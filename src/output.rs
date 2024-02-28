@@ -59,7 +59,7 @@ use tracing::{info, instrument};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
 #[cfg(feature = "backend_drm")]
-use drm::control::{Mode as DrmMode, ModeFlags};
+use drm::control::{connector::SubPixel as DrmSubPixel, Mode as DrmMode, ModeFlags};
 #[cfg(feature = "wayland_frontend")]
 use std::collections::HashSet;
 #[cfg(feature = "wayland_frontend")]
@@ -133,9 +133,25 @@ pub enum Subpixel {
     /// Subpixels are arranged vertically starting with
     /// red, then green, last blue
     VerticalRgb,
-    /// Subpixels are arranged verically starting with
+    /// Subpixels are arranged vertically starting with
     /// blue, then green, last red
     VerticalBgr,
+}
+
+#[cfg(feature = "backend_drm")]
+impl From<DrmSubPixel> for Subpixel {
+    fn from(mode: DrmSubPixel) -> Self {
+        match mode {
+            DrmSubPixel::Unknown => Self::Unknown,
+            DrmSubPixel::HorizontalRgb => Self::HorizontalRgb,
+            DrmSubPixel::HorizontalBgr => Self::HorizontalBgr,
+            DrmSubPixel::VerticalRgb => Self::VerticalRgb,
+            DrmSubPixel::VerticalBgr => Self::VerticalBgr,
+            DrmSubPixel::None => Self::None,
+            DrmSubPixel::NotImplemented => Self::Unknown,
+            _ => Self::Unknown,
+        }
+    }
 }
 
 /// The physical properties of an output
