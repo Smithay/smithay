@@ -59,7 +59,7 @@ use smithay::{
         keyboard::LedState,
         pointer::{CursorImageAttributes, CursorImageStatus},
     },
-    output::{Mode as WlMode, Output, PhysicalProperties, Subpixel},
+    output::{Mode as WlMode, Output, PhysicalProperties},
     reexports::{
         calloop::{
             timer::{TimeoutAction, Timer},
@@ -983,7 +983,7 @@ impl AnvilState<UdevData> {
                 output_name,
                 PhysicalProperties {
                     size: (phys_w as i32, phys_h as i32).into(),
-                    subpixel: Subpixel::Unknown,
+                    subpixel: connector.subpixel().into(),
                     make,
                     model,
                 },
