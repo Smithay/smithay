@@ -29,7 +29,7 @@ appendlist = "1.4"
 # Intentionally pick a commit from "0.37-stable" branch since additions for 0.37.1 are used
 ash = { version = "0.37.1", optional = true }
 bitflags = "2.2.1"
-calloop = "0.12.2"
+calloop = "0.13.0"
 cursor-icon = "1.0.0"
 cgmath = "0.18.0"
 downcast-rs = "1.2.0"
