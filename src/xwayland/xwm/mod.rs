@@ -11,6 +11,7 @@
 //! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
 //! #  use smithay::utils::{Rectangle, Logical};
 //! #  use std::os::unix::io::OwnedFd;
+//! #  use std::process::Stdio;
 //! #
 //! struct State { /* ... */ }
 //! impl XwmHandler for State {
@@ -34,27 +35,33 @@
 //! # let dh = unreachable!();
 //! # let handle: smithay::reexports::calloop::LoopHandle<'static, State> = unreachable!();
 //!
-//! let (xwayland, channel) = XWayland::new(&dh);
-//! let ret = handle.insert_source(channel, move |event, _, data| match event {
+//! let (xwayland, client) = XWayland::spawn(
+//!     &dh,
+//!     None,
+//!     std::iter::empty::<(String, String)>(),
+//!     true,
+//!     Stdio::null(),
+//!     Stdio::null(),
+//!     |_| (),
+//! )
+//! .expect("failed to start XWayland");
+
+//! let ret = handle.insert_source(xwayland, move |event, _, data| match event {
 //!     XWaylandEvent::Ready {
-//!         connection,
-//!         client,
-//!         client_fd: _,
-//!         display: _,
+//!         x11_socket,
+//!         display_number: _,
 //!     } => {
 //!         let wm = X11Wm::start_wm(
 //!             handle.clone(),
 //!             dh.clone(),
-//!             connection,
-//!             client,
+//!             x11_socket,
+//!             client.clone(),
 //!         )
 //!         .expect("Failed to attach X11 Window Manager");
 //!         
 //!         // store the WM somewhere
 //!     }
-//!     XWaylandEvent::Exited => {
-//!         // cleanup your state and drop the WM again
-//!     }
+//!     XWaylandEvent::Error => eprintln!("XWayland failed to start!"),
 //! });
 //! if let Err(e) = ret {
 //!     tracing::error!(
