@@ -1,5 +1,3 @@
-#[cfg(feature = "xwayland")]
-use std::ffi::OsString;
 use std::{
     sync::{atomic::Ordering, Mutex},
     time::Duration,
@@ -206,15 +204,7 @@ pub fn run_winit() {
     state.space.map_output(&output, (0, 0));
 
     #[cfg(feature = "xwayland")]
-    if let Err(e) = state.xwayland.start(
-        state.handle.clone(),
-        None,
-        std::iter::empty::<(OsString, OsString)>(),
-        true,
-        |_| {},
-    ) {
-        error!("Failed to start XWayland: {}", e);
-    }
+    state.start_xwayland();
 
     info!("Initialization completed, starting the main loop.");
 
