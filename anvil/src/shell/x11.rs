@@ -17,6 +17,7 @@ use smithay::{
             },
             SelectionTarget,
         },
+        xwayland_shell::{XWaylandShellHandler, XWaylandShellState},
     },
     xwayland::{
         xwm::{Reorder, ResizeEdge as X11ResizeEdge, XwmId},
@@ -41,6 +42,12 @@ impl OldGeometry {
 
     pub fn restore(&self) -> Option<Rectangle<i32, Logical>> {
         self.0.borrow_mut().take()
+    }
+}
+
+impl<BackendData: Backend> XWaylandShellHandler for AnvilState<BackendData> {
+    fn xwayland_shell_state(&mut self) -> &mut XWaylandShellState {
+        &mut self.xwayland_shell_state
     }
 }
 
