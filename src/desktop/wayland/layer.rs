@@ -576,14 +576,20 @@ impl LayerSurface {
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
         let point = point.into();
         let surface = self.wl_surface();
-        for (popup, location) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            if let Some(result) = under_from_surface_tree(surface, point, location, surface_type) {
-                return Some(result);
+        if surface_type.contains(WindowSurfaceType::POPUP) {
+            for (popup, location) in PopupManager::popups_for_surface(surface) {
+                let surface = popup.wl_surface();
+                if let Some(result) = under_from_surface_tree(surface, point, location, surface_type) {
+                    return Some(result);
+                }
             }
         }
 
-        under_from_surface_tree(surface, point, (0, 0), surface_type)
+        if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+            return under_from_surface_tree(surface, point, (0, 0), surface_type);
+        }
+
+        None
     }
 
     /// Sends the frame callback to all the subsurfaces in this layer that requested it
