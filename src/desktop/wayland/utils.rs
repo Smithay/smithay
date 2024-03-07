@@ -108,25 +108,12 @@ where
     with_surface_tree_downward(
         surface,
         location.into(),
-        |wl_surface, states, location: &Point<i32, Logical>| {
+        |_, states, location: &Point<i32, Logical>| {
             let mut location = *location;
             let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset;
-
-                if states.role == Some("subsurface") || surface_type.contains(WindowSurfaceType::TOPLEVEL) {
-                    let contains_the_point = data
-                        .map(|data| {
-                            data.borrow()
-                                .contains_point(&states.cached_state.current(), point - location.to_f64())
-                        })
-                        .unwrap_or(false);
-                    if contains_the_point {
-                        *found.borrow_mut() = Some((wl_surface.clone(), location));
-                    }
-                }
-
                 if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
                     TraversalAction::DoChildren(location)
                 } else {
@@ -134,10 +121,27 @@ where
                 }
             } else {
                 // We are completely hidden
-                TraversalAction::SkipChildren
+                TraversalAction::Break
             }
         },
-        |_, _, _| {},
+        |wl_surface, states, location: &Point<i32, Logical>| {
+            let mut location = *location;
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
+
+            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+                location += surface_view.offset;
+
+                let contains_the_point = data
+                    .map(|data| {
+                        data.borrow()
+                            .contains_point(&states.cached_state.current(), point - location.to_f64())
+                    })
+                    .unwrap_or(false);
+                if contains_the_point {
+                    *found.borrow_mut() = Some((wl_surface.clone(), location));
+                }
+            }
+        },
         |_, _, _| {
             // only continue if the point is not found
             found.borrow().is_none()
