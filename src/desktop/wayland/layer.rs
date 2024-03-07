@@ -181,42 +181,57 @@ impl LayerMap {
         surface: &WlSurface,
         surface_type: WindowSurfaceType,
     ) -> Option<&LayerSurface> {
-        if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
-            if let Some(layer) = self.layers.iter().find(|l| l.wl_surface() == surface) {
-                return Some(layer);
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        self.layers.iter().find(|layer| {
+            if surface_type.contains(WindowSurfaceType::POPUP) {
+                for (popup, _) in PopupManager::popups_for_surface(layer.wl_surface()) {
+                    let toplevel = popup.wl_surface();
+                    let found = AtomicBool::new(false);
+                    with_surface_tree_downward(
+                        toplevel,
+                        surface,
+                        |_, _, search| {
+                            if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
+                                TraversalAction::DoChildren(search)
+                            } else {
+                                TraversalAction::SkipChildren
+                            }
+                        },
+                        |s, _, search| {
+                            found.fetch_or(s == *search, Ordering::SeqCst);
+                        },
+                        |_, _, _| !found.load(Ordering::SeqCst),
+                    );
+                    if found.load(Ordering::SeqCst) {
+                        return true;
+                    }
+                }
             }
-        }
 
-        if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
-            use std::sync::atomic::{AtomicBool, Ordering};
-
-            if let Some(layer) = self.layers.iter().find(|l| {
-                let toplevel = l.wl_surface();
+            if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+                let toplevel = layer.wl_surface();
                 let found = AtomicBool::new(false);
                 with_surface_tree_downward(
                     toplevel,
                     surface,
-                    |_, _, search| TraversalAction::DoChildren(search),
+                    |_, _, search| {
+                        if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
+                            TraversalAction::DoChildren(search)
+                        } else {
+                            TraversalAction::SkipChildren
+                        }
+                    },
                     |s, _, search| {
                         found.fetch_or(s == *search, Ordering::SeqCst);
                     },
                     |_, _, _| !found.load(Ordering::SeqCst),
                 );
-                found.load(Ordering::SeqCst)
-            }) {
-                return Some(layer);
+                return found.load(Ordering::SeqCst);
             }
-        }
 
-        if surface_type.contains(WindowSurfaceType::POPUP) {
-            if let Some(layer) = self.layers.iter().find(|l| {
-                PopupManager::popups_for_surface(l.wl_surface()).any(|(p, _)| p.wl_surface() == surface)
-            }) {
-                return Some(layer);
-            }
-        }
-
-        None
+            false
+        })
     }
 
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
