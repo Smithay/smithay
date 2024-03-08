@@ -39,6 +39,7 @@ use smithay::{
     wayland::{
         compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         dmabuf::DmabufFeedback,
+        drm_syncobj::DrmSyncobjState,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
         input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
         keyboard_shortcuts_inhibit::{
@@ -547,6 +548,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 .get_data::<ClientState>()
                 .map_or(true, |client_state| client_state.security_context.is_none())
         });
+        DrmSyncobjState::new::<Self>(&dh);
 
         // init input
         let seat_name = backend_data.seat_name();

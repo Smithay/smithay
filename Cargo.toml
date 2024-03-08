@@ -70,15 +70,15 @@ smallvec = "1.11"
 pixman = { version = "0.1.0", features = ["drm-fourcc"], optional = true }
 
 [patch.crates-io]
-wayland-egl = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2"}
-wayland-protocols = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-protocols-wlr = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-protocols-misc = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-server = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-client = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-sys = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-backend = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-scanner = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
+wayland-egl = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-protocols = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-protocols-wlr = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-protocols-misc = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-server = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-client = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-sys = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-backend = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
+wayland-scanner = { git = "https://github.com/ids1024/wayland-rs", branch = "drm-syncobj" }
 # wayland-egl = { path = "../wayland-rs/wayland-egl/" }
 # wayland-protocols = { path = "../wayland-rs/wayland-protocols/" }
 # wayland-protocols-wlr = { path = "../wayland-rs/wayland-protocols-wlr/" }
@@ -102,7 +102,7 @@ pkg-config = { version = "0.3.17", optional = true }
 cc = { version = "1.0.79", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_pixman", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "desktop", "renderer_gl", "renderer_pixman", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"] # XXX
 backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
