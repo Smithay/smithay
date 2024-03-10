@@ -296,7 +296,7 @@ impl X11Surface {
 
     /// Returns the current window instance of the underlying X11 window
     pub fn instance(&self) -> String {
-        self.state.lock().unwrap().class.clone()
+        self.state.lock().unwrap().instance.clone()
     }
 
     /// Returns the startup id of the underlying X11 window
