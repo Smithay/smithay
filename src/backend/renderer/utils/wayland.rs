@@ -102,9 +102,9 @@ impl RendererSurfaceState {
             self.accumulated_buffer_delta += delta;
         }
 
+        let new_buffer = matches!(attrs.buffer, Some(BufferAssignment::NewBuffer(_)));
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer(buffer)) => {
-                // new contents
                 self.buffer_dimensions = buffer_dimensions(&buffer);
                 if self.buffer_dimensions.is_none() {
                     // This results in us rendering nothing (can happen e.g. for failed egl-buffer-calls),
@@ -121,91 +121,93 @@ impl RendererSurfaceState {
                 }
 
                 self.textures.clear();
-
-                let surface_size = self
-                    .buffer_dimensions
-                    .unwrap()
-                    .to_logical(self.buffer_scale, self.buffer_transform);
-                let surface_view =
-                    SurfaceView::from_states(states, surface_size, self.accumulated_buffer_delta);
-                self.surface_view = Some(surface_view);
-
-                let mut buffer_damage = attrs
-                    .damage
-                    .drain(..)
-                    .flat_map(|dmg| {
-                        match dmg {
-                            Damage::Buffer(rect) => rect,
-                            Damage::Surface(rect) => surface_view.rect_to_local(rect).to_i32_up().to_buffer(
-                                self.buffer_scale,
-                                self.buffer_transform,
-                                &surface_size,
-                            ),
-                        }
-                        .intersection(Rectangle::from_loc_and_size(
-                            (0, 0),
-                            self.buffer_dimensions.unwrap(),
-                        ))
-                    })
-                    .collect::<Vec<Rectangle<i32, BufferCoord>>>();
-                buffer_damage.dedup();
-                self.damage.add(buffer_damage);
-
-                self.opaque_regions.clear();
-                if !self.buffer_has_alpha.unwrap_or(true) {
-                    self.opaque_regions.push(Rectangle::from_loc_and_size(
-                        (0, 0),
-                        self.surface_view.unwrap().dst,
-                    ))
-                } else if let Some(region_attributes) = &attrs.opaque_region {
-                    let opaque_regions = region_attributes
-                        .rects
-                        .iter()
-                        .map(|(kind, rect)| {
-                            let dest_size = self.surface_view.unwrap().dst;
-
-                            let rect_constrained_loc = rect
-                                .loc
-                                .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
-                            let rect_clamped_size = rect
-                                .size
-                                .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
-
-                            let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
-
-                            (kind, rect)
-                        })
-                        .fold(
-                            std::mem::take(&mut self.opaque_regions),
-                            |mut new_regions, (kind, rect)| {
-                                match kind {
-                                    RectangleKind::Add => {
-                                        let added_regions = rect.subtract_rects(
-                                            new_regions
-                                                .iter()
-                                                .filter(|region| region.overlaps_or_touches(rect))
-                                                .copied(),
-                                        );
-                                        new_regions.extend(added_regions);
-                                    }
-                                    RectangleKind::Subtract => {
-                                        new_regions =
-                                            Rectangle::subtract_rects_many_in_place(new_regions, [rect]);
-                                    }
-                                }
-
-                                new_regions
-                            },
-                        );
-
-                    self.opaque_regions = opaque_regions;
-                }
             }
             Some(BufferAssignment::Removed) => {
-                // remove the contents
                 self.reset();
+                return;
             }
             None => {}
+        };
+
+        let Some(buffer_dimensions) = self.buffer_dimensions else {
+            // nothing to be done without a buffer
+            return;
+        };
+
+        let surface_size = buffer_dimensions.to_logical(self.buffer_scale, self.buffer_transform);
+        let surface_view = SurfaceView::from_states(states, surface_size, self.accumulated_buffer_delta);
+        let surface_view_changed = self.surface_view.replace(surface_view) != Some(surface_view);
+
+        // if we received a new buffer also process the attached damage
+        if new_buffer {
+            let mut buffer_damage = attrs
+                .damage
+                .drain(..)
+                .flat_map(|dmg| {
+                    match dmg {
+                        Damage::Buffer(rect) => rect,
+                        Damage::Surface(rect) => surface_view.rect_to_local(rect).to_i32_up().to_buffer(
+                            self.buffer_scale,
+                            self.buffer_transform,
+                            &surface_size,
+                        ),
+                    }
+                    .intersection(Rectangle::from_loc_and_size((0, 0), buffer_dimensions))
+                })
+                .collect::<Vec<Rectangle<i32, BufferCoord>>>();
+            buffer_damage.dedup();
+            self.damage.add(buffer_damage);
+        }
+
+        // if the buffer or our view changed rebuild our opaque regions
+        if new_buffer || surface_view_changed {
+            self.opaque_regions.clear();
+            if !self.buffer_has_alpha.unwrap_or(true) {
+                self.opaque_regions
+                    .push(Rectangle::from_loc_and_size((0, 0), surface_view.dst))
+            } else if let Some(region_attributes) = &attrs.opaque_region {
+                let opaque_regions = region_attributes
+                    .rects
+                    .iter()
+                    .map(|(kind, rect)| {
+                        let dest_size = surface_view.dst;
+
+                        let rect_constrained_loc = rect
+                            .loc
+                            .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                        let rect_clamped_size = rect
+                            .size
+                            .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+
+                        let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+
+                        (kind, rect)
+                    })
+                    .fold(
+                        std::mem::take(&mut self.opaque_regions),
+                        |mut new_regions, (kind, rect)| {
+                            match kind {
+                                RectangleKind::Add => {
+                                    let added_regions = rect.subtract_rects(
+                                        new_regions
+                                            .iter()
+                                            .filter(|region| region.overlaps_or_touches(rect))
+                                            .copied(),
+                                    );
+                                    new_regions.extend(added_regions);
+                                }
+                                RectangleKind::Subtract => {
+                                    new_regions =
+                                        Rectangle::subtract_rects_many_in_place(new_regions, [rect]);
+                                }
+                            }
+
+                            new_regions
+                        },
+                    );
+
+                self.opaque_regions = opaque_regions;
+            }
         }
     }
 
