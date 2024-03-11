@@ -8,6 +8,36 @@ use wayland_server::{
     protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
+use super::compositor::{with_states, Cacheable};
+
+#[derive(Clone)]
+struct SyncPoint {
+    fd: Arc<OwnedFd>,
+    point: u64,
+}
+
+#[derive(Default)]
+struct DrmSyncobjCachedState {
+    acquire_point: Option<SyncPoint>,
+    release_point: Option<SyncPoint>,
+}
+
+impl Cacheable for DrmSyncobjCachedState {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
+        Self {
+            acquire_point: None,
+            release_point: None,
+        }
+    }
+
+    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
+        // TODO need to verify that buffer, acquire point, and release point are sent together
+        // in one commit, or send `no_buffer`, `no_acquire_point`, `no_release_point`
+        into.acquire_point = self.acquire_point;
+        into.release_point = self.release_point;
+    }
+}
+
 pub struct DrmSyncobjState {}
 
 impl DrmSyncobjState {
@@ -67,7 +97,7 @@ impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSy
         _client: &Client,
         _resource: &WpLinuxDrmSyncobjSurfaceV1,
         request: wp_linux_drm_syncobj_surface_v1::Request,
-        _data: &DrmSyncobjSurfaceData,
+        data: &DrmSyncobjSurfaceData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -78,16 +108,28 @@ impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSy
                 point_hi,
                 point_lo,
             } => {
-                let fd = &timeline.data::<DrmSyncobjTimelineData>().unwrap().fd;
-                let point = ((point_hi as u64) << 32) + (point_lo as u64);
+                let sync_point = SyncPoint {
+                    fd: timeline.data::<DrmSyncobjTimelineData>().unwrap().fd.clone(),
+                    point: ((point_hi as u64) << 32) + (point_lo as u64),
+                };
+                with_states(&data.surface, |states| {
+                    let mut cached_state = states.cached_state.pending::<DrmSyncobjCachedState>();
+                    cached_state.acquire_point = Some(sync_point);
+                });
             }
             wp_linux_drm_syncobj_surface_v1::Request::SetReleasePoint {
                 timeline,
                 point_hi,
                 point_lo,
             } => {
-                let fd = &timeline.data::<DrmSyncobjTimelineData>().unwrap().fd;
-                let point = ((point_hi as u64) << 32) + (point_lo as u64);
+                let sync_point = SyncPoint {
+                    fd: timeline.data::<DrmSyncobjTimelineData>().unwrap().fd.clone(),
+                    point: ((point_hi as u64) << 32) + (point_lo as u64),
+                };
+                with_states(&data.surface, |states| {
+                    let mut cached_state = states.cached_state.pending::<DrmSyncobjCachedState>();
+                    cached_state.release_point = Some(sync_point);
+                });
             }
             _ => unreachable!(),
         }
