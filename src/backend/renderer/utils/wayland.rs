@@ -20,7 +20,7 @@ use tracing::{error, instrument, warn};
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
-use super::{CommitCounter, DamageBag, SurfaceView};
+use super::{CommitCounter, DamageBag, DamageSet, SurfaceView};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -130,25 +130,20 @@ impl RendererSurfaceState {
                     SurfaceView::from_states(states, surface_size, self.accumulated_buffer_delta);
                 self.surface_view = Some(surface_view);
 
-                let mut buffer_damage = attrs
-                    .damage
-                    .drain(..)
-                    .flat_map(|dmg| {
-                        match dmg {
-                            Damage::Buffer(rect) => rect,
-                            Damage::Surface(rect) => surface_view.rect_to_local(rect).to_i32_up().to_buffer(
-                                self.buffer_scale,
-                                self.buffer_transform,
-                                &surface_size,
-                            ),
-                        }
-                        .intersection(Rectangle::from_loc_and_size(
-                            (0, 0),
-                            self.buffer_dimensions.unwrap(),
-                        ))
-                    })
-                    .collect::<Vec<Rectangle<i32, BufferCoord>>>();
-                buffer_damage.dedup();
+                let buffer_damage = attrs.damage.drain(..).flat_map(|dmg| {
+                    match dmg {
+                        Damage::Buffer(rect) => rect,
+                        Damage::Surface(rect) => surface_view.rect_to_local(rect).to_i32_up().to_buffer(
+                            self.buffer_scale,
+                            self.buffer_transform,
+                            &surface_size,
+                        ),
+                    }
+                    .intersection(Rectangle::from_loc_and_size(
+                        (0, 0),
+                        self.buffer_dimensions.unwrap(),
+                    ))
+                });
                 self.damage.add(buffer_damage);
 
                 self.opaque_regions.clear();
@@ -221,17 +216,17 @@ impl RendererSurfaceState {
     ///
     /// If either the commit is `None` or the commit is too old
     /// the whole buffer will be returned as damage.
-    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Vec<Rectangle<i32, BufferCoord>> {
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> DamageSet<i32, BufferCoord> {
         self.damage.damage_since(commit).unwrap_or_else(|| {
             self.buffer_dimensions
                 .as_ref()
-                .map(|size| vec![Rectangle::from_loc_and_size((0, 0), *size)])
+                .map(|size| DamageSet::from_slice(&[Rectangle::from_loc_and_size((0, 0), *size)]))
                 .unwrap_or_default()
         })
     }
 
     /// Gets the raw damage of this surface
-    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<i32, BufferCoord>>> {
+    pub fn damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<i32, BufferCoord>>> {
         self.damage.damage()
     }
 

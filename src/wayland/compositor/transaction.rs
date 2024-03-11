@@ -238,6 +238,7 @@ impl TransactionQueue {
     }
 
     pub(crate) fn take_ready(&mut self) -> Vec<Transaction> {
+        // FIXME: Get rid of this allocation here
         let mut ready_transactions = Vec::new();
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which

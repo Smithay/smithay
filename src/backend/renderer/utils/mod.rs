@@ -72,7 +72,7 @@ pub struct DamageBag<N, Kind> {
 pub struct DamageSnapshot<N, Kind> {
     limit: usize,
     commit_counter: CommitCounter,
-    damage: Arc<VecDeque<Vec<Rectangle<N, Kind>>>>,
+    damage: Arc<VecDeque<smallvec::SmallVec<[Rectangle<N, Kind>; MAX_DAMAGE_RECTS]>>>,
 }
 
 impl<N, Kind> Clone for DamageSnapshot<N, Kind> {
@@ -139,11 +139,13 @@ impl<N: fmt::Debug> fmt::Debug for DamageSnapshot<N, Logical> {
     }
 }
 
-const MAX_DAMAGE: usize = 4;
+const MAX_DAMAGE_AGE: usize = 4;
+const MAX_DAMAGE_RECTS: usize = 16;
+const MAX_DAMAGE_SET: usize = MAX_DAMAGE_RECTS * 2;
 
 impl<N: Clone, Kind> Default for DamageBag<N, Kind> {
     fn default() -> Self {
-        DamageBag::new(MAX_DAMAGE)
+        DamageBag::new(MAX_DAMAGE_AGE)
     }
 }
 
@@ -176,8 +178,8 @@ impl<N: Clone, Kind> DamageSnapshot<N, Kind> {
     }
 
     /// Provides raw access to the stored damage
-    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<N, Kind>>> {
-        self.damage.iter()
+    pub fn damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<N, Kind>>> {
+        self.damage.iter().map(|d| d.iter())
     }
 
     fn reset(&mut self) {
@@ -195,44 +197,36 @@ impl<N: Coordinate, Kind> DamageSnapshot<N, Kind> {
     ///
     /// If the commit is recent enough and no damage has occurred
     /// an empty `Vec` will be returned
-    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Option<Vec<Rectangle<N, Kind>>> {
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Option<DamageSet<N, Kind>> {
         let distance = self.commit_counter.distance(commit);
 
         if distance
             .map(|distance| distance <= self.damage.len())
             .unwrap_or(false)
         {
-            Some(
-                self.damage
-                    .iter()
-                    .take(distance.unwrap())
-                    .fold(Vec::new(), |mut acc, elem| {
-                        acc.extend(elem);
-                        acc
-                    }),
-            )
+            let mut damage_set = DamageSet::default();
+            for damage in self.damage.iter().take(distance.unwrap()) {
+                damage_set.damage.extend_from_slice(damage);
+            }
+            Some(damage_set)
         } else {
             None
         }
     }
 
     fn add(&mut self, damage: impl IntoIterator<Item = Rectangle<N, Kind>>) {
-        let damage = damage.into_iter().collect::<Vec<_>>();
+        // FIXME: Get rid of this allocation here
+        let mut damage = damage.into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>();
 
-        if damage.is_empty() || damage.iter().all(|d| d.is_empty()) {
+        if damage.is_empty() {
             // do not track empty damage
             return;
         }
 
-        let mut damage = damage
-            .iter()
-            .copied()
-            .filter(|d| !d.is_empty())
-            .collect::<Vec<_>>();
         damage.dedup();
 
         let inner_damage = Arc::make_mut(&mut self.damage);
-        inner_damage.push_front(damage);
+        inner_damage.push_front(smallvec::SmallVec::from_vec(damage));
         inner_damage.truncate(self.limit);
 
         self.commit_counter.increment();
@@ -254,7 +248,7 @@ impl<N: Clone, Kind> DamageBag<N, Kind> {
     }
 
     /// Provides raw access to the stored damage
-    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<N, Kind>>> {
+    pub fn damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<N, Kind>>> {
         self.state.damage()
     }
 
@@ -288,8 +282,117 @@ impl<N: Coordinate, Kind> DamageBag<N, Kind> {
     ///
     /// If the commit is recent enough and no damage has occurred
     /// an empty `Vec` will be returned
-    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Option<Vec<Rectangle<N, Kind>>> {
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Option<DamageSet<N, Kind>> {
         self.state.damage_since(commit)
+    }
+}
+
+/// A set of damage returned from [`DamageBag::damage_since`] of [`DamageSnapshot::damage_since`]
+pub struct DamageSet<N, Kind> {
+    damage: smallvec::SmallVec<[Rectangle<N, Kind>; MAX_DAMAGE_SET]>,
+}
+
+impl<N, Kind> Default for DamageSet<N, Kind> {
+    fn default() -> Self {
+        Self {
+            damage: Default::default(),
+        }
+    }
+}
+
+impl<N: Copy, Kind> DamageSet<N, Kind> {
+    /// Copy the damage from a slice into a new `DamageSet`.
+    pub fn from_slice(slice: &[Rectangle<N, Kind>]) -> Self {
+        Self {
+            damage: smallvec::SmallVec::from_slice(slice),
+        }
+    }
+}
+
+impl<N, Kind> std::ops::Deref for DamageSet<N, Kind> {
+    type Target = [Rectangle<N, Kind>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.damage
+    }
+}
+
+impl<N, Kind> IntoIterator for DamageSet<N, Kind> {
+    type Item = Rectangle<N, Kind>;
+
+    type IntoIter = DamageSetIter<N, Kind>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DamageSetIter {
+            inner: self.damage.into_iter(),
+        }
+    }
+}
+
+impl<N, Kind> FromIterator<Rectangle<N, Kind>> for DamageSet<N, Kind> {
+    fn from_iter<T: IntoIterator<Item = Rectangle<N, Kind>>>(iter: T) -> Self {
+        Self {
+            damage: smallvec::SmallVec::from_iter(iter),
+        }
+    }
+}
+
+/// Iterator for [`DamageSet::into_iter`]
+pub struct DamageSetIter<N, Kind> {
+    inner: smallvec::IntoIter<[Rectangle<N, Kind>; MAX_DAMAGE_SET]>,
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageSetIter<N, BufferCoord> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageSetIter")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageSetIter<N, Physical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageSetIter")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageSetIter<N, Logical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageSetIter")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl<N, Kind> Iterator for DamageSetIter<N, Kind> {
+    type Item = Rectangle<N, Kind>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageSet<N, BufferCoord> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageSet").field("damage", &self.damage).finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageSet<N, Physical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageSet").field("damage", &self.damage).finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageSet<N, Logical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageSet").field("damage", &self.damage).finish()
     }
 }
 
