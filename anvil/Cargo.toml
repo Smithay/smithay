@@ -37,7 +37,7 @@ gl_generator = "0.14"
 
 [features]
 debug = ["fps_ticker", "image/png", "renderdoc"]
-default = ["egl", "winit", "x11", "udev", "xwayland"]
+default = ["egl", "x11", "udev", "xwayland"]
 egl = ["smithay/use_system_lib", "smithay/backend_egl"]
 test_all_features = ["default", "debug"]
 udev = [
