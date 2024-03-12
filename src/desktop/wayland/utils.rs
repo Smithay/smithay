@@ -120,8 +120,8 @@ where
                     TraversalAction::SkipChildren
                 }
             } else {
-                // We are completely hidden
-                TraversalAction::Break
+                // We are completely hidden, no point in traversing our children
+                TraversalAction::SkipChildren
             }
         },
         |wl_surface, states, location: &Point<i32, Logical>| {
