@@ -1,5 +1,4 @@
 use smithay::{
-    delegate_xdg_shell,
     desktop::{find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Space, Window},
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
@@ -122,9 +121,6 @@ impl XdgShellHandler for Smallvil {
         // TODO popup grabs
     }
 }
-
-// Xdg Shell
-delegate_xdg_shell!(Smallvil);
 
 fn check_grab(
     seat: &Seat<Smallvil>,

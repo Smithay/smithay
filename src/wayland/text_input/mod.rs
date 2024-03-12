@@ -6,18 +6,11 @@
 //! Text input focus is automatically set to the same surface that has keyboard focus.
 //!
 //! ```
-//! use smithay::{
-//!     delegate_seat, delegate_text_input_manager,
-//! };
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::wayland::text_input::TextInputManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
 //! # struct State { seat_state: SeatState<Self> };
-//!
-//! delegate_seat!(State);
-//! // Delegate text input handling for State to TextInputManagerState.
-//! delegate_text_input_manager!(State);
 //!
 //! # let mut display = Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
@@ -38,13 +31,11 @@
 //!
 //! // Add the seat state to your state and create manager global
 //! TextInputManagerState::new::<State>(&display_handle);
-//!
 //! ```
 //!
 
-use wayland_protocols::wp::text_input::zv3::server::{
-    zwp_text_input_manager_v3::{self, ZwpTextInputManagerV3},
-    zwp_text_input_v3::ZwpTextInputV3,
+use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_manager_v3::{
+    self, ZwpTextInputManagerV3,
 };
 use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
@@ -83,12 +74,10 @@ impl TextInputManagerState {
     /// Initialize a text input manager global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpTextInputManagerV3, ()>,
-        D: Dispatch<ZwpTextInputManagerV3, ()>,
-        D: Dispatch<ZwpTextInputV3, TextInputUserData>,
-        D: 'static,
+        D: SeatHandler,
     {
-        let global = display.create_global::<D, ZwpTextInputManagerV3, _>(MANAGER_VERSION, ());
+        let global =
+            display.create_delegated_global::<D, ZwpTextInputManagerV3, _, Self>(MANAGER_VERSION, ());
 
         Self { global }
     }
@@ -101,10 +90,7 @@ impl TextInputManagerState {
 
 impl<D> GlobalDispatch<ZwpTextInputManagerV3, (), D> for TextInputManagerState
 where
-    D: GlobalDispatch<ZwpTextInputManagerV3, ()>,
-    D: Dispatch<ZwpTextInputManagerV3, ()>,
-    D: Dispatch<ZwpTextInputV3, TextInputUserData>,
-    D: 'static,
+    D: SeatHandler,
 {
     fn bind(
         _: &mut D,
@@ -114,16 +100,13 @@ where
         _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<ZwpTextInputManagerV3, (), D> for TextInputManagerState
 where
-    D: Dispatch<ZwpTextInputManagerV3, ()>,
-    D: Dispatch<ZwpTextInputV3, TextInputUserData>,
     D: SeatHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,
@@ -143,7 +126,7 @@ where
                 user_data.insert_if_missing(InputMethodHandle::default);
                 let handle = user_data.get::<TextInputHandle>().unwrap();
                 let input_method_handle = user_data.get::<InputMethodHandle>().unwrap();
-                let instance = data_init.init(
+                let instance = data_init.init_delegated::<_, _, Self>(
                     id,
                     TextInputUserData {
                         handle: handle.clone(),
@@ -163,21 +146,9 @@ where
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_text_input_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_manager_v3::ZwpTextInputManagerV3: ()
-        ] => $crate::wayland::text_input::TextInputManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_manager_v3::ZwpTextInputManagerV3: ()
-        ] => $crate::wayland::text_input::TextInputManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::ZwpTextInputV3:
-            $crate::wayland::text_input::TextInputUserData
-        ] => $crate::wayland::text_input::TextInputManagerState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

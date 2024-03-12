@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
-    utils::Serial,
+    utils::{user_data::UserdataGetter, Serial},
     wayland::{compositor, shell::xdg::XdgToplevelSurfaceData},
 };
 
@@ -13,14 +13,14 @@ use wayland_server::{
 
 use super::{
     SurfaceCachedState, ToplevelConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData,
-    XdgSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
+    XdgToplevelSurfaceRoleAttributes,
 };
+
+impl UserdataGetter<XdgShellSurfaceUserData, XdgShellState> for XdgToplevel {}
 
 impl<D> Dispatch<XdgToplevel, XdgShellSurfaceUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -33,17 +33,13 @@ where
     ) {
         match request {
             xdg_toplevel::Request::Destroy => {
-                if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
+                if let Some(surface_data) = data.xdg_surface.user_data() {
                     surface_data.has_active_role.store(false, Ordering::Release);
                 }
             }
             xdg_toplevel::Request::SetParent { parent } => {
                 let parent_surface = parent.map(|toplevel_surface_parent| {
-                    toplevel_surface_parent
-                        .data::<XdgShellSurfaceUserData>()
-                        .unwrap()
-                        .wl_surface
-                        .clone()
+                    toplevel_surface_parent.user_data().unwrap().wl_surface.clone()
                 });
 
                 // Parent is not double buffered, we can set it directly
@@ -177,7 +173,7 @@ fn with_surface_toplevel_role_data<F, T>(toplevel: &xdg_toplevel::XdgToplevel, f
 where
     F: FnOnce(&mut XdgToplevelSurfaceRoleAttributes) -> T,
 {
-    let data = toplevel.data::<XdgShellSurfaceUserData>().unwrap();
+    let data = toplevel.user_data().unwrap();
     compositor::with_states(&data.wl_surface, |states| {
         f(&mut states
             .data_map
@@ -191,7 +187,7 @@ where
 pub(super) fn make_toplevel_handle(
     resource: &xdg_toplevel::XdgToplevel,
 ) -> crate::wayland::shell::xdg::ToplevelSurface {
-    let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
+    let data = resource.user_data().unwrap();
     crate::wayland::shell::xdg::ToplevelSurface {
         wl_surface: data.wl_surface.clone(),
         shell_surface: resource.clone(),
@@ -230,7 +226,7 @@ pub fn send_toplevel_configure(
     send_bounds: bool,
     send_capabilities: bool,
 ) {
-    let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
+    let data = resource.user_data().unwrap();
     let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
     let states = {

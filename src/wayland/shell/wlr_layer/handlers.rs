@@ -6,6 +6,7 @@ use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrL
 use wayland_server::protocol::wl_surface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource};
 
+use crate::utils::user_data::UserdataGetter;
 use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
     Serial,
@@ -26,11 +27,7 @@ use super::LAYER_SURFACE_ROLE;
 
 impl<D> GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData, D> for WlrLayerShellState
 where
-    D: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
-    D: Dispatch<ZwlrLayerShellV1, ()>,
-    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
-    D: 'static,
 {
     fn bind(
         _state: &mut D,
@@ -40,7 +37,7 @@ where
         _global_data: &WlrLayerShellGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 
     fn can_view(client: Client, global_data: &WlrLayerShellGlobalData) -> bool {
@@ -50,10 +47,7 @@ where
 
 impl<D> Dispatch<ZwlrLayerShellV1, (), D> for WlrLayerShellState
 where
-    D: Dispatch<ZwlrLayerShellV1, ()>,
-    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -88,7 +82,7 @@ where
                     return;
                 }
 
-                let id = data_init.init(
+                let id = data_init.init_delegated::<_, _, Self>(
                     id,
                     WlrLayerSurfaceUserData {
                         shell_data: state.shell_state().clone(),
@@ -188,14 +182,15 @@ pub struct WlrLayerSurfaceUserData {
 
 impl IsAlive for ZwlrLayerSurfaceV1 {
     fn alive(&self) -> bool {
-        let data: &WlrLayerSurfaceUserData = self.data().unwrap();
+        let data: &WlrLayerSurfaceUserData = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }
 
+impl UserdataGetter<WlrLayerSurfaceUserData, WlrLayerShellState> for ZwlrLayerSurfaceV1 {}
+
 impl<D> Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData, D> for WlrLayerShellState
 where
-    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
 {
     fn request(
@@ -274,9 +269,7 @@ where
             zwlr_layer_surface_v1::Request::GetPopup { popup } => {
                 let parent_surface = data.wl_surface.clone();
 
-                let data = popup
-                    .data::<crate::wayland::shell::xdg::XdgShellSurfaceUserData>()
-                    .unwrap();
+                let data = popup.user_data().unwrap();
 
                 compositor::with_states(&data.wl_surface, move |states| {
                     states
@@ -362,7 +355,7 @@ fn with_surface_pending_state<F, T>(layer_surface: &zwlr_layer_surface_v1::ZwlrL
 where
     F: FnOnce(&mut LayerSurfaceCachedState) -> T,
 {
-    let data = layer_surface.data::<WlrLayerSurfaceUserData>().unwrap();
+    let data = layer_surface.user_data().unwrap();
     compositor::with_states(&data.wl_surface, |states| {
         f(&mut states.cached_state.pending::<LayerSurfaceCachedState>())
     })
@@ -371,7 +364,7 @@ where
 pub fn make_surface_handle(
     resource: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
 ) -> crate::wayland::shell::wlr_layer::LayerSurface {
-    let data = resource.data::<WlrLayerSurfaceUserData>().unwrap();
+    let data = resource.user_data().unwrap();
     crate::wayland::shell::wlr_layer::LayerSurface {
         wl_surface: data.wl_surface.clone(),
         shell_surface: resource.clone(),

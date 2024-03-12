@@ -21,7 +21,6 @@
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
-//! use smithay::delegate_output;
 //! use smithay::output::{Output, PhysicalProperties, Scale, Mode, Subpixel};
 //! use smithay::utils::Transform;
 //! use smithay::wayland::output::OutputHandler;
@@ -57,7 +56,6 @@
 //! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
 //!
 //! impl OutputHandler for State {}
-//! delegate_output!(State);
 //! ```
 
 mod handlers;
@@ -73,7 +71,7 @@ use wayland_server::{
         wl_output::{Mode as WMode, Subpixel as WlSubpixel, Transform, WlOutput},
         wl_surface,
     },
-    Client, DisplayHandle, GlobalDispatch, Resource,
+    Client, DisplayHandle, Resource,
 };
 
 use crate::utils::{Logical, Point};
@@ -109,11 +107,9 @@ impl OutputManagerState {
     /// Create new output manager with xdg output support
     pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlOutput, WlOutputData>,
-        D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
         D: 'static,
     {
-        let xdg_output_manager = display.create_global::<D, ZxdgOutputManagerV1, _>(3, ());
+        let xdg_output_manager = display.create_delegated_global::<D, ZxdgOutputManagerV1, _, Self>(3, ());
 
         Self {
             xdg_output_manager: Some(xdg_output_manager),
@@ -171,12 +167,12 @@ impl Output {
     /// multiple times.
     pub fn create_global<D>(&self, display: &DisplayHandle) -> GlobalId
     where
-        D: GlobalDispatch<WlOutput, WlOutputData>,
+        D: OutputHandler,
         D: 'static,
     {
         info!(output = self.name(), "Creating new wl_output");
         self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
-        display.create_global::<D, WlOutput, _>(
+        display.create_delegated_global::<D, WlOutput, _, OutputManagerState>(
             4,
             WlOutputData {
                 inner: self.inner.clone(),
@@ -186,9 +182,11 @@ impl Output {
 
     /// Attempt to retrieve a [`Output`] from an existing resource
     pub fn from_resource(output: &WlOutput) -> Option<Output> {
-        output.data::<OutputUserData>().map(|ud| Output {
-            inner: ud.global_data.clone(),
-        })
+        output
+            .delegated_data::<OutputUserData, OutputManagerState>()
+            .map(|ud| Output {
+                inner: ud.global_data.clone(),
+            })
     }
 
     pub(crate) fn wl_change_current_state(
@@ -315,25 +313,9 @@ impl Output {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_output {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::WlOutputData
-        ] => $crate::wayland::output::OutputManagerState);
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
-        ] => $crate::wayland::output::OutputManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputUserData
-        ] => $crate::wayland::output::OutputManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1: $crate::wayland::output::XdgOutputUserData
-        ] => $crate::wayland::output::OutputManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
-        ] => $crate::wayland::output::OutputManagerState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

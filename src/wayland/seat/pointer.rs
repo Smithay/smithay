@@ -154,7 +154,7 @@ fn for_each_focused_hold_gestures<D: SeatHandler + 'static>(
 #[cfg(feature = "wayland_frontend")]
 impl<D> PointerTarget<D> for WlSurface
 where
-    D: SeatHandler + 'static,
+    D: SeatHandler,
 {
     fn enter(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         let serial = event.serial;
@@ -167,7 +167,9 @@ where
     }
     fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial, time: u32) {
         for_each_focused_swipe_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().take();
             if ongoing.is_some() {
                 // Cancel the ongoing gesture.
@@ -175,7 +177,9 @@ where
             }
         });
         for_each_focused_pinch_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().take();
             if ongoing.is_some() {
                 // Cancel the ongoing gesture.
@@ -183,7 +187,9 @@ where
             }
         });
         for_each_focused_hold_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().take();
             if ongoing.is_some() {
                 // Cancel the ongoing gesture.
@@ -332,7 +338,9 @@ where
 
     fn gesture_swipe_begin(&self, seat: &Seat<D>, _data: &mut D, event: &GestureSwipeBeginEvent) {
         for_each_focused_swipe_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().replace(self.clone());
             if ongoing.is_some() {
                 // Cancel an ongoing gesture for a different surface.
@@ -344,7 +352,9 @@ where
 
     fn gesture_swipe_update(&self, seat: &Seat<D>, _data: &mut D, event: &GestureSwipeUpdateEvent) {
         for_each_focused_swipe_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let mut ongoing = data.in_progress_on.lock().unwrap();
             // Check that the ongoing gesture is for this surface.
             if ongoing.as_ref() == Some(self) {
@@ -358,7 +368,9 @@ where
 
     fn gesture_swipe_end(&self, seat: &Seat<D>, _data: &mut D, event: &GestureSwipeEndEvent) {
         for_each_focused_swipe_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().take();
             // Check if the gesture was ongoing.
             if ongoing.is_some() {
@@ -375,7 +387,9 @@ where
 
     fn gesture_pinch_begin(&self, seat: &Seat<D>, _data: &mut D, event: &GesturePinchBeginEvent) {
         for_each_focused_pinch_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().replace(self.clone());
             if ongoing.is_some() {
                 // Cancel an ongoing gesture for a different surface.
@@ -387,7 +401,9 @@ where
 
     fn gesture_pinch_update(&self, seat: &Seat<D>, _data: &mut D, event: &GesturePinchUpdateEvent) {
         for_each_focused_pinch_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let mut ongoing = data.in_progress_on.lock().unwrap();
             // Check that the ongoing gesture is for this surface.
             if ongoing.as_ref() == Some(self) {
@@ -407,7 +423,9 @@ where
 
     fn gesture_pinch_end(&self, seat: &Seat<D>, _data: &mut D, event: &GesturePinchEndEvent) {
         for_each_focused_pinch_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().take();
             // Check if the gesture was ongoing.
             if ongoing.is_some() {
@@ -424,7 +442,9 @@ where
 
     fn gesture_hold_begin(&self, seat: &Seat<D>, _data: &mut D, event: &GestureHoldBeginEvent) {
         for_each_focused_hold_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().replace(self.clone());
             if ongoing.is_some() {
                 // Cancel an ongoing gesture for a different surface.
@@ -436,7 +456,9 @@ where
 
     fn gesture_hold_end(&self, seat: &Seat<D>, _data: &mut D, event: &GestureHoldEndEvent) {
         for_each_focused_hold_gestures(seat, self, |gesture| {
-            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let data = gesture
+                .delegated_data::<PointerGestureUserData<D>, SeatState<D>>()
+                .unwrap();
             let ongoing = data.in_progress_on.lock().unwrap().take();
             // Check if the gesture was ongoing.
             if ongoing.is_some() {
@@ -467,10 +489,8 @@ impl<D: SeatHandler> fmt::Debug for PointerUserData<D> {
 
 impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
 where
-    D: Dispatch<WlPointer, PointerUserData<D>>,
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
-    D: 'static,
 {
     fn request(
         state: &mut D,

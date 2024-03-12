@@ -1,11 +1,10 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
-    input::SeatHandler,
     utils::Serial,
     wayland::{
         compositor,
-        shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
+        shell::xdg::{SurfaceCachedState, UserdataGetter, XdgPopupSurfaceData},
     },
 };
 
@@ -13,14 +12,13 @@ use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
 use wayland_server::{backend::ClientId, DataInit, Dispatch, DisplayHandle, Resource};
 
-use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData};
+use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData};
+
+impl UserdataGetter<XdgShellSurfaceUserData, XdgShellState> for XdgPopup {}
 
 impl<D> Dispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
-    D: SeatHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -33,7 +31,7 @@ where
     ) {
         match request {
             xdg_popup::Request::Destroy => {
-                if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
+                if let Some(surface_data) = data.xdg_surface.user_data() {
                     surface_data.has_active_role.store(false, Ordering::Release);
                 }
             }
@@ -53,12 +51,7 @@ where
                     shell_surface: popup.clone(),
                 };
 
-                let positioner_data = *positioner
-                    .data::<XdgPositionerUserData>()
-                    .unwrap()
-                    .inner
-                    .lock()
-                    .unwrap();
+                let positioner_data = *positioner.user_data().unwrap().inner.lock().unwrap();
 
                 XdgShellHandler::reposition_request(state, handle, positioner_data, token);
             }
@@ -94,7 +87,7 @@ where
 }
 
 pub fn send_popup_configure(resource: &XdgPopup, configure: PopupConfigure) {
-    let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
+    let data = resource.user_data().unwrap();
 
     let serial = configure.serial;
     let geometry = configure.state.geometry;
@@ -113,7 +106,7 @@ pub fn send_popup_configure(resource: &XdgPopup, configure: PopupConfigure) {
 }
 
 pub fn make_popup_handle(resource: &XdgPopup) -> crate::wayland::shell::xdg::PopupSurface {
-    let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
+    let data = resource.user_data().unwrap();
     crate::wayland::shell::xdg::PopupSurface {
         wl_surface: data.wl_surface.clone(),
         shell_surface: resource.clone(),

@@ -9,7 +9,6 @@
 //!
 //! ```
 //! use smithay::wayland::presentation::PresentationState;
-//! use smithay::delegate_presentation;
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -18,9 +17,6 @@
 //!     &display.handle(), // the display
 //!     1 // the id of the clock
 //! );
-//!
-//! // implement Dispatch for the Presentation types
-//! delegate_presentation!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -72,9 +68,13 @@
 
 use std::time::Duration;
 
-use wayland_protocols::wp::presentation_time::server::{wp_presentation, wp_presentation_feedback};
+use wayland_protocols::wp::presentation_time::server::{
+    wp_presentation::{self, WpPresentation},
+    wp_presentation_feedback::{self, WpPresentationFeedback},
+};
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak,
+    backend::GlobalId, protocol::wl_surface::WlSurface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    Weak,
 };
 
 use crate::output::Output;
@@ -88,19 +88,16 @@ pub struct PresentationState {
 }
 
 impl PresentationState {
-    /// Create new [`WpPresentation`](wp_presentation::WpPresentation) global.
+    /// Create new [`WpPresentation`] global.
     ///
     /// It returns the presentation state, which you can drop to remove these global from
     /// the event loop in the future.
     pub fn new<D>(display: &DisplayHandle, clk_id: u32) -> Self
     where
-        D: GlobalDispatch<wp_presentation::WpPresentation, u32>
-            + Dispatch<wp_presentation::WpPresentation, u32>
-            + Dispatch<wp_presentation_feedback::WpPresentationFeedback, ()>
-            + 'static,
+        D: 'static,
     {
         PresentationState {
-            global: display.create_global::<D, wp_presentation::WpPresentation, u32>(1, clk_id),
+            global: display.create_delegated_global::<D, WpPresentation, u32, Self>(1, clk_id),
         }
     }
 
@@ -110,43 +107,33 @@ impl PresentationState {
     }
 }
 
-impl<D> GlobalDispatch<wp_presentation::WpPresentation, u32, D> for PresentationState
-where
-    D: GlobalDispatch<wp_presentation::WpPresentation, u32>,
-    D: Dispatch<wp_presentation::WpPresentation, u32>,
-    D: Dispatch<wp_presentation_feedback::WpPresentationFeedback, ()>,
-{
+impl<D> GlobalDispatch<WpPresentation, u32, D> for PresentationState {
     fn bind(
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
-        resource: wayland_server::New<wp_presentation::WpPresentation>,
+        resource: wayland_server::New<WpPresentation>,
         global_data: &u32,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let interface = data_init.init(resource, *global_data);
+        let interface = data_init.init_delegated::<_, _, Self>(resource, *global_data);
         interface.clock_id(*global_data);
     }
 }
 
-impl<D> Dispatch<wp_presentation::WpPresentation, u32, D> for PresentationState
-where
-    D: GlobalDispatch<wp_presentation::WpPresentation, u32>,
-    D: Dispatch<wp_presentation::WpPresentation, u32>,
-    D: Dispatch<wp_presentation_feedback::WpPresentationFeedback, ()>,
-{
+impl<D> Dispatch<WpPresentation, u32, D> for PresentationState {
     fn request(
         _state: &mut D,
         _client: &wayland_server::Client,
-        _resource: &wp_presentation::WpPresentation,
-        request: <wp_presentation::WpPresentation as Resource>::Request,
+        _resource: &WpPresentation,
+        request: wp_presentation::Request,
         data: &u32,
         _dhandle: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             wp_presentation::Request::Feedback { surface, callback } => {
-                let callback = data_init.init(callback, ());
+                let callback = data_init.init_delegated::<_, _, Self>(callback, ());
 
                 // TODO: Is there a better way to store the surface?
                 with_states(&surface, |states| {
@@ -164,17 +151,12 @@ where
     }
 }
 
-impl<D> Dispatch<wp_presentation_feedback::WpPresentationFeedback, (), D> for PresentationFeedbackState
-where
-    D: GlobalDispatch<wp_presentation::WpPresentation, u32>,
-    D: Dispatch<wp_presentation::WpPresentation, u32>,
-    D: Dispatch<wp_presentation_feedback::WpPresentationFeedback, ()>,
-{
+impl<D> Dispatch<WpPresentationFeedback, (), D> for PresentationState {
     fn request(
         _state: &mut D,
         _client: &wayland_server::Client,
-        _resource: &wp_presentation_feedback::WpPresentationFeedback,
-        _request: <wp_presentation_feedback::WpPresentationFeedback as Resource>::Request,
+        _resource: &WpPresentationFeedback,
+        _request: wp_presentation_feedback::Request,
         _data: &(),
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
@@ -183,16 +165,12 @@ where
     }
 }
 
-/// State for a single presentation feedback callback
-#[derive(Debug)]
-pub struct PresentationFeedbackState;
-
 /// Holds a single presentation feedback
 #[derive(Debug)]
 pub struct PresentationFeedbackCallback {
-    surface: Weak<wl_surface::WlSurface>,
+    surface: Weak<WlSurface>,
     clk_id: u32,
-    callback: wp_presentation_feedback::WpPresentationFeedback,
+    callback: WpPresentationFeedback,
 }
 
 impl PresentationFeedbackCallback {
@@ -261,7 +239,7 @@ pub struct PresentationFeedbackCachedState {
 impl PresentationFeedbackCachedState {
     fn add_callback(
         &mut self,
-        surface: wl_surface::WlSurface,
+        surface: WlSurface,
         clk_id: u32,
         callback: wp_presentation_feedback::WpPresentationFeedback,
     ) {
@@ -299,19 +277,9 @@ impl Drop for PresentationFeedbackCachedState {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_presentation {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation::WpPresentation: u32
-        ] => $crate::wayland::presentation::PresentationState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation::WpPresentation: u32
-        ] => $crate::wayland::presentation::PresentationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback::WpPresentationFeedback: ()
-        ] => $crate::wayland::presentation::PresentationFeedbackState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

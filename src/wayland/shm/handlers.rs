@@ -1,7 +1,4 @@
-use crate::wayland::{
-    buffer::BufferHandler,
-    shm::{wl_bytes_per_pixel, ShmBufferUserData},
-};
+use crate::wayland::shm::{wl_bytes_per_pixel, ShmBufferUserData};
 
 use super::{
     pool::{Pool, ResizeError},
@@ -20,11 +17,7 @@ use wayland_server::{
 
 impl<D> GlobalDispatch<WlShm, (), D> for ShmState
 where
-    D: GlobalDispatch<WlShm, ()>,
-    D: Dispatch<WlShm, ()>,
-    D: Dispatch<WlShmPool, ShmPoolUserData>,
-    D: ShmHandler,
-    D: 'static,
+    D: ShmHandler + 'static,
 {
     fn bind(
         state: &mut D,
@@ -34,7 +27,7 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        let shm = data_init.init(resource, ());
+        let shm = data_init.init_delegated::<_, _, Self>(resource, ());
 
         // send the formats
         for &f in &state.shm_state().formats {
@@ -45,7 +38,7 @@ where
 
 impl<D> Dispatch<WlShm, (), D> for ShmState
 where
-    D: Dispatch<WlShm, ()> + Dispatch<WlShmPool, ShmPoolUserData> + ShmHandler + 'static,
+    D: ShmHandler + 'static,
 {
     fn request(
         _state: &mut D,
@@ -79,7 +72,7 @@ where
             }
         };
 
-        data_init.init(
+        data_init.init_delegated::<_, _, Self>(
             pool,
             ShmPoolUserData {
                 inner: Arc::new(mmap_pool),
@@ -94,11 +87,7 @@ where
 
 impl<D> Dispatch<WlShmPool, ShmPoolUserData, D> for ShmState
 where
-    D: Dispatch<WlShmPool, ShmPoolUserData>
-        + Dispatch<wl_buffer::WlBuffer, ShmBufferUserData>
-        + BufferHandler
-        + ShmHandler
-        + 'static,
+    D: ShmHandler + 'static,
 {
     fn request(
         state: &mut D,
@@ -172,7 +161,7 @@ where
                             },
                         };
 
-                        data_init.init(buffer, data);
+                        data_init.init_delegated::<_, _, Self>(buffer, data);
                     }
 
                     WEnum::Unknown(unknown) => {
@@ -211,7 +200,7 @@ where
 
 impl<D> Dispatch<wl_buffer::WlBuffer, ShmBufferUserData, D> for ShmState
 where
-    D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler,
+    D: ShmHandler,
 {
     fn request(
         data: &mut D,

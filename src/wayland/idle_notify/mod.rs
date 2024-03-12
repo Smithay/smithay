@@ -3,7 +3,6 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::delegate_idle_notify;
 //! use smithay::wayland::idle_notify::{IdleNotifierState, IdleNotifierHandler};
 //! # use smithay::input::{Seat, SeatHandler, SeatState, pointer::CursorImageStatus};
 //! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -33,7 +32,6 @@
 //!         &mut self.idle_notifier
 //!     }
 //! }
-//! delegate_idle_notify!(State);
 //!
 //! // On input you should notify the idle_notifier
 //! // state.idle_notifier.notify_activity(&seat);
@@ -62,7 +60,7 @@ use wayland_server::{
 use crate::input::{Seat, SeatHandler};
 
 /// Handler trait for ext-idle-notify
-pub trait IdleNotifierHandler: Sized {
+pub trait IdleNotifierHandler: Sized + 'static {
     /// [`IdleNotifierState`] getter
     fn idle_notifier_state(&mut self) -> &mut IdleNotifierState<Self>;
 }
@@ -107,13 +105,9 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
     /// Create new [`ExtIdleNotifierV1`] global.
     pub fn new(display: &DisplayHandle, loop_handle: LoopHandle<'static, D>) -> Self
     where
-        D: GlobalDispatch<ExtIdleNotifierV1, ()>,
-        D: Dispatch<ExtIdleNotifierV1, ()>,
-        D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
         D: IdleNotifierHandler,
-        D: 'static,
     {
-        let global = display.create_global::<D, ExtIdleNotifierV1, _>(1, ());
+        let global = display.create_delegated_global::<D, ExtIdleNotifierV1, _, Self>(1, ());
         Self {
             global,
             notifications: HashMap::new(),
@@ -132,7 +126,7 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
 
         for notification in self.notifications() {
             if is_inhibited {
-                let data = notification.data::<IdleNotificationUserData>().unwrap();
+                let data = Self::notification_user_data(notification).unwrap();
 
                 if data.is_idle() {
                     notification.resumed();
@@ -162,7 +156,7 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
         };
 
         for notification in notifications {
-            let data = notification.data::<IdleNotificationUserData>().unwrap();
+            let data = Self::notification_user_data(notification).unwrap();
 
             if data.is_idle() {
                 notification.resumed();
@@ -183,7 +177,7 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
     }
 
     fn reinsert_timer(&self, notification: &ExtIdleNotificationV1) {
-        let data = notification.data::<IdleNotificationUserData>().unwrap();
+        let data = Self::notification_user_data(notification).unwrap();
 
         if let Some(token) = data.take_timer_token() {
             self.loop_handle.remove(token);
@@ -198,7 +192,7 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
             .insert_source(calloop::timer::Timer::from_duration(data.timeout), {
                 let idle_notification = notification.clone();
                 move |_, _, state| {
-                    let data = idle_notification.data::<IdleNotificationUserData>().unwrap();
+                    let data = Self::notification_user_data(&idle_notification).unwrap();
 
                     if !state.idle_notifier_state().is_inhibited && !data.is_idle() {
                         idle_notification.idled();
@@ -211,6 +205,10 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
             });
 
         data.set_timer_token(token.ok());
+    }
+
+    fn notification_user_data(res: &ExtIdleNotificationV1) -> Option<&IdleNotificationUserData> {
+        res.delegated_data::<_, Self>()
     }
 }
 
@@ -227,11 +225,7 @@ impl<D: IdleNotifierHandler + SeatHandler> IdleNotifierState<D> {
 
 impl<D> GlobalDispatch<ExtIdleNotifierV1, (), D> for IdleNotifierState<D>
 where
-    D: GlobalDispatch<ExtIdleNotifierV1, ()>,
-    D: Dispatch<ExtIdleNotifierV1, ()>,
-    D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
     D: IdleNotifierHandler,
-    D: 'static,
 {
     fn bind(
         _state: &mut D,
@@ -241,17 +235,13 @@ where
         _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<ExtIdleNotifierV1, (), D> for IdleNotifierState<D>
 where
-    D: GlobalDispatch<ExtIdleNotifierV1, ()>,
-    D: Dispatch<ExtIdleNotifierV1, ()>,
-    D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
     D: IdleNotifierHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -268,7 +258,7 @@ where
 
                 let idle_notifier_state = state.idle_notifier_state();
 
-                let idle_notification = data_init.init(
+                let idle_notification = data_init.init_delegated::<_, _, Self>(
                     id,
                     IdleNotificationUserData {
                         seat: seat.clone(),
@@ -295,7 +285,6 @@ where
 
 impl<D> Dispatch<ExtIdleNotificationV1, IdleNotificationUserData, D> for IdleNotifierState<D>
 where
-    D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
     D: IdleNotifierHandler,
 {
     fn request(
@@ -331,30 +320,8 @@ where
 }
 
 /// Macro to delegate implementation of the ext idle notify protocol
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_idle_notify {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ExtIdleNotifierV1 =
-            $crate::reexports::wayland_protocols::ext::idle_notify::v1::server::ext_idle_notifier_v1::ExtIdleNotifierV1;
-        type __ExtIdleNotificationV1 =
-            $crate::reexports::wayland_protocols::ext::idle_notify::v1::server::ext_idle_notification_v1::ExtIdleNotificationV1;
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtIdleNotifierV1: ()
-            ] => $crate::wayland::idle_notify::IdleNotifierState<$ty>
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtIdleNotifierV1: ()
-            ] => $crate::wayland::idle_notify::IdleNotifierState<$ty>
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtIdleNotificationV1: $crate::wayland::idle_notify::IdleNotificationUserData
-            ] => $crate::wayland::idle_notify::IdleNotifierState<$ty>
-        );
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

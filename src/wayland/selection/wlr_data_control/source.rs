@@ -4,9 +4,10 @@ use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1
     self, ZwlrDataControlSourceV1,
 };
 use wayland_server::backend::ClientId;
-use wayland_server::{Dispatch, DisplayHandle, Resource};
+use wayland_server::{Dispatch, DisplayHandle};
 
 use crate::utils::alive_tracker::AliveTracker;
+use crate::utils::user_data::UserdataGetter;
 use crate::utils::IsAlive;
 
 use super::{DataControlHandler, DataControlState};
@@ -31,11 +32,11 @@ pub struct SourceMetadata {
     pub mime_types: Vec<String>,
 }
 
+impl UserdataGetter<DataControlSourceUserData, DataControlState> for ZwlrDataControlSourceV1 {}
+
 impl<D> Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData, D> for DataControlState
 where
-    D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
     D: DataControlHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,
@@ -68,7 +69,7 @@ where
 
 impl IsAlive for ZwlrDataControlSourceV1 {
     fn alive(&self) -> bool {
-        let data: &DataControlSourceUserData = self.data().unwrap();
+        let data = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }

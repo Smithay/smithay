@@ -15,7 +15,6 @@ use smithay::{
         },
         winit::{self, WinitEvent},
     },
-    delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
     input::{keyboard::FilterResult, Seat, SeatHandler, SeatState},
     reexports::wayland_server::{protocol::wl_seat, Display},
     utils::{Rectangle, Serial, Transform},
@@ -289,10 +288,3 @@ impl ClientData for ClientState {
         println!("disconnected");
     }
 }
-
-// Macros used to delegate protocol handling to types in the app state.
-delegate_xdg_shell!(App);
-delegate_compositor!(App);
-delegate_shm!(App);
-delegate_seat!(App);
-delegate_data_device!(App);

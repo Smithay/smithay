@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use smithay::delegate_seat;
 use smithay::input::{keyboard::FilterResult, Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
@@ -84,5 +83,3 @@ impl ClientData for ClientState {
         println!("disconnected");
     }
 }
-
-delegate_seat!(App);

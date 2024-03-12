@@ -5,18 +5,11 @@
 //! an input method to pass through keys from the keyboard.
 //!
 //! ```
-//! use smithay::{
-//!     delegate_seat, delegate_virtual_keyboard_manager,
-//! };
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
 //! # struct State { seat_state: SeatState<Self> };
-//!
-//! delegate_seat!(State);
-//! // Delegate virtual keyboard handling for State to VirtualKeyboardManagerState.
-//! delegate_virtual_keyboard_manager!(State);
 //!
 //! # let mut display = Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
@@ -38,13 +31,10 @@
 //! // Add the seat state to your state, create manager global and add client filter
 //! // to avoid untrusted clients requesting a new keyboard
 //! VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_client| true);
-//!
 //! ```
-//!
 
-use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
-    zwp_virtual_keyboard_manager_v1::{self, ZwpVirtualKeyboardManagerV1},
-    zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
+use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::{
+    self, ZwpVirtualKeyboardManagerV1,
 };
 use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
@@ -58,6 +48,8 @@ mod virtual_keyboard_handle;
 
 pub use virtual_keyboard_handle::VirtualKeyboardUserData;
 
+use super::seat::WaylandFocus;
+
 /// State of wp misc virtual keyboard protocol
 #[derive(Debug)]
 pub struct VirtualKeyboardManagerState {
@@ -70,30 +62,21 @@ pub struct VirtualKeyboardManagerGlobalData {
     filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
 }
 
-fn create_global_with_filter<D, F>(display: &DisplayHandle, filter: F) -> GlobalId
-where
-    D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, VirtualKeyboardManagerGlobalData> + 'static,
-    F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
-{
-    let data = VirtualKeyboardManagerGlobalData {
-        filter: Box::new(filter),
-    };
-
-    display.create_global::<D, ZwpVirtualKeyboardManagerV1, _>(MANAGER_VERSION, data)
-}
-
 impl VirtualKeyboardManagerState {
     /// Initialize a virtual keyboard manager global.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, VirtualKeyboardManagerGlobalData>,
-        D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-        D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
         D: SeatHandler,
-        D: 'static,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let global = create_global_with_filter::<D, F>(display, filter);
+        let global = display
+            .create_delegated_global::<D, ZwpVirtualKeyboardManagerV1, _, VirtualKeyboardManagerState>(
+                MANAGER_VERSION,
+                VirtualKeyboardManagerGlobalData {
+                    filter: Box::new(filter),
+                },
+            );
 
         Self { global }
     }
@@ -107,11 +90,8 @@ impl VirtualKeyboardManagerState {
 impl<D> GlobalDispatch<ZwpVirtualKeyboardManagerV1, VirtualKeyboardManagerGlobalData, D>
     for VirtualKeyboardManagerState
 where
-    D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, VirtualKeyboardManagerGlobalData>,
-    D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
     D: SeatHandler,
-    D: 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn bind(
         _: &mut D,
@@ -121,7 +101,7 @@ where
         _: &VirtualKeyboardManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 
     fn can_view(client: Client, global_data: &VirtualKeyboardManagerGlobalData) -> bool {
@@ -131,10 +111,8 @@ where
 
 impl<D> Dispatch<ZwpVirtualKeyboardManagerV1, (), D> for VirtualKeyboardManagerState
 where
-    D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
     D: SeatHandler,
-    D: 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
         _state: &mut D,
@@ -151,7 +129,7 @@ where
                 let user_data = seat.user_data();
                 user_data.insert_if_missing(VirtualKeyboardHandle::default);
                 let virtual_keyboard_handle = user_data.get::<VirtualKeyboardHandle>().unwrap();
-                data_init.init(
+                data_init.init_delegated::<_, _, Self>(
                     id,
                     VirtualKeyboardUserData {
                         handle: virtual_keyboard_handle.clone(),
@@ -166,20 +144,9 @@ where
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] //TODO
 #[macro_export]
 macro_rules! delegate_virtual_keyboard_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1: $crate::wayland::virtual_keyboard::VirtualKeyboardManagerGlobalData
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1: ()
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1: $crate::wayland::virtual_keyboard::VirtualKeyboardUserData<Self>
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

@@ -1,17 +1,10 @@
-use wayland_protocols::wp::tablet::zv2::server::{
-    zwp_tablet_seat_v2::{self, ZwpTabletSeatV2},
-    zwp_tablet_tool_v2::ZwpTabletToolV2,
-    zwp_tablet_v2::ZwpTabletV2,
-};
+use wayland_protocols::wp::tablet::zv2::server::zwp_tablet_seat_v2::{self, ZwpTabletSeatV2};
 use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
 
 use crate::backend::input::TabletToolDescriptor;
 use crate::input::pointer::CursorImageStatus;
 
-use super::{
-    tablet::TabletUserData,
-    tablet_tool::{TabletToolHandle, TabletToolUserData},
-};
+use super::tablet_tool::TabletToolHandle;
 use super::{
     tablet::{TabletDescriptor, TabletHandle},
     TabletManagerState,
@@ -61,8 +54,6 @@ pub struct TabletSeatHandle {
 impl TabletSeatHandle {
     pub(super) fn add_instance<D>(&self, dh: &DisplayHandle, seat: &ZwpTabletSeatV2, client: &Client)
     where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: 'static,
     {
         let mut inner = self.inner.lock().unwrap();
@@ -101,7 +92,6 @@ impl TabletSeatHandle {
     /// Returns new [TabletHandle] if tablet was not know by this seat, if tablet was already know it returns existing handle.
     pub fn add_tablet<D>(&self, dh: &DisplayHandle, tablet_desc: &TabletDescriptor) -> TabletHandle
     where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: 'static,
     {
         let inner = &mut *self.inner.lock().unwrap();
@@ -154,7 +144,6 @@ impl TabletSeatHandle {
     /// it allows you to send tool input events to clients.
     pub fn add_tool<D>(&self, dh: &DisplayHandle, tool_desc: &TabletToolDescriptor) -> TabletToolHandle
     where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: 'static,
     {
         let inner = &mut *self.inner.lock().unwrap();
@@ -215,7 +204,6 @@ pub struct TabletSeatUserData {
 
 impl<D> Dispatch<ZwpTabletSeatV2, TabletSeatUserData, D> for TabletManagerState
 where
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: 'static,
 {
     fn request(

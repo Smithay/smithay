@@ -1,4 +1,7 @@
-use crate::{utils::Serial, wayland::compositor::SUBSURFACE_ROLE};
+use crate::{
+    utils::{user_data::UserdataGetter, Serial},
+    wayland::compositor::SUBSURFACE_ROLE,
+};
 
 use super::{
     cache::MultiCache,
@@ -123,13 +126,13 @@ impl PrivateSurfaceData {
         let mut my_data = my_data_mutex.lock().unwrap();
         if let Some(old_parent) = my_data.parent.take() {
             // We had a parent, lets unregister ourselves from it
-            let old_parent_mutex = &old_parent.data::<SurfaceUserData>().unwrap().inner;
+            let old_parent_mutex = &old_parent.user_data().unwrap().inner;
             let mut old_parent_guard = old_parent_mutex.lock().unwrap();
             old_parent_guard.children.retain(|c| c.id() != surface.id());
         }
         // orphan all our children
         for child in my_data.children.drain(..) {
-            let child_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
+            let child_mutex = &child.user_data().unwrap().inner;
             if std::ptr::eq(child_mutex, my_data_mutex) {
                 // This child is ourselves, don't do anything.
                 continue;
@@ -166,7 +169,7 @@ impl PrivateSurfaceData {
     }
 
     pub fn lock_user_data(surface: &WlSurface) -> MutexGuard<'_, PrivateSurfaceData> {
-        surface.data::<SurfaceUserData>().unwrap().inner.lock().unwrap()
+        surface.user_data().unwrap().inner.lock().unwrap()
     }
 
     pub fn set_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {

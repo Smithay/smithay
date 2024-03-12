@@ -39,7 +39,6 @@
 //!     fn data_control_state(&self) -> &DataControlState { &self.data_control_state }
 //!     // ... override default implementations here to customize handling ...
 //! }
-//! delegate_data_control!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -49,7 +48,7 @@
 
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
 use wayland_server::backend::GlobalId;
-use wayland_server::{Client, DisplayHandle, GlobalDispatch};
+use wayland_server::{Client, DisplayHandle};
 
 mod device;
 mod source;
@@ -61,7 +60,7 @@ use super::primary_selection::PrimarySelectionState;
 use super::SelectionHandler;
 
 /// Access the data control state.
-pub trait DataControlHandler: Sized + SelectionHandler {
+pub trait DataControlHandler: Sized + SelectionHandler + 'static {
     /// [`DataControlState`] getter.
     fn data_control_state(&self) -> &DataControlState;
 }
@@ -82,14 +81,14 @@ impl DataControlState {
         filter: F,
     ) -> Self
     where
-        D: GlobalDispatch<ZwlrDataControlManagerV1, DataControlManagerGlobalData> + 'static,
+        D: DataControlHandler,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = DataControlManagerGlobalData {
             primary: primary_selection.is_some(),
             filter: Box::new(filter),
         };
-        let manager_global = display.create_global::<D, ZwlrDataControlManagerV1, _>(2, data);
+        let manager_global = display.create_delegated_global::<D, ZwlrDataControlManagerV1, _, Self>(2, data);
         Self { manager_global }
     }
 
@@ -120,10 +119,8 @@ mod handlers {
     use std::cell::RefCell;
 
     use tracing::error;
-    use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1;
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
-    use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
     use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch};
 
     use crate::input::Seat;
@@ -140,12 +137,7 @@ mod handlers {
 
     impl<D> GlobalDispatch<ZwlrDataControlManagerV1, DataControlManagerGlobalData, D> for DataControlState
     where
-        D: GlobalDispatch<ZwlrDataControlManagerV1, DataControlManagerGlobalData>,
-        D: Dispatch<ZwlrDataControlManagerV1, DataControlManagerUserData>,
-        D: Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData>,
-        D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
         D: DataControlHandler,
-        D: 'static,
     {
         fn bind(
             _state: &mut D,
@@ -155,7 +147,7 @@ mod handlers {
             global_data: &DataControlManagerGlobalData,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
-            data_init.init(
+            data_init.init_delegated::<_, _, Self>(
                 resource,
                 DataControlManagerUserData {
                     primary: global_data.primary,
@@ -170,11 +162,7 @@ mod handlers {
 
     impl<D> Dispatch<ZwlrDataControlManagerV1, DataControlManagerUserData, D> for DataControlState
     where
-        D: Dispatch<ZwlrDataControlManagerV1, DataControlManagerUserData>,
-        D: Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData>,
-        D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
         D: DataControlHandler,
-        D: 'static,
     {
         fn request(
             _handler: &mut D,
@@ -187,7 +175,7 @@ mod handlers {
         ) {
             match request {
                 zwlr_data_control_manager_v1::Request::CreateDataSource { id } => {
-                    data_init.init(id, DataControlSourceUserData::new());
+                    data_init.init_delegated::<_, _, Self>(id, DataControlSourceUserData::new());
                 }
                 zwlr_data_control_manager_v1::Request::GetDataDevice { id, seat: wl_seat } => {
                     match Seat::<D>::from_resource(&wl_seat) {
@@ -195,13 +183,14 @@ mod handlers {
                             seat.user_data()
                                 .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
 
-                            let device = SelectionDevice::DataControl(data_init.init(
-                                id,
-                                DataControlDeviceUserData {
-                                    wl_seat,
-                                    primary: data.primary,
-                                },
-                            ));
+                            let device =
+                                SelectionDevice::DataControl(data_init.init_delegated::<_, _, Self>(
+                                    id,
+                                    DataControlDeviceUserData {
+                                        wl_seat,
+                                        primary: data.primary,
+                                    },
+                                ));
 
                             let mut seat_data = seat
                                 .user_data()
@@ -234,21 +223,9 @@ mod handlers {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_data_control {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1: $crate::wayland::selection::wlr_data_control::DataControlManagerGlobalData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1: $crate::wayland::selection::wlr_data_control::DataControlManagerUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1: $crate::wayland::selection::wlr_data_control::DataControlDeviceUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1: $crate::wayland::selection::wlr_data_control::DataControlSourceUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

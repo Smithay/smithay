@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use indexmap::IndexSet;
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
-use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
+use crate::wayland::shell::xdg::{UserdataGetter, XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
     utils::{Rectangle, Serial},
     wayland::{
@@ -24,8 +24,8 @@ use wayland_protocols::{
 use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
 use super::{
-    PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
-    XdgPositionerUserData, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
+    PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes, XdgShellHandler,
+    XdgToplevelSurfaceRoleAttributes,
 };
 
 mod toplevel;
@@ -44,13 +44,11 @@ pub struct XdgSurfaceUserData {
     pub(crate) has_active_role: AtomicBool,
 }
 
+impl UserdataGetter<XdgSurfaceUserData, XdgShellState> for XdgSurface {}
+
 impl<D> Dispatch<XdgSurface, XdgSurfaceUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
-    D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,
-    D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -126,7 +124,7 @@ where
                     );
                 }
 
-                let toplevel = data_init.init(
+                let toplevel = data_init.init_delegated::<_, _, Self>(
                     id,
                     XdgShellSurfaceUserData {
                         wl_surface: data.wl_surface.clone(),
@@ -151,15 +149,10 @@ where
                 parent,
                 positioner,
             } => {
-                let positioner_data = *positioner
-                    .data::<XdgPositionerUserData>()
-                    .unwrap()
-                    .inner
-                    .lock()
-                    .unwrap();
+                let positioner_data = *positioner.user_data().unwrap().inner.lock().unwrap();
 
                 let parent_surface = parent.map(|parent| {
-                    let parent_data = parent.data::<XdgSurfaceUserData>().unwrap();
+                    let parent_data = parent.user_data().unwrap();
                     parent_data.wl_surface.clone()
                 });
 
@@ -200,7 +193,7 @@ where
                     compositor::add_pre_commit_hook::<D, _>(surface, super::super::PopupSurface::commit_hook);
                 }
 
-                let popup = data_init.init(
+                let popup = data_init.init_delegated::<_, _, Self>(
                     id,
                     XdgShellSurfaceUserData {
                         wl_surface: data.wl_surface.clone(),
@@ -335,14 +328,14 @@ pub struct XdgShellSurfaceUserData {
 
 impl IsAlive for XdgToplevel {
     fn alive(&self) -> bool {
-        let data: &XdgShellSurfaceUserData = self.data().unwrap();
+        let data: &XdgShellSurfaceUserData = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }
 
 impl IsAlive for XdgPopup {
     fn alive(&self) -> bool {
-        let data: &XdgShellSurfaceUserData = self.data().unwrap();
+        let data: &XdgShellSurfaceUserData = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }

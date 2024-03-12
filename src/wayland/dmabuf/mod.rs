@@ -17,7 +17,6 @@
 //!
 //! ```no_run
 //! use smithay::{
-//!     delegate_dmabuf,
 //!     backend::allocator::dmabuf::{Dmabuf},
 //!     reexports::{
 //!         wayland_server::protocol::{
@@ -72,9 +71,6 @@
 //!         None
 //!     }
 //! }
-//!
-//! // Delegate dmabuf handling for State to DmabufState.
-//! delegate_dmabuf!(State);
 //!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
@@ -140,7 +136,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! # use smithay::{
-//! #     delegate_dmabuf,
 //! #     backend::allocator::dmabuf::Dmabuf,
 //! #     reexports::{wayland_server::protocol::wl_buffer::WlBuffer},
 //! #     wayland::{
@@ -161,7 +156,6 @@
 //! #     }
 //! #     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {}
 //! # }
-//! # delegate_dmabuf!(State);
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! # let mut dmabuf_state = DmabufState::new();
@@ -210,7 +204,7 @@ use wayland_server::{
         wl_buffer::{self, WlBuffer},
         wl_surface::WlSurface,
     },
-    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
+    Client, DisplayHandle, Resource, WEnum,
 };
 
 #[cfg(feature = "backend_drm")]
@@ -595,10 +589,7 @@ impl DmabufState {
     /// if you want to create a version 4 global you need to call [`DmabufState::create_global_with_default_feedback`].
     pub fn create_global<D>(&mut self, display: &DisplayHandle, formats: Vec<Format>) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler,
     {
         self.create_global_with_filter::<D, _>(display, formats, |_| true)
     }
@@ -618,10 +609,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         self.create_global_with_filter_and_optional_default_feedback::<D, _>(
@@ -641,10 +629,7 @@ impl DmabufState {
         default_feedback: &DmabufFeedback,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler,
     {
         self.create_global_with_filter_and_default_feedback::<D, _>(display, default_feedback, |_| true)
     }
@@ -663,10 +648,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         self.create_global_with_filter_and_optional_default_feedback::<D, _>(
@@ -685,10 +667,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let id = next_global_id();
@@ -723,7 +702,8 @@ impl DmabufState {
             id,
         };
 
-        let global = display.create_global::<D, zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, _>(version, data);
+        let global = display
+            .create_delegated_global::<D, zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, _, Self>(version, data);
         self.globals.insert(
             id,
             DmabufGlobalState {
@@ -873,18 +853,14 @@ impl ImportNotifier {
     /// This can return [`InvalidId`] if the client the buffer was imported from has died.
     pub fn successful<D>(mut self) -> Result<WlBuffer, InvalidId>
     where
-        D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-            + Dispatch<wl_buffer::WlBuffer, Dmabuf>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler,
     {
         let client = self.inner.client();
 
         let result = match self.import {
             Import::Falliable => {
                 if let Some(client) = client {
-                    match client.create_resource::<wl_buffer::WlBuffer, Dmabuf, D>(
+                    match client.create_delegated_resource::<WlBuffer, Dmabuf, D, DmabufState>(
                         &self.display,
                         1,
                         self.dmabuf.clone(),
@@ -982,7 +958,7 @@ impl Drop for ImportNotifier {
 }
 
 /// Handler trait for [`Dmabuf`] import from the compositor.
-pub trait DmabufHandler: BufferHandler {
+pub trait DmabufHandler: BufferHandler + 'static {
     /// Returns a mutable reference to the [`DmabufState`] delegate type.
     fn dmabuf_state(&mut self) -> &mut DmabufState;
 
@@ -1020,40 +996,19 @@ pub trait DmabufHandler: BufferHandler {
 ///
 /// [`WlBuffer`]: wl_buffer::WlBuffer
 pub fn get_dmabuf(buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, UnmanagedResource> {
-    buffer.data::<Dmabuf>().cloned().ok_or(UnmanagedResource)
+    buffer
+        .delegated_data::<Dmabuf, DmabufState>()
+        .cloned()
+        .ok_or(UnmanagedResource)
 }
 
 /// Macro to delegate implementation of the linux dmabuf to [`DmabufState`].
 ///
 /// You must also implement [`DmabufHandler`] to use this.
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_dmabuf {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ZwpLinuxDmabufV1 =
-            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
-        type __ZwpLinuxBufferParamsV1 =
-            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
-        type __ZwpLinuxDmabufFeedbackv1 =
-            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1;
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufGlobalData
-        ] => $crate::wayland::dmabuf::DmabufState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufData
-        ] => $crate::wayland::dmabuf::DmabufState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxBufferParamsV1: $crate::wayland::dmabuf::DmabufParamsData
-        ] => $crate::wayland::dmabuf::DmabufState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::backend::allocator::dmabuf::Dmabuf
-        ] => $crate::wayland::dmabuf::DmabufState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxDmabufFeedbackv1: $crate::wayland::dmabuf::DmabufFeedbackData
-        ] => $crate::wayland::dmabuf::DmabufState);
-
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }
 
 impl DmabufParamsData {
