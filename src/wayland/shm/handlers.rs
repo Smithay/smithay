@@ -10,6 +10,7 @@ use super::{
 
 use std::{num::NonZeroUsize, os::unix::io::AsRawFd, sync::Arc};
 use wayland_server::{
+    backend::ClientId,
     protocol::{
         wl_buffer,
         wl_shm::{self, WlShm},
@@ -214,9 +215,9 @@ where
     D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler,
 {
     fn request(
-        data: &mut D,
+        _data: &mut D,
         _client: &wayland_server::Client,
-        buffer: &wl_buffer::WlBuffer,
+        _buffer: &wl_buffer::WlBuffer,
         request: wl_buffer::Request,
         _udata: &ShmBufferUserData,
         _dh: &DisplayHandle,
@@ -224,10 +225,14 @@ where
     ) {
         match request {
             wl_buffer::Request::Destroy => {
-                data.buffer_destroyed(buffer);
+                // Handled in the destroyed callback.
             }
 
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer, _udata: &ShmBufferUserData) {
+        data.buffer_destroyed(buffer);
     }
 }

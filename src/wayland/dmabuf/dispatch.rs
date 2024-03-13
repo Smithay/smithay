@@ -4,7 +4,8 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
-    protocol::wl_buffer, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    backend::ClientId, protocol::wl_buffer, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Resource,
 };
 
 use crate::{
@@ -22,9 +23,9 @@ where
     D: Dispatch<wl_buffer::WlBuffer, Dmabuf> + BufferHandler,
 {
     fn request(
-        data: &mut D,
+        _data: &mut D,
         _client: &Client,
-        buffer: &wl_buffer::WlBuffer,
+        _buffer: &wl_buffer::WlBuffer,
         request: wl_buffer::Request,
         _udata: &Dmabuf,
         _dh: &DisplayHandle,
@@ -32,11 +33,15 @@ where
     ) {
         match request {
             wl_buffer::Request::Destroy => {
-                data.buffer_destroyed(buffer);
+                // Handled in the destroyed callback.
             }
 
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer, _udata: &Dmabuf) {
+        data.buffer_destroyed(buffer);
     }
 }
 
