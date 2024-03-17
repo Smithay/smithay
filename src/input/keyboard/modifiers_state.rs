@@ -22,6 +22,10 @@ pub struct ModifiersState {
     pub logo: bool,
     /// The "Num lock" key
     pub num_lock: bool,
+    /// The "ISO level 3 shift" key
+    ///
+    /// Also known as the "AltGr" key
+    pub iso_level3_shift: bool,
 
     /// Serialized modifier state, as send e.g. by the wl_keyboard protocol
     pub serialized: SerializedMods,
@@ -36,6 +40,8 @@ impl ModifiersState {
         self.caps_lock = state.mod_name_is_active(&xkb::MOD_NAME_CAPS, xkb::STATE_MODS_EFFECTIVE);
         self.logo = state.mod_name_is_active(&xkb::MOD_NAME_LOGO, xkb::STATE_MODS_EFFECTIVE);
         self.num_lock = state.mod_name_is_active(&xkb::MOD_NAME_NUM, xkb::STATE_MODS_EFFECTIVE);
+        self.iso_level3_shift =
+            state.mod_name_is_active(&xkb::MOD_NAME_ISO_LEVEL3_SHIFT, xkb::STATE_MODS_EFFECTIVE);
         self.serialized = serialize_modifiers(state);
     }
 }
