@@ -283,7 +283,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// Returns the geometry of the output including it's relative position inside the space.
     ///
     /// The size is matching the amount of logical pixels of the space visible on the output
-    /// given is current mode and scale.
+    /// given its current mode and scale.
     pub fn output_geometry(&self, o: &Output) -> Option<Rectangle<i32, Logical>> {
         if !self.outputs.contains(o) {
             return None;
