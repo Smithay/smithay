@@ -216,6 +216,15 @@ impl Frame for DummyFrame {
     fn finish(self) -> Result<SyncPoint, Self::Error> {
         Ok(SyncPoint::default())
     }
+
+    fn set_downscale_filter(&mut self, _filter: TextureFilter) {}
+    fn set_upscale_filter(&mut self, _filter: TextureFilter) {}
+    fn downscale_filter(&self) -> TextureFilter {
+        TextureFilter::Linear
+    }
+    fn upscale_filter(&self) -> TextureFilter {
+        TextureFilter::Linear
+    }
 }
 
 #[derive(Clone, Debug)]

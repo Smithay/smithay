@@ -1656,6 +1656,22 @@ where
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().wait(sync).map_err(Error::Render)
     }
+
+    fn set_downscale_filter(&mut self, filter: TextureFilter) {
+        self.frame.as_mut().unwrap().set_downscale_filter(filter);
+    }
+
+    fn set_upscale_filter(&mut self, filter: TextureFilter) {
+        self.frame.as_mut().unwrap().set_upscale_filter(filter);
+    }
+
+    fn downscale_filter(&self) -> TextureFilter {
+        self.frame.as_ref().unwrap().downscale_filter()
+    }
+
+    fn upscale_filter(&self) -> TextureFilter {
+        self.frame.as_ref().unwrap().upscale_filter()
+    }
 }
 
 #[cfg(feature = "wayland_frontend")]
