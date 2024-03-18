@@ -2378,6 +2378,12 @@ impl Renderer for GlesRenderer {
         sync.wait();
         Ok(())
     }
+
+    #[profiling::function]
+    fn cleanup_texture_cache(&mut self) {
+        // make_current will trigger an implicit clean-up
+        let _ = self.make_current();
+    }
 }
 
 /// Vertices for instanced rendering.

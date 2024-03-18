@@ -298,6 +298,9 @@ pub trait Renderer: fmt::Debug {
         sync.wait();
         Ok(())
     }
+
+    /// Forcibly clean up the renderer internal texture cache
+    fn cleanup_texture_cache(&mut self) {}
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.
