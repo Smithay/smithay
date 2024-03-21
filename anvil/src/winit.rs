@@ -48,7 +48,7 @@ use smithay::{
 };
 use tracing::{error, info, warn};
 
-use crate::state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData};
+use crate::state::{post_repaint, take_presentation_feedback, AnvilState, Backend};
 use crate::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";
@@ -234,9 +234,7 @@ pub fn run_winit() {
                 output.set_preferred(mode);
                 crate::shell::fixup_positions(&mut state.space, state.pointer.current_location());
             }
-            WinitEvent::Input(event) => {
-                state.process_input_event_windowed(&display_handle, event, OUTPUT_NAME)
-            }
+            WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
             _ => (),
         });
 
@@ -430,16 +428,7 @@ pub fn run_winit() {
             }
         }
 
-        let mut calloop_data = CalloopData {
-            state,
-            display_handle,
-        };
-        let result = event_loop.dispatch(Some(Duration::from_millis(1)), &mut calloop_data);
-        CalloopData {
-            state,
-            display_handle,
-        } = calloop_data;
-
+        let result = event_loop.dispatch(Some(Duration::from_millis(1)), &mut state);
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {

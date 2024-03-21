@@ -103,11 +103,6 @@ use smithay::{
     xwayland::{X11Wm, XWayland, XWaylandEvent},
 };
 
-pub struct CalloopData<BackendData: Backend + 'static> {
-    pub state: AnvilState<BackendData>,
-    pub display_handle: DisplayHandle,
-}
-
 #[derive(Debug, Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
@@ -126,7 +121,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub socket_name: Option<String>,
     pub display_handle: DisplayHandle,
     pub running: Arc<AtomicBool>,
-    pub handle: LoopHandle<'static, CalloopData<BackendData>>,
+    pub handle: LoopHandle<'static, AnvilState<BackendData>>,
 
     // desktop
     pub space: Space<WindowElement>,
@@ -525,7 +520,7 @@ smithay::delegate_xdg_foreign!(@<BackendData: Backend + 'static> AnvilState<Back
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
-        handle: LoopHandle<'static, CalloopData<BackendData>>,
+        handle: LoopHandle<'static, AnvilState<BackendData>>,
         backend_data: BackendData,
         listen_on_socket: bool,
     ) -> AnvilState<BackendData> {
@@ -559,7 +554,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     profiling::scope!("dispatch_clients");
                     // Safety: we don't drop the display
                     unsafe {
-                        display.get_mut().dispatch_clients(&mut data.state).unwrap();
+                        display.get_mut().dispatch_clients(data).unwrap();
                     }
                     Ok(PostAction::Continue)
                 },
@@ -631,7 +626,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     client_fd: _,
                     display,
                 } => {
-                    let mut wm = X11Wm::start_wm(data.state.handle.clone(), dh.clone(), connection, client)
+                    let mut wm = X11Wm::start_wm(data.handle.clone(), dh.clone(), connection, client)
                         .expect("Failed to attach X11 Window Manager");
                     let cursor = Cursor::load();
                     let image = cursor.get_image(1, Duration::ZERO);
@@ -641,11 +636,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                         Point::from((image.xhot as u16, image.yhot as u16)),
                     )
                     .expect("Failed to set xwayland default cursor");
-                    data.state.xwm = Some(wm);
-                    data.state.xdisplay = Some(display);
+                    data.xwm = Some(wm);
+                    data.xdisplay = Some(display);
                 }
                 XWaylandEvent::Exited => {
-                    let _ = data.state.xwm.take();
+                    let _ = data.xwm.take();
                 }
             });
             if let Err(e) = ret {

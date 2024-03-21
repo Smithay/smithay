@@ -78,7 +78,7 @@ impl HeaderBar {
                         let surface = w.clone();
                         state
                             .handle
-                            .insert_idle(move |data| data.state.maximize_request_x11(&surface));
+                            .insert_idle(move |data| data.maximize_request_x11(&surface));
                     }
                 };
             }
@@ -89,14 +89,14 @@ impl HeaderBar {
                         let toplevel = w.clone();
                         state
                             .handle
-                            .insert_idle(move |data| data.state.move_request_xdg(&toplevel, &seat, serial));
+                            .insert_idle(move |data| data.move_request_xdg(&toplevel, &seat, serial));
                     }
                     #[cfg(feature = "xwayland")]
                     WindowSurface::X11(w) => {
                         let window = w.clone();
                         state
                             .handle
-                            .insert_idle(move |data| data.state.move_request_x11(&window));
+                            .insert_idle(move |data| data.move_request_x11(&window));
                     }
                 };
             }
@@ -121,14 +121,14 @@ impl HeaderBar {
                         let toplevel = w.clone();
                         state
                             .handle
-                            .insert_idle(move |data| data.state.move_request_xdg(&toplevel, &seat, serial));
+                            .insert_idle(move |data| data.move_request_xdg(&toplevel, &seat, serial));
                     }
                     #[cfg(feature = "xwayland")]
                     WindowSurface::X11(w) => {
                         let window = w.clone();
                         state
                             .handle
-                            .insert_idle(move |data| data.state.move_request_x11(&window));
+                            .insert_idle(move |data| data.move_request_x11(&window));
                     }
                 };
             }
@@ -161,7 +161,7 @@ impl HeaderBar {
                         let surface = w.clone();
                         state
                             .handle
-                            .insert_idle(move |data| data.state.maximize_request_x11(&surface));
+                            .insert_idle(move |data| data.maximize_request_x11(&surface));
                     }
                 };
             }

@@ -35,8 +35,6 @@ use smithay::{
     },
 };
 
-#[cfg(feature = "xwayland")]
-use crate::CalloopData;
 use crate::{
     state::{AnvilState, Backend},
     ClientState,
@@ -124,9 +122,8 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
                 if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
                     let client = surface.client().unwrap();
                     let res = state.handle.insert_source(source, move |_, _, data| {
-                        data.state
-                            .client_compositor_state(&client)
-                            .blocker_cleared(&mut data.state, &data.display_handle);
+                        let dh = data.display_handle.clone();
+                        data.client_compositor_state(&client).blocker_cleared(data, &dh);
                         Ok(())
                     });
                     if res.is_ok() {
@@ -139,7 +136,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
 
     fn commit(&mut self, surface: &WlSurface) {
         #[cfg(feature = "xwayland")]
-        X11Wm::commit_hook::<CalloopData<BackendData>>(surface);
+        X11Wm::commit_hook::<AnvilState<BackendData>>(surface);
 
         on_commit_buffer_handler::<Self>(surface);
         self.backend_data.early_import(surface);
