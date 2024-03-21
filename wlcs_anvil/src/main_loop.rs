@@ -18,13 +18,13 @@ use smithay::{
             channel::{Channel, Event as ChannelEvent},
             EventLoop,
         },
-        wayland_server::{protocol::wl_surface, Client, Display, DisplayHandle, Resource},
+        wayland_server::{protocol::wl_surface, Client, Display, Resource},
     },
     utils::{IsAlive, Scale, SERIAL_COUNTER as SCOUNTER},
     wayland::compositor,
 };
 
-use anvil::{drawing::PointerElement, render::*, state::Backend, AnvilState, CalloopData, ClientState};
+use anvil::{drawing::PointerElement, render::*, state::Backend, AnvilState, ClientState};
 
 use crate::WlcsEvent;
 
@@ -41,27 +41,24 @@ impl Backend for TestState {
 
     fn reset_buffers(&mut self, _output: &Output) {}
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
-    fn update_led_state(&mut self, led_state: smithay::input::keyboard::LedState) {}
+    fn update_led_state(&mut self, _led_state: smithay::input::keyboard::LedState) {}
 }
 
 pub fn run(channel: Channel<WlcsEvent>) {
     let mut event_loop =
-        EventLoop::<CalloopData<TestState>>::try_new().expect("Failed to init the event loop.");
+        EventLoop::<AnvilState<TestState>>::try_new().expect("Failed to init the event loop.");
 
     let display = Display::new().expect("Failed to init display");
-    let mut display_handle = display.handle();
-
     let test_state = TestState {
         clients: HashMap::new(),
     };
-
     let mut state = AnvilState::init(display, event_loop.handle(), test_state, false);
 
     event_loop
         .handle()
         .insert_source(channel, move |event, &mut (), data| match event {
-            ChannelEvent::Msg(evt) => handle_event(evt, &mut data.state, &mut data.display_handle),
-            ChannelEvent::Closed => handle_event(WlcsEvent::Exit, &mut data.state, &mut data.display_handle),
+            ChannelEvent::Msg(evt) => handle_event(evt, data),
+            ChannelEvent::Closed => handle_event(WlcsEvent::Exit, data),
         })
         .unwrap();
 
@@ -81,7 +78,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             model: "WLCS".into(),
         },
     );
-    let _global = output.create_global::<AnvilState<TestState>>(&display_handle);
+    let _global = output.create_global::<AnvilState<TestState>>(&state.display_handle);
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
@@ -156,31 +153,25 @@ pub fn run(channel: Channel<WlcsEvent>) {
             })
         });
 
-        let mut calloop_data = CalloopData {
-            state,
-            display_handle,
-        };
-        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
-        CalloopData {
-            state,
-            display_handle,
-        } = calloop_data;
-
-        if result.is_err() {
+        if event_loop
+            .dispatch(Some(Duration::from_millis(16)), &mut state)
+            .is_err()
+        {
             state.running.store(false, Ordering::SeqCst);
         } else {
             state.space.refresh();
             state.popups.cleanup();
-            display_handle.flush_clients().unwrap();
+            state.display_handle.flush_clients().unwrap();
         }
     }
 }
 
-fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>, display_handle: &mut DisplayHandle) {
+fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
     match event {
         WlcsEvent::Exit => state.running.store(false, Ordering::SeqCst),
         WlcsEvent::NewClient { stream, client_id } => {
-            let client = display_handle
+            let client = state
+                .display_handle
                 .insert_client(stream, Arc::new(ClientState::default()))
                 .expect("Failed to insert client");
             state.backend_data.clients.insert(client_id, client);
@@ -194,7 +185,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>, display_han
             let client = state.backend_data.clients.get(&client_id);
             let toplevel = state.space.elements().find(|w| {
                 if let Some(surface) = w.wl_surface() {
-                    display_handle.get_client(surface.id()).ok().as_ref() == client
+                    state.display_handle.get_client(surface.id()).ok().as_ref() == client
                         && surface.id().protocol_id() == surface_id
                 } else {
                     false

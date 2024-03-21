@@ -21,4 +21,4 @@ pub mod winit;
 #[cfg(feature = "x11")]
 pub mod x11;
 
-pub use state::{AnvilState, CalloopData, ClientState};
+pub use state::{AnvilState, ClientState};
