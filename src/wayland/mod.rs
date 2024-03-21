@@ -70,6 +70,7 @@ pub mod shell;
 pub mod shm;
 pub mod socket;
 pub mod tablet_manager;
+pub mod tearing_control;
 pub mod text_input;
 pub mod viewporter;
 pub mod virtual_keyboard;
