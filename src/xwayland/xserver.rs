@@ -1,231 +1,371 @@
-/*
- * Steps of XWayland server creation
- *
- * Sockets to create:
- * - a pair for XWayland to connect to smithay as a wayland client, we use our
- *   end to insert the XWayland client in the display
- * - a pair for smithay to connect to XWayland as a WM, we give our end to the
- *   WM and it deals with it
- * - 2 listening sockets on which the XWayland server will listen. We need to
- *   bind them ourselves so we know what value put in the $DISPLAY env variable.
- *   This involves some dance with a lockfile to ensure there is no collision with
- *   an other starting xserver
- *   if we listen on display $D, their paths are respectively:
- *   - /tmp/.X11-unix/X$D
- *   - @/tmp/.X11-unix/X$D (abstract socket)
- *
- * The XWayland server is spawned via an intermediate shell
- * -> wlroots does a double-fork while weston a single one, why ??
- *    -> https://stackoverflow.com/questions/881388/
- * -> once it is started, it will check if SIGUSR1 is set to ignored. If so,
- *    if will consider its parent as "smart", and send a SIGUSR1 signal when
- *    startup completes. We want to catch this so we can launch the VM.
- * -> we need to track if the XWayland crashes, to restart it
- *
- * cf https://github.com/swaywm/wlroots/blob/master/xwayland/xwayland.c
- *
- * Setting SIGUSR1 handler is complicated in multithreaded program, because
- * Xwayland will send SIGUSR1 to the process, and if a thread cannot handle
- * SIGUSR1, that thread will be killed.
- *
- * Double-fork can tackle this issue, but this is also very complex in a
- * a multithread program, after forking only signal-safe functions can be used.
- * The only workaround is to fork early before any other thread starts, but
- * doing so will expose an unsafe interface.
- *
- * We use an intermediate shell to translate the signal to simple fd IO.
- * We ask sh to setup SIGUSR1 handler, and in a subshell mute SIGUSR1 and exec
- * Xwayland. When the SIGUSR1 is received, it can communicate to us via redirected
- * STDOUT.
- */
 use std::{
     env,
     ffi::OsStr,
-    io::{self, Read},
+    os::fd::{BorrowedFd, OwnedFd},
     os::unix::{
-        io::{AsRawFd, BorrowedFd, RawFd},
+        io::{AsRawFd, RawFd},
         net::UnixStream,
         process::CommandExt,
     },
-    process::{ChildStdout, Command, Stdio},
+    process::Command,
     sync::{Arc, Mutex},
 };
 
-use calloop::{
-    channel::{self, sync_channel, Channel, SyncSender},
-    generic::Generic,
-    Interest, LoopHandle, Mode,
-};
-use wayland_server::{
-    backend::{ClientData, ClientId, DisconnectReason},
-    Client, DisplayHandle,
-};
+use tracing::{info, trace};
+use wayland_server::backend::ClientData;
+use wayland_server::backend::DisconnectReason;
+use wayland_server::{Client, DisplayHandle};
 
-use tracing::{error, info, instrument};
+use crate::{utils::user_data::UserDataMap, wayland::compositor::CompositorClientState};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
-use crate::utils::user_data::UserDataMap;
-#[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::CompositorClientState;
 
-/// The XWayland handle
+/// A handle to a running XWayland process. Using XWayland as an xserver for
+/// X11-based clients requires two connections: one wayland socket, where
+/// XWayland creates surfaces for its clients, and one X11 socket, where a
+/// compositor's implementation of an X11 window manager connects and handles
+/// X11 events.
+///            ┌───────────────────┐
+///            │                   │
+///            │                   │ X11 Clients
+///            │     Xwayland      │ ◄─────
+///            │                   │
+///            │                   │
+///            └──┬──────────────▲┘
+///               │              │
+/// Wayland Socket│              │ X11 Socket
+///               │              │
+///               │              │
+///  ┌────────────▼─────────────┼────────────┐
+///  │  Compositor               │            │
+///  │                         ┌─┴───────┐    │
+///  │                         │ XWM     │    │
+///  │                         │         │    │
+///  │                         └─────────┘    │
+///  │                                        │
+///  └────────────────────────────────────────┘
+///
+/// This struct handles integrating the XWayland process itself into the event
+/// loop, but a [separate X11 window manager implementation](crate::xwayland::xwm::X11Wm)
+/// is needed as well to support X11 clients.
+///
+/// To shut down the instance, dropping this handle is generally sufficient,
+/// along with the X11 connection that was passed to the window manager
+/// implementation, if any. The process will die once the connections to it
+/// are closed.
 #[derive(Debug)]
 pub struct XWayland {
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<Mutex<Instance>>,
+    source: calloop::generic::Generic<calloop::generic::FdWrapper<RawFd>>,
+
+    // So we can disconnect the client on drop.
+    dh: DisplayHandle,
+    client: Client,
 }
 
-/// Events generated by the XWayland manager
-///
-/// This is a very low-level interface, only notifying you when the connection
-/// with XWayland is up, or when it terminates.
-///
-/// Your WM code must be able to handle the XWayland server connecting then
-/// disconnecting several time in a row, but only a single connection will
-/// be active at any given time.
+/// Events generated by an [XWayland] instance.
 #[derive(Debug)]
 #[must_use = "Connection events must be handled to prevent fd leaking"]
 pub enum XWaylandEvent {
     /// The XWayland server is ready
     Ready {
-        /// Privileged X11 connection to XWayland
-        connection: UnixStream,
+        /// A privileged X11 connection to XWayland.
+        x11_socket: UnixStream,
 
-        /// Wayland client representing XWayland
-        client: Client,
-
-        /// Wayland client file descriptor in case you are not using the display's poll_fd
-        client_fd: RawFd,
-
-        /// The display number the XWayland server is available at.
+        /// The display number the XWayland server is using.
         ///
-        /// This may be used if you wish to set the `DISPLAY` variable manually when spawning processes that
-        /// may use XWayland.
-        display: u32,
+        /// This can be useful to set the `DISPLAY` variable manually when
+        /// spawning processes that may use XWayland.
+        display_number: u32,
     },
 
-    /// The XWayland server exited
-    ///
-    /// This event is sent when the [`XWayland`] handle is dropped.
-    Exited,
+    /// The XWayland server exited unexpectedly during startup.
+    Error,
 }
 
 impl XWayland {
-    /// Create a new XWayland manager
-    ///
-    /// This function returns both the [`XWayland`] handle and an [`XWaylandSource`] that needs to be inserted
-    /// into the [`calloop`] event loop, producing the Xwayland startup and shutdown events.
-    pub fn new(dh: &DisplayHandle) -> (XWayland, XWaylandSource) {
-        // We don't expect to ever have more than 2 messages in flight, if XWayland got ready and then died right away
-        let (sender, channel) = sync_channel(2);
-        let inner = Arc::new(Mutex::new(Inner {
-            instance: None,
-            sender,
-            dh: dh.clone(),
-        }));
-        (XWayland { inner }, XWaylandSource { channel })
-    }
-
-    /// Attempt to start the XWayland instance
+    /// Spawns an XWayland server instance. `Xwayland` must be on the `PATH` and
+    /// executable.
     ///
     /// ## Arguments
     ///
-    /// - `display` - if provided only the given display number will be tested.
+    /// - `display` - if provided, only the given display number will be tested.
     ///     If you wish smithay to choose a display for you, pass `None`.
-    /// - `envs` - Allows additionally environment variables for the xwayland executable to be set
-    /// - `open_abstract_socket` - Open an abstract socket as well as filesystem sockets (only on
-    ///    Linux)
-    /// - `user_data` - Allows mutating the `XWaylandClientData::user_data`-map before the client
-    ///    is added to the wayland display. Useful for initializing state for global filters.
+    /// - `envs` - Allows additionally environment variables to be set when
+    ///   launching XWayland.
+    /// - `open_abstract_socket` - Open an abstract socket as well as filesystem
+    ///    sockets (only on available on Linux).
+    /// - `stdout, stderr` - Allows redirecting stdout and stderr of the
+    ///   XWayland process. XWayland output is rarely useful, so `Stdio::null()`
+    ///   is a good choice if you're not sure.
+    /// - `user_data` - Allows mutating the `XWaylandClientData::user_data`-map
+    ///    before the client is added to the wayland display. Useful for
+    ///    initializing state for global filters.
     ///
-    /// ## Return value
-    ///
-    /// Returns the display value, that was choosen to start the Xserver.
-    /// This function does **not** set the `DISPLAY` environment variable.
-    ///
-    /// If it succeeds, you'll eventually receive an `XWaylandEvent::Ready`
-    /// through the source provided by `XWayland::new()` containing an
-    /// `UnixStream` representing your WM connection to XWayland, and the
-    /// wayland `Client` for XWayland.
-    ///
-    /// Does nothing if XWayland is already started or starting.
-    pub fn start<D, K, V, I, F>(
-        &self,
-        loop_handle: LoopHandle<'_, D>,
+    /// Returns a handle to the XWayland instance and the
+    /// [Client](wayland_server::Client) representing the XWayland server. The
+    /// handle can be inserted in your event loop, and If everything goes well,
+    /// you'll eventually receive an `XWaylandEvent::Ready`, indicating that
+    /// it's time to start the X11 window manager.
+    pub fn spawn<K, V, I, F>(
+        dh: &DisplayHandle,
         display: impl Into<Option<u32>>,
         envs: I,
         open_abstract_socket: bool,
+        stdout: impl Into<std::process::Stdio>,
+        stderr: impl Into<std::process::Stdio>,
         user_data: F,
-    ) -> io::Result<u32>
+    ) -> std::io::Result<(Self, Client)>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
         F: FnOnce(&UserDataMap),
     {
-        let dh = self.inner.lock().unwrap().dh.clone();
-        launch(
-            &self.inner,
-            loop_handle,
-            dh,
-            display.into(),
-            envs,
-            open_abstract_socket,
-            user_data,
-        )
+        let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
+        let (wl_x11, wl_me) = UnixStream::pair()?;
+
+        let (lock, listen_sockets) = prepare_x11_sockets(display.into(), open_abstract_socket)?;
+        let display_number = lock.display_number();
+
+        // XWayland writes the the display number and a newline to this pipe when it's ready.
+        let (displayfd_recv, displayfd_send) =
+            rustix::pipe::pipe_with(rustix::pipe::PipeFlags::NONBLOCK | rustix::pipe::PipeFlags::CLOEXEC)?;
+
+        let mut command = Command::new("Xwayland");
+
+        command
+            .stdout(stdout)
+            .stderr(stderr)
+            .arg(format!(":{}", display_number))
+            .arg("-verbose")
+            .arg("-rootless")
+            .arg("-terminate")
+            .arg("-wm")
+            .arg(x_wm_x11.as_raw_fd().to_string())
+            .arg("-displayfd")
+            .arg(displayfd_send.as_raw_fd().to_string());
+
+        for socket in &listen_sockets {
+            command.arg("-listenfd").arg(socket.as_raw_fd().to_string());
+        }
+
+        // Setup the environment; clear everything except PATH and XDG_RUNTIME_DIR.
+        command.env_clear();
+        for (key, value) in env::vars_os() {
+            if key.to_str() == Some("PATH") || key.to_str() == Some("XDG_RUNTIME_DIR") {
+                command.env(key, value);
+                continue;
+            }
+        }
+
+        command.env("WAYLAND_SOCKET", format!("{}", wl_x11.as_raw_fd()));
+        command.envs(envs);
+
+        unsafe {
+            let wayland_socket_fd = wl_x11.as_raw_fd();
+            let wm_socket_fd = x_wm_x11.as_raw_fd();
+            let pipe_fd = displayfd_send.as_raw_fd();
+            let socket_fds: Vec<_> = listen_sockets.iter().map(|socket| socket.as_raw_fd()).collect();
+
+            command.pre_exec(move || {
+                // unset the CLOEXEC flag from the sockets we need to pass
+                // to xwayland.
+                unset_cloexec(wayland_socket_fd)?;
+                unset_cloexec(wm_socket_fd)?;
+                unset_cloexec(pipe_fd)?;
+                for &socket in socket_fds.iter() {
+                    unset_cloexec(socket)?;
+                }
+
+                Ok(())
+            });
+        }
+
+        info!("spawning XWayland instance");
+
+        let _ = command.spawn()?;
+
+        // SAFETY: RawFd's AsRawFd impl is infallible.
+        let wrapper = unsafe { calloop::generic::FdWrapper::new(displayfd_recv.as_raw_fd()) };
+        let source = calloop::generic::Generic::new(wrapper, calloop::Interest::READ, calloop::Mode::Level);
+        let inner = Instance {
+            display_lock: lock,
+            display_fd: displayfd_recv,
+            x11_socket: Some(x_wm_me),
+        };
+
+        let data_map = UserDataMap::new();
+        user_data(&data_map);
+
+        // Insert the client into the display handle. The order is important
+        // here; XWayland never starts up at all unless it can roundtrip with
+        // wayland.
+        let inner = Arc::new(Mutex::new(inner));
+        let mut dh = dh.clone();
+        let client = dh.insert_client(
+            wl_me,
+            Arc::new(XWaylandClientData {
+                #[cfg(feature = "wayland_frontend")]
+                compositor_state: CompositorClientState::default(),
+                data_map,
+            }),
+        )?;
+
+        Ok((
+            Self {
+                inner,
+                source,
+                dh,
+                client: client.clone(),
+            },
+            client,
+        ))
     }
 
-    /// Shutdown XWayland
+    /// Returns the X11 display used by the instance, suitable for setting the
+    /// `DISPLAY` environment variable.
+    pub fn display_number(&self) -> u32 {
+        self.inner.lock().unwrap().display_lock.display_number()
+    }
+
+    /// Returns a file descriptor which can be polled for readiness. When the fd
+    /// is readable, the XWayland server's readiness can be checked with
+    /// [take_socket](Self::take_socket).
+    pub fn poll_fd(&self) -> BorrowedFd<'_> {
+        let guard = self.inner.lock().unwrap();
+
+        // SAFETY: we never mutate display_fd, and it lives as long as the instance.
+        unsafe { BorrowedFd::borrow_raw(guard.display_fd.as_raw_fd()) }
+    }
+
+    /// Checks if the XWayland instance is ready. If XWayland has fully started,
+    /// this will return the X11 socket connected to the running instance.
     ///
-    /// Does nothing if it was not already running, otherwise kills it and you will
-    /// later receive a `XWaylandEvent::Exited` event.
-    pub fn shutdown(&self) {
-        self.inner.lock().unwrap().shutdown();
+    /// Calling `take_socket` successfully transfers ownership of the connection
+    /// to the caller. After returning `Some` the first time, it will always
+    /// return `None`.
+    ///
+    /// An `Err` result is only returned if the XWayland instance has exited
+    /// unexpectedly.
+    ///
+    /// This is a low-level method. Using the instance as an event source is the
+    /// recommended way to interact with it.
+    pub fn take_socket(&mut self) -> std::io::Result<Option<UnixStream>> {
+        self.inner.lock().unwrap().take_socket()
+    }
+}
+
+#[derive(Debug)]
+struct Instance {
+    display_lock: X11Lock,
+    x11_socket: Option<UnixStream>,
+    display_fd: OwnedFd,
+}
+
+impl calloop::EventSource for XWayland {
+    type Event = XWaylandEvent;
+    type Metadata = ();
+    type Ret = ();
+    type Error = std::io::Error;
+
+    #[profiling::function]
+    fn process_events<F>(
+        &mut self,
+        readiness: calloop::Readiness,
+        token: calloop::Token,
+        mut callback: F,
+    ) -> std::io::Result<calloop::PostAction>
+    where
+        F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
+    {
+        let mut guard = self.inner.lock().unwrap();
+
+        self.source.process_events(readiness, token, |_, _| {
+            let x11_socket = match guard.take_socket() {
+                Ok(Some(sockets)) => sockets,
+                Ok(None) => return Ok(calloop::PostAction::Continue),
+                Err(_) => {
+                    callback(XWaylandEvent::Error, &mut ());
+                    return Ok(calloop::PostAction::Disable);
+                }
+            };
+
+            callback(
+                XWaylandEvent::Ready {
+                    x11_socket,
+                    display_number: guard.display_lock.display_number(),
+                },
+                &mut (),
+            );
+
+            Ok(calloop::PostAction::Disable)
+        })
+    }
+
+    fn register(
+        &mut self,
+        poll: &mut calloop::Poll,
+        factory: &mut calloop::TokenFactory,
+    ) -> calloop::Result<()> {
+        self.source.register(poll, factory)
+    }
+
+    fn reregister(
+        &mut self,
+        poll: &mut calloop::Poll,
+        factory: &mut calloop::TokenFactory,
+    ) -> calloop::Result<()> {
+        self.source.reregister(poll, factory)
+    }
+
+    fn unregister(&mut self, poll: &mut calloop::Poll) -> calloop::Result<()> {
+        self.source.unregister(poll)
     }
 }
 
 impl Drop for XWayland {
     fn drop(&mut self) {
-        self.inner.lock().unwrap().shutdown();
+        self.dh
+            .backend_handle()
+            .kill_client(self.client.id(), DisconnectReason::ConnectionClosed);
     }
 }
 
-#[derive(Debug)]
-struct XWaylandInstance {
-    display_lock: X11Lock,
-    wayland_client: Client,
-    wayland_client_fd: RawFd,
-    wm_fd: Option<UnixStream>,
+impl Instance {
+    fn take_socket(&mut self) -> std::io::Result<Option<UnixStream>> {
+        trace!("checking for XWayland readiness");
+
+        if self.x11_socket.is_none() {
+            return Ok(None);
+        }
+
+        let mut buf = [0; 64];
+        loop {
+            let res = rustix::io::read(&self.display_fd, &mut buf);
+            trace!(?res, "read from XWayland displayfd");
+
+            match res {
+                Ok(0) => return Ok(None),
+                Ok(len) if (buf[..len]).contains(&b'\n') => return Ok(self.x11_socket.take()),
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+                Err(err) => return Err(err.into()),
+                _ => continue,
+            }
+        }
+    }
 }
 
-// Inner implementation of the XWayland manager
-#[derive(Debug)]
-struct Inner {
-    sender: SyncSender<XWaylandEvent>,
-    instance: Option<XWaylandInstance>,
-    dh: DisplayHandle,
-}
-
-/// Inner `ClientData`-type of an xwayland client
+/// Inner `ClientData`-type of an xwayland client.
 #[derive(Debug)]
 pub struct XWaylandClientData {
-    inner: Arc<Mutex<Inner>>,
     /// client state of the [`crate::wayland::compositor`] module
     #[cfg(feature = "wayland_frontend")]
     pub compositor_state: CompositorClientState,
     data_map: UserDataMap,
 }
 
-impl ClientData for XWaylandClientData {
-    fn initialized(&self, _client_id: ClientId) {}
-    fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {
-        // If we are unable to take a lock we are most likely called during
-        // a shutdown. This will definitely be the case when the compositor exits
-        // and the XWayland instance is dropped.
-        if let Ok(mut guard) = self.inner.try_lock() {
-            guard.shutdown();
-        }
-    }
-}
+impl ClientData for XWaylandClientData {}
 
 impl XWaylandClientData {
     /// Access user_data map for a xwayland client
@@ -234,276 +374,9 @@ impl XWaylandClientData {
     }
 }
 
-// Launch an XWayland server
-//
-// Does nothing if there is already a launched instance
-fn launch<D, K, V, I, F>(
-    inner: &Arc<Mutex<Inner>>,
-    loop_handle: LoopHandle<'_, D>,
-    mut dh: DisplayHandle,
-    display: Option<u32>,
-    envs: I,
-    open_abstract_socket: bool,
-    user_data: F,
-) -> io::Result<u32>
-where
-    I: IntoIterator<Item = (K, V)>,
-    K: AsRef<OsStr>,
-    V: AsRef<OsStr>,
-    F: FnOnce(&UserDataMap),
-{
-    let mut guard = inner.lock().unwrap();
-    if let Some(instance) = guard.instance.as_ref() {
-        return Ok(instance.display_lock.display());
-    }
-
-    info!("Starting XWayland");
-
-    let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
-    let (wl_x11, wl_me) = UnixStream::pair()?;
-
-    let (lock, x_fds) = prepare_x11_sockets(display, open_abstract_socket)?;
-    let display = lock.display();
-
-    // we have now created all the required sockets
-
-    // all is ready, we can do the fork dance
-    let child_stdout = match spawn_xwayland(display, wl_x11, x_wm_x11, &x_fds, envs) {
-        Ok(child_stdout) => child_stdout,
-        Err(e) => {
-            error!(error = ?e, "XWayland failed to spawn");
-            return Err(e);
-        }
-    };
-
-    let loop_inner = inner.clone();
-    loop_handle
-        .insert_source(
-            Generic::<_, io::Error>::new(child_stdout, Interest::READ, Mode::Level),
-            move |_, child_stdout, _| {
-                // the closure must be called exactly one time, this cannot panic
-                // Safety: xwayland_ready will not close the child_stdout
-                xwayland_ready(&loop_inner, unsafe { child_stdout.get_mut() });
-                Ok(calloop::PostAction::Remove)
-            },
-        )
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-
-    let client_fd = wl_me.as_raw_fd();
-
-    let data_map = UserDataMap::new();
-    user_data(&data_map);
-    let client = dh.insert_client(
-        wl_me,
-        Arc::new(XWaylandClientData {
-            inner: inner.clone(),
-            #[cfg(feature = "wayland_frontend")]
-            compositor_state: CompositorClientState::default(),
-            data_map,
-        }),
-    )?;
-    guard.instance = Some(XWaylandInstance {
-        display_lock: lock,
-        wayland_client: client,
-        wayland_client_fd: client_fd,
-        wm_fd: Some(x_wm_me),
-    });
-
-    Ok(display)
-}
-
-/// An event source for monitoring XWayland status
-///
-/// You need to insert it in a [`calloop`] event loop to handle the events it produces,
-/// of type [`XWaylandEvent`], which notify you about startup and shutdown of the Xwayland
-/// instance.
-#[derive(Debug)]
-#[must_use]
-pub struct XWaylandSource {
-    channel: Channel<XWaylandEvent>,
-}
-
-impl calloop::EventSource for XWaylandSource {
-    type Event = XWaylandEvent;
-    type Metadata = ();
-    type Ret = ();
-    type Error = io::Error;
-
-    #[profiling::function]
-    fn process_events<F>(
-        &mut self,
-        readiness: calloop::Readiness,
-        token: calloop::Token,
-        mut callback: F,
-    ) -> io::Result<calloop::PostAction>
-    where
-        F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
-    {
-        self.channel
-            .process_events(readiness, token, |event, &mut ()| match event {
-                channel::Event::Msg(msg) => callback(msg, &mut ()),
-                channel::Event::Closed => {}
-            })
-            .map_err(|err| io::Error::new(io::ErrorKind::BrokenPipe, err))
-    }
-
-    fn register(
-        &mut self,
-        poll: &mut calloop::Poll,
-        factory: &mut calloop::TokenFactory,
-    ) -> calloop::Result<()> {
-        self.channel.register(poll, factory)
-    }
-
-    fn reregister(
-        &mut self,
-        poll: &mut calloop::Poll,
-        factory: &mut calloop::TokenFactory,
-    ) -> calloop::Result<()> {
-        self.channel.reregister(poll, factory)
-    }
-
-    fn unregister(&mut self, poll: &mut calloop::Poll) -> calloop::Result<()> {
-        self.channel.unregister(poll)
-    }
-}
-
-impl Inner {
-    // Shutdown the XWayland server and cleanup everything
-    fn shutdown(&mut self) {
-        // don't do anything if not running
-        if let Some(instance) = self.instance.take() {
-            info!(
-                display = instance.display_lock.display(),
-                "Shutting down XWayland."
-            );
-            self.dh
-                .backend_handle()
-                .kill_client(instance.wayland_client.id(), DisconnectReason::ConnectionClosed);
-
-            // send error occurs if the user dropped the channel... We cannot do much except ignore.
-            let _ = self.sender.send(XWaylandEvent::Exited);
-            // All connections and lockfiles are cleaned by their destructors
-
-            // We do like wlroots:
-            // > We do not kill the XWayland process, it dies to broken pipe
-            // > after we close our side of the wm/wl fds. This is more reliable
-            // > than trying to kill something that might no longer be XWayland.
-        }
-    }
-}
-
-#[instrument(name = "xwayland", skip(inner), fields(display = inner.lock().unwrap().instance.as_ref().map(|i| i.display_lock.display())))]
-fn xwayland_ready(inner: &Arc<Mutex<Inner>>, child_stdout: &mut ChildStdout) {
-    // Lots of re-borrowing to please the borrow-checker
-    let mut guard = inner.lock().unwrap();
-    let guard = &mut *guard;
-    info!("XWayland ready");
-    // instance should never be None at this point
-    let Some(instance) = guard.instance.as_mut() else {
-        error!("XWayland crashed at startup, will not try to restart it.");
-        return;
-    };
-
-    // This reads the one byte that is written when sh receives SIGUSR1
-    let mut buffer = [0];
-    let success = match child_stdout.read(&mut buffer) {
-        Ok(len) => len > 0 && buffer[0] == b'S',
-        Err(e) => {
-            error!(error = ?e, "Checking launch status failed");
-            false
-        }
-    };
-
-    if success {
-        // signal the WM
-        info!(
-            "XWayland is ready on DISPLAY \":{}\", signaling the WM.",
-            instance.display_lock.display()
-        );
-        // send error occurs if the user dropped the channel... We cannot do much except ignore.
-        let _ = guard.sender.send(XWaylandEvent::Ready {
-            connection: instance.wm_fd.take().unwrap(), // This is a bug if None
-            client: instance.wayland_client.clone(),
-            client_fd: instance.wayland_client_fd,
-            display: instance.display_lock.display(),
-        });
-    } else {
-        error!("XWayland crashed at startup, will not try to restart it.");
-    }
-}
-
-/// Spawn XWayland with given sockets on given display
-///
-/// Returns a pipe that outputs 'S' upon successful launch.
-fn spawn_xwayland<K, V, I>(
-    display: u32,
-    wayland_socket: UnixStream,
-    wm_socket: UnixStream,
-    listen_sockets: &[UnixStream],
-    envs: I,
-) -> io::Result<ChildStdout>
-where
-    I: IntoIterator<Item = (K, V)>,
-    K: AsRef<OsStr>,
-    V: AsRef<OsStr>,
-{
-    let mut command = Command::new("sh");
-
-    // We use output stream to communicate because FD is easier to handle than exit code.
-    command.stdout(Stdio::piped());
-
-    let mut xwayland_args = format!(":{} -rootless -terminate -wm {}", display, wm_socket.as_raw_fd());
-    for socket in listen_sockets {
-        xwayland_args.push_str(&format!(" -listenfd {}", socket.as_raw_fd()));
-    }
-    // This command let sh to:
-    // * Set up signal handler for USR1
-    // * Launch Xwayland with USR1 ignored so Xwayland will signal us when it is ready (also redirect
-    //   Xwayland's STDOUT to STDERR so its output, if any, won't distract us)
-    // * Print "S" and exit if USR1 is received
-    command.arg("-c").arg(format!(
-        "trap 'echo S' USR1; (trap '' USR1; exec Xwayland {}) 1>&2 & wait",
-        xwayland_args
-    ));
-
-    // Setup the environment: clear everything except PATH and XDG_RUNTIME_DIR
-    command.env_clear();
-    for (key, value) in env::vars_os() {
-        if key.to_str() == Some("PATH") || key.to_str() == Some("XDG_RUNTIME_DIR") {
-            command.env(key, value);
-            continue;
-        }
-    }
-    command.env("WAYLAND_SOCKET", format!("{}", wayland_socket.as_raw_fd()));
-    // add user provided environment
-    command.envs(envs);
-
-    unsafe {
-        let wayland_socket_fd = wayland_socket.as_raw_fd();
-        let wm_socket_fd = wm_socket.as_raw_fd();
-        let socket_fds: Vec<_> = listen_sockets.iter().map(|socket| socket.as_raw_fd()).collect();
-        command.pre_exec(move || {
-            // unset the CLOEXEC flag from the sockets we need to pass
-            // to xwayland
-            unset_cloexec(wayland_socket_fd)?;
-            unset_cloexec(wm_socket_fd)?;
-            for &socket in socket_fds.iter() {
-                unset_cloexec(socket)?;
-            }
-            Ok(())
-        });
-    }
-
-    let mut child = command.spawn()?;
-    Ok(child.stdout.take().expect("stdout should be piped"))
-}
-
-/// Remove the `O_CLOEXEC` flag from this `Fd`
-///
-/// This means that the `Fd` will *not* be automatically
-/// closed when we `exec()` into XWayland
-unsafe fn unset_cloexec(fd: RawFd) -> io::Result<()> {
+/// Removes the `O_CLOEXEC` flag from a `RawFd`, causing it to leak when we
+/// `exec` XWayland
+unsafe fn unset_cloexec(fd: RawFd) -> std::io::Result<()> {
     let fd = BorrowedFd::borrow_raw(fd);
     rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::empty())?;
     Ok(())
