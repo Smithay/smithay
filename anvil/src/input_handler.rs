@@ -20,7 +20,7 @@ use smithay::{
     output::Scale,
     reexports::{
         wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1,
-        wayland_server::{protocol::wl_pointer, DisplayHandle},
+        wayland_server::protocol::wl_pointer,
     },
     utils::{Logical, Point, Serial, Transform, SERIAL_COUNTER as SCOUNTER},
     wayland::{
@@ -60,6 +60,7 @@ use smithay::{
         },
         touch::{DownEvent, UpEvent},
     },
+    reexports::wayland_server::DisplayHandle,
     wayland::{
         pointer_constraints::{with_pointer_constraint, PointerConstraint},
         seat::WaylandFocus,
@@ -408,7 +409,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         under
     }
 
-    fn on_pointer_axis<B: InputBackend>(&mut self, _dh: &DisplayHandle, evt: B::PointerAxisEvent) {
+    fn on_pointer_axis<B: InputBackend>(&mut self, evt: B::PointerAxisEvent) {
         let horizontal_amount = evt
             .amount(input::Axis::Horizontal)
             .unwrap_or_else(|| evt.amount_v120(input::Axis::Horizontal).unwrap_or(0.0) * 15.0 / 120.);
@@ -451,12 +452,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
 #[cfg(any(feature = "winit", feature = "x11"))]
 impl<Backend: crate::state::Backend> AnvilState<Backend> {
-    pub fn process_input_event_windowed<B: InputBackend>(
-        &mut self,
-        dh: &DisplayHandle,
-        event: InputEvent<B>,
-        output_name: &str,
-    ) {
+    pub fn process_input_event_windowed<B: InputBackend>(&mut self, event: InputEvent<B>, output_name: &str) {
         match event {
             InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
                 KeyAction::ScaleUp => {
@@ -538,17 +534,16 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     .find(|o| o.name() == output_name)
                     .unwrap()
                     .clone();
-                self.on_pointer_move_absolute_windowed::<B>(dh, event, &output)
+                self.on_pointer_move_absolute_windowed::<B>(event, &output)
             }
             InputEvent::PointerButton { event } => self.on_pointer_button::<B>(event),
-            InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(dh, event),
+            InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(event),
             _ => (), // other events are not handled in anvil (yet)
         }
     }
 
     fn on_pointer_move_absolute_windowed<B: InputBackend>(
         &mut self,
-        _dh: &DisplayHandle,
         evt: B::PointerMotionAbsoluteEvent,
         output: &Output,
     ) {
@@ -745,7 +740,7 @@ impl AnvilState<UdevData> {
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(dh, event),
             InputEvent::PointerMotionAbsolute { event, .. } => self.on_pointer_move_absolute::<B>(dh, event),
             InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
-            InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(dh, event),
+            InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
             InputEvent::TabletToolAxis { event, .. } => self.on_tablet_tool_axis::<B>(event),
             InputEvent::TabletToolProximity { event, .. } => self.on_tablet_tool_proximity::<B>(dh, event),
             InputEvent::TabletToolTip { event, .. } => self.on_tablet_tool_tip::<B>(event),
