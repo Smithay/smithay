@@ -59,11 +59,11 @@ use smithay::{
         security_context::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
-        selection::data_device::{
-            set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
-            ServerDndGrabHandler,
-        },
         selection::{
+            data_device::{
+                set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
+                ServerDndGrabHandler,
+            },
             primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
             wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
@@ -96,10 +96,11 @@ use crate::{
 };
 #[cfg(feature = "xwayland")]
 use smithay::{
-    delegate_xwayland_keyboard_grab,
+    delegate_xwayland_keyboard_grab, delegate_xwayland_shell,
     utils::{Point, Size},
     wayland::selection::{SelectionSource, SelectionTarget},
     wayland::xwayland_keyboard_grab::{XWaylandKeyboardGrabHandler, XWaylandKeyboardGrabState},
+    wayland::xwayland_shell,
     xwayland::{X11Wm, XWayland, XWaylandEvent},
 };
 
@@ -149,6 +150,8 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub presentation_state: PresentationState,
     pub fractional_scale_manager_state: FractionalScaleManagerState,
     pub xdg_foreign_state: XdgForeignState,
+    #[cfg(feature = "xwayland")]
+    pub xwayland_shell_state: xwayland_shell::XWaylandShellState,
 
     pub dnd_icon: Option<WlSurface>,
 
@@ -160,8 +163,6 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub clock: Clock<Monotonic>,
     pub pointer: PointerHandle<AnvilState<BackendData>>,
 
-    #[cfg(feature = "xwayland")]
-    pub xwayland: XWayland,
     #[cfg(feature = "xwayland")]
     pub xwm: Option<X11Wm>,
     #[cfg(feature = "xwayland")]
@@ -515,6 +516,9 @@ impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<
 #[cfg(feature = "xwayland")]
 delegate_xwayland_keyboard_grab!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+#[cfg(feature = "xwayland")]
+delegate_xwayland_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend> XdgForeignHandler for AnvilState<BackendData> {
     fn xdg_foreign_state(&mut self) -> &mut XdgForeignState {
         &mut self.xdg_foreign_state
@@ -619,40 +623,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
         #[cfg(feature = "xwayland")]
-        let xwayland = {
-            XWaylandKeyboardGrabState::new::<Self>(&dh);
-
-            let (xwayland, channel) = XWayland::new(&dh);
-            let dh = dh.clone();
-            let ret = handle.insert_source(channel, move |event, _, data| match event {
-                XWaylandEvent::Ready {
-                    connection,
-                    client,
-                    client_fd: _,
-                    display,
-                } => {
-                    let mut wm = X11Wm::start_wm(data.state.handle.clone(), dh.clone(), connection, client)
-                        .expect("Failed to attach X11 Window Manager");
-                    let cursor = Cursor::load();
-                    let image = cursor.get_image(1, Duration::ZERO);
-                    wm.set_cursor(
-                        &image.pixels_rgba,
-                        Size::from((image.width as u16, image.height as u16)),
-                        Point::from((image.xhot as u16, image.yhot as u16)),
-                    )
-                    .expect("Failed to set xwayland default cursor");
-                    data.state.xwm = Some(wm);
-                    data.state.xdisplay = Some(display);
-                }
-                XWaylandEvent::Exited => {
-                    let _ = data.state.xwm.take();
-                }
-            });
-            if let Err(e) = ret {
-                tracing::error!("Failed to insert the XWaylandSource into the event loop: {}", e);
-            }
-            xwayland
-        };
+        let xwayland_shell_state = xwayland_shell::XWaylandShellState::new::<Self>(&dh.clone());
 
         AnvilState {
             backend_data,
@@ -685,8 +656,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             seat,
             pointer,
             clock,
+
             #[cfg(feature = "xwayland")]
-            xwayland,
+            xwayland_shell_state,
             #[cfg(feature = "xwayland")]
             xwm: None,
             #[cfg(feature = "xwayland")]
@@ -694,6 +666,53 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             #[cfg(feature = "debug")]
             renderdoc: renderdoc::RenderDoc::new().ok(),
             show_window_preview: false,
+        }
+    }
+
+    #[cfg(feature = "xwayland")]
+    pub fn start_xwayland(&mut self) {
+        use std::process::Stdio;
+
+        XWaylandKeyboardGrabState::new::<Self>(&self.display_handle.clone());
+
+        let (xwayland, client) = XWayland::spawn(
+            &self.display_handle,
+            None,
+            std::iter::empty::<(String, String)>(),
+            true,
+            Stdio::null(),
+            Stdio::null(),
+            |_| (),
+        )
+        .expect("failed to start XWayland");
+
+        let ret = self
+            .handle
+            .insert_source(xwayland, move |event, _, data| match event {
+                XWaylandEvent::Ready {
+                    x11_socket,
+                    display_number,
+                } => {
+                    let mut wm = X11Wm::start_wm(data.state.handle.clone(), x11_socket, client.clone())
+                        .expect("Failed to attach X11 Window Manager");
+
+                    let cursor = Cursor::load();
+                    let image = cursor.get_image(1, Duration::ZERO);
+                    wm.set_cursor(
+                        &image.pixels_rgba,
+                        Size::from((image.width as u16, image.height as u16)),
+                        Point::from((image.xhot as u16, image.yhot as u16)),
+                    )
+                    .expect("Failed to set xwayland default cursor");
+                    data.state.xwm = Some(wm);
+                    data.state.xdisplay = Some(display_number);
+                }
+                XWaylandEvent::Error => {
+                    warn!("XWayland crashed on startup");
+                }
+            });
+        if let Err(e) = ret {
+            tracing::error!("Failed to insert the XWaylandSource into the event loop: {}", e);
         }
     }
 }

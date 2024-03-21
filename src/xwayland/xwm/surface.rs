@@ -1,5 +1,5 @@
 use crate::{
-    backend::{input::KeyState, renderer::element::Id},
+    backend::input::KeyState,
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{
@@ -11,6 +11,7 @@ use crate::{
         Seat, SeatHandler,
     },
     utils::{user_data::UserDataMap, IsAlive, Logical, Rectangle, Serial, Size},
+    wayland::compositor,
 };
 use encoding_rs::WINDOWS_1252;
 use std::{
@@ -52,9 +53,13 @@ const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
 #[derive(Debug)]
 pub(crate) struct SharedSurfaceState {
     pub(super) alive: bool,
-    pub(crate) wl_surface: Option<WlSurface>,
+    pub(super) wl_surface_id: Option<u32>,
+    pub(super) wl_surface_serial: Option<u64>,
     pub(super) mapped_onto: Option<X11Window>,
     pub(super) geometry: Rectangle<i32, Logical>,
+
+    // The associated wl_surface.
+    pub(crate) wl_surface: Option<WlSurface>,
 
     title: String,
     class: String,
@@ -147,6 +152,8 @@ impl X11Surface {
             atoms,
             state: Arc::new(Mutex::new(SharedSurfaceState {
                 alive: true,
+                wl_surface_id: None,
+                wl_surface_serial: None,
                 wl_surface: None,
                 mapped_onto: None,
                 geometry,
@@ -226,7 +233,7 @@ impl X11Surface {
     /// Returns if the window is currently mapped or not
     pub fn is_mapped(&self) -> bool {
         let state = self.state.lock().unwrap();
-        state.wl_surface.is_some() || state.mapped_onto.is_some()
+        state.mapped_onto.is_some()
     }
 
     /// Returns if the window is still alive
@@ -271,12 +278,36 @@ impl X11Surface {
         Ok(())
     }
 
-    /// Returns the `wl_surface` corresponding to the underlying X11 window.
+    /// Returns the associated wl_surface.
     ///
-    /// An X11 window only has a matching wl_surface if is considered visible
-    /// by Xwayland, which will only happen once it is mapped.
+    /// This will only return `Some` once:
+    ///   - The `WL_SURFACE_SERIAL` has been set on the x11 window, and
+    ///   - The wl_surface has been assigned the same serial using the [xwayland
+    ///     shell](crate::wayland::xwayland_shell) protocol on the wayland side,
+    ///     and then committed.
     pub fn wl_surface(&self) -> Option<WlSurface> {
         self.state.lock().unwrap().wl_surface.clone()
+    }
+
+    /// Returns the associated `wl_surface` id, once it has been set by
+    /// xwayland.
+    ///
+    /// Note that XWayland will only set this if it was unable to bind the
+    /// [xwayland shell](crate::wayland::xwayland_shell) protocol on the wayland
+    /// side.
+    #[deprecated = "Since XWayland 23.1, the recommended approach is to use [wl_surface_serial] and the [xwayland shell](crate::wayland::xwayland_shell) protocol on the wayland side to match X11 windows."]
+    pub fn wl_surface_id(&self) -> Option<u32> {
+        self.state.lock().unwrap().wl_surface_id
+    }
+
+    /// Returns the associated `wl_surface` serial, once it has been set by
+    /// xwayland.
+    ///
+    /// XWayland will set this if it has bound the [xwayland
+    /// shell](crate::wayland::xwayland_shell) protocol on the wayland side.
+    /// Otherwise, it will set [wl_surface_id] instead.
+    pub fn wl_surface_serial(&self) -> Option<u64> {
+        self.state.lock().unwrap().wl_surface_serial
     }
 
     /// Returns the current geometry of the underlying X11 window
@@ -795,24 +826,14 @@ impl X11Relatable for X11Surface {
 
 impl X11Relatable for WlSurface {
     fn is_window(&self, window: &X11Surface) -> bool {
-        let state = window.state.lock().unwrap();
-        state
-            .wl_surface
-            .as_ref()
-            .map(|surface| surface == self)
-            .unwrap_or(false)
-    }
-}
+        let serial = compositor::with_states(self, |states| {
+            states
+                .cached_state
+                .current::<crate::wayland::xwayland_shell::XWaylandShellCachedState>()
+                .serial
+        });
 
-impl X11Relatable for Id {
-    fn is_window(&self, window: &X11Surface) -> bool {
-        let state = window.state.lock().unwrap();
-        state
-            .wl_surface
-            .as_ref()
-            .map(Id::from_wayland_resource)
-            .map(|id| &id == self)
-            .unwrap_or(false)
+        window.wl_surface_serial() == serial
     }
 }
 

@@ -1,5 +1,3 @@
-#[cfg(feature = "xwayland")]
-use std::ffi::OsString;
 use std::{
     collections::{hash_map::HashMap, HashSet},
     io,
@@ -469,15 +467,7 @@ pub fn run_udev() {
      * Start XWayland if supported
      */
     #[cfg(feature = "xwayland")]
-    if let Err(e) = state.xwayland.start(
-        state.handle.clone(),
-        None,
-        std::iter::empty::<(OsString, OsString)>(),
-        true,
-        |_| {},
-    ) {
-        error!("Failed to start XWayland: {}", e);
-    }
+    state.start_xwayland();
 
     /*
      * And run our loop

@@ -77,3 +77,5 @@ pub mod xdg_activation;
 pub mod xdg_foreign;
 #[cfg(feature = "xwayland")]
 pub mod xwayland_keyboard_grab;
+#[cfg(feature = "xwayland")]
+pub mod xwayland_shell;

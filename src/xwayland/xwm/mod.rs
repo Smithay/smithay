@@ -1,18 +1,45 @@
 //!
 //! Xwayland Window Manager module
 //!
-//! Provides an [`X11Wm`] type, which will register itself as a window manager for a previously spawned Xwayland instances,
-//! allowing backwards-compatibility by seemlessly integrating X11 windows into a wayland compositor.
+//! Provides an [`X11Wm`] type, which will register itself as a window manager
+//! for a previously spawned Xwayland instances, allowing
+//! backwards-compatibility by seamlessly integrating X11 windows into a wayland
+//! compositor.
 //!
-//! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
+//! To use this functionality you must first spawn an
+//! [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
+//!
+//! # Associating an [X11Surface] with a [WlSurface]
+//!
+//! When an X11 window is created, XWayland will associate it with a
+//! `wl_surface` that it creates via the wayland connection. This happens in two
+//! steps:
+//!
+//!  - Via the [xwayland shell](crate::wayland::xwayland::shell) protocol, a
+//!    serial number is set on the surface, and it is given the
+//!    "xwayland_surface" role.
+//!  - Via the X11 connection, a matching `WL_SURFACE_SERIAL` atom is set on the
+//!    X11 window, which can be queried with
+//!    [`X11Surface::wl_surface_serial()`].
+//!
+//! Note that these two steps can happen in any order.
+//!
+//! # Example
 //!
 //! ```no_run
+//! #  use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
 //! #  use smithay::wayland::selection::SelectionTarget;
 //! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
 //! #  use smithay::utils::{Rectangle, Logical};
 //! #  use std::os::unix::io::OwnedFd;
+//! #  use std::process::Stdio;
 //! #
 //! struct State { /* ... */ }
+//! # impl XWaylandShellHandler for State {
+//! #     fn xwayland_shell_state(&mut self) -> &mut XWaylandShellState {
+//! #         unreachable!()
+//! #     }
+//! # }
 //! impl XwmHandler for State {
 //!     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm {
 //!         // ...
@@ -34,42 +61,39 @@
 //! # let dh = unreachable!();
 //! # let handle: smithay::reexports::calloop::LoopHandle<'static, State> = unreachable!();
 //!
-//! let (xwayland, channel) = XWayland::new(&dh);
-//! let ret = handle.insert_source(channel, move |event, _, data| match event {
+//! let (xwayland, client) = XWayland::spawn(
+//!     &dh,
+//!     None,
+//!     std::iter::empty::<(String, String)>(),
+//!     true,
+//!     Stdio::null(),
+//!     Stdio::null(),
+//!     |_| (),
+//! )
+//! .expect("failed to start XWayland");
+
+//! let ret = handle.insert_source(xwayland, move |event, _, data| match event {
 //!     XWaylandEvent::Ready {
-//!         connection,
-//!         client,
-//!         client_fd: _,
-//!         display: _,
+//!         x11_socket,
+//!         display_number: _,
 //!     } => {
 //!         let wm = X11Wm::start_wm(
 //!             handle.clone(),
-//!             dh.clone(),
-//!             connection,
-//!             client,
+//!             x11_socket,
+//!             client.clone(),
 //!         )
 //!         .expect("Failed to attach X11 Window Manager");
 //!         
 //!         // store the WM somewhere
 //!     }
-//!     XWaylandEvent::Exited => {
-//!         // cleanup your state and drop the WM again
-//!     }
-//! });
-//! if let Err(e) = ret {
-//!     tracing::error!(
-//!         "Failed to insert the XWaylandSource into the event loop: {}", e
-//!     );
-//! }
+//!     XWaylandEvent::Error => eprintln!("XWayland failed to start!"),
+//! }); if let Err(e) = ret { tracing::error!( "Failed to insert the
+//! XWaylandSource into the event loop: {}", e ); }
 //! ```
-//!
 
 use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
-    wayland::{
-        compositor::{get_role, give_role},
-        selection::SelectionTarget,
-    },
+    wayland::{compositor, selection::SelectionTarget, xwayland_shell},
 };
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
 use rustix::fs::OFlags;
@@ -84,7 +108,7 @@ use std::{
     sync::Arc,
 };
 use tracing::{debug, debug_span, error, info, trace, warn};
-use wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Resource};
+use wayland_server::{protocol::wl_surface::WlSurface, Client, Resource};
 
 use x11rb::{
     connection::Connection as _,
@@ -109,7 +133,6 @@ use x11rb::{
 
 mod surface;
 pub use self::surface::*;
-use super::xserver::XWaylandClientData;
 
 /// X11 wl_surface role
 pub const X11_SURFACE_ROLE: &str = "x11_surface";
@@ -125,6 +148,7 @@ mod atoms {
         AtomsCookie {
             // wayland-stuff
             WL_SURFACE_ID,
+            WL_SURFACE_SERIAL,
 
             // private
             _SMITHAY_CLOSE_CONNECTION,
@@ -187,6 +211,8 @@ mod atoms {
     }
 }
 pub use self::atoms::Atoms;
+
+use super::XWaylandClientData;
 
 crate::utils::ids::id_gen!(next_xwm_id, XWM_ID, XWM_IDS);
 
@@ -355,13 +381,11 @@ pub trait XwmHandler {
 pub struct X11Wm {
     id: XwmId,
     conn: Arc<RustConnection>,
-    dh: DisplayHandle,
     screen: Screen,
     wm_window: X11Window,
     atoms: Atoms,
 
-    wl_client: Client,
-    unpaired_surfaces: HashMap<u32, X11Window>,
+    unpaired_surfaces: HashMap<u64, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
 
     // selections
@@ -591,36 +615,6 @@ impl Drop for XWmSelection {
     }
 }
 
-struct X11Injector<D: XwmHandler> {
-    xwm: XwmId,
-    handle: LoopHandle<'static, D>,
-}
-impl<D: XwmHandler> X11Injector<D> {
-    pub fn late_window(&self, surface: &WlSurface) {
-        let xwm_id = self.xwm;
-        let id = surface.id().protocol_id();
-
-        self.handle.insert_idle(move |data| {
-            let xwm = data.xwm_state(xwm_id);
-
-            if let Some(window) = xwm.unpaired_surfaces.remove(&id) {
-                if let Some(surface) = xwm
-                    .windows
-                    .iter()
-                    .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
-                {
-                    let wl_surface = xwm
-                        .wl_client
-                        .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
-                        .unwrap();
-                    let surface = surface.clone();
-                    X11Wm::new_surface(data, xwm_id, surface, wl_surface);
-                }
-            }
-        });
-    }
-}
-
 /// Edge values for resizing
 ///
 // These values are used to indicate which edge of a surface is being dragged in a resize operation.
@@ -667,12 +661,13 @@ impl X11Wm {
     /// - `client` is the wayland client instance of the Xwayland instance
     pub fn start_wm<D>(
         handle: LoopHandle<'static, D>,
-        dh: DisplayHandle,
         connection: UnixStream,
         client: Client,
     ) -> Result<Self, Box<dyn std::error::Error>>
     where
-        D: XwmHandler + 'static,
+        D: XwmHandler,
+        D: xwayland_shell::XWaylandShellHandler,
+        D: 'static,
     {
         let id = XwmId(next_xwm_id());
         let span = debug_span!("xwayland_wm", id = id.0);
@@ -805,15 +800,12 @@ impl X11Wm {
         let conn = Arc::new(conn);
         let source = X11Source::new(Arc::clone(&conn), win, atoms._SMITHAY_CLOSE_CONNECTION);
 
-        let injector = X11Injector {
-            xwm: id,
-            handle: handle.clone(),
-        };
+        // We need this for the commit hook.
         client
             .get_data::<XWaylandClientData>()
             .unwrap()
             .user_data()
-            .insert_if_missing(move || injector);
+            .insert_if_missing(|| id);
 
         let _xfixes_data = conn
             .query_extension(x11rb::protocol::xfixes::X11_EXTENSION_NAME.as_bytes())?
@@ -830,12 +822,10 @@ impl X11Wm {
         drop(_guard);
         let wm = Self {
             id,
-            dh,
             conn,
             screen,
             atoms,
             wm_window: win,
-            wl_client: client,
             _xfixes_data,
             clipboard,
             primary,
@@ -1014,35 +1004,51 @@ impl X11Wm {
         self.update_stacking_order_impl(order, StackingDirection::Upwards)
     }
 
-    /// This function has to be called on [`CompositorHandler::commit`](crate::wayland::compositor::CompositorHandler::commit) to correctly
-    /// update the internal state of Xwayland WMs.
-    pub fn commit_hook<D: XwmHandler + 'static>(surface: &WlSurface) {
+    /// This function has to be called on [`CompositorHandler::commit`](crate::wayland::compositor::CompositorHandler::commit) to
+    /// handle associating surfaces with X11 windows.
+    pub fn commit_hook<D>(state: &mut D, surface: &WlSurface)
+    where
+        D: XwmHandler,
+        D: xwayland_shell::XWaylandShellHandler,
+        D: 'static,
+    {
         if let Some(client) = surface.client() {
-            if let Some(x11) = client
+            // We only care about surfaces created by XWayland.
+            if let Some(xwm_id) = client
                 .get_data::<XWaylandClientData>()
-                .and_then(|data| data.user_data().get::<X11Injector<D>>())
+                .and_then(|data| data.user_data().get::<XwmId>())
             {
-                if get_role(surface).is_none() {
-                    x11.late_window(surface);
+                let serial = compositor::with_states(surface, |states| {
+                    states
+                        .cached_state
+                        .current::<xwayland_shell::XWaylandShellCachedState>()
+                        .serial
+                });
+
+                // This handles the case that the serial was set on the X11
+                // window before surface. To handle the other case, we look for
+                // a matching surface when the WL_SURFACE_SERIAL atom is sent.
+                if let Some(serial) = serial {
+                    let xwm = XwmHandler::xwm_state(state, *xwm_id);
+
+                    if let Some(window) = xwm.unpaired_surfaces.remove(&serial) {
+                        if let Some(xsurface) = xwm
+                            .windows
+                            .iter()
+                            .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
+                        {
+                            debug!(
+                                window = xsurface.window_id(),
+                                wl_surface = ?surface.id().protocol_id(),
+                                "associated X11 window to wl_surface in commit hook",
+                            );
+
+                            xsurface.state.lock().unwrap().wl_surface = Some(surface.clone());
+                        }
+                    }
                 }
             }
         }
-    }
-
-    fn new_surface<D: XwmHandler>(state: &mut D, xwm_id: XwmId, surface: X11Surface, wl_surface: WlSurface) {
-        info!(
-            window_id = surface.window_id(),
-            surface = ?wl_surface,
-            "Matched X11 surface to wayland surface",
-        );
-        if give_role(&wl_surface, X11_SURFACE_ROLE).is_err() {
-            // It makes no sense to post a protocol error here since that would only kill Xwayland
-            error!(surface = ?wl_surface, "Surface already has a role?!");
-            return;
-        }
-
-        surface.state.lock().unwrap().wl_surface = Some(wl_surface);
-        state.map_window_notify(xwm_id, surface);
     }
 
     /// Set the default cursor used by X clients.
@@ -1265,12 +1271,17 @@ impl X11Wm {
     }
 }
 
-fn handle_event<D: XwmHandler + 'static>(
+fn handle_event<D>(
     loop_handle: &LoopHandle<'_, D>,
     state: &mut D,
     xwm_id: XwmId,
     event: Event,
-) -> Result<(), ReplyOrIdError> {
+) -> Result<(), ReplyOrIdError>
+where
+    D: XwmHandler,
+    D: xwayland_shell::XWaylandShellHandler,
+    D: 'static,
+{
     let xwm = state.xwm_state(xwm_id);
     let _guard = xwm.span.enter();
     let conn = xwm.conn.clone();
@@ -2118,22 +2129,50 @@ fn handle_event<D: XwmHandler + 'static>(
                         .iter_mut()
                         .find(|x| x.window_id() == msg.window || x.mapped_window_id() == Some(msg.window))
                     {
-                        // We get a WL_SURFACE_ID message when Xwayland creates a WlSurface for a
-                        // window. Both the creation of the surface and this client message happen at
-                        // roughly the same time and are sent over different sockets (X11 socket and
-                        // wayland socket). Thus, we could receive these two in any order. Hence, it
-                        // can happen that we get None below when X11 was faster than Wayland.
+                        // This is the old, deprecated method for associating a
+                        // wl_surface with an X11 window. It can race with the
+                        // lifecycle of the wl_surface. Still, we can make it
+                        // available to compositors who want to support old
+                        // versions of xwayland by manually matching on ID in an
+                        // idle callback.
+                        surface.state.lock().unwrap().wl_surface_id = Some(wid);
+                    }
+                }
+                x if x == xwm.atoms.WL_SURFACE_SERIAL => {
+                    // This handles the case that the serial was already set on
+                    // the wayland side. For the reverse order, we have a commit
+                    // hook.
+                    if let Some(xsurface) = xwm
+                        .windows
+                        .iter_mut()
+                        .find(|x| x.window_id() == msg.window || x.mapped_window_id() == Some(msg.window))
+                    {
+                        drop(_guard);
 
-                        let wl_surface = xwm.wl_client.object_from_protocol_id::<WlSurface>(&xwm.dh, wid);
-                        match wl_surface {
-                            Err(_) => {
-                                xwm.unpaired_surfaces.insert(wid, msg.window);
-                            }
-                            Ok(wl_surface) => {
-                                let surface = surface.clone();
-                                drop(_guard);
-                                X11Wm::new_surface(state, xwm_id, surface, wl_surface);
-                            }
+                        let serial_lo = msg.data.as_data32()[0];
+                        let serial_hi = msg.data.as_data32()[1];
+                        let serial = u64::from(serial_lo) | (u64::from(serial_hi) << 32);
+
+                        let surface_state = xsurface.state.clone();
+                        let mut guard = surface_state.lock().unwrap();
+                        guard.wl_surface_serial = Some(serial);
+
+                        xwm.unpaired_surfaces.insert(serial, msg.window);
+
+                        if let Some(wl_surface) =
+                            xwayland_shell::XWaylandShellHandler::xwayland_shell_state(state)
+                                .surface_for_serial(serial)
+                                .clone()
+                        {
+                            debug!(
+                                window = ?msg.window,
+                                wl_surface = ?wl_surface.id().protocol_id(),
+                                "associated X11 window to wl_surface",
+                            );
+
+                            guard.wl_surface = Some(wl_surface);
+                        } else {
+                            guard.wl_surface = None;
                         }
                     }
                 }
