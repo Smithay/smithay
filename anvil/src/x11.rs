@@ -8,7 +8,7 @@ use std::{
 use crate::{
     drawing::*,
     render::*,
-    state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
+    state::{post_repaint, take_presentation_feedback, AnvilState, Backend},
 };
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
@@ -260,32 +260,29 @@ pub fn run_x11() {
         .handle()
         .insert_source(backend, move |event, _, data| match event {
             X11Event::CloseRequested { .. } => {
-                data.state.running.store(false, Ordering::SeqCst);
+                data.running.store(false, Ordering::SeqCst);
             }
             X11Event::Resized { new_size, .. } => {
                 let output = &output_clone;
                 let size = { (new_size.w as i32, new_size.h as i32).into() };
 
-                data.state.backend_data.mode = Mode {
+                data.backend_data.mode = Mode {
                     size,
                     refresh: 60_000,
                 };
                 output.delete_mode(output.current_mode().unwrap());
-                output.change_current_state(Some(data.state.backend_data.mode), None, None, None);
-                output.set_preferred(data.state.backend_data.mode);
-                crate::shell::fixup_positions(&mut data.state.space, data.state.pointer.current_location());
+                output.change_current_state(Some(data.backend_data.mode), None, None, None);
+                output.set_preferred(data.backend_data.mode);
+                crate::shell::fixup_positions(&mut data.space, data.pointer.current_location());
 
-                data.state.backend_data.render = true;
+                data.backend_data.render = true;
             }
             X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
-                data.state.backend_data.render = true;
+                data.backend_data.render = true;
             }
-            X11Event::Input(event) => {
-                data.state
-                    .process_input_event_windowed(&data.display_handle, event, OUTPUT_NAME)
-            }
+            X11Event::Input(event) => data.process_input_event_windowed(event, OUTPUT_NAME),
             X11Event::Focus(false) => {
-                data.state.release_all_keys();
+                data.release_all_keys();
             }
             _ => {}
         })
@@ -461,16 +458,7 @@ pub fn run_x11() {
             profiling::finish_frame!();
         }
 
-        let mut calloop_data = CalloopData {
-            state,
-            display_handle,
-        };
-        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
-        CalloopData {
-            state,
-            display_handle,
-        } = calloop_data;
-
+        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut state);
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {

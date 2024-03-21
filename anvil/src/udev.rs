@@ -13,7 +13,7 @@ use crate::{
     drawing::*,
     render::*,
     shell::WindowElement,
-    state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
+    state::{post_repaint, take_presentation_feedback, AnvilState, Backend},
 };
 #[cfg(feature = "renderer_sync")]
 use smithay::backend::drm::compositor::PrimaryPlaneElement;
@@ -288,26 +288,21 @@ pub fn run_udev() {
     event_loop
         .handle()
         .insert_source(libinput_backend, move |mut event, _, data| {
-            let dh = data.state.backend_data.dh.clone();
+            let dh = data.backend_data.dh.clone();
             if let InputEvent::DeviceAdded { device } = &mut event {
                 if device.has_capability(DeviceCapability::Keyboard) {
-                    if let Some(led_state) = data
-                        .state
-                        .seat
-                        .get_keyboard()
-                        .map(|keyboard| keyboard.led_state())
-                    {
+                    if let Some(led_state) = data.seat.get_keyboard().map(|keyboard| keyboard.led_state()) {
                         device.led_update(led_state.into());
                     }
-                    data.state.backend_data.keyboards.push(device.clone());
+                    data.backend_data.keyboards.push(device.clone());
                 }
             } else if let InputEvent::DeviceRemoved { ref device } = event {
                 if device.has_capability(DeviceCapability::Keyboard) {
-                    data.state.backend_data.keyboards.retain(|item| item != device);
+                    data.backend_data.keyboards.retain(|item| item != device);
                 }
             }
 
-            data.state.process_input_event(&dh, event)
+            data.process_input_event(&dh, event)
         })
         .unwrap();
 
@@ -319,7 +314,7 @@ pub fn run_udev() {
                 libinput_context.suspend();
                 info!("pausing session");
 
-                for backend in data.state.backend_data.backends.values_mut() {
+                for backend in data.backend_data.backends.values_mut() {
                     backend.drm.pause();
                     backend.active_leases.clear();
                     if let Some(lease_global) = backend.leasing_global.as_mut() {
@@ -334,7 +329,6 @@ pub fn run_udev() {
                     error!("Failed to resume libinput context: {:?}", err);
                 }
                 for (node, backend) in data
-                    .state
                     .backend_data
                     .backends
                     .iter_mut()
@@ -358,7 +352,7 @@ pub fn run_udev() {
                             warn!("Failed to reset drm surface state: {}", err);
                         }
                     }
-                    handle.insert_idle(move |data| data.state.render(node, None));
+                    handle.insert_idle(move |data| data.render(node, None));
                 }
             }
         })
@@ -447,19 +441,19 @@ pub fn run_udev() {
             UdevEvent::Added { device_id, path } => {
                 if let Err(err) = DrmNode::from_dev_id(device_id)
                     .map_err(DeviceAddError::DrmNode)
-                    .and_then(|node| data.state.device_added(node, &path))
+                    .and_then(|node| data.device_added(node, &path))
                 {
                     error!("Skipping device {device_id}: {err}");
                 }
             }
             UdevEvent::Changed { device_id } => {
                 if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    data.state.device_changed(node)
+                    data.device_changed(node)
                 }
             }
             UdevEvent::Removed { device_id } => {
                 if let Ok(node) = DrmNode::from_dev_id(device_id) {
-                    data.state.device_removed(node)
+                    data.device_removed(node)
                 }
             }
         })
@@ -484,16 +478,7 @@ pub fn run_udev() {
      */
 
     while state.running.load(Ordering::SeqCst) {
-        let mut calloop_data = CalloopData {
-            state,
-            display_handle,
-        };
-        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
-        CalloopData {
-            state,
-            display_handle,
-        } = calloop_data;
-
+        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut state);
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
@@ -862,10 +847,10 @@ impl AnvilState<UdevData> {
             .handle
             .insert_source(
                 notifier,
-                move |event, metadata, data: &mut CalloopData<_>| match event {
+                move |event, metadata, data: &mut AnvilState<_>| match event {
                     DrmEvent::VBlank(crtc) => {
                         profiling::scope!("vblank", &format!("{crtc:?}"));
-                        data.state.frame_finish(node, crtc, metadata);
+                        data.frame_finish(node, crtc, metadata);
                     }
                     DrmEvent::Error(error) => {
                         error!("{:?}", error);
@@ -1350,7 +1335,7 @@ impl AnvilState<UdevData> {
 
             self.handle
                 .insert_source(timer, move |_, _, data| {
-                    data.state.render(dev_id, Some(crtc));
+                    data.render(dev_id, Some(crtc));
                     TimeoutAction::Drop
                 })
                 .expect("failed to schedule frame timer");
@@ -1504,7 +1489,7 @@ impl AnvilState<UdevData> {
             let timer = Timer::from_duration(reschedule_duration);
             self.handle
                 .insert_source(timer, move |_, _, data| {
-                    data.state.render(node, Some(crtc));
+                    data.render(node, Some(crtc));
                     TimeoutAction::Drop
                 })
                 .expect("failed to schedule frame timer");
@@ -1520,7 +1505,7 @@ impl AnvilState<UdevData> {
         &mut self,
         node: DrmNode,
         crtc: crtc::Handle,
-        evt_handle: LoopHandle<'static, CalloopData<UdevData>>,
+        evt_handle: LoopHandle<'static, AnvilState<UdevData>>,
     ) {
         let device = if let Some(device) = self.backend_data.backends.get_mut(&node) {
             device
@@ -1547,8 +1532,7 @@ impl AnvilState<UdevData> {
                     // TODO dont reschedule after 3(?) retries
                     warn!("Failed to submit page_flip: {}", err);
                     let handle = evt_handle.clone();
-                    evt_handle
-                        .insert_idle(move |data| data.state.schedule_initial_render(node, crtc, handle));
+                    evt_handle.insert_idle(move |data| data.schedule_initial_render(node, crtc, handle));
                 }
                 SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
             }
