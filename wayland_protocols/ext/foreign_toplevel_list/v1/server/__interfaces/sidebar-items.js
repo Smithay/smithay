@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["EXT_FOREIGN_TOPLEVEL_HANDLE_V1_INTERFACE","EXT_FOREIGN_TOPLEVEL_LIST_V1_INTERFACE","ext_foreign_toplevel_handle_v1_events","ext_foreign_toplevel_handle_v1_interface","ext_foreign_toplevel_handle_v1_requests","ext_foreign_toplevel_list_v1_events","ext_foreign_toplevel_list_v1_interface","ext_foreign_toplevel_list_v1_requests"]};

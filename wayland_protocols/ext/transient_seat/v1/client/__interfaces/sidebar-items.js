@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["EXT_TRANSIENT_SEAT_MANAGER_V1_INTERFACE","EXT_TRANSIENT_SEAT_V1_INTERFACE","ext_transient_seat_manager_v1_interface","ext_transient_seat_manager_v1_requests","ext_transient_seat_v1_events","ext_transient_seat_v1_interface","ext_transient_seat_v1_requests"]};

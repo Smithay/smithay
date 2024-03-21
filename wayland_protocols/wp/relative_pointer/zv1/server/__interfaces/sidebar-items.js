@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["ZWP_RELATIVE_POINTER_MANAGER_V1_INTERFACE","ZWP_RELATIVE_POINTER_V1_INTERFACE","zwp_relative_pointer_manager_v1_interface","zwp_relative_pointer_manager_v1_requests","zwp_relative_pointer_v1_events","zwp_relative_pointer_v1_interface","zwp_relative_pointer_v1_requests"]};

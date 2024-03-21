@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["WP_SECURITY_CONTEXT_MANAGER_V1_INTERFACE","WP_SECURITY_CONTEXT_V1_INTERFACE","wp_security_context_manager_v1_interface","wp_security_context_manager_v1_requests","wp_security_context_v1_interface","wp_security_context_v1_requests"]};

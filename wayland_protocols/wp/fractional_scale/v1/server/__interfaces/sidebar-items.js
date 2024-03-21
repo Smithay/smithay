@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["WP_FRACTIONAL_SCALE_MANAGER_V1_INTERFACE","WP_FRACTIONAL_SCALE_V1_INTERFACE","wp_fractional_scale_manager_v1_interface","wp_fractional_scale_manager_v1_requests","wp_fractional_scale_v1_events","wp_fractional_scale_v1_interface","wp_fractional_scale_v1_requests"]};

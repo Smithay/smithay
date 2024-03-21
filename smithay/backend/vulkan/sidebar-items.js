@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["InstanceError","UnsupportedProperty"],"mod":["version"],"struct":["AppInfo","DriverInfo","Instance","LoadError","PhysicalDevice"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["activation","decoration","foreign","shell","xdg_output"]};

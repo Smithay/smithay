@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["WP_CURSOR_SHAPE_DEVICE_V1_INTERFACE","WP_CURSOR_SHAPE_MANAGER_V1_INTERFACE","wp_cursor_shape_device_v1_interface","wp_cursor_shape_device_v1_requests","wp_cursor_shape_manager_v1_interface","wp_cursor_shape_manager_v1_requests"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["XDG_ACTIVATION_TOKEN_V1_INTERFACE","XDG_ACTIVATION_V1_INTERFACE","xdg_activation_token_v1_events","xdg_activation_token_v1_interface","xdg_activation_token_v1_requests","xdg_activation_v1_interface","xdg_activation_v1_requests"]};

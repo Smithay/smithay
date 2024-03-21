@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["foreign_toplevel_list","idle_notify","session_lock","transient_seat"]};

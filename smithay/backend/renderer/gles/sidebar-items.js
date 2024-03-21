@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEBUG_FLAGS","EXTERNAL","NO_ALPHA"],"enum":["Capability","GlesError","UniformType","UniformValue"],"mod":["element","ffi","format"],"struct":["GlesFrame","GlesMapping","GlesPixelProgram","GlesRenderbuffer","GlesRenderer","GlesTexProgram","GlesTexture","Uniform","UniformName"]};

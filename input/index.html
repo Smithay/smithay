@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Libinput bindings for rust"><title>input - Rust</title><script> if (window.location.protocol !== "file:") document.write(`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceSerif4-Regular-46f98efaafac5295.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Regular-018c141bf0843ffd.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/FiraSans-Medium-8f9a781e4970d388.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2">`)</script><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-e935ef01ae1c1829.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="input" data-themes="" data-resource-suffix="" data-rustdoc-version="1.79.0-nightly (1388d7a06 2024-03-20)" data-channel="nightly" data-search-js="search-42d8da7a6b9792c2.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../static.files/storage-4c98445ec4002617.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-12cf3b4f4f9dc36d.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-04d5337699b92874.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-16x16-8b506e7a72182f1c.png"><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../input/index.html">input</a><span class="version">0.9.0</span></h2></div><div class="sidebar-elems"><ul class="block">
+            <li><a id="all-types" href="all.html">All Items</a></li></ul><section><ul class="block"><li><a href="#reexports">Re-exports</a></li><li><a href="#modules">Modules</a></li><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#traits">Traits</a></li><li><a href="#types">Type Aliases</a></li></ul></section></div></nav><div class="sidebar-resizer"></div>
+    <main><div class="width-limiter"><nav class="sub"><form class="search-form"><span></span><div id="sidebar-button" tabindex="-1"><a href="../input/all.html" title="show sidebar"></a></div><input class="search-input" name="search" aria-label="Run search in the documentation" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" tabindex="-1"><a href="../help.html" title="help">?</a></div><div id="settings-menu" tabindex="-1"><a href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../static.files/wheel-7b819b6101059cd0.svg"></a></div></form></nav><section id="main-content" class="content"><div class="main-heading"><h1>Crate <a class="mod" href="#">input</a><button id="copy-path" title="Copy item path to clipboard"><img src="../static.files/clipboard-7571035ce49a181d.svg" width="19" height="18" alt="Copy item path"></button></h1><span class="out-of-band"><a class="src" href="../src/input/lib.rs.html#1-237">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="libinput-bindings-for-rust"><a class="doc-anchor" href="#libinput-bindings-for-rust">§</a>Libinput bindings for rust</h2>
+<p>These bindings closely follow libinput’s concepts and it’s original API.
+Please refer to the <a href="https://wayland.freedesktop.org/libinput/doc/latest/">libinput documentation</a>
+to understand the general structure and concepts.</p>
+<h3 id="differences-to-the-c-library"><a class="doc-anchor" href="#differences-to-the-c-library">§</a>Differences to the C-Library:</h3>
+<ul>
+<li>Refcounting does not need to be done manually. Just call <code>clone</code> when you need an additional reference.</li>
+<li>Libinput logging cannot (currently) not be customized.</li>
+</ul>
+<h3 id="userdata-handling"><a class="doc-anchor" href="#userdata-handling">§</a>Userdata handling</h3>
+<p>Multiple types in the libinput library allow to attach a pointer of an arbitrary type, so called <code>userdata</code>.
+Using this data is unsafe as there is no way to find out what type is stored in the libinput struct.
+Additionally multiple references to the same libinput object may exist and userdata may be shared mutably.</p>
+<p>This is why using and setting userdata is an unsafe operation (except when creating an object).</p>
+<p>If you heavily rely on userdata, you should always stored them wrapped in a <code>Mutex</code> and use the same
+type for every userdata access to further simplify usage.</p>
+<p>You need to be especially cautious when initializing libinput types from raw pointers, you obtained
+from other libraries which may set their own userdata. If accessing their userdata make sure no shared
+mutable access may happen and don’t store something else instead, if the library does not explicitly
+allow this.</p>
+<p>Generally usage of this api is error-prone and discouraged if not needed.</p>
+<h3 id="getting-started"><a class="doc-anchor" href="#getting-started">§</a>Getting started</h3>
+<p>To get started check out the <a href="./struct.Libinput.html"><code>Libinput</code> struct</a>.</p>
+<p>Here’s a small example that prints all events:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>input::{Libinput, LibinputInterface};
+<span class="kw">use </span>std::fs::{File, OpenOptions};
+<span class="kw">use </span>std::os::unix::{fs::OpenOptionsExt, io::OwnedFd};
+<span class="kw">use </span>std::path::Path;
+
+<span class="kw">extern crate </span>libc;
+<span class="kw">use </span>libc::{O_RDONLY, O_RDWR, O_WRONLY};
+
+<span class="kw">struct </span>Interface;
+
+<span class="kw">impl </span>LibinputInterface <span class="kw">for </span>Interface {
+    <span class="kw">fn </span>open_restricted(<span class="kw-2">&amp;mut </span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>Path, flags: i32) -&gt; <span class="prelude-ty">Result</span>&lt;OwnedFd, i32&gt; {
+        OpenOptions::new()
+            .custom_flags(flags)
+            .read((flags &amp; O_RDONLY != <span class="number">0</span>) | (flags &amp; O_RDWR != <span class="number">0</span>))
+            .write((flags &amp; O_WRONLY != <span class="number">0</span>) | (flags &amp; O_RDWR != <span class="number">0</span>))
+            .open(path)
+            .map(|file| file.into())
+            .map_err(|err| err.raw_os_error().unwrap())
+    }
+    <span class="kw">fn </span>close_restricted(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: OwnedFd) {
+        <span class="kw">unsafe </span>{
+            File::from(fd);
+        }
+    }
+}
+
+<span class="kw">fn </span>main() {
+    <span class="kw">let </span><span class="kw-2">mut </span>input = Libinput::new_with_udev(Interface);
+    input.udev_assign_seat(<span class="string">"seat0"</span>).unwrap();
+    <span class="kw">loop </span>{
+        input.dispatch().unwrap();
+        <span class="kw">for </span>event <span class="kw">in </span><span class="kw-2">&amp;mut </span>input {
+            <span class="macro">println!</span>(<span class="string">"Got event: {:?}"</span>, event);
+        }
+    }
+}</code></pre></div>
+</div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name" id="reexport.Event"><code>pub use event::<a class="enum" href="event/enum.Event.html" title="enum input::event::Event">Event</a>;</code></div></li></ul><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="mod" href="event/index.html" title="mod input::event">event</a></div><div class="desc docblock-short">Libinput Events</div></li><li><div class="item-name"><a class="mod" href="ffi/index.html" title="mod input::ffi">ffi</a></div><div class="desc docblock-short">Unsafe raw C API.</div></li></ul><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="struct" href="struct.Device.html" title="struct input::Device">Device</a></div><div class="desc docblock-short">Representation of a single input device as seen by the kernel.</div></li><li><div class="item-name"><a class="struct" href="struct.DeviceGroup.html" title="struct input::DeviceGroup">DeviceGroup</a></div><div class="desc docblock-short">Device group</div></li><li><div class="item-name"><a class="struct" href="struct.Led.html" title="struct input::Led">Led</a></div><div class="desc docblock-short">Mask reflecting LEDs on a device.</div></li><li><div class="item-name"><a class="struct" href="struct.Libinput.html" title="struct input::Libinput">Libinput</a></div><div class="desc docblock-short">Libinput context</div></li><li><div class="item-name"><a class="struct" href="struct.Seat.html" title="struct input::Seat">Seat</a></div><div class="desc docblock-short">A seat has two identifiers, the physical name and the logical name.</div></li><li><div class="item-name"><a class="struct" href="struct.SendEventsMode.html" title="struct input::SendEventsMode">SendEventsMode</a></div><div class="desc docblock-short">The send-event mode of a device defines when a device may generate
+events and pass those events to the caller.</div></li></ul><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="enum" href="enum.AccelProfile.html" title="enum input::AccelProfile">AccelProfile</a></div><div class="desc docblock-short">Pointer Acceleration Profile</div></li><li><div class="item-name"><a class="enum" href="enum.ClickMethod.html" title="enum input::ClickMethod">ClickMethod</a></div><div class="desc docblock-short">The click method defines when to generate software-emulated
+buttons, usually on a device that does not have a specific
+physical button available.</div></li><li><div class="item-name"><a class="enum" href="enum.DeviceCapability.html" title="enum input::DeviceCapability">DeviceCapability</a></div><div class="desc docblock-short">Capabilities on a device.</div></li><li><div class="item-name"><a class="enum" href="enum.DeviceConfigError.html" title="enum input::DeviceConfigError">DeviceConfigError</a></div><div class="desc docblock-short">Errors returned when applying configuration settings.</div></li><li><div class="item-name"><a class="enum" href="enum.ScrollButtonLockState.html" title="enum input::ScrollButtonLockState">ScrollButtonLockState</a></div><div class="desc docblock-short">Whenever scroll button lock is enabled or not</div></li><li><div class="item-name"><a class="enum" href="enum.ScrollMethod.html" title="enum input::ScrollMethod">ScrollMethod</a></div><div class="desc docblock-short">The scroll method of a device selects when to generate scroll axis
+events instead of pointer motion events.</div></li><li><div class="item-name"><a class="enum" href="enum.TapButtonMap.html" title="enum input::TapButtonMap">TapButtonMap</a></div><div class="desc docblock-short">Map 1/2/3 finger tips to buttons</div></li></ul><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="trait" href="trait.AsRaw.html" title="trait input::AsRaw">AsRaw</a></div><div class="desc docblock-short">Trait for types that allow to optain the underlying raw libinput pointer.</div></li><li><div class="item-name"><a class="trait" href="trait.Context.html" title="trait input::Context">Context</a></div><div class="desc docblock-short">Trait to receive the underlying context</div></li><li><div class="item-name"><a class="trait" href="trait.FromRaw.html" title="trait input::FromRaw">FromRaw</a></div><div class="desc docblock-short">Trait for types that allow to be initialized from a raw pointer</div></li><li><div class="item-name"><a class="trait" href="trait.LibinputInterface.html" title="trait input::LibinputInterface">LibinputInterface</a></div><div class="desc docblock-short">libinput does not open file descriptors to devices directly,
+instead <code>open_restricted</code> and <code>close_restricted</code> are called for
+each path that must be opened.</div></li></ul><h2 id="types" class="section-header">Type Aliases<a href="#types" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="type" href="type.DeviceConfigResult.html" title="type input::DeviceConfigResult">DeviceConfigResult</a></div><div class="desc docblock-short">Result returned when applying configuration settings.</div></li></ul></section></div></main></body></html>

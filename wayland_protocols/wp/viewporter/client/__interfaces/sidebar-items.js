@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["WP_VIEWPORTER_INTERFACE","WP_VIEWPORT_INTERFACE","wp_viewport_interface","wp_viewport_requests","wp_viewporter_interface","wp_viewporter_requests"]};

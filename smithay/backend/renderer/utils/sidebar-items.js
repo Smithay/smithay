@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["draw_render_elements","import_surface","import_surface_tree","on_commit_buffer_handler","with_renderer_surface_state"],"struct":["Buffer","CommitCounter","DamageBag","DamageSnapshot","RendererSurfaceState","SurfaceView"],"type":["RendererSurfaceStateUserData"]};
