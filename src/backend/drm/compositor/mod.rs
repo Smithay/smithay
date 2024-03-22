@@ -58,7 +58,7 @@
 //! # use std::{collections::HashSet, mem::MaybeUninit};
 //! #
 //! use smithay::{
-//!     backend::drm::{compositor::DrmCompositor, DrmSurface},
+//!     backend::drm::{compositor::DrmCompositor, DrmSurface, PresentationMode},
 //!     output::{Output, PhysicalProperties, Subpixel},
 //!     utils::Size,
 //! };
@@ -108,7 +108,7 @@
 //!     .expect("failed to render frame");
 //!
 //! if !render_frame_result.is_empty {
-//!     compositor.queue_frame(()).expect("failed to queue frame");
+//!     compositor.queue_frame((), PresentationMode::VSync).expect("failed to queue frame");
 //!
 //!     // ...wait for VBlank event
 //!
@@ -131,7 +131,7 @@ use std::{
 
 use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::{
-    control::{connector, crtc, framebuffer, plane, Mode, PlaneType},
+    control::{connector, crtc, framebuffer, plane, Mode, PageFlipFlags, PlaneType},
     Device, DriverCapability,
 };
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -163,7 +163,7 @@ use crate::{
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag, DamageSnapshot},
-            Bind, Blit, DebugFlags, Frame as RendererFrame, Renderer, Texture,
+            Bind, Blit, DebugFlags, Frame as RendererFrame, PresentationMode, Renderer, Texture,
         },
         SwapBuffersError,
     },
@@ -692,12 +692,12 @@ impl<B: Framebuffer> FrameState<B> {
         surface: &DrmSurface,
         supports_fencing: bool,
         allow_partial_update: bool,
-        event: bool,
+        flip_flags: PageFlipFlags,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.commit(
             self.build_planes(surface, supports_fencing, allow_partial_update),
-            event,
+            flip_flags,
         )
     }
 
@@ -707,12 +707,12 @@ impl<B: Framebuffer> FrameState<B> {
         surface: &DrmSurface,
         supports_fencing: bool,
         allow_partial_update: bool,
-        event: bool,
+        flip_flags: PageFlipFlags,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.page_flip(
             self.build_planes(surface, supports_fencing, allow_partial_update),
-            event,
+            flip_flags,
         )
     }
 
@@ -875,6 +875,9 @@ pub struct PrimarySwapchainElement<B: Buffer, F: Framebuffer> {
     pub transform: Transform,
     /// The damage on the primary plane
     pub damage: DamageSnapshot<i32, BufferCoords>,
+    /// Presentation preference for this swapchain element, created by combining mode of all elements
+    /// rendered on this buffer
+    pub presentation_mode: Option<PresentationMode>,
 }
 
 impl<B: Buffer, F: Framebuffer> PrimarySwapchainElement<B, F> {
@@ -931,7 +934,22 @@ pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
     supports_fencing: bool,
 }
 
-impl<'a, B: Buffer, F: Framebuffer, E> RenderFrameResult<'a, B, F, E> {
+fn combine_modes(a: Option<PresentationMode>, b: Option<PresentationMode>) -> Option<PresentationMode> {
+    match (a, b) {
+        // If either one wants VSync we go with VSync
+        (Some(PresentationMode::VSync), _) | (_, Some(PresentationMode::VSync)) => {
+            Some(PresentationMode::VSync)
+        }
+        // If neither wants VSync, and one wants Async we go with Async
+        (Some(PresentationMode::Async), _) | (_, Some(PresentationMode::Async)) => {
+            Some(PresentationMode::Async)
+        }
+        // Elements have no preference
+        (None, None) => None,
+    }
+}
+
+impl<'a, B: Buffer, F: Framebuffer, E: Element> RenderFrameResult<'a, B, F, E> {
     /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
     pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
@@ -939,6 +957,24 @@ impl<'a, B: Buffer, F: Framebuffer, E> RenderFrameResult<'a, B, F, E> {
         } else {
             false
         }
+    }
+
+    /// Hint for DRM backend on how the surface should be presented
+    pub fn presentation_mode(&self) -> PresentationMode {
+        let mut res = None;
+
+        res = match &self.primary_element {
+            PrimaryPlaneElement::Swapchain(e) => combine_modes(res, e.presentation_mode),
+            PrimaryPlaneElement::Element(e) => combine_modes(res, e.presentation_mode()),
+        };
+
+        for e in self.overlay_elements.iter() {
+            res = combine_modes(res, e.presentation_mode());
+        }
+
+        // Let's assume that cursor element does not care about tearing
+
+        res.unwrap_or(PresentationMode::VSync)
     }
 }
 
@@ -1426,6 +1462,7 @@ where
 struct QueuedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
     prepared_frame: PreparedFrame<A, F>,
     user_data: U,
+    presentation_mode: PresentationMode,
 }
 
 impl<A, F, U> std::fmt::Debug for QueuedFrame<A, F, U>
@@ -2273,6 +2310,7 @@ where
             .map(|config| matches!(&config.buffer, ScanoutBuffer::Swapchain(_)))
             .unwrap_or(false);
 
+        let mut swapchain_presentation_mode = None;
         if render {
             trace!(
                 "rendering {} elements on the primary {:?}",
@@ -2336,6 +2374,11 @@ where
                     .iter()
                     .map(|e| DrmRenderElements::Other(*e)),
             );
+
+            for e in elements.iter() {
+                swapchain_presentation_mode =
+                    combine_modes(swapchain_presentation_mode, e.presentation_mode());
+            }
 
             let render_res =
                 self.damage_tracker
@@ -2450,6 +2493,7 @@ where
                 transform: output_transform,
                 damage: self.primary_plane_damage_bag.snapshot(),
                 sync,
+                presentation_mode: swapchain_presentation_mode,
             })
         } else {
             PrimaryPlaneElement::Element(primary_plane_scanout_element.unwrap())
@@ -2473,7 +2517,7 @@ where
             supports_fencing: self.supports_fencing,
         };
 
-        // We only store the next frame if it acutaly contains any changes or if a commit is pending
+        // We only store the next frame if it actually contains any changes or if a commit is pending
         // Storing the (empty) frame could keep a reference to wayland buffers which
         // could otherwise be potentially released on `frame_submitted`
         if !next_frame.is_empty() {
@@ -2500,7 +2544,11 @@ where
     ///
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]
     #[profiling::function]
-    pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
+    pub fn queue_frame(
+        &mut self,
+        user_data: U,
+        presentation_mode: PresentationMode,
+    ) -> FrameResult<(), A, F> {
         if !self.surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
@@ -2526,6 +2574,7 @@ where
         self.queued_frame = Some(QueuedFrame {
             prepared_frame,
             user_data,
+            presentation_mode,
         });
         if self.pending_frame.is_none() {
             self.submit()?;
@@ -2553,17 +2602,29 @@ where
         let QueuedFrame {
             mut prepared_frame,
             user_data,
+            presentation_mode,
         } = self.queued_frame.take().unwrap();
+
+        let mut flip_flags = PageFlipFlags::EVENT;
+        if presentation_mode == PresentationMode::Async {
+            flip_flags |= PageFlipFlags::ASYNC;
+        }
 
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.surface.commit_pending() {
-            prepared_frame
-                .frame
-                .commit(&self.surface, self.supports_fencing, allow_partial_update, true)
+            prepared_frame.frame.commit(
+                &self.surface,
+                self.supports_fencing,
+                allow_partial_update,
+                flip_flags,
+            )
         } else {
-            prepared_frame
-                .frame
-                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
+            prepared_frame.frame.page_flip(
+                &self.surface,
+                self.supports_fencing,
+                allow_partial_update,
+                flip_flags,
+            )
         };
 
         match flip {
@@ -3376,7 +3437,7 @@ where
             let previous_fb_cache = self
                 .element_states
                 .get_mut(element_id)
-                // Note: We can mem::take the old fb_cache here here as we guarante that
+                // Note: We can mem::take the old fb_cache here here as we guarantee that
                 // the element state will always overwrite the current state at the end of render_frame
                 .map(|state| std::mem::take(&mut state.fb_cache))
                 .unwrap_or_default();
@@ -3537,7 +3598,7 @@ where
                             });
 
                         if !(primary_plane_changed || overlay_plane_changed) {
-                            // we now know that nothing changed and we can assume any previouly failed
+                            // we now know that nothing changed and we can assume any previously failed
                             // test will again fail
                             let instance_state = element_state
                                 .instances

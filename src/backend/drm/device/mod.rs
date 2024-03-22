@@ -113,6 +113,7 @@ pub struct DrmDevice {
     pub(super) dev_id: dev_t,
     pub(crate) internal: Arc<DrmDeviceInternal>,
     has_universal_planes: bool,
+    has_async_page_flips: bool,
     cursor_size: Size<u32, Buffer>,
     resources: ResourceHandles,
     plane_claim_storage: PlaneClaimStorage,
@@ -144,6 +145,14 @@ impl DrmDeviceInternal {
             DrmDeviceInternal::Atomic(dev) => &dev.fd,
             DrmDeviceInternal::Legacy(dev) => &dev.fd,
         }
+    }
+
+    fn has_async_page_flips(&self) -> bool {
+        let async_cap = match self {
+            DrmDeviceInternal::Atomic(_) => DriverCapability::AtomicASyncPageFlip,
+            DrmDeviceInternal::Legacy(_) => DriverCapability::ASyncPageFlip,
+        };
+        self.device_fd().get_driver_capability(async_cap).unwrap_or(0) == 1
     }
 
     fn span(&self) -> &tracing::Span {
@@ -218,12 +227,14 @@ impl DrmDevice {
         })?;
 
         let internal = Arc::new(DrmDevice::create_internal(fd, active, disable_connectors)?);
+        let has_async_page_flips = internal.has_async_page_flips();
 
         Ok((
             DrmDevice {
                 dev_id,
                 internal: internal.clone(),
                 has_universal_planes,
+                has_async_page_flips,
                 cursor_size,
                 resources,
                 plane_claim_storage: Default::default(),
@@ -359,6 +370,7 @@ impl DrmDevice {
                 mapping,
                 mode,
                 connectors,
+                self.has_async_page_flips,
             )?)
         } else {
             DrmSurfaceInternal::Legacy(LegacyDrmSurface::new(
@@ -367,6 +379,7 @@ impl DrmDevice {
                 crtc,
                 mode,
                 connectors,
+                self.has_async_page_flips,
             )?)
         };
         let internal = Arc::new(internal);
