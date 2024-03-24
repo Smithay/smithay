@@ -1,4 +1,4 @@
-#![forbid(unsafe_op_in_unsafe_fn)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use std::{
     cell::Cell,
@@ -44,7 +44,7 @@ static DROP_THIS: Lazy<SyncSender<InnerPool>> = Lazy::new(|| {
     tx
 });
 
-thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
+thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = const { Cell::new((ptr::null_mut(), false)) });
 
 /// SAFETY:
 /// This will be only set in the `SIGBUS_INIT` closure, hence only once!
