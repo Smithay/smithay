@@ -49,7 +49,7 @@ To get informations about it and how you can run it visit [anvil README](https:/
 
 ## System Dependencies
 
-(This list can depend of features you enable)
+(This list can depend on features you enable)
 
 - `libwayland`
 - `libxkbcommon`
