@@ -107,7 +107,7 @@ impl<D: SeatHandler> std::cmp::PartialEq for PointerHandle<D> {
 impl<D: SeatHandler> std::cmp::Eq for PointerHandle<D> {}
 
 /// Trait representing object that can receive pointer interactions
-pub trait PointerTarget<D>: IsAlive + PartialEq + Clone + fmt::Debug + Send
+pub trait PointerTarget<D>: IsAlive + fmt::Debug + Send
 where
     D: SeatHandler,
 {

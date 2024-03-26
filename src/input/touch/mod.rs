@@ -164,7 +164,7 @@ pub struct OrientationEvent {
 }
 
 /// Trait representing object that can receive touch interactions
-pub trait TouchTarget<D>: IsAlive + PartialEq + Clone + fmt::Debug + Send
+pub trait TouchTarget<D>: IsAlive + fmt::Debug + Send
 where
     D: SeatHandler,
 {
