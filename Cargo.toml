@@ -135,3 +135,12 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch.crates-io]
+wayland-protocols = { git = "https://github.com/ids1024/wayland-rs", branch = "dmabuf-v6-wip" }
+wayland-server = { git = "https://github.com/ids1024/wayland-rs", branch = "dmabuf-v6-wip" }
+wayland-backend = { git = "https://github.com/ids1024/wayland-rs", branch = "dmabuf-v6-wip" }
+wayland-sys = { git = "https://github.com/ids1024/wayland-rs", branch = "dmabuf-v6-wip" }
+wayland-scanner = { git = "https://github.com/ids1024/wayland-rs", branch = "dmabuf-v6-wip" }
+wayland-cursor = { git = "https://github.com/ids1024/wayland-rs", branch = "dmabuf-v6-wip" }
+wayland-client = { git = "https://github.com/ids1024/wayland-rs", branch = "dmabuf-v6-wip" }
