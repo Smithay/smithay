@@ -1306,6 +1306,7 @@ impl AnvilState<UdevData> {
 }
 
 /// Possible results of a keyboard action
+#[allow(dead_code)] // some of these are only read if udev is enabled
 #[derive(Debug)]
 enum KeyAction {
     /// Quit the compositor
