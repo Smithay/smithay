@@ -33,6 +33,7 @@ macro_rules! extensions {
             },
         )*
     ) => {
+        #[allow(dead_code)]
         #[derive(Debug, Copy, Clone)]
         pub struct Extensions {
             $(
