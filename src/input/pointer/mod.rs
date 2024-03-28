@@ -150,6 +150,7 @@ where
         event: &MotionEvent,
     ) {
         PointerTarget::<D>::leave(&replaced, seat, data, event.serial, event.time);
+        data.cursor_image(seat, CursorImageStatus::default_named());
         PointerTarget::<D>::enter(self, seat, data, event);
     }
 }
