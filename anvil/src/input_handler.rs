@@ -1195,13 +1195,8 @@ impl AnvilState<UdevData> {
             .find(|output| output.name().starts_with("eDP"))
             .or_else(|| self.space.outputs().next());
 
-        let Some(output) = output else {
-            return None;
-        };
-
-        let Some(output_geometry) = self.space.output_geometry(output) else {
-            return None;
-        };
+        let output = output?;
+        let output_geometry = self.space.output_geometry(output)?;
 
         let transform = output.current_transform();
         let size = transform.invert().transform_size(output_geometry.size);
@@ -1311,6 +1306,7 @@ impl AnvilState<UdevData> {
 }
 
 /// Possible results of a keyboard action
+#[allow(dead_code)] // some of these are only read if udev is enabled
 #[derive(Debug)]
 enum KeyAction {
     /// Quit the compositor
