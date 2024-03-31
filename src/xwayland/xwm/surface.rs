@@ -121,6 +121,21 @@ pub enum WmWindowType {
     Utility,
 }
 
+/// Window properties of [`X11Surface`]s
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum WmWindowProperty {
+    Title,
+    Class,
+    Protocols,
+    Hints,
+    NormalHints,
+    TransientFor,
+    WindowType,
+    MotifHints,
+    StartupId,
+}
+
 impl X11Surface {
     /// Create a new [`X11Surface`] usually handled by an [`X11Wm`](super::X11Wm)
     ///
@@ -530,33 +545,32 @@ impl X11Surface {
         }
     }
 
-    pub(super) fn update_properties(&self, atom: Option<Atom>) -> Result<(), ConnectionError> {
+    pub(super) fn update_properties(&self) -> Result<(), ConnectionError> {
+        self.update_title()?;
+        self.update_class()?;
+        self.update_protocols()?;
+        self.update_hints()?;
+        self.update_normal_hints()?;
+        self.update_transient_for()?;
+        // NET_WM_STATE is managed by the WM, we don't need to update it unless explicitly asked to
+        self.update_net_window_type()?;
+        self.update_motif_hints()?;
+        self.update_startup_id()?;
+        Ok(())
+    }
+
+    pub(super) fn update_property(&self, atom: Atom) -> Result<Option<WmWindowProperty>, ConnectionError> {
         match atom {
-            Some(atom) if atom == self.atoms._NET_WM_NAME || atom == AtomEnum::WM_NAME.into() => {
-                self.update_title()
-            }
-            Some(atom) if atom == AtomEnum::WM_CLASS.into() => self.update_class(),
-            Some(atom) if atom == self.atoms.WM_PROTOCOLS => self.update_protocols(),
-            Some(atom) if atom == self.atoms.WM_HINTS => self.update_hints(),
-            Some(atom) if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints(),
-            Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
-            Some(atom) if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type(),
-            Some(atom) if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints(),
-            Some(atom) if atom == self.atoms._NET_STARTUP_ID => self.update_startup_id(),
-            Some(_) => Ok(()), // unknown
-            None => {
-                self.update_title()?;
-                self.update_class()?;
-                self.update_protocols()?;
-                self.update_hints()?;
-                self.update_normal_hints()?;
-                self.update_transient_for()?;
-                // NET_WM_STATE is managed by the WM, we don't need to update it unless explicitly asked to
-                self.update_net_window_type()?;
-                self.update_motif_hints()?;
-                self.update_startup_id()?;
-                Ok(())
-            }
+            atom if atom == self.atoms._NET_WM_NAME || atom == AtomEnum::WM_NAME.into() => self.update_title().map(|_| Some(WmWindowProperty::Title)),
+            atom if atom == AtomEnum::WM_CLASS.into() => self.update_class().map(|()| Some(WmWindowProperty::Class)),
+            atom if atom == self.atoms.WM_PROTOCOLS => self.update_protocols().map(|()| Some(WmWindowProperty::Protocols)),
+            atom if atom == self.atoms.WM_HINTS => self.update_hints().map(|()| Some(WmWindowProperty::Hints)),
+            atom if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints().map(|()| Some(WmWindowProperty::NormalHints)),
+            atom if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for().map(|()| Some(WmWindowProperty::TransientFor)),
+            atom if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type().map(|()| Some(WmWindowProperty::WindowType)),
+            atom if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints().map(|()| Some(WmWindowProperty::MotifHints)),
+            atom if atom == self.atoms._NET_STARTUP_ID => self.update_startup_id().map(|()| Some(WmWindowProperty::StartupId)),
+            _ => Ok(None),
         }
     }
 

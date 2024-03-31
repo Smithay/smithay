@@ -291,7 +291,15 @@ pub trait XwmHandler {
         geometry: Rectangle<i32, Logical>,
         above: Option<X11Window>,
     );
-
+    /// A window property has changed.
+    fn property_notify(
+        &mut self,
+        xwm: XwmId,
+        window: X11Surface,
+        property: WmWindowProperty,
+    ) {
+        let _ = (xwm, window, property);
+    }
     /// Window requests to be maximized.
     fn maximize_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
@@ -1335,7 +1343,7 @@ fn handle_event<D: XwmHandler + 'static>(
                     (geo.width as i32, geo.height as i32),
                 ),
             );
-            surface.update_properties(None)?;
+            surface.update_properties()?;
             xwm.windows.push(surface.clone());
 
             drop(_guard);
@@ -1976,10 +1984,6 @@ fn handle_event<D: XwmHandler + 'static>(
             }
         }
         Event::PropertyNotify(n) => {
-            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window) {
-                surface.update_properties(Some(n.atom))?;
-            }
-
             if n.state == Property::NEW_VALUE && n.atom == xwm.atoms._WL_SELECTION {
                 if let Some(selection) = if xwm.clipboard.incoming.iter().any(|t| t.window == n.window) {
                     Some(&mut xwm.clipboard)
@@ -2076,6 +2080,13 @@ fn handle_event<D: XwmHandler + 'static>(
                             }
                         }
                     }
+                }
+            }
+
+            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
+                if let Some(property) = surface.update_property(n.atom)? {
+                    drop(_guard);
+                    state.property_notify(xwm_id, surface, property);
                 }
             }
         }
