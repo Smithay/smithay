@@ -454,7 +454,6 @@ impl LayerMap {
 #[derive(Debug, Default)]
 pub struct LayerState {
     pub location: Point<i32, Logical>,
-    pub outputs: Vec<Output>,
 }
 
 type LayerUserdata = RefCell<Option<LayerState>>;
