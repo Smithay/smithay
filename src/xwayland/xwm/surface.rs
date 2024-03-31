@@ -570,7 +570,7 @@ impl X11Surface {
             atom if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type().map(|()| Some(WmWindowProperty::WindowType)),
             atom if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints().map(|()| Some(WmWindowProperty::MotifHints)),
             atom if atom == self.atoms._NET_STARTUP_ID => self.update_startup_id().map(|()| Some(WmWindowProperty::StartupId)),
-            _ => Ok(None),
+            _ => Ok(None), // unknown
         }
     }
 
