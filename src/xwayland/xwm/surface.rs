@@ -561,15 +561,42 @@ impl X11Surface {
 
     pub(super) fn update_property(&self, atom: Atom) -> Result<Option<WmWindowProperty>, ConnectionError> {
         match atom {
-            atom if atom == self.atoms._NET_WM_NAME || atom == AtomEnum::WM_NAME.into() => self.update_title().map(|_| Some(WmWindowProperty::Title)),
-            atom if atom == AtomEnum::WM_CLASS.into() => self.update_class().map(|()| Some(WmWindowProperty::Class)),
-            atom if atom == self.atoms.WM_PROTOCOLS => self.update_protocols().map(|()| Some(WmWindowProperty::Protocols)),
-            atom if atom == self.atoms.WM_HINTS => self.update_hints().map(|()| Some(WmWindowProperty::Hints)),
-            atom if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints().map(|()| Some(WmWindowProperty::NormalHints)),
-            atom if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for().map(|()| Some(WmWindowProperty::TransientFor)),
-            atom if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type().map(|()| Some(WmWindowProperty::WindowType)),
-            atom if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints().map(|()| Some(WmWindowProperty::MotifHints)),
-            atom if atom == self.atoms._NET_STARTUP_ID => self.update_startup_id().map(|()| Some(WmWindowProperty::StartupId)),
+            atom if atom == self.atoms._NET_WM_NAME || atom == AtomEnum::WM_NAME.into() => {
+                self.update_title()?;
+                Ok(Some(WmWindowProperty::Title))
+            }
+            atom if atom == AtomEnum::WM_CLASS.into() => {
+                self.update_class()?;
+                Ok(Some(WmWindowProperty::Class))
+            }
+            atom if atom == self.atoms.WM_PROTOCOLS => {
+                self.update_protocols()?;
+                Ok(Some(WmWindowProperty::Protocols))
+            }
+            atom if atom == self.atoms.WM_HINTS => {
+                self.update_hints()?;
+                Ok(Some(WmWindowProperty::Hints))
+            }
+            atom if atom == AtomEnum::WM_NORMAL_HINTS.into() => {
+                self.update_normal_hints()?;
+                Ok(Some(WmWindowProperty::NormalHints))
+            }
+            atom if atom == AtomEnum::WM_TRANSIENT_FOR.into() => {
+                self.update_transient_for()?;
+                Ok(Some(WmWindowProperty::TransientFor))
+            }
+            atom if atom == self.atoms._NET_WM_WINDOW_TYPE => {
+                self.update_net_window_type()?;
+                Ok(Some(WmWindowProperty::WindowType))
+            }
+            atom if atom == self.atoms._MOTIF_WM_HINTS => {
+                self.update_motif_hints()?;
+                Ok(Some(WmWindowProperty::MotifHints))
+            }
+            atom if atom == self.atoms._NET_STARTUP_ID => {
+                self.update_startup_id()?;
+                Ok(Some(WmWindowProperty::StartupId))
+            }
             _ => Ok(None), // unknown
         }
     }

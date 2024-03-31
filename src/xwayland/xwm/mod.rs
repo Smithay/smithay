@@ -292,12 +292,7 @@ pub trait XwmHandler {
         above: Option<X11Window>,
     );
     /// A window property has changed.
-    fn property_notify(
-        &mut self,
-        xwm: XwmId,
-        window: X11Surface,
-        property: WmWindowProperty,
-    ) {
+    fn property_notify(&mut self, xwm: XwmId, window: X11Surface, property: WmWindowProperty) {
         let _ = (xwm, window, property);
     }
     /// Window requests to be maximized.
