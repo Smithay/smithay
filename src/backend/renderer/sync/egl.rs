@@ -1,10 +1,16 @@
 use std::{os::unix::io::OwnedFd, time::Duration};
 
-use crate::backend::{egl::fence::EGLFence, renderer::sync::Fence};
+use crate::backend::{
+    egl::fence::EGLFence,
+    renderer::sync::{Fence, Interrupted},
+};
 
 impl Fence for EGLFence {
-    fn wait(&self) {
-        self.client_wait(None, false);
+    fn wait(&self) -> Result<(), Interrupted> {
+        self.client_wait(None, false).map(|_| ()).map_err(|err| {
+            tracing::warn!(?err, "Waiting for fence was interrupted");
+            Interrupted
+        })
     }
 
     fn is_exportable(&self) -> bool {
@@ -16,6 +22,6 @@ impl Fence for EGLFence {
     }
 
     fn is_signaled(&self) -> bool {
-        self.client_wait(Some(Duration::ZERO), false)
+        self.client_wait(Some(Duration::ZERO), false).unwrap_or(false)
     }
 }

@@ -60,6 +60,9 @@ pub enum Error {
     /// The device does not have the given property
     #[error("The device does not have the given property")]
     EmptyDeviceProperty,
+    /// Waiting on a fence failed
+    #[error("Waiting on a fence failed. Err: {0:}")]
+    WaitFailed(#[source] EGLError),
 }
 
 /// Raw EGL error
