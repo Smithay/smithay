@@ -598,6 +598,22 @@ impl<'frame> Frame for PixmanFrame<'frame> {
     fn finish(mut self) -> Result<super::sync::SyncPoint, Self::Error> {
         self.finish_internal()
     }
+
+    fn set_downscale_filter(&mut self, filter: TextureFilter) {
+        self.renderer.downscale_filter = filter;
+    }
+
+    fn set_upscale_filter(&mut self, filter: TextureFilter) {
+        self.renderer.upscale_filter = filter;
+    }
+
+    fn downscale_filter(&self) -> TextureFilter {
+        self.renderer.downscale_filter
+    }
+
+    fn upscale_filter(&self) -> TextureFilter {
+        self.renderer.upscale_filter
+    }
 }
 
 impl<'frame> PixmanFrame<'frame> {

@@ -242,6 +242,17 @@ pub trait Frame {
     /// Leaking might make the renderer return Errors and force it's recreation.
     /// Leaking may not cause otherwise undefined behavior and program execution will always continue normally.
     fn finish(self) -> Result<sync::SyncPoint, Self::Error>;
+
+    /// Set the filter method to be used when rendering a texture into a smaller area than its
+    /// size.
+    fn set_downscale_filter(&mut self, filter: TextureFilter);
+    /// Set the filter method to be used when rendering a texture into a larger area than its size.
+    fn set_upscale_filter(&mut self, filter: TextureFilter);
+
+    /// Get the current downscale filter.
+    fn downscale_filter(&self) -> TextureFilter;
+    /// Get the current upscale filter.
+    fn upscale_filter(&self) -> TextureFilter;
 }
 
 bitflags::bitflags! {
