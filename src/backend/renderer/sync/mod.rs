@@ -1,10 +1,24 @@
 //! Helper for synchronizing rendering operations
-use std::{os::unix::io::OwnedFd, sync::Arc};
+use std::{error::Error, fmt, os::unix::io::OwnedFd, sync::Arc};
 
 use downcast_rs::{impl_downcast, Downcast};
 
 #[cfg(feature = "backend_egl")]
 mod egl;
+
+/// Waiting for the fence was interrupted for an unknown reason.
+///
+/// This does not mean that the fence is signalled or not, neither that
+/// any timeout was reached. Waiting should be attempted again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Interrupted;
+
+impl fmt::Display for Interrupted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Wait for Fence was interrupted")
+    }
+}
+impl Error for Interrupted {}
 
 /// A fence that will be signaled in finite time
 pub trait Fence: std::fmt::Debug + Send + Sync + Downcast {
@@ -12,7 +26,7 @@ pub trait Fence: std::fmt::Debug + Send + Sync + Downcast {
     fn is_signaled(&self) -> bool;
 
     /// Blocks the current thread until the fence is signaled
-    fn wait(&self);
+    fn wait(&self) -> Result<(), Interrupted>;
 
     /// Returns whether this fence can be exported
     /// as a native fence fd
@@ -65,7 +79,7 @@ impl SyncPoint {
     #[profiling::function]
     pub fn wait(&self) {
         if let Some(fence) = self.fence.as_ref() {
-            fence.wait();
+            while fence.wait().is_err() {}
         }
     }
 

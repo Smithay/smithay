@@ -157,7 +157,7 @@ impl EGLFence {
     ///
     /// If the timeout is reached `false` is returned
     #[profiling::function]
-    pub fn client_wait(&self, timeout: Option<Duration>, flush: bool) -> bool {
+    pub fn client_wait(&self, timeout: Option<Duration>, flush: bool) -> Result<bool, Error> {
         let timeout = timeout
             .map(|t| t.as_nanos() as ffi::egl::types::EGLuint64KHR)
             .unwrap_or(ffi::egl::FOREVER);
@@ -174,8 +174,8 @@ impl EGLFence {
             || unsafe { ffi::egl::ClientWaitSync(**self.0.display_handle, self.0.handle, flags, timeout) },
             ffi::egl::FALSE as ffi::egl::types::EGLint,
         )
-        .unwrap();
+        .map_err(Error::WaitFailed)?;
 
-        status == ffi::egl::CONDITION_SATISFIED as ffi::EGLint
+        Ok(status == ffi::egl::CONDITION_SATISFIED as ffi::EGLint)
     }
 }
