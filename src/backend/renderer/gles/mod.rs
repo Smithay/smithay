@@ -2533,11 +2533,6 @@ impl<'frame> GlesFrame<'frame> {
             return Ok(SyncPoint::signaled());
         }
 
-        unsafe {
-            self.renderer.gl.Disable(ffi::SCISSOR_TEST);
-            self.renderer.gl.Disable(ffi::BLEND);
-        }
-
         if let Some(target) = self.renderer.target.as_ref() {
             if let Some(shadow) = target.get_shadow() {
                 target.make_current_no_shadow(
@@ -2594,6 +2589,11 @@ impl<'frame> GlesFrame<'frame> {
                     self.renderer.gl.Disable(ffi::STENCIL_TEST);
                 }
             }
+        }
+
+        unsafe {
+            self.renderer.gl.Disable(ffi::SCISSOR_TEST);
+            self.renderer.gl.Disable(ffi::BLEND);
         }
 
         // if we support egl fences we should use it
