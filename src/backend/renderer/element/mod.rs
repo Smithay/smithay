@@ -1292,6 +1292,7 @@ macro_rules! render_elements_internal {
 /// #         unimplemented!()
 /// #     }
 /// #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
+/// #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
 /// # }
 /// #
 /// # #[derive(Debug)]
@@ -1321,6 +1322,7 @@ macro_rules! render_elements_internal {
 /// #     {
 /// #         unimplemented!()
 /// #     }
+/// #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
 /// # }
 /// use smithay::backend::renderer::element::{render_elements, texture::TextureRenderElement};
 ///

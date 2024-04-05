@@ -2375,8 +2375,7 @@ impl Renderer for GlesRenderer {
 
         // if everything above failed we can only
         // block until the sync point has been reached
-        sync.wait();
-        Ok(())
+        sync.wait().map_err(|_| GlesError::SyncInterrupted)
     }
 }
 
@@ -3205,7 +3204,7 @@ impl<'frame> Drop for GlesFrame<'frame> {
     fn drop(&mut self) {
         match self.finish_internal() {
             Ok(sync) => {
-                sync.wait();
+                let _ = sync.wait(); // nothing we can do
             }
             Err(err) => {
                 warn!("Ignored error finishing GlesFrame on drop: {}", err);

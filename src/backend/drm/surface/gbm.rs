@@ -369,13 +369,14 @@ where
         // fencing force a wait
         let fence = if let Some(sync) = sync {
             if !self.supports_fencing {
-                sync.wait();
+                // we probably don't want to fail to submit in this case, lets hope on implicit sync
+                let _ = sync.wait();
                 None
             } else {
                 let fence = sync.export();
 
                 if fence.is_none() {
-                    sync.wait();
+                    let _ = sync.wait();
                 }
 
                 fence

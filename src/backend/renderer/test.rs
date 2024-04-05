@@ -8,7 +8,7 @@ use crate::backend::renderer::ImportEgl;
 use crate::{
     backend::renderer::{ImportDmaWl, ImportMemWl},
     reexports::wayland_server::protocol::wl_buffer,
-    wayland::{self, compositor::SurfaceData},
+    wayland::{self, compositor::SurfaceData, shm::BufferAccessError},
 };
 use crate::{
     backend::{
@@ -36,8 +36,26 @@ impl Default for DummyRenderer {
     }
 }
 
+/// Error returned by the TestRenderer
+#[derive(thiserror::Error, Debug)]
+pub enum DummyError {
+    /// Error accessing shm buffer
+    #[cfg(feature = "wayland_frontend")]
+    #[error("Error accessing buffer ({0:?})")]
+    BufferAccessError(BufferAccessError),
+    /// Blocking for a synchronization primitive failed
+    #[error("Blocking for a synchronization primitive got interrupted")]
+    SyncInterrupted,
+}
+
+impl From<DummyError> for SwapBuffersError {
+    fn from(value: DummyError) -> Self {
+        SwapBuffersError::TemporaryFailure(Box::new(value))
+    }
+}
+
 impl Renderer for DummyRenderer {
-    type Error = SwapBuffersError;
+    type Error = DummyError;
     type TextureId = DummyTexture;
     type Frame<'a> = DummyFrame;
 
@@ -65,6 +83,10 @@ impl Renderer for DummyRenderer {
 
     fn debug_flags(&self) -> DebugFlags {
         DebugFlags::empty()
+    }
+
+    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        sync.wait().map_err(|_| DummyError::SyncInterrupted)
     }
 }
 
@@ -128,7 +150,7 @@ impl ImportMemWl for DummyRenderer {
 
         match ret {
             Ok((width, height)) => Ok(DummyTexture { width, height }),
-            Err(e) => Err(SwapBuffersError::TemporaryFailure(Box::new(e))),
+            Err(e) => Err(DummyError::BufferAccessError(e)),
         }
     }
 }
@@ -177,7 +199,7 @@ impl ImportDmaWl for DummyRenderer {}
 pub struct DummyFrame {}
 
 impl Frame for DummyFrame {
-    type Error = SwapBuffersError;
+    type Error = DummyError;
     type TextureId = DummyTexture;
 
     fn id(&self) -> usize {
@@ -215,6 +237,10 @@ impl Frame for DummyFrame {
 
     fn finish(self) -> Result<SyncPoint, Self::Error> {
         Ok(SyncPoint::default())
+    }
+
+    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        sync.wait().map_err(|_| DummyError::SyncInterrupted)
     }
 }
 

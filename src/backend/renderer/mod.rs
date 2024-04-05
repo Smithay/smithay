@@ -38,6 +38,7 @@ use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
 };
+
 #[cfg(feature = "renderer_multi")]
 pub mod multigpu;
 
@@ -226,10 +227,7 @@ pub trait Frame {
     fn transformation(&self) -> Transform;
 
     /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
-    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
-        sync.wait();
-        Ok(())
-    }
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error>;
 
     /// Finish this [`Frame`] returning any error that may happen during any cleanup.
     ///
@@ -294,10 +292,7 @@ pub trait Renderer: fmt::Debug {
     ) -> Result<Self::Frame<'_>, Self::Error>;
 
     /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
-    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
-        sync.wait();
-        Ok(())
-    }
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error>;
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.
