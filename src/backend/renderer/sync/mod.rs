@@ -77,9 +77,11 @@ impl SyncPoint {
     ///
     /// If the sync point does not contain a fence this will never block.
     #[profiling::function]
-    pub fn wait(&self) {
+    pub fn wait(&self) -> Result<(), Interrupted> {
         if let Some(fence) = self.fence.as_ref() {
-            while fence.wait().is_err() {}
+            fence.wait()
+        } else {
+            Ok(())
         }
     }
 

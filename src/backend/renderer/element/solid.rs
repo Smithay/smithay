@@ -62,6 +62,7 @@
 //! #     fn finish(self) -> Result<SyncPoint, Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # #[derive(Debug)]
@@ -90,6 +91,7 @@
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # impl ImportMem for FakeRenderer {

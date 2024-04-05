@@ -595,8 +595,12 @@ impl<'frame> Frame for PixmanFrame<'frame> {
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<super::sync::SyncPoint, Self::Error> {
+    fn finish(mut self) -> Result<SyncPoint, Self::Error> {
         self.finish_internal()
+    }
+
+    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        sync.wait().map_err(|_| PixmanError::SyncInterrupted)
     }
 }
 
@@ -626,7 +630,7 @@ impl<'frame> Drop for PixmanFrame<'frame> {
     fn drop(&mut self) {
         match self.finish_internal() {
             Ok(sync) => {
-                sync.wait();
+                let _ = sync.wait();
             }
             Err(err) => {
                 warn!("Ignored error finishing PixmanFrame on drop: {}", err);
@@ -808,6 +812,9 @@ impl Renderer for PixmanRenderer {
 
             finished: AtomicBool::new(false),
         })
+    }
+    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        sync.wait().map_err(|_| PixmanError::SyncInterrupted)
     }
 }
 

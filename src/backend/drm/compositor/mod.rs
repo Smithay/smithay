@@ -3231,7 +3231,7 @@ where
                             element.transform(),
                             element.alpha(),
                         )?;
-                        frame.finish()?.wait();
+                        let _ = frame.finish()?.wait(); // what can we do?
                         Ok(())
                     },
                 )

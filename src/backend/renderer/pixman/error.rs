@@ -58,10 +58,16 @@ pub enum PixmanError {
     /// The requested operation is not supported
     #[error("The requested operation is not supported")]
     Unsupported,
+    /// Blocking for a synchronization primitive failed
+    #[error("Blocking for a synchronization primitive got interrupted")]
+    SyncInterrupted,
 }
 
 impl From<PixmanError> for SwapBuffersError {
     fn from(value: PixmanError) -> Self {
-        SwapBuffersError::ContextLost(Box::new(value))
+        match value {
+            x @ PixmanError::SyncInterrupted => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x => SwapBuffersError::ContextLost(Box::new(x)),
+        }
     }
 }
