@@ -472,6 +472,8 @@ struct OutgoingTransfer {
 
     property_set: bool,
     flush_property_on_delete: bool,
+    /// The final 0-byte data chunk has been sent, denoting the completion of this transfer
+    sent_finished: bool,
 }
 
 impl fmt::Debug for OutgoingTransfer {
@@ -491,6 +493,12 @@ impl fmt::Debug for OutgoingTransfer {
 impl OutgoingTransfer {
     fn flush_data(&mut self) -> Result<usize, ReplyOrIdError> {
         let len = std::cmp::min(self.source_data.len(), INCR_CHUNK_SIZE);
+
+        if len == 0 {
+            // This flush will complete the transfer
+            self.sent_finished = true;
+        }
+
         let mut data = self.source_data.split_off(len);
         std::mem::swap(&mut data, &mut self.source_data);
 
@@ -504,7 +512,6 @@ impl OutgoingTransfer {
         self.conn.flush()?;
 
         let remaining = self.source_data.len();
-        self.source_data = Vec::new();
         self.property_set = true;
         Ok(remaining)
     }
@@ -1965,6 +1972,7 @@ fn handle_event<D: XwmHandler + 'static>(
                             request: n,
                             property_set: false,
                             flush_property_on_delete: false,
+                            sent_finished: false,
                         };
                         selection.outgoing.push(transfer);
 
@@ -2062,8 +2070,10 @@ fn handle_event<D: XwmHandler + 'static>(
                         trace!(requestor, len, "Send data chunk");
 
                         if transfer.token.is_none() {
-                            if len > 0 {
-                                // Transfer is done, but we still have bytes left
+                            if len > 0 || !transfer.sent_finished {
+                                // Either the transfer is done, but we still have bytes left, or
+                                // all bytes have been transferred but the final 0-byte data chunk
+                                // hasn't been sent yet
                                 transfer.flush_property_on_delete = true;
                             } else if let Some(pos) = selection
                                 .outgoing
