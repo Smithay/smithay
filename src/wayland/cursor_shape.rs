@@ -25,6 +25,7 @@
 //! # use smithay::utils::{IsAlive, Serial};
 //! # use smithay::wayland::seat::WaylandFocus;
 //! # use wayland_server::protocol::wl_surface;
+//! # use smithay::wayland::tablet_manager::TabletSeatHandler;
 //!
 //! # #[derive(Debug, Clone, PartialEq)]
 //! # struct Target;
@@ -90,6 +91,7 @@
 //! #         &mut self.seat_state
 //! #     }
 //! # }
+//! # impl TabletSeatHandler for State {}
 //!
 //! let state = CursorShapeManagerState::new::<State>(&display.handle());
 //!
@@ -113,7 +115,7 @@ use crate::input::SeatHandler;
 use crate::wayland::seat::WaylandFocus;
 
 use super::seat::PointerUserData;
-use super::tablet_manager::TabletToolUserData;
+use super::tablet_manager::{TabletSeatHandler, TabletToolUserData};
 
 /// State of the cursor shape manager.
 #[derive(Debug)]
@@ -216,7 +218,7 @@ impl<D> Dispatch<CursorShapeDevice, CursorShapeDeviceUserData, D> for CursorShap
 where
     D: Dispatch<CursorShapeManager, ()>,
     D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData>,
-    D: SeatHandler,
+    D: SeatHandler + TabletSeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
@@ -296,10 +298,7 @@ where
                         }
 
                         let cursor_icon = shape_to_cursor_icon(shape);
-                        (tablet_data.cb.lock().unwrap())(
-                            &tablet_data.desc,
-                            CursorImageStatus::Named(cursor_icon),
-                        );
+                        state.tablet_tool_image(&tablet_data.desc, CursorImageStatus::Named(cursor_icon));
                     }
                 }
             }
