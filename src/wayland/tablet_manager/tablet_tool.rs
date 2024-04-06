@@ -15,6 +15,7 @@ use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandl
 use crate::{utils::Serial, wayland::compositor};
 
 use super::tablet::TabletHandle;
+use super::tablet_seat::TabletSeatHandler;
 use super::TabletManagerState;
 
 #[derive(Debug, Default)]
@@ -215,17 +216,15 @@ pub struct TabletToolHandle {
 }
 
 impl TabletToolHandle {
-    pub(super) fn new_instance<D, F>(
+    pub(super) fn new_instance<D>(
         &mut self,
         client: &Client,
         dh: &DisplayHandle,
         seat: &ZwpTabletSeatV2,
         tool: &TabletToolDescriptor,
-        cb: F,
     ) where
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-        D: 'static,
-        F: FnMut(&TabletToolDescriptor, CursorImageStatus) + Send + 'static,
+        D: TabletSeatHandler + 'static,
     {
         let desc = tool.clone();
 
@@ -235,7 +234,6 @@ impl TabletToolHandle {
                 seat.version(),
                 TabletToolUserData {
                     handle: self.clone(),
-                    cb: Mutex::new(Box::new(cb)),
                     desc,
                 },
             )
@@ -418,7 +416,6 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
 /// User data of ZwpTabletToolV2 object
 pub struct TabletToolUserData {
     pub(crate) handle: TabletToolHandle,
-    pub(crate) cb: Mutex<Box<dyn FnMut(&TabletToolDescriptor, CursorImageStatus) + Send>>,
     pub(crate) desc: TabletToolDescriptor,
 }
 
@@ -435,10 +432,10 @@ impl fmt::Debug for TabletToolUserData {
 impl<D> Dispatch<ZwpTabletToolV2, TabletToolUserData, D> for TabletManagerState
 where
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-    D: 'static,
+    D: TabletSeatHandler + 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         tool: &ZwpTabletToolV2,
         request: zwp_tablet_tool_v2::Request,
@@ -484,9 +481,9 @@ where
                                     .hotspot = (hotspot_x, hotspot_y).into();
                             });
 
-                            (data.cb.lock().unwrap())(&data.desc, CursorImageStatus::Surface(surface));
+                            state.tablet_tool_image(&data.desc, CursorImageStatus::Surface(surface));
                         } else {
-                            (data.cb.lock().unwrap())(&data.desc, CursorImageStatus::Hidden);
+                            state.tablet_tool_image(&data.desc, CursorImageStatus::Hidden);
                         };
                     }
                 }

@@ -4,8 +4,9 @@
 //!
 //! ```
 //! use smithay::{delegate_seat, delegate_tablet_manager};
+//! use smithay::backend::input::TabletToolDescriptor;
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
-//! use smithay::wayland::tablet_manager::{TabletManagerState, TabletDescriptor};
+//! use smithay::wayland::tablet_manager::{TabletManagerState, TabletDescriptor, TabletSeatHandler};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
 //! # struct State { seat_state: SeatState<Self> };
@@ -52,6 +53,12 @@
 //!     }
 //! }
 //! delegate_seat!(State);
+//!
+//! impl TabletSeatHandler for State {
+//!     fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
+//!         // ...
+//!     }
+//! }
 //! delegate_tablet_manager!(State);
 //! ```
 //! ```ignore
@@ -95,7 +102,7 @@ mod tablet_seat;
 pub(crate) mod tablet_tool;
 
 pub use tablet::{TabletDescriptor, TabletHandle, TabletUserData};
-pub use tablet_seat::{TabletSeatHandle, TabletSeatUserData};
+pub use tablet_seat::{TabletSeatHandle, TabletSeatHandler, TabletSeatUserData};
 pub use tablet_tool::{TabletToolHandle, TabletToolUserData};
 
 /// Extends [Seat] with graphic tablet specific functionality
@@ -164,7 +171,7 @@ where
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-    D: SeatHandler + 'static,
+    D: SeatHandler + TabletSeatHandler + 'static,
 {
     fn request(
         _state: &mut D,

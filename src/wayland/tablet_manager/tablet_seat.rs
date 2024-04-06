@@ -26,8 +26,6 @@ pub(crate) struct TabletSeat {
     instances: Vec<ZwpTabletSeatV2>,
     tablets: HashMap<TabletDescriptor, TabletHandle>,
     tools: HashMap<TabletToolDescriptor, TabletToolHandle>,
-
-    cursor_callback: Option<Box<dyn FnMut(&TabletToolDescriptor, CursorImageStatus) + Send>>,
 }
 
 impl fmt::Debug for TabletSeat {
@@ -36,15 +34,16 @@ impl fmt::Debug for TabletSeat {
             .field("instances", &self.instances)
             .field("tablets", &self.tablets)
             .field("tools", &self.tools)
-            .field(
-                "cursor_callback",
-                if self.cursor_callback.is_some() {
-                    &"Some(...)"
-                } else {
-                    &"None"
-                },
-            )
             .finish()
+    }
+}
+
+/// Handler trait for Tablet Seats
+pub trait TabletSeatHandler {
+    /// Callback that will be notified whenever a client requests to set a custom tool image.
+    fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
+        let _ = tool;
+        let _ = image;
     }
 }
 
@@ -63,7 +62,7 @@ impl TabletSeatHandle {
     where
         D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-        D: 'static,
+        D: TabletSeatHandler + 'static,
     {
         let mut inner = self.inner.lock().unwrap();
 
@@ -74,23 +73,10 @@ impl TabletSeatHandle {
 
         // Notify new instance about available tools
         for (desc, tool) in inner.tools.iter_mut() {
-            let inner = self.inner.clone();
-            tool.new_instance::<D, _>(client, dh, seat, desc, move |desc, status| {
-                if let Some(ref mut cursor_callback) = inner.lock().unwrap().cursor_callback {
-                    cursor_callback(desc, status);
-                }
-            });
+            tool.new_instance::<D>(client, dh, seat, desc);
         }
 
         inner.instances.push(seat.clone());
-    }
-
-    /// Add a callback to SetCursor event
-    pub fn on_cursor_surface<F>(&self, cb: F)
-    where
-        F: FnMut(&TabletToolDescriptor, CursorImageStatus) + Send + 'static,
-    {
-        self.inner.lock().unwrap().cursor_callback = Some(Box::new(cb));
     }
 
     /// Add a new tablet to a seat.
@@ -155,7 +141,7 @@ impl TabletSeatHandle {
     pub fn add_tool<D>(&self, dh: &DisplayHandle, tool_desc: &TabletToolDescriptor) -> TabletToolHandle
     where
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-        D: 'static,
+        D: TabletSeatHandler + 'static,
     {
         let inner = &mut *self.inner.lock().unwrap();
 
@@ -166,14 +152,8 @@ impl TabletSeatHandle {
             let mut tool = TabletToolHandle::default();
             // Create new tool instance for every seat instance
             for seat in instances.iter() {
-                let inner = self.inner.clone();
-
                 if let Ok(client) = dh.get_client(seat.id()) {
-                    tool.new_instance::<D, _>(&client, dh, seat, tool_desc, move |desc, status| {
-                        if let Some(ref mut cursor_callback) = inner.lock().unwrap().cursor_callback {
-                            cursor_callback(desc, status);
-                        }
-                    });
+                    tool.new_instance::<D>(&client, dh, seat, tool_desc);
                 }
             }
             tool

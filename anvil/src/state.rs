@@ -7,8 +7,11 @@ use std::{
 use tracing::{info, warn};
 
 use smithay::{
-    backend::renderer::element::{
-        default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
+    backend::{
+        input::TabletToolDescriptor,
+        renderer::element::{
+            default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
+        },
     },
     delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale,
     delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_layer_shell,
@@ -59,11 +62,11 @@ use smithay::{
         security_context::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
-        selection::data_device::{
-            set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
-            ServerDndGrabHandler,
-        },
         selection::{
+            data_device::{
+                set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
+                ServerDndGrabHandler,
+            },
             primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
             wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
@@ -77,7 +80,7 @@ use smithay::{
         },
         shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
-        tablet_manager::{TabletManagerState, TabletSeatTrait},
+        tablet_manager::{TabletManagerState, TabletSeatHandler},
         text_input::TextInputManagerState,
         viewporter::ViewporterState,
         virtual_keyboard::VirtualKeyboardManagerState,
@@ -273,6 +276,12 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
 }
 delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+impl<BackendData: Backend> TabletSeatHandler for AnvilState<BackendData> {
+    fn tablet_tool_image(&mut self, _tool: &TabletToolDescriptor, image: CursorImageStatus) {
+        // TODO: tablet tools should have their own cursors
+        *self.cursor_status.lock().unwrap() = image;
+    }
+}
 delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_text_input_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -604,12 +613,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let pointer = seat.add_pointer();
         seat.add_keyboard(XkbConfig::default(), 200, 25)
             .expect("Failed to initialize the keyboard");
-
-        let cursor_status2 = cursor_status.clone();
-        seat.tablet_seat().on_cursor_surface(move |_tool, new_status| {
-            // TODO: tablet tools should have their own cursors
-            *cursor_status2.lock().unwrap() = new_status;
-        });
 
         let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
