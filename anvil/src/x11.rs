@@ -308,7 +308,6 @@ pub fn run_x11() {
 
             let backend_data = &mut state.backend_data;
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
-            let cursor_status = &state.cursor_status;
             #[cfg(feature = "debug")]
             let fps = backend_data.fps.avg().round() as u32;
             #[cfg(feature = "debug")]
@@ -329,22 +328,21 @@ pub fn run_x11() {
                 );
             }
 
-            let mut cursor_guard = cursor_status.lock().unwrap();
             let mut elements: Vec<CustomRenderElements<GlesRenderer>> = Vec::new();
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
                 reset = !surface.alive();
             }
             if reset {
-                *cursor_guard = CursorImageStatus::default_named();
+                state.cursor_status = CursorImageStatus::default_named();
             }
-            let cursor_visible = !matches!(*cursor_guard, CursorImageStatus::Surface(_));
+            let cursor_visible = !matches!(state.cursor_status, CursorImageStatus::Surface(_));
 
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+            let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = state.cursor_status {
                 compositor::with_states(surface, |states| {
                     states
                         .data_map
@@ -360,7 +358,7 @@ pub fn run_x11() {
             let cursor_pos = state.pointer.current_location() - cursor_hotspot.to_f64();
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
-            pointer_element.set_status(cursor_guard.clone());
+            pointer_element.set_status(state.cursor_status.clone());
             elements.extend(pointer_element.render_elements(
                 &mut backend_data.renderer,
                 cursor_pos_scaled,

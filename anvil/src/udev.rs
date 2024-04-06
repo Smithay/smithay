@@ -1441,7 +1441,7 @@ impl AnvilState<UdevData> {
             &pointer_image,
             &mut self.backend_data.pointer_element,
             &self.dnd_icon,
-            &mut self.cursor_status.lock().unwrap(),
+            &mut self.cursor_status,
             &self.clock,
             self.show_window_preview,
         );

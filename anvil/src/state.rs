@@ -1,6 +1,6 @@
 use std::{
     os::unix::io::OwnedFd,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
 
@@ -152,7 +152,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     // input-related fields
     pub suppressed_keys: Vec<Keysym>,
-    pub cursor_status: Arc<Mutex<CursorImageStatus>>,
+    pub cursor_status: CursorImageStatus,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
     pub clock: Clock<Monotonic>,
@@ -267,7 +267,7 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
         set_primary_focus(dh, seat, focus);
     }
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
-        *self.cursor_status.lock().unwrap() = image;
+        self.cursor_status = image;
     }
 
     fn led_state_changed(&mut self, _seat: &Seat<Self>, led_state: LedState) {
@@ -279,7 +279,7 @@ delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 impl<BackendData: Backend> TabletSeatHandler for AnvilState<BackendData> {
     fn tablet_tool_image(&mut self, _tool: &TabletToolDescriptor, image: CursorImageStatus) {
         // TODO: tablet tools should have their own cursors
-        *self.cursor_status.lock().unwrap() = image;
+        self.cursor_status = image;
     }
 }
 delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -609,7 +609,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let seat_name = backend_data.seat_name();
         let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
 
-        let cursor_status = Arc::new(Mutex::new(CursorImageStatus::default_named()));
         let pointer = seat.add_pointer();
         seat.add_keyboard(XkbConfig::default(), 200, 25)
             .expect("Failed to initialize the keyboard");
@@ -678,7 +677,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             xdg_foreign_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
-            cursor_status,
+            cursor_status: CursorImageStatus::default_named(),
             seat_name,
             seat,
             pointer,
