@@ -47,11 +47,11 @@ use std::{
     time::Instant,
 };
 
-use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
+use wayland_protocols::xdg::activation::v1::server::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_server::{
     backend::{ClientId, GlobalId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    DisplayHandle,
+    Dispatch, DisplayHandle, GlobalDispatch,
 };
 
 use rand::distributions::{Alphanumeric, DistString};
@@ -157,11 +157,15 @@ impl XdgActivationState {
     /// Creates a new xdg activation global.
     ///
     /// In order to use this abstraction, your `D` type needs to implement [`XdgActivationHandler`].
-    pub fn new<D>(display: &DisplayHandle) -> XdgActivationState
+    pub fn new<D, F>(display: &DisplayHandle) -> XdgActivationState
     where
         D: XdgActivationHandler,
+        F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>
+            + Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>
+            + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>
+            + 'static,
     {
-        let global = display.create_delegated_global::<D, xdg_activation_v1::XdgActivationV1, _, Self>(1, ());
+        let global = display.create_delegated_global::<F, xdg_activation_v1::XdgActivationV1, _, F>(1, ());
 
         XdgActivationState {
             global,

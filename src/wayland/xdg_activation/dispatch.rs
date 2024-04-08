@@ -12,9 +12,12 @@ use super::{
     ActivationTokenData, TokenBuilder, XdgActivationHandler, XdgActivationState, XdgActivationTokenData,
 };
 
-impl<D> Dispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
+impl<D, F> Dispatch<xdg_activation_v1::XdgActivationV1, (), D, F> for XdgActivationState
 where
     D: XdgActivationHandler,
+    F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
+    F: Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
+    F: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>,
 {
     fn request(
         state: &mut D,
@@ -23,13 +26,13 @@ where
         request: xdg_activation_v1::Request,
         _: &(),
         _dh: &DisplayHandle,
-        data_init: &mut DataInit<'_, D>,
+        data_init: &mut DataInit<'_, F>,
     ) {
         match request {
             xdg_activation_v1::Request::Destroy => {}
 
             xdg_activation_v1::Request::GetActivationToken { id } => {
-                data_init.init_delegated::<_, _, Self>(
+                data_init.init_delegated::<_, _, F>(
                     id,
                     ActivationTokenData {
                         constructed: AtomicBool::new(false),
@@ -58,9 +61,12 @@ where
     }
 }
 
-impl<D> GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
+impl<D, F> GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D, F> for XdgActivationState
 where
     D: XdgActivationHandler,
+    F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
+    F: Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
+    F: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>,
 {
     fn bind(
         _: &mut D,
@@ -68,15 +74,19 @@ where
         _: &Client,
         resource: New<xdg_activation_v1::XdgActivationV1>,
         _: &(),
-        data_init: &mut DataInit<'_, D>,
+        data_init: &mut DataInit<'_, F>,
     ) {
-        data_init.init_delegated::<_, _, Self>(resource, ());
+        data_init.init_delegated::<_, _, F>(resource, ());
     }
 }
 
-impl<D> Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D> for XdgActivationState
+impl<D, F> Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D, F>
+    for XdgActivationState
 where
     D: XdgActivationHandler,
+    F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
+    F: Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
+    F: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>,
 {
     fn request(
         state: &mut D,
@@ -85,7 +95,7 @@ where
         request: xdg_activation_token_v1::Request,
         data: &ActivationTokenData,
         _dh: &DisplayHandle,
-        _: &mut DataInit<'_, D>,
+        _: &mut DataInit<'_, F>,
     ) {
         match request {
             xdg_activation_token_v1::Request::SetSerial { serial, seat } => {
