@@ -15,8 +15,6 @@ use super::{
 impl<D, F> Dispatch<xdg_activation_v1::XdgActivationV1, (), D, F> for XdgActivationState
 where
     D: XdgActivationHandler,
-    F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
-    F: Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
     F: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>,
 {
     fn request(
@@ -64,9 +62,7 @@ where
 impl<D, F> GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D, F> for XdgActivationState
 where
     D: XdgActivationHandler,
-    F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
     F: Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
-    F: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>,
 {
     fn bind(
         _: &mut D,
@@ -84,9 +80,6 @@ impl<D, F> Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTok
     for XdgActivationState
 where
     D: XdgActivationHandler,
-    F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
-    F: Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>,
-    F: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>,
 {
     fn request(
         state: &mut D,

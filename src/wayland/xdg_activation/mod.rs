@@ -160,12 +160,10 @@ impl XdgActivationState {
     pub fn new<D, F>(display: &DisplayHandle) -> XdgActivationState
     where
         D: XdgActivationHandler,
-        F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, F>
-            + Dispatch<xdg_activation_v1::XdgActivationV1, (), F, F>
-            + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, F>
-            + 'static,
+        F: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D, F>,
     {
-        let global = display.create_delegated_global::<F, xdg_activation_v1::XdgActivationV1, _, F>(1, ());
+        let global =
+            display.create_delegated_global::<F, xdg_activation_v1::XdgActivationV1, _, Self, D>(1, ());
 
         XdgActivationState {
             global,
