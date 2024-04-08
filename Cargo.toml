@@ -70,15 +70,15 @@ smallvec = "1.11"
 pixman = { version = "0.1.0", features = ["drm-fourcc"], optional = true }
 
 [patch.crates-io]
-wayland-egl = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2"}
-wayland-protocols = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-protocols-wlr = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-protocols-misc = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-server = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-client = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-sys = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-backend = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
-wayland-scanner = { git = "https://github.com/PolyMeilex/wayland-rs.git", branch = "new-delegate-v2" }
+wayland-egl = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch"}
+wayland-protocols = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
+wayland-protocols-wlr = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
+wayland-protocols-misc = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
+wayland-server = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
+wayland-client = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
+wayland-sys = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
+wayland-backend = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
+wayland-scanner = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch" }
 # wayland-egl = { path = "../wayland-rs/wayland-egl/" }
 # wayland-protocols = { path = "../wayland-rs/wayland-protocols/" }
 # wayland-protocols-wlr = { path = "../wayland-rs/wayland-protocols-wlr/" }
