@@ -239,6 +239,16 @@ impl RendererSurfaceState {
             .map(|dim| dim.to_logical(self.buffer_scale, self.buffer_transform))
     }
 
+    /// Returns the scale of the current attached buffer
+    pub fn buffer_scale(&self) -> i32 {
+        self.buffer_scale
+    }
+
+    /// Returns the transform of the current attached buffer
+    pub fn buffer_transform(&self) -> Transform {
+        self.buffer_transform
+    }
+
     /// Returns the logical size of the surface.
     ///
     /// Note: The surface size may not be equal to the buffer size in case
