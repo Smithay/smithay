@@ -51,7 +51,7 @@ use std::{
     time::Instant,
 };
 
-use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
+pub use wayland_protocols::xdg::activation::v1::server::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_server::{
     backend::{ClientId, GlobalId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
@@ -163,9 +163,8 @@ impl XdgActivationState {
     /// In order to use this abstraction, your `D` type needs to implement [`XdgActivationHandler`].
     pub fn new<D>(display: &DisplayHandle) -> XdgActivationState
     where
-        D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
-            + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
-            + XdgActivationHandler
+        D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D>
+            + Dispatch<xdg_activation_v1::XdgActivationV1, (), D>
             + 'static,
     {
         let global = display.create_global::<D, xdg_activation_v1::XdgActivationV1, _>(1, ());
