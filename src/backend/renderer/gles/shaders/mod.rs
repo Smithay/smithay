@@ -16,7 +16,12 @@ pub const DEBUG_FLAGS: &str = "DEBUG_FLAGS";
 
 use super::*;
 
-pub(super) unsafe fn compile_shader(
+/// Compiles a shader variant.
+///
+/// # Safety
+///
+/// You must call this only when it is safe to compile shaders with GL.
+pub unsafe fn compile_shader(
     gl: &ffi::Gles2,
     variant: ffi::types::GLuint,
     src: &str,
@@ -62,7 +67,12 @@ pub(super) unsafe fn compile_shader(
     Ok(shader)
 }
 
-pub(super) unsafe fn link_program(
+/// Compiles and links a shader program.
+///
+/// # Safety
+///
+/// You must call this only when it is safe to compile and link shaders with GL.
+pub unsafe fn link_program(
     gl: &ffi::Gles2,
     vert_src: &str,
     frag_src: &str,
