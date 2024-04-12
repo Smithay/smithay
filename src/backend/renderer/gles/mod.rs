@@ -3266,6 +3266,16 @@ impl<'frame> GlesFrame<'frame> {
     pub fn egl_context(&self) -> &EGLContext {
         self.renderer.egl_context()
     }
+
+    /// Returns the supported [`Capabilities`](Capability) of the underlying renderer.
+    pub fn capabilities(&self) -> &[Capability] {
+        self.renderer.capabilities()
+    }
+
+    /// Returns the current enabled [`DebugFlags`] of the underlying renderer.
+    pub fn debug_flags(&self) -> DebugFlags {
+        self.renderer.debug_flags()
+    }
 }
 
 impl<'frame> Drop for GlesFrame<'frame> {
