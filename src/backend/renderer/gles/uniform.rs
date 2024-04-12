@@ -49,10 +49,13 @@ pub enum UniformType {
     Matrix4x4,
 }
 
+/// GL location and type of a uniform shader variable
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(super) struct UniformDesc {
-    pub(super) location: super::ffi::types::GLint,
-    pub(super) type_: UniformType,
+pub struct UniformDesc {
+    /// GL location of the uniform
+    pub location: super::ffi::types::GLint,
+    /// type of the uniform
+    pub type_: UniformType,
 }
 
 /// A shader uniform variable consisting out of a name and value
@@ -259,7 +262,13 @@ impl UniformValue {
         }
     }
 
-    pub(super) fn set(&self, gl: &super::ffi::Gles2, desc: &UniformDesc) -> Result<(), GlesError> {
+    /// Sets the `desc` uniform to this value.
+    ///
+    /// # Safety
+    ///
+    /// You have to make sure to pass a valid `UniformDesc`, and to only call this function when it
+    /// is otherwise safe to call `gl.Uniform()` series of methods.
+    pub unsafe fn set(&self, gl: &super::ffi::Gles2, desc: &UniformDesc) -> Result<(), GlesError> {
         if !self.matches(&desc.type_) {
             return Err(GlesError::UniformTypeMismatch {
                 provided: self.type_(),
