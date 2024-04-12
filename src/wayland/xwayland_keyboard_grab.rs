@@ -123,6 +123,8 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
     fn start_data(&self) -> &keyboard::GrabStartData<D> {
         &self.start_data
     }
+
+    fn unset(&mut self, _data: &mut D) {}
 }
 
 /// State of the xwayland keyboard grab global

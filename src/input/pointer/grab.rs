@@ -167,6 +167,8 @@ pub trait PointerGrab<D: SeatHandler>: Send {
     );
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData<D>;
+    /// The grab has been unset or replaced with another grab.
+    fn unset(&mut self, data: &mut D);
 }
 
 /// Data about the event that started the grab.
@@ -343,6 +345,8 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
     fn start_data(&self) -> &GrabStartData<D> {
         unreachable!()
     }
+
+    fn unset(&mut self, _data: &mut D) {}
 }
 
 // A click grab, basic grab started when an user clicks a surface
@@ -466,4 +470,6 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
     fn start_data(&self) -> &GrabStartData<D> {
         &self.start_data
     }
+
+    fn unset(&mut self, _data: &mut D) {}
 }

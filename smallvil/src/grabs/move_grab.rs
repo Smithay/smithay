@@ -150,4 +150,6 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
     fn start_data(&self) -> &PointerGrabStartData<Smallvil> {
         &self.start_data
     }
+
+    fn unset(&mut self, _data: &mut Smallvil) {}
 }

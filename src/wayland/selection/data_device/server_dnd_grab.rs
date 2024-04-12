@@ -266,7 +266,6 @@ where
 
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
-            self.drop(data);
             handle.unset_grab(data, serial, time, true);
         }
     }
@@ -355,6 +354,10 @@ where
     fn start_data(&self) -> &PointerGrabStartData<D> {
         self.pointer_start_data.as_ref().unwrap()
     }
+
+    fn unset(&mut self, data: &mut D) {
+        self.drop(data);
+    }
 }
 
 impl<D> TouchGrab<D> for ServerDnDGrab<D>
@@ -387,7 +390,6 @@ where
         }
 
         // the user dropped, proceed to the drop
-        self.drop(data);
         handle.unset_grab(data);
     }
 
@@ -429,6 +431,10 @@ where
 
     fn start_data(&self) -> &TouchGrabStartData<D> {
         self.touch_start_data.as_ref().unwrap()
+    }
+
+    fn unset(&mut self, data: &mut D) {
+        self.drop(data);
     }
 }
 

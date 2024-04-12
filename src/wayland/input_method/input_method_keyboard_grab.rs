@@ -78,6 +78,8 @@ where
     fn start_data(&self) -> &KeyboardGrabStartData<D> {
         &KeyboardGrabStartData { focus: None }
     }
+
+    fn unset(&mut self, _data: &mut D) {}
 }
 
 /// User data of ZwpInputKeyboardGrabV2 object
