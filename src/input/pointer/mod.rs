@@ -244,7 +244,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = focus.clone();
         let seat = self.get_seat(data);
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.motion(data, handle, focus, event);
         });
     }
@@ -264,7 +264,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = focus.clone();
         let seat = self.get_seat(data);
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.relative_motion(data, handle, focus, event);
         });
     }
@@ -285,7 +285,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
             }
         }
         let seat = self.get_seat(data);
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.button(data, handle, event);
         });
     }
@@ -296,9 +296,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn axis(&self, data: &mut D, details: AxisFrame) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.axis(data, handle, details);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.axis(data, handle, details);
+            });
     }
 
     /// End of a pointer frame
@@ -307,9 +310,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn frame(&self, data: &mut D) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.frame(data, handle);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.frame(data, handle);
+            });
     }
 
     /// Notify about swipe gesture begin
@@ -320,9 +326,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_swipe_begin(&self, data: &mut D, event: &GestureSwipeBeginEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_swipe_begin(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_swipe_begin(data, handle, event);
+            });
     }
 
     /// Notify about swipe gesture update
@@ -333,9 +342,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_swipe_update(&self, data: &mut D, event: &GestureSwipeUpdateEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_swipe_update(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_swipe_update(data, handle, event);
+            });
     }
 
     /// Notify about swipe gesture end
@@ -346,9 +358,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_swipe_end(&self, data: &mut D, event: &GestureSwipeEndEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_swipe_end(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_swipe_end(data, handle, event);
+            });
     }
 
     /// Notify about pinch gesture begin
@@ -359,9 +374,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_pinch_begin(&self, data: &mut D, event: &GesturePinchBeginEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_pinch_begin(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_pinch_begin(data, handle, event);
+            });
     }
 
     /// Notify about pinch gesture update
@@ -372,9 +390,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_pinch_update(&self, data: &mut D, event: &GesturePinchUpdateEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_pinch_update(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_pinch_update(data, handle, event);
+            });
     }
 
     /// Notify about pinch gesture end
@@ -385,9 +406,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_pinch_end(&self, data: &mut D, event: &GesturePinchEndEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_pinch_end(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_pinch_end(data, handle, event);
+            });
     }
 
     /// Notify about hold gesture begin
@@ -398,9 +422,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_hold_begin(&self, data: &mut D, event: &GestureHoldBeginEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_hold_begin(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_hold_begin(data, handle, event);
+            });
     }
 
     /// Notify about hold gesture end
@@ -411,9 +438,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_hold_end(&self, data: &mut D, event: &GestureHoldEndEvent) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().with_grab(&seat, |handle, grab| {
-            grab.gesture_hold_end(data, handle, event);
-        });
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(data, &seat, |data, handle, grab| {
+                grab.gesture_hold_end(data, handle, event);
+            });
     }
 
     /// Access the current location of this pointer in the global space
@@ -686,6 +716,9 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         grab: G,
         focus: Focus,
     ) {
+        if let GrabStatus::Active(_, handler) = &mut self.grab {
+            handler.unset(data);
+        }
         self.grab = GrabStatus::Active(serial, Box::new(grab));
 
         if matches!(focus, Focus::Clear) {
@@ -704,6 +737,9 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
     }
 
     fn unset_grab(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, time: u32, restore_focus: bool) {
+        if let GrabStatus::Active(_, handler) = &mut self.grab {
+            handler.unset(data);
+        }
         self.grab = GrabStatus::None;
         if restore_focus {
             // restore the focus
@@ -817,9 +853,9 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
     }
 
-    fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
+    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
     where
-        F: FnOnce(&mut PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
+        F: FnOnce(&mut D, &mut PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
     {
         let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -829,20 +865,34 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 if let Some((ref focus, _)) = handler.start_data().focus {
                     if !focus.alive() {
                         self.grab = GrabStatus::None;
-                        f(&mut PointerInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                        f(
+                            data,
+                            &mut PointerInnerHandle { inner: self, seat },
+                            &mut DefaultGrab,
+                        );
                         return;
                     }
                 }
-                f(&mut PointerInnerHandle { inner: self, seat }, &mut **handler);
+                f(
+                    data,
+                    &mut PointerInnerHandle { inner: self, seat },
+                    &mut **handler,
+                );
             }
             GrabStatus::None => {
-                f(&mut PointerInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                f(
+                    data,
+                    &mut PointerInnerHandle { inner: self, seat },
+                    &mut DefaultGrab,
+                );
             }
         }
 
         if let GrabStatus::Borrowed = self.grab {
-            // the grab has not been ended nor replaced, put it back in place
+            // The grab has not been ended nor replaced, put it back in place
             self.grab = grab;
+        } else if let GrabStatus::Active(_, mut handler) = grab {
+            handler.unset(data);
         }
     }
 }

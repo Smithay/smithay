@@ -20,7 +20,7 @@ use crate::{
         },
         SeatHandler,
     },
-    utils::{DeadResource, IsAlive, Logical, Point, Serial},
+    utils::{DeadResource, IsAlive, Logical, Point, Serial, SERIAL_COUNTER},
     wayland::{compositor::get_role, seat::WaylandFocus, shell::xdg::XDG_POPUP_ROLE},
 };
 
@@ -486,6 +486,8 @@ where
     fn start_data(&self) -> &KeyboardGrabStartData<D> {
         self.popup_grab.keyboard_grab_start_data()
     }
+
+    fn unset(&mut self, _data: &mut D) {}
 }
 
 /// Default implementation of a [`PointerGrab`] for [`PopupGrab`]
@@ -552,7 +554,6 @@ where
     ) {
         if self.popup_grab.has_ended() {
             handle.unset_grab(data, event.serial, event.time, true);
-            self.popup_grab.unset_keyboard_grab(data, event.serial);
             return;
         }
 
@@ -593,7 +594,6 @@ where
         if self.popup_grab.has_ended() {
             handle.unset_grab(data, serial, time, true);
             handle.button(data, event);
-            self.popup_grab.unset_keyboard_grab(data, serial);
             return;
         }
 
@@ -612,7 +612,6 @@ where
             let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
             handle.unset_grab(data, serial, time, true);
             handle.button(data, event);
-            self.popup_grab.unset_keyboard_grab(data, serial);
             return;
         }
 
@@ -701,5 +700,10 @@ where
 
     fn start_data(&self) -> &PointerGrabStartData<D> {
         self.popup_grab.pointer_grab_start_data()
+    }
+
+    fn unset(&mut self, data: &mut D) {
+        let serial = SERIAL_COUNTER.next_serial();
+        self.popup_grab.unset_keyboard_grab(data, serial);
     }
 }
