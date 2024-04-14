@@ -141,6 +141,7 @@ use wayland_server::{
 use super::PingError;
 
 pub mod decoration;
+pub mod dialog;
 
 // handlers for the xdg_shell protocol
 pub(super) mod handlers;
@@ -337,6 +338,12 @@ xdg_role!(
         /// should be brought to front. If the parent is focused
         /// all of it's child should be brought to front.
         pub parent: Option<wl_surface::WlSurface>,
+        /// Hints that the dialog has "modal" behavior.
+        /// Modal dialogs typically require to be fully addressed by the user (i.e. closed)
+        /// before resuming interaction with the parent toplevel, and may require a distinct presentation.
+        ///
+        /// This interface should have no effect on toplevels that are not attached to a parent toplevel.
+        pub modal: bool,
         /// Holds the optional title the client has set for
         /// this toplevel. For example a web-browser will most likely
         /// set this to include the current uri.

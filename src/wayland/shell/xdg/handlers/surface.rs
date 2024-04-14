@@ -16,6 +16,7 @@ use crate::{
 
 use wayland_protocols::{
     xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1,
+    xdg::dialog::v1::server::xdg_dialog_v1,
     xdg::shell::server::{
         xdg_popup::XdgPopup, xdg_surface, xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel, xdg_wm_base,
     },
@@ -133,6 +134,7 @@ where
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
                         decoration: Default::default(),
+                        dialog: Default::default(),
                         alive_tracker: Default::default(),
                     },
                 );
@@ -207,6 +209,7 @@ where
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
                         decoration: Default::default(),
+                        dialog: Default::default(),
                         alive_tracker: Default::default(),
                     },
                 );
@@ -329,6 +332,7 @@ pub struct XdgShellSurfaceUserData {
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) xdg_surface: xdg_surface::XdgSurface,
     pub(crate) decoration: Mutex<Option<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1>>,
+    pub(crate) dialog: Mutex<Option<xdg_dialog_v1::XdgDialogV1>>,
 
     pub(crate) alive_tracker: AliveTracker,
 }
