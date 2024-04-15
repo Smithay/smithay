@@ -130,23 +130,6 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
     }
 }
 
-pub(super) enum GrabStatus<D> {
-    None,
-    Active(Serial, Box<dyn TouchGrab<D>>),
-    Borrowed,
-}
-
-// TouchGrab is a trait, so we have to impl Debug manually
-impl<D> fmt::Debug for GrabStatus<D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GrabStatus::None => f.debug_tuple("GrabStatus::None").finish(),
-            GrabStatus::Active(serial, _) => f.debug_tuple("GrabStatus::Active").field(&serial).finish(),
-            GrabStatus::Borrowed => f.debug_tuple("GrabStatus::Borrowed").finish(),
-        }
-    }
-}
-
 /// The default grab, the behavior when no particular grab is in progress
 #[derive(Debug)]
 pub struct DefaultGrab;
