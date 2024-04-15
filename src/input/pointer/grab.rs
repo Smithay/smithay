@@ -3,7 +3,6 @@ use std::fmt;
 use crate::{
     backend::input::ButtonState,
     input::SeatHandler,
-    utils::Serial,
     utils::{Logical, Point},
 };
 
@@ -199,23 +198,6 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
             focus: self.focus.clone(),
             button: self.button,
             location: self.location,
-        }
-    }
-}
-
-pub(super) enum GrabStatus<D> {
-    None,
-    Active(Serial, Box<dyn PointerGrab<D>>),
-    Borrowed,
-}
-
-// PointerGrab is a trait, so we have to impl Debug manually
-impl<D> fmt::Debug for GrabStatus<D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            GrabStatus::None => f.debug_tuple("GrabStatus::None").finish(),
-            GrabStatus::Active(serial, _) => f.debug_tuple("GrabStatus::Active").field(&serial).finish(),
-            GrabStatus::Borrowed => f.debug_tuple("GrabStatus::Borrowed").finish(),
         }
     }
 }

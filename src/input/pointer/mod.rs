@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     backend::input::{Axis, AxisRelativeDirection, AxisSource, ButtonState},
-    input::{Seat, SeatHandler},
+    input::{GrabStatus, Seat, SeatHandler},
     utils::Serial,
     utils::{IsAlive, Logical, Point},
 };
@@ -17,7 +17,7 @@ pub use cursor_icon::CursorIcon;
 pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CursorImageSurfaceData};
 
 mod grab;
-use grab::{DefaultGrab, GrabStatus};
+use grab::DefaultGrab;
 pub use grab::{GrabStartData, PointerGrab};
 use tracing::{info_span, instrument};
 
@@ -679,7 +679,7 @@ pub(crate) struct PointerInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
     pending_focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
     location: Point<f64, Logical>,
-    grab: GrabStatus<D>,
+    grab: GrabStatus<dyn PointerGrab<D>>,
     pressed_buttons: Vec<u32>,
 }
 

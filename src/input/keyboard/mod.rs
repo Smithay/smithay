@@ -16,7 +16,7 @@ use tracing::{debug, error, info, info_span, instrument, trace};
 use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
 pub use xkbcommon::xkb::{self, keysyms, Keycode, Keysym};
 
-use super::{Seat, SeatHandler};
+use super::{GrabStatus, Seat, SeatHandler};
 
 #[cfg(feature = "wayland_frontend")]
 mod keymap_file;
@@ -50,12 +50,6 @@ where
     );
     /// Hold modifiers were changed on a keyboard from a given seat
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial);
-}
-
-enum GrabStatus<D> {
-    None,
-    Active(Serial, Box<dyn KeyboardGrab<D>>),
-    Borrowed,
 }
 
 /// Mapping of the led of a keymap
@@ -133,7 +127,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) repeat_delay: i32,
     led_mapping: LedMapping,
     pub(crate) led_state: LedState,
-    grab: GrabStatus<D>,
+    grab: GrabStatus<dyn KeyboardGrab<D>>,
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually

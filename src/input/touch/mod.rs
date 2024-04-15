@@ -9,10 +9,9 @@ use tracing::{info_span, instrument};
 use crate::backend::input::TouchSlot;
 use crate::utils::{IsAlive, Logical, Point, Serial, SerialCounter};
 
-use self::grab::GrabStatus;
 pub use grab::{DefaultGrab, GrabStartData, TouchDownGrab, TouchGrab};
 
-use super::{Seat, SeatHandler};
+use super::{GrabStatus, Seat, SeatHandler};
 
 mod grab;
 
@@ -79,7 +78,7 @@ pub(crate) struct TouchInternal<D: SeatHandler> {
     focus: HashMap<TouchSlot, TouchSlotState<D>>,
     seq_counter: SerialCounter,
     default_grab: Box<dyn Fn() -> Box<dyn TouchGrab<D>> + Send + 'static>,
-    grab: GrabStatus<D>,
+    grab: GrabStatus<dyn TouchGrab<D>>,
 }
 
 struct TouchSlotState<D: SeatHandler> {

@@ -135,7 +135,7 @@ use self::{
     pointer::{CursorImageStatus, PointerHandle, PointerTarget},
     touch::TouchGrab,
 };
-use crate::utils::user_data::UserDataMap;
+use crate::utils::{user_data::UserDataMap, Serial};
 
 pub mod keyboard;
 pub mod pointer;
@@ -644,5 +644,22 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// Gets this seat's name
     pub fn name(&self) -> &str {
         &self.arc.name
+    }
+}
+
+pub(super) enum GrabStatus<G: ?Sized> {
+    None,
+    Active(Serial, Box<G>),
+    Borrowed,
+}
+
+// `G` is not `Debug`, so we have to impl Debug manually
+impl<G: ?Sized> fmt::Debug for GrabStatus<G> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GrabStatus::None => f.debug_tuple("GrabStatus::None").finish(),
+            GrabStatus::Active(serial, _) => f.debug_tuple("GrabStatus::Active").field(&serial).finish(),
+            GrabStatus::Borrowed => f.debug_tuple("GrabStatus::Borrowed").finish(),
+        }
     }
 }
