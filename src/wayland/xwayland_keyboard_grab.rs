@@ -66,7 +66,7 @@ pub trait XWaylandKeyboardGrabHandler: SeatHandler {
     /// has a keyboard.
     fn grab(&mut self, _surface: wl_surface::WlSurface, seat: Seat<Self>, grab: XWaylandKeyboardGrab<Self>) {
         if let Some(keyboard) = seat.get_keyboard() {
-            keyboard.set_grab(grab, SERIAL_COUNTER.next_serial());
+            keyboard.set_grab(self, grab, SERIAL_COUNTER.next_serial());
         }
     }
 

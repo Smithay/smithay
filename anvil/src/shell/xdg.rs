@@ -414,7 +414,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                         return;
                     }
                     keyboard.set_focus(self, grab.current_grab(), serial);
-                    keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
+                    keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
                 }
                 if let Some(pointer) = seat.get_pointer() {
                     if pointer.is_grabbed()

@@ -382,7 +382,7 @@ where
                 && (keyboard.has_grab(self.serial)
                     || keyboard.has_grab(self.previous_serial.unwrap_or(self.serial)))
             {
-                keyboard.unset_grab();
+                keyboard.unset_grab(data);
                 keyboard.set_focus(data, Some(self.root.clone()), serial);
             }
         }
