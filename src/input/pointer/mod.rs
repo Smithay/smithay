@@ -970,6 +970,7 @@ pub struct ButtonEvent {
 ///     .value(Axis::Vertical, 30, time)
 ///     .stop(Axis::Vertical);
 /// ```
+#[must_use]
 #[derive(Copy, Clone, Debug)]
 pub struct AxisFrame {
     /// Source of the axis event, if known
