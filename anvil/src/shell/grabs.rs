@@ -67,7 +67,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerMoveS
         handle.button(data, event);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(data, event.serial, event.time, true);
+            handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
 
@@ -199,7 +199,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         }
 
         handle.up(data, event, seq);
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn motion(
@@ -238,7 +238,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         seq: Serial,
     ) {
         handle.cancel(data, seq);
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn start_data(&self) -> &smithay::input::touch::GrabStartData<AnvilState<BackendData>> {
@@ -340,7 +340,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
 
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
         if !self.window.alive() {
-            handle.unset_grab(data, event.serial, event.time, true);
+            handle.unset_grab(self, data, event.serial, event.time, true);
             return;
         }
 
@@ -431,7 +431,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
         handle.button(data, event);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(data, event.serial, event.time, true);
+            handle.unset_grab(self, data, event.serial, event.time, true);
 
             // If toplevel is dead, we can't resize it, so we return early.
             if !self.window.alive() {
@@ -644,7 +644,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         if event.slot != self.start_data.slot {
             return;
         }
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
 
         // If toplevel is dead, we can't resize it, so we return early.
         if !self.window.alive() {
@@ -744,7 +744,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
 
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
         if !self.window.alive() {
-            handle.unset_grab(data);
+            handle.unset_grab(self, data);
             return;
         }
 
@@ -831,7 +831,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         seq: Serial,
     ) {
         handle.cancel(data, seq);
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn start_data(&self) -> &smithay::input::touch::GrabStartData<AnvilState<BackendData>> {

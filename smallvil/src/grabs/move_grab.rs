@@ -58,7 +58,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
 
         if !handle.current_pressed().contains(&BTN_LEFT) {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(data, event.serial, event.time, true);
+            handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
 

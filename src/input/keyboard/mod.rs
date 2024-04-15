@@ -207,9 +207,9 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         (modifiers_changed, leds_changed)
     }
 
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
+    fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
     where
-        F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
+        F: FnOnce(&mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {
         let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -219,34 +219,20 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                 if let Some(ref surface) = handler.start_data().focus {
                     if !surface.alive() {
                         self.grab = GrabStatus::None;
-                        f(
-                            data,
-                            &mut KeyboardInnerHandle { inner: self, seat },
-                            &mut DefaultGrab,
-                        );
+                        f(&mut KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
                         return;
                     }
                 }
-                f(
-                    data,
-                    &mut KeyboardInnerHandle { inner: self, seat },
-                    &mut **handler,
-                );
+                f(&mut KeyboardInnerHandle { inner: self, seat }, &mut **handler);
             }
             GrabStatus::None => {
-                f(
-                    data,
-                    &mut KeyboardInnerHandle { inner: self, seat },
-                    &mut DefaultGrab,
-                );
+                f(&mut KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
             }
         }
 
         if let GrabStatus::Borrowed = self.grab {
             // the grab has not been ended nor replaced, put it back in place
             self.grab = grab;
-        } else if let GrabStatus::Active(_, mut handler) = grab {
-            handler.unset(data);
         }
     }
 }
@@ -951,7 +937,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
         let modifiers = mods_changed.then_some(guard.mods_state);
-        guard.with_grab(data, &seat, |data, handle, grab| {
+        guard.with_grab(&seat, |handle, grab| {
             grab.input(data, handle, keycode, state, modifiers, serial, time);
         });
         if guard.focus.is_some() {
@@ -972,7 +958,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.clone();
         let seat = self.get_seat(data);
-        guard.with_grab(data, &seat, |data, handle, grab| {
+        guard.with_grab(&seat, |handle, grab| {
             grab.set_focus(data, handle, focus, serial);
         });
     }
@@ -1087,10 +1073,14 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
     /// Change the current grab on this keyboard to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: KeyboardGrab<D> + 'static>(&mut self, data: &mut D, serial: Serial, grab: G) {
-        if let GrabStatus::Active(_, handler) = &mut self.inner.grab {
-            handler.unset(data);
-        }
+    pub fn set_grab<G: KeyboardGrab<D> + 'static>(
+        &mut self,
+        handler: &mut dyn KeyboardGrab<D>,
+        data: &mut D,
+        serial: Serial,
+        grab: G,
+    ) {
+        handler.unset(data);
         self.inner.grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
@@ -1098,10 +1088,14 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
     ///
     /// This will also restore the focus of the underlying keyboard if restore_focus
     /// is [`true`]
-    pub fn unset_grab(&mut self, data: &mut D, serial: Serial, restore_focus: bool) {
-        if let GrabStatus::Active(_, handler) = &mut self.inner.grab {
-            handler.unset(data);
-        }
+    pub fn unset_grab(
+        &mut self,
+        handler: &mut dyn KeyboardGrab<D>,
+        data: &mut D,
+        serial: Serial,
+        restore_focus: bool,
+    ) {
+        handler.unset(data);
         self.inner.grab = GrabStatus::None;
         // restore the focus
         if restore_focus {

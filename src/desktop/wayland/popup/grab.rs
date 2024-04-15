@@ -455,7 +455,7 @@ where
         }
 
         if self.popup_grab.has_ended() {
-            handle.unset_grab(data, serial, false);
+            handle.unset_grab(self, data, serial, false);
         }
 
         handle.input(data, keycode, state, modifiers, serial, time)
@@ -471,7 +471,7 @@ where
         // Ignore focus changes unless the grab has ended
         if self.popup_grab.has_ended() {
             handle.set_focus(data, focus, serial);
-            handle.unset_grab(data, serial, false);
+            handle.unset_grab(self, data, serial, false);
             return;
         }
 
@@ -553,7 +553,7 @@ where
         event: &MotionEvent,
     ) {
         if self.popup_grab.has_ended() {
-            handle.unset_grab(data, event.serial, event.time, true);
+            handle.unset_grab(self, data, event.serial, event.time, true);
             return;
         }
 
@@ -592,7 +592,7 @@ where
         let state = event.state;
 
         if self.popup_grab.has_ended() {
-            handle.unset_grab(data, serial, time, true);
+            handle.unset_grab(self, data, serial, time, true);
             handle.button(data, event);
             return;
         }
@@ -610,7 +610,7 @@ where
                 .unwrap_or(false)
         {
             let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
-            handle.unset_grab(data, serial, time, true);
+            handle.unset_grab(self, data, serial, time, true);
             handle.button(data, event);
             return;
         }

@@ -145,6 +145,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
     ) {
         handle.down(data, focus.clone(), event, seq);
         handle.set_grab(
+            self,
             data,
             event.serial,
             TouchDownGrab {
@@ -226,7 +227,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
         handle.up(data, event, seq);
         self.touch_points = self.touch_points.saturating_sub(1);
         if self.touch_points == 0 {
-            handle.unset_grab(data);
+            handle.unset_grab(self, data);
         }
     }
 
@@ -247,7 +248,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
 
     fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, seq: Serial) {
         handle.cancel(data, seq);
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn start_data(&self) -> &GrabStartData<D> {
