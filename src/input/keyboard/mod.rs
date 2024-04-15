@@ -812,13 +812,21 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Change the current grab on this keyboard to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: KeyboardGrab<D> + 'static>(&self, grab: G, serial: Serial) {
-        self.arc.internal.lock().unwrap().grab = GrabStatus::Active(serial, Box::new(grab));
+    pub fn set_grab<G: KeyboardGrab<D> + 'static>(&self, data: &mut D, grab: G, serial: Serial) {
+        let mut inner = self.arc.internal.lock().unwrap();
+        if let GrabStatus::Active(_, handler) = &mut inner.grab {
+            handler.unset(data);
+        }
+        inner.grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
     /// Remove any current grab on this keyboard, resetting it to the default behavior
-    pub fn unset_grab(&self) {
-        self.arc.internal.lock().unwrap().grab = GrabStatus::None;
+    pub fn unset_grab(&self, data: &mut D) {
+        let mut inner = self.arc.internal.lock().unwrap();
+        if let GrabStatus::Active(_, handler) = &mut inner.grab {
+            handler.unset(data);
+        }
+        inner.grab = GrabStatus::None;
     }
 
     /// Check if this keyboard is currently grabbed with this serial

@@ -264,8 +264,11 @@ where
             }
             zwp_input_method_v2::Request::GrabKeyboard { keyboard } => {
                 let input_method = data.handle.inner.lock().unwrap();
-                data.keyboard_handle
-                    .set_grab(input_method.keyboard_grab.clone(), SERIAL_COUNTER.next_serial());
+                data.keyboard_handle.set_grab(
+                    state,
+                    input_method.keyboard_grab.clone(),
+                    SERIAL_COUNTER.next_serial(),
+                );
                 let instance = data_init.init(
                     keyboard,
                     InputMethodKeyboardUserData {
