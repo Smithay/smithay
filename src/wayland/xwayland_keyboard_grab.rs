@@ -101,7 +101,7 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
         handle.set_focus(data, self.start_data.focus.clone(), serial);
 
         if !self.grab.is_alive() {
-            handle.unset_grab(data, serial, false);
+            handle.unset_grab(self, data, serial, false);
         }
 
         handle.input(data, keycode, state, modifiers, serial, time)
@@ -115,7 +115,7 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
         serial: Serial,
     ) {
         if !self.grab.is_alive() {
-            handle.unset_grab(data, serial, false);
+            handle.unset_grab(self, data, serial, false);
             handle.set_focus(data, focus, serial);
         }
     }

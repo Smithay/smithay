@@ -266,7 +266,7 @@ where
 
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
-            handle.unset_grab(data, serial, time, true);
+            handle.unset_grab(self, data, serial, time, true);
         }
     }
 
@@ -390,7 +390,7 @@ where
         }
 
         // the user dropped, proceed to the drop
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn motion(
@@ -426,7 +426,7 @@ where
         _seq: Serial,
     ) {
         // TODO: should we cancel something here?
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn start_data(&self) -> &TouchGrabStartData<D> {

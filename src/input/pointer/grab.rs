@@ -230,6 +230,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         handle.button(data, event);
         if event.state == ButtonState::Pressed {
             handle.set_grab(
+                self,
                 data,
                 event.serial,
                 Focus::Keep,
@@ -365,7 +366,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         handle.button(data, event);
         if handle.current_pressed().is_empty() {
             // no more buttons are pressed, release the grab
-            handle.unset_grab(data, event.serial, event.time, false);
+            handle.unset_grab(self, data, event.serial, event.time, false);
         }
     }
 

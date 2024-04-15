@@ -291,7 +291,7 @@ where
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
-            handle.unset_grab(data, event.serial, event.time, true);
+            handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
 
@@ -414,7 +414,7 @@ where
             return;
         }
 
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn motion(
@@ -447,7 +447,7 @@ where
         _seq: crate::utils::Serial,
     ) {
         // TODO: should we cancel something here?
-        handle.unset_grab(data);
+        handle.unset_grab(self, data);
     }
 
     fn start_data(&self) -> &TouchGrabStartData<D> {
