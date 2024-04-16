@@ -33,7 +33,7 @@ pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logi
             // our children to send a leave events
             if *parent_unmapped {
                 TraversalAction::DoChildren((location, true))
-            } else if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+            } else if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 location += surface_view.offset;
                 TraversalAction::DoChildren((location, false))
             } else {
@@ -60,7 +60,7 @@ pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logi
 
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
-            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+            if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 location += surface_view.offset;
                 let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
                 if output_overlap.overlaps(surface_rectangle) {

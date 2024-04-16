@@ -13,8 +13,8 @@ use crate::{
 use std::sync::Arc;
 use std::{
     any::TypeId,
-    cell::RefCell,
     collections::{hash_map::Entry, HashMap},
+    sync::Mutex,
 };
 use tracing::{error, instrument, warn};
 
@@ -29,7 +29,7 @@ use super::{CommitCounter, DamageBag, DamageSet, SurfaceView};
 ///     let data = states.data_map.get::<RendererSurfaceStateUserData>();
 /// });
 /// ```
-pub type RendererSurfaceStateUserData = RefCell<RendererSurfaceState>;
+pub type RendererSurfaceStateUserData = Mutex<RendererSurfaceState>;
 
 /// Surface state for rendering related data
 #[derive(Default, Debug)]
@@ -48,6 +48,12 @@ pub struct RendererSurfaceState {
 
     accumulated_buffer_delta: Point<i32, Logical>,
 }
+
+// SAFETY: Only thing unsafe here is the `Box<dyn std::any::Any>`, which are the textures.
+// Those are guarded by our Renderers handling thread-safety and the TypeId+render-id.
+// Theoretically a renderer could be thread-safe, but it's texture type isn't, but that is **very** theoretical.
+unsafe impl Send for RendererSurfaceState {}
+unsafe impl Sync for RendererSurfaceState {}
 
 #[derive(Debug)]
 struct InnerBuffer(WlBuffer);
@@ -339,7 +345,7 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
             |surf, states, _| {
                 if states
                     .data_map
-                    .insert_if_missing(|| RefCell::new(RendererSurfaceState::default()))
+                    .insert_if_missing_threadsafe(|| Mutex::new(RendererSurfaceState::default()))
                 {
                     new_surfaces.push(surf.clone());
                 }
@@ -347,7 +353,8 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
                     .data_map
                     .get::<RendererSurfaceStateUserData>()
                     .unwrap()
-                    .borrow_mut();
+                    .lock()
+                    .unwrap();
                 data.update_buffer(states);
             },
             |_, _, _| true,
@@ -362,7 +369,7 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
                     if let Some(mut state) = data
                         .data_map
                         .get::<RendererSurfaceStateUserData>()
-                        .map(|s| s.borrow_mut())
+                        .map(|s| s.lock().unwrap())
                     {
                         state.reset();
                     }
@@ -432,7 +439,7 @@ where
 {
     compositor::with_states(surface, |states| {
         let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
-        Some(cb(&mut data.borrow_mut()))
+        Some(cb(&mut data.lock().unwrap()))
     })
 }
 
@@ -452,7 +459,7 @@ where
 {
     if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
         let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
-        let mut data_ref = data.borrow_mut();
+        let mut data_ref = data.lock().unwrap();
         let data = &mut *data_ref;
 
         let last_commit = data.renderer_seen.get(&texture_id);
@@ -509,7 +516,7 @@ where
             }
 
             if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-                let mut data_ref = data.borrow_mut();
+                let mut data_ref = data.lock().unwrap();
                 let data = &mut *data_ref;
                 // Now, should we be drawn ?
                 if data.textures.contains_key(&texture_id) {
