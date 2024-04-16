@@ -9,7 +9,7 @@ use wayland_protocols::wp::{
     relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1,
 };
 use wayland_server::{
-    backend::ClientId,
+    backend::{ClientId, ObjectId},
     protocol::{
         wl_pointer::{
             self, Axis as WlAxis, AxisSource as WlAxisSource, ButtonState as WlButtonState, Request,
@@ -493,28 +493,7 @@ where
                     None => return,
                 };
 
-                if !handle
-                    .last_enter
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .map(|last_serial| last_serial.0 == serial)
-                    .unwrap_or(false)
-                {
-                    return; // Ignore mismatches in serial
-                }
-
-                // Only allow setting the cursor icon if the current pointer focus is of the same
-                // client.
-                if !handle
-                    .inner
-                    .lock()
-                    .unwrap()
-                    .focus
-                    .as_ref()
-                    .map(|(focus, _)| focus.same_client_as(&pointer.id()))
-                    .unwrap_or(false)
-                {
+                if !allow_setting_cursor(handle, Serial(serial), &pointer.id()) {
                     return;
                 }
 
@@ -634,4 +613,39 @@ impl TryFrom<WlButtonState> for ButtonState {
             x => Err(UnknownButtonState(x)),
         }
     }
+}
+
+pub(crate) fn allow_setting_cursor<D>(handle: &PointerHandle<D>, serial: Serial, object_id: &ObjectId) -> bool
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
+{
+    // Allow client if there is a pointer grab for that client. Like drag and drop.
+    if handle
+        .grab_start_data()
+        .and_then(|data| data.focus)
+        .map_or(false, |focus| focus.0.same_client_as(object_id))
+    {
+        return true;
+    }
+
+    if !handle
+        .last_enter
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map_or(false, |last_serial| *last_serial == serial)
+    {
+        return false; // Ignore mismatches in serial
+    }
+
+    // Only allow setting the cursor icon if the current pointer focus is of the same
+    // client.
+    handle
+        .inner
+        .lock()
+        .unwrap()
+        .focus
+        .as_ref()
+        .map_or(false, |(focus, _)| focus.same_client_as(object_id))
 }
