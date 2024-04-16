@@ -19,9 +19,8 @@ use wayland_server::protocol::wl_surface::{self, WlSurface};
 
 use std::{
     borrow::Cow,
-    cell::{RefCell, RefMut},
     hash::{Hash, Hasher},
-    sync::Arc,
+    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 
@@ -42,14 +41,14 @@ pub struct LayerMap {
 /// If none existed before a new empty [`LayerMap`] is attached
 /// to the output and returned on subsequent calls.
 ///
-/// Note: This function internally uses a [`RefCell`] per
+/// Note: This function internally uses a [`Mutex`] per
 /// [`Output`] as exposed by its return type. Therefor
 /// trying to hold on to multiple references of a [`LayerMap`]
-/// of the same output using this function *will* result in a panic.
-pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
+/// of the same output using this function *will* result in a deadlock.
+pub fn layer_map_for_output(o: &Output) -> MutexGuard<'_, LayerMap> {
     let userdata = o.user_data();
-    userdata.insert_if_missing(|| {
-        RefCell::new(LayerMap {
+    userdata.insert_if_missing_threadsafe(|| {
+        Mutex::new(LayerMap {
             layers: IndexSet::new(),
             output: o.downgrade(),
             zone: Rectangle::from_loc_and_size(
@@ -67,7 +66,7 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
             ),
         })
     });
-    userdata.get::<RefCell<LayerMap>>().unwrap().borrow_mut()
+    userdata.get::<Mutex<LayerMap>>().unwrap().lock().unwrap()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -84,7 +83,7 @@ impl LayerMap {
                 .0
                 .userdata
                 .get::<LayerUserdata>()
-                .map(|s| s.borrow().is_some())
+                .map(|s| s.lock().unwrap().location.is_some())
                 .unwrap_or(false)
             {
                 return Err(LayerError::AlreadyMapped);
@@ -99,7 +98,14 @@ impl LayerMap {
     /// Remove a [`LayerSurface`] from this [`LayerMap`].
     pub fn unmap_layer(&mut self, layer: &LayerSurface) {
         if self.layers.shift_remove(layer) {
-            let _ = layer.user_data().get::<LayerUserdata>().take();
+            let _ = layer
+                .user_data()
+                .get::<LayerUserdata>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .location
+                .take();
             self.arrange();
         }
         if let (Some(output), surface) = (self.output(), layer.wl_surface()) {
@@ -142,7 +148,7 @@ impl LayerMap {
         }
         let mut bbox = layer.bbox();
         let state = layer_state(layer);
-        bbox.loc += state.location;
+        bbox.loc += state.location.unwrap_or_default();
         Some(bbox)
     }
 
@@ -157,7 +163,7 @@ impl LayerMap {
             let bbox_with_popups = {
                 let mut bbox = l.bbox_with_popups();
                 let state = layer_state(l);
-                bbox.loc += state.location;
+                bbox.loc += state.location.unwrap_or_default();
                 bbox
             };
             bbox_with_popups.to_f64().contains(point)
@@ -416,8 +422,8 @@ impl LayerMap {
 
                 {
                     let mut layer_state = layer_state(layer);
-                    if layer_state.location != location {
-                        layer_state.location = location;
+                    if layer_state.location != Some(location) {
+                        layer_state.location = Some(location);
                         changed = true;
                     }
                 }
@@ -452,21 +458,16 @@ impl LayerMap {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct LayerState {
-    pub location: Point<i32, Logical>,
+    pub location: Option<Point<i32, Logical>>,
 }
 
-type LayerUserdata = RefCell<Option<LayerState>>;
-pub fn layer_state(layer: &LayerSurface) -> RefMut<'_, LayerState> {
+type LayerUserdata = Mutex<LayerState>;
+pub fn layer_state(layer: &LayerSurface) -> MutexGuard<'_, LayerState> {
     let userdata = layer.user_data();
-    userdata.insert_if_missing(LayerUserdata::default);
-    RefMut::map(userdata.get::<LayerUserdata>().unwrap().borrow_mut(), |opt| {
-        if opt.is_none() {
-            *opt = Some(LayerState::default());
-        }
-        opt.as_mut().unwrap()
-    })
+    userdata.insert_if_missing_threadsafe(LayerUserdata::default);
+    userdata.get::<LayerUserdata>().unwrap().lock().unwrap()
 }
 
 /// A [`LayerSurface`] represents a single layer surface as given by the wlr-layer-shell protocol.
