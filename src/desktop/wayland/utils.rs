@@ -5,7 +5,7 @@ use crate::{
         element::{
             PrimaryScanoutOutput, RenderElementPresentationState, RenderElementState, RenderElementStates,
         },
-        utils::RendererSurfaceState,
+        utils::{RendererSurfaceState, RendererSurfaceStateUserData},
     },
     desktop::WindowSurfaceType,
     output::{Output, WeakOutput},
@@ -69,9 +69,9 @@ where
         location,
         |_, states, loc: &Point<i32, Logical>| {
             let mut loc = *loc;
-            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
-            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+            if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 loc += surface_view.offset;
                 // Update the bounding box.
                 bounding_box = bounding_box.merge(Rectangle::from_loc_and_size(loc, surface_view.dst));
@@ -110,9 +110,9 @@ where
         location.into(),
         |_, states, location: &Point<i32, Logical>| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
-            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+            if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 location += surface_view.offset;
                 if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
                     TraversalAction::DoChildren(location)
@@ -126,14 +126,15 @@ where
         },
         |wl_surface, states, location: &Point<i32, Logical>| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
-            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+            if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 location += surface_view.offset;
 
                 let contains_the_point = data
                     .map(|data| {
-                        data.borrow()
+                        data.lock()
+                            .unwrap()
                             .contains_point(&states.cached_state.current(), point - location.to_f64())
                     })
                     .unwrap_or(false);

@@ -269,9 +269,7 @@ where
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(data) = data {
-                let data = &*data.borrow();
-
-                if let Some(view) = data.view() {
+                if let Some(view) = data.lock().unwrap().view() {
                     location += view.offset.to_f64().to_physical(scale);
                     TraversalAction::DoChildren(location)
                 } else {
@@ -286,7 +284,7 @@ where
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(data) = data {
-                let has_view = if let Some(view) = data.borrow().view() {
+                let has_view = if let Some(view) = data.lock().unwrap().view() {
                     location += view.offset.to_f64().to_physical(scale);
                     true
                 } else {
@@ -367,7 +365,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             location,
             alpha * alpha_multiplier,
             kind,
-            &data_ref.borrow(),
+            &data_ref.lock().unwrap(),
         ))
     }
 
