@@ -57,7 +57,7 @@
 //! // ... render frame ...
 //!
 //! let presentation_feedbacks = with_states(&surface, |states| {
-//!     std::mem::take(&mut states.cached_state.current::<PresentationFeedbackCachedState>().callbacks)
+//!     std::mem::take(&mut states.cached_state.get::<PresentationFeedbackCachedState>().current().callbacks)
 //! });
 //!
 //! // ... send frame callbacks and present frame
@@ -152,7 +152,8 @@ where
                 with_states(&surface, |states| {
                     states
                         .cached_state
-                        .pending::<PresentationFeedbackCachedState>()
+                        .get::<PresentationFeedbackCachedState>()
+                        .pending()
                         .add_callback(surface.clone(), *data, callback);
                 });
             }

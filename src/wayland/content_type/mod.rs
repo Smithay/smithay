@@ -32,7 +32,8 @@
 //!
 //!    fn commit(&mut self, surface: &WlSurface) {
 //!        compositor::with_states(&surface, |states| {
-//!            let current = states.cached_state.current::<ContentTypeSurfaceCachedState>();
+//!            let mut guard = states.cached_state.get::<ContentTypeSurfaceCachedState>();
+//!            let current = guard.current();
 //!            dbg!(current.content_type());
 //!        });
 //!    }
@@ -75,7 +76,8 @@ mod dispatch;
 ///
 /// # let wl_surface = todo!();
 /// compositor::with_states(&wl_surface, |states| {
-///     let current = states.cached_state.current::<ContentTypeSurfaceCachedState>();
+///     let mut guard = states.cached_state.get::<ContentTypeSurfaceCachedState>();
+///     let current = guard.current();
 ///     dbg!(current.content_type());
 /// });
 /// ```

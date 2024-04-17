@@ -156,7 +156,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
         for layer in self.layer_shell_state.layer_surfaces().rev() {
             let data = with_states(layer.wl_surface(), |states| {
-                *states.cached_state.current::<LayerSurfaceCachedState>()
+                *states.cached_state.get::<LayerSurfaceCachedState>().current()
             });
             if data.keyboard_interactivity == KeyboardInteractivity::Exclusive
                 && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)

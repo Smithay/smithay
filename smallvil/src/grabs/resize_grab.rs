@@ -105,7 +105,8 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
 
         let (min_size, max_size) =
             compositor::with_states(self.window.toplevel().unwrap().wl_surface(), |states| {
-                let data = states.cached_state.current::<SurfaceCachedState>();
+                let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                let data = guard.current();
                 (data.min_size, data.max_size)
             });
 

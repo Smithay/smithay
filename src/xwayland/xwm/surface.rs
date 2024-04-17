@@ -873,7 +873,8 @@ impl X11Relatable for WlSurface {
         let serial = compositor::with_states(self, |states| {
             states
                 .cached_state
-                .current::<crate::wayland::xwayland_shell::XWaylandShellCachedState>()
+                .get::<crate::wayland::xwayland_shell::XWaylandShellCachedState>()
+                .current()
                 .serial
         });
 

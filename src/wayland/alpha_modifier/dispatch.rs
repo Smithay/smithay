@@ -106,7 +106,8 @@ where
                 compositor::with_states(&surface, |states| {
                     states
                         .cached_state
-                        .pending::<AlphaModifierSurfaceCachedState>()
+                        .get::<AlphaModifierSurfaceCachedState>()
+                        .pending()
                         .multiplier = Some(factor);
                 })
             }
@@ -129,7 +130,8 @@ where
 
                     states
                         .cached_state
-                        .pending::<AlphaModifierSurfaceCachedState>()
+                        .get::<AlphaModifierSurfaceCachedState>()
+                        .pending()
                         .multiplier = None;
                 });
             }

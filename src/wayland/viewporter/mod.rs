@@ -32,7 +32,7 @@
 //!
 //! ```no_compile
 //! let viewport = with_states(surface, |states| {
-//!     states.cached_state.current::<ViewportCachedState>();
+//!     states.cached_state.get::<ViewportCachedState>().current()
 //! });
 //! ```
 //!
@@ -204,7 +204,7 @@ where
                             .lock()
                             .unwrap()
                             .take();
-                        *states.cached_state.pending::<ViewportCachedState>() =
+                        *states.cached_state.get::<ViewportCachedState>().pending() =
                             ViewportCachedState::default();
                     });
                 }
@@ -235,7 +235,8 @@ where
                 };
 
                 with_states(&surface, |states| {
-                    let mut viewport_state = states.cached_state.pending::<ViewportCachedState>();
+                    let mut guard = states.cached_state.get::<ViewportCachedState>();
+                    let viewport_state = guard.pending();
                     let src = if is_unset {
                         None
                     } else {
@@ -272,7 +273,8 @@ where
                 };
 
                 with_states(&surface, |states| {
-                    let mut viewport_state = states.cached_state.pending::<ViewportCachedState>();
+                    let mut guard = states.cached_state.get::<ViewportCachedState>();
+                    let viewport_state = guard.pending();
                     let size = if is_unset {
                         None
                     } else {
@@ -308,7 +310,8 @@ fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface
             .lock()
             .unwrap();
         if let Some(viewport) = &*viewport {
-            let viewport_state = states.cached_state.pending::<ViewportCachedState>();
+            let mut guard = states.cached_state.get::<ViewportCachedState>();
+            let viewport_state = guard.pending();
 
             // If src_width or src_height are not integers and destination size is not set,
             // the bad_size protocol error is raised when the surface state is applied.
@@ -343,7 +346,8 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
         .unwrap();
 
     if let Some(viewport) = &*viewport {
-        let state = states.cached_state.pending::<ViewportCachedState>();
+        let mut guard = states.cached_state.get::<ViewportCachedState>();
+        let state = guard.pending();
 
         let buffer_rect = Rectangle::from_loc_and_size((0.0, 0.0), buffer_size.to_f64());
         let src = state.src.unwrap_or(buffer_rect);

@@ -64,7 +64,8 @@ impl PopupKind {
             PopupKind::Xdg(_) => with_states(wl_surface, |states| {
                 states
                     .cached_state
-                    .current::<SurfaceCachedState>()
+                    .get::<SurfaceCachedState>()
+                    .current()
                     .geometry
                     .unwrap_or_default()
             }),

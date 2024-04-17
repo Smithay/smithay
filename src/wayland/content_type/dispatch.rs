@@ -101,7 +101,8 @@ where
                 compositor::with_states(&surface, |states| {
                     states
                         .cached_state
-                        .pending::<ContentTypeSurfaceCachedState>()
+                        .get::<ContentTypeSurfaceCachedState>()
+                        .pending()
                         .content_type = content_type;
                 })
             }
@@ -122,7 +123,8 @@ where
 
                     states
                         .cached_state
-                        .pending::<ContentTypeSurfaceCachedState>()
+                        .get::<ContentTypeSurfaceCachedState>()
+                        .pending()
                         .content_type = wp_content_type_v1::Type::None;
                 });
             }

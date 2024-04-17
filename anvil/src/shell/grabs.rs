@@ -391,7 +391,8 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
 
         let (min_size, max_size) = if let Some(surface) = self.window.wl_surface() {
             with_states(&surface, |states| {
-                let data = states.cached_state.current::<SurfaceCachedState>();
+                let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                let data = guard.current();
                 (data.min_size, data.max_size)
             })
         } else {
@@ -787,7 +788,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
 
         let (min_size, max_size) = if let Some(surface) = self.window.wl_surface() {
             with_states(&surface, |states| {
-                let data = states.cached_state.current::<SurfaceCachedState>();
+                let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                let data = guard.current();
                 (data.min_size, data.max_size)
             })
         } else {

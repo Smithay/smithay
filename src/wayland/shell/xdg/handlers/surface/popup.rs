@@ -86,8 +86,10 @@ where
                     .unwrap()
                     .lock()
                     .unwrap() = Default::default();
-                *states.cached_state.pending::<SurfaceCachedState>() = Default::default();
-                *states.cached_state.current::<SurfaceCachedState>() = Default::default();
+
+                let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
             })
         }
     }

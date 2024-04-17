@@ -165,8 +165,10 @@ where
                     .unwrap()
                     .lock()
                     .unwrap() = Default::default();
-                *states.cached_state.pending::<SurfaceCachedState>() = Default::default();
-                *states.cached_state.current::<SurfaceCachedState>() = Default::default();
+
+                let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
             })
         }
     }
@@ -220,7 +222,7 @@ where
     F: FnOnce(&mut SurfaceCachedState) -> T,
 {
     compositor::with_states(&data.wl_surface, |states| {
-        f(&mut states.cached_state.pending::<SurfaceCachedState>())
+        f(states.cached_state.get::<SurfaceCachedState>().pending())
     })
 }
 
