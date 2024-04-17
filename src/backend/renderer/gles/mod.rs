@@ -730,7 +730,7 @@ impl GlesRenderer {
 
         context
             .user_data()
-            .insert_if_missing(|| RendererId(next_renderer_id()));
+            .insert_if_missing_threadsafe(|| RendererId(next_renderer_id()));
         drop(_guard);
 
         let renderer = GlesRenderer {
