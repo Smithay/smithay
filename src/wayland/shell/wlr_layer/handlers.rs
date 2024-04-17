@@ -112,7 +112,11 @@ where
                         attributes.surface = id.clone();
                     }
 
-                    states.cached_state.pending::<LayerSurfaceCachedState>().layer = layer;
+                    states
+                        .cached_state
+                        .get::<LayerSurfaceCachedState>()
+                        .pending()
+                        .layer = layer;
 
                     inserted
                 });
@@ -127,7 +131,8 @@ where
                                 .lock()
                                 .unwrap();
 
-                            let pending = states.cached_state.pending::<LayerSurfaceCachedState>();
+                            let mut cached_guard = states.cached_state.get::<LayerSurfaceCachedState>();
+                            let pending = cached_guard.pending();
 
                             if pending.size.w == 0 && !pending.anchor.anchored_horizontally() {
                                 guard.surface.post_error(
@@ -360,8 +365,10 @@ where
                     .lock()
                     .unwrap();
                 attributes.reset();
-                *states.cached_state.pending::<LayerSurfaceCachedState>() = Default::default();
-                *states.cached_state.current::<LayerSurfaceCachedState>() = Default::default();
+
+                let mut guard = states.cached_state.get::<LayerSurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
             });
         }
     }
@@ -377,7 +384,7 @@ where
     let data = layer_surface.data::<WlrLayerSurfaceUserData>().unwrap();
     let surface = data.wl_surface.upgrade()?;
     Ok(compositor::with_states(&surface, |states| {
-        f(&mut states.cached_state.pending::<LayerSurfaceCachedState>())
+        f(states.cached_state.get::<LayerSurfaceCachedState>().pending())
     }))
 }
 

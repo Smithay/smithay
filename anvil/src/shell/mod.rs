@@ -114,7 +114,8 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             let maybe_dmabuf = with_states(surface, |surface_data| {
                 surface_data
                     .cached_state
-                    .pending::<SurfaceAttributes>()
+                    .get::<SurfaceAttributes>()
+                    .pending()
                     .buffer
                     .as_ref()
                     .and_then(|assignment| match assignment {

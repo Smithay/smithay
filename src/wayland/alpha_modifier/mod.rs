@@ -35,8 +35,8 @@
 //!
 //!    fn commit(&mut self, surface: &WlSurface) {
 //!        compositor::with_states(&surface, |states| {
-//!            let current = states.cached_state.current::<AlphaModifierSurfaceCachedState>();
-//!            dbg!(current.multiplier());
+//!            let mut modifier_state = states.cached_state.get::<AlphaModifierSurfaceCachedState>();
+//!            dbg!(modifier_state.current().multiplier());
 //!        });
 //!    }
 //! }
@@ -77,8 +77,8 @@ mod dispatch;
 ///
 /// # let wl_surface = todo!();
 /// compositor::with_states(&wl_surface, |states| {
-///     let current = states.cached_state.current::<AlphaModifierSurfaceCachedState>();
-///     dbg!(current.multiplier());
+///     let mut modifier_state = states.cached_state.get::<AlphaModifierSurfaceCachedState>();
+///     dbg!(modifier_state.current().multiplier());
 /// });
 /// ```
 #[derive(Debug, Clone, Copy, Default)]

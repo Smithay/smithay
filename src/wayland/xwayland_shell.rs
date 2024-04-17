@@ -234,7 +234,11 @@ where
 
                 // Set the serial on the pending state of surface
                 compositor::with_states(&data.wl_surface, |states| {
-                    states.cached_state.pending::<XWaylandShellCachedState>().serial = Some(serial);
+                    states
+                        .cached_state
+                        .get::<XWaylandShellCachedState>()
+                        .pending()
+                        .serial = Some(serial);
                 });
             }
             xwayland_surface_v1::Request::Destroy => {
@@ -251,7 +255,11 @@ fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + 'static>(
     surface: &WlSurface,
 ) {
     if let Some(serial) = compositor::with_states(surface, |states| {
-        states.cached_state.pending::<XWaylandShellCachedState>().serial
+        states
+            .cached_state
+            .get::<XWaylandShellCachedState>()
+            .pending()
+            .serial
     }) {
         if let Some(client) = surface.client() {
             // We only care about surfaces created by XWayland.

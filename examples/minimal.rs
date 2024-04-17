@@ -265,7 +265,8 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
             // yet been commited
             for callback in states
                 .cached_state
-                .current::<SurfaceAttributes>()
+                .get::<SurfaceAttributes>()
+                .current()
                 .frame_callbacks
                 .drain(..)
             {

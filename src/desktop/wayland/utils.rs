@@ -135,7 +135,7 @@ where
                     .map(|data| {
                         data.lock()
                             .unwrap()
-                            .contains_point(&states.cached_state.current(), point - location.to_f64())
+                            .contains_point(&*states.cached_state.get().current(), point - location.to_f64())
                     })
                     .unwrap_or(false);
                 if contains_the_point {
@@ -257,7 +257,8 @@ pub fn send_frames_surface_tree<T, F>(
                 // yet been commited
                 for callback in states
                     .cached_state
-                    .current::<SurfaceAttributes>()
+                    .get::<SurfaceAttributes>()
+                    .current()
                     .frame_callbacks
                     .drain(..)
                 {
@@ -319,8 +320,8 @@ impl SurfacePresentationFeedback {
     ///
     /// Returns `None` if the surface has no stored presentation feedback
     pub fn from_states(states: &SurfaceData, flags: wp_presentation_feedback::Kind) -> Option<Self> {
-        let mut presentation_feedback_state =
-            states.cached_state.current::<PresentationFeedbackCachedState>();
+        let mut guard = states.cached_state.get::<PresentationFeedbackCachedState>();
+        let presentation_feedback_state = guard.current();
         if presentation_feedback_state.callbacks.is_empty() {
             return None;
         }

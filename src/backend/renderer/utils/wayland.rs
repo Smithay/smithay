@@ -106,7 +106,8 @@ impl PartialEq<WlBuffer> for &Buffer {
 impl RendererSurfaceState {
     #[profiling::function]
     pub(crate) fn update_buffer(&mut self, states: &SurfaceData) {
-        let mut attrs = states.cached_state.current::<SurfaceAttributes>();
+        let mut attrs_state = states.cached_state.get::<SurfaceAttributes>();
+        let attrs = attrs_state.current();
         self.buffer_delta = attrs.buffer_delta.take();
 
         if let Some(delta) = self.buffer_delta {
@@ -386,13 +387,18 @@ impl SurfaceView {
         buffer_delta: Point<i32, Logical>,
     ) -> SurfaceView {
         viewporter::ensure_viewport_valid(states, surface_size);
-        let viewport = states.cached_state.current::<viewporter::ViewportCachedState>();
+        let mut viewport_state = states.cached_state.get::<viewporter::ViewportCachedState>();
+        let viewport = viewport_state.current();
         let src = viewport
             .src
             .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
         let dst = viewport.size().unwrap_or(surface_size);
         let mut offset = if states.role == Some("subsurface") {
-            states.cached_state.current::<SubsurfaceCachedState>().location
+            states
+                .cached_state
+                .get::<SubsurfaceCachedState>()
+                .current()
+                .location
         } else {
             Default::default()
         };

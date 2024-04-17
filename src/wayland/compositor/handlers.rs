@@ -191,7 +191,8 @@ where
                 };
 
                 PrivateSurfaceData::with_states(surface, |states| {
-                    let mut pending = states.cached_state.pending::<SurfaceAttributes>();
+                    let mut guard = states.cached_state.get::<SurfaceAttributes>();
+                    let pending = guard.pending();
 
                     // Let's set the offset here in case it is supported and non-zero
                     if offset.is_some() {
@@ -208,7 +209,8 @@ where
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
-                        .pending::<SurfaceAttributes>()
+                        .get::<SurfaceAttributes>()
+                        .pending()
                         .damage
                         .push(Damage::Surface(Rectangle::from_loc_and_size(
                             (x, y),
@@ -222,7 +224,8 @@ where
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
-                        .pending::<SurfaceAttributes>()
+                        .get::<SurfaceAttributes>()
+                        .pending()
                         .frame_callbacks
                         .push(callback.clone());
                 });
@@ -233,7 +236,11 @@ where
                     attributes_mutex.lock().unwrap().clone()
                 });
                 PrivateSurfaceData::with_states(surface, |states| {
-                    states.cached_state.pending::<SurfaceAttributes>().opaque_region = attributes;
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .opaque_region = attributes;
                 });
             }
             wl_surface::Request::SetInputRegion { region } => {
@@ -242,7 +249,11 @@ where
                     attributes_mutex.lock().unwrap().clone()
                 });
                 PrivateSurfaceData::with_states(surface, |states| {
-                    states.cached_state.pending::<SurfaceAttributes>().input_region = attributes;
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .input_region = attributes;
                 });
             }
             wl_surface::Request::Commit => {
@@ -255,7 +266,8 @@ where
                     PrivateSurfaceData::with_states(surface, |states| {
                         states
                             .cached_state
-                            .pending::<SurfaceAttributes>()
+                            .get::<SurfaceAttributes>()
+                            .pending()
                             .buffer_transform = transform;
                     });
                 }
@@ -263,7 +275,11 @@ where
             wl_surface::Request::SetBufferScale { scale } => {
                 if scale >= 1 {
                     PrivateSurfaceData::with_states(surface, |states| {
-                        states.cached_state.pending::<SurfaceAttributes>().buffer_scale = scale;
+                        states
+                            .cached_state
+                            .get::<SurfaceAttributes>()
+                            .pending()
+                            .buffer_scale = scale;
                     });
                 } else {
                     surface.post_error(wl_surface::Error::InvalidScale, "Scale must be positive");
@@ -273,7 +289,8 @@ where
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
-                        .pending::<SurfaceAttributes>()
+                        .get::<SurfaceAttributes>()
+                        .pending()
                         .damage
                         .push(Damage::Buffer(Rectangle::from_loc_and_size(
                             (x, y),
@@ -283,7 +300,11 @@ where
             }
             wl_surface::Request::Offset { x, y } => {
                 PrivateSurfaceData::with_states(surface, |states| {
-                    states.cached_state.pending::<SurfaceAttributes>().buffer_delta = Some((x, y).into());
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .buffer_delta = Some((x, y).into());
                 });
             }
             wl_surface::Request::Destroy => {
@@ -523,7 +544,11 @@ where
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
                 PrivateSurfaceData::with_states(&data.surface, |state| {
-                    state.cached_state.pending::<SubsurfaceCachedState>().location = (x, y).into();
+                    state
+                        .cached_state
+                        .get::<SubsurfaceCachedState>()
+                        .pending()
+                        .location = (x, y).into();
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {
@@ -579,8 +604,10 @@ where
                 .unwrap()
                 .sync
                 .store(true, Ordering::Release);
-            *state.cached_state.pending::<SubsurfaceCachedState>() = Default::default();
-            *state.cached_state.current::<SubsurfaceCachedState>() = Default::default();
+
+            let mut guard = state.cached_state.get::<SubsurfaceCachedState>();
+            *guard.pending() = Default::default();
+            *guard.current() = Default::default();
         });
     }
 }

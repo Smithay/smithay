@@ -159,7 +159,8 @@ impl Window {
             with_states(&surface, |states| {
                 states
                     .cached_state
-                    .current::<SurfaceCachedState>()
+                    .get::<SurfaceCachedState>()
+                    .current()
                     .geometry
                     .and_then(|geo| geo.intersection(bbox))
             })

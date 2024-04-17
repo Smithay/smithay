@@ -24,8 +24,8 @@
 // and described in `transaction.rs`.
 
 use std::{
-    cell::{RefCell, RefMut},
     collections::VecDeque,
+    sync::{Mutex, MutexGuard},
 };
 
 use downcast_rs::{impl_downcast, Downcast};
@@ -62,7 +62,9 @@ pub trait Cacheable: Default {
     fn merge_into(self, into: &mut Self, dh: &DisplayHandle);
 }
 
-struct CachedState<T> {
+/// Double buffered cached state of type `T`
+#[derive(Debug)]
+pub struct CachedState<T> {
     pending: T,
     cache: VecDeque<(Serial, T)>,
     current: T,
@@ -78,6 +80,18 @@ impl<T: Default> Default for CachedState<T> {
     }
 }
 
+impl<T> CachedState<T> {
+    /// Access the current state for `T`
+    pub fn current(&mut self) -> &mut T {
+        &mut self.current
+    }
+
+    /// Access the pending state for `T`
+    pub fn pending(&mut self) -> &mut T {
+        &mut self.pending
+    }
+}
+
 trait Cache: Downcast {
     fn commit(&self, commit_id: Option<Serial>, dh: &DisplayHandle);
     fn apply_state(&self, commit_id: Serial, dh: &DisplayHandle);
@@ -85,9 +99,9 @@ trait Cache: Downcast {
 
 impl_downcast!(Cache);
 
-impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
+impl<T: Cacheable + 'static> Cache for Mutex<CachedState<T>> {
     fn commit(&self, commit_id: Option<Serial>, dh: &DisplayHandle) {
-        let mut guard = self.borrow_mut();
+        let mut guard = self.lock().unwrap();
         let me = &mut *guard;
         let new_state = me.pending.commit(dh);
         if let Some(id) = commit_id {
@@ -104,7 +118,7 @@ impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
     }
 
     fn apply_state(&self, commit_id: Serial, dh: &DisplayHandle) {
-        let mut me = self.borrow_mut();
+        let mut me = self.lock().unwrap();
         loop {
             if me.cache.front().map(|&(s, _)| s > commit_id).unwrap_or(true) {
                 // if the cache is empty or the next state has a commit_id greater than the requested one
@@ -130,9 +144,9 @@ impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
 /// which provides access to the pending state of the surface, in which new state from clients will be
 /// stored.
 ///
-/// This contained has [`RefCell`]-like semantics: values of multiple stored types can be accessed at the
-/// same time. The stored values are initialized lazily the first time `current()` or `pending()` are
-/// invoked with this type as argument.
+/// This contained has [`Mutex`]-like semantics: values of multiple stored types can be accessed at the
+/// same time, but accessing the same value multiple times will cause a deadlock.
+/// The stored values are initialized lazily the first time `get()` is invoked with this type as argument.
 pub struct MultiCache {
     caches: appendlist::AppendList<Box<dyn Cache + Send>>,
 }
@@ -150,7 +164,7 @@ impl MultiCache {
         }
     }
 
-    fn find_or_insert<T: Cacheable + Send + 'static>(&self) -> &RefCell<CachedState<T>> {
+    fn find_or_insert<T: Cacheable + Send + 'static>(&self) -> &Mutex<CachedState<T>> {
         for cache in &self.caches {
             if let Some(v) = (**cache).as_any().downcast_ref() {
                 return v;
@@ -158,28 +172,23 @@ impl MultiCache {
         }
         // if we reach here, then the value is not yet in the list, insert it
         self.caches
-            .push(Box::new(RefCell::new(CachedState::<T>::default())) as Box<_>);
+            .push(Box::new(Mutex::new(CachedState::<T>::default())) as Box<_>);
         (*self.caches[self.caches.len() - 1])
             .as_any()
             .downcast_ref()
             .unwrap()
     }
 
-    /// Access the pending state associated with type `T`
-    pub fn pending<T: Cacheable + Send + 'static>(&self) -> RefMut<'_, T> {
-        RefMut::map(self.find_or_insert::<T>().borrow_mut(), |cs| &mut cs.pending)
-    }
-
-    /// Access the current state associated with type `T`
-    pub fn current<T: Cacheable + Send + 'static>(&self) -> RefMut<'_, T> {
-        RefMut::map(self.find_or_insert::<T>().borrow_mut(), |cs| &mut cs.current)
+    /// Access the state associated with type `T`
+    pub fn get<T: Cacheable + Send + 'static>(&self) -> MutexGuard<'_, CachedState<T>> {
+        self.find_or_insert::<T>().lock().unwrap()
     }
 
     /// Check if the container currently contains values for type `T`
     pub fn has<T: Cacheable + Send + 'static>(&self) -> bool {
         self.caches
             .iter()
-            .any(|c| (**c).as_any().is::<RefCell<CachedState<T>>>())
+            .any(|c| (**c).as_any().is::<Mutex<CachedState<T>>>())
     }
 
     /// Commits the pending state, invoking Cacheable::commit()
