@@ -43,7 +43,7 @@
 //! [`on_commit_buffer_handler`](crate::backend::renderer::utils::on_commit_buffer_handler)
 //! the implementation will already call [`ensure_viewport_valid`] for you.
 
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 use tracing::trace;
 use wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
@@ -60,6 +60,8 @@ use super::compositor::{self, with_states, Cacheable, SurfaceData};
 pub struct ViewporterState {
     global: GlobalId,
 }
+
+type ViewporterSurfaceState = Mutex<Option<ViewportMarker>>;
 
 impl ViewporterState {
     /// Create new [`wp_viewporter`] global.
@@ -122,8 +124,8 @@ where
                 let already_has_viewport = with_states(&surface, |states| {
                     states
                         .data_map
-                        .get::<RefCell<Option<ViewportMarker>>>()
-                        .map(|v| v.borrow().is_some())
+                        .get::<ViewporterSurfaceState>()
+                        .map(|v| v.lock().unwrap().is_some())
                         .unwrap_or(false)
                 });
 
@@ -144,7 +146,9 @@ where
                 let initial = with_states(&surface, |states| {
                     let inserted = states
                         .data_map
-                        .insert_if_missing(|| RefCell::new(Some(ViewportMarker(viewport.downgrade()))));
+                        .insert_if_missing_threadsafe::<ViewporterSurfaceState, _>(|| {
+                            Mutex::new(Some(ViewportMarker(viewport.downgrade())))
+                        });
 
                     // if we did not insert the marker it will be None as
                     // checked in already_has_viewport and we have to update
@@ -152,9 +156,10 @@ where
                     if !inserted {
                         *states
                             .data_map
-                            .get::<RefCell<Option<ViewportMarker>>>()
+                            .get::<ViewporterSurfaceState>()
                             .unwrap()
-                            .borrow_mut() = Some(ViewportMarker(viewport.downgrade()));
+                            .lock()
+                            .unwrap() = Some(ViewportMarker(viewport.downgrade()));
                     }
 
                     inserted
@@ -194,9 +199,10 @@ where
                     with_states(&surface, |states| {
                         states
                             .data_map
-                            .get::<RefCell<Option<ViewportMarker>>>()
+                            .get::<ViewporterSurfaceState>()
                             .unwrap()
-                            .borrow_mut()
+                            .lock()
+                            .unwrap()
                             .take();
                         *states.cached_state.pending::<ViewportCachedState>() =
                             ViewportCachedState::default();
@@ -294,12 +300,13 @@ fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface
     with_states(surface, |states| {
         states
             .data_map
-            .insert_if_missing(|| RefCell::new(Option::<ViewportMarker>::None));
+            .insert_if_missing_threadsafe::<ViewporterSurfaceState, _>(|| Mutex::new(None));
         let viewport = states
             .data_map
-            .get::<RefCell<Option<ViewportMarker>>>()
+            .get::<ViewporterSurfaceState>()
             .unwrap()
-            .borrow();
+            .lock()
+            .unwrap();
         if let Some(viewport) = &*viewport {
             let viewport_state = states.cached_state.pending::<ViewportCachedState>();
 
@@ -327,12 +334,13 @@ fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface
 pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logical>) -> bool {
     states
         .data_map
-        .insert_if_missing(|| RefCell::new(Option::<ViewportMarker>::None));
+        .insert_if_missing_threadsafe::<ViewporterSurfaceState, _>(|| Mutex::new(None));
     let viewport = states
         .data_map
-        .get::<RefCell<Option<ViewportMarker>>>()
+        .get::<ViewporterSurfaceState>()
         .unwrap()
-        .borrow();
+        .lock()
+        .unwrap();
 
     if let Some(viewport) = &*viewport {
         let state = states.cached_state.pending::<ViewportCachedState>();
