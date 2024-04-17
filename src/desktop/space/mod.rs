@@ -255,9 +255,8 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     ///
     /// *Note:* Remapping an output does reset it's damage memory.
     pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, location: P) {
-        let mut state = output_state(self.id, output);
         let location = location.into();
-        *state = OutputState { location };
+        set_output_location(self.id, output, location);
         if !self.outputs.contains(output) {
             debug!(parent: &self.span, output = output.name(), "Mapping output at {:?}", location);
             self.outputs.push(output.clone());
@@ -277,9 +276,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             return;
         }
         debug!(parent: &self.span, output = output.name(), "Unmapping output");
-        if let Some(map) = output.user_data().get::<OutputUserdata>() {
-            map.borrow_mut().remove(&self.id);
-        }
+        set_output_location(self.id, output, None);
         self.outputs.retain(|o| o != output);
     }
 
@@ -293,10 +290,10 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         }
 
         let transform: Transform = o.current_transform();
-        let state = output_state(self.id, o);
+        let location = output_location(self.id, o);
         o.current_mode().map(|mode| {
             Rectangle::from_loc_and_size(
-                state.location,
+                location,
                 transform
                     .transform_size(mode.size)
                     .to_f64()
