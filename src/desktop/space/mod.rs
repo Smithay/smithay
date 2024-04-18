@@ -424,7 +424,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         alpha: f32,
     ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
-        <R as Renderer>::TextureId: Texture + 'static,
+        <R as Renderer>::TextureId: Clone + Texture + 'static,
         E: AsRenderElements<R>,
         <E as AsRenderElements<R>>::RenderElement: 'a,
         SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
@@ -585,7 +585,7 @@ pub fn space_render_elements<
     alpha: f32,
 ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
-    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
@@ -680,7 +680,7 @@ pub fn render_output<
     clear_color: [f32; 4],
 ) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R>>
 where
-    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
