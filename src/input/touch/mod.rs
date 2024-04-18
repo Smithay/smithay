@@ -279,7 +279,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
         let seq = inner.seq_counter.next_serial();
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.down(data, handle, focus, event, seq);
         });
     }
@@ -289,7 +289,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
         let seq = inner.seq_counter.next_serial();
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.up(data, handle, event, seq);
         });
     }
@@ -315,7 +315,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
         let seq = inner.seq_counter.next_serial();
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.motion(data, handle, focus, event, seq);
         });
     }
@@ -327,7 +327,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
         let seq = inner.seq_counter.next_serial();
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.frame(data, handle, seq);
         });
     }
@@ -341,7 +341,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
         let seq = inner.seq_counter.next_serial();
-        inner.with_grab(&seat, |handle, grab| {
+        inner.with_grab(data, &seat, |data, handle, grab| {
             grab.cancel(data, handle, seq);
         });
     }
@@ -572,9 +572,9 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         }
     }
 
-    fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
+    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
     where
-        F: FnOnce(&mut TouchInnerHandle<'_, D>, &mut dyn TouchGrab<D>),
+        F: FnOnce(&mut D, &mut TouchInnerHandle<'_, D>, &mut dyn TouchGrab<D>),
     {
         let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -583,17 +583,26 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref focus, _)) = handler.start_data().focus {
                     if !focus.alive() {
+                        handler.unset(data);
                         self.grab = GrabStatus::None;
                         let mut default_grab = (self.default_grab)();
-                        f(&mut TouchInnerHandle { inner: self, seat }, &mut *default_grab);
+                        f(
+                            data,
+                            &mut TouchInnerHandle { inner: self, seat },
+                            &mut *default_grab,
+                        );
                         return;
                     }
                 }
-                f(&mut TouchInnerHandle { inner: self, seat }, &mut **handler);
+                f(data, &mut TouchInnerHandle { inner: self, seat }, &mut **handler);
             }
             GrabStatus::None => {
                 let mut default_grab = (self.default_grab)();
-                f(&mut TouchInnerHandle { inner: self, seat }, &mut *default_grab);
+                f(
+                    data,
+                    &mut TouchInnerHandle { inner: self, seat },
+                    &mut *default_grab,
+                );
             }
         }
 

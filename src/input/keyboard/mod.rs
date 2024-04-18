@@ -207,9 +207,9 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         (modifiers_changed, leds_changed)
     }
 
-    fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
+    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
     where
-        F: FnOnce(&mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
+        F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {
         let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -218,15 +218,28 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some(ref surface) = handler.start_data().focus {
                     if !surface.alive() {
+                        handler.unset(data);
                         self.grab = GrabStatus::None;
-                        f(&mut KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                        f(
+                            data,
+                            &mut KeyboardInnerHandle { inner: self, seat },
+                            &mut DefaultGrab,
+                        );
                         return;
                     }
                 }
-                f(&mut KeyboardInnerHandle { inner: self, seat }, &mut **handler);
+                f(
+                    data,
+                    &mut KeyboardInnerHandle { inner: self, seat },
+                    &mut **handler,
+                );
             }
             GrabStatus::None => {
-                f(&mut KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                f(
+                    data,
+                    &mut KeyboardInnerHandle { inner: self, seat },
+                    &mut DefaultGrab,
+                );
             }
         }
 
@@ -937,7 +950,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
         let modifiers = mods_changed.then_some(guard.mods_state);
-        guard.with_grab(&seat, |handle, grab| {
+        guard.with_grab(data, &seat, |data, handle, grab| {
             grab.input(data, handle, keycode, state, modifiers, serial, time);
         });
         if guard.focus.is_some() {
@@ -958,7 +971,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.clone();
         let seat = self.get_seat(data);
-        guard.with_grab(&seat, |handle, grab| {
+        guard.with_grab(data, &seat, |data, handle, grab| {
             grab.set_focus(data, handle, focus, serial);
         });
     }
