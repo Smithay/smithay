@@ -218,17 +218,17 @@
 //! }
 //! ```
 
-use std::{fmt, marker::PhantomData};
+use std::fmt;
 
 use tracing::{instrument, warn};
 use wayland_server::protocol::wl_surface;
 
 use crate::{
     backend::renderer::{
-        utils::{DamageSet, RendererSurfaceStateUserData},
+        utils::{Buffer, DamageSet, DamageSnapshot, RendererSurfaceStateUserData, SurfaceView},
         Frame, ImportAll, Renderer, Texture,
     },
-    utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::{self, SurfaceData, TraversalAction},
 };
 
@@ -247,7 +247,7 @@ pub fn render_elements_from_surface_tree<R, E>(
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
     E: From<WaylandSurfaceRenderElement<R>>,
 {
     let location = location.into().to_f64();
@@ -290,7 +290,8 @@ where
                     match WaylandSurfaceRenderElement::from_surface(
                         renderer, surface, states, location, alpha, kind,
                     ) {
-                        Ok(surface) => surfaces.push(surface.into()),
+                        Ok(Some(surface)) => surfaces.push(surface.into()),
+                        Ok(None) => {} // surface is not mapped
                         Err(err) => {
                             warn!("Failed to import surface: {}", err);
                         }
@@ -305,21 +306,27 @@ where
 }
 
 /// A single surface render element
-pub struct WaylandSurfaceRenderElement<R> {
+pub struct WaylandSurfaceRenderElement<R: Renderer> {
     id: Id,
     location: Point<f64, Physical>,
     alpha: f32,
-    surface: wl_surface::WlSurface,
-    renderer_type: PhantomData<R>,
     kind: Kind,
+
+    view: Option<SurfaceView>,
+    buffer: Option<Buffer>,
+    buffer_scale: i32,
+    buffer_transform: Transform,
+    buffer_dimensions: Option<Size<i32, BufferCoords>>,
+    damage: DamageSnapshot<i32, BufferCoords>,
+    opaque_regions: Vec<Rectangle<i32, Logical>>,
+    texture: Option<R::TextureId>,
 }
 
-impl<R> fmt::Debug for WaylandSurfaceRenderElement<R> {
+impl<R: Renderer> fmt::Debug for WaylandSurfaceRenderElement<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WaylandSurfaceRenderElement")
             .field("id", &self.id)
             .field("location", &self.location)
-            .field("surface", &self.surface)
             .finish()
     }
 }
@@ -334,33 +341,48 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         location: Point<f64, Physical>,
         alpha: f32,
         kind: Kind,
-    ) -> Result<Self, <R as Renderer>::Error>
+    ) -> Result<Option<Self>, <R as Renderer>::Error>
     where
-        <R as Renderer>::TextureId: 'static,
+        <R as Renderer>::TextureId: Clone + 'static,
     {
         let id = Id::from_wayland_resource(surface);
         crate::backend::renderer::utils::import_surface(renderer, states)?;
 
-        Ok(Self {
+        let Some(data_ref) = states.data_map.get::<RendererSurfaceStateUserData>() else {
+            return Ok(None);
+        };
+        let data = data_ref.borrow();
+
+        Ok(Some(Self {
             id,
             location,
             alpha,
-            surface: surface.clone(),
-            renderer_type: PhantomData,
             kind,
-        })
+            view: data.view(),
+            buffer: data.buffer().cloned(),
+            buffer_scale: data.buffer_scale,
+            buffer_transform: data.buffer_transform,
+            buffer_dimensions: data.buffer_dimensions,
+            damage: data.damage.snapshot(),
+            opaque_regions: data.opaque_regions.clone(),
+            texture: data.texture::<R>(renderer.id()).cloned(),
+        }))
     }
 
     fn size(&self, scale: impl Into<Scale<f64>>) -> Size<i32, Physical> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| d.borrow().view()).map(|surface_view| {
+        self.view
+            .map(|surface_view| {
                 ((surface_view.dst.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
                     - self.location.to_i32_round())
                 .to_size()
             })
-        })
-        .unwrap_or_default()
+            .unwrap_or_default()
+    }
+
+    fn buffer_size(&self) -> Option<Size<i32, Logical>> {
+        self.buffer_dimensions
+            .as_ref()
+            .map(|dim| dim.to_logical(self.buffer_scale, self.buffer_transform))
     }
 }
 
@@ -370,94 +392,73 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
     }
 
     fn current_commit(&self) -> CommitCounter {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.map(|d| d.borrow().current_commit())
-        })
-        .unwrap_or_default()
+        self.damage.current_commit()
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         Rectangle::from_loc_and_size(self.location.to_i32_round(), self.size(scale))
     }
 
-    fn src(&self) -> Rectangle<f64, Buffer> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            if let Some(data) = data {
-                let data = data.borrow();
-
-                if let Some(view) = data.view() {
-                    Some(view.src.to_buffer(
-                        data.buffer_scale as f64,
-                        data.buffer_transform,
-                        &data.buffer_size().unwrap().to_f64(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default()
+    fn src(&self) -> Rectangle<f64, BufferCoords> {
+        self.view
+            .map(|view| {
+                view.src.to_buffer(
+                    self.buffer_scale as f64,
+                    self.buffer_transform,
+                    &self.buffer_size().unwrap().to_f64(),
+                )
+            })
+            .unwrap_or_default()
     }
 
     fn transform(&self) -> Transform {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.map(|d| d.borrow().buffer_transform)
-        })
-        .unwrap_or_default()
+        self.buffer_transform
     }
 
     fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         let dst_size = self.size(scale);
 
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| {
-                let data = d.borrow();
-                if let Some(surface_view) = data.view() {
-                    let damage = data
-                        .damage_since(commit)
-                        .iter()
-                        .filter_map(|rect| {
-                            rect.to_f64()
-                                // first bring the damage into logical space
-                                // Note: We use f64 for this as the damage could
-                                // be not dividable by the buffer scale without
-                                // a rest
-                                .to_logical(
-                                    data.buffer_scale as f64,
-                                    data.buffer_transform,
-                                    &data.buffer_dimensions.unwrap().to_f64(),
-                                )
-                                // then crop by the surface view (viewporter for example could define a src rect)
-                                .intersection(surface_view.src)
-                                // move and scale the cropped rect (viewporter could define a dst size)
-                                .map(|rect| surface_view.rect_to_global(rect).to_i32_up::<i32>())
-                                // now bring the damage to physical space
-                                .map(|rect| {
-                                    // We calculate the scale between to rounded
-                                    // surface size and the scaled surface size
-                                    // and use it to scale the damage to the rounded
-                                    // surface size by multiplying the output scale
-                                    // with the result.
-                                    let surface_scale =
-                                        dst_size.to_f64() / surface_view.dst.to_f64().to_physical(scale);
-                                    rect.to_physical_precise_up(surface_scale * scale)
-                                })
-                        })
-                        .collect::<DamageSet<_, _>>();
-
-                    Some(damage)
-                } else {
-                    None
-                }
+        self.view
+            .map(|surface_view| {
+                self.damage
+                    .damage_since(commit)
+                    .unwrap_or_else(|| {
+                        self.buffer_dimensions
+                            .as_ref()
+                            .map(|size| DamageSet::from_slice(&[Rectangle::from_loc_and_size((0, 0), *size)]))
+                            .unwrap_or_default()
+                    })
+                    .iter()
+                    .filter_map(|rect| {
+                        rect.to_f64()
+                            // first bring the damage into logical space
+                            // Note: We use f64 for this as the damage could
+                            // be not dividable by the buffer scale without
+                            // a rest
+                            .to_logical(
+                                self.buffer_scale as f64,
+                                self.buffer_transform,
+                                &self.buffer_dimensions.unwrap().to_f64(),
+                            )
+                            // then crop by the surface view (viewporter for example could define a src rect)
+                            .intersection(surface_view.src)
+                            // move and scale the cropped rect (viewporter could define a dst size)
+                            .map(|rect| surface_view.rect_to_global(rect).to_i32_up::<i32>())
+                            // now bring the damage to physical space
+                            .map(|rect| {
+                                // We calculate the scale between to rounded
+                                // surface size and the scaled surface size
+                                // and use it to scale the damage to the rounded
+                                // surface size by multiplying the output scale
+                                // with the result.
+                                let surface_scale =
+                                    dst_size.to_f64() / surface_view.dst.to_f64().to_physical(scale);
+                                rect.to_physical_precise_up(surface_scale * scale)
+                            })
+                    })
+                    .collect::<DamageSet<_, _>>()
             })
             .unwrap_or_default()
-        })
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
@@ -465,27 +466,20 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
             return Vec::new();
         }
 
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.map(|d| {
-                let data = d.borrow();
-                data.opaque_regions()
-                    .map(|r| {
-                        r.iter()
-                            .map(|r| {
-                                let loc = r.loc.to_physical_precise_round(scale);
-                                let size = ((r.size.to_f64().to_physical(scale).to_point() + self.location)
-                                    .to_i32_round()
-                                    - self.location.to_i32_round())
-                                .to_size();
-                                Rectangle::from_loc_and_size(loc, size)
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default()
+        if self.view.is_none() {
+            return Vec::new();
+        }
+
+        self.opaque_regions
+            .iter()
+            .map(|r| {
+                let loc = r.loc.to_physical_precise_round(scale);
+                let size = ((r.size.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
+                    - self.location.to_i32_round())
+                .to_size();
+                Rectangle::from_loc_and_size(loc, size)
             })
-            .unwrap_or_default()
-        })
+            .collect::<Vec<_>>()
     }
 
     fn alpha(&self) -> f32 {
@@ -503,11 +497,7 @@ where
     <R as Renderer>::TextureId: Texture + 'static,
 {
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| d.borrow().buffer().cloned())
-                .map(UnderlyingStorage::Wayland)
-        })
+        self.buffer.clone().map(UnderlyingStorage::Wayland)
     }
 
     #[instrument(level = "trace", skip(frame))]
@@ -515,30 +505,15 @@ where
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
-        src: Rectangle<f64, Buffer>,
+        src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            if let Some(data) = data {
-                let data = data.borrow();
-
-                if let Some(texture) = data.texture::<R>(frame.id()) {
-                    frame.render_texture_from_to(
-                        texture,
-                        src,
-                        dst,
-                        damage,
-                        data.buffer_transform,
-                        self.alpha,
-                    )?;
-                } else {
-                    warn!("trying to render texture from different renderer");
-                }
-            }
-
+        if let Some(texture) = &self.texture {
+            frame.render_texture_from_to(texture, src, dst, damage, self.buffer_transform, self.alpha)
+        } else {
+            warn!("trying to render texture from different renderer");
             Ok(())
-        })
+        }
     }
 }

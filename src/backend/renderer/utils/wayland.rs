@@ -476,7 +476,7 @@ where
 
 /// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
 ///
-/// This (or `import_surface`) need to be called before`draw_render_elements`, if used later.
+/// This (or `import_surface`) need to be called before `draw_render_elements`, if used later.
 ///
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
