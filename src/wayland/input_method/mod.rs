@@ -20,6 +20,7 @@
 //! impl InputMethodHandler for State {
 //!     fn new_popup(&mut self, surface: PopupSurface) {}
 //!     fn dismiss_popup(&mut self, surface: PopupSurface) {}
+//!     fn popup_repositioned(&mut self, surface: PopupSurface) {}
 //!     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
 //!         Rectangle::default()
 //!     }
@@ -92,6 +93,9 @@ pub trait InputMethodHandler {
 
     /// Dismiss a popup surface from the compositor state.
     fn dismiss_popup(&mut self, surface: PopupSurface);
+
+    /// Popup location has changed.
+    fn popup_repositioned(&mut self, surface: PopupSurface);
 
     /// Sets the parent location so the popup surface can be placed correctly
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical>;
@@ -208,6 +212,7 @@ where
                         text_input_handle: text_input_handle.clone(),
                         keyboard_handle,
                         popup_geometry_callback: D::parent_geometry,
+                        popup_repositioned: D::popup_repositioned,
                         new_popup: D::new_popup,
                         dismiss_popup: D::dismiss_popup,
                     },

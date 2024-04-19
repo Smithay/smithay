@@ -100,12 +100,28 @@ impl InputMethodHandle {
         keyboard.grab.is_some()
     }
 
-    pub(crate) fn set_text_input_rectangle(&self, x: i32, y: i32, width: i32, height: i32) {
+    pub(crate) fn set_text_input_rectangle<D: SeatHandler + 'static>(
+        &self,
+        state: &mut D,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) {
         let mut inner = self.inner.lock().unwrap();
         inner.popup_handle.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
-        if let Some(mut popup_surface) = inner.popup_handle.surface.clone() {
-            popup_surface.set_rectangle(x, y, width, height);
-        }
+
+        let mut popup_surface = match inner.popup_handle.surface.clone() {
+            Some(popup_surface) => popup_surface,
+            None => return,
+        };
+
+        popup_surface.set_text_input_rectangle(x, y, width, height);
+
+        if let Some(instance) = &inner.instance {
+            let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+            (data.popup_repositioned)(state, popup_surface);
+        };
     }
 
     /// Activate input method on the given surface.
@@ -160,6 +176,7 @@ pub struct InputMethodUserData<D: SeatHandler> {
     pub(crate) keyboard_handle: KeyboardHandle<D>,
     pub(crate) popup_geometry_callback: fn(&D, &WlSurface) -> Rectangle<i32, Logical>,
     pub(crate) new_popup: fn(&mut D, PopupSurface),
+    pub(crate) popup_repositioned: fn(&mut D, PopupSurface),
     pub(crate) dismiss_popup: fn(&mut D, PopupSurface),
 }
 

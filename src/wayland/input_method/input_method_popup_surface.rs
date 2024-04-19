@@ -25,10 +25,10 @@ pub struct PopupSurface {
     /// The surface role for the input method popup
     pub surface_role: ZwpInputPopupSurfaceV2,
     surface: WlSurface,
-    // NOTE the popup position could change at any time, so the popup manager should get updates,
-    // thus use shared storage for the `cloned` data to automatically apply .
-    /// Rectangle with position and size of  text cursor, used for placement of popup surface.
+    /// Protected cursor area.
     pub(crate) rectangle: Arc<Mutex<Rectangle<i32, Logical>>>,
+    /// Location of the popup surface.
+    location: Arc<Mutex<Point<i32, Logical>>>,
     /// Current parent of the IME popup.
     parent: Option<PopupParent>,
 }
@@ -40,10 +40,12 @@ impl PopupSurface {
         rectangle: Arc<Mutex<Rectangle<i32, Logical>>>,
         parent: Option<PopupParent>,
     ) -> Self {
+        let location = Arc::new(Mutex::new(rectangle.lock().unwrap().loc));
         Self {
             surface_role,
-            surface,
             rectangle,
+            location,
+            surface,
             parent,
         }
     }
@@ -72,19 +74,33 @@ impl PopupSurface {
 
     /// Used to access the location of an input popup surface relative to the parent
     pub fn location(&self) -> Point<i32, Logical> {
-        let rectangle = *self.rectangle.lock().unwrap();
-        Point::from((rectangle.loc.x, rectangle.loc.y))
+        *self.location.lock().unwrap()
+    }
+
+    /// Set location of the popup surface relative to the parent. The primary use for this function
+    /// is to adjust the popup during rendering.
+    ///
+    /// Setting this value **won't update** the [`text_input_rectangle`].
+    ///
+    /// [`text_input_rectangle`]: Self::text_input_rectangle
+    pub fn set_location(&self, location: Point<i32, Logical>) {
+        *self.location.lock().unwrap() = location;
     }
 
     /// The region compositor shouldn't obscure when placing the popup within the
     /// client.
-    pub fn protected_region(&self) -> Rectangle<i32, Logical> {
+    pub fn text_input_rectangle(&self) -> Rectangle<i32, Logical> {
         *self.rectangle.lock().unwrap()
     }
 
-    /// Set relative location of text cursor
-    pub fn set_rectangle(&mut self, x: i32, y: i32, width: i32, height: i32) {
+    /// Set relative location of text cursor.
+    ///
+    /// Setting this value **will update** the [`location`] to the new `x` and `y`.
+    ///
+    /// [`location`]: Self::location
+    pub fn set_text_input_rectangle(&mut self, x: i32, y: i32, width: i32, height: i32) {
         *self.rectangle.lock().unwrap() = Rectangle::from_loc_and_size((x, y), (width, height));
+        *self.location.lock().unwrap() = (x, y).into();
         self.surface_role.text_input_rectangle(x, y, width, height);
     }
 }
