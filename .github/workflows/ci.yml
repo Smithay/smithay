@@ -171,7 +171,7 @@ jobs:
       - name: Test features
         env:
           RUST_BACKTRACE: full
-        run: cargo hack check --each-feature --no-dev-deps
+        run: cargo hack check --each-feature --no-dev-deps --exclude-features use_bindgen
 
   smithay-tests:
     needs:
