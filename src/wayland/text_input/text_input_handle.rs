@@ -210,7 +210,7 @@ where
             }
             zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
                 data.input_method_handle
-                    .set_text_input_rectangle(x, y, width, height);
+                    .set_text_input_rectangle::<D>(state, x, y, width, height);
             }
             zwp_text_input_v3::Request::Commit => {
                 data.input_method_handle.with_instance(|input_method| {
