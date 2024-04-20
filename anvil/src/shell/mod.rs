@@ -16,7 +16,7 @@ use smithay::{
             Client, Resource,
         },
     },
-    utils::{Logical, Point, Rectangle, Size},
+    utils::{IsAlive, Logical, Point, Rectangle, Size},
     wayland::{
         buffer::BufferHandler,
         compositor::{
@@ -78,7 +78,11 @@ impl FullscreenSurface {
     }
 
     pub fn get(&self) -> Option<WindowElement> {
-        self.0.borrow().clone()
+        let mut window = self.0.borrow_mut();
+        if window.as_ref().map(|w| !w.alive()).unwrap_or(false) {
+            *window = None;
+        }
+        window.clone()
     }
 
     pub fn clear(&self) -> Option<WindowElement> {
