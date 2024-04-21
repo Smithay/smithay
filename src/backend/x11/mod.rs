@@ -135,7 +135,12 @@ pub enum X11Event {
     },
 
     /// The focus state of the window changed.
-    Focus(bool),
+    Focus {
+        /// The new focus state
+        focused: bool,
+        /// The XID of the window
+        window_id: u32,
+    },
 
     /// An input event occurred.
     Input {
@@ -664,12 +669,12 @@ impl X11Inner {
         // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
 
         match event {
-            x11::Event::FocusIn(_focus_in) => {
-                callback(Focus(true), &mut ());
+            x11::Event::FocusIn(focus_in) => {
+                callback(Focus { focused: true, window_id: focus_in.event }, &mut ());
             }
 
-            x11::Event::FocusOut(_focus_out) => {
-                callback(Focus(false), &mut ());
+            x11::Event::FocusOut(focus_out) => {
+                callback(Focus { focused: false, window_id: focus_out.event }, &mut ());
             }
 
             x11::Event::ButtonPress(button_press) => {
