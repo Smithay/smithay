@@ -138,7 +138,15 @@ pub enum X11Event {
     Focus(bool),
 
     /// An input event occurred.
-    Input(InputEvent<X11Input>),
+    Input {
+        /// The received event.
+        event: InputEvent<X11Input>,
+        /// The XID of the window.
+        ///
+        /// If the XID is None, this means that no specific window was targeted for this, and all
+        /// of them should react to this change.
+        window_id: Option<u32>,
+    },
 
     /// The window was resized.
     Resized {
@@ -628,17 +636,23 @@ impl X11Inner {
             let mut inner = inner.lock().unwrap();
             if !inner.windows.is_empty() && !inner.devices {
                 callback(
-                    Input(InputEvent::DeviceAdded {
-                        device: X11VirtualDevice,
-                    }),
+                    Input {
+                        event: InputEvent::DeviceAdded {
+                            device: X11VirtualDevice,
+                        },
+                        window_id: None,
+                    },
                     &mut (),
                 );
                 inner.devices = true;
             } else if inner.windows.is_empty() && inner.devices {
                 callback(
-                    Input(InputEvent::DeviceRemoved {
-                        device: X11VirtualDevice,
-                    }),
+                    Input {
+                        event: InputEvent::DeviceRemoved {
+                            device: X11VirtualDevice,
+                        },
+                        window_id: None,
+                    },
                     &mut (),
                 );
                 inner.devices = false;
@@ -681,42 +695,48 @@ impl X11Inner {
                     // Scrolling
                     if button_press.detail >= 4 && button_press.detail <= 7 {
                         callback(
-                            Input(InputEvent::PointerAxis {
-                                event: X11MouseWheelEvent {
-                                    time: button_press.time,
-                                    axis: match button_press.detail {
-                                        // Up | Down
-                                        4 | 5 => Axis::Vertical,
+                            Input {
+                                event: InputEvent::PointerAxis {
+                                    event: X11MouseWheelEvent {
+                                        time: button_press.time,
+                                        axis: match button_press.detail {
+                                            // Up | Down
+                                            4 | 5 => Axis::Vertical,
 
-                                        // Right | Left
-                                        6 | 7 => Axis::Horizontal,
+                                            // Right | Left
+                                            6 | 7 => Axis::Horizontal,
 
-                                        _ => unreachable!(),
+                                            _ => unreachable!(),
+                                        },
+                                        amount: match button_press.detail {
+                                            // Up | Right
+                                            4 | 7 => 1.0,
+
+                                            // Down | Left
+                                            5 | 6 => -1.0,
+
+                                            _ => unreachable!(),
+                                        },
+                                        window,
                                     },
-                                    amount: match button_press.detail {
-                                        // Up | Right
-                                        4 | 7 => 1.0,
-
-                                        // Down | Left
-                                        5 | 6 => -1.0,
-
-                                        _ => unreachable!(),
-                                    },
-                                    window,
                                 },
-                            }),
+                                window_id: Some(button_press.event)
+                            },
                             &mut (),
                         )
                     } else {
                         callback(
-                            Input(InputEvent::PointerButton {
-                                event: X11MouseInputEvent {
-                                    time: button_press.time,
-                                    raw: button_press.detail as u32,
-                                    state: ButtonState::Pressed,
-                                    window,
+                            Input {
+                                event: InputEvent::PointerButton {
+                                    event: X11MouseInputEvent {
+                                        time: button_press.time,
+                                        raw: button_press.detail as u32,
+                                        state: ButtonState::Pressed,
+                                        window,
+                                    },
                                 },
-                            }),
+                                window_id: Some(button_press.event),
+                            },
                             &mut (),
                         )
                     }
@@ -733,14 +753,17 @@ impl X11Inner {
 
                 if let Some(window) = X11Inner::window_ref_from_id(inner, &button_release.event) {
                     callback(
-                        Input(InputEvent::PointerButton {
-                            event: X11MouseInputEvent {
-                                time: button_release.time,
-                                raw: button_release.detail as u32,
-                                state: ButtonState::Released,
-                                window,
+                        Input {
+                            event: InputEvent::PointerButton {
+                                event: X11MouseInputEvent {
+                                    time: button_release.time,
+                                    raw: button_release.detail as u32,
+                                    state: ButtonState::Released,
+                                    window,
+                                },
                             },
-                        }),
+                            window_id: Some(button_release.event),
+                        },
                         &mut (),
                     );
                 }
@@ -752,20 +775,23 @@ impl X11Inner {
                     let count = { inner.lock().unwrap().key_counter.fetch_add(1, Ordering::SeqCst) + 1 };
 
                     callback(
-                        Input(InputEvent::Keyboard {
-                            event: X11KeyboardInputEvent {
-                                time: key_press.time,
-                                // X11's keycodes are +8 relative to the libinput keycodes
-                                // that are expected, so subtract 8 from each keycode to
-                                // match libinput.
-                                //
-                                // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                                key: key_press.detail as u32 - 8,
-                                count,
-                                state: KeyState::Pressed,
-                                window,
+                        Input {
+                            event: InputEvent::Keyboard {
+                                event: X11KeyboardInputEvent {
+                                    time: key_press.time,
+                                    // X11's keycodes are +8 relative to the libinput keycodes
+                                    // that are expected, so subtract 8 from each keycode to
+                                    // match libinput.
+                                    //
+                                    // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
+                                    key: key_press.detail as u32 - 8,
+                                    count,
+                                    state: KeyState::Pressed,
+                                    window,
+                                },
                             },
-                        }),
+                            window_id: Some(key_press.event),
+                        },
                         &mut (),
                     )
                 }
@@ -785,20 +811,23 @@ impl X11Inner {
                     };
 
                     callback(
-                        Input(InputEvent::Keyboard {
-                            event: X11KeyboardInputEvent {
-                                time: key_release.time,
-                                // X11's keycodes are +8 relative to the libinput keycodes
-                                // that are expected, so subtract 8 from each keycode to
-                                // match libinput.
-                                //
-                                // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                                key: key_release.detail as u32 - 8,
-                                count,
-                                state: KeyState::Released,
-                                window,
+                        Input {
+                            event: InputEvent::Keyboard {
+                                event: X11KeyboardInputEvent {
+                                    time: key_release.time,
+                                    // X11's keycodes are +8 relative to the libinput keycodes
+                                    // that are expected, so subtract 8 from each keycode to
+                                    // match libinput.
+                                    //
+                                    // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
+                                    key: key_release.detail as u32 - 8,
+                                    count,
+                                    state: KeyState::Released,
+                                    window,
+                                },
                             },
-                        }),
+                            window_id: Some(key_release.event)
+                        },
                         &mut (),
                     );
                 }
@@ -815,15 +844,18 @@ impl X11Inner {
                     let window_size = { *window.size.lock().unwrap() };
 
                     callback(
-                        Input(InputEvent::PointerMotionAbsolute {
-                            event: X11MouseMovedEvent {
-                                time: motion_notify.time,
-                                x,
-                                y,
-                                size: window_size,
-                                window: Arc::downgrade(&window),
+                        Input {
+                            event: InputEvent::PointerMotionAbsolute {
+                                event: X11MouseMovedEvent {
+                                    time: motion_notify.time,
+                                    x,
+                                    y,
+                                    size: window_size,
+                                    window: Arc::downgrade(&window),
+                                },
                             },
-                        }),
+                            window_id: Some(motion_notify.event),
+                        },
                         &mut (),
                     )
                 }
