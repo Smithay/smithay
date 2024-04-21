@@ -279,7 +279,7 @@ pub fn run_x11() {
                 data.backend_data.render = true;
             }
             X11Event::Input { event, .. } => data.process_input_event_windowed(event, OUTPUT_NAME),
-            X11Event::Focus(false) => {
+            X11Event::Focus { focused: false, .. } => {
                 data.release_all_keys();
             }
             _ => {}
