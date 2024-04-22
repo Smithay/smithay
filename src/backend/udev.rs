@@ -272,7 +272,7 @@ pub fn all_gpus<S: AsRef<str>>(seat: S) -> io::Result<Vec<PathBuf>> {
     let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;
-    Ok(enumerator
+    let mut gpus = enumerator
         .scan_devices()?
         .filter(|device| {
             device
@@ -282,7 +282,9 @@ pub fn all_gpus<S: AsRef<str>>(seat: S) -> io::Result<Vec<PathBuf>> {
                 == *seat.as_ref()
         })
         .flat_map(|device| device.devnode().map(PathBuf::from))
-        .collect())
+        .collect::<Vec<_>>();
+    gpus.sort();
+    Ok(gpus)
 }
 
 /// Returns the loaded driver for a device named by it's [`dev_t`].
