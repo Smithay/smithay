@@ -670,11 +670,23 @@ impl X11Inner {
 
         match event {
             x11::Event::FocusIn(focus_in) => {
-                callback(Focus { focused: true, window_id: focus_in.event }, &mut ());
+                callback(
+                    Focus {
+                        focused: true,
+                        window_id: focus_in.event,
+                    },
+                    &mut (),
+                );
             }
 
             x11::Event::FocusOut(focus_out) => {
-                callback(Focus { focused: false, window_id: focus_out.event }, &mut ());
+                callback(
+                    Focus {
+                        focused: false,
+                        window_id: focus_out.event,
+                    },
+                    &mut (),
+                );
             }
 
             x11::Event::ButtonPress(button_press) => {
@@ -725,7 +737,7 @@ impl X11Inner {
                                         window,
                                     },
                                 },
-                                window_id: Some(button_press.event)
+                                window_id: Some(button_press.event),
                             },
                             &mut (),
                         )
@@ -831,7 +843,7 @@ impl X11Inner {
                                     window,
                                 },
                             },
-                            window_id: Some(key_release.event)
+                            window_id: Some(key_release.event),
                         },
                         &mut (),
                     );
