@@ -145,6 +145,7 @@ where
                         active: true,
                         dropped: false,
                         accepted: true,
+                        finished: false,
                         chosen_action: DndAction::empty(),
                     }));
                     for device in seat_data
@@ -464,6 +465,7 @@ struct OfferData {
     active: bool,
     dropped: bool,
     accepted: bool,
+    finished: bool,
     chosen_action: DndAction,
 }
 
@@ -533,7 +535,11 @@ where
                 source.send(mime_type, fd.as_fd());
             }
         }
-        Request::Destroy => {}
+        Request::Destroy => {
+            if source.version() >= 3 && data.dropped && !data.finished {
+                source.cancelled();
+            }
+        }
         Request::Finish => {
             if !data.active {
                 offer.post_error(
@@ -565,6 +571,7 @@ where
             }
             source.dnd_finished();
             data.active = false;
+            data.finished = true;
         }
         Request::SetActions {
             dnd_actions,
