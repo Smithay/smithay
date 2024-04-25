@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_output::Transform as WlTransform;
@@ -556,6 +556,18 @@ impl<N, Kind> From<Point<N, Kind>> for (N, N) {
     #[inline]
     fn from(point: Point<N, Kind>) -> (N, N) {
         (point.x, point.y)
+    }
+}
+
+impl<N: Coordinate + Neg<Output = N>, Kind> Neg for Point<N, Kind> {
+    type Output = Point<N, Kind>;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Point {
+            x: -self.x,
+            y: -self.y,
+            _kind: std::marker::PhantomData,
+        }
     }
 }
 
