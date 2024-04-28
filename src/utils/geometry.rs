@@ -382,14 +382,14 @@ impl<N: Coordinate, Kind> Point<N, Kind> {
     /// Constrain this [`Point`] within a [`Rectangle`] with the same coordinates
     ///
     /// The [`Point`] returned is guaranteed to be not smaller than the [`Rectangle`]
-    /// location and not greater than the [`Rectangle`] size.
+    /// location and not greater than the [`Rectangle`] location plus size.
     #[inline]
     pub fn constrain(self, rect: impl Into<Rectangle<N, Kind>>) -> Point<N, Kind> {
         let rect = rect.into();
 
         Point {
-            x: self.x.max(rect.loc.x).min(rect.size.w),
-            y: self.y.max(rect.loc.y).min(rect.size.h),
+            x: self.x.max(rect.loc.x).min(rect.loc.x + rect.size.w),
+            y: self.y.max(rect.loc.y).min(rect.loc.y + rect.size.h),
             _kind: std::marker::PhantomData,
         }
     }
