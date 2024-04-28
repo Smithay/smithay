@@ -158,8 +158,6 @@ where
                         seat: seat.clone(),
                     },
                 );
-
-                virtual_keyboard_handle.count_instance();
             }
             _ => unreachable!(),
         }
