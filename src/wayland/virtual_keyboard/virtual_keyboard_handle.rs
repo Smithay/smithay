@@ -27,7 +27,6 @@ use super::VirtualKeyboardManagerState;
 
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
-    instances: u8,
     state: Option<VirtualKeyboardState>,
 }
 
@@ -55,13 +54,6 @@ unsafe impl Send for VirtualKeyboard {}
 #[derive(Debug, Clone, Default)]
 pub(crate) struct VirtualKeyboardHandle {
     pub(crate) inner: Arc<Mutex<VirtualKeyboard>>,
-}
-
-impl VirtualKeyboardHandle {
-    pub(super) fn count_instance(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.instances += 1;
-    }
 }
 
 /// User data of ZwpVirtualKeyboardV1 object
