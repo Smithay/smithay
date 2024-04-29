@@ -217,6 +217,11 @@ impl SolidColorBuffer {
             self.commit.increment();
         }
     }
+
+    /// Get the current color of this buffer
+    pub fn color(&self) -> [f32; 4] {
+        self.color
+    }
 }
 
 /// [`Element`] to render a solid color
@@ -276,6 +281,11 @@ impl SolidColorRenderElement {
             color,
             kind,
         }
+    }
+
+    /// Get the current color of this element
+    pub fn color(&self) -> [f32; 4] {
+        self.color
     }
 }
 
