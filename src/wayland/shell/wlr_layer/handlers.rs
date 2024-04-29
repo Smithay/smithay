@@ -4,7 +4,7 @@ use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::{self, 
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1;
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
 use wayland_server::protocol::wl_surface;
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak};
 
 use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
@@ -92,7 +92,7 @@ where
                     id,
                     WlrLayerSurfaceUserData {
                         shell_data: state.shell_state().clone(),
-                        wl_surface: wl_surface.clone(),
+                        wl_surface: wl_surface.downgrade(),
                         alive_tracker: Default::default(),
                     },
                 );
@@ -182,7 +182,10 @@ where
 #[derive(Debug)]
 pub struct WlrLayerSurfaceUserData {
     shell_data: WlrLayerShellState,
-    wl_surface: wl_surface::WlSurface,
+    // `LayerSurfaceAttributes` stored in the surface `data_map`, contains a
+    // `ZwlrLayerSurfaceV1`. So this reference needs to be weak to avoid a
+    // cycle.
+    wl_surface: Weak<wl_surface::WlSurface>,
     alive_tracker: AliveTracker,
 }
 
@@ -209,14 +212,14 @@ where
     ) {
         match request {
             zwlr_layer_surface_v1::Request::SetSize { width, height } => {
-                with_surface_pending_state(layer_surface, |data| {
+                let _ = with_surface_pending_state(layer_surface, |data| {
                     data.size = (width as i32, height as i32).into();
                 });
             }
             zwlr_layer_surface_v1::Request::SetAnchor { anchor } => {
                 match Anchor::try_from(anchor) {
                     Ok(anchor) => {
-                        with_surface_pending_state(layer_surface, |data| {
+                        let _ = with_surface_pending_state(layer_surface, |data| {
                             data.anchor = Anchor::from_bits(anchor.bits()).unwrap_or_default();
                         });
                     }
@@ -226,7 +229,7 @@ where
                 };
             }
             zwlr_layer_surface_v1::Request::SetExclusiveZone { zone } => {
-                with_surface_pending_state(layer_surface, |data| {
+                let _ = with_surface_pending_state(layer_surface, |data| {
                     data.exclusive_zone = zone.into();
                 });
             }
@@ -236,7 +239,7 @@ where
                 bottom,
                 left,
             } => {
-                with_surface_pending_state(layer_surface, |data| {
+                let _ = with_surface_pending_state(layer_surface, |data| {
                     data.margin = Margins {
                         top,
                         right,
@@ -250,7 +253,7 @@ where
             } => {
                 match KeyboardInteractivity::try_from(keyboard_interactivity) {
                     Ok(keyboard_interactivity) => {
-                        with_surface_pending_state(layer_surface, |data| {
+                        let _ = with_surface_pending_state(layer_surface, |data| {
                             data.keyboard_interactivity = keyboard_interactivity;
                         });
                     }
@@ -262,7 +265,7 @@ where
             zwlr_layer_surface_v1::Request::SetLayer { layer } => {
                 match Layer::try_from(layer) {
                     Ok(layer) => {
-                        with_surface_pending_state(layer_surface, |data| {
+                        let _ = with_surface_pending_state(layer_surface, |data| {
                             data.layer = layer;
                         });
                     }
@@ -272,7 +275,9 @@ where
                 };
             }
             zwlr_layer_surface_v1::Request::GetPopup { popup } => {
-                let parent_surface = data.wl_surface.clone();
+                let Ok(parent_surface) = data.wl_surface.upgrade() else {
+                    return;
+                };
 
                 let data = popup
                     .data::<crate::wayland::shell::xdg::XdgShellSurfaceUserData>()
@@ -290,15 +295,18 @@ where
 
                 WlrLayerShellHandler::new_popup(
                     state,
-                    make_surface_handle(layer_surface),
+                    make_surface_handle(layer_surface).unwrap(),
                     crate::wayland::shell::xdg::handlers::make_popup_handle(&popup),
                 );
             }
             zwlr_layer_surface_v1::Request::AckConfigure { serial } => {
-                let serial = Serial::from(serial);
-                let surface = &data.wl_surface;
+                let Ok(surface) = data.wl_surface.upgrade() else {
+                    return;
+                };
 
-                let found_configure = compositor::with_states(surface, |states| {
+                let serial = Serial::from(serial);
+
+                let found_configure = compositor::with_states(&surface, |states| {
                     states
                         .data_map
                         .get::<LayerSurfaceData>()
@@ -319,7 +327,7 @@ where
                     }
                 };
 
-                WlrLayerShellHandler::ack_configure(state, data.wl_surface.clone(), configure);
+                WlrLayerShellHandler::ack_configure(state, surface, configure);
             }
             _ => {}
         }
@@ -358,22 +366,27 @@ where
     }
 }
 
-fn with_surface_pending_state<F, T>(layer_surface: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, f: F) -> T
+fn with_surface_pending_state<F, T>(
+    layer_surface: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+    f: F,
+) -> Result<T, wayland_server::backend::InvalidId>
 where
     F: FnOnce(&mut LayerSurfaceCachedState) -> T,
 {
     let data = layer_surface.data::<WlrLayerSurfaceUserData>().unwrap();
-    compositor::with_states(&data.wl_surface, |states| {
+    let surface = data.wl_surface.upgrade()?;
+    Ok(compositor::with_states(&surface, |states| {
         f(&mut states.cached_state.pending::<LayerSurfaceCachedState>())
-    })
+    }))
 }
 
 pub fn make_surface_handle(
     resource: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
-) -> crate::wayland::shell::wlr_layer::LayerSurface {
+) -> Result<crate::wayland::shell::wlr_layer::LayerSurface, wayland_server::backend::InvalidId> {
     let data = resource.data::<WlrLayerSurfaceUserData>().unwrap();
-    crate::wayland::shell::wlr_layer::LayerSurface {
-        wl_surface: data.wl_surface.clone(),
+    let wl_surface = data.wl_surface.upgrade()?;
+    Ok(crate::wayland::shell::wlr_layer::LayerSurface {
+        wl_surface,
         shell_surface: resource.clone(),
-    }
+    })
 }
