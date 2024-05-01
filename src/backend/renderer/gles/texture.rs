@@ -39,6 +39,11 @@ impl GlesTexture {
     pub fn tex_id(&self) -> ffi::types::GLuint {
         self.0.texture
     }
+
+    /// Whether the texture is upside down
+    pub fn is_y_inverted(&self) -> bool {
+        self.0.y_inverted
+    }
 }
 
 #[derive(Debug)]
