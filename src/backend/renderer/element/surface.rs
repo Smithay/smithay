@@ -379,10 +379,21 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             .unwrap_or_default()
     }
 
-    fn buffer_size(&self) -> Option<Size<i32, Logical>> {
+    /// Get the buffer dimensions in logical coordinates
+    pub fn buffer_size(&self) -> Option<Size<i32, Logical>> {
         self.buffer_dimensions
             .as_ref()
             .map(|dim| dim.to_logical(self.buffer_scale, self.buffer_transform))
+    }
+
+    /// Get the view into the surface
+    pub fn view(&self) -> Option<SurfaceView> {
+        self.view
+    }
+
+    /// Get the buffer texture
+    pub fn texture(&self) -> Option<&R::TextureId> {
+        self.texture.as_ref()
     }
 }
 
