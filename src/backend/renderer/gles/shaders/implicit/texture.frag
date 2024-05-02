@@ -31,7 +31,7 @@ void main() {
 
 #if defined(DEBUG_FLAGS)
     if (tint == 1.0)
-        color = vec4(0.0, 0.3, 0.0, 0.2) + color * 0.8;
+        color = vec4(0.0, 0.2, 0.0, 0.2) + color * 0.8;
 #endif
 
     gl_FragColor = color;
