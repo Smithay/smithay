@@ -656,7 +656,7 @@ pub struct PixmanRenderer {
 impl PixmanRenderer {
     /// Creates a new pixman renderer
     pub fn new() -> Result<Self, PixmanError> {
-        let tint = pixman::Solid::new([0.0, 0.3, 0.0, 0.2]).map_err(|_| PixmanError::Unsupported)?;
+        let tint = pixman::Solid::new([0.0, 0.2, 0.0, 0.2]).map_err(|_| PixmanError::Unsupported)?;
         Ok(Self {
             target: None,
             downscale_filter: TextureFilter::Linear,
