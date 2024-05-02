@@ -287,9 +287,12 @@ impl PrivateSurfaceData {
             .pending_transaction
             .insert_state(surface.clone(), my_data.current_txid);
         if !is_sync {
+            let client = match surface.client() {
+                Some(client) => client,
+                None => return,
+            };
             // if we are not sync, add the transaction to the queue
             let tx = std::mem::take(&mut my_data.pending_transaction);
-            let client = surface.client().unwrap();
             let mut queue_guard = state.client_compositor_state(&client).queue.lock().unwrap();
             let queue = queue_guard.get_or_insert_with(TransactionQueue::default);
             queue.append(tx.finalize());
