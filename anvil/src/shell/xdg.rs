@@ -281,7 +281,10 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     .as_ref()
                     .and_then(Output::from_resource)
                     .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
-                let client = self.display_handle.get_client(wl_surface.id()).unwrap();
+                let client = match self.display_handle.get_client(wl_surface.id()) {
+                    Ok(client) => client,
+                    Err(_) => return,
+                };
                 for output in output.client_outputs(&client) {
                     wl_output = Some(output);
                 }

@@ -124,14 +124,15 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             });
             if let Some(dmabuf) = maybe_dmabuf {
                 if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
-                    let client = surface.client().unwrap();
-                    let res = state.handle.insert_source(source, move |_, _, data| {
-                        let dh = data.display_handle.clone();
-                        data.client_compositor_state(&client).blocker_cleared(data, &dh);
-                        Ok(())
-                    });
-                    if res.is_ok() {
-                        add_blocker(surface, blocker);
+                    if let Some(client) = surface.client() {
+                        let res = state.handle.insert_source(source, move |_, _, data| {
+                            let dh = data.display_handle.clone();
+                            data.client_compositor_state(&client).blocker_cleared(data, &dh);
+                            Ok(())
+                        });
+                        if res.is_ok() {
+                            add_blocker(surface, blocker);
+                        }
                     }
                 }
             }
