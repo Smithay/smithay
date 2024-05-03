@@ -969,7 +969,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
-        guard.pending_focus = focus.clone();
+        guard.pending_focus.clone_from(&focus);
         let seat = self.get_seat(data);
         guard.with_grab(data, &seat, |data, handle, grab| {
             grab.set_focus(data, handle, focus, serial);

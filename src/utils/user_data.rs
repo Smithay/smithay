@@ -36,6 +36,12 @@ enum UserDataInner {
 unsafe impl Send for UserData {}
 unsafe impl Sync for UserData {}
 
+impl Default for UserData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UserData {
     /// Create a new UserData instance
     pub const fn new() -> UserData {

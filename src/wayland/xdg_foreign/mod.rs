@@ -102,8 +102,9 @@ impl XdgForeignState {
     /// Creates a new xdg activation global.
     ///
     /// In order to use this abstraction, your `D` type needs to implement [`XdgForeignHandler`].
-    pub fn new<D: XdgForeignHandler>(display: &DisplayHandle) -> Self
+    pub fn new<D>(display: &DisplayHandle) -> Self
     where
+        D: XdgForeignHandler,
         D: GlobalDispatch<ZxdgExporterV2, ()>,
         D: GlobalDispatch<ZxdgImporterV2, ()>,
     {

@@ -174,10 +174,10 @@ impl PointerConstraint {
     fn commit(&mut self) {
         match self {
             Self::Confined(confined) => {
-                confined.region = confined.pending_region.clone();
+                confined.region.clone_from(&confined.pending_region);
             }
             Self::Locked(locked) => {
-                locked.region = locked.pending_region.clone();
+                locked.region.clone_from(&locked.pending_region);
                 locked.cursor_position_hint = locked.pending_cursor_position_hint;
             }
         }

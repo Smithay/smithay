@@ -282,7 +282,7 @@ impl AtomicDrmSurface {
     fn ensure_props_known(&self, conns: &[connector::Handle]) -> Result<(), Error> {
         let mapping_exists = {
             let prop_mapping = self.prop_mapping.read().unwrap();
-            conns.iter().all(|conn| prop_mapping.0.get(conn).is_some())
+            conns.iter().all(|conn| prop_mapping.0.contains_key(conn))
         };
         if !mapping_exists {
             map_props(

@@ -504,7 +504,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
             .entry(event.slot)
             .and_modify(|state| {
                 state.pending = seq;
-                state.focus = focus.clone();
+                state.focus.clone_from(&focus);
             })
             .or_insert_with(|| TouchSlotState {
                 focus,

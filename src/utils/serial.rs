@@ -66,6 +66,12 @@ pub struct SerialCounter {
     serial: AtomicU32,
 }
 
+impl Default for SerialCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SerialCounter {
     /// Create a new counter starting at `1`
     pub const fn new() -> Self {
