@@ -242,7 +242,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         event: &MotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
-        inner.pending_focus = focus.clone();
+        inner.pending_focus.clone_from(&focus);
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.motion(data, handle, focus, event);
@@ -262,7 +262,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         event: &RelativeMotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
-        inner.pending_focus = focus.clone();
+        inner.pending_focus.clone_from(&focus);
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.relative_motion(data, handle, focus, event);
@@ -453,7 +453,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 
     /// Access the [`Serial`] of the last `pointer_enter` event, if that focus is still active.
     ///
-    /// In other words this will return `None` again, once a `pointer_leave` event occured.
+    /// In other words this will return `None` again, once a `pointer_leave` event occurred.
     #[cfg(feature = "wayland_frontend")]
     pub fn last_enter(&self) -> Option<Serial> {
         *self.last_enter.lock().unwrap()

@@ -1095,13 +1095,13 @@ where
     }
 }
 
-fn create_shared_dma_framebuffer<R: GraphicsApi, T: GraphicsApi>(
+fn create_shared_dma_framebuffer<R, T: GraphicsApi>(
     buffer_size: Size<i32, BufferCoords>,
     src: &mut R::Device,
     target: &mut TargetData<'_, T>,
 ) -> Result<Dmabuf, Error<R, T>>
 where
-    R: 'static,
+    R: GraphicsApi + 'static,
     R::Error: 'static,
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
