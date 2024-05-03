@@ -305,11 +305,12 @@ unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
 unsafe fn place_sigbus_handler() {
     // create our sigbus handler
     unsafe {
-        let action = libc::sigaction {
-            sa_sigaction: sigbus_handler as _,
-            sa_flags: libc::SA_SIGINFO | libc::SA_NODEFER,
-            ..mem::zeroed()
-        };
+        // We use `mem::zeroed()` because regular struct init as well as struct update syntax require all fields to be public
+        // and libc does not guarantee that for all targets
+        let mut action: libc::sigaction = mem::zeroed();
+        action.sa_sigaction = sigbus_handler as _;
+        action.sa_flags = libc::SA_SIGINFO | libc::SA_NODEFER;
+
         let old_action = OLD_SIGBUS_HANDLER.insert(mem::zeroed());
         if libc::sigaction(libc::SIGBUS, &action, old_action) == -1 {
             let e = rustix::io::Errno::from_raw_os_error(errno::errno().0);
