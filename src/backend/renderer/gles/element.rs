@@ -97,7 +97,7 @@ impl Element for PixelShaderElement {
     }
 
     fn alpha(&self) -> f32 {
-        1.0
+        self.alpha
     }
 
     fn kind(&self) -> Kind {
