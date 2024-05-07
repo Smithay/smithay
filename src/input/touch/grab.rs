@@ -6,7 +6,7 @@ use crate::{
     utils::{Logical, Point, Serial},
 };
 
-use super::{DownEvent, MotionEvent, TouchInnerHandle, UpEvent};
+use super::{DownEvent, MotionEvent, OrientationEvent, ShapeEvent, TouchInnerHandle, UpEvent};
 
 /// A trait to implement a touch grab
 ///
@@ -90,6 +90,18 @@ pub trait TouchGrab<D: SeatHandler>: Send {
     ///
     /// Usually called in case the compositor decides the touch stream is a global gesture.
     fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, seq: Serial);
+
+    /// A touch point has changed its shape.
+    fn shape(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &ShapeEvent, seq: Serial);
+
+    /// A touch point has changed its orientation.
+    fn orientation(
+        &mut self,
+        data: &mut D,
+        handle: &mut TouchInnerHandle<'_, D>,
+        event: &OrientationEvent,
+        seq: Serial,
+    );
 
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData<D>;
@@ -182,6 +194,20 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
         handle.cancel(data, seq)
     }
 
+    fn shape(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &ShapeEvent, seq: Serial) {
+        handle.shape(data, event, seq)
+    }
+
+    fn orientation(
+        &mut self,
+        data: &mut D,
+        handle: &mut TouchInnerHandle<'_, D>,
+        event: &OrientationEvent,
+        seq: Serial,
+    ) {
+        handle.orientation(data, event, seq)
+    }
+
     fn start_data(&self) -> &GrabStartData<D> {
         unreachable!()
     }
@@ -249,6 +275,20 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
     fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, seq: Serial) {
         handle.cancel(data, seq);
         handle.unset_grab(self, data);
+    }
+
+    fn shape(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &ShapeEvent, seq: Serial) {
+        handle.shape(data, event, seq)
+    }
+
+    fn orientation(
+        &mut self,
+        data: &mut D,
+        handle: &mut TouchInnerHandle<'_, D>,
+        event: &OrientationEvent,
+        seq: Serial,
+    ) {
+        handle.orientation(data, event, seq)
     }
 
     fn start_data(&self) -> &GrabStartData<D> {

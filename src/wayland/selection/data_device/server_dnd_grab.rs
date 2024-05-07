@@ -429,6 +429,24 @@ where
         handle.unset_grab(self, data);
     }
 
+    fn shape(
+        &mut self,
+        _data: &mut D,
+        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _event: &crate::input::touch::ShapeEvent,
+        _seq: Serial,
+    ) {
+    }
+
+    fn orientation(
+        &mut self,
+        _data: &mut D,
+        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _event: &crate::input::touch::OrientationEvent,
+        _seq: Serial,
+    ) {
+    }
+
     fn start_data(&self) -> &TouchGrabStartData<D> {
         self.touch_start_data.as_ref().unwrap()
     }

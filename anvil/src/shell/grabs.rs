@@ -241,6 +241,26 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         handle.unset_grab(self, data);
     }
 
+    fn shape(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
+        event: &smithay::input::touch::ShapeEvent,
+        seq: Serial,
+    ) {
+        handle.shape(data, event, seq);
+    }
+
+    fn orientation(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
+        event: &smithay::input::touch::OrientationEvent,
+        seq: Serial,
+    ) {
+        handle.orientation(data, event, seq);
+    }
+
     fn start_data(&self) -> &smithay::input::touch::GrabStartData<AnvilState<BackendData>> {
         &self.start_data
     }
@@ -832,6 +852,26 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
     ) {
         handle.cancel(data, seq);
         handle.unset_grab(self, data);
+    }
+
+    fn shape(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
+        event: &smithay::input::touch::ShapeEvent,
+        seq: Serial,
+    ) {
+        handle.shape(data, event, seq);
+    }
+
+    fn orientation(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
+        event: &smithay::input::touch::OrientationEvent,
+        seq: Serial,
+    ) {
+        handle.orientation(data, event, seq);
     }
 
     fn start_data(&self) -> &smithay::input::touch::GrabStartData<AnvilState<BackendData>> {

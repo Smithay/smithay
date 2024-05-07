@@ -346,6 +346,26 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         });
     }
 
+    /// Notify that a touch point has changed its shape.
+    pub fn shape(&self, data: &mut D, event: &ShapeEvent) {
+        let mut inner = self.inner.lock().unwrap();
+        let seat = self.get_seat(data);
+        let seq = inner.seq_counter.next_serial();
+        inner.with_grab(data, &seat, |data, handle, grab| {
+            grab.shape(data, handle, event, seq);
+        });
+    }
+
+    /// Notify that a touch point has changed its orientation.
+    pub fn orientation(&self, data: &mut D, event: &OrientationEvent) {
+        let mut inner = self.inner.lock().unwrap();
+        let seat = self.get_seat(data);
+        let seq = inner.seq_counter.next_serial();
+        inner.with_grab(data, &seat, |data, handle, grab| {
+            grab.orientation(data, handle, event, seq);
+        });
+    }
+
     fn get_seat(&self, data: &mut D) -> Seat<D> {
         let seat_state = data.seat_state();
         seat_state
@@ -447,6 +467,16 @@ impl<'a, D: SeatHandler + 'static> TouchInnerHandle<'a, D> {
     /// This needs to be called after one or move calls to [`TouchHandle::down`] or [`TouchHandle::motion`]
     pub fn frame(&mut self, data: &mut D, seq: Serial) {
         self.inner.frame(data, self.seat, seq)
+    }
+
+    /// Notify that a touch point has changed its shape.
+    pub fn shape(&mut self, data: &mut D, event: &ShapeEvent, seq: Serial) {
+        self.inner.shape(data, self.seat, event, seq)
+    }
+
+    /// Notify that a touch point has changed its orientation.
+    pub fn orientation(&mut self, data: &mut D, event: &OrientationEvent, seq: Serial) {
+        self.inner.orientation(data, self.seat, event, seq)
     }
 
     /// Notify that the touch session has been cancelled.
@@ -569,6 +599,26 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
             if let Some((focus, _)) = state.focus.take() {
                 focus.cancel(seat, data, seq);
             }
+        }
+    }
+
+    fn shape(&mut self, data: &mut D, seat: &Seat<D>, event: &ShapeEvent, seq: Serial) {
+        let Some(state) = self.focus.get_mut(&event.slot) else {
+            return;
+        };
+        state.pending = seq;
+        if let Some((focus, _)) = state.focus.as_ref() {
+            focus.shape(seat, data, event, seq);
+        }
+    }
+
+    fn orientation(&mut self, data: &mut D, seat: &Seat<D>, event: &OrientationEvent, seq: Serial) {
+        let Some(state) = self.focus.get_mut(&event.slot) else {
+            return;
+        };
+        state.pending = seq;
+        if let Some((focus, _)) = state.focus.as_ref() {
+            focus.orientation(seat, data, event, seq);
         }
     }
 
