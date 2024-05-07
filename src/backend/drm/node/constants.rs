@@ -8,10 +8,10 @@ pub const DRM_MAJOR: u32 = 145;
 #[cfg(target_os = "netbsd")]
 pub const DRM_MAJOR: u32 = 34;
 
-#[cfg(all(target_os = "openbsd", target_arch = "i386"))]
+#[cfg(all(target_os = "openbsd", target_arch = "x86"))]
 pub const DRM_MAJOR: u32 = 88;
 
-#[cfg(all(target_os = "openbsd", not(target_arch = "i386")))]
+#[cfg(all(target_os = "openbsd", not(target_arch = "x86")))]
 pub const DRM_MAJOR: u32 = 87;
 
 #[cfg(not(any(target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd")))]

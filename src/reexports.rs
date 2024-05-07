@@ -3,8 +3,6 @@
 #[cfg(feature = "backend_vulkan")]
 pub use ash;
 pub use calloop;
-#[cfg(feature = "dbus")]
-pub use dbus;
 #[cfg(feature = "backend_drm")]
 pub use drm;
 #[cfg(feature = "backend_gbm")]
