@@ -83,6 +83,7 @@ pub(crate) struct TouchInternal<D: SeatHandler> {
 
 struct TouchSlotState<D: SeatHandler> {
     focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+    frame_pending: Option<<D as SeatHandler>::TouchFocus>,
     pending: Serial,
     current: Option<Serial>,
 }
@@ -91,6 +92,7 @@ impl<D: SeatHandler> fmt::Debug for TouchSlotState<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TouchSlotState")
             .field("focus", &self.focus)
+            .field("frame_pending", &self.frame_pending)
             .field("pending", &self.pending)
             .field("current", &self.current)
             .finish()
@@ -504,10 +506,12 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
             .entry(event.slot)
             .and_modify(|state| {
                 state.pending = seq;
+                state.frame_pending = None;
                 state.focus.clone_from(&focus);
             })
             .or_insert_with(|| TouchSlotState {
                 focus,
+                frame_pending: None,
                 pending: seq,
                 current: None,
             });
@@ -526,6 +530,10 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         state.pending = seq;
         if let Some((focus, _)) = state.focus.take() {
             focus.up(seat, data, event, seq);
+
+            // Keep the focus around to be able to send a frame event after up, but move
+            // it out of the current focus to prevent sending other events.
+            state.frame_pending = Some(focus);
         }
     }
 
@@ -554,6 +562,12 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
                 continue;
             }
             state.current = Some(seq);
+
+            // Send the frame event for any stored focus in the up handler
+            if let Some(focus) = state.frame_pending.take() {
+                focus.frame(seat, data, seq);
+            }
+
             if let Some((focus, _)) = state.focus.as_ref() {
                 focus.frame(seat, data, seq);
             }
