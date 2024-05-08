@@ -45,6 +45,7 @@
 //! are not, for example).
 //!
 
+pub mod alpha_modifier;
 pub mod buffer;
 pub mod compositor;
 pub mod content_type;
