@@ -257,6 +257,29 @@ impl PrivateSurfaceData {
         }
     }
 
+    fn commit_sync_surface_tree(
+        surface: &WlSurface,
+        parent_transaction: &PendingTransaction,
+        dh: &DisplayHandle,
+    ) {
+        let children = PrivateSurfaceData::get_children(surface);
+        let mut my_data = Self::lock_user_data(surface);
+
+        for child in children {
+            Self::commit_sync_surface_tree(&child, &my_data.pending_transaction, dh);
+        }
+
+        let current_txid = my_data.current_txid;
+        my_data.public_data.cached_state.commit(Some(current_txid), dh);
+        my_data
+            .pending_transaction
+            .insert_state(surface.clone(), current_txid);
+
+        let child_tx = std::mem::take(&mut my_data.pending_transaction);
+        child_tx.merge_into(parent_transaction);
+        my_data.current_txid.0 = my_data.current_txid.0.wrapping_add(1);
+    }
+
     pub fn commit<C: CompositorHandler + 'static>(surface: &WlSurface, dh: &DisplayHandle, state: &mut C) {
         let is_sync = is_effectively_sync(surface);
         let children = PrivateSurfaceData::get_children(surface);
@@ -269,15 +292,18 @@ impl PrivateSurfaceData {
             // if the child is effectively sync, take its state
             // this is the case if either we are effectively sync, or the child is explicitly sync
             let mut child_data = Self::lock_user_data(&child);
-            let is_child_sync = || {
-                child_data
-                    .public_data
-                    .data_map
-                    .get::<super::handlers::SubsurfaceState>()
-                    .map(|s| s.sync.load(Ordering::Acquire))
-                    .unwrap_or(false)
-            };
-            if is_sync || is_child_sync() {
+            let is_child_sync = child_data
+                .public_data
+                .data_map
+                .get::<super::handlers::SubsurfaceState>()
+                .map(|s| s.sync.load(Ordering::Acquire))
+                .unwrap_or(false);
+
+            // if we are not sync, but the child is we also have to commit the complete child surface tree
+            if !is_sync && is_child_sync {
+                std::mem::drop(child_data);
+                Self::commit_sync_surface_tree(&child, &my_data.pending_transaction, dh);
+            } else if is_sync || is_child_sync {
                 let child_tx = std::mem::take(&mut child_data.pending_transaction);
                 child_tx.merge_into(&my_data.pending_transaction);
                 child_data.current_txid.0 = child_data.current_txid.0.wrapping_add(1);
