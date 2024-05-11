@@ -85,7 +85,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
          * not knowing its layout can result in garbage being displayed. In
          * short, importing a buffer to KMS requires explicit modifiers. */
         if dmabuf.format().modifier != DrmModifier::Invalid {
-            return Ok(Some(framebuffer_from_dmabuf(drm, gbm, &dmabuf, use_opaque)?));
+            return Ok(Some(framebuffer_from_dmabuf(drm, gbm, dmabuf, use_opaque)?));
         }
     }
 

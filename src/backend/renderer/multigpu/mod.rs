@@ -541,7 +541,7 @@ impl<A: GraphicsApi> GpuManager<A> {
 
                 let mut devices = self.devices.iter_mut();
                 let first = devices.next().unwrap();
-                let src_node = import_on_src_node(&dmabuf, Some(damage), &mut texture, first, None, devices)?;
+                let src_node = import_on_src_node(dmabuf, Some(damage), &mut texture, first, None, devices)?;
 
                 if src_node != target_node {
                     let mut texture_internal = texture.0.borrow_mut();
@@ -1777,7 +1777,7 @@ where
         let dmabuf = get_dmabuf(buffer).expect("import_dma_buffer without checking buffer type?");
         let texture = MultiTexture::from_surface(surface, dmabuf.size());
         let texture_ref = texture.0.clone();
-        let res = self.import_dmabuf_internal(&dmabuf, texture, Some(damage));
+        let res = self.import_dmabuf_internal(dmabuf, texture, Some(damage));
         if res.is_ok() {
             if let Some(surface) = surface {
                 surface.data_map.insert_if_missing(|| texture_ref);

@@ -1022,8 +1022,8 @@ pub trait DmabufHandler: BufferHandler {
 /// error.
 ///
 /// [`WlBuffer`]: wl_buffer::WlBuffer
-pub fn get_dmabuf(buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, UnmanagedResource> {
-    buffer.data::<Dmabuf>().cloned().ok_or(UnmanagedResource)
+pub fn get_dmabuf(buffer: &wl_buffer::WlBuffer) -> Result<&Dmabuf, UnmanagedResource> {
+    buffer.data::<Dmabuf>().ok_or(UnmanagedResource)
 }
 
 /// Macro to delegate implementation of the linux dmabuf to [`DmabufState`].
