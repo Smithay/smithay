@@ -9,7 +9,6 @@ use drm::{
     control::{framebuffer, Device, FbCmd2Flags},
 };
 use drm_fourcc::DrmModifier;
-use gbm::BufferObject;
 use tracing::{trace, warn};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_buffer::WlBuffer;
@@ -20,6 +19,7 @@ use crate::backend::{
     allocator::{
         dmabuf::Dmabuf,
         format::{get_bpp, get_depth, get_opaque},
+        gbm::GbmBuffer,
         Fourcc,
     },
     drm::DrmDeviceFd,
@@ -31,7 +31,7 @@ use super::{error::AccessError, warn_legacy_fb_export, Framebuffer};
 /// A GBM backed framebuffer
 #[derive(Debug)]
 pub struct GbmFramebuffer {
-    _bo: Option<BufferObject<()>>,
+    _bo: Option<GbmBuffer>,
     fb: framebuffer::Handle,
     format: drm_fourcc::DrmFormat,
     drm: DrmDeviceFd,
@@ -97,6 +97,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
     ) {
         let bo = gbm
             .import_buffer_object_from_wayland::<()>(buffer, gbm::BufferObjectFlags::SCANOUT)
+            .map(GbmBuffer::from_bo)
             .map_err(Error::Import)?;
         let (fb, format) = framebuffer_from_bo_internal(
             drm,
@@ -142,7 +143,7 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
     dmabuf: &Dmabuf,
     use_opaque: bool,
 ) -> Result<GbmFramebuffer, Error> {
-    let bo: BufferObject<()> = dmabuf
+    let bo: GbmBuffer = dmabuf
         .import_to(gbm, gbm::BufferObjectFlags::SCANOUT)
         .map_err(Error::Import)?;
 
@@ -180,9 +181,9 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
 
 /// Attach a [`framebuffer::Handle`] to an [`BufferObject`]
 #[profiling::function]
-pub fn framebuffer_from_bo<T>(
+pub fn framebuffer_from_bo(
     drm: &DrmDeviceFd,
-    bo: &BufferObject<T>,
+    bo: &GbmBuffer,
     use_opaque: bool,
 ) -> Result<GbmFramebuffer, AccessError> {
     framebuffer_from_bo_internal(
@@ -202,14 +203,14 @@ pub fn framebuffer_from_bo<T>(
     })
 }
 
-struct BufferObjectInternal<'a, T: 'static> {
-    bo: &'a BufferObject<T>,
+struct BufferObjectInternal<'a> {
+    bo: &'a GbmBuffer,
     pitches: Option<[u32; 4]>,
     offsets: Option<[u32; 4]>,
 }
 
-impl<'a, T: 'static> std::ops::Deref for BufferObjectInternal<'a, T> {
-    type Target = BufferObject<T>;
+impl<'a> std::ops::Deref for BufferObjectInternal<'a> {
+    type Target = GbmBuffer;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -217,7 +218,7 @@ impl<'a, T: 'static> std::ops::Deref for BufferObjectInternal<'a, T> {
     }
 }
 
-impl<'a, T: 'static> PlanarBuffer for BufferObjectInternal<'a, T> {
+impl<'a> PlanarBuffer for BufferObjectInternal<'a> {
     #[inline]
     fn size(&self) -> (u32, u32) {
         PlanarBuffer::size(self.bo)
@@ -230,10 +231,7 @@ impl<'a, T: 'static> PlanarBuffer for BufferObjectInternal<'a, T> {
 
     #[inline]
     fn modifier(&self) -> Option<DrmModifier> {
-        match self.bo.modifier().unwrap() {
-            DrmModifier::Invalid => None,
-            x => Some(x),
-        }
+        PlanarBuffer::modifier(self.bo)
     }
 
     #[inline]
@@ -291,9 +289,9 @@ where
 
 #[profiling::function]
 #[inline]
-fn framebuffer_from_bo_internal<D, T>(
+fn framebuffer_from_bo_internal<D>(
     drm: &D,
-    bo: BufferObjectInternal<'_, T>,
+    bo: BufferObjectInternal<'_>,
     use_opaque: bool,
 ) -> Result<(framebuffer::Handle, drm_fourcc::DrmFormat), AccessError>
 where

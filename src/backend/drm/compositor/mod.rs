@@ -129,7 +129,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::{
     control::{connector, crtc, framebuffer, plane, Mode, PlaneType},
     Device, DriverCapability,
@@ -150,7 +149,7 @@ use crate::{
         allocator::{
             dmabuf::{AsDmabuf, Dmabuf},
             format::{get_opaque, has_alpha},
-            gbm::{GbmAllocator, GbmDevice},
+            gbm::{GbmAllocator, GbmBuffer, GbmBufferFlags, GbmDevice},
             Allocator, Buffer, Slot, Swapchain,
         },
         drm::{plane_has_property, DrmError, PlaneDamageClips},
@@ -201,7 +200,7 @@ impl RenderElementState {
 enum ScanoutBuffer<B: Buffer> {
     Wayland(crate::backend::renderer::utils::Buffer),
     Swapchain(Slot<B>),
-    Cursor(BufferObject<()>),
+    Cursor(GbmBuffer),
 }
 
 impl<B: Buffer> ScanoutBuffer<B> {
@@ -1658,10 +1657,8 @@ where
                             }
                         };
 
-                        let cursor_allocator = GbmAllocator::new(
-                            gbm.clone(),
-                            BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
-                        );
+                        let cursor_allocator =
+                            GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
                         CursorState {
                             allocator: cursor_allocator,
                             framebuffer_exporter: gbm,
@@ -4085,7 +4082,7 @@ fn copy_element_to_cursor_bo<R, E, T>(
     cursor_size: Size<i32, Physical>,
     output_transform: Transform,
     device: &GbmDevice<T>,
-    bo: &mut BufferObject<()>,
+    bo: &mut GbmBuffer,
 ) -> bool
 where
     R: Renderer,
@@ -4109,9 +4106,7 @@ where
         return false;
     }
 
-    let Ok(bo_format) = bo.format() else {
-        return false;
-    };
+    let bo_format = bo.format().code;
     let Ok(bo_stride) = bo.stride() else {
         return false;
     };
