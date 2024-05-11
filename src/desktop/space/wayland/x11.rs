@@ -51,7 +51,7 @@ impl SpaceElement for X11Surface {
                 .unwrap()
                 .borrow_mut();
             state.output_overlap.insert(output.downgrade(), overlap);
-            state.output_overlap.retain(|weak, _| weak.upgrade().is_some());
+            state.output_overlap.retain(|weak, _| weak.is_alive());
         }
         self.refresh()
     }
