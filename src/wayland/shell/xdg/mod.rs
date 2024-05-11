@@ -1292,6 +1292,7 @@ impl ShellClient {
     }
 
     /// Is the shell client represented by this handle still connected?
+    #[inline]
     pub fn alive(&self) -> bool {
         self.kind.alive()
     }
@@ -1366,6 +1367,7 @@ impl std::cmp::PartialEq for ToplevelSurface {
 
 impl ToplevelSurface {
     /// Is the toplevel surface referred by this handle still alive?
+    #[inline]
     pub fn alive(&self) -> bool {
         self.wl_surface.alive() && self.shell_surface.alive()
     }
@@ -1577,6 +1579,7 @@ impl ToplevelSurface {
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
+    #[inline]
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
@@ -1703,6 +1706,7 @@ impl std::cmp::PartialEq for PopupSurface {
 
 impl PopupSurface {
     /// Is the toplevel surface referred by this handle still alive?
+    #[inline]
     pub fn alive(&self) -> bool {
         self.wl_surface.alive() && self.shell_surface.alive()
     }
@@ -1930,6 +1934,7 @@ impl PopupSurface {
     }
 
     /// Access the underlying `wl_surface` of this popup surface
+    #[inline]
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }

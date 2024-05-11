@@ -28,6 +28,7 @@ impl AliveTracker {
     }
 
     /// Check if object is alive
+    #[inline]
     pub fn alive(&self) -> bool {
         self.is_alive.load(Ordering::Acquire)
     }
@@ -40,6 +41,7 @@ pub trait IsAlive {
 }
 
 impl<T: IsAlive> IsAlive for &T {
+    #[inline]
     fn alive(&self) -> bool {
         IsAlive::alive(*self)
     }

@@ -253,6 +253,7 @@ impl X11Surface {
     }
 
     /// Returns if the window is still alive
+    #[inline]
     pub fn alive(&self) -> bool {
         self.state.lock().unwrap().alive && self.conn.strong_count() != 0
     }
@@ -301,6 +302,7 @@ impl X11Surface {
     ///   - The wl_surface has been assigned the same serial using the [xwayland
     ///     shell](crate::wayland::xwayland_shell) protocol on the wayland side,
     ///     and then committed.
+    #[inline]
     pub fn wl_surface(&self) -> Option<WlSurface> {
         self.state.lock().unwrap().wl_surface.clone()
     }
@@ -880,6 +882,7 @@ impl X11Relatable for WlSurface {
 }
 
 impl IsAlive for X11Surface {
+    #[inline]
     fn alive(&self) -> bool {
         self.state.lock().unwrap().alive
     }

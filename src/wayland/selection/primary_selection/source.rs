@@ -65,6 +65,7 @@ where
 }
 
 impl IsAlive for PrimarySource {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &PrimarySourceUserData = self.data().unwrap();
         data.alive_tracker.alive()

@@ -112,6 +112,7 @@ impl KeyboardShortcutsInhibitor {
     }
 
     /// Seat that is beeing inhibited
+    #[inline]
     pub fn wl_surface(&self) -> &WlSurface {
         &self.data().surface
     }

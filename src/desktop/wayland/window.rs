@@ -72,6 +72,7 @@ impl Hash for Window {
 }
 
 impl IsAlive for Window {
+    #[inline]
     fn alive(&self) -> bool {
         match &self.0.surface {
             WindowSurface::Wayland(s) => s.alive(),
@@ -136,12 +137,14 @@ impl Window {
     }
 
     /// Checks if the window is a wayland one.
+    #[inline]
     pub fn is_wayland(&self) -> bool {
         matches!(self.0.surface, WindowSurface::Wayland(_))
     }
 
     /// Checks if the window is an X11 one.
     #[cfg(feature = "xwayland")]
+    #[inline]
     pub fn is_x11(&self) -> bool {
         matches!(self.0.surface, WindowSurface::X11(_))
     }
@@ -383,12 +386,14 @@ impl Window {
     }
 
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
+    #[inline]
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
     }
 }
 
 impl WaylandFocus for Window {
+    #[inline]
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
         match &self.0.surface {
             WindowSurface::Wayland(s) => Some(s.wl_surface().clone()),

@@ -86,6 +86,7 @@ where
 }
 
 impl IsAlive for WlDataSource {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &DataSourceUserData = self.data().unwrap();
         data.alive_tracker.alive()

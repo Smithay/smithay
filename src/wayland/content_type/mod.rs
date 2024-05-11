@@ -140,6 +140,7 @@ impl ContentTypeUserData {
         Self(Mutex::new(surface.downgrade()))
     }
 
+    #[inline]
     fn wl_surface(&self) -> Option<WlSurface> {
         self.0.lock().unwrap().upgrade().ok()
     }

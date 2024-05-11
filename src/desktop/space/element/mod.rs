@@ -265,6 +265,7 @@ macro_rules! space_elements_internal {
         $crate::desktop::space::SpaceElement::$name($($x),*)
     };
     (@alive $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        #[inline]
         fn alive(&self) -> bool {
             match self {
                 $(

@@ -235,6 +235,7 @@ impl<F> Framebuffer for DrmFramebuffer<F>
 where
     F: Framebuffer,
 {
+    #[inline]
     fn format(&self) -> drm_fourcc::DrmFormat {
         match self {
             DrmFramebuffer::Exporter(e) => e.format(),
@@ -281,6 +282,7 @@ impl<B: Buffer, F: Framebuffer> AsRef<framebuffer::Handle> for DrmScanoutBuffer<
 }
 
 impl<B: Buffer, F: Framebuffer> Framebuffer for DrmScanoutBuffer<B, F> {
+    #[inline]
     fn format(&self) -> drm_fourcc::DrmFormat {
         self.fb.format()
     }
@@ -292,6 +294,7 @@ enum ElementFramebufferCacheBuffer {
 }
 
 impl ElementFramebufferCacheBuffer {
+    #[inline]
     fn from_underlying_storage(storage: &UnderlyingStorage) -> Option<Self> {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer.downgrade())),
@@ -307,6 +310,7 @@ struct ElementFramebufferCacheKey {
 }
 
 impl ElementFramebufferCacheKey {
+    #[inline]
     fn from_underlying_storage(storage: &UnderlyingStorage, allow_opaque_fallback: bool) -> Option<Self> {
         let buffer = ElementFramebufferCacheBuffer::from_underlying_storage(storage)?;
         Some(Self {
@@ -317,6 +321,7 @@ impl ElementFramebufferCacheKey {
 }
 
 impl ElementFramebufferCacheKey {
+    #[inline]
     fn is_alive(&self) -> bool {
         match self.buffer {
             ElementFramebufferCacheBuffer::Wayland(ref buffer) => buffer.upgrade().is_ok(),
@@ -357,6 +362,7 @@ impl<B> ElementFramebufferCache<B>
 where
     B: Framebuffer,
 {
+    #[inline]
     fn get(
         &self,
         cache_key: &ElementFramebufferCacheKey,
@@ -364,6 +370,7 @@ where
         self.fb_cache.get(cache_key).cloned()
     }
 
+    #[inline]
     fn insert(
         &mut self,
         cache_key: ElementFramebufferCacheKey,
@@ -410,6 +417,7 @@ struct PlaneProperties {
 }
 
 impl PlaneProperties {
+    #[inline]
     fn is_compatible(&self, other: &PlaneProperties) -> bool {
         self.src == other.src
             && self.dst == other.dst
@@ -437,6 +445,7 @@ struct PlaneConfig<B> {
 }
 
 impl<B> PlaneConfig<B> {
+    #[inline]
     pub fn is_compatible(&self, other: &PlaneConfig<B>) -> bool {
         self.properties.is_compatible(&other.properties)
     }
@@ -483,10 +492,12 @@ impl<B> Default for PlaneState<B> {
 }
 
 impl<B> PlaneState<B> {
+    #[inline]
     fn buffer(&self) -> Option<&B> {
         self.config.as_ref().map(|config| &*config.buffer)
     }
 
+    #[inline]
     fn is_compatible(&self, other: &Self) -> bool {
         match (self.config.as_ref(), other.config.as_ref()) {
             (Some(a), Some(b)) => a.is_compatible(b),
@@ -514,6 +525,7 @@ struct FrameState<B: AsRef<framebuffer::Handle>> {
 }
 
 impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
+    #[inline]
     fn is_assigned(&self, handle: plane::Handle) -> bool {
         self.planes
             .get(&handle)
@@ -521,6 +533,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
             .unwrap_or(false)
     }
 
+    #[inline]
     fn overlaps(&self, handle: plane::Handle, element_geometry: Rectangle<i32, Physical>) -> bool {
         self.planes
             .get(&handle)
@@ -533,20 +546,24 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
             .unwrap_or(false)
     }
 
+    #[inline]
     fn plane_state(&self, handle: plane::Handle) -> Option<&PlaneState<B>> {
         self.planes.get(&handle)
     }
 
+    #[inline]
     fn plane_state_mut(&mut self, handle: plane::Handle) -> Option<&mut PlaneState<B>> {
         self.planes.get_mut(&handle)
     }
 
+    #[inline]
     fn plane_properties(&self, handle: plane::Handle) -> Option<&PlaneProperties> {
         self.plane_state(handle)
             .and_then(|state| state.config.as_ref())
             .map(|config| &config.properties)
     }
 
+    #[inline]
     fn plane_buffer(&self, handle: plane::Handle) -> Option<&B> {
         self.plane_state(handle)
             .and_then(|state| state.config.as_ref().map(|config| &*config.buffer))
@@ -586,6 +603,7 @@ impl<B> Framebuffer for Owned<B>
 where
     B: Framebuffer,
 {
+    #[inline]
     fn format(&self) -> drm_fourcc::DrmFormat {
         (*self.0).format()
     }
@@ -620,6 +638,7 @@ impl<B: Framebuffer> FrameState<B> {
 
 impl<B: Framebuffer> FrameState<B> {
     #[profiling::function]
+    #[inline]
     fn set_state(&mut self, plane: plane::Handle, state: PlaneState<B>) {
         let current_config = match self.planes.get_mut(&plane) {
             Some(config) => config,
@@ -788,6 +807,7 @@ pub enum ExportBuffer<'a, B: Buffer> {
 }
 
 impl<'a, B: Buffer> ExportBuffer<'a, B> {
+    #[inline]
     fn from_underlying_storage(storage: &'a UnderlyingStorage) -> Option<Self> {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
@@ -824,6 +844,7 @@ where
     type Framebuffer = <F as ExportFramebuffer<B>>::Framebuffer;
     type Error = <F as ExportFramebuffer<B>>::Error;
 
+    #[inline]
     fn add_framebuffer(
         &self,
         drm: &DrmDeviceFd,
@@ -843,6 +864,7 @@ where
     type Framebuffer = <F as ExportFramebuffer<B>>::Framebuffer;
     type Error = <F as ExportFramebuffer<B>>::Error;
 
+    #[inline]
     fn add_framebuffer(
         &self,
         drm: &DrmDeviceFd,
@@ -890,6 +912,7 @@ pub struct PrimarySwapchainElement<B: Buffer, F: Framebuffer> {
 
 impl<B: Buffer, F: Framebuffer> PrimarySwapchainElement<B, F> {
     /// Access the underlying swapchain buffer
+    #[inline]
     pub fn buffer(&self) -> &B {
         match &self.slot.0.buffer {
             ScanoutBuffer::Swapchain(slot) => slot,
@@ -1461,6 +1484,7 @@ struct PreparedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer
 }
 
 impl<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> PreparedFrame<A, F> {
+    #[inline]
     fn is_empty(&self) -> bool {
         // It can happen that we have no changes, but there is a pending commit or
         // we are forced to do a full update in which case we just set the previous state again
@@ -3957,6 +3981,7 @@ where
     }
 }
 
+#[inline]
 fn apply_underlying_storage_transform(
     element_transform: Transform,
     storage: &UnderlyingStorage,
@@ -3982,6 +4007,7 @@ fn apply_underlying_storage_transform(
     }
 }
 
+#[inline]
 fn apply_output_transform(transform: Transform, output_transform: Transform) -> Transform {
     match (transform, output_transform) {
         (Transform::Normal, output_transform) => output_transform,
@@ -4161,6 +4187,7 @@ impl<B: Framebuffer + std::fmt::Debug> std::fmt::Debug for OwnedFramebuffer<B> {
 }
 
 impl<B: Framebuffer> OwnedFramebuffer<B> {
+    #[inline]
     fn new(buffer: B) -> Self {
         OwnedFramebuffer(Arc::new(buffer))
     }
@@ -4181,6 +4208,7 @@ impl<B: Framebuffer> AsRef<framebuffer::Handle> for OwnedFramebuffer<B> {
 }
 
 impl<B: Framebuffer> Framebuffer for OwnedFramebuffer<B> {
+    #[inline]
     fn format(&self) -> drm_fourcc::DrmFormat {
         (*self.0).format()
     }

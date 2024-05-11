@@ -112,24 +112,29 @@ impl WindowElement {
     }
 
     #[cfg(feature = "xwayland")]
+    #[inline]
     pub fn is_x11(&self) -> bool {
         self.0.is_x11()
     }
 
+    #[inline]
     pub fn is_wayland(&self) -> bool {
         self.0.is_wayland()
     }
 
+    #[inline]
     pub fn wl_surface(&self) -> Option<WlSurface> {
         self.0.wl_surface()
     }
 
+    #[inline]
     pub fn user_data(&self) -> &UserDataMap {
         self.0.user_data()
     }
 }
 
 impl IsAlive for WindowElement {
+    #[inline]
     fn alive(&self) -> bool {
         self.0.alive()
     }
@@ -139,12 +144,14 @@ impl IsAlive for WindowElement {
 pub struct SSD(WindowElement);
 
 impl IsAlive for SSD {
+    #[inline]
     fn alive(&self) -> bool {
         self.0.alive()
     }
 }
 
 impl WaylandFocus for SSD {
+    #[inline]
     fn wl_surface(&self) -> Option<WlSurface> {
         self.0.wl_surface()
     }

@@ -36,6 +36,7 @@ pub enum KeyboardFocusTarget {
 }
 
 impl IsAlive for KeyboardFocusTarget {
+    #[inline]
     fn alive(&self) -> bool {
         match self {
             KeyboardFocusTarget::Window(w) => w.alive(),
@@ -54,6 +55,7 @@ pub enum PointerFocusTarget {
 }
 
 impl IsAlive for PointerFocusTarget {
+    #[inline]
     fn alive(&self) -> bool {
         match self {
             PointerFocusTarget::WlSurface(w) => w.alive(),
@@ -447,6 +449,7 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocus
 }
 
 impl WaylandFocus for PointerFocusTarget {
+    #[inline]
     fn wl_surface(&self) -> Option<WlSurface> {
         match self {
             PointerFocusTarget::WlSurface(w) => w.wl_surface(),
@@ -455,6 +458,7 @@ impl WaylandFocus for PointerFocusTarget {
             PointerFocusTarget::SSD(_) => None,
         }
     }
+    #[inline]
     fn same_client_as(&self, object_id: &ObjectId) -> bool {
         match self {
             PointerFocusTarget::WlSurface(w) => w.same_client_as(object_id),
@@ -469,6 +473,7 @@ impl WaylandFocus for PointerFocusTarget {
 }
 
 impl WaylandFocus for KeyboardFocusTarget {
+    #[inline]
     fn wl_surface(&self) -> Option<WlSurface> {
         match self {
             KeyboardFocusTarget::Window(w) => w.wl_surface(),

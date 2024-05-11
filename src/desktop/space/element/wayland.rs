@@ -23,6 +23,7 @@ impl SurfaceTree {
 }
 
 impl IsAlive for SurfaceTree {
+    #[inline]
     fn alive(&self) -> bool {
         self.surface.alive()
     }

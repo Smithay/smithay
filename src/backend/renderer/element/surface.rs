@@ -507,6 +507,7 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
 {
+    #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
         self.buffer.clone().map(UnderlyingStorage::Wayland)
     }

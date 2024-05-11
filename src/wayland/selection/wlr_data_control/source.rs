@@ -67,6 +67,7 @@ where
 }
 
 impl IsAlive for ZwlrDataControlSourceV1 {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &DataControlSourceUserData = self.data().unwrap();
         data.alive_tracker.alive()

@@ -17,6 +17,7 @@ use crate::{
 use super::{output_update, WindowOutputUserData};
 
 impl WaylandFocus for X11Surface {
+    #[inline]
     fn wl_surface(&self) -> Option<WlSurface> {
         self.state.lock().unwrap().wl_surface.clone()
     }

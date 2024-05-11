@@ -117,6 +117,7 @@ impl<A: AsFd + 'static> Allocator for GbmAllocator<A> {
 }
 
 impl<T> Buffer for GbmBuffer<T> {
+    #[inline]
     fn size(&self) -> Size<i32, BufferCoords> {
         (
             self.width().unwrap_or(0) as i32,
@@ -125,6 +126,7 @@ impl<T> Buffer for GbmBuffer<T> {
             .into()
     }
 
+    #[inline]
     fn format(&self) -> Format {
         Format {
             // FIXME: self.format() calls drm_fourcc::Format::try_from which would be a good candidate for inline, but it is not. Fix in drm_fourcc
