@@ -346,6 +346,7 @@ impl TouchEvent<WinitInput> for WinitTouchCancelledEvent {
 }
 
 impl From<ElementState> for KeyState {
+    #[inline]
     fn from(state: ElementState) -> Self {
         match state {
             ElementState::Pressed => KeyState::Pressed,
@@ -355,6 +356,7 @@ impl From<ElementState> for KeyState {
 }
 
 impl From<ElementState> for ButtonState {
+    #[inline]
     fn from(state: ElementState) -> Self {
         match state {
             ElementState::Pressed => ButtonState::Pressed,

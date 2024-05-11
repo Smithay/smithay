@@ -40,6 +40,7 @@ pub struct State {
 }
 
 impl PartialEq for State {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.active == other.active && self.mode == other.mode && self.connectors == other.connectors
     }
@@ -1194,6 +1195,7 @@ bitflags::bitflags! {
 }
 
 impl From<Transform> for DrmRotation {
+    #[inline]
     fn from(transform: Transform) -> Self {
         match transform {
             Transform::Normal => DrmRotation::ROTATE_0,

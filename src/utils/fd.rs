@@ -11,12 +11,14 @@ use std::{
 pub struct DeviceFd(Arc<OwnedFd>);
 
 impl PartialEq for DeviceFd {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0.as_raw_fd() == other.0.as_raw_fd()
     }
 }
 
 impl AsFd for DeviceFd {
+    #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.0.as_fd()
     }
@@ -24,6 +26,7 @@ impl AsFd for DeviceFd {
 
 // TODO: drop impl once not needed anymore by smithay or dependencies
 impl AsRawFd for DeviceFd {
+    #[inline]
     fn as_raw_fd(&self) -> RawFd {
         self.0.as_raw_fd()
     }
@@ -32,12 +35,14 @@ impl AsRawFd for DeviceFd {
 impl FromRawFd for DeviceFd {
     /// SAFETY:
     /// Make sure that `fd` is a valid value!
+    #[inline]
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
         DeviceFd(Arc::new(unsafe { OwnedFd::from_raw_fd(fd) }))
     }
 }
 
 impl From<OwnedFd> for DeviceFd {
+    #[inline]
     fn from(fd: OwnedFd) -> Self {
         DeviceFd(Arc::new(fd))
     }
@@ -46,6 +51,7 @@ impl From<OwnedFd> for DeviceFd {
 impl TryInto<OwnedFd> for DeviceFd {
     type Error = DeviceFd;
 
+    #[inline]
     fn try_into(self) -> Result<OwnedFd, Self::Error> {
         Arc::try_unwrap(self.0).map_err(DeviceFd)
     }

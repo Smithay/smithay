@@ -656,6 +656,7 @@ pub enum SelectionError {
 }
 
 impl From<ConnectionError> for SelectionError {
+    #[inline]
     fn from(err: ConnectionError) -> Self {
         SelectionError::X11Error(err.into())
     }

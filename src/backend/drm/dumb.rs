@@ -41,6 +41,7 @@ impl Drop for DumbFramebuffer {
 }
 
 impl AsRef<framebuffer::Handle> for DumbFramebuffer {
+    #[inline]
     fn as_ref(&self) -> &framebuffer::Handle {
         &self.fb
     }

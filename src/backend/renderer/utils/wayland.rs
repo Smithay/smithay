@@ -53,6 +53,7 @@ pub struct RendererSurfaceState {
 struct InnerBuffer(WlBuffer);
 
 impl Drop for InnerBuffer {
+    #[inline]
     fn drop(&mut self) {
         self.0.release();
     }
@@ -65,6 +66,7 @@ pub struct Buffer {
 }
 
 impl From<WlBuffer> for Buffer {
+    #[inline]
     fn from(buffer: WlBuffer) -> Self {
         Buffer {
             inner: Arc::new(InnerBuffer(buffer)),
@@ -75,18 +77,21 @@ impl From<WlBuffer> for Buffer {
 impl std::ops::Deref for Buffer {
     type Target = WlBuffer;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.inner.0
     }
 }
 
 impl PartialEq<WlBuffer> for Buffer {
+    #[inline]
     fn eq(&self, other: &WlBuffer) -> bool {
         self.inner.0 == *other
     }
 }
 
 impl PartialEq<WlBuffer> for &Buffer {
+    #[inline]
     fn eq(&self, other: &WlBuffer) -> bool {
         self.inner.0 == *other
     }

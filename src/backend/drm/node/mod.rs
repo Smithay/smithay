@@ -184,6 +184,7 @@ pub enum CreateDrmNodeError {
 }
 
 impl From<io::Error> for CreateDrmNodeError {
+    #[inline]
     fn from(err: io::Error) -> Self {
         CreateDrmNodeError::Io(err)
     }

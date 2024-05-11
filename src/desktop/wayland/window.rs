@@ -56,6 +56,7 @@ impl Drop for WindowInner {
 pub struct Window(pub(crate) Arc<WindowInner>);
 
 impl PartialEq for Window {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0.id == other.0.id
     }
@@ -64,6 +65,7 @@ impl PartialEq for Window {
 impl Eq for Window {}
 
 impl Hash for Window {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
     }

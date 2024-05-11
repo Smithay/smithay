@@ -25,6 +25,7 @@ pub enum Layer {
 impl TryFrom<WEnum<zwlr_layer_shell_v1::Layer>> for Layer {
     type Error = (zwlr_layer_shell_v1::Error, String);
 
+    #[inline]
     fn try_from(layer: WEnum<zwlr_layer_shell_v1::Layer>) -> Result<Self, Self::Error> {
         use zwlr_layer_shell_v1::Layer;
 
@@ -42,6 +43,7 @@ impl TryFrom<WEnum<zwlr_layer_shell_v1::Layer>> for Layer {
 }
 
 impl Default for Layer {
+    #[inline]
     fn default() -> Self {
         Self::Background
     }
@@ -92,6 +94,7 @@ pub enum KeyboardInteractivity {
 }
 
 impl Default for KeyboardInteractivity {
+    #[inline]
     fn default() -> Self {
         Self::None
     }
@@ -100,6 +103,7 @@ impl Default for KeyboardInteractivity {
 impl TryFrom<WEnum<zwlr_layer_surface_v1::KeyboardInteractivity>> for KeyboardInteractivity {
     type Error = (zwlr_layer_surface_v1::Error, String);
 
+    #[inline]
     fn try_from(ki: WEnum<zwlr_layer_surface_v1::KeyboardInteractivity>) -> Result<Self, Self::Error> {
         use zwlr_layer_surface_v1::KeyboardInteractivity;
 
@@ -148,6 +152,7 @@ impl Anchor {
 }
 
 impl Default for Anchor {
+    #[inline]
     fn default() -> Self {
         Self::empty()
     }
@@ -156,6 +161,7 @@ impl Default for Anchor {
 impl TryFrom<WEnum<zwlr_layer_surface_v1::Anchor>> for Anchor {
     type Error = (zwlr_layer_surface_v1::Error, String);
 
+    #[inline]
     fn try_from(anchor: WEnum<zwlr_layer_surface_v1::Anchor>) -> Result<Self, Self::Error> {
         let a = if let WEnum::Value(anchor) = anchor {
             Anchor::from_bits(anchor.bits())
@@ -197,12 +203,14 @@ pub enum ExclusiveZone {
 }
 
 impl Default for ExclusiveZone {
+    #[inline]
     fn default() -> Self {
         Self::Neutral
     }
 }
 
 impl From<i32> for ExclusiveZone {
+    #[inline]
     fn from(v: i32) -> Self {
         match v.cmp(&0) {
             Ordering::Greater => Self::Exclusive(v as u32),
@@ -213,6 +221,7 @@ impl From<i32> for ExclusiveZone {
 }
 
 impl From<ExclusiveZone> for i32 {
+    #[inline]
     fn from(z: ExclusiveZone) -> i32 {
         match z {
             ExclusiveZone::Exclusive(v) => v as i32,

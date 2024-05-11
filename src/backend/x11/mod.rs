@@ -541,6 +541,7 @@ impl Window {
 }
 
 impl PartialEq for Window {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
@@ -549,6 +550,7 @@ impl PartialEq for Window {
 struct WindowTemporary(Window);
 
 impl AsRef<Window> for WindowTemporary {
+    #[inline]
     fn as_ref(&self) -> &Window {
         &self.0
     }

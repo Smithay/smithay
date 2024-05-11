@@ -958,6 +958,7 @@ impl IntoIterator for ToplevelStateSet {
 }
 
 impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
+    #[inline]
     fn from(states: ToplevelStateSet) -> Self {
         states.states
     }
@@ -1006,6 +1007,7 @@ impl<T> From<T> for WmCapabilitySet
 where
     T: IntoIterator<Item = xdg_toplevel::WmCapabilities>,
 {
+    #[inline]
     fn from(capabilities: T) -> Self {
         let capabilities = capabilities.into_iter().collect();
         Self { capabilities }
@@ -1276,6 +1278,7 @@ pub struct ShellClient {
 }
 
 impl std::cmp::PartialEq for ShellClient {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
     }
@@ -1354,6 +1357,7 @@ pub struct ToplevelSurface {
 }
 
 impl std::cmp::PartialEq for ToplevelSurface {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // self.alive() && other.alive() &&
         self.wl_surface == other.wl_surface
@@ -1690,6 +1694,7 @@ pub struct PopupSurface {
 }
 
 impl std::cmp::PartialEq for PopupSurface {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // self.alive() && other.alive() &&
         self.wl_surface == other.wl_surface
@@ -1993,12 +1998,14 @@ pub enum Configure {
 }
 
 impl From<ToplevelConfigure> for Configure {
+    #[inline]
     fn from(configure: ToplevelConfigure) -> Self {
         Configure::Toplevel(configure)
     }
 }
 
 impl From<PopupConfigure> for Configure {
+    #[inline]
     fn from(configure: PopupConfigure) -> Self {
         Configure::Popup(configure)
     }

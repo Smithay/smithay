@@ -611,6 +611,7 @@ impl PhysicalDevice {
 }
 
 impl PartialEq for PhysicalDevice {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // Both the physical device handle and instance handle must be the same
         self.phd == other.phd && self.instance().handle().handle() == other.instance().handle().handle()

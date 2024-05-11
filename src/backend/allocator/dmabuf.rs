@@ -64,6 +64,7 @@ pub(crate) struct Plane {
 }
 
 impl From<Plane> for OwnedFd {
+    #[inline]
     fn from(plane: Plane) -> OwnedFd {
         plane.fd
     }
@@ -98,12 +99,14 @@ struct PlaneRef {
 }
 
 impl AsFd for PlaneRef {
+    #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.dmabuf.0.planes[self.idx].fd.as_fd()
     }
 }
 
 impl PartialEq for Dmabuf {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
@@ -111,6 +114,7 @@ impl PartialEq for Dmabuf {
 impl Eq for Dmabuf {}
 
 impl PartialEq for WeakDmabuf {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Weak::ptr_eq(&self.0, &other.0)
     }
@@ -118,11 +122,13 @@ impl PartialEq for WeakDmabuf {
 impl Eq for WeakDmabuf {}
 
 impl Hash for Dmabuf {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.0).hash(state)
     }
 }
 impl Hash for WeakDmabuf {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.as_ptr().hash(state)
     }
@@ -345,6 +351,7 @@ bitflags::bitflags! {
 }
 
 impl From<DmabufMappingMode> for rustix::mm::ProtFlags {
+    #[inline]
     fn from(mode: DmabufMappingMode) -> Self {
         let mut flags = rustix::mm::ProtFlags::empty();
 
@@ -473,6 +480,7 @@ impl fmt::Display for AnyError {
 }
 
 impl error::Error for AnyError {
+    #[inline]
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         Some(&*self.0)
     }

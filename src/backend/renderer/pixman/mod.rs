@@ -86,6 +86,7 @@ impl PixmanTarget {
 pub struct PixmanRenderBuffer(pixman::Image<'static, 'static>);
 
 impl From<pixman::Image<'static, 'static>> for PixmanRenderBuffer {
+    #[inline]
     fn from(value: pixman::Image<'static, 'static>) -> Self {
         Self(value)
     }
@@ -140,6 +141,7 @@ impl PixmanImage {
 pub struct PixmanTexture(PixmanImage);
 
 impl From<pixman::Image<'static, 'static>> for PixmanTexture {
+    #[inline]
     fn from(image: pixman::Image<'static, 'static>) -> Self {
         Self(PixmanImage(Rc::new(PixmanImageInner {
             #[cfg(feature = "wayland_frontend")]

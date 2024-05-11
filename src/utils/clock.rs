@@ -66,6 +66,7 @@ impl<Kind> Time<Kind> {
 }
 
 impl<Kind> Clone for Time<Kind> {
+    #[inline]
     fn clone(&self) -> Self {
         *self
     }
@@ -74,6 +75,7 @@ impl<Kind> Clone for Time<Kind> {
 impl<Kind> Copy for Time<Kind> {}
 
 impl<Kind: NonNegativeClockSource> From<Time<Kind>> for Duration {
+    #[inline]
     fn from(time: Time<Kind>) -> Self {
         debug_assert!(time.tp.tv_sec > 0);
         debug_assert!(time.tp.tv_nsec > 0);
@@ -91,6 +93,7 @@ impl<Kind> std::fmt::Debug for Time<Kind> {
 }
 
 impl<Kind> PartialEq for Time<Kind> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.tp == other.tp && self._kind == other._kind
     }
@@ -99,12 +102,14 @@ impl<Kind> PartialEq for Time<Kind> {
 impl<Kind> Eq for Time<Kind> {}
 
 impl<Kind> PartialOrd for Time<Kind> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<Kind> Ord for Time<Kind> {
+    #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let tv_sec = self.tp.tv_sec.cmp(&other.tp.tv_sec);
 
@@ -117,6 +122,7 @@ impl<Kind> Ord for Time<Kind> {
 }
 
 impl<Kind: NonNegativeClockSource> From<Duration> for Time<Kind> {
+    #[inline]
     fn from(tp: Duration) -> Self {
         let tp = Timespec {
             tv_sec: tp.as_secs() as rustix::time::Secs,
@@ -130,6 +136,7 @@ impl<Kind: NonNegativeClockSource> From<Duration> for Time<Kind> {
 }
 
 impl<Kind> From<Timespec> for Time<Kind> {
+    #[inline]
     fn from(tp: Timespec) -> Self {
         Time {
             tp,

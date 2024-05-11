@@ -194,6 +194,7 @@ impl<D: SeatHandler> fmt::Debug for Seat<D> {
 }
 
 impl<D: SeatHandler> PartialEq for Seat<D> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.arc, &other.arc)
     }
@@ -201,6 +202,7 @@ impl<D: SeatHandler> PartialEq for Seat<D> {
 impl<D: SeatHandler> Eq for Seat<D> {}
 
 impl<D: SeatHandler> Hash for Seat<D> {
+    #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.arc).hash(state)
     }
@@ -259,6 +261,7 @@ impl<D: SeatHandler> fmt::Debug for SeatRc<D> {
 }
 
 impl<D: SeatHandler> Clone for Seat<D> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             arc: self.arc.clone(),
@@ -267,6 +270,7 @@ impl<D: SeatHandler> Clone for Seat<D> {
 }
 
 impl<D: SeatHandler> Default for SeatState<D> {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }

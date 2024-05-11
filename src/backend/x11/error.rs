@@ -55,12 +55,14 @@ pub enum X11Error {
 }
 
 impl From<ReplyError> for X11Error {
+    #[inline]
     fn from(err: ReplyError) -> Self {
         Self::Protocol(err.into())
     }
 }
 
 impl From<ConnectionError> for X11Error {
+    #[inline]
     fn from(err: ConnectionError) -> Self {
         Self::Protocol(err.into())
     }
@@ -133,12 +135,14 @@ pub enum AllocateBuffersError {
 }
 
 impl From<Errno> for AllocateBuffersError {
+    #[inline]
     fn from(err: Errno) -> Self {
         Self::OpenDevice(err.into())
     }
 }
 
 impl From<CreateDrmNodeError> for AllocateBuffersError {
+    #[inline]
     fn from(err: CreateDrmNodeError) -> Self {
         match err {
             CreateDrmNodeError::Io(err) => AllocateBuffersError::OpenDevice(err),

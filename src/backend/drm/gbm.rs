@@ -38,6 +38,7 @@ pub struct GbmFramebuffer {
 }
 
 impl Drop for GbmFramebuffer {
+    #[inline]
     fn drop(&mut self) {
         trace!(fb = ?self.fb, "destroying framebuffer");
         if let Err(err) = self.drm.destroy_framebuffer(self.fb) {
@@ -47,6 +48,7 @@ impl Drop for GbmFramebuffer {
 }
 
 impl AsRef<framebuffer::Handle> for GbmFramebuffer {
+    #[inline]
     fn as_ref(&self) -> &framebuffer::Handle {
         &self.fb
     }
@@ -208,6 +210,7 @@ struct BufferObjectInternal<'a, T: 'static> {
 impl<'a, T: 'static> std::ops::Deref for BufferObjectInternal<'a, T> {
     type Target = BufferObject<T>;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.bo
     }

@@ -357,6 +357,7 @@ pub enum AxisRelativeDirection {
 
 #[cfg(feature = "wayland_frontend")]
 impl From<AxisRelativeDirection> for wl_pointer::AxisRelativeDirection {
+    #[inline]
     fn from(direction: AxisRelativeDirection) -> Self {
         match direction {
             AxisRelativeDirection::Identical => wl_pointer::AxisRelativeDirection::Identical,
@@ -516,12 +517,14 @@ pub struct TouchSlot {
 }
 
 impl From<Option<u32>> for TouchSlot {
+    #[inline]
     fn from(id: Option<u32>) -> Self {
         Self { id }
     }
 }
 
 impl From<TouchSlot> for i32 {
+    #[inline]
     fn from(slot: TouchSlot) -> i32 {
         slot.id.map(|id| id as i32).unwrap_or(-1)
     }

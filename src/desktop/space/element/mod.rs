@@ -37,12 +37,14 @@ pub enum RenderZindex {
 }
 
 impl From<RenderZindex> for u8 {
+    #[inline]
     fn from(idx: RenderZindex) -> u8 {
         idx as u8
     }
 }
 
 impl From<RenderZindex> for Option<u8> {
+    #[inline]
     fn from(idx: RenderZindex) -> Option<u8> {
         Some(idx as u8)
     }

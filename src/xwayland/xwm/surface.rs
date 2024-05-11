@@ -92,6 +92,7 @@ enum InputMode {
 }
 
 impl PartialEq for X11Surface {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         let self_alive = self.state.lock().unwrap().alive;
         let other_alive = other.state.lock().unwrap().alive;

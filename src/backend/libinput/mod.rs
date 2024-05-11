@@ -86,6 +86,7 @@ impl backend::Device for libinput::Device {
 }
 
 impl From<backend::DeviceCapability> for libinput::DeviceCapability {
+    #[inline]
     fn from(other: backend::DeviceCapability) -> libinput::DeviceCapability {
         match other {
             backend::DeviceCapability::Gesture => libinput::DeviceCapability::Gesture,
@@ -612,6 +613,7 @@ impl InputBackend for LibinputInputBackend {
 }
 
 impl From<event::keyboard::KeyState> for backend::KeyState {
+    #[inline]
     fn from(libinput: event::keyboard::KeyState) -> Self {
         match libinput {
             event::keyboard::KeyState::Pressed => backend::KeyState::Pressed,
@@ -621,6 +623,7 @@ impl From<event::keyboard::KeyState> for backend::KeyState {
 }
 
 impl From<event::pointer::Axis> for backend::Axis {
+    #[inline]
     fn from(libinput: event::pointer::Axis) -> Self {
         match libinput {
             event::pointer::Axis::Vertical => backend::Axis::Vertical,
@@ -630,6 +633,7 @@ impl From<event::pointer::Axis> for backend::Axis {
 }
 
 impl From<backend::Axis> for event::pointer::Axis {
+    #[inline]
     fn from(axis: backend::Axis) -> Self {
         match axis {
             backend::Axis::Vertical => event::pointer::Axis::Vertical,
@@ -639,6 +643,7 @@ impl From<backend::Axis> for event::pointer::Axis {
 }
 
 impl From<event::pointer::ButtonState> for backend::ButtonState {
+    #[inline]
     fn from(libinput: event::pointer::ButtonState) -> Self {
         match libinput {
             event::pointer::ButtonState::Pressed => backend::ButtonState::Pressed,
@@ -648,6 +653,7 @@ impl From<event::pointer::ButtonState> for backend::ButtonState {
 }
 
 impl From<crate::input::keyboard::LedState> for libinput::Led {
+    #[inline]
     fn from(value: crate::input::keyboard::LedState) -> Self {
         let mut leds = libinput::Led::empty();
         if value.num.unwrap_or_default() {
@@ -671,6 +677,7 @@ pub struct LibinputSessionInterface<S: Session>(S);
 
 #[cfg(feature = "backend_session")]
 impl<S: Session> From<S> for LibinputSessionInterface<S> {
+    #[inline]
     fn from(session: S) -> LibinputSessionInterface<S> {
         LibinputSessionInterface(session)
     }
@@ -691,6 +698,7 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
 }
 
 impl AsFd for LibinputInputBackend {
+    #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.context.as_fd()
     }

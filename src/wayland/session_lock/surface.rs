@@ -116,6 +116,7 @@ pub struct LockSurface {
 }
 
 impl PartialEq for LockSurface {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.surface == other.surface
     }

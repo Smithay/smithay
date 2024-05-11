@@ -589,6 +589,7 @@ impl<D: SeatHandler> fmt::Debug for KeyboardHandle<D> {
 }
 
 impl<D: SeatHandler> Clone for KeyboardHandle<D> {
+    #[inline]
     fn clone(&self) -> Self {
         KeyboardHandle {
             arc: self.arc.clone(),
@@ -597,6 +598,7 @@ impl<D: SeatHandler> Clone for KeyboardHandle<D> {
 }
 
 impl<D: SeatHandler> ::std::cmp::PartialEq for KeyboardHandle<D> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.arc, &other.arc)
     }

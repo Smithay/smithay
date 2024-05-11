@@ -390,6 +390,7 @@ impl TabletToolHandle {
 }
 
 impl From<TabletToolType> for zwp_tablet_tool_v2::Type {
+    #[inline]
     fn from(from: TabletToolType) -> zwp_tablet_tool_v2::Type {
         match from {
             TabletToolType::Pen => zwp_tablet_tool_v2::Type::Pen,
@@ -405,6 +406,7 @@ impl From<TabletToolType> for zwp_tablet_tool_v2::Type {
 }
 
 impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
+    #[inline]
     fn from(from: ButtonState) -> zwp_tablet_tool_v2::ButtonState {
         match from {
             ButtonState::Pressed => zwp_tablet_tool_v2::ButtonState::Pressed,

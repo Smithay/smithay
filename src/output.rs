@@ -87,6 +87,7 @@ pub struct Mode {
 
 #[cfg(feature = "backend_drm")]
 impl From<DrmMode> for Mode {
+    #[inline]
     fn from(mode: DrmMode) -> Self {
         let clock = mode.clock() as u64;
         let htotal = mode.hsync().2 as u64;
@@ -140,6 +141,7 @@ pub enum Subpixel {
 
 #[cfg(feature = "backend_drm")]
 impl From<DrmSubPixel> for Subpixel {
+    #[inline]
     fn from(mode: DrmSubPixel) -> Self {
         match mode {
             DrmSubPixel::Unknown => Self::Unknown,

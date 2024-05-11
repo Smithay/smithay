@@ -72,6 +72,7 @@ impl<D: SeatHandler> fmt::Debug for PointerHandle<D> {
 }
 
 impl<D: SeatHandler> Clone for PointerHandle<D> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -93,12 +94,14 @@ impl<D: SeatHandler> Clone for PointerHandle<D> {
 }
 
 impl<D: SeatHandler> std::hash::Hash for PointerHandle<D> {
+    #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.inner).hash(state)
     }
 }
 
 impl<D: SeatHandler> std::cmp::PartialEq for PointerHandle<D> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }

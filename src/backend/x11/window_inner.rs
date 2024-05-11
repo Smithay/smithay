@@ -33,6 +33,7 @@ use x11rb::{
 };
 
 impl From<Arc<WindowInner>> for Window {
+    #[inline]
     fn from(inner: Arc<WindowInner>) -> Self {
         Window(inner)
     }
@@ -45,6 +46,7 @@ pub struct CursorState {
 }
 
 impl Default for CursorState {
+    #[inline]
     fn default() -> Self {
         CursorState {
             inside_window: false,

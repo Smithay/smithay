@@ -186,6 +186,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: Into<SwapBuffersError> + Send + Sync,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: Into<SwapBuffersError> + Send + Sync,
 {
+    #[inline]
     fn from(err: Error<R, T>) -> SwapBuffersError {
         match err {
             x @ Error::NoDevice(_) | x @ Error::DeviceMissing | x @ Error::AllocatorError(_) => {

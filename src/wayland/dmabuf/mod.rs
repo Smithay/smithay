@@ -246,6 +246,7 @@ struct DmabufFeedbackInner {
 }
 
 impl PartialEq for DmabufFeedbackInner {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.main_device == other.main_device
             && self.format_table.formats == other.format_table.formats
@@ -297,6 +298,7 @@ impl DmabufFeedbackFormat {
 }
 
 impl From<Format> for DmabufFeedbackFormat {
+    #[inline]
     fn from(format: Format) -> Self {
         DmabufFeedbackFormat {
             format: format.code as u32,
@@ -429,6 +431,7 @@ impl DmabufFeedbackBuilder {
 pub struct DmabufFeedback(Arc<DmabufFeedbackInner>);
 
 impl PartialEq for DmabufFeedback {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // Note: The dmabuf feedback can not change, it is initialized
         // with the DmabufFeedbackBuilder, so if the arc ptr equal we

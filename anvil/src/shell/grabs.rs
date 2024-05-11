@@ -279,6 +279,7 @@ impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
 
 #[cfg(feature = "xwayland")]
 impl From<X11ResizeEdge> for ResizeEdge {
+    #[inline]
     fn from(edge: X11ResizeEdge) -> Self {
         match edge {
             X11ResizeEdge::Bottom => ResizeEdge::BOTTOM,

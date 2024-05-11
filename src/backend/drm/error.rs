@@ -80,6 +80,7 @@ pub enum Error {
 }
 
 impl From<Error> for SwapBuffersError {
+    #[inline]
     fn from(err: Error) -> SwapBuffersError {
         match err {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),

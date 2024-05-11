@@ -11,6 +11,7 @@ pub static SERIAL_COUNTER: SerialCounter = SerialCounter::new();
 pub struct Serial(pub(crate) u32);
 
 impl PartialEq for Serial {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
@@ -19,6 +20,7 @@ impl PartialEq for Serial {
 impl Eq for Serial {}
 
 impl PartialOrd for Serial {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let distance = if self.0 > other.0 {
             self.0 - other.0
@@ -35,12 +37,14 @@ impl PartialOrd for Serial {
 }
 
 impl From<u32> for Serial {
+    #[inline]
     fn from(n: u32) -> Self {
         Serial(n)
     }
 }
 
 impl From<Serial> for u32 {
+    #[inline]
     fn from(serial: Serial) -> u32 {
         serial.0
     }
@@ -67,6 +71,7 @@ pub struct SerialCounter {
 }
 
 impl Default for SerialCounter {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }

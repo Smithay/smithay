@@ -214,6 +214,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
 }
 
 impl From<KeyState> for WlKeyState {
+    #[inline]
     fn from(state: KeyState) -> WlKeyState {
         match state {
             KeyState::Pressed => WlKeyState::Pressed,
@@ -228,6 +229,7 @@ pub struct UnknownKeyState(WlKeyState);
 
 impl TryFrom<WlKeyState> for KeyState {
     type Error = UnknownKeyState;
+    #[inline]
     fn try_from(state: WlKeyState) -> Result<Self, Self::Error> {
         match state {
             WlKeyState::Pressed => Ok(KeyState::Pressed),

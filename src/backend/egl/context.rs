@@ -54,6 +54,7 @@ pub enum ContextPriority {
 impl TryFrom<ffi::egl::types::EGLenum> for ContextPriority {
     type Error = EGLError;
 
+    #[inline]
     fn try_from(value: ffi::egl::types::EGLenum) -> Result<Self, Self::Error> {
         let priority = match value {
             ffi::egl::CONTEXT_PRIORITY_HIGH_IMG => ContextPriority::High,
@@ -66,6 +67,7 @@ impl TryFrom<ffi::egl::types::EGLenum> for ContextPriority {
 }
 
 impl From<ContextPriority> for ffi::egl::types::EGLenum {
+    #[inline]
     fn from(value: ContextPriority) -> Self {
         match value {
             ContextPriority::High => ffi::egl::CONTEXT_PRIORITY_HIGH_IMG,

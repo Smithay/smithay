@@ -74,6 +74,7 @@ impl XdgActivationToken {
     }
 
     /// Extracts a string slice containing the entire token.
+    #[inline]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -88,12 +89,14 @@ impl ops::Deref for XdgActivationToken {
 }
 
 impl From<String> for XdgActivationToken {
+    #[inline]
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
 impl From<XdgActivationToken> for String {
+    #[inline]
     fn from(s: XdgActivationToken) -> Self {
         s.0
     }
