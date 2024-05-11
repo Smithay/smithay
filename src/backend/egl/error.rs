@@ -124,6 +124,7 @@ pub enum EGLError {
 }
 
 impl From<u32> for EGLError {
+    #[inline]
     fn from(value: u32) -> Self {
         match value {
             ffi::egl::NOT_INITIALIZED => EGLError::NotInitialized,

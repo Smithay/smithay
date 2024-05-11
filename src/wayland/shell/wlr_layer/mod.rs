@@ -299,6 +299,7 @@ pub struct LayerSurface {
 }
 
 impl std::cmp::PartialEq for LayerSurface {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.wl_surface == other.wl_surface
     }

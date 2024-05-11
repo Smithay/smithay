@@ -222,6 +222,7 @@ impl<F> AsRef<framebuffer::Handle> for DrmFramebuffer<F>
 where
     F: Framebuffer,
 {
+    #[inline]
     fn as_ref(&self) -> &framebuffer::Handle {
         match self {
             DrmFramebuffer::Exporter(e) => e.as_ref(),
@@ -273,6 +274,7 @@ where
 }
 
 impl<B: Buffer, F: Framebuffer> AsRef<framebuffer::Handle> for DrmScanoutBuffer<B, F> {
+    #[inline]
     fn as_ref(&self) -> &drm::control::framebuffer::Handle {
         self.fb.as_ref()
     }
@@ -390,6 +392,7 @@ impl<B> Default for ElementFramebufferCache<B>
 where
     B: Framebuffer,
 {
+    #[inline]
     fn default() -> Self {
         Self {
             fb_cache: Default::default(),
@@ -440,6 +443,7 @@ impl<B> PlaneConfig<B> {
 }
 
 impl<B> Clone for PlaneConfig<B> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             properties: self.properties,
@@ -467,6 +471,7 @@ struct PlaneState<B> {
 }
 
 impl<B> Default for PlaneState<B> {
+    #[inline]
     fn default() -> Self {
         Self {
             skip: true,
@@ -492,6 +497,7 @@ impl<B> PlaneState<B> {
 }
 
 impl<B> Clone for PlaneState<B> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             skip: self.skip,
@@ -553,12 +559,14 @@ struct Owned<B>(Rc<B>);
 impl<B> std::ops::Deref for Owned<B> {
     type Target = B;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
 impl<B> From<B> for Owned<B> {
+    #[inline]
     fn from(outer: B) -> Self {
         Self(Rc::new(outer))
     }
@@ -568,6 +576,7 @@ impl<B> AsRef<framebuffer::Handle> for Owned<B>
 where
     B: Framebuffer,
 {
+    #[inline]
     fn as_ref(&self) -> &framebuffer::Handle {
         (*self.0).as_ref()
     }
@@ -583,6 +592,7 @@ where
 }
 
 impl<B> Clone for Owned<B> {
+    #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
@@ -1313,6 +1323,7 @@ enum ExportBufferError {
 }
 
 impl From<ExportBufferError> for Option<RenderingReason> {
+    #[inline]
     fn from(err: ExportBufferError) -> Self {
         if matches!(err, ExportBufferError::ExportFailed) {
             // Export failed could mean the buffer could
@@ -1387,6 +1398,7 @@ struct PlaneAssignment {
 }
 
 impl From<&PlaneInfo> for PlaneAssignment {
+    #[inline]
     fn from(value: &PlaneInfo) -> Self {
         PlaneAssignment {
             handle: value.handle,
@@ -4136,6 +4148,7 @@ where
 struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);
 
 impl<B: Framebuffer> PartialEq for OwnedFramebuffer<B> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         AsRef::<framebuffer::Handle>::as_ref(&self) == AsRef::<framebuffer::Handle>::as_ref(&other)
     }
@@ -4154,12 +4167,14 @@ impl<B: Framebuffer> OwnedFramebuffer<B> {
 }
 
 impl<B: Framebuffer> Clone for OwnedFramebuffer<B> {
+    #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
 impl<B: Framebuffer> AsRef<framebuffer::Handle> for OwnedFramebuffer<B> {
+    #[inline]
     fn as_ref(&self) -> &framebuffer::Handle {
         (*self.0).as_ref()
     }
@@ -4250,6 +4265,7 @@ impl<
         F: std::error::Error + Send + Sync + 'static,
     > From<FrameError<A, B, F>> for SwapBuffersError
 {
+    #[inline]
     fn from(err: FrameError<A, B, F>) -> SwapBuffersError {
         match err {
             x @ FrameError::NoSupportedPlaneFormat

@@ -102,6 +102,7 @@ impl SyncPoint {
 }
 
 impl<T: Fence + 'static> From<T> for SyncPoint {
+    #[inline]
     fn from(value: T) -> Self {
         SyncPoint {
             fence: Some(Arc::new(value)),

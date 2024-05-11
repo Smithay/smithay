@@ -65,6 +65,7 @@ impl IsAlive for PointerFocusTarget {
 }
 
 impl From<PointerFocusTarget> for WlSurface {
+    #[inline]
     fn from(target: PointerFocusTarget) -> Self {
         target.wl_surface().unwrap()
     }
@@ -478,18 +479,21 @@ impl WaylandFocus for KeyboardFocusTarget {
 }
 
 impl From<WlSurface> for PointerFocusTarget {
+    #[inline]
     fn from(value: WlSurface) -> Self {
         PointerFocusTarget::WlSurface(value)
     }
 }
 
 impl From<&WlSurface> for PointerFocusTarget {
+    #[inline]
     fn from(value: &WlSurface) -> Self {
         PointerFocusTarget::from(value.clone())
     }
 }
 
 impl From<PopupKind> for PointerFocusTarget {
+    #[inline]
     fn from(value: PopupKind) -> Self {
         PointerFocusTarget::from(value.wl_surface())
     }
@@ -497,6 +501,7 @@ impl From<PopupKind> for PointerFocusTarget {
 
 #[cfg(feature = "xwayland")]
 impl From<X11Surface> for PointerFocusTarget {
+    #[inline]
     fn from(value: X11Surface) -> Self {
         PointerFocusTarget::X11Surface(value)
     }
@@ -504,30 +509,35 @@ impl From<X11Surface> for PointerFocusTarget {
 
 #[cfg(feature = "xwayland")]
 impl From<&X11Surface> for PointerFocusTarget {
+    #[inline]
     fn from(value: &X11Surface) -> Self {
         PointerFocusTarget::from(value.clone())
     }
 }
 
 impl From<WindowElement> for KeyboardFocusTarget {
+    #[inline]
     fn from(w: WindowElement) -> Self {
         KeyboardFocusTarget::Window(w.0.clone())
     }
 }
 
 impl From<LayerSurface> for KeyboardFocusTarget {
+    #[inline]
     fn from(l: LayerSurface) -> Self {
         KeyboardFocusTarget::LayerSurface(l)
     }
 }
 
 impl From<PopupKind> for KeyboardFocusTarget {
+    #[inline]
     fn from(p: PopupKind) -> Self {
         KeyboardFocusTarget::Popup(p)
     }
 }
 
 impl From<KeyboardFocusTarget> for PointerFocusTarget {
+    #[inline]
     fn from(value: KeyboardFocusTarget) -> Self {
         match value {
             KeyboardFocusTarget::Window(w) => match w.underlying_surface() {

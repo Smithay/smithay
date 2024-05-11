@@ -23,18 +23,21 @@ pub struct GbmAllocator<A: AsFd + 'static> {
 }
 
 impl<A: AsFd + 'static> AsRef<GbmDevice<A>> for GbmAllocator<A> {
+    #[inline]
     fn as_ref(&self) -> &GbmDevice<A> {
         &self.device
     }
 }
 
 impl<A: AsFd + 'static> AsMut<GbmDevice<A>> for GbmAllocator<A> {
+    #[inline]
     fn as_mut(&mut self) -> &mut GbmDevice<A> {
         &mut self.device
     }
 }
 
 impl<A: AsFd + 'static> AsFd for GbmAllocator<A> {
+    #[inline]
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.device.as_fd()
     }
@@ -148,6 +151,7 @@ pub enum GbmConvertError {
 }
 
 impl From<gbm::FdError> for GbmConvertError {
+    #[inline]
     fn from(err: gbm::FdError) -> Self {
         match err {
             gbm::FdError::DeviceDestroyed(err) => err.into(),

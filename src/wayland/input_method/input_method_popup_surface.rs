@@ -106,6 +106,7 @@ impl PopupSurface {
 }
 
 impl std::cmp::PartialEq for PopupSurface {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.surface_role == other.surface_role
     }

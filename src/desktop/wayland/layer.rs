@@ -473,6 +473,7 @@ pub fn layer_state(layer: &LayerSurface) -> RefMut<'_, LayerState> {
 pub struct LayerSurface(pub(crate) Arc<LayerSurfaceInner>);
 
 impl PartialEq for LayerSurface {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.0.id == other.0.id
     }
@@ -481,6 +482,7 @@ impl PartialEq for LayerSurface {
 impl Eq for LayerSurface {}
 
 impl Hash for LayerSurface {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
     }
@@ -495,6 +497,7 @@ pub(crate) struct LayerSurfaceInner {
 }
 
 impl Drop for LayerSurfaceInner {
+    #[inline]
     fn drop(&mut self) {
         LAYER_IDS.lock().unwrap().remove(&self.id);
     }

@@ -56,6 +56,7 @@ pub enum Error {
 }
 
 impl From<Error> for SwapBuffersError {
+    #[inline]
     fn from(err: Error) -> SwapBuffersError {
         match err {
             x @ Error::DrmNode(_) | x @ Error::Egl(_) => SwapBuffersError::ContextLost(Box::new(x)),
@@ -85,6 +86,7 @@ impl<R, A: AsFd + fmt::Debug + 'static> fmt::Debug for GbmGlesBackend<R, A> {
 }
 
 impl<R, A: AsFd + 'static> Default for GbmGlesBackend<R, A> {
+    #[inline]
     fn default() -> Self {
         GbmGlesBackend {
             devices: HashMap::new(),
@@ -223,6 +225,7 @@ where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
+    #[inline]
     fn from(err: GlesError) -> MultiError<GbmGlesBackend<R, A>, T> {
         MultiError::Render(err)
     }

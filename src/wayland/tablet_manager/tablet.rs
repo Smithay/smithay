@@ -27,6 +27,7 @@ pub struct TabletDescriptor {
 }
 
 impl<D: Device> From<&D> for TabletDescriptor {
+    #[inline]
     fn from(device: &D) -> Self {
         TabletDescriptor {
             name: device.name(),

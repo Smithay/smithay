@@ -148,6 +148,7 @@ impl Inner {
 }
 
 impl From<Subpixel> for WlSubpixel {
+    #[inline]
     fn from(s: Subpixel) -> Self {
         match s {
             Subpixel::HorizontalBgr => WlSubpixel::HorizontalBgr,

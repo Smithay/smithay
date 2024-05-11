@@ -156,6 +156,7 @@ impl<'frame> GlowFrame<'frame> {
 //  so `TryFrom<GlesRenderer, Error=Infaillable> for GlesRenderer` qualifies
 //  just as `TryFrom<GlesRenderer, Error=GlesError> for GlowRenderer`
 impl From<GlesRenderer> for GlowRenderer {
+    #[inline]
     fn from(mut renderer: GlesRenderer) -> GlowRenderer {
         let glow = unsafe {
             renderer.make_current().unwrap();
@@ -170,24 +171,28 @@ impl From<GlesRenderer> for GlowRenderer {
 }
 
 impl Borrow<GlesRenderer> for GlowRenderer {
+    #[inline]
     fn borrow(&self) -> &GlesRenderer {
         &self.gl
     }
 }
 
 impl BorrowMut<GlesRenderer> for GlowRenderer {
+    #[inline]
     fn borrow_mut(&mut self) -> &mut GlesRenderer {
         &mut self.gl
     }
 }
 
 impl<'frame> Borrow<GlesFrame<'frame>> for GlowFrame<'frame> {
+    #[inline]
     fn borrow(&self) -> &GlesFrame<'frame> {
         self.frame.as_ref().unwrap()
     }
 }
 
 impl<'frame> BorrowMut<GlesFrame<'frame>> for GlowFrame<'frame> {
+    #[inline]
     fn borrow_mut(&mut self) -> &mut GlesFrame<'frame> {
         self.frame.as_mut().unwrap()
     }

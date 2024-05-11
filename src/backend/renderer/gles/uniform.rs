@@ -368,108 +368,129 @@ impl UniformValue {
 }
 
 impl From<f32> for UniformValue {
+    #[inline]
     fn from(v: f32) -> Self {
         UniformValue::_1f(v)
     }
 }
 impl From<(f32, f32)> for UniformValue {
+    #[inline]
     fn from((v1, v2): (f32, f32)) -> Self {
         UniformValue::_2f(v1, v2)
     }
 }
 impl From<(f32, f32, f32)> for UniformValue {
+    #[inline]
     fn from((v1, v2, v3): (f32, f32, f32)) -> Self {
         UniformValue::_3f(v1, v2, v3)
     }
 }
 impl From<(f32, f32, f32, f32)> for UniformValue {
+    #[inline]
     fn from((v1, v2, v3, v4): (f32, f32, f32, f32)) -> Self {
         UniformValue::_4f(v1, v2, v3, v4)
     }
 }
 impl From<[f32; 2]> for UniformValue {
+    #[inline]
     fn from(v: [f32; 2]) -> Self {
         UniformValue::_2f(v[0], v[1])
     }
 }
 impl From<[f32; 3]> for UniformValue {
+    #[inline]
     fn from(v: [f32; 3]) -> Self {
         UniformValue::_3f(v[0], v[1], v[2])
     }
 }
 impl From<[f32; 4]> for UniformValue {
+    #[inline]
     fn from(v: [f32; 4]) -> Self {
         UniformValue::_4f(v[0], v[1], v[2], v[3])
     }
 }
 
 impl From<i32> for UniformValue {
+    #[inline]
     fn from(v: i32) -> Self {
         UniformValue::_1i(v)
     }
 }
 impl From<(i32, i32)> for UniformValue {
+    #[inline]
     fn from((v1, v2): (i32, i32)) -> Self {
         UniformValue::_2i(v1, v2)
     }
 }
 impl From<(i32, i32, i32)> for UniformValue {
+    #[inline]
     fn from((v1, v2, v3): (i32, i32, i32)) -> Self {
         UniformValue::_3i(v1, v2, v3)
     }
 }
 impl From<(i32, i32, i32, i32)> for UniformValue {
+    #[inline]
     fn from((v1, v2, v3, v4): (i32, i32, i32, i32)) -> Self {
         UniformValue::_4i(v1, v2, v3, v4)
     }
 }
 impl From<[i32; 2]> for UniformValue {
+    #[inline]
     fn from(v: [i32; 2]) -> Self {
         UniformValue::_2i(v[0], v[1])
     }
 }
 impl From<[i32; 3]> for UniformValue {
+    #[inline]
     fn from(v: [i32; 3]) -> Self {
         UniformValue::_3i(v[0], v[1], v[2])
     }
 }
 impl From<[i32; 4]> for UniformValue {
+    #[inline]
     fn from(v: [i32; 4]) -> Self {
         UniformValue::_4i(v[0], v[1], v[2], v[3])
     }
 }
 
 impl From<u32> for UniformValue {
+    #[inline]
     fn from(v: u32) -> Self {
         UniformValue::_1ui(v)
     }
 }
 impl From<(u32, u32)> for UniformValue {
+    #[inline]
     fn from((v1, v2): (u32, u32)) -> Self {
         UniformValue::_2ui(v1, v2)
     }
 }
 impl From<(u32, u32, u32)> for UniformValue {
+    #[inline]
     fn from((v1, v2, v3): (u32, u32, u32)) -> Self {
         UniformValue::_3ui(v1, v2, v3)
     }
 }
 impl From<(u32, u32, u32, u32)> for UniformValue {
+    #[inline]
     fn from((v1, v2, v3, v4): (u32, u32, u32, u32)) -> Self {
         UniformValue::_4ui(v1, v2, v3, v4)
     }
 }
 impl From<[u32; 2]> for UniformValue {
+    #[inline]
     fn from(v: [u32; 2]) -> Self {
         UniformValue::_2ui(v[0], v[1])
     }
 }
 impl From<[u32; 3]> for UniformValue {
+    #[inline]
     fn from(v: [u32; 3]) -> Self {
         UniformValue::_3ui(v[0], v[1], v[2])
     }
 }
 impl From<[u32; 4]> for UniformValue {
+    #[inline]
     fn from(v: [u32; 4]) -> Self {
         UniformValue::_4ui(v[0], v[1], v[2], v[3])
     }

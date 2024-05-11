@@ -49,6 +49,7 @@ pub enum DummyError {
 }
 
 impl From<DummyError> for SwapBuffersError {
+    #[inline]
     fn from(value: DummyError) -> Self {
         SwapBuffersError::TemporaryFailure(Box::new(value))
     }

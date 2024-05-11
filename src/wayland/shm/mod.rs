@@ -205,6 +205,7 @@ pub enum BufferAccessError {
 }
 
 impl From<UnmanagedResource> for BufferAccessError {
+    #[inline]
     fn from(_: UnmanagedResource) -> Self {
         Self::NotManaged
     }

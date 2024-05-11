@@ -57,18 +57,21 @@ pub struct Space<E: SpaceElement> {
 }
 
 impl<E: SpaceElement> PartialEq for Space<E> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
 impl<E: SpaceElement> Drop for Space<E> {
+    #[inline]
     fn drop(&mut self) {
         SPACE_IDS.lock().unwrap().remove(&self.id);
     }
 }
 
 impl<E: SpaceElement> Default for Space<E> {
+    #[inline]
     fn default() -> Self {
         let id = next_space_id();
         let span = debug_span!("desktop_space", id);

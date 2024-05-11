@@ -557,6 +557,7 @@ where
 }
 
 impl From<Axis> for WlAxis {
+    #[inline]
     fn from(axis: Axis) -> WlAxis {
         match axis {
             Axis::Horizontal => WlAxis::HorizontalScroll,
@@ -571,6 +572,7 @@ pub struct UnknownAxis(WlAxis);
 
 impl TryFrom<WlAxis> for Axis {
     type Error = UnknownAxis;
+    #[inline]
     fn try_from(value: WlAxis) -> Result<Self, Self::Error> {
         match value {
             WlAxis::HorizontalScroll => Ok(Axis::Horizontal),
@@ -581,6 +583,7 @@ impl TryFrom<WlAxis> for Axis {
 }
 
 impl From<AxisSource> for WlAxisSource {
+    #[inline]
     fn from(axis: AxisSource) -> WlAxisSource {
         match axis {
             AxisSource::Wheel => WlAxisSource::Wheel,
@@ -592,6 +595,7 @@ impl From<AxisSource> for WlAxisSource {
 }
 
 impl From<ButtonState> for WlButtonState {
+    #[inline]
     fn from(state: ButtonState) -> WlButtonState {
         match state {
             ButtonState::Pressed => WlButtonState::Pressed,
@@ -606,6 +610,7 @@ pub struct UnknownButtonState(WlButtonState);
 
 impl TryFrom<WlButtonState> for ButtonState {
     type Error = UnknownButtonState;
+    #[inline]
     fn try_from(value: WlButtonState) -> Result<Self, Self::Error> {
         match value {
             WlButtonState::Pressed => Ok(ButtonState::Pressed),

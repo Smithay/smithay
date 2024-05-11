@@ -90,6 +90,7 @@ pub enum GlesError {
 
 impl From<GlesError> for SwapBuffersError {
     #[cfg(feature = "wayland_frontend")]
+    #[inline]
     fn from(err: GlesError) -> SwapBuffersError {
         match err {
             x @ GlesError::ShaderCompileError
@@ -118,6 +119,7 @@ impl From<GlesError> for SwapBuffersError {
         }
     }
     #[cfg(not(feature = "wayland_frontend"))]
+    #[inline]
     fn from(err: GlesError) -> SwapBuffersError {
         match err {
             x @ GlesError::ShaderCompileError

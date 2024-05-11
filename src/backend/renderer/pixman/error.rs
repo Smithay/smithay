@@ -64,6 +64,7 @@ pub enum PixmanError {
 }
 
 impl From<PixmanError> for SwapBuffersError {
+    #[inline]
     fn from(value: PixmanError) -> Self {
         match value {
             x @ PixmanError::SyncInterrupted => SwapBuffersError::TemporaryFailure(Box::new(x)),
