@@ -3087,8 +3087,7 @@ where
                 .unwrap_or(true)
             || previous_element_state
                 .map(|element_state| {
-                    element_state.id != *element.id()
-                        || !element.damage_since(scale, Some(element_state.commit)).is_empty()
+                    element_state.id != *element.id() || element.current_commit() != element_state.commit
                 })
                 .unwrap_or(true);
 
