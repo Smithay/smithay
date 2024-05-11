@@ -317,7 +317,7 @@ impl DrmDevice {
         mode: Mode,
         connectors: &[connector::Handle],
     ) -> Result<DrmSurface, Error> {
-        self.surfaces.retain(|surface| surface.upgrade().is_some());
+        self.surfaces.retain(|surface| surface.strong_count() != 0);
 
         if connectors.is_empty() {
             return Err(Error::SurfaceWithoutConnectors(crtc));
@@ -398,7 +398,7 @@ impl DrmDevice {
     /// will ignore this state. Use [`DrmDevice::is_active`] to guard these calls.
     pub fn pause(&mut self) {
         self.set_active(false);
-        self.surfaces.retain(|surface| surface.upgrade().is_some());
+        self.surfaces.retain(|surface| surface.strong_count() != 0);
         if self.device_fd().is_privileged() {
             if let Err(err) = self.release_master_lock() {
                 error!("Failed to drop drm master state Error: {}", err);
@@ -421,7 +421,7 @@ impl DrmDevice {
         if !self.set_active(true) && disable_connectors {
             self.reset_state()
         } else {
-            self.surfaces.retain(|surface| surface.upgrade().is_some());
+            self.surfaces.retain(|surface| surface.strong_count() != 0);
             Ok(())
         }
     }

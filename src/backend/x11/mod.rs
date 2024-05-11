@@ -630,7 +630,7 @@ pub(crate) struct X11Inner {
 impl X11Inner {
     fn window_ref_from_id(inner: &Arc<Mutex<X11Inner>>, id: &u32) -> Option<Weak<WindowInner>> {
         let mut inner = inner.lock().unwrap();
-        inner.windows.retain(|_, weak| weak.upgrade().is_some());
+        inner.windows.retain(|_, weak| weak.strong_count() != 0);
         inner.windows.get(id).cloned()
     }
 

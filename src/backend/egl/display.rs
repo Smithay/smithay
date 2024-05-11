@@ -231,7 +231,7 @@ impl EGLDisplay {
             let weak_disp = WeakEGLDisplayHandle::from(new_display.clone());
 
             let mut displays = DISPLAYS.lock().unwrap();
-            displays.retain(|handle| handle.handle.upgrade().is_some());
+            displays.retain(|handle| handle.handle.strong_count() != 0);
             if displays.insert(weak_disp.clone()) {
                 new_display
             } else {
