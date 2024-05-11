@@ -253,7 +253,7 @@ impl X11Surface {
 
     /// Returns if the window is still alive
     pub fn alive(&self) -> bool {
-        self.state.lock().unwrap().alive && self.conn.upgrade().is_some()
+        self.state.lock().unwrap().alive && self.conn.strong_count() != 0
     }
 
     /// Send a configure to this window.
