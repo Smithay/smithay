@@ -416,6 +416,20 @@ impl Output {
             inner: Arc::downgrade(&self.inner),
         }
     }
+
+    /// Cleanup some internal resource.
+    ///
+    /// Needs to be called periodically, at best before every
+    /// wayland socket flush.
+    ///
+    /// Note: [`Space::refresh`](crate::desktop::space::Space) already calls this
+    /// function internally. So in case you already use the desktop module you can
+    /// skip calling this function explicitly.
+    #[profiling::function]
+    pub fn cleanup(&self) {
+        #[cfg(feature = "wayland_frontend")]
+        self.cleanup_surfaces();
+    }
 }
 
 impl PartialEq for Output {
