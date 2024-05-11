@@ -475,7 +475,7 @@ pub trait ImportDmaWl: ImportDma {
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         let dmabuf = crate::wayland::dmabuf::get_dmabuf(buffer)
             .expect("import_dma_buffer without checking buffer type?");
-        self.import_dmabuf(&dmabuf, Some(damage))
+        self.import_dmabuf(dmabuf, Some(damage))
     }
 }
 
