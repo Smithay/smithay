@@ -521,23 +521,30 @@ impl<B> Clone for PlaneState<B> {
 
 #[derive(Debug)]
 struct FrameState<B: AsRef<framebuffer::Handle>> {
-    planes: HashMap<plane::Handle, PlaneState<B>>,
+    planes: SmallVec<[(plane::Handle, PlaneState<B>); 10]>,
 }
 
 impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
     #[inline]
     fn is_assigned(&self, handle: plane::Handle) -> bool {
         self.planes
-            .get(&handle)
-            .map(|config| config.config.is_some())
+            .iter()
+            .find_map(|(p, state)| {
+                if *p == handle {
+                    Some(state.config.is_some())
+                } else {
+                    None
+                }
+            })
             .unwrap_or(false)
     }
 
     #[inline]
     fn overlaps(&self, handle: plane::Handle, element_geometry: Rectangle<i32, Physical>) -> bool {
         self.planes
-            .get(&handle)
-            .and_then(|state| {
+            .iter()
+            .find(|(p, _)| *p == handle)
+            .and_then(|(_, state)| {
                 state
                     .config
                     .as_ref()
@@ -548,12 +555,16 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
 
     #[inline]
     fn plane_state(&self, handle: plane::Handle) -> Option<&PlaneState<B>> {
-        self.planes.get(&handle)
+        self.planes
+            .iter()
+            .find_map(|(p, state)| if *p == handle { Some(state) } else { None })
     }
 
     #[inline]
     fn plane_state_mut(&mut self, handle: plane::Handle) -> Option<&mut PlaneState<B>> {
-        self.planes.get_mut(&handle)
+        self.planes
+            .iter_mut()
+            .find_map(|(p, state)| if *p == handle { Some(state) } else { None })
     }
 
     #[inline]
@@ -619,11 +630,10 @@ impl<B> Clone for Owned<B> {
 impl<B: Framebuffer> FrameState<B> {
     fn from_planes(planes: &Planes) -> Self {
         let cursor_plane_count = usize::from(planes.cursor.is_some());
-        // FIXME: We can cache that somewhere and get rid of this allocation in the hot path
-        let mut tmp = HashMap::with_capacity(planes.overlay.len() + cursor_plane_count + 1);
-        tmp.insert(planes.primary.handle, PlaneState::default());
+        let mut tmp = SmallVec::with_capacity(planes.overlay.len() + cursor_plane_count + 1);
+        tmp.push((planes.primary.handle, PlaneState::default()));
         if let Some(info) = planes.cursor.as_ref() {
-            tmp.insert(info.handle, PlaneState::default());
+            tmp.push((info.handle, PlaneState::default()));
         }
         tmp.extend(
             planes
@@ -640,7 +650,7 @@ impl<B: Framebuffer> FrameState<B> {
     #[profiling::function]
     #[inline]
     fn set_state(&mut self, plane: plane::Handle, state: PlaneState<B>) {
-        let current_config = match self.planes.get_mut(&plane) {
+        let current_config = match self.plane_state_mut(plane) {
             Some(config) => config,
             None => return,
         };
@@ -656,7 +666,7 @@ impl<B: Framebuffer> FrameState<B> {
         state: PlaneState<B>,
         allow_modeset: bool,
     ) -> Result<(), DrmError> {
-        let current_config = match self.planes.get_mut(&plane) {
+        let current_config = match self.plane_state_mut(plane) {
             Some(config) => config,
             None => return Ok(()),
         };
@@ -667,7 +677,7 @@ impl<B: Framebuffer> FrameState<B> {
 
         if res.is_err() {
             // test failed, restore previous state
-            self.planes.insert(plane, backup);
+            *self.plane_state_mut(plane).unwrap() = backup;
         } else {
             self.planes
                 .iter_mut()
@@ -776,7 +786,7 @@ impl<B: Framebuffer> FrameState<B> {
                 if allow_partial_update {
                     !state.skip
                 } else {
-                    state.config.is_some() || surface.claim_plane(**handle).is_some()
+                    state.config.is_some() || surface.claim_plane(*handle).is_some()
                 }
             })
             .map(move |(handle, state)| super::surface::PlaneState {
@@ -3890,7 +3900,7 @@ where
             .map(|pending| &pending.frame)
             .unwrap_or(&self.current_frame);
 
-        let previous_commit = previous_state.planes.get(&plane.handle).and_then(|state| {
+        let previous_commit = previous_state.plane_state(plane.handle).and_then(|state| {
             state.element_state.as_ref().and_then(|state| {
                 if state.id == *element_id {
                     Some(state.commit)
