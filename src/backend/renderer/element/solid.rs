@@ -148,7 +148,10 @@
 //! }
 //! ```
 use crate::{
-    backend::renderer::{utils::CommitCounter, Frame, Renderer},
+    backend::renderer::{
+        utils::{CommitCounter, OpaqueRegions},
+        Frame, Renderer,
+    },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
@@ -306,8 +309,8 @@ impl Element for SolidColorRenderElement {
         self.geometry
     }
 
-    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        self.opaque_regions.clone()
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        OpaqueRegions::from_slice(&self.opaque_regions)
     }
 
     fn alpha(&self) -> f32 {

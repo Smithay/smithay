@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{
         element::{Element, Id, RenderElement},
-        utils::{CommitCounter, DamageSet},
+        utils::{CommitCounter, DamageSet, OpaqueRegions},
         Frame, Renderer,
     },
     render_elements,
@@ -81,15 +81,15 @@ impl Element for HolepunchRenderElement {
         Transform::Normal
     }
 
-    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        vec![Rectangle::from_loc_and_size(Point::default(), self.geometry.size)]
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        OpaqueRegions::from_slice(&[Rectangle::from_loc_and_size(Point::default(), self.geometry.size)])
     }
 }
 
 pub struct OverlayPlaneElement {
     id: Id,
     geometry: Rectangle<i32, Physical>,
-    opaque_regions: Vec<Rectangle<i32, Physical>>,
+    opaque_regions: OpaqueRegions<i32, Physical>,
 }
 
 impl OverlayPlaneElement {
@@ -99,7 +99,7 @@ impl OverlayPlaneElement {
         E: RenderElement<R>,
     {
         let scale = scale.into();
-        let mut opaque_regions = element.opaque_regions(scale);
+        let opaque_regions = element.opaque_regions(scale);
         let geometry = element.geometry(scale);
 
         // We use the opaque regions to create a bounding box around them to
@@ -117,9 +117,13 @@ impl OverlayPlaneElement {
         // Because we will move the geometry by the top-left corner of
         // the opaque geometry we calculated we have to subtract
         // that from the element local opaque regions.
-        opaque_regions.iter_mut().for_each(|region| {
-            region.loc -= opaque_geometry.loc;
-        });
+        let opaque_regions = opaque_regions
+            .into_iter()
+            .map(|mut region| {
+                region.loc -= opaque_geometry.loc;
+                region
+            })
+            .collect();
 
         // Move the opaque geometry relative to the original
         // element location
@@ -158,8 +162,8 @@ impl Element for OverlayPlaneElement {
         DamageSet::default()
     }
 
-    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        self.opaque_regions.clone()
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        OpaqueRegions::from_slice(&self.opaque_regions)
     }
 }
 

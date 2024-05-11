@@ -410,7 +410,7 @@ use crate::{
     backend::{
         allocator::Fourcc,
         renderer::{
-            utils::{DamageBag, DamageSet, DamageSnapshot},
+            utils::{DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
             Frame, ImportMem, Renderer, Texture,
         },
     },
@@ -854,9 +854,9 @@ where
             .collect::<DamageSet<_, _>>()
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         if self.alpha < 1.0 {
-            return Vec::new();
+            return OpaqueRegions::default();
         }
 
         let src = self.src();
@@ -876,7 +876,7 @@ where
                                 rect.to_physical_precise_up(surface_scale * scale)
                             })
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<OpaqueRegions<_, _>>()
             })
             .unwrap_or_default()
     }

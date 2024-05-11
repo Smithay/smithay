@@ -407,6 +407,133 @@ impl<N: fmt::Debug> fmt::Debug for DamageSet<N, Logical> {
     }
 }
 
+const MAX_OPAQUE_REGIONS: usize = 16;
+
+/// Wrapper for a set of opaque regions
+pub struct OpaqueRegions<N, Kind> {
+    regions: smallvec::SmallVec<[Rectangle<N, Kind>; MAX_OPAQUE_REGIONS]>,
+}
+
+impl<N, Kind> Default for OpaqueRegions<N, Kind>
+where
+    N: Default,
+{
+    #[inline]
+    fn default() -> Self {
+        Self {
+            regions: Default::default(),
+        }
+    }
+}
+
+impl<N: Copy, Kind> OpaqueRegions<N, Kind> {
+    /// Copy the opaque regions from a slice into a new `OpaqueRegions`.
+    #[inline]
+    pub fn from_slice(slice: &[Rectangle<N, Kind>]) -> Self {
+        Self {
+            regions: smallvec::SmallVec::from_slice(slice),
+        }
+    }
+}
+
+impl<N, Kind> std::ops::Deref for OpaqueRegions<N, Kind> {
+    type Target = [Rectangle<N, Kind>];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.regions
+    }
+}
+
+impl<N, Kind> IntoIterator for OpaqueRegions<N, Kind> {
+    type Item = Rectangle<N, Kind>;
+
+    type IntoIter = OpaqueRegionsIter<N, Kind>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        OpaqueRegionsIter {
+            inner: self.regions.into_iter(),
+        }
+    }
+}
+
+impl<N, Kind> FromIterator<Rectangle<N, Kind>> for OpaqueRegions<N, Kind> {
+    #[inline]
+    fn from_iter<T: IntoIterator<Item = Rectangle<N, Kind>>>(iter: T) -> Self {
+        Self {
+            regions: smallvec::SmallVec::from_iter(iter),
+        }
+    }
+}
+
+/// Iterator for [`OpaqueRegions::into_iter`]
+pub struct OpaqueRegionsIter<N, Kind> {
+    inner: smallvec::IntoIter<[Rectangle<N, Kind>; MAX_OPAQUE_REGIONS]>,
+}
+
+impl<N: fmt::Debug> fmt::Debug for OpaqueRegionsIter<N, BufferCoord> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpaqueRegionsIter")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for OpaqueRegionsIter<N, Physical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpaqueRegionsIter")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for OpaqueRegionsIter<N, Logical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpaqueRegionsIter")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl<N, Kind> Iterator for OpaqueRegionsIter<N, Kind> {
+    type Item = Rectangle<N, Kind>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for OpaqueRegions<N, BufferCoord> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpaqueRegions")
+            .field("regions", &self.regions)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for OpaqueRegions<N, Physical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpaqueRegions")
+            .field("regions", &self.regions)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for OpaqueRegions<N, Logical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpaqueRegions")
+            .field("regions", &self.regions)
+            .finish()
+    }
+}
+
 /// Defines a view into the surface
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct SurfaceView {

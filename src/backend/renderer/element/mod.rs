@@ -32,7 +32,7 @@ use crate::{
 #[cfg(feature = "wayland_frontend")]
 use super::utils::Buffer;
 use super::{
-    utils::{CommitCounter, DamageSet},
+    utils::{CommitCounter, DamageSet, OpaqueRegions},
     Renderer,
 };
 
@@ -366,8 +366,8 @@ pub trait Element {
         }
     }
     /// Get the opaque regions of the element relative to the element
-    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        vec![]
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        OpaqueRegions::default()
     }
     /// Returns an alpha value the element should be drawn with regardless of any
     /// already encoded alpha in it's underlying representation.
@@ -448,7 +448,7 @@ where
         (*self).damage_since(scale, commit)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         (*self).opaque_regions(scale)
     }
 
@@ -714,7 +714,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn opaque_regions(&self, scale: $crate::utils::Scale<f64>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
+        fn opaque_regions(&self, scale: $crate::utils::Scale<f64>) -> $crate::backend::renderer::utils::OpaqueRegions<i32, $crate::utils::Physical> {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
@@ -1448,7 +1448,7 @@ where
         self.0.damage_since(scale, commit)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.0.opaque_regions(scale)
     }
 
