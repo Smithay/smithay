@@ -71,7 +71,7 @@ use crate::{
     },
     utils::{Buffer as BufferCoords, Physical, Rectangle, Size, Transform},
 };
-use tracing::{debug, info, info_span, instrument, trace, warn};
+use tracing::{debug, info, info_span, instrument, trace, trace_span, warn};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm, wl_surface::WlSurface};
 
@@ -1069,7 +1069,7 @@ where
             .render(size, dst_transform)
             .map_err(Error::Render)?;
 
-        let span = info_span!(
+        let span = trace_span!(
             parent: &self.span,
             "renderer_multi_frame",
             direct = target_texture.is_some(),
