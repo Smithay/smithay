@@ -878,7 +878,7 @@ impl AnvilState<UdevData> {
         // If pointer is now in a constraint region, activate it
         // TODO Anywhere else pointer is moved needs to do this
         if let Some((under, surface_location)) =
-            new_under.and_then(|(target, loc)| Some((target.wl_surface()?, loc)))
+            new_under.and_then(|(target, loc)| Some((target.wl_surface()?.into_owned(), loc)))
         {
             with_pointer_constraint(&under, &pointer, |constraint| match constraint {
                 Some(constraint) if !constraint.is_active() => {
@@ -981,7 +981,7 @@ impl AnvilState<UdevData> {
 
                 tool.motion(
                     pointer_location,
-                    under.and_then(|(f, loc)| f.wl_surface().map(|s| (s, loc))),
+                    under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.into_owned(), loc))),
                     &tablet,
                     SCOUNTER.next_serial(),
                     evt.time_msec(),
@@ -1028,7 +1028,7 @@ impl AnvilState<UdevData> {
             pointer.frame(self);
 
             if let (Some(under), Some(tablet), Some(tool)) = (
-                under.and_then(|(f, loc)| f.wl_surface().map(|s| (s, loc))),
+                under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.into_owned(), loc))),
                 tablet,
                 tool,
             ) {

@@ -110,7 +110,7 @@ where
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().and_then(|(s, _)| s.wl_surface()) != self.current_focus.clone() {
+        if focus.as_ref().and_then(|(s, _)| s.wl_surface()).as_deref() != self.current_focus.as_ref() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
@@ -191,7 +191,7 @@ where
                         }
                     }
                 }
-                self.current_focus = Some(surface);
+                self.current_focus = Some(surface.into_owned());
             } else {
                 // make a move
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {

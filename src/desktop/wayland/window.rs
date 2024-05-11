@@ -12,6 +12,7 @@ use crate::{
     },
 };
 use std::{
+    borrow::Cow,
     hash::{Hash, Hasher},
     sync::{
         atomic::{AtomicU8, Ordering},
@@ -152,9 +153,10 @@ impl Window {
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
         let bbox = self.bbox();
-        if let Some(surface) = &self.wl_surface() {
+
+        if let Some(surface) = self.wl_surface() {
             // It's the set geometry clamped to the bounding box with the full bounding box as the fallback.
-            with_states(surface, |states| {
+            with_states(&surface, |states| {
                 states
                     .cached_state
                     .current::<SurfaceCachedState>()
@@ -182,8 +184,8 @@ impl Window {
     /// will not include the popups.
     pub fn bbox_with_popups(&self) -> Rectangle<i32, Logical> {
         let mut bounding_box = self.bbox();
-        if let Some(surface) = &self.wl_surface() {
-            for (popup, location) in PopupManager::popups_for_surface(surface) {
+        if let Some(surface) = self.wl_surface() {
+            for (popup, location) in PopupManager::popups_for_surface(&surface) {
                 let surface = popup.wl_surface();
                 let offset = self.geometry().loc + location - popup.geometry().loc;
                 bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
@@ -229,9 +231,9 @@ impl Window {
         F: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
     {
         let time = time.into();
-        if let Some(surface) = &self.wl_surface() {
-            send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
-            for (popup, _) in PopupManager::popups_for_surface(surface) {
+        if let Some(surface) = self.wl_surface() {
+            send_frames_surface_tree(&surface, output, time, throttle, primary_scan_out_output);
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
                 let surface = popup.wl_surface();
                 send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
             }
@@ -250,14 +252,14 @@ impl Window {
         P: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
         F: Fn(&wl_surface::WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
     {
-        if let Some(surface) = &self.wl_surface() {
+        if let Some(surface) = self.wl_surface() {
             send_dmabuf_feedback_surface_tree(
-                surface,
+                &surface,
                 output,
                 primary_scan_out_output,
                 select_dmabuf_feedback,
             );
-            for (popup, _) in PopupManager::popups_for_surface(surface) {
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
                 let surface = popup.wl_surface();
                 send_dmabuf_feedback_surface_tree(
                     surface,
@@ -281,14 +283,14 @@ impl Window {
         F1: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
         F2: FnMut(&wl_surface::WlSurface, &SurfaceData) -> wp_presentation_feedback::Kind + Copy,
     {
-        if let Some(surface) = &self.wl_surface() {
+        if let Some(surface) = self.wl_surface() {
             take_presentation_feedback_surface_tree(
-                surface,
+                &surface,
                 output_feedback,
                 primary_scan_out_output,
                 presentation_feedback_flags,
             );
-            for (popup, _) in PopupManager::popups_for_surface(surface) {
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
                 let surface = popup.wl_surface();
                 take_presentation_feedback_surface_tree(
                     surface,
@@ -305,9 +307,9 @@ impl Window {
     where
         F: FnMut(&wl_surface::WlSurface, &SurfaceData),
     {
-        if let Some(surface) = &self.wl_surface() {
-            with_surfaces_surface_tree(surface, &mut processor);
-            for (popup, _) in PopupManager::popups_for_surface(surface) {
+        if let Some(surface) = self.wl_surface() {
+            with_surfaces_surface_tree(&surface, &mut processor);
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
                 let surface = popup.wl_surface();
                 with_surfaces_surface_tree(surface, &mut processor);
             }
@@ -319,8 +321,8 @@ impl Window {
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
     pub fn on_commit(&self) {
-        if let Some(surface) = &self.wl_surface() {
-            *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(surface, (0, 0));
+        if let Some(surface) = self.wl_surface() {
+            *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(&surface, (0, 0));
         }
     }
 
@@ -336,9 +338,9 @@ impl Window {
         surface_type: WindowSurfaceType,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let point = point.into();
-        if let Some(surface) = &self.wl_surface() {
+        if let Some(surface) = self.wl_surface() {
             if surface_type.contains(WindowSurfaceType::POPUP) {
-                for (popup, location) in PopupManager::popups_for_surface(surface) {
+                for (popup, location) in PopupManager::popups_for_surface(&surface) {
                     let offset = self.geometry().loc + location - popup.geometry().loc;
                     if let Some(result) =
                         under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
@@ -349,7 +351,7 @@ impl Window {
             }
 
             if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
-                return under_from_surface_tree(surface, point, (0, 0), surface_type);
+                return under_from_surface_tree(&surface, point, (0, 0), surface_type);
             }
         }
 
@@ -394,11 +396,11 @@ impl Window {
 
 impl WaylandFocus for Window {
     #[inline]
-    fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
+    fn wl_surface(&self) -> Option<Cow<'_, wl_surface::WlSurface>> {
         match &self.0.surface {
-            WindowSurface::Wayland(s) => Some(s.wl_surface().clone()),
+            WindowSurface::Wayland(s) => Some(Cow::Borrowed(s.wl_surface())),
             #[cfg(feature = "xwayland")]
-            WindowSurface::X11(s) => s.wl_surface(),
+            WindowSurface::X11(s) => s.wl_surface().map(Cow::Owned),
         }
     }
 }

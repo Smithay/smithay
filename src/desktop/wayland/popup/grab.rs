@@ -355,7 +355,7 @@ where
         let root_surface = self.root.wl_surface()?;
         self.toplevel_grab
             .ungrab(&root_surface, strategy)
-            .or(Some(root_surface))
+            .or(Some(root_surface.into_owned()))
     }
 
     /// Convenience method for getting a [`KeyboardGrabStartData`] for this grab.

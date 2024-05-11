@@ -101,7 +101,7 @@ where
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().and_then(|(s, _)| s.wl_surface()) != self.current_focus.clone() {
+        if focus.as_ref().and_then(|(s, _)| s.wl_surface()).as_deref() != self.current_focus.as_ref() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 for device in seat_data.known_data_devices() {
@@ -168,7 +168,7 @@ where
                     self.pending_offers.push(offer);
                 }
                 self.offer_data = Some(offer_data);
-                self.current_focus = Some(surface);
+                self.current_focus = Some(surface.into_owned());
             } else {
                 // make a move
                 for device in seat_data.known_data_devices() {

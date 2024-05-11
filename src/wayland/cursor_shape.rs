@@ -33,7 +33,7 @@
 //! #   fn alive(&self) -> bool { true }
 //! # }
 //! # impl WaylandFocus for Target {
-//! #   fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
+//! #   fn wl_surface(&self) -> Option<std::borrow::Cow<'_, wl_surface::WlSurface>> {
 //! #       None
 //! #   }
 //! # }
