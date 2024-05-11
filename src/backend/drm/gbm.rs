@@ -31,7 +31,6 @@ use super::{error::AccessError, warn_legacy_fb_export, Framebuffer};
 /// A GBM backed framebuffer
 #[derive(Debug)]
 pub struct GbmFramebuffer {
-    _bo: Option<GbmBuffer>,
     fb: framebuffer::Handle,
     format: drm_fourcc::DrmFormat,
     drm: DrmDeviceFd,
@@ -111,7 +110,6 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
         .map_err(Error::Drm)?;
 
         return Ok(Some(GbmFramebuffer {
-            _bo: Some(bo),
             fb,
             format,
             drm: drm.clone(),
@@ -172,7 +170,6 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
     )
     .map_err(Error::Drm)
     .map(|(fb, format)| GbmFramebuffer {
-        _bo: Some(bo),
         fb,
         format,
         drm: drm.clone(),
@@ -196,7 +193,6 @@ pub fn framebuffer_from_bo(
         use_opaque,
     )
     .map(|(fb, format)| GbmFramebuffer {
-        _bo: None,
         fb,
         format,
         drm: drm.clone(),
