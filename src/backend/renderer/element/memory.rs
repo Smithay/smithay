@@ -211,7 +211,6 @@ use std::{
     any::TypeId,
     cell::{RefCell, RefMut},
     collections::{hash_map::Entry, HashMap},
-    marker::PhantomData,
     rc::Rc,
     sync::Arc,
 };
@@ -222,7 +221,7 @@ use crate::{
     backend::{
         allocator::{format::get_bpp, Fourcc},
         renderer::{
-            utils::{CommitCounter, DamageBag, DamageSet, OpaqueRegions},
+            utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
             Frame, ImportMem, Renderer,
         },
     },
@@ -410,10 +409,13 @@ impl MemoryRenderBufferInner {
 
     #[instrument(level = "trace", skip(renderer))]
     #[profiling::function]
-    fn import_texture<R>(&mut self, renderer: &mut R) -> Result<(), <R as Renderer>::Error>
+    fn import_texture<R>(
+        &mut self,
+        renderer: &mut R,
+    ) -> Result<<R as Renderer>::TextureId, <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
-        <R as Renderer>::TextureId: 'static,
+        <R as Renderer>::TextureId: Clone + 'static,
     {
         let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
         let current_commit = self.damage_bag.current_commit();
@@ -424,33 +426,25 @@ impl MemoryRenderBufferInner {
             .map(|d| d.into_iter().reduce(|a, b| a.merge(b)).unwrap_or_default())
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.mem.size()));
 
-        match self.textures.entry(texture_id) {
+        let tex = match self.textures.entry(texture_id) {
             Entry::Occupied(entry) => {
+                let tex = entry.get().downcast_ref().unwrap();
                 if !buffer_damage.is_empty() {
                     trace!("updating memory with damage {:#?}", &buffer_damage);
-                    renderer.update_memory(entry.get().downcast_ref().unwrap(), &self.mem, buffer_damage)?
+                    renderer.update_memory(tex, &self.mem, buffer_damage)?
                 }
+                tex.clone()
             }
             Entry::Vacant(entry) => {
                 trace!("importing memory");
                 let tex = renderer.import_memory(&self.mem, self.mem.format(), self.mem.size(), false)?;
-                entry.insert(Box::new(tex));
+                entry.insert(Box::new(tex.clone()));
+                tex
             }
         };
 
         self.renderer_seen.insert(texture_id, current_commit);
-        Ok(())
-    }
-
-    fn get_texture<R>(&mut self, renderer_id: usize) -> Option<&<R as Renderer>::TextureId>
-    where
-        R: Renderer,
-        <R as Renderer>::TextureId: 'static,
-    {
-        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer_id);
-        self.textures
-            .get(&texture_id)
-            .and_then(|boxed| boxed.downcast_ref::<<R as Renderer>::TextureId>())
+        Ok(tex)
     }
 }
 
@@ -525,15 +519,6 @@ impl MemoryRenderBuffer {
             opaque_regions: None,
         }
     }
-
-    fn current_commit(&self) -> CommitCounter {
-        self.inner.borrow_mut().damage_bag.current_commit()
-    }
-
-    fn size(&self) -> Size<i32, Logical> {
-        let guard = self.inner.borrow_mut();
-        guard.mem.size().to_logical(guard.scale, guard.transform)
-    }
 }
 
 /// A render context for [`MemoryRenderBuffer`]
@@ -584,12 +569,17 @@ impl<'a> Drop for RenderContext<'a> {
 /// A render element for [`MemoryRenderBuffer`]
 #[derive(Debug)]
 pub struct MemoryRenderBufferRenderElement<R: Renderer> {
+    id: Id,
     location: Point<f64, Physical>,
-    buffer: MemoryRenderBuffer,
+    buffer: MemoryBuffer,
     alpha: f32,
-    src: Option<Rectangle<f64, Logical>>,
-    size: Option<Size<i32, Logical>>,
-    renderer_type: PhantomData<R>,
+    src: Rectangle<f64, Logical>,
+    buffer_scale: i32,
+    buffer_transform: Transform,
+    size: Size<i32, Logical>,
+    damage: DamageSnapshot<i32, Buffer>,
+    opaque_regions: OpaqueRegions<i32, Buffer>,
+    texture: R::TextureId,
     kind: Kind,
 }
 
@@ -607,60 +597,98 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
     ) -> Result<Self, <R as Renderer>::Error>
     where
         R: ImportMem,
-        <R as Renderer>::TextureId: 'static,
+        <R as Renderer>::TextureId: Clone + 'static,
     {
-        buffer.inner.borrow_mut().import_texture(renderer)?;
+        let texture = buffer.inner.borrow_mut().import_texture(renderer)?;
+        let inner = buffer.inner.borrow();
+
+        let size = size
+            .or_else(|| src.map(|src| Size::from((src.size.w as i32, src.size.h as i32))))
+            .unwrap_or_else(|| inner.mem.size().to_logical(inner.scale, inner.transform));
+
+        let src = src.unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), size.to_f64()));
+
         Ok(MemoryRenderBufferRenderElement {
+            id: buffer.id.clone(),
+            buffer: inner.mem.clone(),
             location: location.into(),
-            buffer: buffer.clone(),
             alpha: alpha.unwrap_or(1.0),
             src,
+            buffer_scale: inner.scale,
+            buffer_transform: inner.transform,
             size,
-            renderer_type: PhantomData,
+            opaque_regions: inner
+                .opaque_regions
+                .as_deref()
+                .map(OpaqueRegions::from_slice)
+                .unwrap_or_default(),
+            damage: inner.damage_bag.snapshot(),
+            texture,
             kind,
         })
     }
 
-    fn logical_size(&self) -> Size<i32, Logical> {
-        self.size
-            .or_else(|| {
-                self.src
-                    .map(|src| Size::from((src.size.w as i32, src.size.h as i32)))
-            })
-            .unwrap_or_else(|| self.buffer.size())
-    }
-
     fn physical_size(&self, scale: Scale<f64>) -> Size<i32, Physical> {
-        let logical_size = self.logical_size();
-        ((logical_size.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
+        ((self.size.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
             - self.location.to_i32_round())
         .to_size()
     }
 
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+    fn scale(&self) -> Scale<f64> {
         let src = self.src();
-        let logical_size = self.logical_size();
+        Scale::from((self.size.w as f64 / src.size.w, self.size.h as f64 / src.size.h))
+    }
+}
+
+impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
+    fn id(&self) -> &Id {
+        &self.id
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        self.damage.current_commit()
+    }
+
+    fn transform(&self) -> Transform {
+        self.buffer_transform
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        self.src.to_buffer(
+            self.buffer_scale as f64,
+            self.buffer_transform,
+            &self.size.to_f64(),
+        )
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
+    }
+
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         let physical_size = self.physical_size(scale);
         let logical_scale = self.scale();
-        let guard = self.buffer.inner.borrow_mut();
 
-        guard
-            .damage_bag
+        self.damage
             .damage_since(commit)
             .map(|damage| {
                 damage
                     .into_iter()
                     .filter_map(|rect| {
                         rect.to_f64()
-                            .to_logical(guard.scale as f64, guard.transform, &guard.mem.size().to_f64())
-                            .intersection(src)
+                            .to_logical(
+                                self.buffer_scale as f64,
+                                self.buffer_transform,
+                                &self.buffer.size.to_f64(),
+                            )
+                            .intersection(self.src)
                             .map(|mut rect| {
-                                rect.loc -= self.src.map(|rect| rect.loc).unwrap_or_default();
+                                rect.loc -= self.src.loc;
                                 rect.upscale(logical_scale)
                             })
                             .map(|rect| {
                                 let surface_scale =
-                                    physical_size.to_f64() / logical_size.to_f64().to_physical(scale);
+                                    physical_size.to_f64() / self.size.to_f64().to_physical(scale);
                                 rect.to_physical_precise_up(surface_scale * scale)
                             })
                     })
@@ -676,80 +704,29 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
             return OpaqueRegions::default();
         }
 
-        let src = self.src();
-        let logical_size = self.logical_size();
         let physical_size = self.physical_size(scale);
         let logical_scale = self.scale();
-        let guard = self.buffer.inner.borrow_mut();
 
-        guard
-            .opaque_regions
-            .as_ref()
-            .map(|regions| {
-                regions
-                    .iter()
-                    .filter_map(|rect| {
-                        rect.to_f64()
-                            .to_logical(guard.scale as f64, guard.transform, &guard.mem.size().to_f64())
-                            .intersection(src)
-                            .map(|mut rect| {
-                                rect.loc -= self.src.map(|rect| rect.loc).unwrap_or_default();
-                                rect.upscale(logical_scale)
-                            })
-                            .map(|rect| {
-                                let surface_scale =
-                                    physical_size.to_f64() / logical_size.to_f64().to_physical(scale);
-                                rect.to_physical_precise_up(surface_scale * scale)
-                            })
+        self.opaque_regions
+            .iter()
+            .filter_map(|rect| {
+                rect.to_f64()
+                    .to_logical(
+                        self.buffer_scale as f64,
+                        self.buffer_transform,
+                        &self.buffer.size.to_f64(),
+                    )
+                    .intersection(self.src)
+                    .map(|mut rect| {
+                        rect.loc -= self.src.loc;
+                        rect.upscale(logical_scale)
                     })
-                    .collect::<OpaqueRegions<_, _>>()
+                    .map(|rect| {
+                        let surface_scale = physical_size.to_f64() / self.size.to_f64().to_physical(scale);
+                        rect.to_physical_precise_up(surface_scale * scale)
+                    })
             })
-            .unwrap_or_default()
-    }
-
-    fn src(&self) -> Rectangle<f64, Logical> {
-        self.src
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.logical_size().to_f64()))
-    }
-
-    fn scale(&self) -> Scale<f64> {
-        let size = self.logical_size();
-        let src = self.src();
-        Scale::from((size.w as f64 / src.size.w, size.h as f64 / src.size.h))
-    }
-}
-
-impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
-    fn id(&self) -> &super::Id {
-        &self.buffer.id
-    }
-
-    fn current_commit(&self) -> CommitCounter {
-        self.buffer.current_commit()
-    }
-
-    fn transform(&self) -> Transform {
-        self.buffer.inner.borrow_mut().transform
-    }
-
-    fn src(&self) -> Rectangle<f64, Buffer> {
-        let logical_size = self.logical_size();
-        let guard = self.buffer.inner.borrow_mut();
-        self.src
-            .map(|src| src.to_buffer(guard.scale as f64, guard.transform, &logical_size.to_f64()))
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), guard.mem.size()).to_f64())
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
-    }
-
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
-        self.damage_since(scale, commit)
-    }
-
-    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-        self.opaque_regions(scale)
+            .collect::<OpaqueRegions<_, _>>()
     }
 
     fn alpha(&self) -> f32 {
@@ -775,19 +752,11 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        let mut guard = self.buffer.inner.borrow_mut();
-        let transform = guard.transform;
-        let Some(texture) = guard.get_texture::<R>(frame.id()) else {
-            warn!("trying to render texture from different renderer");
-            return Ok(());
-        };
-
-        frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
+        frame.render_texture_from_to(&self.texture, src, dst, damage, self.buffer_transform, self.alpha)
     }
 
     #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
-        let buf = self.buffer.inner.borrow();
-        Some(UnderlyingStorage::Memory(buf.mem.clone()))
+        Some(UnderlyingStorage::Memory(self.buffer.clone()))
     }
 }
