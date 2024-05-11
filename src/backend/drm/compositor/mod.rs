@@ -355,7 +355,12 @@ where
     B: Framebuffer,
 {
     /// Cache for framebuffer handles per cache key (e.g. wayland buffer)
-    fb_cache: HashMap<ElementFramebufferCacheKey, Result<OwnedFramebuffer<B>, ExportBufferError>>,
+    fb_cache: SmallVec<
+        [(
+            ElementFramebufferCacheKey,
+            Result<OwnedFramebuffer<B>, ExportBufferError>,
+        ); 4],
+    >,
 }
 
 impl<B> ElementFramebufferCache<B>
@@ -366,8 +371,14 @@ where
     fn get(
         &self,
         cache_key: &ElementFramebufferCacheKey,
-    ) -> Option<Result<OwnedFramebuffer<B>, ExportBufferError>> {
-        self.fb_cache.get(cache_key).cloned()
+    ) -> Option<Result<&OwnedFramebuffer<B>, ExportBufferError>> {
+        self.fb_cache.iter().find_map(|(k, r)| {
+            if k == cache_key {
+                Some(r.as_ref().map_err(|err| *err))
+            } else {
+                None
+            }
+        })
     }
 
     #[inline]
@@ -376,22 +387,11 @@ where
         cache_key: ElementFramebufferCacheKey,
         fb: Result<OwnedFramebuffer<B>, ExportBufferError>,
     ) {
-        self.fb_cache.insert(cache_key, fb);
+        self.fb_cache.push((cache_key, fb));
     }
 
     fn cleanup(&mut self) {
-        self.fb_cache.retain(|key, _| key.is_alive());
-    }
-}
-
-impl<B> Clone for ElementFramebufferCache<B>
-where
-    B: Framebuffer,
-{
-    fn clone(&self) -> Self {
-        Self {
-            fb_cache: self.fb_cache.clone(),
-        }
+        self.fb_cache.retain(|(key, _)| key.is_alive());
     }
 }
 
@@ -3529,7 +3529,12 @@ where
             format: fb.format(),
         };
         let buffer = ScanoutBuffer::from_underlying_storage(underlying_storage)
-            .map(|buffer| Owned::from(DrmScanoutBuffer { fb, buffer }))
+            .map(|buffer| {
+                Owned::from(DrmScanoutBuffer {
+                    fb: fb.clone(),
+                    buffer,
+                })
+            })
             .ok_or(ExportBufferError::Unsupported)?;
 
         if !element_states
