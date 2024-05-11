@@ -262,10 +262,9 @@ impl Output {
 
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
+    #[profiling::function]
     pub fn enter(&self, surface: &wl_surface::WlSurface) {
         let mut inner = self.inner.0.lock().unwrap();
-        // FIXME: Get this out of the hot path
-        inner.surfaces.retain(|s| s.upgrade().is_ok());
         if inner.surfaces.insert(surface.downgrade()) {
             let client = inner
                 .handle
@@ -284,10 +283,9 @@ impl Output {
 
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
+    #[profiling::function]
     pub fn leave(&self, surface: &wl_surface::WlSurface) {
         let mut inner = self.inner.0.lock().unwrap();
-        // FIXME: Get this out of the hot path
-        inner.surfaces.retain(|s| s.upgrade().is_ok());
         if inner.surfaces.remove(&surface.downgrade()) {
             let client = inner
                 .handle
@@ -302,6 +300,11 @@ impl Output {
                 }
             }
         }
+    }
+
+    pub(crate) fn cleanup_surfaces(&self) {
+        let mut inner = self.inner.0.lock().unwrap();
+        inner.surfaces.retain(|s| s.upgrade().is_ok());
     }
 }
 

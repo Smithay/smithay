@@ -367,6 +367,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         }
 
         self.elements.iter().for_each(|e| e.element.refresh());
+        for (output, _) in outputs {
+            output.cleanup();
+        }
     }
 
     /// Retrieve the render elements for a given region of the space.
