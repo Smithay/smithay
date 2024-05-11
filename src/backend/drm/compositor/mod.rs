@@ -2362,15 +2362,24 @@ where
             // commit -> unlikely but possible
             // So we use an Id per plane for as long as we have the same element
             // on that plane.
-            let overlay_plane_lookup: HashMap<plane::Handle, &PlaneInfo> =
-                self.planes.overlay.iter().map(|p| (p.handle, p)).collect();
             let overlay_plane_elements = overlay_plane_elements.iter().filter_map(|(p, element)| {
                 let id = self
                     .overlay_plane_element_ids
                     .plane_id_for_element_id(p, element.id());
 
-                let is_underlay = overlay_plane_lookup.get(p).unwrap().zpos.unwrap_or_default()
-                    < self.planes.primary.zpos.unwrap_or_default();
+                let plane_z_pos = self
+                    .planes
+                    .overlay
+                    .iter()
+                    .find_map(|info| {
+                        if info.handle == *p {
+                            Some(info.zpos.unwrap_or_default())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                let is_underlay = plane_z_pos < self.planes.primary.zpos.unwrap_or_default();
                 if is_underlay {
                     Some(HolepunchRenderElement::from_render_element(id, element, output_scale).into())
                 } else {
