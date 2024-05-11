@@ -204,9 +204,10 @@ enum ScanoutBuffer<B: Buffer> {
 }
 
 impl<B: Buffer> ScanoutBuffer<B> {
-    fn from_underlying_storage(storage: UnderlyingStorage) -> Option<Self> {
+    #[inline]
+    fn from_underlying_storage(storage: UnderlyingStorage<'_>) -> Option<Self> {
         match storage {
-            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
+            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer.clone())),
             UnderlyingStorage::Memory { .. } => None,
         }
     }
@@ -294,7 +295,7 @@ enum ElementFramebufferCacheBuffer {
 
 impl ElementFramebufferCacheBuffer {
     #[inline]
-    fn from_underlying_storage(storage: &UnderlyingStorage) -> Option<Self> {
+    fn from_underlying_storage(storage: &UnderlyingStorage<'_>) -> Option<Self> {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer.downgrade())),
             UnderlyingStorage::Memory { .. } => None,
@@ -310,7 +311,7 @@ struct ElementFramebufferCacheKey {
 
 impl ElementFramebufferCacheKey {
     #[inline]
-    fn from_underlying_storage(storage: &UnderlyingStorage, allow_opaque_fallback: bool) -> Option<Self> {
+    fn from_underlying_storage(storage: &UnderlyingStorage<'_>, allow_opaque_fallback: bool) -> Option<Self> {
         let buffer = ElementFramebufferCacheBuffer::from_underlying_storage(storage)?;
         Some(Self {
             allow_opaque_fallback,
@@ -807,7 +808,7 @@ pub enum ExportBuffer<'a, B: Buffer> {
 
 impl<'a, B: Buffer> ExportBuffer<'a, B> {
     #[inline]
-    fn from_underlying_storage(storage: &'a UnderlyingStorage) -> Option<Self> {
+    fn from_underlying_storage(storage: &'a UnderlyingStorage<'_>) -> Option<Self> {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
             UnderlyingStorage::Memory { .. } => None,
@@ -3199,7 +3200,7 @@ where
             // client, or the compositor's choice.
             let cursor_texture = match storage {
                 UnderlyingStorage::Wayland(buffer) => pixman_renderer
-                    .import_buffer(&buffer, None, &[element.src().to_i32_up()])
+                    .import_buffer(buffer, None, &[element.src().to_i32_up()])
                     .transpose()
                     .ok()
                     .flatten(),
@@ -3981,7 +3982,7 @@ where
 #[inline]
 fn apply_underlying_storage_transform(
     element_transform: Transform,
-    storage: &UnderlyingStorage,
+    storage: &UnderlyingStorage<'_>,
 ) -> Transform {
     match storage {
         UnderlyingStorage::Wayland(buffer) => {
@@ -4134,7 +4135,7 @@ where
     match underlying_storage {
         UnderlyingStorage::Wayland(buffer) => {
             // Only shm buffers are supported for copy
-            shm::with_buffer_contents(&buffer, |ptr, len, data| {
+            shm::with_buffer_contents(buffer, |ptr, len, data| {
                 let Some(format) = shm::shm_format_to_fourcc(data.format) else {
                     return false;
                 };
@@ -4161,7 +4162,7 @@ where
                 return false;
             };
 
-            copy_to_bo(&*memory, memory.stride(), memory.size().h)
+            copy_to_bo(memory, memory.stride(), memory.size().h)
         }
     }
 }

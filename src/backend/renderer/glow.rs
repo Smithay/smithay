@@ -540,7 +540,7 @@ impl RenderElement<GlowRenderer> for PixelShaderElement {
         RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage<'_>> {
         RenderElement::<GlesRenderer>::underlying_storage(self, renderer.borrow_mut())
     }
 }

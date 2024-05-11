@@ -511,8 +511,8 @@ where
     <R as Renderer>::TextureId: Texture + 'static,
 {
     #[inline]
-    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
-        Some(UnderlyingStorage::Wayland(self.buffer.clone()))
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
+        Some(UnderlyingStorage::Wayland(&self.buffer))
     }
 
     #[instrument(level = "trace", skip(frame))]
