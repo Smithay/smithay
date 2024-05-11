@@ -100,12 +100,12 @@ impl<R: Resource> From<&R> for Id {
 
 /// The underlying storage for a element
 #[derive(Debug, Clone)]
-pub enum UnderlyingStorage {
+pub enum UnderlyingStorage<'a> {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
-    Wayland(Buffer),
+    Wayland(&'a Buffer),
     /// A memory backed buffer
-    Memory(memory::MemoryBuffer),
+    Memory(&'a memory::MemoryBuffer),
 }
 
 /// Defines the (optional) reason why a [`Element`] was selected for
@@ -393,7 +393,7 @@ pub trait RenderElement<R: Renderer>: Element {
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
     #[inline]
-    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         let _ = renderer;
         None
     }
@@ -467,7 +467,7 @@ where
     E: RenderElement<R> + Element,
 {
     #[inline]
-    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         (*self).underlying_storage(renderer)
     }
 
@@ -783,7 +783,7 @@ macro_rules! render_elements_internal {
         }
 
         #[inline]
-        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_>>
         {
             match self {
                 $(
@@ -819,7 +819,7 @@ macro_rules! render_elements_internal {
         }
 
         #[inline]
-        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_>>
         {
             match self {
                 $(
@@ -1477,7 +1477,7 @@ where
     }
 
     #[inline]
-    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.0.underlying_storage(renderer)
     }
 }

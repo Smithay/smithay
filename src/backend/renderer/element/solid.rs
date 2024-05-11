@@ -335,7 +335,7 @@ impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
     }
 
     #[inline]
-    fn underlying_storage(&self, _renderer: &mut R) -> Option<super::UnderlyingStorage> {
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<super::UnderlyingStorage<'_>> {
         None
     }
 }

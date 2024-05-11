@@ -124,7 +124,7 @@ impl RenderElement<GlesRenderer> for PixelShaderElement {
     }
 
     #[inline]
-    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
         None
     }
 }

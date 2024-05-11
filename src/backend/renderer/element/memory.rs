@@ -756,7 +756,7 @@ where
     }
 
     #[inline]
-    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
-        Some(UnderlyingStorage::Memory(self.buffer.clone()))
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
+        Some(UnderlyingStorage::Memory(&self.buffer))
     }
 }
