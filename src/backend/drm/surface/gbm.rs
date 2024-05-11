@@ -4,11 +4,10 @@ use std::sync::Arc;
 
 use drm::control::{connector, crtc, plane, Mode};
 use drm::{Device, DriverCapability};
-use gbm::BufferObject;
 
 use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use crate::backend::allocator::format::get_opaque;
-use crate::backend::allocator::gbm::GbmConvertError;
+use crate::backend::allocator::gbm::{GbmBuffer, GbmConvertError};
 use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapchain};
 use crate::backend::drm::error::AccessError;
 use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
@@ -23,7 +22,7 @@ use super::{PlaneConfig, PlaneDamageClips, PlaneState};
 
 #[derive(Debug)]
 struct QueuedFb<U> {
-    slot: Slot<BufferObject<()>>,
+    slot: Slot<GbmBuffer>,
     sync: Option<SyncPoint>,
     damage: Option<Vec<Rectangle<i32, Physical>>>,
     user_data: U,
@@ -31,11 +30,11 @@ struct QueuedFb<U> {
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 #[derive(Debug)]
-pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static, U> {
-    current_fb: Slot<BufferObject<()>>,
-    pending_fb: Option<(Slot<BufferObject<()>>, U)>,
+pub struct GbmBufferedSurface<A: Allocator<Buffer = GbmBuffer> + 'static, U> {
+    current_fb: Slot<GbmBuffer>,
+    pending_fb: Option<(Slot<GbmBuffer>, U)>,
     queued_fb: Option<QueuedFb<U>>,
-    next_fb: Option<Slot<BufferObject<()>>>,
+    next_fb: Option<Slot<GbmBuffer>>,
     swapchain: Swapchain<A>,
     drm: Arc<DrmSurface>,
     is_opaque: bool,
@@ -45,7 +44,7 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static,
 
 impl<A, U> GbmBufferedSurface<A, U>
 where
-    A: Allocator<Buffer = BufferObject<()>>,
+    A: Allocator<Buffer = GbmBuffer>,
     A::Error: std::error::Error + Send + Sync,
 {
     /// Create a new `GbmBufferedSurface` from a given compatible combination
@@ -114,7 +113,7 @@ where
         allocator: A,
         mut renderer_formats: HashSet<Format>,
         code: Fourcc,
-    ) -> Result<(Slot<BufferObject<()>>, Swapchain<A>, bool), (A, Error<A::Error>)> {
+    ) -> Result<(Slot<GbmBuffer>, Swapchain<A>, bool), (A, Error<A::Error>)> {
         // select a format
         let mut plane_formats = drm.planes().primary.formats.clone();
         let opaque_code = get_opaque(code).unwrap_or(code);
@@ -544,6 +543,7 @@ pub enum Error<E: std::error::Error + Send + Sync + 'static> {
 }
 
 impl<E: std::error::Error + Send + Sync + 'static> From<Error<E>> for SwapBuffersError {
+    #[inline]
     fn from(err: Error<E>) -> SwapBuffersError {
         match err {
             x @ Error::NoSupportedPlaneFormat
