@@ -772,8 +772,6 @@ impl GlesRenderer {
         } else {
             unsafe { self.egl.make_current()? };
         }
-        // delayed destruction until the next frame rendering.
-        self.cleanup();
         Ok(())
     }
 
@@ -2623,6 +2621,9 @@ impl<'frame> GlesFrame<'frame> {
                 }
             }
         }
+
+        // delayed destruction until the next frame rendering.
+        self.renderer.cleanup();
 
         // if we support egl fences we should use it
         if self.renderer.capabilities.contains(&Capability::Fencing) {
