@@ -1391,8 +1391,7 @@ impl From<ExportBufferError> for Option<RenderingReason> {
 
 #[derive(Debug)]
 struct OverlayPlaneElementIds {
-    plane_plane_ids: IndexMap<plane::Handle, Id>,
-    plane_id_element_ids: IndexMap<Id, Id>,
+    plane_ids: Vec<(plane::Handle, Id, Id)>,
 }
 
 impl OverlayPlaneElementIds {
@@ -1400,42 +1399,37 @@ impl OverlayPlaneElementIds {
         let overlay_plane_count = planes.overlay.len();
 
         Self {
-            plane_plane_ids: IndexMap::with_capacity(overlay_plane_count),
-            plane_id_element_ids: IndexMap::with_capacity(overlay_plane_count),
+            plane_ids: Vec::with_capacity(overlay_plane_count),
         }
     }
 
     fn plane_id_for_element_id(&mut self, plane: &plane::Handle, element_id: &Id) -> Id {
         // Either get the existing plane id for the plane when the stored element id
         // matches or generate a new Id (and update the element id)
-        self.plane_plane_ids
-            .entry(*plane)
-            .and_modify(|plane_id| {
-                let current_element_id = self.plane_id_element_ids.get(plane_id).unwrap();
+        let existing = self.plane_ids.iter_mut().find(|(p, _, _)| p == plane);
+        if let Some((_, plane_id, current_element_id)) = existing {
+            if current_element_id != element_id {
+                *plane_id = Id::new();
+                *current_element_id = element_id.clone();
+            }
 
-                if current_element_id != element_id {
-                    *plane_id = Id::new();
-                    self.plane_id_element_ids
-                        .insert(plane_id.clone(), element_id.clone());
-                }
-            })
-            .or_insert_with(|| {
-                let plane_id = Id::new();
-                self.plane_id_element_ids
-                    .insert(plane_id.clone(), element_id.clone());
-                plane_id
-            })
-            .clone()
+            plane_id.clone()
+        } else {
+            let plane_id = Id::new();
+
+            self.plane_ids
+                .push((*plane, plane_id.clone(), element_id.clone()));
+
+            plane_id
+        }
     }
 
     fn contains_plane_id(&self, plane_id: &Id) -> bool {
-        self.plane_id_element_ids.contains_key(plane_id)
+        self.plane_ids.iter().any(|(_, p, _)| p == plane_id)
     }
 
     fn remove_plane(&mut self, plane: &plane::Handle) {
-        if let Some(plane_id) = self.plane_plane_ids.swap_remove(plane) {
-            self.plane_id_element_ids.swap_remove(&plane_id);
-        }
+        self.plane_ids.retain(|(p, _, _)| p != plane);
     }
 }
 
