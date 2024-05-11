@@ -42,4 +42,12 @@ impl ExportFramebuffer<DumbBuffer> for DrmDeviceFd {
                 .map(Some),
         }
     }
+
+    #[inline]
+    fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, DumbBuffer>) -> bool {
+        match buffer {
+            ExportBuffer::Wayland(_) => false,
+            ExportBuffer::Allocator(_) => true,
+        }
+    }
 }

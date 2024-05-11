@@ -32,4 +32,22 @@ impl<A: AsFd + 'static> ExportFramebuffer<GbmBuffer> for gbm::Device<A> {
                 .map(Some),
         }
     }
+
+    #[inline]
+    fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, GbmBuffer>) -> bool {
+        match buffer {
+            #[cfg(not(all(feature = "backend_egl", feature = "use_system_lib")))]
+            ExportBuffer::Wayland(buffer) => matches!(
+                crate::backend::renderer::buffer_type(buffer),
+                Some(crate::backend::renderer::BufferType::Dma)
+            ),
+            #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+            ExportBuffer::Wayland(buffer) => matches!(
+                crate::backend::renderer::buffer_type(buffer),
+                Some(crate::backend::renderer::BufferType::Dma)
+                    | Some(crate::backend::renderer::BufferType::Egl)
+            ),
+            ExportBuffer::Allocator(_) => true,
+        }
+    }
 }

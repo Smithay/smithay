@@ -834,6 +834,9 @@ where
         buffer: ExportBuffer<'_, B>,
         use_opaque: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error>;
+
+    /// Test if the provided buffer is eligible for adding a framebuffer
+    fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, B>) -> bool;
 }
 
 impl<F, B> ExportFramebuffer<B> for Arc<Mutex<F>>
@@ -854,6 +857,12 @@ where
         let guard = self.lock().unwrap();
         guard.add_framebuffer(drm, buffer, use_opaque)
     }
+
+    #[inline]
+    fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, B>) -> bool {
+        let guard = self.lock().unwrap();
+        guard.can_add_framebuffer(buffer)
+    }
 }
 
 impl<F, B> ExportFramebuffer<B> for Rc<RefCell<F>>
@@ -872,6 +881,11 @@ where
         use_opaque: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error> {
         self.borrow().add_framebuffer(drm, buffer, use_opaque)
+    }
+
+    #[inline]
+    fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, B>) -> bool {
+        self.borrow().can_add_framebuffer(buffer)
     }
 }
 
@@ -3405,6 +3419,13 @@ where
             .underlying_storage(renderer)
             .ok_or(ExportBufferError::NoUnderlyingStorage)?;
 
+        let export_buffer = ExportBuffer::from_underlying_storage(&underlying_storage)
+            .ok_or(ExportBufferError::Unsupported)?;
+
+        if !self.framebuffer_exporter.can_add_framebuffer(&export_buffer) {
+            return Err(ExportBufferError::Unsupported);
+        }
+
         // First we try to find a state in our new states, this is important if
         // we got the same id multiple times. If we can't find it we use the previous
         // state if available
@@ -3441,19 +3462,16 @@ where
                 &underlying_storage
             );
 
-            let fb = ExportBuffer::from_underlying_storage(&underlying_storage)
-                .ok_or(ExportBufferError::Unsupported)
-                .and_then(|buffer| {
-                    self.framebuffer_exporter
-                        .add_framebuffer(self.surface.device_fd(), buffer, allow_opaque_fallback)
-                        .map_err(|err| {
-                            trace!("failed to add framebuffer: {:?}", err);
-                            ExportBufferError::ExportFailed
-                        })
-                        .and_then(|fb| {
-                            fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
-                                .ok_or(ExportBufferError::Unsupported)
-                        })
+            let fb = self
+                .framebuffer_exporter
+                .add_framebuffer(self.surface.device_fd(), export_buffer, allow_opaque_fallback)
+                .map_err(|err| {
+                    trace!("failed to add framebuffer: {:?}", err);
+                    ExportBufferError::ExportFailed
+                })
+                .and_then(|fb| {
+                    fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
+                        .ok_or(ExportBufferError::Unsupported)
                 });
 
             if fb.is_err() {
