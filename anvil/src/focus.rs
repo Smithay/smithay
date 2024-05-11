@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::X11Surface;
 pub use smithay::{
@@ -69,7 +71,7 @@ impl IsAlive for PointerFocusTarget {
 impl From<PointerFocusTarget> for WlSurface {
     #[inline]
     fn from(target: PointerFocusTarget) -> Self {
-        target.wl_surface().unwrap()
+        target.wl_surface().unwrap().into_owned()
     }
 }
 
@@ -450,11 +452,11 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocus
 
 impl WaylandFocus for PointerFocusTarget {
     #[inline]
-    fn wl_surface(&self) -> Option<WlSurface> {
+    fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
         match self {
             PointerFocusTarget::WlSurface(w) => w.wl_surface(),
             #[cfg(feature = "xwayland")]
-            PointerFocusTarget::X11Surface(w) => w.wl_surface(),
+            PointerFocusTarget::X11Surface(w) => w.wl_surface().map(Cow::Owned),
             PointerFocusTarget::SSD(_) => None,
         }
     }
@@ -474,11 +476,11 @@ impl WaylandFocus for PointerFocusTarget {
 
 impl WaylandFocus for KeyboardFocusTarget {
     #[inline]
-    fn wl_surface(&self) -> Option<WlSurface> {
+    fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
         match self {
             KeyboardFocusTarget::Window(w) => w.wl_surface(),
-            KeyboardFocusTarget::LayerSurface(l) => Some(l.wl_surface().clone()),
-            KeyboardFocusTarget::Popup(p) => Some(p.wl_surface().clone()),
+            KeyboardFocusTarget::LayerSurface(l) => Some(Cow::Borrowed(l.wl_surface())),
+            KeyboardFocusTarget::Popup(p) => Some(Cow::Borrowed(p.wl_surface())),
         }
     }
 }

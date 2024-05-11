@@ -305,7 +305,7 @@ impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
         self.space
             .elements()
-            .find_map(|window| (window.wl_surface().as_ref() == Some(parent)).then(|| window.geometry()))
+            .find_map(|window| (window.wl_surface().as_deref() == Some(parent)).then(|| window.geometry()))
             .unwrap_or_default()
     }
 }
@@ -334,7 +334,10 @@ delegate_relative_pointer!(@<BackendData: Backend + 'static> AnvilState<BackendD
 impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData> {
     fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>) {
         // XXX region
-        if pointer.current_focus().and_then(|x| x.wl_surface()).as_ref() == Some(surface) {
+        let Some(current_focus) = pointer.current_focus() else {
+            return;
+        };
+        if current_focus.wl_surface().as_deref() == Some(surface) {
             with_pointer_constraint(surface, pointer, |constraint| {
                 constraint.unwrap().activate();
             });
@@ -374,7 +377,7 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
             let w = self
                 .space
                 .elements()
-                .find(|window| window.wl_surface().map(|s| s == surface).unwrap_or(false))
+                .find(|window| window.wl_surface().map(|s| *s == surface).unwrap_or(false))
                 .cloned();
             if let Some(window) = w {
                 self.space.raise_element(&window, true);
@@ -515,7 +518,7 @@ impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<
         let elem = self
             .space
             .elements()
-            .find(|elem| elem.wl_surface().as_ref() == Some(surface))?;
+            .find(|elem| elem.wl_surface().as_deref() == Some(surface))?;
         Some(KeyboardFocusTarget::Window(elem.0.clone()))
     }
 }
