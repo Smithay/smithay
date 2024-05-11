@@ -60,7 +60,7 @@ wayland-egl = { version = "0.32.7", optional = true }
 wayland-protocols = { version = "0.32.9", features = ["unstable", "staging", "server"], optional = true }
 wayland-protocols-wlr = { version = "0.3.8", features = ["server"], optional = true }
 wayland-protocols-misc = { version = "0.3.8", features = ["server"], optional = true }
-wayland-server = { version = "0.31.9", optional = true }
+wayland-server = { version = "0.31.11", optional = true }
 wayland-sys = { version = "0.31.6", optional = true }
 wayland-backend = { version = "0.3.10", optional = true }
 winit = { version = "0.30.0", default-features = false, features = ["wayland", "wayland-dlopen", "x11", "rwh_06"], optional = true }
