@@ -4193,7 +4193,7 @@ where
     }
 }
 
-struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);
+struct OwnedFramebuffer<B: Framebuffer>(Rc<B>);
 
 impl<B: Framebuffer> PartialEq for OwnedFramebuffer<B> {
     #[inline]
@@ -4211,7 +4211,7 @@ impl<B: Framebuffer + std::fmt::Debug> std::fmt::Debug for OwnedFramebuffer<B> {
 impl<B: Framebuffer> OwnedFramebuffer<B> {
     #[inline]
     fn new(buffer: B) -> Self {
-        OwnedFramebuffer(Arc::new(buffer))
+        OwnedFramebuffer(Rc::new(buffer))
     }
 }
 
