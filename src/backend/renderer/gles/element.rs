@@ -3,7 +3,7 @@
 use crate::{
     backend::renderer::{
         element::{Element, Id, Kind, RenderElement, UnderlyingStorage},
-        utils::CommitCounter,
+        utils::{CommitCounter, OpaqueRegions},
     },
     utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform},
 };
@@ -89,7 +89,7 @@ impl Element for PixelShaderElement {
         self.area.to_physical_precise_round(scale)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.opaque_regions
             .iter()
             .map(|region| region.to_physical_precise_round(scale))

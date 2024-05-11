@@ -225,7 +225,9 @@ use wayland_server::protocol::wl_surface;
 
 use crate::{
     backend::renderer::{
-        utils::{Buffer, DamageSet, DamageSnapshot, RendererSurfaceStateUserData, SurfaceView},
+        utils::{
+            Buffer, DamageSet, DamageSnapshot, OpaqueRegions, RendererSurfaceStateUserData, SurfaceView,
+        },
         Frame, ImportAll, Renderer, Texture,
     },
     utils::{Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -318,7 +320,7 @@ pub struct WaylandSurfaceRenderElement<R: Renderer> {
     buffer_transform: Transform,
     buffer_dimensions: Option<Size<i32, BufferCoords>>,
     damage: DamageSnapshot<i32, BufferCoords>,
-    opaque_regions: Vec<Rectangle<i32, Logical>>,
+    opaque_regions: OpaqueRegions<i32, Logical>,
     texture: Option<R::TextureId>,
 }
 
@@ -364,7 +366,10 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             buffer_transform: data.buffer_transform,
             buffer_dimensions: data.buffer_dimensions,
             damage: data.damage.snapshot(),
-            opaque_regions: data.opaque_regions.clone(),
+            opaque_regions: data
+                .opaque_regions()
+                .map(OpaqueRegions::from_slice)
+                .unwrap_or_default(),
             texture: data.texture::<R>(renderer.id()).cloned(),
         }))
     }
@@ -472,13 +477,9 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
             .unwrap_or_default()
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         if self.alpha < 1.0 {
-            return Vec::new();
-        }
-
-        if self.view.is_none() {
-            return Vec::new();
+            return OpaqueRegions::default();
         }
 
         self.opaque_regions
@@ -490,7 +491,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
                 .to_size();
                 Rectangle::from_loc_and_size(loc, size)
             })
-            .collect::<Vec<_>>()
+            .collect::<OpaqueRegions<_, _>>()
     }
 
     fn alpha(&self) -> f32 {

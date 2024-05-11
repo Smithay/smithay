@@ -3,7 +3,7 @@
 use crate::{
     backend::renderer::{
         element::{AsRenderElements, Element, Id, Kind, RenderElement, UnderlyingStorage},
-        utils::DamageSet,
+        utils::{DamageSet, OpaqueRegions},
         Renderer,
     },
     utils::{Buffer, Physical, Point, Rectangle, Scale},
@@ -75,15 +75,12 @@ impl<E: Element> Element for RescaleRenderElement<E> {
             .collect::<DamageSet<_, _>>()
     }
 
-    fn opaque_regions(
-        &self,
-        scale: crate::utils::Scale<f64>,
-    ) -> Vec<crate::utils::Rectangle<i32, crate::utils::Physical>> {
+    fn opaque_regions(&self, scale: crate::utils::Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.element
             .opaque_regions(scale)
             .into_iter()
             .map(|rect| rect.to_f64().upscale(self.scale).to_i32_round())
-            .collect::<Vec<_>>()
+            .collect::<OpaqueRegions<_, _>>()
     }
 
     fn alpha(&self) -> f32 {
@@ -252,7 +249,7 @@ impl<E: Element> Element for CropRenderElement<E> {
         }
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<crate::utils::Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         if let Some(element_crop_rect) = self.element_crop_rect(scale) {
             self.element
                 .opaque_regions(scale)
@@ -263,7 +260,7 @@ impl<E: Element> Element for CropRenderElement<E> {
                         rect
                     })
                 })
-                .collect::<Vec<_>>()
+                .collect::<OpaqueRegions<_, _>>()
         } else {
             Default::default()
         }
@@ -366,7 +363,7 @@ impl<E: Element> Element for RelocateRenderElement<E> {
         self.element.damage_since(scale, commit)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.element.opaque_regions(scale)
     }
 

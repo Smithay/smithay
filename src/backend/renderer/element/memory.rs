@@ -222,7 +222,7 @@ use crate::{
     backend::{
         allocator::{format::get_bpp, Fourcc},
         renderer::{
-            utils::{CommitCounter, DamageBag, DamageSet},
+            utils::{CommitCounter, DamageBag, DamageSet, OpaqueRegions},
             Frame, ImportMem, Renderer,
         },
     },
@@ -671,9 +671,9 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
             })
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         if self.alpha < 1.0 {
-            return Vec::new();
+            return OpaqueRegions::default();
         }
 
         let src = self.src();
@@ -702,7 +702,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
                                 rect.to_physical_precise_up(surface_scale * scale)
                             })
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<OpaqueRegions<_, _>>()
             })
             .unwrap_or_default()
     }
@@ -748,7 +748,7 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
         self.damage_since(scale, commit)
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         self.opaque_regions(scale)
     }
 
