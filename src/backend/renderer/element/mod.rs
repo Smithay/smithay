@@ -193,7 +193,7 @@ impl PrimaryScanoutOutput {
 
         let has_valid_output = primary_scanout_output
             .as_ref()
-            .map(|(current, _)| current.upgrade().is_some())
+            .map(|(current, _)| current.is_alive())
             .unwrap_or(false);
         let same_output = primary_scanout_output
             .as_ref()
