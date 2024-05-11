@@ -746,7 +746,7 @@ impl PixmanRenderer {
                 .0
                 .dmabuf
                 .as_ref()
-                .map(|map| map.dmabuf.upgrade().is_some())
+                .map(|map| !map.dmabuf.is_gone())
                 .unwrap_or(false)
         });
         self.buffers.retain(|image| {
@@ -754,7 +754,7 @@ impl PixmanRenderer {
                 .0
                 .dmabuf
                 .as_ref()
-                .map(|map| map.dmabuf.upgrade().is_some())
+                .map(|map| !map.dmabuf.is_gone())
                 .unwrap_or(false)
         });
     }
