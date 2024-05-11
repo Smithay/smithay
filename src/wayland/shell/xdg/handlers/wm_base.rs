@@ -113,6 +113,7 @@ where
 }
 
 impl IsAlive for XdgWmBase {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &XdgWmBaseUserData = self.data().unwrap();
         data.alive_tracker.alive()

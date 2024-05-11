@@ -101,6 +101,7 @@ pub trait WaylandFocus {
 }
 
 impl WaylandFocus for wl_surface::WlSurface {
+    #[inline]
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
         Some(self.clone())
     }

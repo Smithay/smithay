@@ -218,6 +218,7 @@ pub enum Format {
 
 impl Format {
     /// Amount of planes this format uses
+    #[inline]
     pub fn num_planes(&self) -> usize {
         match *self {
             Format::RGB | Format::RGBA | Format::External => 1,
@@ -244,6 +245,7 @@ pub struct EGLBuffer {
 #[cfg(feature = "wayland_frontend")]
 impl EGLBuffer {
     /// Amount of planes of this EGLBuffer
+    #[inline]
     pub fn num_planes(&self) -> usize {
         self.format.num_planes()
     }

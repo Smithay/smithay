@@ -331,6 +331,7 @@ impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
         frame.draw_solid(dst, damage, self.color)
     }
 
+    #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<super::UnderlyingStorage> {
         None
     }

@@ -148,6 +148,7 @@ impl From<u32> for EGLError {
 }
 
 impl EGLError {
+    #[inline]
     pub(super) fn from_last_call() -> Option<EGLError> {
         match unsafe { ffi::egl::GetError() as u32 } {
             ffi::egl::SUCCESS => None,
@@ -158,6 +159,7 @@ impl EGLError {
 
 /// Wraps a raw egl call and returns error codes from `eglGetError()`, only if the result of the
 /// call is different from the `err` value.
+#[inline]
 pub fn wrap_egl_call<R: PartialEq, F: FnOnce() -> R>(call: F, err: R) -> Result<R, EGLError> {
     let res = call();
     if res != err {
@@ -172,6 +174,7 @@ pub fn wrap_egl_call<R: PartialEq, F: FnOnce() -> R>(call: F, err: R) -> Result<
 
 /// Wraps a raw egl call and returns error codes from `eglGetError()`, only if the pointer returned
 /// is null.
+#[inline]
 pub fn wrap_egl_call_ptr<R, F: FnOnce() -> *const R>(call: F) -> Result<*const R, EGLError> {
     let res = call();
     if !res.is_null() {
@@ -186,6 +189,7 @@ pub fn wrap_egl_call_ptr<R, F: FnOnce() -> *const R>(call: F) -> Result<*const R
 
 /// Wraps a raw egl call and returns error codes from `eglGetError()`, only if the `EGLBoolean`
 /// returned is `EGL_FALSE`.
+#[inline]
 pub fn wrap_egl_call_bool<F: FnOnce() -> ffi::egl::types::EGLBoolean>(
     call: F,
 ) -> Result<ffi::egl::types::EGLBoolean, EGLError> {

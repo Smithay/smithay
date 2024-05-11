@@ -327,6 +327,7 @@ impl PopupTree {
         children.retain(|n| n.surface.alive());
     }
 
+    #[inline]
     fn alive(&self) -> bool {
         !self.0.lock().unwrap().is_empty()
     }

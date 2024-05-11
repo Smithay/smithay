@@ -504,6 +504,7 @@ impl Drop for LayerSurfaceInner {
 }
 
 impl IsAlive for LayerSurface {
+    #[inline]
     fn alive(&self) -> bool {
         self.0.surface.alive()
     }
@@ -526,6 +527,7 @@ impl LayerSurface {
     }
 
     /// Returns the underlying [`WlSurface`]
+    #[inline]
     pub fn wl_surface(&self) -> &WlSurface {
         self.0.surface.wl_surface()
     }
@@ -708,6 +710,7 @@ impl LayerSurface {
 }
 
 impl WaylandFocus for LayerSurface {
+    #[inline]
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
         Some(self.0.surface.wl_surface().clone())
     }

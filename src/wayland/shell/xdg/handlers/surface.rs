@@ -334,6 +334,7 @@ pub struct XdgShellSurfaceUserData {
 }
 
 impl IsAlive for XdgToplevel {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &XdgShellSurfaceUserData = self.data().unwrap();
         data.alive_tracker.alive()
@@ -341,6 +342,7 @@ impl IsAlive for XdgToplevel {
 }
 
 impl IsAlive for XdgPopup {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &XdgShellSurfaceUserData = self.data().unwrap();
         data.alive_tracker.alive()

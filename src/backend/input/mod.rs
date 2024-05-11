@@ -537,6 +537,7 @@ pub trait TouchEvent<B: InputBackend>: Event<B> {
 }
 
 impl<B: InputBackend> TouchEvent<B> for UnusedEvent {
+    #[inline]
     fn slot(&self) -> TouchSlot {
         match *self {}
     }

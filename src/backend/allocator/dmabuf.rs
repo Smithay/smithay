@@ -135,10 +135,12 @@ impl Hash for WeakDmabuf {
 }
 
 impl Buffer for Dmabuf {
+    #[inline]
     fn size(&self) -> Size<i32, BufferCoords> {
         self.0.size
     }
 
+    #[inline]
     fn format(&self) -> Format {
         Format {
             code: self.0.format,
@@ -442,11 +444,13 @@ impl WeakDmabuf {
     /// Try to upgrade to a strong reference of this buffer.
     ///
     /// Fails if no strong references exist anymore and the handle was already closed.
+    #[inline]
     pub fn upgrade(&self) -> Option<Dmabuf> {
         self.0.upgrade().map(Dmabuf)
     }
 
     /// Returns true if there are not any strong references remaining
+    #[inline]
     pub fn is_gone(&self) -> bool {
         self.0.strong_count() == 0
     }
@@ -464,6 +468,7 @@ pub trait AsDmabuf {
 impl AsDmabuf for Dmabuf {
     type Error = std::convert::Infallible;
 
+    #[inline]
     fn export(&self) -> Result<Dmabuf, std::convert::Infallible> {
         Ok(self.clone())
     }

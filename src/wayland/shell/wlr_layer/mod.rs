@@ -307,6 +307,7 @@ impl std::cmp::PartialEq for LayerSurface {
 
 impl LayerSurface {
     /// Checks if the surface is still alive
+    #[inline]
     pub fn alive(&self) -> bool {
         self.wl_surface.alive() && self.shell_surface.alive()
     }
@@ -429,6 +430,7 @@ impl LayerSurface {
     /// Access the underlying `wl_surface` of this layer surface
     ///
     /// Returns `None` if the layer surface actually no longer exists.
+    #[inline]
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }

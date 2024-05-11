@@ -489,6 +489,7 @@ pub enum OutputError {
 }
 
 impl<E: IsAlive> IsAlive for InnerElement<E> {
+    #[inline]
     fn alive(&self) -> bool {
         self.element.alive()
     }

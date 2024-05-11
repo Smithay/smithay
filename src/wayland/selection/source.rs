@@ -86,6 +86,7 @@ impl SelectionSourceProvider {
 }
 
 impl IsAlive for SelectionSourceProvider {
+    #[inline]
     fn alive(&self) -> bool {
         selection_dispatch!(self; Self(source) => source.alive())
     }

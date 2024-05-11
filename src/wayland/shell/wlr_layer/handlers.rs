@@ -190,6 +190,7 @@ pub struct WlrLayerSurfaceUserData {
 }
 
 impl IsAlive for ZwlrLayerSurfaceV1 {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &WlrLayerSurfaceUserData = self.data().unwrap();
         data.alive_tracker.alive()

@@ -785,6 +785,7 @@ where
         frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
     }
 
+    #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
         let buf = self.buffer.inner.borrow();
         Some(UnderlyingStorage::Memory(buf.mem.clone()))

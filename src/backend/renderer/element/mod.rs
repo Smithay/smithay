@@ -392,6 +392,7 @@ pub trait RenderElement<R: Renderer>: Element {
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
+    #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         let _ = renderer;
         None
@@ -465,6 +466,7 @@ where
     R: Renderer,
     E: RenderElement<R> + Element,
 {
+    #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         (*self).underlying_storage(renderer)
     }
@@ -780,6 +782,7 @@ macro_rules! render_elements_internal {
             }
         }
 
+        #[inline]
         fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
@@ -815,6 +818,7 @@ macro_rules! render_elements_internal {
             }
         }
 
+        #[inline]
         fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
@@ -1472,6 +1476,7 @@ where
         self.0.draw(frame, src, dst, damage)
     }
 
+    #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.0.underlying_storage(renderer)
     }

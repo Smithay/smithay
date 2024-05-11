@@ -48,6 +48,7 @@ impl AsRef<framebuffer::Handle> for DumbFramebuffer {
 }
 
 impl Framebuffer for DumbFramebuffer {
+    #[inline]
     fn format(&self) -> drm_fourcc::DrmFormat {
         self.format
     }
@@ -56,37 +57,45 @@ impl Framebuffer for DumbFramebuffer {
 struct PlanarDumbBuffer<'a>(&'a DumbBuffer);
 
 impl<'a> Buffer for PlanarDumbBuffer<'a> {
+    #[inline]
     fn size(&self) -> Size<i32, BufferCoords> {
         self.0.size()
     }
 
+    #[inline]
     fn format(&self) -> DrmFormat {
         self.0.format()
     }
 }
 
 impl<'a> PlanarBuffer for PlanarDumbBuffer<'a> {
+    #[inline]
     fn size(&self) -> (u32, u32) {
         let size = self.0.size();
         (size.w as u32, size.h as u32)
     }
 
+    #[inline]
     fn format(&self) -> Fourcc {
         self.0.format().code
     }
 
+    #[inline]
     fn modifier(&self) -> Option<DrmModifier> {
         Some(self.0.format().modifier)
     }
 
+    #[inline]
     fn pitches(&self) -> [u32; 4] {
         [self.0.handle().pitch(), 0, 0, 0]
     }
 
+    #[inline]
     fn handles(&self) -> [Option<drm::buffer::Handle>; 4] {
         [Some(self.0.handle().handle()), None, None, None]
     }
 
+    #[inline]
     fn offsets(&self) -> [u32; 4] {
         [0, 0, 0, 0]
     }
@@ -97,27 +106,33 @@ impl<'a, B> PlanarBuffer for OpaqueBufferWrapper<'a, B>
 where
     B: PlanarBuffer,
 {
+    #[inline]
     fn size(&self) -> (u32, u32) {
         self.0.size()
     }
 
+    #[inline]
     fn format(&self) -> Fourcc {
         let fmt = self.0.format();
         get_opaque(fmt).unwrap_or(fmt)
     }
 
+    #[inline]
     fn modifier(&self) -> Option<DrmModifier> {
         self.0.modifier()
     }
 
+    #[inline]
     fn pitches(&self) -> [u32; 4] {
         self.0.pitches()
     }
 
+    #[inline]
     fn handles(&self) -> [Option<drm::buffer::Handle>; 4] {
         self.0.handles()
     }
 
+    #[inline]
     fn offsets(&self) -> [u32; 4] {
         self.0.offsets()
     }

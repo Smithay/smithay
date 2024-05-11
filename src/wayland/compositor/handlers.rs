@@ -314,6 +314,7 @@ where
 }
 
 impl IsAlive for WlSurface {
+    #[inline]
     fn alive(&self) -> bool {
         let data: &SurfaceUserData = self.data().unwrap();
         data.alive_tracker.alive()

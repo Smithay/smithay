@@ -51,6 +51,7 @@ impl PopupSurface {
     }
 
     /// Is the input method popup surface referred by this handle still alive?
+    #[inline]
     pub fn alive(&self) -> bool {
         // TODO other things to check? This may not sufice.
         let role_data: &InputMethodPopupSurfaceUserData = self.surface_role.data().unwrap();
@@ -58,6 +59,7 @@ impl PopupSurface {
     }
 
     /// Access to the underlying `wl_surface` of this popup
+    #[inline]
     pub fn wl_surface(&self) -> &WlSurface {
         &self.surface
     }
