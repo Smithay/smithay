@@ -257,7 +257,7 @@ where
     }
 
     fn modifier(&self) -> Option<DrmModifier> {
-        self.0.modifier()
+        None //self.0.modifier()
     }
 
     fn pitches(&self) -> [u32; 4] {
@@ -282,8 +282,8 @@ fn framebuffer_from_bo_internal<D, T>(
 where
     D: drm::control::Device + DevPath,
 {
-    let modifier = bo.modifier();
-    let flags = if bo.modifier().is_some() {
+    let modifier = None; // bo.modifier();
+    let flags = if modifier.is_some() {
         FbCmd2Flags::MODIFIERS
     } else {
         FbCmd2Flags::empty()

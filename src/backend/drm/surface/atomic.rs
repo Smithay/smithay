@@ -554,6 +554,7 @@ impl AtomicDrmSurface {
         } else {
             AtomicCommitFlags::TEST_ONLY
         };
+
         self.fd.atomic_commit(flags, req).map_err(|source| {
             Error::Access(AccessError {
                 errmsg: "Error testing state",
@@ -844,6 +845,7 @@ impl AtomicDrmSurface {
                     plane_prop_handle(&prop_mapping, *handle, "CRTC_H")?,
                     property::Value::UnsignedRange(config.dst.size.h as u64),
                 );
+
                 if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "rotation") {
                     req.add_property(
                         *handle,

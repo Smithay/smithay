@@ -210,7 +210,7 @@ impl Dmabuf {
                 planes: Vec::with_capacity(MAX_PLANES),
                 size: size.into(),
                 format,
-                modifier,
+                modifier: Modifier::Invalid,
                 flags,
                 #[cfg(feature = "backend_drm")]
                 node: Mutex::new(None),
