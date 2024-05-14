@@ -579,11 +579,13 @@ impl OutputDamageTracker {
         }
 
         // add the damage for elements gone that are not covered an opaque region
-        let elements_gone = self
-            .last_state
-            .elements
-            .iter()
-            .filter(|(id, _)| !render_elements.iter().any(|e| e.id() == *id));
+        let elements_gone = self.last_state.elements.iter().filter(|(id, _)| {
+            element_render_states
+                .states
+                .get(id)
+                .map(|state| state.presentation_state == RenderElementPresentationState::Skipped)
+                .unwrap_or(true)
+        });
 
         for (_, state) in elements_gone {
             element_damage.clear();
