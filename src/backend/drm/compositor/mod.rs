@@ -1565,6 +1565,7 @@ where
     previous_element_states:
         IndexMap<Id, ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>,
     opaque_regions: Vec<Rectangle<i32, Physical>>,
+    element_opaque_regions_workhouse: Vec<Rectangle<i32, Physical>>,
 
     debug_flags: DebugFlags,
     span: tracing::Span,
@@ -1712,6 +1713,7 @@ where
                         element_states: IndexMap::new(),
                         previous_element_states: IndexMap::new(),
                         opaque_regions: Vec::new(),
+                        element_opaque_regions_workhouse: Vec::new(),
                         supports_fencing,
                         debug_flags: DebugFlags::empty(),
                         span,
@@ -2071,6 +2073,7 @@ where
         let mut output_elements: Vec<(&'a E, Rectangle<i32, Physical>, usize, bool)> =
             Vec::with_capacity(elements.len());
 
+        let mut element_opaque_regions_workhouse = std::mem::take(&mut self.element_opaque_regions_workhouse);
         for element in elements.iter() {
             let element_id = element.id();
             let element_geometry = element.geometry(output_scale);
@@ -2084,10 +2087,14 @@ where
             };
 
             // Then test if the element is completely hidden behind opaque regions
-            // FIXME: This should be possible to calculate without allocating
-            let element_visible_area = element_output_geometry
-                .subtract_rects(opaque_regions.iter().copied())
-                .into_iter()
+            element_opaque_regions_workhouse.clear();
+            element_opaque_regions_workhouse.push(element_output_geometry);
+            element_opaque_regions_workhouse = Rectangle::subtract_rects_many_in_place(
+                element_opaque_regions_workhouse,
+                opaque_regions.iter().copied(),
+            );
+            let element_visible_area = element_opaque_regions_workhouse
+                .iter()
                 .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
             if element_visible_area == 0 {
@@ -2105,10 +2112,13 @@ where
             }
 
             let element_opaque_regions = element.opaque_regions(output_scale);
-            // FIXME: This should be possible to calculate without allocating
-            let element_is_opaque = Rectangle::from_loc_and_size(Point::default(), element_geometry.size)
-                .subtract_rects(element_opaque_regions.iter().copied())
-                .is_empty();
+            element_opaque_regions_workhouse.clear();
+            element_opaque_regions_workhouse.push(element_output_geometry);
+            element_opaque_regions_workhouse = Rectangle::subtract_rects_many_in_place(
+                element_opaque_regions_workhouse,
+                element_opaque_regions.iter().copied(),
+            );
+            let element_is_opaque = element_opaque_regions_workhouse.is_empty();
 
             opaque_regions.extend(
                 element_opaque_regions
@@ -2122,6 +2132,7 @@ where
 
             output_elements.push((element, element_geometry, element_visible_area, element_is_opaque));
         }
+        self.element_opaque_regions_workhouse = element_opaque_regions_workhouse;
 
         // This will hold the element that has been selected for direct scan-out on
         // the primary plane if any
