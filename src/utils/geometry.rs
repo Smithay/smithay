@@ -1203,10 +1203,10 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
                 checked += 1;
 
                 // If there is no overlap there is nothing to subtract
-                if !rects[index].overlaps(other) {
+                let Some(intersection) = rects[index].intersection(other) else {
                     index += 1;
                     continue;
-                }
+                };
 
                 // We now know that we have to subtract the other rect
                 let item = rects.remove(index);
@@ -1215,9 +1215,6 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
                 if other.contains_rect(item) {
                     continue;
                 }
-
-                // we already checked that there is an overlap so the unwrap should be safe
-                let intersection = item.intersection(other).unwrap();
 
                 let top_rect = Rectangle::from_loc_and_size(
                     item.loc,
