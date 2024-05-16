@@ -60,6 +60,9 @@ impl Drop for InnerBuffer {
 }
 
 /// A wayland buffer
+///
+/// Reference counted, calling `wl_buffer::release` when last reference is
+/// dropped.
 #[derive(Debug, Clone)]
 pub struct Buffer {
     inner: Arc<InnerBuffer>,
