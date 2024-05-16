@@ -96,7 +96,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
     ) {
         let bo = gbm
             .import_buffer_object_from_wayland::<()>(buffer, gbm::BufferObjectFlags::SCANOUT)
-            .map(GbmBuffer::from_bo)
+            .map(|bo| GbmBuffer::from_bo(bo, true))
             .map_err(Error::Import)?;
         let (fb, format) = framebuffer_from_bo_internal(
             drm,

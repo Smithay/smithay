@@ -87,11 +87,21 @@ impl drm::buffer::Buffer for GbmBuffer {
 
 impl GbmBuffer {
     /// Create a [`GbmBuffer`] from an existing [`BufferObject`]
-    pub fn from_bo(bo: BufferObject<()>) -> Self {
+    ///
+    /// `implicit` forces the object to assume the modifier is `Invalid` for cases,
+    /// where the buffer was allocated with an older api, that doesn't support modifiers.
+    ///
+    /// Gbm might otherwise give us the underlying or a non-sensical modifier,
+    /// which can fail in various other apis.
+    pub fn from_bo(bo: BufferObject<()>, implicit: bool) -> Self {
         let size = (bo.width().unwrap_or(0) as i32, bo.height().unwrap_or(0) as i32).into();
         let format = Format {
             code: bo.format().unwrap_or(Fourcc::Argb8888), // we got to return something, but this should never happen anyway
-            modifier: bo.modifier().unwrap_or(Modifier::Invalid),
+            modifier: if implicit {
+                Modifier::Invalid
+            } else {
+                bo.modifier().unwrap_or(Modifier::Invalid)
+            },
         };
         Self { bo, size, format }
     }
@@ -164,20 +174,21 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
         flags: GbmBufferFlags,
     ) -> Result<GbmBuffer, std::io::Error> {
         #[cfg(feature = "backend_gbm_has_create_with_modifiers2")]
-        let result = self.device.create_buffer_object_with_modifiers2(
-            width,
-            height,
-            fourcc,
-            modifiers.iter().copied(),
-            flags,
-        );
+        let result = self
+            .device
+            .create_buffer_object_with_modifiers2(width, height, fourcc, modifiers.iter().copied(), flags)
+            .map(|bo| GbmBuffer::from_bo(bo, false));
 
         #[cfg(not(feature = "backend_gbm_has_create_with_modifiers2"))]
         let result = if (flags & !(GbmBufferFlags::SCANOUT | GbmBufferFlags::RENDERING)).is_empty() {
             self.device
                 .create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied())
+                .map(|bo| GbmBuffer::from_bo(bo, false))
         } else if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
-            return self.device.create_buffer_object(width, height, fourcc, flags);
+            return self
+                .device
+                .create_buffer_object(width, height, fourcc, flags)
+                .map(|bo| GbmBuffer::from_bo(bo, true));
         } else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -186,12 +197,12 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
         };
 
         match result {
-            Ok(bo) => Ok(GbmBuffer::from_bo(bo)),
+            Ok(bo) => Ok(bo),
             Err(err) => {
                 if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
                     self.device
                         .create_buffer_object(width, height, fourcc, flags)
-                        .map(GbmBuffer::from_bo)
+                        .map(|bo| GbmBuffer::from_bo(bo, true))
                 } else {
                     Err(err)
                 }
@@ -360,7 +371,7 @@ impl Dmabuf {
                 offsets,
                 self.format().modifier,
             )
-            .map(GbmBuffer::from_bo)
+            .map(|bo| GbmBuffer::from_bo(bo, false))
         } else {
             gbm.import_buffer_object_from_dma_buf(
                 handles[0].unwrap(),
@@ -374,7 +385,7 @@ impl Dmabuf {
                     usage
                 },
             )
-            .map(GbmBuffer::from_bo)
+            .map(|bo| GbmBuffer::from_bo(bo, true))
         }
     }
 }
