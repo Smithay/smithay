@@ -5,7 +5,7 @@ use super::{
     handlers::{is_effectively_sync, SurfaceUserData},
     hook::{Hook, HookId},
     transaction::{Blocker, PendingTransaction, TransactionQueue},
-    BufferAssignment, CompositorHandler, SurfaceAttributes, SurfaceData,
+    CompositorHandler, SurfaceAttributes, SurfaceData,
 };
 use std::{
     any::Any,
@@ -138,24 +138,16 @@ impl PrivateSurfaceData {
             let mut child_guard = child_mutex.lock().unwrap();
             child_guard.parent = None;
         }
-        if let Some(BufferAssignment::NewBuffer(buffer)) = my_data
+        my_data
             .public_data
             .cached_state
             .current::<SurfaceAttributes>()
-            .buffer
-            .take()
-        {
-            buffer.release();
-        };
-        if let Some(BufferAssignment::NewBuffer(buffer)) = my_data
+            .buffer = None;
+        my_data
             .public_data
             .cached_state
             .pending::<SurfaceAttributes>()
-            .buffer
-            .take()
-        {
-            buffer.release();
-        };
+            .buffer = None;
 
         let hooks = my_data.destruction_hooks.clone();
         // don't hold the mutex while the hooks are invoked
