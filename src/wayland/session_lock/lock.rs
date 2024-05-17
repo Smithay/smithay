@@ -67,8 +67,14 @@ where
                 // Ensure surface has no existing buffers attached.
                 let has_buffer = compositor::with_states(&surface, |states| {
                     let cached = &states.cached_state;
-                    let pending = cached.pending::<SurfaceAttributes>().buffer.is_some();
-                    let current = cached.current::<SurfaceAttributes>().buffer.is_some();
+                    let pending = matches!(
+                        cached.pending::<SurfaceAttributes>().buffer,
+                        Some(BufferAssignment::NewBuffer(_))
+                    );
+                    let current = matches!(
+                        cached.current::<SurfaceAttributes>().buffer,
+                        Some(BufferAssignment::NewBuffer(_))
+                    );
                     pending || current
                 });
                 if has_buffer {
