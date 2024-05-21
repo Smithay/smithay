@@ -1449,6 +1449,8 @@ where
                         AtomEnum::WINDOW,
                         &[surface.window_id()],
                     )?;
+                    drop(_guard);
+                    state.map_window_notify(xwm_id, surface);
                 }
             }
         }
