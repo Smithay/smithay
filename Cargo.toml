@@ -135,3 +135,14 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch.crates-io]
+wayland-egl = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-protocols = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-protocols-wlr = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-protocols-misc = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-server = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-client = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-sys = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-backend = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-scanner = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
