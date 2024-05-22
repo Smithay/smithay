@@ -1640,6 +1640,22 @@ where
             .overlay
             .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
 
+        let driver = surface.get_driver().map_err(|err| {
+            FrameError::DrmError(DrmError::Access(AccessError {
+                errmsg: "Failed to query drm driver",
+                dev: surface.dev_path(),
+                source: err,
+            }))
+        })?;
+        // `IN_FENCE_FD` makes commit fail on Nvidia driver
+        // https://github.com/NVIDIA/open-gpu-kernel-modules/issues/622
+        let is_nvidia = driver.name().to_string_lossy().to_lowercase().contains("nvidia")
+            || driver
+                .description()
+                .to_string_lossy()
+                .to_lowercase()
+                .contains("nvidia");
+
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
         let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
         let supports_fencing = !surface.is_legacy()
@@ -1653,7 +1669,8 @@ where
                         source: err,
                     }))
                 })?
-            && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?;
+            && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?
+            && !is_nvidia;
 
         for format in color_formats {
             debug!("Testing color format: {}", format);
