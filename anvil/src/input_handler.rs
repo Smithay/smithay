@@ -451,7 +451,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 }
 
 #[cfg(any(feature = "winit", feature = "x11"))]
-impl<Backend: crate::state::Backend> AnvilState<Backend> {
+impl<BackendData: Backend> AnvilState<BackendData> {
     pub fn process_input_event_windowed<B: InputBackend>(&mut self, event: InputEvent<B>, output_name: &str) {
         match event {
             InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
