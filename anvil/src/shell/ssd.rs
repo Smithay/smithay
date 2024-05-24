@@ -14,7 +14,7 @@ use smithay::{
 
 use std::cell::{RefCell, RefMut};
 
-use crate::AnvilState;
+use crate::{state::Backend, AnvilState};
 
 use super::WindowElement;
 
@@ -53,10 +53,10 @@ impl HeaderBar {
         self.pointer_loc = None;
     }
 
-    pub fn clicked<B: crate::state::Backend>(
+    pub fn clicked<BackendData: Backend>(
         &mut self,
-        seat: &Seat<AnvilState<B>>,
-        state: &mut AnvilState<B>,
+        seat: &Seat<AnvilState<BackendData>>,
+        state: &mut AnvilState<BackendData>,
         window: &WindowElement,
         serial: Serial,
     ) {
@@ -104,10 +104,10 @@ impl HeaderBar {
         };
     }
 
-    pub fn touch_down<B: crate::state::Backend>(
+    pub fn touch_down<BackendData: Backend>(
         &mut self,
-        seat: &Seat<AnvilState<B>>,
-        state: &mut AnvilState<B>,
+        seat: &Seat<AnvilState<BackendData>>,
+        state: &mut AnvilState<BackendData>,
         window: &WindowElement,
         serial: Serial,
     ) {
@@ -136,10 +136,10 @@ impl HeaderBar {
         };
     }
 
-    pub fn touch_up<B: crate::state::Backend>(
+    pub fn touch_up<BackendData: Backend>(
         &mut self,
-        _seat: &Seat<AnvilState<B>>,
-        state: &mut AnvilState<B>,
+        _seat: &Seat<AnvilState<BackendData>>,
+        state: &mut AnvilState<BackendData>,
         window: &WindowElement,
         _serial: Serial,
     ) {

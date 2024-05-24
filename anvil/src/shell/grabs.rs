@@ -24,8 +24,8 @@ use crate::{
     state::{AnvilState, Backend},
 };
 
-pub struct PointerMoveSurfaceGrab<B: Backend + 'static> {
-    pub start_data: PointerGrabStartData<AnvilState<B>>,
+pub struct PointerMoveSurfaceGrab<BackendData: Backend + 'static> {
+    pub start_data: PointerGrabStartData<AnvilState<BackendData>>,
     pub window: WindowElement,
     pub initial_window_location: Point<i32, Logical>,
 }
@@ -167,8 +167,8 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerMoveS
     fn unset(&mut self, _data: &mut AnvilState<BackendData>) {}
 }
 
-pub struct TouchMoveSurfaceGrab<B: Backend + 'static> {
-    pub start_data: TouchGrabStartData<AnvilState<B>>,
+pub struct TouchMoveSurfaceGrab<BackendData: Backend + 'static> {
+    pub start_data: TouchGrabStartData<AnvilState<BackendData>>,
     pub window: WindowElement,
     pub initial_window_location: Point<i32, Logical>,
 }
@@ -339,8 +339,8 @@ pub enum ResizeState {
     WaitingForCommit(ResizeData),
 }
 
-pub struct PointerResizeSurfaceGrab<B: Backend + 'static> {
-    pub start_data: PointerGrabStartData<AnvilState<B>>,
+pub struct PointerResizeSurfaceGrab<BackendData: Backend + 'static> {
+    pub start_data: PointerGrabStartData<AnvilState<BackendData>>,
     pub window: WindowElement,
     pub edges: ResizeEdge,
     pub initial_window_location: Point<i32, Logical>,
@@ -632,8 +632,8 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
     fn unset(&mut self, _data: &mut AnvilState<BackendData>) {}
 }
 
-pub struct TouchResizeSurfaceGrab<B: Backend + 'static> {
-    pub start_data: TouchGrabStartData<AnvilState<B>>,
+pub struct TouchResizeSurfaceGrab<BackendData: Backend + 'static> {
+    pub start_data: TouchGrabStartData<AnvilState<BackendData>>,
     pub window: WindowElement,
     pub edges: ResizeEdge,
     pub initial_window_location: Point<i32, Logical>,
