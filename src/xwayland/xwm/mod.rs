@@ -278,7 +278,7 @@ pub trait XwmHandler {
     ///
     /// To grant the wish you have to call `X11Surface::set_mapped(true)` for the window to become visible.
     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface);
-    /// Notification a window was mapped sucessfully and now has a usable `wl_surface` attached.
+    /// Notification a window was mapped sucessfully
     fn map_window_notify(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
@@ -388,7 +388,7 @@ pub struct X11Wm {
     wm_window: X11Window,
     atoms: Atoms,
 
-    unpaired_surfaces: HashMap<u64, X11Window>,
+    pub(crate) unpaired_surfaces: HashMap<u64, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
 
     // selections

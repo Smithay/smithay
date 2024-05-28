@@ -24,7 +24,7 @@
 //!         todo!()
 //!     }
 //!
-//!     fn surface_associated(&mut self, _surface: WlSurface, _serial: u64) {
+//!     fn surface_associated(&mut self, _surface: WlSurface, _window: X11Window) {
 //!         // Called when XWayland has associated an X11 window with a wl_surface.
 //!         todo!()
 //!     }
@@ -45,8 +45,12 @@ use wayland_server::{
     protocol::wl_surface::{self, WlSurface},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
+use x11rb::protocol::xproto::Window as X11Window;
 
-use crate::{wayland::compositor, xwayland::XWaylandClientData};
+use crate::{
+    wayland::compositor,
+    xwayland::{xwm::XwmId, XWaylandClientData, XwmHandler},
+};
 
 /// The role for an xwayland-associated surface.
 pub const XWAYLAND_SHELL_ROLE: &str = "xwayland_shell";
@@ -101,7 +105,7 @@ pub trait XWaylandShellHandler {
 
     /// An X11 window has been associated with a wayland surface. This doesn't
     /// take effect until the wl_surface is committed.
-    fn surface_associated(&mut self, _surface: wl_surface::WlSurface, _serial: u64) {}
+    fn surface_associated(&mut self, _surface: wl_surface::WlSurface, _window: X11Window) {}
 }
 
 /// Represents a pending X11 serial, used to associate X11 windows with wayland
@@ -182,6 +186,7 @@ where
     D: Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>,
     D: XWaylandShellHandler,
     D: 'static,
+    D: XwmHandler,
 {
     fn request(
         state: &mut D,
@@ -202,7 +207,18 @@ where
 
                 compositor::add_pre_commit_hook::<D, _>(&data.wl_surface, register_serial_commit_hook);
 
-                XWaylandShellHandler::surface_associated(state, data.wl_surface.clone(), serial);
+                if let Some(xwm_id) = _client
+                    .get_data::<XWaylandClientData>()
+                    .and_then(|data| data.user_data().get::<XwmId>())
+                {
+                    let x11_window: Option<X11Window> = {
+                        let xwm = XwmHandler::xwm_state(state, *xwm_id);
+                        xwm.unpaired_surfaces.get(&serial).cloned()
+                    };
+                    if let Some(x11_window) = x11_window {
+                        XWaylandShellHandler::surface_associated(state, data.wl_surface.clone(), x11_window);
+                    }
+                }
             }
             xwayland_surface_v1::Request::Destroy => {
                 // Any already existing associations are unaffected.
