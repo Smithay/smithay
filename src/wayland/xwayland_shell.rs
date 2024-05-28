@@ -8,6 +8,7 @@
 //!     XWaylandShellState,
 //! };
 //! use smithay::delegate_xwayland_shell;
+//! use x11rb::protocol::xproto::Window as X11Window;
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
