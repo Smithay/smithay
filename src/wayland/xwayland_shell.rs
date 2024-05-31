@@ -37,6 +37,7 @@
 
 use std::collections::HashMap;
 
+use tracing::debug;
 use wayland_protocols::xwayland::shell::v1::server::{
     xwayland_shell_v1::{self, XwaylandShellV1},
     xwayland_surface_v1::{self, XwaylandSurfaceV1},
@@ -199,26 +200,50 @@ where
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
+            // In order to match a WlSurface to an X11 window, we need to match a Serial sent both to the X11 window and the WlSurface.
+            // This can happen in any order so we need to store the Serial until we have both.
             xwayland_surface_v1::Request::SetSerial { serial_lo, serial_hi } => {
                 let serial = u64::from(serial_lo) | (u64::from(serial_hi) << 32);
 
+                // Set the serial on the pending state of surface
                 compositor::with_states(&data.wl_surface, |states| {
                     states.cached_state.pending::<XWaylandShellCachedState>().serial = Some(serial);
                 });
 
+                // Register to commit state
                 compositor::add_pre_commit_hook::<D, _>(&data.wl_surface, register_serial_commit_hook);
 
-                if let Some(xwm_id) = _client
-                    .get_data::<XWaylandClientData>()
-                    .and_then(|data| data.user_data().get::<XwmId>())
-                {
-                    let x11_window: Option<X11Window> = {
+                // Now check if the serial has already been set on the X11 window
+                if let Some(xsurface) = {
+                    let xwm_id = _client
+                        .get_data::<XWaylandClientData>()
+                        .and_then(|data| data.user_data().get::<XwmId>());
+
+                    xwm_id.and_then(|xwm_id| {
                         let xwm = XwmHandler::xwm_state(state, *xwm_id);
-                        xwm.unpaired_surfaces.get(&serial).cloned()
-                    };
-                    if let Some(x11_window) = x11_window {
-                        XWaylandShellHandler::surface_associated(state, data.wl_surface.clone(), x11_window);
-                    }
+                        let window = xwm.unpaired_surfaces.remove(&serial);
+                        window.and_then(|window| {
+                            xwm.windows
+                                .iter()
+                                .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
+                        })
+                    })
+                } {
+                    debug!(
+                        mapped_window_id = xsurface.mapped_window_id(),
+                        window_id = xsurface.window_id(),
+                        wl_surface = ?data.wl_surface.id().protocol_id(),
+                        "associated X11 window to wl_surface in commit hook",
+                    );
+
+                    xsurface.state.lock().unwrap().wl_surface = Some(data.wl_surface.clone());
+                    let window_id = xsurface.window_id();
+                    XWaylandShellHandler::surface_associated(state, data.wl_surface.clone(), window_id);
+                } else {
+                    debug!(
+                        wl_surface = ?data.wl_surface.id().protocol_id(),
+                        "no matching X11 window found for wl_surface in commit hook",
+                    );
                 }
             }
             xwayland_surface_v1::Request::Destroy => {

@@ -93,7 +93,11 @@
 
 use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
-    wayland::{compositor, selection::SelectionTarget, xwayland_shell},
+    wayland::{
+        compositor,
+        selection::SelectionTarget,
+        xwayland_shell::{self, XWaylandShellHandler},
+    },
 };
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
 use rustix::fs::OFlags;
@@ -396,7 +400,7 @@ pub struct X11Wm {
     clipboard: XWmSelection,
     primary: XWmSelection,
 
-    windows: Vec<X11Surface>,
+    pub(crate) windows: Vec<X11Surface>,
     // oldest mapped -> newest
     client_list: Vec<X11Window>,
     // bottom -> top
@@ -1013,53 +1017,6 @@ impl X11Wm {
         order: impl Iterator<Item = &'a W>,
     ) -> Result<(), ConnectionError> {
         self.update_stacking_order_impl(order, StackingDirection::Upwards)
-    }
-
-    /// This function has to be called on [`CompositorHandler::commit`](crate::wayland::compositor::CompositorHandler::commit) to
-    /// handle associating surfaces with X11 windows.
-    pub fn commit_hook<D>(state: &mut D, surface: &WlSurface)
-    where
-        D: XwmHandler,
-        D: xwayland_shell::XWaylandShellHandler,
-        D: 'static,
-    {
-        if let Some(client) = surface.client() {
-            // We only care about surfaces created by XWayland.
-            if let Some(xwm_id) = client
-                .get_data::<XWaylandClientData>()
-                .and_then(|data| data.user_data().get::<XwmId>())
-            {
-                let serial = compositor::with_states(surface, |states| {
-                    states
-                        .cached_state
-                        .current::<xwayland_shell::XWaylandShellCachedState>()
-                        .serial
-                });
-
-                // This handles the case that the serial was set on the X11
-                // window before surface. To handle the other case, we look for
-                // a matching surface when the WL_SURFACE_SERIAL atom is sent.
-                if let Some(serial) = serial {
-                    let xwm = XwmHandler::xwm_state(state, *xwm_id);
-
-                    if let Some(window) = xwm.unpaired_surfaces.remove(&serial) {
-                        if let Some(xsurface) = xwm
-                            .windows
-                            .iter()
-                            .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
-                        {
-                            debug!(
-                                window = xsurface.window_id(),
-                                wl_surface = ?surface.id().protocol_id(),
-                                "associated X11 window to wl_surface in commit hook",
-                            );
-
-                            xsurface.state.lock().unwrap().wl_surface = Some(surface.clone());
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /// Set the default cursor used by X clients.
@@ -2175,8 +2132,7 @@ where
                         let surface_state = xsurface.state.clone();
                         let mut guard = surface_state.lock().unwrap();
                         guard.wl_surface_serial = Some(serial);
-
-                        xwm.unpaired_surfaces.insert(serial, msg.window);
+                        let window_id = xsurface.window_id();
 
                         if let Some(wl_surface) =
                             xwayland_shell::XWaylandShellHandler::xwayland_shell_state(state)
@@ -2184,13 +2140,21 @@ where
                                 .clone()
                         {
                             debug!(
-                                window = ?msg.window,
+                                window = ?window_id,
                                 wl_surface = ?wl_surface.id().protocol_id(),
                                 "associated X11 window to wl_surface",
                             );
 
-                            guard.wl_surface = Some(wl_surface);
+                            guard.wl_surface = Some(wl_surface.clone());
+                            XWaylandShellHandler::surface_associated(state, wl_surface, window_id);
                         } else {
+                            debug!(
+                                window = ?msg.window,
+                                serial = serial,
+                                "no matching wl_surface for X11 window",
+                            );
+                            let xwm = state.xwm_state(xwm_id);
+                            xwm.unpaired_surfaces.insert(serial, window_id);
                             guard.wl_surface = None;
                         }
                     }
