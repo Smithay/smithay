@@ -30,6 +30,9 @@
 //!         todo!()
 //!     }
 //! }
+//! 
+//! impl XwmHandler for State {
+//! }
 //!
 //! // implement Dispatch for your state.
 //! delegate_xwayland_shell!(State);
