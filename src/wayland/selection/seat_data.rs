@@ -44,12 +44,16 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
 
     /// Change focus for the clipboard selection to `new_focus` client. Providing `None` will
     /// remove the focus.
+    ///
+    /// If the focus is different from the existing focus, the current selection will be offered to the client.
     pub fn set_clipboard_focus<D>(&mut self, dh: &DisplayHandle, new_focus: Option<Client>)
     where
         D: SelectionHandler<SelectionUserData = U> + 'static,
     {
-        self.clipboard_selection_focus = new_focus;
-        self.send_selection::<D>(dh, SelectionTarget::Clipboard, None, false)
+        if self.clipboard_selection_focus != new_focus {
+            self.clipboard_selection_focus = new_focus;
+            self.send_selection::<D>(dh, SelectionTarget::Clipboard, None, false)
+        }
     }
 
     /// Set the clipboard selection to the `new_selection`, providing `None` will clear the
@@ -73,12 +77,16 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
 
     /// Change focus for the primary selection to `new_focus` client. Providing `None` will
     /// remove the focus.
+    ///
+    /// If the focus is different from the existing focus, the current selection will be offered to the client.
     pub fn set_primary_focus<D>(&mut self, dh: &DisplayHandle, new_focus: Option<Client>)
     where
         D: SelectionHandler<SelectionUserData = U> + 'static,
     {
-        self.primary_selection_focus = new_focus;
-        self.send_selection::<D>(dh, SelectionTarget::Primary, None, false)
+        if self.primary_selection_focus != new_focus {
+            self.primary_selection_focus = new_focus;
+            self.send_selection::<D>(dh, SelectionTarget::Primary, None, false)
+        }
     }
 
     /// Set the primary selection to the `new_selection`, providing `None` will clear the
