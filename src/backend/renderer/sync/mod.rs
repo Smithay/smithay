@@ -58,6 +58,11 @@ impl SyncPoint {
         }
     }
 
+    /// Returns `true` if `SyncPoint` contains a [`Fence`]
+    pub fn contains_fence(&self) -> bool {
+        self.fence.is_some()
+    }
+
     /// Get a reference to the underlying [`Fence`] if any
     ///
     /// Returns `None` if the sync point does not contain a fence

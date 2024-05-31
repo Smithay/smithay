@@ -278,7 +278,7 @@ impl Dmabuf {
         *self.0.node.lock().unwrap() = node.into();
     }
 
-    /// Create an [`calloop::EventSource`] and [`crate::wayland::compositor::Blocker`] for this [`Dmabuf`].
+    /// Create an [`calloop::EventSource`] and [`Blocker`] for this [`Dmabuf`].
     ///
     /// Usually used to block applying surface state on the readiness of an attached dmabuf.
     #[cfg(feature = "wayland_frontend")]
@@ -526,7 +526,7 @@ where
     }
 }
 
-/// [`crate::wayland::compositor::Blocker`] implementation for an accompaning [`DmabufSource`]
+/// [`Blocker`] implementation for an accompaning [`DmabufSource`]
 #[cfg(feature = "wayland_frontend")]
 #[derive(Debug)]
 pub struct DmabufBlocker(Arc<AtomicBool>);

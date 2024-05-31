@@ -7,7 +7,7 @@ use tracing::{error, info, warn};
 
 use crate::utils::{DevPath, DeviceFd};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct InternalDrmDeviceFd {
     fd: DeviceFd,
     privileged: bool,
@@ -33,7 +33,7 @@ impl BasicDevice for InternalDrmDeviceFd {}
 impl ControlDevice for InternalDrmDeviceFd {}
 
 /// Ref-counted file descriptor of an open drm device
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DrmDeviceFd(Arc<InternalDrmDeviceFd>);
 
 impl AsFd for DrmDeviceFd {
