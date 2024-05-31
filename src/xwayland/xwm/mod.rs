@@ -94,7 +94,6 @@
 use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
     wayland::{
-        compositor,
         selection::SelectionTarget,
         xwayland_shell::{self, XWaylandShellHandler},
     },
@@ -112,7 +111,7 @@ use std::{
     sync::Arc,
 };
 use tracing::{debug, debug_span, error, info, trace, warn};
-use wayland_server::{protocol::wl_surface::WlSurface, Client, Resource};
+use wayland_server::{Client, Resource};
 
 use x11rb::{
     connection::Connection as _,
