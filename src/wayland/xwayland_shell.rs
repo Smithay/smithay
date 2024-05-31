@@ -30,7 +30,7 @@
 //!         todo!()
 //!     }
 //! }
-//! 
+//!
 //! impl XwmHandler for State {
 //! }
 //!
