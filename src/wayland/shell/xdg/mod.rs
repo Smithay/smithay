@@ -342,7 +342,7 @@ xdg_role!(
         /// Modal dialogs typically require to be fully addressed by the user (i.e. closed)
         /// before resuming interaction with the parent toplevel, and may require a distinct presentation.
         ///
-        /// This interface should have no effect on toplevels that are not attached to a parent toplevel.
+        /// This value has no effect on toplevels that are not attached to a parent toplevel.
         pub modal: bool,
         /// Holds the optional title the client has set for
         /// this toplevel. For example a web-browser will most likely
