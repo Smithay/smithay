@@ -118,6 +118,8 @@ impl PrimarySelectionState {
 }
 
 /// Set the primary selection focus to a certain client for a given seat
+///
+/// If the focus is different from the existing focus, the current selection will be offered to the client.
 #[instrument(name = "wayland_primary_selection", level = "debug", skip(dh, seat, client), fields(seat = seat.name(), client = ?client.as_ref().map(|c| c.id())))]
 pub fn set_primary_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where

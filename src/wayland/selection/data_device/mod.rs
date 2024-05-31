@@ -233,6 +233,8 @@ pub fn default_action_chooser(available: DndAction, preferred: DndAction) -> Dnd
 }
 
 /// Set the data device focus to a certain client for a given seat
+///
+/// If the focus is different from the existing focus, the current selection will be offered to the client.
 #[instrument(name = "wayland_data_device", level = "debug", skip(dh, seat, client), fields(seat = seat.name(), client = ?client.as_ref().map(|c| c.id())))]
 pub fn set_data_device_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where
