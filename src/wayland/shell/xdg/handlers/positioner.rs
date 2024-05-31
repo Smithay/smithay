@@ -68,9 +68,9 @@ where
             xdg_positioner::Request::SetConstraintAdjustment {
                 constraint_adjustment,
             } => {
-                let constraint_adjustment =
-                    xdg_positioner::ConstraintAdjustment::from_bits_truncate(constraint_adjustment);
-                state.constraint_adjustment = constraint_adjustment;
+                if let WEnum::Value(constraint_adjustment) = constraint_adjustment {
+                    state.constraint_adjustment = constraint_adjustment;
+                }
             }
             xdg_positioner::Request::SetOffset { x, y } => {
                 state.offset = (x, y).into();
