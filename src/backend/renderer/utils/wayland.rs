@@ -1,3 +1,5 @@
+#[cfg(feature = "backend_drm")]
+use crate::wayland::drm_syncobj::{DrmSyncPoint, DrmSyncobjCachedState};
 use crate::{
     backend::renderer::{buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer},
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -56,12 +58,24 @@ unsafe impl Send for RendererSurfaceState {}
 unsafe impl Sync for RendererSurfaceState {}
 
 #[derive(Debug)]
-struct InnerBuffer(WlBuffer);
+struct InnerBuffer {
+    buffer: WlBuffer,
+    #[cfg(feature = "backend_drm")]
+    acquire_point: Option<DrmSyncPoint>,
+    #[cfg(feature = "backend_drm")]
+    release_point: Option<DrmSyncPoint>,
+}
 
 impl Drop for InnerBuffer {
     #[inline]
     fn drop(&mut self) {
-        self.0.release();
+        self.buffer.release();
+        #[cfg(feature = "backend_drm")]
+        if let Some(release_point) = &self.release_point {
+            if let Err(err) = release_point.signal() {
+                tracing::error!("Failed to signal syncobj release point: {}", err);
+            }
+        }
     }
 }
 
@@ -71,12 +85,11 @@ pub struct Buffer {
     inner: Arc<InnerBuffer>,
 }
 
-impl From<WlBuffer> for Buffer {
-    #[inline]
-    fn from(buffer: WlBuffer) -> Self {
-        Buffer {
-            inner: Arc::new(InnerBuffer(buffer)),
-        }
+impl Buffer {
+    #[cfg(feature = "backend_drm")]
+    #[allow(dead_code)]
+    pub(crate) fn acquire_point(&self) -> Option<&DrmSyncPoint> {
+        self.inner.acquire_point.as_ref()
     }
 }
 
@@ -85,29 +98,34 @@ impl std::ops::Deref for Buffer {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.inner.0
+        &self.inner.buffer
     }
 }
 
 impl PartialEq<WlBuffer> for Buffer {
     #[inline]
     fn eq(&self, other: &WlBuffer) -> bool {
-        self.inner.0 == *other
+        self.inner.buffer == *other
     }
 }
 
 impl PartialEq<WlBuffer> for &Buffer {
     #[inline]
     fn eq(&self, other: &WlBuffer) -> bool {
-        self.inner.0 == *other
+        self.inner.buffer == *other
     }
 }
 
 impl RendererSurfaceState {
     #[profiling::function]
     pub(crate) fn update_buffer(&mut self, states: &SurfaceData) {
-        let mut attrs_state = states.cached_state.get::<SurfaceAttributes>();
-        let attrs = attrs_state.current();
+        #[cfg(feature = "backend_drm")]
+        let mut guard = states.cached_state.get::<DrmSyncobjCachedState>();
+        #[cfg(feature = "backend_drm")]
+        let syncobj_state = guard.current();
+
+        let mut guard = states.cached_state.get::<SurfaceAttributes>();
+        let attrs = guard.current();
         self.buffer_delta = attrs.buffer_delta.take();
 
         if let Some(delta) = self.buffer_delta {
@@ -129,7 +147,15 @@ impl RendererSurfaceState {
                 self.buffer_transform = attrs.buffer_transform.into();
 
                 if !self.buffer.as_ref().map_or(false, |b| b == buffer) {
-                    self.buffer = Some(Buffer::from(buffer));
+                    self.buffer = Some(Buffer {
+                        inner: Arc::new(InnerBuffer {
+                            buffer,
+                            #[cfg(feature = "backend_drm")]
+                            acquire_point: syncobj_state.acquire_point.take(),
+                            #[cfg(feature = "backend_drm")]
+                            release_point: syncobj_state.release_point.take(),
+                        }),
+                    });
                 }
 
                 self.textures.clear();
