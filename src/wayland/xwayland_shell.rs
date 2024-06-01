@@ -31,7 +31,28 @@
 //!     }
 //! }
 //!
+//! #  use smithay::wayland::selection::SelectionTarget;
+//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
+//! #  use smithay::utils::{Rectangle, Logical};
+//! #  use std::os::unix::io::OwnedFd;
+//! #  use std::process::Stdio;
+//!
 //! impl XwmHandler for State {
+//!     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm {
+//!         // ...
+//! #       unreachable!()
+//!     }
+//!     fn new_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn new_override_redirect_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn mapped_override_redirect_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn unmapped_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn destroyed_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn configure_request(&mut self, xwm: XwmId, window: X11Surface, x: Option<i32>, y: Option<i32>, w: Option<u32>, h: Option<u32>, reorder: Option<Reorder>) { /* ... */ }
+//!     fn configure_notify(&mut self, xwm: XwmId, window: X11Surface, geometry: Rectangle<i32, Logical>, above: Option<u32>) { /* ... */ }
+//!     fn resize_request(&mut self, xwm: XwmId, window: X11Surface, button: u32, resize_edge: ResizeEdge) { /* ... */ }
+//!     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32) { /* ... */ }
+//!     fn send_selection(&mut self, xwm: XwmId, selection: SelectionTarget, mime_type: String, fd: OwnedFd) { /* ... */ }
 //! }
 //!
 //! // implement Dispatch for your state.
