@@ -141,9 +141,6 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
-        #[cfg(feature = "xwayland")]
-        X11Wm::commit_hook(self, surface);
-
         on_commit_buffer_handler::<Self>(surface);
         self.backend_data.early_import(surface);
 
