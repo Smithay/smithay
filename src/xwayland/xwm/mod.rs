@@ -17,7 +17,7 @@
 //!
 //!  - Via the [xwayland shell](crate::wayland::xwayland::shell) protocol, a
 //!    serial number is set on the surface, and it is given the
-//!    "xwayland_surface" role.
+//!    "xwayland_shell" role.
 //!  - Via the X11 connection, a matching `WL_SURFACE_SERIAL` atom is set on the
 //!    X11 window, which can be queried with
 //!    [`X11Surface::wl_surface_serial()`].
@@ -93,7 +93,11 @@
 
 use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
-    wayland::{compositor, selection::SelectionTarget, xwayland_shell},
+    wayland::{
+        compositor,
+        selection::SelectionTarget,
+        xwayland_shell::{self, XWaylandShellHandler},
+    },
 };
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
 use rustix::fs::OFlags;
@@ -134,8 +138,6 @@ use x11rb::{
 mod surface;
 pub use self::surface::*;
 
-/// X11 wl_surface role
-pub const X11_SURFACE_ROLE: &str = "x11_surface";
 // copied from wlroots - docs say "maximum size can vary widely depending on the implementation"
 // and there is no way to query the maximum size, you just get a non-descriptive `Length` error...
 const INCR_CHUNK_SIZE: usize = 64 * 1024;
@@ -278,7 +280,7 @@ pub trait XwmHandler {
     ///
     /// To grant the wish you have to call `X11Surface::set_mapped(true)` for the window to become visible.
     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface);
-    /// Notification a window was mapped sucessfully and now has a usable `wl_surface` attached.
+    /// Notification a window was mapped sucessfully
     fn map_window_notify(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
@@ -388,7 +390,7 @@ pub struct X11Wm {
     wm_window: X11Window,
     atoms: Atoms,
 
-    unpaired_surfaces: HashMap<u64, X11Window>,
+    pub(crate) unpaired_surfaces: HashMap<u64, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
 
     // selections
@@ -396,7 +398,7 @@ pub struct X11Wm {
     clipboard: XWmSelection,
     primary: XWmSelection,
 
-    windows: Vec<X11Surface>,
+    pub(crate) windows: Vec<X11Surface>,
     // oldest mapped -> newest
     client_list: Vec<X11Window>,
     // bottom -> top
@@ -2175,8 +2177,7 @@ where
                         let surface_state = xsurface.state.clone();
                         let mut guard = surface_state.lock().unwrap();
                         guard.wl_surface_serial = Some(serial);
-
-                        xwm.unpaired_surfaces.insert(serial, msg.window);
+                        let window_id = xsurface.window_id();
 
                         if let Some(wl_surface) =
                             xwayland_shell::XWaylandShellHandler::xwayland_shell_state(state)
@@ -2184,13 +2185,21 @@ where
                                 .clone()
                         {
                             debug!(
-                                window = ?msg.window,
+                                window = ?window_id,
                                 wl_surface = ?wl_surface.id().protocol_id(),
                                 "associated X11 window to wl_surface",
                             );
 
-                            guard.wl_surface = Some(wl_surface);
+                            guard.wl_surface = Some(wl_surface.clone());
+                            XWaylandShellHandler::surface_associated(state, wl_surface, window_id);
                         } else {
+                            debug!(
+                                window = ?msg.window,
+                                serial = serial,
+                                "no matching wl_surface for X11 window",
+                            );
+                            let xwm = state.xwm_state(xwm_id);
+                            xwm.unpaired_surfaces.insert(serial, window_id);
                             guard.wl_surface = None;
                         }
                     }
