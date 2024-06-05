@@ -94,7 +94,6 @@
 use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
     wayland::{
-        compositor,
         selection::SelectionTarget,
         xwayland_shell::{self, XWaylandShellHandler},
     },
@@ -112,7 +111,7 @@ use std::{
     sync::Arc,
 };
 use tracing::{debug, debug_span, error, info, trace, warn};
-use wayland_server::{protocol::wl_surface::WlSurface, Client, Resource};
+use wayland_server::{Client, Resource};
 
 use x11rb::{
     connection::Connection as _,
@@ -1015,53 +1014,6 @@ impl X11Wm {
         order: impl Iterator<Item = &'a W>,
     ) -> Result<(), ConnectionError> {
         self.update_stacking_order_impl(order, StackingDirection::Upwards)
-    }
-
-    /// This function has to be called on [`CompositorHandler::commit`](crate::wayland::compositor::CompositorHandler::commit) to
-    /// handle associating surfaces with X11 windows.
-    pub fn commit_hook<D>(state: &mut D, surface: &WlSurface)
-    where
-        D: XwmHandler,
-        D: xwayland_shell::XWaylandShellHandler,
-        D: 'static,
-    {
-        if let Some(client) = surface.client() {
-            // We only care about surfaces created by XWayland.
-            if let Some(xwm_id) = client
-                .get_data::<XWaylandClientData>()
-                .and_then(|data| data.user_data().get::<XwmId>())
-            {
-                let serial = compositor::with_states(surface, |states| {
-                    states
-                        .cached_state
-                        .current::<xwayland_shell::XWaylandShellCachedState>()
-                        .serial
-                });
-
-                // This handles the case that the serial was set on the X11
-                // window before surface. To handle the other case, we look for
-                // a matching surface when the WL_SURFACE_SERIAL atom is sent.
-                if let Some(serial) = serial {
-                    let xwm = XwmHandler::xwm_state(state, *xwm_id);
-
-                    if let Some(window) = xwm.unpaired_surfaces.remove(&serial) {
-                        if let Some(xsurface) = xwm
-                            .windows
-                            .iter()
-                            .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
-                        {
-                            debug!(
-                                window = xsurface.window_id(),
-                                wl_surface = ?surface.id().protocol_id(),
-                                "associated X11 window to wl_surface in commit hook",
-                            );
-
-                            xsurface.state.lock().unwrap().wl_surface = Some(surface.clone());
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /// Set the default cursor used by X clients.
