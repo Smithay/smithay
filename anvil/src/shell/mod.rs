@@ -1,8 +1,7 @@
 use std::cell::RefCell;
 
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::XWaylandClientData;
-
+use smithay::xwayland::{X11Wm, XWaylandClientData};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
@@ -34,7 +33,6 @@ use smithay::{
             xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData},
         },
     },
-    xwayland::X11Wm,
 };
 
 use crate::{
