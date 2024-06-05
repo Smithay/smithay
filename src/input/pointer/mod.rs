@@ -33,17 +33,11 @@ use tracing::{info_span, instrument};
 pub struct PointerHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<PointerInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) last_enter: Arc<Mutex<Option<Serial>>>,
+    pub(crate) wl_pointer: Arc<crate::wayland::seat::pointer::WlPointerHandle>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_pointers: Arc<Mutex<Vec<wayland_server::protocol::wl_pointer::WlPointer>>>,
+    pub(crate) wp_pointer_gestures: Arc<crate::wayland::pointer_gestures::WpPointerGesturePointerHandle>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_relative_pointers: Arc<Mutex<Vec<wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1>>>,
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_swipe_gestures: Arc<Mutex<Vec<wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_swipe_v1::ZwpPointerGestureSwipeV1>>>,
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_pinch_gestures: Arc<Mutex<Vec<wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1>>>,
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_hold_gestures: Arc<Mutex<Vec<wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_hold_v1::ZwpPointerGestureHoldV1>>>,
+    pub(crate) wp_relative: Arc<crate::wayland::relative_pointer::WpRelativePointerHandle>,
     pub(crate) span: tracing::Span,
 }
 
@@ -61,12 +55,9 @@ impl<D: SeatHandler> fmt::Debug for PointerHandle<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerHandle")
             .field("inner", &self.inner)
-            .field("last_enter", &self.last_enter)
-            .field("known_pointers", &self.known_pointers)
-            .field("known_relative_pointers", &self.known_relative_pointers)
-            .field("known_swipe_gestures", &self.known_swipe_gestures)
-            .field("known_pinch_gestures", &self.known_pinch_gestures)
-            .field("known_hold_gestures", &self.known_hold_gestures)
+            .field("wl_seat", &self.wl_pointer)
+            .field("wp_pointer_gestures", &self.wp_pointer_gestures)
+            .field("wp_relative", &self.wp_relative)
             .finish()
     }
 }
@@ -77,17 +68,11 @@ impl<D: SeatHandler> Clone for PointerHandle<D> {
         Self {
             inner: self.inner.clone(),
             #[cfg(feature = "wayland_frontend")]
-            last_enter: self.last_enter.clone(),
+            wl_pointer: self.wl_pointer.clone(),
             #[cfg(feature = "wayland_frontend")]
-            known_pointers: self.known_pointers.clone(),
+            wp_pointer_gestures: self.wp_pointer_gestures.clone(),
             #[cfg(feature = "wayland_frontend")]
-            known_relative_pointers: self.known_relative_pointers.clone(),
-            #[cfg(feature = "wayland_frontend")]
-            known_swipe_gestures: self.known_swipe_gestures.clone(),
-            #[cfg(feature = "wayland_frontend")]
-            known_pinch_gestures: self.known_pinch_gestures.clone(),
-            #[cfg(feature = "wayland_frontend")]
-            known_hold_gestures: self.known_hold_gestures.clone(),
+            wp_relative: self.wp_relative.clone(),
             span: self.span.clone(),
         }
     }
@@ -163,17 +148,13 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         PointerHandle {
             inner: Arc::new(Mutex::new(PointerInternal::new())),
             #[cfg(feature = "wayland_frontend")]
-            last_enter: Arc::new(Mutex::new(None)),
+            wl_pointer: Arc::new(crate::wayland::seat::pointer::WlPointerHandle::default()),
             #[cfg(feature = "wayland_frontend")]
-            known_pointers: Arc::new(Mutex::new(Vec::new())),
+            wp_pointer_gestures: Arc::new(
+                crate::wayland::pointer_gestures::WpPointerGesturePointerHandle::default(),
+            ),
             #[cfg(feature = "wayland_frontend")]
-            known_relative_pointers: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(feature = "wayland_frontend")]
-            known_swipe_gestures: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(feature = "wayland_frontend")]
-            known_pinch_gestures: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(feature = "wayland_frontend")]
-            known_hold_gestures: Arc::new(Mutex::new(Vec::new())),
+            wp_relative: Arc::new(crate::wayland::relative_pointer::WpRelativePointerHandle::default()),
             span: info_span!("input_pointer"),
         }
     }
@@ -459,7 +440,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// In other words this will return `None` again, once a `pointer_leave` event occurred.
     #[cfg(feature = "wayland_frontend")]
     pub fn last_enter(&self) -> Option<Serial> {
-        *self.last_enter.lock().unwrap()
+        *self.wl_pointer.last_enter.lock().unwrap()
     }
 
     fn get_seat(&self, data: &mut D) -> Seat<D> {
@@ -986,7 +967,7 @@ pub struct AxisFrame {
     pub axis: (f64, f64),
     /// Discrete representation of scroll value per axis, if available
     pub v120: Option<(i32, i32)>,
-    /// If the axis is considered having stoped movement
+    /// If the axis is considered having stopped movement
     ///
     /// Only useful in conjunction of AxisSource::Finger events
     pub stop: (bool, bool),

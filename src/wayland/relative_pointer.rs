@@ -84,21 +84,62 @@
 //! delegate_relative_pointer!(State);
 //! ```
 
+use std::sync::Mutex;
+
 use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_manager_v1::{self, ZwpRelativePointerManagerV1},
     zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
 };
 use wayland_server::{
     backend::{ClientId, GlobalId},
+    protocol::wl_surface::WlSurface,
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{
-    input::{pointer::PointerHandle, SeatHandler},
+    input::{
+        pointer::{PointerHandle, RelativeMotionEvent},
+        SeatHandler,
+    },
     wayland::seat::PointerUserData,
 };
 
 const MANAGER_VERSION: u32 = 1;
+
+#[derive(Debug, Default)]
+pub(crate) struct WpRelativePointerHandle {
+    known_relative_pointers: Mutex<Vec<ZwpRelativePointerV1>>,
+}
+
+impl WpRelativePointerHandle {
+    fn new_relative_pointer(&self, pointer: ZwpRelativePointerV1) {
+        self.known_relative_pointers.lock().unwrap().push(pointer);
+    }
+
+    pub(super) fn relative_motion(&self, surface: &WlSurface, event: &RelativeMotionEvent) {
+        self.for_each_focused_pointer(surface, |ptr| {
+            let utime_hi = (event.utime >> 32) as u32;
+            let utime_lo = (event.utime & 0xffffffff) as u32;
+            ptr.relative_motion(
+                utime_hi,
+                utime_lo,
+                event.delta.x,
+                event.delta.y,
+                event.delta_unaccel.x,
+                event.delta_unaccel.y,
+            );
+        })
+    }
+
+    fn for_each_focused_pointer(&self, surface: &WlSurface, mut f: impl FnMut(ZwpRelativePointerV1)) {
+        let inner = self.known_relative_pointers.lock().unwrap();
+        for ptr in &*inner {
+            if ptr.id().same_client_as(&surface.id()) {
+                f(ptr.clone())
+            }
+        }
+    }
+}
 
 /// User data of ZwpRelativePointerV1 object
 #[derive(Debug)]
@@ -157,7 +198,7 @@ where
                 };
                 let pointer = data_init.init(id, user_data);
                 if let Some(handle) = handle {
-                    handle.new_relative_pointer(pointer);
+                    handle.wp_relative.new_relative_pointer(pointer);
                 }
             }
             zwp_relative_pointer_manager_v1::Request::Destroy => {}
@@ -214,6 +255,7 @@ where
     ) {
         if let Some(ref handle) = data.handle {
             handle
+                .wp_relative
                 .known_relative_pointers
                 .lock()
                 .unwrap()
