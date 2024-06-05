@@ -61,7 +61,7 @@
 
 use std::collections::HashMap;
 
-use tracing::debug;
+use tracing::{debug, warn};
 use wayland_protocols::xwayland::shell::v1::server::{
     xwayland_shell_v1::{self, XwaylandShellV1},
     xwayland_surface_v1::{self, XwaylandSurfaceV1},
@@ -178,6 +178,7 @@ impl<D> Dispatch<XwaylandShellV1, (), D> for XWaylandShellState
 where
     D: Dispatch<XwaylandShellV1, ()>,
     D: Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>,
+    D: XWaylandShellHandler + XwmHandler,
     D: 'static,
 {
     fn request(
@@ -195,6 +196,8 @@ where
                     resource.post_error(xwayland_shell_v1::Error::Role, "Surface already has a role.");
                     return;
                 }
+
+                compositor::add_pre_commit_hook::<D, _>(&surface, serial_commit_hook);
 
                 data_init.init(id, XWaylandSurfaceUserData { wl_surface: surface });
                 // We call the handler callback once the serial is set.
@@ -215,7 +218,7 @@ where
     D: XwmHandler,
 {
     fn request(
-        state: &mut D,
+        _state: &mut D,
         _client: &Client,
         _resource: &XwaylandSurfaceV1,
         request: <XwaylandSurfaceV1 as Resource>::Request,
@@ -233,40 +236,6 @@ where
                 compositor::with_states(&data.wl_surface, |states| {
                     states.cached_state.pending::<XWaylandShellCachedState>().serial = Some(serial);
                 });
-
-                // Register to commit state
-                compositor::add_pre_commit_hook::<D, _>(&data.wl_surface, register_serial_commit_hook);
-
-                // Now check if the serial has already been set on the X11 window
-                if let Some(xsurface) = {
-                    let xwm_id = _client
-                        .get_data::<XWaylandClientData>()
-                        .and_then(|data| data.user_data().get::<XwmId>());
-
-                    xwm_id.and_then(|xwm_id| {
-                        let xwm = XwmHandler::xwm_state(state, *xwm_id);
-                        let window = xwm.unpaired_surfaces.get(&serial);
-                        window.and_then(|window| {
-                            xwm.windows
-                                .iter()
-                                .find(|x| x.window_id() == *window || x.mapped_window_id() == Some(*window))
-                        })
-                    })
-                } {
-                    debug!(
-                        mapped_window_id = xsurface.mapped_window_id(),
-                        window_id = xsurface.window_id(),
-                        wl_surface = ?data.wl_surface.id().protocol_id(),
-                        "associated X11 window to wl_surface in SetSerial request",
-                    );
-                    let window_id = xsurface.window_id();
-                    XWaylandShellHandler::surface_associated(state, data.wl_surface.clone(), window_id);
-                } else {
-                    debug!(
-                        wl_surface = ?data.wl_surface.id().protocol_id(),
-                        "no matching X11 window found for wl_surface in commit hook",
-                    );
-                }
             }
             xwayland_surface_v1::Request::Destroy => {
                 // Any already existing associations are unaffected.
@@ -276,7 +245,7 @@ where
     }
 }
 
-fn register_serial_commit_hook<D: XWaylandShellHandler + 'static>(
+fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + 'static>(
     state: &mut D,
     _dh: &DisplayHandle,
     surface: &WlSurface,
@@ -284,9 +253,48 @@ fn register_serial_commit_hook<D: XWaylandShellHandler + 'static>(
     if let Some(serial) = compositor::with_states(surface, |states| {
         states.cached_state.pending::<XWaylandShellCachedState>().serial
     }) {
-        XWaylandShellHandler::xwayland_shell_state(state)
-            .by_serial
-            .insert(serial, surface.clone());
+        if let Some(client) = surface.client() {
+            // We only care about surfaces created by XWayland.
+            if let Some(xwm_id) = client
+                .get_data::<XWaylandClientData>()
+                .and_then(|data| data.user_data().get::<XwmId>())
+            {
+                let xwm = XwmHandler::xwm_state(state, *xwm_id);
+
+                // This handles the case that the serial was set on the X11
+                // window before surface. To handle the other case, we look for
+                // a matching surface when the WL_SURFACE_SERIAL atom is sent.
+                if let Some(window) = xwm.unpaired_surfaces.remove(&serial) {
+                    if let Some(xsurface) = xwm
+                        .windows
+                        .iter()
+                        .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
+                    {
+                        debug!(
+                            window = xsurface.window_id(),
+                            wl_surface = ?surface.id().protocol_id(),
+                            "associated X11 window to wl_surface in commit hook",
+                        );
+
+                        xsurface.state.lock().unwrap().wl_surface = Some(surface.clone());
+
+                        let window_id = xsurface.window_id();
+                        XWaylandShellHandler::surface_associated(state, surface.clone(), window_id);
+                    } else {
+                        warn!(
+                            window,
+                            wl_surface = ?surface.id().protocol_id(),
+                            "Unknown X11 window associated to wl_surface in commit hook"
+                        )
+                    }
+                } else {
+                    // this is necessary for the atom-handler to look up the matching surface
+                    XWaylandShellHandler::xwayland_shell_state(state)
+                        .by_serial
+                        .insert(serial, surface.clone());
+                }
+            }
+        }
     }
 }
 
