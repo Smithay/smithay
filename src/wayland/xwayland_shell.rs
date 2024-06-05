@@ -245,11 +245,11 @@ where
 
                     xwm_id.and_then(|xwm_id| {
                         let xwm = XwmHandler::xwm_state(state, *xwm_id);
-                        let window = xwm.unpaired_surfaces.remove(&serial);
+                        let window = xwm.unpaired_surfaces.get(&serial);
                         window.and_then(|window| {
                             xwm.windows
                                 .iter()
-                                .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
+                                .find(|x| x.window_id() == *window || x.mapped_window_id() == Some(*window))
                         })
                     })
                 } {
@@ -257,10 +257,8 @@ where
                         mapped_window_id = xsurface.mapped_window_id(),
                         window_id = xsurface.window_id(),
                         wl_surface = ?data.wl_surface.id().protocol_id(),
-                        "associated X11 window to wl_surface in commit hook",
+                        "associated X11 window to wl_surface in SetSerial request",
                     );
-
-                    xsurface.state.lock().unwrap().wl_surface = Some(data.wl_surface.clone());
                     let window_id = xsurface.window_id();
                     XWaylandShellHandler::surface_associated(state, data.wl_surface.clone(), window_id);
                 } else {
