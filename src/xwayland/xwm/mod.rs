@@ -94,7 +94,9 @@
 use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
     wayland::{
-        compositor, selection::SelectionTarget, xwayland_shell::{self, XWaylandShellHandler}
+        compositor,
+        selection::SelectionTarget,
+        xwayland_shell::{self, XWaylandShellHandler},
     },
 };
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
