@@ -232,7 +232,10 @@ use crate::{
         Frame, ImportAll, Renderer, Texture,
     },
     utils::{Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
-    wayland::compositor::{self, SurfaceData, TraversalAction},
+    wayland::{
+        alpha_modifier::AlphaModifierSurfaceCachedState,
+        compositor::{self, SurfaceData, TraversalAction},
+    },
 };
 
 use super::{CommitCounter, Element, Id, Kind, RenderElement, UnderlyingStorage};
@@ -351,6 +354,9 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         let id = Id::from_wayland_resource(surface);
         crate::backend::renderer::utils::import_surface(renderer, states)?;
 
+        let alpha_modifier_state = states.cached_state.current::<AlphaModifierSurfaceCachedState>();
+        let alpha_multiplier = alpha_modifier_state.multiplier().unwrap_or(u32::MAX) as f32 / u32::MAX as f32;
+
         let Some(data_ref) = states.data_map.get::<RendererSurfaceStateUserData>() else {
             return Ok(None);
         };
@@ -358,7 +364,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             renderer,
             id,
             location,
-            alpha,
+            alpha * alpha_multiplier,
             kind,
             &data_ref.borrow(),
         ))
