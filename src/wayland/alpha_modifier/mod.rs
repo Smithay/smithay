@@ -1,5 +1,8 @@
 //! Implementation of `wp_alpha_modifier` protocol
 //!
+//! [`WaylandSurfaceRenderElement`][`crate::backend::renderer::element::surface::WaylandSurfaceRenderElement`]
+//! takes the alpha multiplier into account automatically.
+//!
 //! ### Example
 //!
 //! ```no_run
