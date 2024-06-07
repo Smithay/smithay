@@ -41,10 +41,9 @@
 //!
 use std::{
     any::{Any, TypeId},
-    cell::{Ref, RefCell},
     collections::HashMap,
     fmt,
-    rc::Rc,
+    sync::{Arc, Mutex},
 };
 
 use super::{
@@ -545,7 +544,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                 let src_node = import_on_src_node(dmabuf, Some(damage), &mut texture, first, None, devices)?;
 
                 if src_node != target_node {
-                    let mut texture_internal = texture.0.borrow_mut();
+                    let mut texture_internal = texture.0.lock().unwrap();
                     let api_textures = texture_internal.textures.get_mut(&TypeId::of::<A>()).unwrap();
 
                     {
@@ -858,6 +857,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -889,6 +889,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -928,6 +929,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -959,6 +961,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1346,7 +1349,7 @@ where
 
 /// [`Texture`]s produced by a [`MultiRenderer`].
 #[derive(Debug, Clone)]
-pub struct MultiTexture(Rc<RefCell<MultiTextureInternal>>);
+pub struct MultiTexture(Arc<Mutex<MultiTextureInternal>>);
 #[derive(Debug)]
 struct MultiTextureInternal {
     textures: HashMap<TypeId, HashMap<DrmNode, GpuSingleTexture>>,
@@ -1382,18 +1385,18 @@ impl MultiTexture {
             .and_then(|surface| {
                 surface
                     .data_map
-                    .get::<Rc<RefCell<MultiTextureInternal>>>()
+                    .get::<Arc<Mutex<MultiTextureInternal>>>()
                     .cloned()
             })
             .unwrap_or_else(|| {
-                Rc::new(RefCell::new(MultiTextureInternal {
+                Arc::new(Mutex::new(MultiTextureInternal {
                     textures: HashMap::new(),
                     size,
                     format: None,
                 }))
             });
         {
-            let mut internal = internal.borrow_mut();
+            let mut internal = internal.lock().unwrap();
             if internal.size != size {
                 internal.textures.clear();
                 internal.size = size;
@@ -1403,7 +1406,7 @@ impl MultiTexture {
     }
 
     fn new(size: Size<i32, BufferCoords>) -> MultiTexture {
-        MultiTexture(Rc::new(RefCell::new(MultiTextureInternal {
+        MultiTexture(Arc::new(Mutex::new(MultiTextureInternal {
             textures: HashMap::new(),
             size,
             format: None,
@@ -1413,34 +1416,32 @@ impl MultiTexture {
     fn get<A: GraphicsApi + 'static>(
         &self,
         render: &DrmNode,
-    ) -> Option<Ref<'_, <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>>
+    ) -> Option<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>
     where
-        <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: 'static,
+        <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + 'static,
     {
-        let tex = self.0.borrow();
-        Ref::filter_map(tex, |tex| {
-            tex.textures
-                .get(&TypeId::of::<A>())
-                .and_then(|textures| textures.get(render))
-                .and_then(|texture| match texture {
-                    GpuSingleTexture::Direct(texture) => Some(texture),
-                    GpuSingleTexture::Dma { texture, .. } => Some(texture),
-                    GpuSingleTexture::Mem { texture, .. } => texture.as_ref(),
-                })
-                .and_then(|texture| {
-                    <dyn Any>::downcast_ref::<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>(
-                        &**texture,
-                    )
-                })
-        })
-        .ok()
+        let tex = self.0.lock().unwrap();
+        tex.textures
+            .get(&TypeId::of::<A>())
+            .and_then(|textures| textures.get(render))
+            .and_then(|texture| match texture {
+                GpuSingleTexture::Direct(texture) => Some(texture),
+                GpuSingleTexture::Dma { texture, .. } => Some(texture),
+                GpuSingleTexture::Mem { texture, .. } => texture.as_ref(),
+            })
+            .and_then(|texture| {
+                <dyn Any>::downcast_ref::<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>(
+                    &**texture,
+                )
+            })
+            .cloned()
     }
 
     fn needs_synchronization<A: GraphicsApi + 'static>(&self, render: &DrmNode) -> Option<SyncPoint>
     where
         <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: 'static,
     {
-        let mut tex = self.0.borrow_mut();
+        let mut tex = self.0.lock().unwrap();
         tex.textures
             .get_mut(&TypeId::of::<A>())
             .and_then(|textures| textures.get_mut(render))
@@ -1458,7 +1459,7 @@ impl MultiTexture {
     ) where
         <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: 'static,
     {
-        let mut tex = self.0.borrow_mut();
+        let mut tex = self.0.lock().unwrap();
         let format = texture.format();
         if format != tex.format && !tex.textures.is_empty() {
             warn!(has = ?tex.format, got = ?format, "Multi-SubTexture with wrong format!");
@@ -1468,7 +1469,7 @@ impl MultiTexture {
 
         trace!(
             "Inserting into: {:p} for {:?}: {:?}",
-            self.0.as_ptr(),
+            Arc::as_ptr(&self.0),
             render,
             tex
         );
@@ -1496,7 +1497,7 @@ impl MultiTexture {
         <T::Device as ApiDevice>::Renderer: ExportMem,
         <<T::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
-        let mut tex_ref = self.0.borrow_mut();
+        let mut tex_ref = self.0.lock().unwrap();
         let tex = &mut *tex_ref;
 
         let textures = tex.textures.entry(TypeId::of::<R>()).or_default();
@@ -1557,16 +1558,16 @@ impl MultiTexture {
 
 impl Texture for MultiTexture {
     fn size(&self) -> Size<i32, BufferCoords> {
-        self.0.borrow().size
+        self.0.lock().unwrap().size
     }
     fn width(&self) -> u32 {
-        self.0.borrow().size.w as u32
+        self.0.lock().unwrap().size.w as u32
     }
     fn height(&self) -> u32 {
-        self.0.borrow().size.h as u32
+        self.0.lock().unwrap().size.h as u32
     }
     fn format(&self) -> Option<Fourcc> {
-        self.0.borrow().format
+        self.0.lock().unwrap().format
     }
 }
 
@@ -1578,6 +1579,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1650,9 +1652,9 @@ where
         } else {
             warn!(
                 "Failed to render texture {:?}, import for wrong devices {:?}? {:?}",
-                texture.0.as_ptr(),
+                Arc::as_ptr(&texture.0),
                 self.node,
-                texture.0.borrow(),
+                texture.0.lock().unwrap(),
             );
             Ok(())
         }
@@ -1683,6 +1685,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1720,6 +1723,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1776,6 +1780,7 @@ where
     R: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1811,6 +1816,7 @@ where
     R: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -2322,6 +2328,7 @@ where
     R: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -2351,7 +2358,7 @@ where
                 .as_ref()
                 .is_some_and(|target| src_node == *target.device.node())
             {
-                let mut texture_internal = texture.0.borrow_mut();
+                let mut texture_internal = texture.0.lock().unwrap();
                 // make sure our target exists
                 texture_internal.textures.entry(TypeId::of::<R>()).or_default();
 
@@ -2402,7 +2409,7 @@ where
                 .iter_mut()
                 .find(|other| src_node == *other.node())
             {
-                let mut texture_internal = texture.0.borrow_mut();
+                let mut texture_internal = texture.0.lock().unwrap();
                 let api_textures = texture_internal.textures.get_mut(&TypeId::of::<R>()).unwrap();
                 let mut target_texture = api_textures.remove(self.render.node());
                 let src_texture = match api_textures.get(&src_node).unwrap() {
@@ -2518,6 +2525,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -2609,6 +2617,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
