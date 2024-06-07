@@ -278,7 +278,7 @@ where
         + ImportEgl
         + ExportMem
         + 'static,
-    <R as Renderer>::TextureId: Clone,
+    <R as Renderer>::TextureId: Clone + Send,
 {
     fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
