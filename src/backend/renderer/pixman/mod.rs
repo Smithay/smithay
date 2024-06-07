@@ -348,6 +348,7 @@ impl<'frame> Frame for PixmanFrame<'frame> {
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        _opaque_regions: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {

@@ -271,6 +271,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
@@ -280,6 +281,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
             src,
             dst,
             damage,
+            opaque_regions,
             src_transform,
             alpha,
         )
@@ -298,6 +300,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
         output_scale: impl Into<crate::utils::Scale<f64>>,
         src_transform: Transform,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
         alpha: f32,
     ) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().render_texture_at(
@@ -307,6 +310,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
             output_scale,
             src_transform,
             damage,
+            opaque_regions,
             alpha,
         )
     }
@@ -536,8 +540,9 @@ impl RenderElement<GlowRenderer> for PixelShaderElement {
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage)
+        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage, opaque_regions)
     }
 
     fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage<'_>> {

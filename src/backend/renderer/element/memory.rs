@@ -66,6 +66,7 @@
 //! #         _: Rectangle<f64, Buffer>,
 //! #         _: Rectangle<i32, Physical>,
 //! #         _: &[Rectangle<i32, Physical>],
+//! #         _: &[Rectangle<i32, Physical>],
 //! #         _: Transform,
 //! #         _: f32,
 //! #     ) -> Result<(), Self::Error> {
@@ -751,8 +752,17 @@ where
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        frame.render_texture_from_to(&self.texture, src, dst, damage, self.buffer_transform, self.alpha)
+        frame.render_texture_from_to(
+            &self.texture,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            self.buffer_transform,
+            self.alpha,
+        )
     }
 
     #[inline]

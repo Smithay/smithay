@@ -70,6 +70,7 @@
 //! #         _: Rectangle<f64, Buffer>,
 //! #         _: Rectangle<i32, Physical>,
 //! #         _: &[Rectangle<i32, Physical>],
+//! #         _: &[Rectangle<i32, Physical>],
 //! #         _: Transform,
 //! #         _: f32,
 //! #     ) -> Result<(), Self::Error> {
@@ -287,6 +288,7 @@ pub struct OutputDamageTracker {
     damage: Vec<Rectangle<i32, Physical>>,
     element_damage: Vec<Rectangle<i32, Physical>>,
     opaque_regions: Vec<(usize, Vec<Rectangle<i32, Physical>>)>,
+    element_opaque_regions: Vec<Rectangle<i32, Physical>>,
     span: tracing::Span,
 }
 
@@ -349,6 +351,7 @@ impl OutputDamageTracker {
             damage: Default::default(),
             element_damage: Default::default(),
             opaque_regions: Default::default(),
+            element_opaque_regions: Default::default(),
             span: info_span!("renderer_damage"),
         }
     }
@@ -365,6 +368,7 @@ impl OutputDamageTracker {
             damage: Default::default(),
             element_damage: Default::default(),
             opaque_regions: Default::default(),
+            element_opaque_regions: Default::default(),
             last_state: Default::default(),
             span: info_span!("renderer_damage", output = output.name()),
         }
@@ -382,6 +386,7 @@ impl OutputDamageTracker {
             damage_shaper: Default::default(),
             damage: Default::default(),
             element_damage: Default::default(),
+            element_opaque_regions: Default::default(),
             opaque_regions: Default::default(),
             last_state: Default::default(),
         }
@@ -832,6 +837,7 @@ impl OutputDamageTracker {
         let render_res = (|| {
             // we have to take the element damage to be able to move it around
             let mut element_damage = std::mem::take(&mut self.element_damage);
+            let mut element_opaque_regions = std::mem::take(&mut self.element_opaque_regions);
             let mut frame = renderer.render(output_size, output_transform)?;
 
             element_damage.clear();
@@ -883,6 +889,20 @@ impl OutputDamageTracker {
                     continue;
                 }
 
+                element_opaque_regions.clear();
+                if let Some(regions) = self.opaque_regions.iter().find_map(|(index, regions)| {
+                    if *index == z_index {
+                        Some(regions.iter().copied().map(|mut rect| {
+                            rect.loc -= element_geometry.loc;
+                            rect
+                        }))
+                    } else {
+                        None
+                    }
+                }) {
+                    element_opaque_regions.extend(regions);
+                };
+
                 trace!(
                     "rendering element {:?} with geometry {:?} and damage {:?}",
                     element_id,
@@ -890,11 +910,18 @@ impl OutputDamageTracker {
                     element_damage,
                 );
 
-                element.draw(&mut frame, element.src(), element_geometry, &element_damage)?;
+                element.draw(
+                    &mut frame,
+                    element.src(),
+                    element_geometry,
+                    &element_damage,
+                    &element_opaque_regions,
+                )?;
             }
 
             // return the element damage so that we can re-use the allocation
             std::mem::swap(&mut self.element_damage, &mut element_damage);
+            std::mem::swap(&mut self.element_opaque_regions, &mut element_opaque_regions);
             frame.finish()
         })();
 

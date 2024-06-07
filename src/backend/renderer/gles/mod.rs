@@ -403,6 +403,8 @@ pub struct GlesRenderer {
     dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
     vbos: [ffi::types::GLuint; 3],
     vertices: Vec<f32>,
+    non_opaque_damage: Vec<Rectangle<i32, Physical>>,
+    opaque_damage: Vec<Rectangle<i32, Physical>>,
 
     // cleanup
     destruction_callback: Receiver<CleanupResource>,
@@ -752,6 +754,8 @@ impl GlesRenderer {
             buffers: Vec::new(),
             dmabuf_cache: std::collections::HashMap::new(),
             vertices: Vec::with_capacity(6 * 16),
+            non_opaque_damage: Vec::with_capacity(16),
+            opaque_damage: Vec::with_capacity(16),
 
             destruction_callback: rx,
             destruction_callback_sender: tx,
@@ -2529,10 +2533,21 @@ impl<'frame> Frame for GlesFrame<'frame> {
         src: Rectangle<f64, BufferCoord>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
     ) -> Result<(), GlesError> {
-        self.render_texture_from_to(texture, src, dest, damage, transform, alpha, None, &[])
+        self.render_texture_from_to(
+            texture,
+            src,
+            dest,
+            damage,
+            opaque_regions,
+            transform,
+            alpha,
+            None,
+            &[],
+        )
     }
 
     fn transformation(&self) -> Transform {
@@ -2819,6 +2834,7 @@ impl<'frame> GlesFrame<'frame> {
         src: Rectangle<f64, BufferCoord>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
         program: Option<&GlesTexProgram>,
@@ -2842,34 +2858,99 @@ impl<'frame> GlesFrame<'frame> {
             tex_mat = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0) * tex_mat;
         }
 
-        let instances = damage.iter().flat_map(|rect| {
-            let dest_size = dest.size;
+        let render_texture = |renderer: &mut Self, damage: &[Rectangle<i32, Physical>]| {
+            let instances = damage.iter().flat_map(|rect| {
+                let dest_size = dest.size;
 
-            let rect_constrained_loc = rect
-                .loc
-                .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
-            let rect_clamped_size = rect
-                .size
-                .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+                let rect_constrained_loc = rect
+                    .loc
+                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_clamped_size = rect
+                    .size
+                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-            let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
-            [
-                rect.loc.x as f32,
-                rect.loc.y as f32,
-                rect.size.w as f32,
-                rect.size.h as f32,
-            ]
-        });
+                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                [
+                    rect.loc.x as f32,
+                    rect.loc.y as f32,
+                    rect.size.w as f32,
+                    rect.size.h as f32,
+                ]
+            });
 
-        self.render_texture(
-            texture,
-            tex_mat,
-            mat,
-            Some(instances),
-            alpha,
-            program,
-            additional_uniforms,
-        )
+            renderer.render_texture(
+                texture,
+                tex_mat,
+                mat,
+                Some(instances),
+                alpha,
+                program,
+                additional_uniforms,
+            )
+        };
+
+        // We split the damage in opaque and non opaque regions, for opaque regions we can
+        // disable blending. Most likely we did not clear regions marked as opaque, which can
+        // result in read-back when not disabling blending. This can be problematic on tile based
+        // renderers.
+        let mut non_opaque_damage = std::mem::take(&mut self.renderer.non_opaque_damage);
+        let mut opaque_damage = std::mem::take(&mut self.renderer.opaque_damage);
+        non_opaque_damage.clear();
+        opaque_damage.clear();
+
+        // If drawing is implicit opaque we can skip some logic and save
+        // a few operations. In case we have some user-provided alpha we
+        // can not disable blending, but should also have cleared the region
+        // previously anyway. In case we have no opaque regions we can also
+        // short cut the logic a bit.
+        let is_implicit_opaque = !texture.0.has_alpha && alpha == 1f32;
+        if is_implicit_opaque {
+            opaque_damage.extend_from_slice(damage);
+        } else if alpha != 1f32 || opaque_regions.is_empty() {
+            non_opaque_damage.extend_from_slice(damage);
+        } else {
+            non_opaque_damage.extend_from_slice(damage);
+            opaque_damage.extend_from_slice(damage);
+
+            non_opaque_damage =
+                Rectangle::subtract_rects_many_in_place(non_opaque_damage, opaque_regions.iter().copied());
+            opaque_damage =
+                Rectangle::subtract_rects_many_in_place(opaque_damage, non_opaque_damage.iter().copied());
+        }
+
+        tracing::trace!(non_opaque_damage = ?non_opaque_damage, opaque_damage = ?opaque_damage, "drawing texture");
+
+        let non_opaque_render_res = if !non_opaque_damage.is_empty() {
+            render_texture(self, &non_opaque_damage)
+        } else {
+            Ok(())
+        };
+
+        let opaque_render_res = if !opaque_damage.is_empty() {
+            unsafe {
+                self.renderer.gl.Disable(ffi::BLEND);
+            }
+
+            let res = render_texture(self, &opaque_damage);
+
+            unsafe {
+                self.renderer.gl.Enable(ffi::BLEND);
+                self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+            }
+
+            res
+        } else {
+            Ok(())
+        };
+
+        // Return the damage(s) to be able to re-use the allocation(s)
+        std::mem::swap(&mut self.renderer.non_opaque_damage, &mut non_opaque_damage);
+        std::mem::swap(&mut self.renderer.opaque_damage, &mut opaque_damage);
+
+        non_opaque_render_res?;
+        opaque_render_res?;
+
+        Ok(())
     }
 
     /// Render a texture to the current target using given projection matrix and alpha.

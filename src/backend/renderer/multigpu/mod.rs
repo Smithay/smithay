@@ -1212,6 +1212,7 @@ where
                             Rectangle::from_loc_and_size((0, 0), buffer_size).to_f64(),
                             Rectangle::from_loc_and_size((0, 0), self.size),
                             &damage,
+                            &[Rectangle::from_loc_and_size((0, 0), self.size)],
                             Transform::Normal,
                             1.0,
                         )
@@ -1300,7 +1301,15 @@ where
                         let damage = &[Rectangle::from_loc_and_size((0, 0), dst.size)];
                         frame.clear([0.0, 0.0, 0.0, 0.0], &[dst]).map_err(Error::Target)?;
                         frame
-                            .render_texture_from_to(&texture, src, dst, damage, Transform::Normal, 1.0)
+                            .render_texture_from_to(
+                                &texture,
+                                src,
+                                dst,
+                                damage,
+                                &[Rectangle::from_loc_and_size((0, 0), self.size)],
+                                Transform::Normal,
+                                1.0,
+                            )
                             .map_err(Error::Target)?;
                     }
                 }
@@ -1614,6 +1623,7 @@ where
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Error<R, T>> {
@@ -1632,7 +1642,7 @@ where
             self.frame
                 .as_mut()
                 .unwrap()
-                .render_texture_from_to(&texture, src, dst, damage, src_transform, alpha)
+                .render_texture_from_to(&texture, src, dst, damage, opaque_regions, src_transform, alpha)
                 .map_err(Error::Render)
         } else {
             warn!(
@@ -1986,6 +1996,7 @@ where
             Rectangle::from_loc_and_size((0, 0), src_texture.size()).to_f64(),
             Rectangle::from_loc_and_size((0, 0), shadow_size),
             damage,
+            &[],
             Transform::Normal,
             1.0,
         )

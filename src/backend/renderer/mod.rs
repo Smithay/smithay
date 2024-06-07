@@ -194,6 +194,7 @@ pub trait Frame {
         output_scale: impl Into<Scale<f64>>,
         src_transform: Transform,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
         alpha: f32,
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
@@ -207,6 +208,7 @@ pub trait Frame {
                     .to_physical_precise_round(output_scale),
             ),
             damage,
+            opaque_regions,
             src_transform,
             alpha,
         )
@@ -215,12 +217,14 @@ pub trait Frame {
     /// Render part of a texture as given by src to the current target into the rectangle described by dst
     /// as a flat 2d-plane after applying the inverse of the given transformation.
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
+    #[allow(clippy::too_many_arguments)]
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error>;

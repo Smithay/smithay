@@ -389,6 +389,7 @@ pub trait RenderElement<R: Renderer>: Element {
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
@@ -477,8 +478,9 @@ where
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
-        (*self).draw(frame, src, dst, damage)
+        (*self).draw(frame, src, dst, damage, opaque_regions)
     }
 }
 
@@ -760,6 +762,7 @@ macro_rules! render_elements_internal {
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
+            opaque_regions: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         where
         $(
@@ -776,7 +779,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, opaque_regions)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -804,6 +807,7 @@ macro_rules! render_elements_internal {
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
+            opaque_regions: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         {
             match self {
@@ -812,7 +816,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, opaque_regions)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1146,6 +1150,7 @@ macro_rules! render_elements_internal {
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
+/// #         _opaque_regions: &[Rectangle<i32, Physical>],
 /// #     ) -> Result<(), <R as Renderer>::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1176,6 +1181,7 @@ macro_rules! render_elements_internal {
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
+/// #         _opaque_regions: &[Rectangle<i32, Physical>],
 /// #     ) -> Result<(), <R as Renderer>::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1288,6 +1294,7 @@ macro_rules! render_elements_internal {
 /// #         _: &Self::TextureId,
 /// #         _: Rectangle<f64, Buffer>,
 /// #         _: Rectangle<i32, Physical>,
+/// #         _: &[Rectangle<i32, Physical>],
 /// #         _: &[Rectangle<i32, Physical>],
 /// #         _: Transform,
 /// #         _: f32,
@@ -1472,8 +1479,9 @@ where
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        self.0.draw(frame, src, dst, damage)
+        self.0.draw(frame, src, dst, damage, opaque_regions)
     }
 
     #[inline]

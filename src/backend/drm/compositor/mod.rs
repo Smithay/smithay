@@ -1324,7 +1324,7 @@ where
                 trace!("drawing frame element with damage: {:#?}", element_damage);
 
                 element
-                    .draw(&mut frame, src, dst, &element_damage)
+                    .draw(&mut frame, src, dst, &element_damage, &[])
                     .map_err(BlitFrameResultError::Rendering)?;
             }
 
@@ -3308,6 +3308,7 @@ where
                             src,
                             dst,
                             &[dst],
+                            &[],
                             element.transform(),
                             element.alpha(),
                         )?;
