@@ -857,7 +857,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -889,7 +889,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -929,7 +929,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -961,7 +961,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1356,6 +1356,9 @@ struct MultiTextureInternal {
     size: Size<i32, BufferCoords>,
     format: Option<Fourcc>,
 }
+// SAFETY: We require `Send` for textures of renderers suitable for the MultiRenderer.
+//  Type erasure just forces us to do this instead.
+unsafe impl Send for MultiTextureInternal {}
 
 type DamageAnyTextureMappings = Vec<(Rectangle<i32, BufferCoords>, Box<dyn Any + 'static>)>;
 
@@ -1418,7 +1421,7 @@ impl MultiTexture {
         render: &DrmNode,
     ) -> Option<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>
     where
-        <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + 'static,
+        <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send + 'static,
     {
         let tex = self.0.lock().unwrap();
         tex.textures
@@ -1579,7 +1582,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1685,7 +1688,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1723,7 +1726,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1780,7 +1783,7 @@ where
     R: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -1816,7 +1819,7 @@ where
     R: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -2328,7 +2331,7 @@ where
     R: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -2525,7 +2528,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
@@ -2617,7 +2620,7 @@ where
     T::Error: 'static,
     <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::TextureId: Clone + Send,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
