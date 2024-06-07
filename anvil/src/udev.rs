@@ -1059,6 +1059,9 @@ impl AnvilState<UdevData> {
                     }
                 };
                 compositor.set_debug_flags(self.backend_data.debug_flags);
+
+                let disable_direct_scanout = std::env::var("ANVIL_DISABLE_DIRECT_SCANOUT").is_ok();
+                compositor.use_direct_scanout(!disable_direct_scanout);
                 SurfaceComposition::Compositor(compositor)
             };
 
