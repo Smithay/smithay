@@ -84,6 +84,7 @@
 //! #         _: Rectangle<f64, Buffer>,
 //! #         _: Rectangle<i32, Physical>,
 //! #         _: &[Rectangle<i32, Physical>],
+//! #         _: &[Rectangle<i32, Physical>],
 //! #         _: Transform,
 //! #         _: f32,
 //! #     ) -> Result<(), Self::Error> {
@@ -242,6 +243,7 @@
 //! #         _: &Self::TextureId,
 //! #         _: Rectangle<f64, Buffer>,
 //! #         _: Rectangle<i32, Physical>,
+//! #         _: &[Rectangle<i32, Physical>],
 //! #         _: &[Rectangle<i32, Physical>],
 //! #         _: Transform,
 //! #         _: f32,
@@ -903,12 +905,21 @@ where
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
         if frame.id() != self.renderer_id {
             warn!("trying to render texture from different renderer");
             return Ok(());
         }
 
-        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
+        frame.render_texture_from_to(
+            &self.texture,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            self.transform,
+            self.alpha,
+        )
     }
 }

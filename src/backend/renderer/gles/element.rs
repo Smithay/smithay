@@ -113,6 +113,7 @@ impl RenderElement<GlesRenderer> for PixelShaderElement {
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
+        _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         frame.render_pixel_shader_to(
             &self.shader,

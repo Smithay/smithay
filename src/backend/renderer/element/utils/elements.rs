@@ -99,8 +99,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        self.element.draw(frame, src, dst, damage)
+        self.element.draw(frame, src, dst, damage, opaque_regions)
     }
 
     #[inline]
@@ -282,8 +283,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        self.element.draw(frame, src, dst, damage)
+        self.element.draw(frame, src, dst, damage, opaque_regions)
     }
 
     #[inline]
@@ -383,8 +385,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        self.element.draw(frame, src, dst, damage)
+        self.element.draw(frame, src, dst, damage, opaque_regions)
     }
 
     #[inline]

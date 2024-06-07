@@ -340,6 +340,7 @@ where
             1.,
             Transform::Normal,
             &[Rectangle::from_loc_and_size((0, 0), (w, h))],
+            &[],
             1.0,
         )
         .expect("Failed to sample dmabuf");
