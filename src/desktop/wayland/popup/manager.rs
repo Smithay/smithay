@@ -143,7 +143,7 @@ impl PopupManager {
 
         with_states(&root, |states| {
             let tree = PopupTree::default();
-            if states.data_map.insert_if_missing(|| tree.clone()) {
+            if states.data_map.insert_if_missing_threadsafe(|| tree.clone()) {
                 self.popup_trees.push(tree);
             };
             let tree = states.data_map.get::<PopupTree>().unwrap();
