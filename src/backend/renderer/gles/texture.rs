@@ -1,8 +1,9 @@
 use super::*;
+use std::sync::Arc;
 
 /// A handle to a GLES texture
 #[derive(Debug, Clone)]
-pub struct GlesTexture(pub(super) Rc<GlesTextureInternal>);
+pub struct GlesTexture(pub(super) Arc<GlesTextureInternal>);
 
 impl GlesTexture {
     /// Create a GlesTexture from a raw gl texture id.
@@ -21,7 +22,7 @@ impl GlesTexture {
         tex: ffi::types::GLuint,
         size: Size<i32, BufferCoord>,
     ) -> GlesTexture {
-        GlesTexture(Rc::new(GlesTextureInternal {
+        GlesTexture(Arc::new(GlesTextureInternal {
             texture: tex,
             format: internal_format,
             has_alpha: !opaque,
@@ -57,6 +58,8 @@ pub(super) struct GlesTextureInternal {
     pub(super) egl_images: Option<Vec<EGLImage>>,
     pub(super) destruction_callback_sender: Sender<CleanupResource>,
 }
+unsafe impl Send for GlesTextureInternal {}
+unsafe impl Sync for GlesTextureInternal {}
 
 impl Drop for GlesTextureInternal {
     fn drop(&mut self) {

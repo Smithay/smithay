@@ -12,12 +12,13 @@ use std::{
     sync::{
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{channel, Receiver, Sender},
+        Arc,
     },
 };
 use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
 
 #[cfg(feature = "wayland_frontend")]
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 pub mod element;
 mod error;
@@ -88,6 +89,7 @@ enum CleanupResource {
     Mapping(ffi::types::GLuint, *const std::ffi::c_void),
     Program(ffi::types::GLuint),
 }
+unsafe impl Send for CleanupResource {}
 
 #[derive(Debug)]
 struct ShadowBuffer {
@@ -847,7 +849,7 @@ impl ImportMemWl for GlesRenderer {
 
         // why not store a `GlesTexture`? because the user might do so.
         // this is guaranteed a non-public internal type, so we are good.
-        type CacheMap = HashMap<usize, Rc<GlesTextureInternal>>;
+        type CacheMap = HashMap<usize, Arc<GlesTextureInternal>>;
 
         with_buffer_contents(buffer, |ptr, len, data| {
             self.make_current()?;
@@ -893,12 +895,13 @@ impl ImportMemWl for GlesRenderer {
                     .and_then(|surface| {
                         surface
                             .data_map
-                            .insert_if_missing(|| Rc::new(RefCell::new(CacheMap::new())));
+                            .insert_if_missing_threadsafe(|| Arc::new(Mutex::new(CacheMap::new())));
                         surface
                             .data_map
-                            .get::<Rc<RefCell<CacheMap>>>()
+                            .get::<Arc<Mutex<CacheMap>>>()
                             .unwrap()
-                            .borrow()
+                            .lock()
+                            .unwrap()
                             .get(&id)
                             .cloned()
                     })
@@ -908,7 +911,7 @@ impl ImportMemWl for GlesRenderer {
                         unsafe { self.gl.GenTextures(1, &mut tex) };
                         // new texture, upload in full
                         upload_full = true;
-                        let new = Rc::new(GlesTextureInternal {
+                        let new = Arc::new(GlesTextureInternal {
                             texture: tex,
                             format: Some(internal_format),
                             has_alpha,
@@ -922,9 +925,10 @@ impl ImportMemWl for GlesRenderer {
                             let copy = new.clone();
                             surface
                                 .data_map
-                                .get::<Rc<RefCell<CacheMap>>>()
+                                .get::<Arc<Mutex<CacheMap>>>()
                                 .unwrap()
-                                .borrow_mut()
+                                .lock()
+                                .unwrap()
                                 .insert(id, copy);
                         }
                         new
@@ -1041,7 +1045,7 @@ impl ImportMem for GlesRenderer {
             };
         }
 
-        let texture = GlesTexture(Rc::new({
+        let texture = GlesTexture(Arc::new({
             let mut tex = 0;
             unsafe {
                 self.gl.GenTextures(1, &mut tex);
@@ -1199,7 +1203,7 @@ impl ImportEgl for GlesRenderer {
 
         let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;
 
-        let texture = GlesTexture(Rc::new(GlesTextureInternal {
+        let texture = GlesTexture(Arc::new(GlesTextureInternal {
             texture: tex,
             format: match egl.format {
                 EGLFormat::RGB | EGLFormat::RGBA => Some(ffi::RGBA8),
@@ -1245,7 +1249,7 @@ impl ImportDma for GlesRenderer {
                 .map(|(internal, _, _)| internal)
                 .unwrap_or(ffi::RGBA8);
             let has_alpha = has_alpha(buffer.format().code);
-            let texture = GlesTexture(Rc::new(GlesTextureInternal {
+            let texture = GlesTexture(Arc::new(GlesTextureInternal {
                 texture: tex,
                 format: Some(format),
                 has_alpha,
