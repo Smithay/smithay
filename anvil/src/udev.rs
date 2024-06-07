@@ -30,13 +30,13 @@ use smithay::{
             compositor::DrmCompositor, CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError,
             DrmEvent, DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
-        egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
+        egl::{self, context::ContextPriority, EGLContext, EGLDevice, EGLDisplay},
         input::InputEvent,
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElement, RenderElementStates},
-            gles::{GlesRenderer, GlesTexture},
+            gles::{Capability, GlesRenderer, GlesTexture},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
             sync::SyncPoint,
             Bind, DebugFlags, ExportMem, ImportDma, ImportMemWl, Offscreen, Renderer,
@@ -241,7 +241,18 @@ pub fn run_udev() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    let gpus = GpuManager::new(GbmGlesBackend::with_context_priority(ContextPriority::High)).unwrap();
+    let gpus = GpuManager::new(GbmGlesBackend::with_factory(|egl_display| {
+        let egl_context = EGLContext::new_with_priority(egl_display, ContextPriority::High)?;
+        let disable_color_transform = std::env::var("ANVIL_DISABLE_COLOR_TRANSFORM").is_ok();
+        unsafe {
+            let capabilities = GlesRenderer::supported_capabilities(&egl_context)?
+                .into_iter()
+                .filter(|c| !disable_color_transform || *c != Capability::ColorTransformations);
+
+            Ok(GlesRenderer::with_capabilities(egl_context, capabilities)?)
+        }
+    }))
+    .unwrap();
 
     let data = UdevData {
         dh: display_handle.clone(),
