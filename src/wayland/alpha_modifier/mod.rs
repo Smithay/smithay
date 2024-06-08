@@ -91,6 +91,18 @@ impl AlphaModifierSurfaceCachedState {
     pub fn multiplier(&self) -> Option<u32> {
         self.multiplier
     }
+
+    /// Alpha multiplier for the surface
+    pub fn multiplier_f32(&self) -> Option<f32> {
+        self.multiplier
+            .map(|multiplier| multiplier as f32 / u32::MAX as f32)
+    }
+
+    /// Alpha multiplier for the surface
+    pub fn multiplier_f64(&self) -> Option<f64> {
+        self.multiplier
+            .map(|multiplier| multiplier as f64 / u32::MAX as f64)
+    }
 }
 
 impl Cacheable for AlphaModifierSurfaceCachedState {

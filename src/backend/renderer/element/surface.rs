@@ -355,7 +355,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         crate::backend::renderer::utils::import_surface(renderer, states)?;
 
         let alpha_modifier_state = states.cached_state.current::<AlphaModifierSurfaceCachedState>();
-        let alpha_multiplier = alpha_modifier_state.multiplier().unwrap_or(u32::MAX) as f32 / u32::MAX as f32;
+        let alpha_multiplier = alpha_modifier_state.multiplier_f32().unwrap_or(1.0);
 
         let Some(data_ref) = states.data_map.get::<RendererSurfaceStateUserData>() else {
             return Ok(None);
