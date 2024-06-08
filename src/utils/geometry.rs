@@ -1199,6 +1199,12 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
             let mut checked = 0usize;
             let mut index = 0usize;
 
+            // If there is nothing left we can stop,
+            // we won't be able to subtract any further
+            if items == 0 {
+                return rects;
+            }
+
             while checked != items {
                 checked += 1;
 
