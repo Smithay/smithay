@@ -132,6 +132,10 @@ required-features = ["backend_drm", "backend_gbm", "backend_egl", "backend_vulka
 name = "benchmark"
 harness = false
 
+[[bench]]
+name = "geometry"
+harness = false
+
 [profile.release-with-debug]
 inherits = "release"
 debug = true
