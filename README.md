@@ -46,6 +46,8 @@ To get informations about it and how you can run it visit [anvil README](https:/
 - [Strata](https://github.com/StrataWM/strata): A cutting-edge, robust and sleek Wayland compositor
 - [Pinnacle](https://github.com/Ottatop/pinnacle): A WIP Wayland compositor, inspired by AwesomeWM 
 - [Sudbury](https://gitlab.freedesktop.org/bwidawsk/sudbury): Compositor designed for ChromeOS
+- [wprs](https://github.com/wayland-transpositor/wprs): Like [xpra](https://en.wikipedia.org/wiki/Xpra), but for Wayland, and written in
+Rust.
 
 ## System Dependencies
 
