@@ -30,12 +30,8 @@
 //! // implement the necessary traits
 //! impl FractionalScaleHandler for State {
 //!    fn new_fractional_scale(&mut self, surface: wl_surface::WlSurface) {
-//!        compositor::with_states(&surface, |states| {
-//!            fractional_scale::with_fractional_scale(states, |fractional_scale| {
-//!                // set the preferred scale for the surface
-//!                fractional_scale.set_preferred_scale(1.25);
-//!            });
-//!        })
+//!        // If you set preferred fractional scale for this surface before,
+//!        // then you don't need to do anything here.
 //!    }
 //! }
 //! delegate_fractional_scale!(State);
@@ -149,7 +145,7 @@ where
                     states
                         .data_map
                         .get::<FractionalScaleStateUserData>()
-                        .map(|v| v.borrow().is_some())
+                        .map(|v| v.borrow().fractional_scale.is_some())
                         .unwrap_or(false)
                 });
 
@@ -164,23 +160,14 @@ where
                 let fractional_scale: wp_fractional_scale_v1::WpFractionalScaleV1 =
                     data_init.init(id, surface.downgrade());
 
-                with_states(&surface, |states| {
-                    if !states.data_map.insert_if_missing(|| {
-                        RefCell::new(Some(FractionalScaleState {
-                            fractional_scale: fractional_scale.clone(),
-                            preferred_scale: None,
-                        }))
-                    }) {
-                        let mut state = states
-                            .data_map
-                            .get::<FractionalScaleStateUserData>()
-                            .unwrap()
-                            .borrow_mut();
-                        *state = Some(FractionalScaleState {
-                            fractional_scale,
-                            preferred_scale: None,
-                        });
-                    }
+                with_states(&surface, move |states| {
+                    with_fractional_scale(states, move |data| {
+                        // Send the scale that the user may have pre-filled for this surface.
+                        if let Some(scale) = data.preferred_scale {
+                            fractional_scale.preferred_scale(f64::round(scale * 120.0) as u32);
+                        }
+                        data.fractional_scale = Some(fractional_scale);
+                    });
                 });
                 state.new_fractional_scale(surface);
             }
@@ -213,7 +200,7 @@ where
                         states
                             .data_map
                             .get::<FractionalScaleStateUserData>()
-                            .and_then(|v| v.borrow_mut().take());
+                            .and_then(|v| v.borrow_mut().fractional_scale.take());
                     })
                 }
             }
@@ -225,35 +212,34 @@ where
 /// Fractional scale handler type
 pub trait FractionalScaleHandler {
     /// A new fractional scale was instantiated
-    fn new_fractional_scale(&mut self, surface: wl_surface::WlSurface);
+    fn new_fractional_scale(&mut self, _surface: wl_surface::WlSurface) {}
 }
 
 /// Type stored in WlSurface states data_map
 ///
 /// ```rs
 /// compositor::with_states(surface, |states| {
-///     let data = states.data_map.get::<RendererSurfaceStateUserData>();
+///     let data = states.data_map.get::<FractionalScaleStateUserData>();
 /// });
 /// ```
-pub type FractionalScaleStateUserData = RefCell<Option<FractionalScaleState>>;
+pub type FractionalScaleStateUserData = RefCell<FractionalScaleState>;
 
-/// State for the fractional scale
-#[derive(Debug)]
+/// State for the fractional scale of a surface
+#[derive(Debug, Default)]
 pub struct FractionalScaleState {
-    fractional_scale: wp_fractional_scale_v1::WpFractionalScaleV1,
+    /// The fractional scale object, if one exists for this surface.
+    fractional_scale: Option<wp_fractional_scale_v1::WpFractionalScaleV1>,
+    /// Preferred fractional scale for this surface.
     preferred_scale: Option<f64>,
 }
 
 impl FractionalScaleState {
     /// Set the preferred scale
     pub fn set_preferred_scale(&mut self, scale: f64) {
-        if self
-            .preferred_scale
-            .map(|preferred_scale| preferred_scale != scale)
-            .unwrap_or(true)
-        {
-            self.fractional_scale
-                .preferred_scale(f64::round(scale * 120.0) as u32);
+        if self.preferred_scale.map_or(true, |preferred| preferred != scale) {
+            if let Some(obj) = &self.fractional_scale {
+                obj.preferred_scale(f64::round(scale * 120.0) as u32);
+            }
             self.preferred_scale = Some(scale);
         }
     }
@@ -265,22 +251,16 @@ impl FractionalScaleState {
 }
 
 /// Run a closure on the [`FractionalScaleState`] of a [`WlSurface`](wl_surface::WlSurface)
-///
-/// Returns `None` if the surface has no fractional scale attached
-pub fn with_fractional_scale<F, T>(states: &SurfaceData, f: F) -> Option<T>
+pub fn with_fractional_scale<F, T>(states: &SurfaceData, f: F) -> T
 where
-    F: Fn(&mut FractionalScaleState) -> T,
+    F: FnOnce(&mut FractionalScaleState) -> T,
 {
-    let fractional_scale = states
+    let mut fractional_scale = states
         .data_map
-        .get::<FractionalScaleStateUserData>()
-        .map(|state| state.borrow_mut());
+        .get_or_insert(FractionalScaleStateUserData::default)
+        .borrow_mut();
 
-    if let Some(mut fractional_scale) = fractional_scale {
-        fractional_scale.as_mut().map(f)
-    } else {
-        None
-    }
+    f(&mut fractional_scale)
 }
 
 #[allow(missing_docs)] // TODO
