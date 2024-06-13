@@ -90,7 +90,7 @@ where
 {
     fn update_focus<F: WaylandFocus>(
         &mut self,
-        focus: Option<(F, Point<i32, Logical>)>,
+        focus: Option<(F, Point<f64, Logical>)>,
         location: Point<f64, Logical>,
         serial: Serial,
         time: u32,
@@ -125,7 +125,7 @@ where
                 Ok(c) => c,
                 _ => return,
             };
-            let (x, y) = (location - surface_location.to_f64()).into();
+            let (x, y) = (location - *surface_location).into();
             if self.current_focus.is_none() {
                 // We entered a new surface, send the data offer
                 let offer_data = Arc::new(Mutex::new(ServerDndOfferData {
@@ -237,7 +237,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         let location = event.location;
@@ -254,7 +254,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -371,7 +371,7 @@ where
         &mut self,
         _data: &mut D,
         _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
-        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         _event: &crate::input::touch::DownEvent,
         _seq: Serial,
     ) {
@@ -397,7 +397,7 @@ where
         &mut self,
         _data: &mut D,
         _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &crate::input::touch::MotionEvent,
         _seq: Serial,
     ) {

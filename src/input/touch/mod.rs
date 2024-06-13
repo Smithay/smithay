@@ -85,7 +85,7 @@ pub(crate) struct TouchInternal<D: SeatHandler> {
 }
 
 struct TouchSlotState<D: SeatHandler> {
-    focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+    focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
     frame_pending: Option<<D as SeatHandler>::TouchFocus>,
     pending: Serial,
     current: Option<Serial>,
@@ -278,7 +278,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn down(
         &self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
@@ -314,7 +314,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn motion(
         &self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
@@ -433,7 +433,7 @@ impl<'a, D: SeatHandler + 'static> TouchInnerHandle<'a, D> {
     pub fn down(
         &mut self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
         seq: Serial,
     ) {
@@ -460,7 +460,7 @@ impl<'a, D: SeatHandler + 'static> TouchInnerHandle<'a, D> {
     pub fn motion(
         &mut self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
         seq: Serial,
     ) {
@@ -531,7 +531,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
         seq: Serial,
     ) {
@@ -551,7 +551,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         let state = self.focus.get(&event.slot).unwrap();
         if let Some((focus, loc)) = state.focus.as_ref() {
             let mut new_event = event.clone();
-            new_event.location -= loc.to_f64();
+            new_event.location -= *loc;
             focus.down(seat, data, &new_event, seq);
         }
     }
@@ -574,7 +574,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
         seq: Serial,
     ) {
@@ -584,7 +584,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         state.pending = seq;
         if let Some((focus, loc)) = state.focus.as_ref() {
             let mut new_event = event.clone();
-            new_event.location -= loc.to_f64();
+            new_event.location -= *loc;
             focus.motion(seat, data, &new_event, seq);
         }
     }

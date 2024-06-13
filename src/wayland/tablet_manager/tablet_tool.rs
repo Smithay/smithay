@@ -37,7 +37,7 @@ impl TabletTool {
     fn proximity_in(
         &mut self,
         loc: Point<f64, Logical>,
-        (focus, sloc): (WlSurface, Point<i32, Logical>),
+        (focus, sloc): (WlSurface, Point<f64, Logical>),
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
@@ -48,7 +48,7 @@ impl TabletTool {
             tablet.with_focused_tablet(&focus, |wl_tablet| {
                 wl_tool.proximity_in(serial.into(), wl_tablet, &focus);
                 // proximity_in has to be followed by motion event (required by protocol)
-                let srel_loc = loc - sloc.to_f64();
+                let srel_loc = loc - sloc;
                 wl_tool.motion(srel_loc.x, srel_loc.y);
                 wl_tool.frame(time);
             });
@@ -103,7 +103,7 @@ impl TabletTool {
     fn motion(
         &mut self,
         pos: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<(WlSurface, Point<f64, Logical>)>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
@@ -116,7 +116,7 @@ impl TabletTool {
                         .iter()
                         .find(|i| i.id().same_client_as(&focus.0.id()))
                     {
-                        let srel_loc = pos - focus.1.to_f64();
+                        let srel_loc = pos - focus.1;
                         wl_tool.motion(srel_loc.x, srel_loc.y);
 
                         if let Some(pressure) = self.pending_pressure.take() {
@@ -290,7 +290,7 @@ impl TabletToolHandle {
     pub fn proximity_in(
         &self,
         pos: Point<f64, Logical>,
-        focus: (WlSurface, Point<i32, Logical>),
+        focus: (WlSurface, Point<f64, Logical>),
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
@@ -330,7 +330,7 @@ impl TabletToolHandle {
     pub fn motion(
         &self,
         pos: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<(WlSurface, Point<f64, Logical>)>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,

@@ -35,7 +35,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerMoveS
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(PointerFocusTarget, Point<i32, Logical>)>,
+        _focus: Option<(PointerFocusTarget, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -52,7 +52,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerMoveS
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        focus: Option<(PointerFocusTarget, Point<i32, Logical>)>,
+        focus: Option<(PointerFocusTarget, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -180,7 +180,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         _handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         _focus: Option<(
             <AnvilState<BackendData> as smithay::input::SeatHandler>::TouchFocus,
-            Point<i32, Logical>,
+            Point<f64, Logical>,
         )>,
         _event: &smithay::input::touch::DownEvent,
         _seq: Serial,
@@ -208,7 +208,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         _handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         _focus: Option<(
             <AnvilState<BackendData> as smithay::input::SeatHandler>::TouchFocus,
-            Point<i32, Logical>,
+            Point<f64, Logical>,
         )>,
         event: &smithay::input::touch::MotionEvent,
         _seq: Serial,
@@ -353,7 +353,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(PointerFocusTarget, Point<i32, Logical>)>,
+        _focus: Option<(PointerFocusTarget, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -437,7 +437,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        focus: Option<(PointerFocusTarget, Point<i32, Logical>)>,
+        focus: Option<(PointerFocusTarget, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -648,7 +648,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         _handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         _focus: Option<(
             <AnvilState<BackendData> as smithay::input::SeatHandler>::TouchFocus,
-            Point<i32, Logical>,
+            Point<f64, Logical>,
         )>,
         _event: &smithay::input::touch::DownEvent,
         _seq: Serial,
@@ -754,7 +754,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         _focus: Option<(
             <AnvilState<BackendData> as smithay::input::SeatHandler>::TouchFocus,
-            Point<i32, Logical>,
+            Point<f64, Logical>,
         )>,
         event: &smithay::input::touch::MotionEvent,
         _seq: Serial,

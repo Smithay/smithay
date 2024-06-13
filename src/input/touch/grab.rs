@@ -41,7 +41,7 @@ pub trait TouchGrab<D: SeatHandler>: Send {
         &mut self,
         data: &mut D,
         handle: &mut TouchInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
         seq: Serial,
     );
@@ -68,7 +68,7 @@ pub trait TouchGrab<D: SeatHandler>: Send {
         &mut self,
         data: &mut D,
         handle: &mut TouchInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
         seq: Serial,
     );
@@ -115,7 +115,7 @@ pub struct GrabStartData<D: SeatHandler> {
     /// The focused surface and its location, if any, at the start of the grab.
     ///
     /// The location coordinates are in the global compositor space.
-    pub focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+    pub focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
     /// The touch point that initiated the grab.
     pub slot: TouchSlot,
     /// The location of the down event that initiated the grab, in the global compositor space.
@@ -151,7 +151,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut TouchInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
         seq: Serial,
     ) {
@@ -179,7 +179,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut TouchInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
         seq: Serial,
     ) {
@@ -241,7 +241,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut TouchInnerHandle<'_, D>,
-        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
         seq: Serial,
     ) {
@@ -261,7 +261,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut TouchInnerHandle<'_, D>,
-        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
         seq: Serial,
     ) {

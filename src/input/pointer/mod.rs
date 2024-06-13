@@ -222,7 +222,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub fn motion(
         &self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
@@ -242,7 +242,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub fn relative_motion(
         &self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
@@ -515,7 +515,7 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     }
 
     /// Access the current focus of this pointer
-    pub fn current_focus(&self) -> Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)> {
+    pub fn current_focus(&self) -> Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)> {
         self.inner.focus.clone()
     }
 
@@ -546,7 +546,7 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     pub fn motion(
         &mut self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         self.inner.motion(data, self.seat, focus, event);
@@ -560,7 +560,7 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     pub fn relative_motion(
         &mut self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         self.inner.relative_motion(data, self.seat, focus, event);
@@ -670,8 +670,8 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
 }
 
 pub(crate) struct PointerInternal<D: SeatHandler> {
-    pub(crate) focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
-    pending_focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+    pub(crate) focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
+    pending_focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
     location: Point<f64, Logical>,
     grab: GrabStatus<dyn PointerGrab<D>>,
     pressed_buttons: Vec<u32>,
@@ -756,13 +756,13 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         self.location = event.location;
         if let Some((focus, loc)) = focus {
             let event = MotionEvent {
-                location: event.location - loc.to_f64(),
+                location: event.location - loc,
                 serial: event.serial,
                 time: event.time,
             };
@@ -791,7 +791,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         if let Some((focused, _)) = self.focus.as_mut() {
