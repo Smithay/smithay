@@ -345,7 +345,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
-    ) -> Option<(PointerFocusTarget, Point<i32, Logical>)> {
+    ) -> Option<(PointerFocusTarget, Point<f64, Logical>)> {
         let output = self.space.outputs().find(|o| {
             let geometry = self.space.output_geometry(o).unwrap();
             geometry.contains(pos.to_i32_round())
@@ -406,7 +406,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         {
             under = Some(focus)
         };
-        under
+        under.map(|(s, l)| (s, l.to_f64()))
     }
 
     fn on_pointer_axis<B: InputBackend>(&mut self, evt: B::PointerAxisEvent) {
@@ -806,7 +806,7 @@ impl AnvilState<UdevData> {
                 Some(constraint) if constraint.is_active() => {
                     // Constraint does not apply if not within region
                     if !constraint.region().map_or(true, |x| {
-                        x.contains(pointer_location.to_i32_round() - *surface_loc)
+                        x.contains((pointer_location - *surface_loc).to_i32_round())
                     }) {
                         return;
                     }
@@ -856,7 +856,7 @@ impl AnvilState<UdevData> {
                     return;
                 }
                 if let Some(region) = confine_region {
-                    if !region.contains(pointer_location.to_i32_round() - *surface_loc) {
+                    if !region.contains((pointer_location - *surface_loc).to_i32_round()) {
                         pointer.frame(self);
                         return;
                     }
@@ -882,7 +882,7 @@ impl AnvilState<UdevData> {
         {
             with_pointer_constraint(&under, &pointer, |constraint| match constraint {
                 Some(constraint) if !constraint.is_active() => {
-                    let point = pointer_location.to_i32_round() - surface_location;
+                    let point = (pointer_location - surface_location).to_i32_round();
                     if constraint.region().map_or(true, |region| region.contains(point)) {
                         constraint.activate();
                     }

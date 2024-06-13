@@ -22,7 +22,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(WlSurface, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -38,7 +38,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<(WlSurface, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
