@@ -2874,13 +2874,13 @@ impl<'frame> GlesFrame<'frame> {
         non_opaque_damage.clear();
         opaque_damage.clear();
 
-        // If drawing is implicit opaque we can skip some logic and save
-        // a few operations. In case we have some user-provided alpha we
-        // can not disable blending, but should also have cleared the region
-        // previously anyway. In case we have no opaque regions we can also
-        // short cut the logic a bit.
+        // If drawing is implicit opaque and we have no custom program we
+        // can skip some logic and save a few operations. In case we have
+        // some user-provided alpha we can not disable blending, but should
+        // also have cleared the region previously anyway. In case we have
+        // no opaque regions we can also short cut the logic a bit.
         let is_implicit_opaque = !texture.0.has_alpha && alpha == 1f32;
-        if is_implicit_opaque {
+        if is_implicit_opaque && program.is_none() && self.tex_program_override.is_none() {
             opaque_damage.extend_from_slice(damage);
         } else if alpha != 1f32 || opaque_regions.is_empty() {
             non_opaque_damage.extend_from_slice(damage);
