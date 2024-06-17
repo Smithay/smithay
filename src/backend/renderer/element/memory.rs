@@ -210,10 +210,8 @@
 
 use std::{
     any::TypeId,
-    cell::{RefCell, RefMut},
     collections::{hash_map::Entry, HashMap},
-    rc::Rc,
-    sync::Arc,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use tracing::{instrument, trace, warn};
@@ -329,7 +327,7 @@ struct MemoryRenderBufferInner {
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     damage_bag: DamageBag<i32, Buffer>,
-    textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
+    textures: HashMap<(TypeId, usize), Box<dyn std::any::Any + Send>>,
     renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
 }
 
@@ -416,7 +414,7 @@ impl MemoryRenderBufferInner {
     ) -> Result<<R as Renderer>::TextureId, <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
-        <R as Renderer>::TextureId: Clone + 'static,
+        <R as Renderer>::TextureId: Send + Clone + 'static,
     {
         let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
         let current_commit = self.damage_bag.current_commit();
@@ -453,7 +451,7 @@ impl MemoryRenderBufferInner {
 #[derive(Debug, Clone)]
 pub struct MemoryRenderBuffer {
     id: Id,
-    inner: Rc<RefCell<MemoryRenderBufferInner>>,
+    inner: Arc<Mutex<MemoryRenderBufferInner>>,
 }
 
 impl Default for MemoryRenderBuffer {
@@ -477,7 +475,7 @@ impl MemoryRenderBuffer {
         let inner = MemoryRenderBufferInner::new(format, size, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
-            inner: Rc::new(RefCell::new(inner)),
+            inner: Arc::new(Mutex::new(inner)),
         }
     }
 
@@ -491,7 +489,7 @@ impl MemoryRenderBuffer {
         let inner = MemoryRenderBufferInner::from_memory(mem, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
-            inner: Rc::new(RefCell::new(inner)),
+            inner: Arc::new(Mutex::new(inner)),
         }
     }
 
@@ -507,13 +505,13 @@ impl MemoryRenderBuffer {
         let inner = MemoryRenderBufferInner::from_slice(mem, format, size, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
-            inner: Rc::new(RefCell::new(inner)),
+            inner: Arc::new(Mutex::new(inner)),
         }
     }
 
     /// Render to the memory buffer
     pub fn render(&mut self) -> RenderContext<'_> {
-        let guard = self.inner.borrow_mut();
+        let guard = self.inner.lock().unwrap();
         RenderContext {
             buffer: guard,
             damage: Vec::new(),
@@ -525,7 +523,7 @@ impl MemoryRenderBuffer {
 /// A render context for [`MemoryRenderBuffer`]
 #[derive(Debug)]
 pub struct RenderContext<'a> {
-    buffer: RefMut<'a, MemoryRenderBufferInner>,
+    buffer: MutexGuard<'a, MemoryRenderBufferInner>,
     damage: Vec<Rectangle<i32, Buffer>>,
     opaque_regions: Option<Option<Vec<Rectangle<i32, Buffer>>>>,
 }
@@ -598,10 +596,10 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
     ) -> Result<Self, <R as Renderer>::Error>
     where
         R: ImportMem,
-        <R as Renderer>::TextureId: Clone + 'static,
+        <R as Renderer>::TextureId: Send + Clone + 'static,
     {
-        let texture = buffer.inner.borrow_mut().import_texture(renderer)?;
-        let inner = buffer.inner.borrow();
+        let mut inner = buffer.inner.lock().unwrap();
+        let texture = inner.import_texture(renderer)?;
 
         let size = size
             .or_else(|| src.map(|src| Size::from((src.size.w as i32, src.size.h as i32))))
