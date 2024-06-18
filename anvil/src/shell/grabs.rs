@@ -400,16 +400,8 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
 
         let min_width = min_size.w.max(1);
         let min_height = min_size.h.max(1);
-        let max_width = if max_size.w == 0 {
-            i32::max_value()
-        } else {
-            max_size.w
-        };
-        let max_height = if max_size.h == 0 {
-            i32::max_value()
-        } else {
-            max_size.h
-        };
+        let max_width = if max_size.w == 0 { i32::MAX } else { max_size.w };
+        let max_height = if max_size.h == 0 { i32::MAX } else { max_size.h };
 
         new_window_width = new_window_width.max(min_width).min(max_width);
         new_window_height = new_window_height.max(min_height).min(max_height);
@@ -804,16 +796,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
 
         let min_width = min_size.w.max(1);
         let min_height = min_size.h.max(1);
-        let max_width = if max_size.w == 0 {
-            i32::max_value()
-        } else {
-            max_size.w
-        };
-        let max_height = if max_size.h == 0 {
-            i32::max_value()
-        } else {
-            max_size.h
-        };
+        let max_width = if max_size.w == 0 { i32::MAX } else { max_size.w };
+        let max_height = if max_size.h == 0 { i32::MAX } else { max_size.h };
 
         new_window_width = new_window_width.max(min_width).min(max_width);
         new_window_height = new_window_height.max(min_height).min(max_height);

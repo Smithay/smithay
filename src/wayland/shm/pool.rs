@@ -150,6 +150,8 @@ impl InnerPool {
             place_sigbus_handler();
         });
 
+        // This is actually a write access.
+        #[allow(clippy::readonly_write_lock)]
         let pool_guard = self.map.write().unwrap();
 
         trace!(fd = ?self.fd, "Mutable buffer access on shm pool");

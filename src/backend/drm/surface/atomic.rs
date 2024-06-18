@@ -422,7 +422,7 @@ impl AtomicDrmSurface {
             return Err(Error::DeviceInactive);
         }
 
-        let current = self.state.write().unwrap();
+        let current = self.state.read().unwrap();
         let mut pending = self.pending.write().unwrap();
 
         self.ensure_props_known(connectors)?;
@@ -578,7 +578,7 @@ impl AtomicDrmSurface {
         let planes = planes.into_iter().collect::<Vec<_>>();
         let mut current = self.state.write().unwrap();
         let mut used_planes = self.used_planes.lock().unwrap();
-        let pending = self.pending.write().unwrap();
+        let pending = self.pending.read().unwrap();
 
         debug!(current = ?*current, pending = ?*pending, ?planes, "Preparing Commit",);
 
