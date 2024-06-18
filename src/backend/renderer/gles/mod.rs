@@ -2028,6 +2028,7 @@ impl Unbind for GlesRenderer {
         }
         unsafe { self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0) };
         self.target = None;
+        self.cleanup();
         self.egl.unbind()?;
         Ok(())
     }
