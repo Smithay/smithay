@@ -2,10 +2,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::Rng;
 use smithay::utils::{Physical, Rectangle, Size};
 
-fn element_visible_size(
-    test_element: Rectangle<i32, Physical>,
-    opaque_regions: &Vec<Rectangle<i32, Physical>>,
-) {
+fn element_visible_size(test_element: Rectangle<i32, Physical>, opaque_regions: &[Rectangle<i32, Physical>]) {
     let mut workhouse = Vec::with_capacity(2048 * 4);
     workhouse.push(test_element);
     workhouse = Rectangle::subtract_rects_many_in_place(workhouse, opaque_regions.iter().copied());
@@ -35,7 +32,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     // let y_max = stage.h - element_size.h;
 
     let opaque_regions = (0..2048)
-        .into_iter()
         .map(|_| {
             let x = rand.gen_range(x_min..=x_max);
             let y = rand.gen_range(y_min..=y_max);

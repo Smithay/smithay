@@ -1259,7 +1259,7 @@ where
             // "to_ignore <= seqno". This is equivalent to "to_ignore - seqno <= 0", which is what we
             // check instead. Since sequence numbers are unsigned, we need a trick: We decide
             // that values from [MAX/2, MAX] count as "<= 0" and the rest doesn't.
-            if to_ignore.wrapping_sub(seqno) <= u16::max_value() / 2 {
+            if to_ignore.wrapping_sub(seqno) <= u16::MAX / 2 {
                 // If the two sequence numbers are equal, this event should be ignored.
                 should_ignore = to_ignore == seqno;
                 break;
