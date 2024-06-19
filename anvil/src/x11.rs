@@ -182,7 +182,7 @@ pub fn run_x11() {
         info!("EGL hardware-acceleration enabled");
     }
 
-    let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
+    let dmabuf_formats = renderer.dmabuf_formats();
     let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
         .build()
         .unwrap();

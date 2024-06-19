@@ -7,7 +7,6 @@
 //!
 //! - Raw OpenGL ES 2
 
-use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 
@@ -38,6 +37,8 @@ use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
 };
+
+use super::allocator::format::FormatSet;
 
 #[cfg(feature = "renderer_multi")]
 pub mod multigpu;
@@ -107,7 +108,7 @@ pub trait Bind<Target>: Unbind {
     /// or throw an error.
     fn bind(&mut self, target: Target) -> Result<(), <Self as Renderer>::Error>;
     /// Supported pixel formats for given targets, if applicable.
-    fn supported_formats(&self) -> Option<HashSet<crate::backend::allocator::Format>> {
+    fn supported_formats(&self) -> Option<FormatSet> {
         None
     }
 }
@@ -486,13 +487,13 @@ pub trait ImportDmaWl: ImportDma {
 /// Trait for Renderers supporting importing dmabufs.
 pub trait ImportDma: Renderer {
     /// Returns supported formats for dmabufs.
-    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
-        Box::new(std::iter::empty())
+    fn dmabuf_formats(&self) -> FormatSet {
+        FormatSet::default()
     }
 
     /// Test if a specific dmabuf [`Format`] is supported
     fn has_dmabuf_format(&self, format: Format) -> bool {
-        self.dmabuf_formats().any(|f| f == format)
+        self.dmabuf_formats().contains(&format)
     }
 
     /// Import a given raw dmabuf into the renderer.

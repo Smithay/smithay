@@ -42,7 +42,7 @@
 use std::{
     any::{Any, TypeId},
     cell::{Ref, RefCell},
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt,
     rc::Rc,
 };
@@ -63,6 +63,7 @@ use crate::{
     backend::{
         allocator::{
             dmabuf::{AnyError, Dmabuf},
+            format::FormatSet,
             Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
         },
         drm::DrmNode,
@@ -940,7 +941,7 @@ where
         }
     }
 
-    fn supported_formats(&self) -> Option<HashSet<crate::backend::allocator::Format>> {
+    fn supported_formats(&self) -> Option<FormatSet> {
         if let Some(target) = self.target.as_ref() {
             Bind::<Target>::supported_formats(target.device.renderer())
         } else {
@@ -1111,8 +1112,10 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     let target_formats = ImportDma::dmabuf_formats(target.device.renderer())
+        .iter()
         .filter(|format| format.code == target.format)
-        .collect::<HashSet<Format>>();
+        .copied()
+        .collect::<FormatSet>();
     let render_formats = Bind::<Dmabuf>::supported_formats(src.renderer()).unwrap_or_default();
     let formats = target_formats.intersection(&render_formats);
     let target_modifiers = formats
@@ -1811,7 +1814,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
+    fn dmabuf_formats(&self) -> FormatSet {
         ImportDma::dmabuf_formats(self.render.renderer())
     }
 
@@ -1928,8 +1931,10 @@ where
     } else {
         ImportDma::dmabuf_formats(src.renderer())
     }
+    .iter()
     .filter(|f| f.code == format)
-    .collect::<HashSet<_>>();
+    .copied()
+    .collect::<FormatSet>();
     let write_formats = Bind::<Dmabuf>::supported_formats(src.renderer()).unwrap_or_default();
     let modifiers = read_formats
         .intersection(&write_formats)

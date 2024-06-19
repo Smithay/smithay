@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::HashMap, HashSet},
+    collections::hash_map::HashMap,
     io,
     path::Path,
     sync::{atomic::Ordering, Mutex},
@@ -23,6 +23,7 @@ use smithay::{
     backend::{
         allocator::{
             dmabuf::Dmabuf,
+            format::FormatSet,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
             Fourcc,
         },
@@ -420,7 +421,7 @@ pub fn run_udev() {
     }
 
     // init dmabuf support with format list from our primary gpu
-    let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
+    let dmabuf_formats = renderer.dmabuf_formats();
     let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
@@ -770,23 +771,14 @@ fn get_surface_dmabuf_feedback(
     gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
     composition: &SurfaceComposition,
 ) -> Option<DrmSurfaceDmabufFeedback> {
-    let primary_formats = gpus
-        .single_renderer(&primary_gpu)
-        .ok()?
-        .dmabuf_formats()
-        .collect::<HashSet<_>>();
-
-    let render_formats = gpus
-        .single_renderer(&render_node)
-        .ok()?
-        .dmabuf_formats()
-        .collect::<HashSet<_>>();
+    let primary_formats = gpus.single_renderer(&primary_gpu).ok()?.dmabuf_formats();
+    let render_formats = gpus.single_renderer(&render_node).ok()?.dmabuf_formats();
 
     let all_render_formats = primary_formats
         .iter()
         .chain(render_formats.iter())
         .copied()
-        .collect::<HashSet<_>>();
+        .collect::<FormatSet>();
 
     let surface = composition.surface();
     let planes = surface.planes().clone();
@@ -799,10 +791,10 @@ fn get_surface_dmabuf_feedback(
         .formats
         .into_iter()
         .chain(planes.overlay.into_iter().flat_map(|p| p.formats))
-        .collect::<HashSet<_>>()
+        .collect::<FormatSet>()
         .intersection(&all_render_formats)
         .copied()
-        .collect::<Vec<_>>();
+        .collect::<FormatSet>();
 
     let builder = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), primary_formats);
     let render_feedback = builder
