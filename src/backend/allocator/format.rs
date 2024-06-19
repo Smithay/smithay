@@ -37,6 +37,11 @@
 //! assert_eq!(get_depth(Fourcc::Xrgb8888), Some(24));
 //! ```
 
+use std::sync::Arc;
+
+use super::Format;
+use indexmap::IndexSet;
+
 /// Macro to generate table lookup functions for formats.
 ///
 /// See the module documentation for usage details.
@@ -361,6 +366,124 @@ format_tables! {
     Axbxgxrx106106106106 { alpha: true, bpp: 64, depth: 40 }
 
     // TODO: YUV and other formats
+}
+
+/// A set of [`Format`]s
+#[derive(Debug, Default, Clone)]
+pub struct FormatSet {
+    formats: Arc<IndexSet<Format>>,
+}
+
+impl FormatSet {
+    #[cfg(feature = "backend_egl")]
+    pub(crate) fn from_formats(formats: IndexSet<Format>) -> Self {
+        FormatSet {
+            formats: Arc::new(formats),
+        }
+    }
+}
+
+impl FormatSet {
+    /// Return an iterator over the values of the set, in their order
+    pub fn iter(&self) -> FormatSetIter<'_> {
+        FormatSetIter {
+            inner: self.formats.iter(),
+        }
+    }
+
+    /// Return `true` if an equivalent to `value` exists in the set.
+    pub fn contains(&self, format: &Format) -> bool {
+        self.formats.contains(format)
+    }
+
+    /// Return an iterator over the values that are in both `self` and `other`.
+    pub fn intersection<'a>(&'a self, other: &'a FormatSet) -> FormatSetIntersection<'a> {
+        FormatSetIntersection {
+            inner: self.formats.intersection(&other.formats),
+        }
+    }
+}
+
+/// A lazy iterator producing elements in the intersection of [`FormatSet`]s.
+#[derive(Debug)]
+pub struct FormatSetIntersection<'a> {
+    inner: indexmap::set::Intersection<'a, Format, std::collections::hash_map::RandomState>,
+}
+
+impl<'a> Iterator for FormatSetIntersection<'a> {
+    type Item = &'a Format;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl IntoIterator for FormatSet {
+    type Item = Format;
+
+    type IntoIter = FormatSetIntoIter;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        FormatSetIntoIter {
+            inner: (*self.formats).clone().into_iter(),
+        }
+    }
+}
+
+impl FromIterator<Format> for FormatSet {
+    #[inline]
+    fn from_iter<T: IntoIterator<Item = Format>>(iter: T) -> Self {
+        Self {
+            formats: Arc::new(IndexSet::from_iter(iter)),
+        }
+    }
+}
+
+/// An iterator over the items of an [`FormatSet`].
+#[derive(Debug)]
+pub struct FormatSetIter<'a> {
+    inner: indexmap::set::Iter<'a, Format>,
+}
+
+impl<'a> Iterator for FormatSetIter<'a> {
+    type Item = &'a Format;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+/// An owning iterator over the items of an [`FormatSet`].
+#[derive(Debug)]
+pub struct FormatSetIntoIter {
+    inner: indexmap::set::IntoIter<Format>,
+}
+
+impl Iterator for FormatSetIntoIter {
+    type Item = Format;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
 }
 
 #[cfg(test)]
