@@ -82,7 +82,6 @@ pub mod node;
 
 mod surface;
 
-use std::collections::HashSet;
 use std::sync::Once;
 
 use crate::utils::DevPath;
@@ -93,6 +92,7 @@ pub use device::{
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 pub use error::AccessError as DrmAccessError;
 pub use error::Error as DrmError;
+use indexmap::IndexSet;
 pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
@@ -105,6 +105,8 @@ use drm::{
 use tracing::trace;
 
 use self::error::AccessError;
+
+use super::allocator::format::FormatSet;
 
 fn warn_legacy_fb_export() {
     static WARN_LEGACY_FB_EXPORT: Once = Once::new();
@@ -140,7 +142,7 @@ pub struct PlaneInfo {
     /// z-position of the plane if available
     pub zpos: Option<i32>,
     /// Formats supported by this plane
-    pub formats: HashSet<DrmFormat>,
+    pub formats: FormatSet,
 }
 
 fn planes(
@@ -268,10 +270,7 @@ fn plane_zpos(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Res
     Ok(None)
 }
 
-fn plane_formats(
-    dev: &(impl ControlDevice + DevPath),
-    plane: plane::Handle,
-) -> Result<HashSet<DrmFormat>, DrmError> {
+fn plane_formats(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Result<FormatSet, DrmError> {
     // get plane formats
     let plane_info = dev.get_plane(plane).map_err(|source| {
         DrmError::Access(AccessError {
@@ -280,7 +279,7 @@ fn plane_formats(
             source,
         })
     })?;
-    let mut formats = HashSet::new();
+    let mut formats = IndexSet::new();
     for code in plane_info
         .formats()
         .iter()
@@ -401,7 +400,7 @@ fn plane_formats(
         formats
     );
 
-    Ok(formats)
+    Ok(FormatSet::from_formats(formats))
 }
 
 #[cfg(feature = "backend_gbm")]

@@ -1766,7 +1766,7 @@ where
         code: DrmFourcc,
     ) -> Result<(Swapchain<A>, Frame<A, F>, bool), (A, FrameErrorType<A, F>)> {
         // select a format
-        let mut plane_formats = planes.primary.formats.clone();
+        let mut plane_formats = planes.primary.formats.iter().copied().collect::<IndexSet<_>>();
 
         let opaque_code = get_opaque(code).unwrap_or(code);
         if !plane_formats
