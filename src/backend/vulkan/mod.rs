@@ -72,7 +72,7 @@ use std::{
 };
 
 use ash::{
-    extensions::ext::DebugUtils,
+    ext,
     prelude::VkResult,
     vk::{self, PhysicalDeviceDriverProperties, PhysicalDeviceDrmPropertiesEXT},
     Entry,
@@ -190,15 +190,17 @@ impl Instance {
 
         // Determine the maximum instance version that is possible.
         let max_version = {
-            LIBRARY
-                .as_ref()
-                .or(Err(LoadError))?
-                .try_enumerate_instance_version()
-                // Any allocation errors must be the result of the loader or layers
-                .or(Err(LoadError))?
-                .map(Version::from_raw)
-                // Vulkan 1.0 does not have `vkEnumerateInstanceVersion`.
-                .unwrap_or(Version::VERSION_1_0)
+            unsafe {
+                LIBRARY
+                    .as_ref()
+                    .or(Err(LoadError))?
+                    .try_enumerate_instance_version()
+            }
+            // Any allocation errors must be the result of the loader or layers
+            .or(Err(LoadError))?
+            .map(Version::from_raw)
+            // Vulkan 1.0 does not have `vkEnumerateInstanceVersion`.
+            .unwrap_or(Version::VERSION_1_0)
         };
 
         if max_version == Version::VERSION_1_0 {
@@ -236,10 +238,10 @@ impl Instance {
         // Enable debug utils if available.
         let has_debug_utils = available_extensions
             .iter()
-            .any(|name| name.as_c_str() == vk::ExtDebugUtilsFn::name());
+            .any(|name| name.as_c_str() == ext::debug_utils::NAME);
 
         if has_debug_utils {
-            enabled_extensions.push(vk::ExtDebugUtilsFn::name());
+            enabled_extensions.push(ext::debug_utils::NAME);
         }
 
         // Both of these are safe because both vecs contain static CStrs.
@@ -252,7 +254,7 @@ impl Instance {
         let app_version = app_info.as_ref().map(|info| info.version.to_raw());
         let app_name =
             app_info.map(|info| CString::new(info.name).expect("app name contains null terminator"));
-        let mut app_info = vk::ApplicationInfo::builder()
+        let mut app_info = vk::ApplicationInfo::default()
             .api_version(api_version.to_raw())
             // SAFETY: null terminated with no interior null bytes.
             .engine_name(unsafe { CStr::from_bytes_with_nul_unchecked(b"Smithay\0") })
@@ -267,7 +269,7 @@ impl Instance {
         }
 
         let library = LIBRARY.as_ref().map_err(|_| LoadError)?;
-        let create_info = vk::InstanceCreateInfo::builder()
+        let create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_layer_names(&layer_pointers)
             .enabled_extension_names(&extension_pointers);
@@ -283,14 +285,14 @@ impl Instance {
         // Setup the debug utils
         let debug_state = if has_debug_utils {
             let span = info_span!("backend_vulkan_debug");
-            let debug_utils = DebugUtils::new(library, &instance);
+            let debug_utils = ext::debug_utils::Instance::new(library, &instance);
             // Place the pointer to the span in a scopeguard to prevent a memory leak in case creating the
             // debug messenger fails.
             let span_ptr = scopeguard::guard(Box::into_raw(Box::new(span)), |ptr| unsafe {
                 let _ = Box::from_raw(ptr);
             });
 
-            let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
+            let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
                 .message_severity(
                     vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
                         | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
@@ -343,8 +345,7 @@ impl Instance {
     pub fn enumerate_extensions() -> Result<impl Iterator<Item = CString>, LoadError> {
         let library = LIBRARY.as_ref().or(Err(LoadError))?;
 
-        let extensions = library
-            .enumerate_instance_extension_properties(None)
+        let extensions = unsafe { library.enumerate_instance_extension_properties(None) }
             .or(Err(LoadError))?
             .into_iter()
             .map(|properties| {
@@ -453,12 +454,12 @@ impl PhysicalDevice {
     /// Returns the device's descriptor set properties.
     ///
     /// This also describes the maximum memory allocation size.
-    pub fn properties_maintenance_3(&self) -> vk::PhysicalDeviceMaintenance3Properties {
+    pub fn properties_maintenance_3(&self) -> vk::PhysicalDeviceMaintenance3Properties<'_> {
         self.info.maintenance_3
     }
 
     /// Information about universally unique identifiers (UUIDs) that identify this device.
-    pub fn id_properties(&self) -> vk::PhysicalDeviceIDProperties {
+    pub fn id_properties(&self) -> vk::PhysicalDeviceIDProperties<'_> {
         self.info.id
     }
 
@@ -520,7 +521,7 @@ impl PhysicalDevice {
     ///   for more information.
     ///
     /// [`vkGetPhysicalDeviceProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceProperties2.html
-    pub unsafe fn get_properties(&self, props: &mut vk::PhysicalDeviceProperties2) {
+    pub unsafe fn get_properties(&self, props: &mut vk::PhysicalDeviceProperties2<'_>) {
         let instance = self.instance().handle();
         // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceProperties2
         // are satisfied.
@@ -537,7 +538,7 @@ impl PhysicalDevice {
     ///   for more information.
     ///
     /// [`vkGetPhysicalDeviceFormatProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
-    pub unsafe fn get_format_properties(&self, format: vk::Format, props: &mut vk::FormatProperties2) {
+    pub unsafe fn get_format_properties(&self, format: vk::Format, props: &mut vk::FormatProperties2<'_>) {
         let instance = self.instance().handle();
         // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2
         // are satisfied.
@@ -552,15 +553,15 @@ impl PhysicalDevice {
         &self,
         format: vk::Format,
     ) -> Result<Vec<vk::DrmFormatModifierPropertiesEXT>, UnsupportedProperty> {
-        if !self.has_device_extension(vk::ExtImageDrmFormatModifierFn::name()) {
-            const EXTENSIONS: &[&CStr] = &[vk::ExtImageDrmFormatModifierFn::name()];
+        if !self.has_device_extension(ext::image_drm_format_modifier::NAME) {
+            const EXTENSIONS: &[&CStr] = &[ext::image_drm_format_modifier::NAME];
             return Err(UnsupportedProperty::Extensions(EXTENSIONS));
         }
 
         // First get the number of modifiers the driver supports.
         let count = unsafe {
             let mut list = vk::DrmFormatModifierPropertiesListEXT::default();
-            let mut format_properties2 = vk::FormatProperties2::builder().push_next(&mut list);
+            let mut format_properties2 = vk::FormatProperties2::default().push_next(&mut list);
             self.get_format_properties(format, &mut format_properties2);
             list.drm_format_modifier_count as usize
         };
@@ -577,7 +578,7 @@ impl PhysicalDevice {
                 ..Default::default()
             };
 
-            let mut format_properties2 = vk::FormatProperties2::builder().push_next(&mut list);
+            let mut format_properties2 = vk::FormatProperties2::default().push_next(&mut list);
             self.get_format_properties(format, &mut format_properties2);
             // SAFETY: Vulkan just initialized the elements of the vector.
             data.set_len(list.drm_format_modifier_count as usize);
@@ -647,12 +648,12 @@ struct PhdInfo {
     name: String,
     properties: vk::PhysicalDeviceProperties,
     features: vk::PhysicalDeviceFeatures,
-    maintenance_3: vk::PhysicalDeviceMaintenance3Properties,
-    id: vk::PhysicalDeviceIDProperties,
-    properties_driver: Option<PhysicalDeviceDriverProperties>,
+    maintenance_3: vk::PhysicalDeviceMaintenance3Properties<'static>,
+    id: vk::PhysicalDeviceIDProperties<'static>,
+    properties_driver: Option<PhysicalDeviceDriverProperties<'static>>,
     /// Information about the DRM device which corresponds to this physical device.
     #[cfg_attr(not(feature = "backend_drm"), allow(dead_code))]
-    properties_drm: Option<PhysicalDeviceDrmPropertiesEXT>,
+    properties_drm: Option<PhysicalDeviceDrmPropertiesEXT<'static>>,
     driver: Option<DriverInfo>,
 }
 
@@ -702,7 +703,7 @@ fn get_env_or_max_version(max_version: Version) -> Version {
 unsafe extern "system" fn vulkan_debug_utils_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
+    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT<'_>,
     span: *mut c_void,
 ) -> vk::Bool32 {
     let _ = std::panic::catch_unwind(|| {

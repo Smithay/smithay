@@ -3,7 +3,7 @@ use std::{
     fmt,
 };
 
-use ash::{extensions::ext::DebugUtils, vk};
+use ash::{ext, vk};
 
 use super::{version::Version, LoadError, LIBRARY};
 
@@ -23,7 +23,7 @@ unsafe impl Send for InstanceInner {}
 unsafe impl Sync for InstanceInner {}
 
 pub struct DebugState {
-    pub debug_utils: DebugUtils,
+    pub debug_utils: ext::debug_utils::Instance,
     pub debug_messenger: vk::DebugUtilsMessengerEXT,
     pub span_ptr: *mut tracing::Span,
 }
@@ -64,8 +64,7 @@ impl super::Instance {
     pub(super) fn enumerate_layers() -> Result<impl Iterator<Item = CString>, LoadError> {
         let library = LIBRARY.as_ref().or(Err(LoadError))?;
 
-        let layers = library
-            .enumerate_instance_layer_properties()
+        let layers = unsafe { library.enumerate_instance_layer_properties() }
             .or(Err(LoadError))?
             .into_iter()
             .map(|properties| {

@@ -2,7 +2,7 @@
 
 use std::ffi::{CStr, CString};
 
-use ash::{prelude::VkResult, vk};
+use ash::{ext, khr, prelude::VkResult, vk};
 use tracing::info_span;
 
 use super::{version::Version, DriverInfo, PhdInfo, UnsupportedProperty};
@@ -86,7 +86,7 @@ impl super::PhdInfo {
             ..Default::default()
         };
 
-        let mut properties = vk::PhysicalDeviceProperties2::builder();
+        let mut properties = vk::PhysicalDeviceProperties2::default();
 
         // Maintenance3 and IDProperties are both Core in Vulkan 1.1
         //
@@ -98,7 +98,7 @@ impl super::PhdInfo {
         // VK_EXT_physical_device_drm
         if supported_extensions
             .iter()
-            .any(|name| name.as_c_str() == vk::ExtPhysicalDeviceDrmFn::name())
+            .any(|name| name.as_c_str() == ext::physical_device_drm::NAME)
         {
             // SAFETY: The caller has garunteed the physical device supports VK_EXT_physical_device_drm
             let next = info
@@ -111,7 +111,7 @@ impl super::PhdInfo {
         if api_version >= Version::VERSION_1_2
             || supported_extensions
                 .iter()
-                .any(|name| name.as_c_str() == vk::KhrDriverPropertiesFn::name())
+                .any(|name| name.as_c_str() == khr::driver_properties::NAME)
         {
             // SAFETY: VK_KHR_driver_properties is supported
             let next = info
@@ -122,7 +122,7 @@ impl super::PhdInfo {
 
         unsafe { instance.get_physical_device_properties2(phd, &mut properties) };
 
-        info.properties = properties.build().properties;
+        info.properties = properties.properties;
         // Initialize the driver info
         info.driver = info.properties_driver.map(DriverInfo::from_driver_properties);
 
@@ -132,15 +132,15 @@ impl super::PhdInfo {
     #[cfg_attr(not(feature = "backend_drm"), allow(dead_code))]
     pub(super) fn get_drm_properties(
         &self,
-    ) -> Result<vk::PhysicalDeviceDrmPropertiesEXT, UnsupportedProperty> {
-        const EXTENSIONS: &[&CStr] = &[vk::ExtPhysicalDeviceDrmFn::name()];
+    ) -> Result<vk::PhysicalDeviceDrmPropertiesEXT<'_>, UnsupportedProperty> {
+        const EXTENSIONS: &[&CStr] = &[ext::physical_device_drm::NAME];
         self.properties_drm
             .ok_or(UnsupportedProperty::Extensions(EXTENSIONS))
     }
 }
 
 impl super::DriverInfo {
-    fn from_driver_properties(properties: vk::PhysicalDeviceDriverProperties) -> DriverInfo {
+    fn from_driver_properties(properties: vk::PhysicalDeviceDriverProperties<'_>) -> DriverInfo {
         // SAFETY: Vulkan guarantees the driver name is valid UTF-8 with a null terminator.
         let name = unsafe { CStr::from_ptr(&properties.driver_name as *const _) }
             .to_str()
