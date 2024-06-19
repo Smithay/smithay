@@ -375,7 +375,7 @@ pub struct FormatSet {
 }
 
 impl FormatSet {
-    #[cfg(feature = "backend_egl")]
+    #[cfg(any(feature = "backend_egl", feature = "backend_drm"))]
     pub(crate) fn from_formats(formats: IndexSet<Format>) -> Self {
         FormatSet {
             formats: Arc::new(formats),
