@@ -134,7 +134,7 @@ use drm::{
     Device, DriverCapability,
 };
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use smallvec::SmallVec;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
@@ -1609,7 +1609,7 @@ where
         mut allocator: A,
         framebuffer_exporter: F,
         color_formats: &[DrmFourcc],
-        renderer_formats: HashSet<DrmFormat>,
+        renderer_formats: impl IntoIterator<Item = DrmFormat>,
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
     ) -> FrameResult<Self, A, F> {
@@ -1621,6 +1621,7 @@ where
         );
 
         let output_mode_source = output_mode_source.into();
+        let renderer_formats = renderer_formats.into_iter().collect::<Vec<_>>();
 
         let mut error = None;
         let surface = Arc::new(surface);
@@ -1761,7 +1762,7 @@ where
         planes: &Planes,
         allocator: A,
         framebuffer_exporter: &F,
-        mut renderer_formats: HashSet<DrmFormat>,
+        mut renderer_formats: Vec<DrmFormat>,
         code: DrmFourcc,
     ) -> Result<(Swapchain<A>, Frame<A, F>, bool), (A, FrameErrorType<A, F>)> {
         // select a format
@@ -1783,16 +1784,16 @@ where
         let plane_modifiers = plane_formats
             .iter()
             .map(|fmt| fmt.modifier)
-            .collect::<HashSet<_>>();
+            .collect::<IndexSet<_>>();
         let renderer_modifiers = renderer_formats
             .iter()
             .map(|fmt| fmt.modifier)
-            .collect::<HashSet<_>>();
+            .collect::<IndexSet<_>>();
         debug!(
             "Remaining intersected modifiers: {:?}",
             plane_modifiers
                 .intersection(&renderer_modifiers)
-                .collect::<HashSet<_>>()
+                .collect::<IndexSet<_>>()
         );
 
         if plane_formats.is_empty() {
@@ -1813,7 +1814,7 @@ where
                     .all(|x| x.modifier != DrmModifier::Invalid)
                 && renderer_formats.iter().any(|x| x.modifier == DrmModifier::Linear))
                 || (renderer_formats.len() == 1
-                    && renderer_formats.iter().next().unwrap().modifier == DrmModifier::Invalid
+                    && renderer_formats.first().unwrap().modifier == DrmModifier::Invalid
                     && plane_formats.iter().all(|x| x.modifier != DrmModifier::Invalid)
                     && plane_formats.iter().any(|x| x.modifier == DrmModifier::Linear))
             {
