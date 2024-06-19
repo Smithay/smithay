@@ -27,10 +27,7 @@ use std::{
     sync::{mpsc, Arc, Weak},
 };
 
-use ash::{
-    extensions::{ext, khr},
-    vk,
-};
+use ash::{ext, khr, vk};
 use bitflags::bitflags;
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use tracing::instrument;
@@ -164,15 +161,15 @@ impl VulkanAllocator {
     pub fn required_extensions(phd: &PhysicalDevice) -> Vec<&'static CStr> {
         // Always required extensions
         let mut extensions = vec![
-            vk::ExtImageDrmFormatModifierFn::name(),
-            vk::ExtExternalMemoryDmaBufFn::name(),
-            vk::KhrExternalMemoryFdFn::name(),
+            ext::image_drm_format_modifier::NAME,
+            ext::external_memory_dma_buf::NAME,
+            khr::external_memory_fd::NAME,
         ];
 
         if phd.api_version() < Version::VERSION_1_2 {
             // VK_EXT_image_drm_format_modifier requires VK_KHR_image_format_list.
             // VK_KHR_image_format_list is part of the core API in Vulkan 1.2
-            extensions.push(vk::KhrImageFormatListFn::name());
+            extensions.push(khr::image_format_list::NAME);
         }
 
         // Optional extensions:
@@ -181,8 +178,8 @@ impl VulkanAllocator {
         // (see the 1.3 features to enable)
         if phd.api_version() < Version::VERSION_1_3 {
             // In 1.2 and below, the device must support the extension to use it.
-            if phd.has_device_extension(vk::Ext4444FormatsFn::name()) {
-                extensions.push(vk::Ext4444FormatsFn::name());
+            if phd.has_device_extension(ext::_4444_formats::NAME) {
+                extensions.push(ext::_4444_formats::NAME);
             }
         }
 
@@ -233,11 +230,10 @@ impl VulkanAllocator {
             .ok_or(Error::Setup)?;
 
         // TODO: Enable 4444 formats features
-        let queue_create_info = [vk::DeviceQueueCreateInfo::builder()
+        let queue_create_info = [vk::DeviceQueueCreateInfo::default()
             .queue_family_index(queue_family_index as u32)
-            .queue_priorities(&[0.0])
-            .build()];
-        let create_info = vk::DeviceCreateInfo::builder()
+            .queue_priorities(&[0.0])];
+        let create_info = vk::DeviceCreateInfo::default()
             .enabled_extension_names(&extension_pointers)
             .queue_create_infos(&queue_create_info);
 
@@ -246,8 +242,8 @@ impl VulkanAllocator {
 
         // Load extension functions
         let extension_fns = ExtensionFns {
-            ext_image_format_modifier: ext::ImageDrmFormatModifier::new(instance, &device),
-            khr_external_memory_fd: khr::ExternalMemoryFd::new(instance, &device),
+            ext_image_format_modifier: ext::image_drm_format_modifier::Device::new(instance, &device),
+            khr_external_memory_fd: khr::external_memory_fd::Device::new(instance, &device),
         };
 
         let (dropped_sender, dropped_recv) = mpsc::channel();
@@ -394,7 +390,7 @@ pub struct VulkanImage {
     node: Option<DrmNode>,
     /// The number of planes the image has for dmabuf export.
     format_plane_count: u32,
-    khr_external_memory_fd: khr::ExternalMemoryFd,
+    khr_external_memory_fd: khr::external_memory_fd::Device,
     dropped_sender: mpsc::Sender<ImageInner>,
     device: Weak<ash::Device>,
 }
@@ -445,7 +441,7 @@ impl AsDmabuf for VulkanImage {
             "Vulkan implementation reported too many planes"
         );
 
-        let create_info = vk::MemoryGetFdInfoKHR::builder()
+        let create_info = vk::MemoryGetFdInfoKHR::default()
             .handle_type(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT)
             // VUID-VkMemoryGetFdInfoKHR-handleType-00671: Memory was allocated with DMA_BUF_EXT
             .memory(self.inner.memory);
@@ -470,7 +466,7 @@ impl AsDmabuf for VulkanImage {
             };
 
             // VUID-vkGetImageSubresourceLayout-image-02270: All allocate images are created with drm tiling
-            let subresource = vk::ImageSubresource::builder().aspect_mask(aspect_mask).build();
+            let subresource = vk::ImageSubresource::default().aspect_mask(aspect_mask);
             let layout = unsafe { device.get_image_subresource_layout(self.inner.image, subresource) };
             builder.add_plane(
                 // SAFETY: `vkGetMemoryFdKHR` creates a new file descriptor owned by the caller.
@@ -532,11 +528,11 @@ struct ExtensionFns {
     /// Functions to get DRM format information.
     ///
     /// These are required, and therefore you may assume this functionality is available.
-    ext_image_format_modifier: ext::ImageDrmFormatModifier,
+    ext_image_format_modifier: ext::image_drm_format_modifier::Device,
     /// Functions used for dmabuf import and export.
     ///
     /// If this is [`Some`], then the allocator will support dmabuf import and export operations.
-    khr_external_memory_fd: khr::ExternalMemoryFd,
+    khr_external_memory_fd: khr::external_memory_fd::Device,
 }
 
 impl VulkanAllocator {
@@ -570,10 +566,10 @@ impl VulkanAllocator {
 
         match vk_format {
             Some(vk_format) => {
-                let mut image_drm_format_info = vk::PhysicalDeviceImageDrmFormatModifierInfoEXT::builder()
+                let mut image_drm_format_info = vk::PhysicalDeviceImageDrmFormatModifierInfoEXT::default()
                     .drm_format_modifier(format.modifier.into())
                     .sharing_mode(vk::SharingMode::EXCLUSIVE);
-                let format_info = vk::PhysicalDeviceImageFormatInfo2::builder()
+                let format_info = vk::PhysicalDeviceImageFormatInfo2::default()
                     .format(vk_format)
                     .ty(vk::ImageType::TYPE_2D)
                     .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
@@ -681,11 +677,11 @@ impl VulkanAllocator {
 
         // Now that the list of valid modifiers is known, create an image using one of the modifiers.
         let mut modifier_list =
-            vk::ImageDrmFormatModifierListCreateInfoEXT::builder().drm_format_modifiers(modifiers);
-        let mut external_memory_image_create_info = vk::ExternalMemoryImageCreateInfo::builder()
+            vk::ImageDrmFormatModifierListCreateInfoEXT::default().drm_format_modifiers(modifiers);
+        let mut external_memory_image_create_info = vk::ExternalMemoryImageCreateInfo::default()
             .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
 
-        let image_create_info = vk::ImageCreateInfo::builder()
+        let image_create_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .format(vk_format)
             .extent(vk::Extent3D {
@@ -751,9 +747,9 @@ impl VulkanAllocator {
         // Allocate image memory
         let memory_reqs = unsafe { self.device.get_image_memory_requirements(guard.image) };
         // TODO: Memory type index
-        let mut export_memory_allocate_info = vk::ExportMemoryAllocateInfo::builder()
+        let mut export_memory_allocate_info = vk::ExportMemoryAllocateInfo::default()
             .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
-        let alloc_create_info = vk::MemoryAllocateInfo::builder()
+        let alloc_create_info = vk::MemoryAllocateInfo::default()
             .allocation_size(memory_reqs.size)
             .push_next(&mut export_memory_allocate_info);
 

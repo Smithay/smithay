@@ -35,7 +35,7 @@ use smithay::{
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
-        ash::vk::ExtPhysicalDeviceDrmFn,
+        ash::ext,
         calloop::EventLoop,
         gbm,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
@@ -132,7 +132,7 @@ pub fn run_x11() {
             .and_then(|instance| {
                 PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
                     devices
-                        .filter(|phd| phd.has_device_extension(ExtPhysicalDeviceDrmFn::name()))
+                        .filter(|phd| phd.has_device_extension(ext::physical_device_drm::NAME))
                         .find(|phd| {
                             phd.primary_node().unwrap() == Some(node)
                                 || phd.render_node().unwrap() == Some(node)
