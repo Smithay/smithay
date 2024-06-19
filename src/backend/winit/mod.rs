@@ -5,8 +5,8 @@
 //!
 //! ## Usage
 //!
-//! The backend is initialized using one of the [`init`], [`init_from_builder`] or
-//! [`init_from_builder_with_gl_attr`] functions, depending on the amount of control
+//! The backend is initialized using one of the [`init`], [`init_from_attributes`] or
+//! [`init_from_attributes_with_gl_attr`] functions, depending on the amount of control
 //! you want on the initialization of the backend. These functions will provide you
 //! with two objects:
 //!
@@ -27,7 +27,6 @@ use calloop::generic::Generic;
 use calloop::{EventSource, Interest, PostAction, Readiness, Token};
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use wayland_egl as wegl;
-use winit::event_loop::EventLoopBuilder;
 use winit::platform::pump_events::PumpStatus;
 use winit::platform::scancode::PhysicalKeyExtScancode;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -36,7 +35,7 @@ use winit::{
     event::{ElementState, Event, Touch, TouchPhase, WindowEvent},
     event_loop::EventLoop,
     platform::pump_events::EventLoopExtPumpEvents,
-    window::{Window as WinitWindow, WindowBuilder},
+    window::{Window as WinitWindow, WindowAttributes},
 };
 
 use crate::{
@@ -68,8 +67,8 @@ where
     R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
 {
-    init_from_builder(
-        WindowBuilder::new()
+    init_from_attributes(
+        WinitWindow::default_attributes()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             .with_title("Smithay")
             .with_visible(true),
@@ -77,17 +76,17 @@ where
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`]
-/// trait, from a given [`WindowBuilder`] struct and a corresponding
+/// trait, from a given [`WindowAttributes`] struct and a corresponding
 /// [`WinitEventLoop`].
-pub fn init_from_builder<R>(
-    builder: WindowBuilder,
+pub fn init_from_attributes<R>(
+    attributes: WindowAttributes,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
     R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
 {
-    init_from_builder_with_gl_attr(
-        builder,
+    init_from_attributes_with_gl_attr(
+        attributes,
         GlAttributes {
             version: (3, 0),
             profile: None,
@@ -98,12 +97,12 @@ where
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`]
-/// trait, from a given [`WindowBuilder`] struct, as well as given
+/// trait, from a given [`WindowAttributes`] struct, as well as given
 /// [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitEventLoop`].
-pub fn init_from_builder_with_gl_attr<R>(
-    builder: WindowBuilder,
-    attributes: GlAttributes,
+pub fn init_from_attributes_with_gl_attr<R>(
+    attributes: WindowAttributes,
+    gl_attributes: GlAttributes,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
     R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
@@ -113,11 +112,13 @@ where
     let _guard = span.enter();
     info!("Initializing a winit backend");
 
-    let event_loop = EventLoopBuilder::new()
-        .build()
-        .map_err(Error::EventLoopCreation)?;
+    let event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
 
-    let window = Arc::new(builder.build(&event_loop).map_err(Error::WindowCreation)?);
+    let window = Arc::new(
+        event_loop
+            .create_window(attributes)
+            .map_err(Error::WindowCreation)?,
+    );
 
     span.record("window", Into::<u64>::into(window.id()));
     debug!("Window created");
@@ -125,10 +126,11 @@ where
     let (display, context, surface, is_x11) = {
         let display = unsafe { EGLDisplay::new(window.clone())? };
 
-        let context = EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_10_bit())
-            .or_else(|_| {
-            EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_8_bit())
-        })?;
+        let context =
+            EGLContext::new_with_config(&display, gl_attributes, PixelFormatRequirements::_10_bit())
+                .or_else(|_| {
+                    EGLContext::new_with_config(&display, gl_attributes, PixelFormatRequirements::_8_bit())
+                })?;
 
         let (surface, is_x11) = match window.window_handle().map(|handle| handle.as_raw()) {
             Ok(RawWindowHandle::Wayland(handle)) => {
@@ -578,11 +580,12 @@ impl WinitEventLoop {
                     | WindowEvent::Ime(_)
                     | WindowEvent::Moved(_)
                     | WindowEvent::Occluded(_)
-                    | WindowEvent::SmartMagnify { .. }
+                    | WindowEvent::DoubleTapGesture { .. }
                     | WindowEvent::ThemeChanged(_)
-                    | WindowEvent::TouchpadMagnify { .. }
+                    | WindowEvent::PinchGesture { .. }
                     | WindowEvent::TouchpadPressure { .. }
-                    | WindowEvent::TouchpadRotate { .. }
+                    | WindowEvent::RotationGesture { .. }
+                    | WindowEvent::PanGesture { .. }
                     | WindowEvent::ActivationTokenDone { .. } => (),
                 },
                 Event::NewEvents(_)
