@@ -1,9 +1,9 @@
-use std::collections::HashSet;
 use std::os::unix::io::AsFd;
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, plane, Mode};
 use drm::{Device, DriverCapability};
+use indexmap::IndexSet;
 
 use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use crate::backend::allocator::format::get_opaque;
@@ -59,13 +59,14 @@ where
         drm: DrmSurface,
         mut allocator: A,
         color_formats: &[Fourcc],
-        renderer_formats: HashSet<Format>,
+        renderer_formats: impl IntoIterator<Item = Format>,
     ) -> Result<GbmBufferedSurface<A, U>, Error<A::Error>> {
         let span = info_span!(parent: drm.span(), "drm_gbm");
         let _guard = span.enter();
 
         let mut error = None;
         let drm = Arc::new(drm);
+        let renderer_formats = renderer_formats.into_iter().collect::<Vec<_>>();
 
         for format in color_formats {
             debug!("Testing color format: {}", format);
@@ -111,7 +112,7 @@ where
     fn new_internal(
         drm: Arc<DrmSurface>,
         allocator: A,
-        mut renderer_formats: HashSet<Format>,
+        mut renderer_formats: Vec<Format>,
         code: Fourcc,
     ) -> Result<(Slot<GbmBuffer>, Swapchain<A>, bool), (A, Error<A::Error>)> {
         // select a format
@@ -129,11 +130,11 @@ where
         let plane_modifiers = plane_formats
             .iter()
             .map(|fmt| fmt.modifier)
-            .collect::<HashSet<_>>();
+            .collect::<IndexSet<_>>();
         let renderer_modifiers = renderer_formats
             .iter()
             .map(|fmt| fmt.modifier)
-            .collect::<HashSet<_>>();
+            .collect::<IndexSet<_>>();
 
         trace!("Plane formats: {:?}", plane_formats);
         trace!("Renderer formats: {:?}", renderer_formats);
@@ -141,7 +142,7 @@ where
             "Remaining intersected modifiers: {:?}",
             plane_modifiers
                 .intersection(&renderer_modifiers)
-                .collect::<HashSet<_>>()
+                .collect::<IndexSet<_>>()
         );
 
         if plane_formats.is_empty() {
@@ -160,7 +161,7 @@ where
                 && renderer_formats.iter().all(|x| x.modifier != Modifier::Invalid)
                 && renderer_formats.iter().any(|x| x.modifier == Modifier::Linear))
                 || (renderer_formats.len() == 1
-                    && renderer_formats.iter().next().unwrap().modifier == Modifier::Invalid
+                    && renderer_formats.first().unwrap().modifier == Modifier::Invalid
                     && plane_formats.iter().all(|x| x.modifier != Modifier::Invalid)
                     && plane_formats.iter().any(|x| x.modifier == Modifier::Linear))
             {
