@@ -11,7 +11,7 @@ use crate::backend::renderer::{ImportDmaWl, ImportMemWl};
 use crate::backend::{egl::display::EGLBufferReader, renderer::ImportEgl};
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Format, Fourcc},
+        allocator::{dmabuf::Dmabuf, format::FormatSet, Format, Fourcc},
         egl::EGLContext,
         renderer::{
             element::UnderlyingStorage,
@@ -29,7 +29,6 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 use glow::Context;
 use std::{
     borrow::{Borrow, BorrowMut},
-    collections::HashSet,
     sync::Arc,
 };
 
@@ -430,7 +429,7 @@ impl ImportDma for GlowRenderer {
     ) -> Result<GlesTexture, GlesError> {
         self.gl.import_dmabuf(buffer, damage)
     }
-    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
+    fn dmabuf_formats(&self) -> FormatSet {
         self.gl.dmabuf_formats()
     }
     fn has_dmabuf_format(&self, format: Format) -> bool {
@@ -484,7 +483,7 @@ where
     fn bind(&mut self, target: T) -> Result<(), GlesError> {
         self.gl.bind(target)
     }
-    fn supported_formats(&self) -> Option<HashSet<Format>> {
+    fn supported_formats(&self) -> Option<FormatSet> {
         self.gl.supported_formats()
     }
 }

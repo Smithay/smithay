@@ -3,7 +3,7 @@
 use cgmath::{prelude::*, Matrix3, Vector2};
 use core::slice;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ffi::{CStr, CString},
     fmt, mem,
     os::raw::c_char,
@@ -42,7 +42,7 @@ use super::{
 use crate::backend::{
     allocator::{
         dmabuf::{Dmabuf, WeakDmabuf},
-        format::{get_bpp, get_opaque, has_alpha},
+        format::{get_bpp, get_opaque, has_alpha, FormatSet},
         Format, Fourcc,
     },
     egl::fence::EGLFence,
@@ -1260,15 +1260,8 @@ impl ImportDma for GlesRenderer {
         })
     }
 
-    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
-        Box::new(
-            self.egl
-                .dmabuf_texture_formats()
-                .iter()
-                .copied()
-                .collect::<Vec<_>>()
-                .into_iter(),
-        )
+    fn dmabuf_formats(&self) -> FormatSet {
+        self.egl.dmabuf_texture_formats().clone()
     }
 
     fn has_dmabuf_format(&self, format: Format) -> bool {
@@ -1706,7 +1699,7 @@ impl Bind<Dmabuf> for GlesRenderer {
         Ok(())
     }
 
-    fn supported_formats(&self) -> Option<HashSet<Format>> {
+    fn supported_formats(&self) -> Option<FormatSet> {
         Some(self.egl.display().dmabuf_render_formats().clone())
     }
 }

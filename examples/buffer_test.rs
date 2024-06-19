@@ -144,7 +144,7 @@ fn format_test(render: Vec<String>, sample: Vec<String>) {
         }))
         .fold(None, |set, formats| match set {
             None => Some(formats),
-            Some(set) => Some(set.intersection(&formats).cloned().collect()),
+            Some(set) => Some(set.intersection(&formats).copied().collect()),
         })
         .unwrap_or_default()
     {

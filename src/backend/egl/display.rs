@@ -11,12 +11,14 @@ use std::{
     os::unix::io::{AsRawFd, FromRawFd, OwnedFd},
 };
 
+use indexmap::IndexSet;
 use libc::c_void;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
+use crate::backend::allocator::format::FormatSet;
 #[cfg(feature = "backend_drm")]
 use crate::backend::egl::EGLDevice;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
@@ -120,8 +122,8 @@ pub struct EGLDisplay {
     display: Arc<EGLDisplayHandle>,
     egl_version: (i32, i32),
     extensions: Vec<String>,
-    dmabuf_import_formats: HashSet<DrmFormat>,
-    dmabuf_render_formats: HashSet<DrmFormat>,
+    dmabuf_import_formats: FormatSet,
+    dmabuf_render_formats: FormatSet,
     surface_type: ffi::EGLint,
     pub(super) has_fences: bool,
     pub(super) supports_native_fences: bool,
@@ -592,12 +594,12 @@ impl EGLDisplay {
     }
 
     /// Returns a list of formats for dmabufs that can be rendered to.
-    pub fn dmabuf_render_formats(&self) -> &HashSet<DrmFormat> {
+    pub fn dmabuf_render_formats(&self) -> &FormatSet {
         &self.dmabuf_render_formats
     }
 
     /// Returns a list of formats for dmabufs that can be used as textures.
-    pub fn dmabuf_texture_formats(&self) -> &HashSet<DrmFormat> {
+    pub fn dmabuf_texture_formats(&self) -> &FormatSet {
         &self.dmabuf_import_formats
     }
 
@@ -870,10 +872,10 @@ impl EGLDisplay {
 fn get_dmabuf_formats(
     display: &ffi::egl::types::EGLDisplay,
     extensions: &[String],
-) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError> {
+) -> Result<(FormatSet, FormatSet), EGLError> {
     if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
         warn!("Dmabuf import extension not available");
-        return Ok((HashSet::new(), HashSet::new()));
+        return Ok((FormatSet::default(), FormatSet::default()));
     }
 
     let formats = {
@@ -893,7 +895,7 @@ fn get_dmabuf_formats(
                 ffi::egl::QueryDmaBufFormatsEXT(*display, 0, std::ptr::null_mut(), &mut num as *mut _)
             })?;
             if num == 0 {
-                return Ok((HashSet::new(), HashSet::new()));
+                return Ok((FormatSet::default(), FormatSet::default()));
             }
             let mut formats: Vec<u32> = Vec::with_capacity(num as usize);
             wrap_egl_call_bool(|| unsafe {
@@ -914,8 +916,8 @@ fn get_dmabuf_formats(
         }
     };
 
-    let mut texture_formats = HashSet::new();
-    let mut render_formats = HashSet::new();
+    let mut texture_formats = IndexSet::new();
+    let mut render_formats = IndexSet::new();
 
     for fourcc in formats {
         let mut num = 0i32;
@@ -997,7 +999,10 @@ fn get_dmabuf_formats(
     trace!("Supported dmabuf import formats: {:?}", texture_formats);
     trace!("Supported dmabuf render formats: {:?}", render_formats);
 
-    Ok((texture_formats, render_formats))
+    Ok((
+        FormatSet::from_formats(texture_formats),
+        FormatSet::from_formats(render_formats),
+    ))
 }
 
 /// Type to receive [`EGLBuffer`] for EGL-based [`WlBuffer`]s.

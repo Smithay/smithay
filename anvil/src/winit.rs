@@ -147,7 +147,7 @@ pub fn run_winit() {
 
     let dmabuf_default_feedback = match render_node {
         Ok(Some(node)) => {
-            let dmabuf_formats = backend.renderer().dmabuf_formats().collect::<Vec<_>>();
+            let dmabuf_formats = backend.renderer().dmabuf_formats();
             let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
                 .build()
                 .unwrap();
@@ -173,7 +173,7 @@ pub fn run_winit() {
         );
         (dmabuf_state, dmabuf_global, Some(default_feedback))
     } else {
-        let dmabuf_formats = backend.renderer().dmabuf_formats().collect::<Vec<_>>();
+        let dmabuf_formats = backend.renderer().dmabuf_formats();
         let mut dmabuf_state = DmabufState::new();
         let dmabuf_global =
             dmabuf_state.create_global::<AnvilState<WinitData>>(&display.handle(), dmabuf_formats);

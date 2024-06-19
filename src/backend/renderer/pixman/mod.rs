@@ -1,6 +1,5 @@
 //! Implementation of the rendering traits using pixman
 use std::{
-    collections::HashSet,
     rc::Rc,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -12,7 +11,7 @@ use tracing::warn;
 use crate::{
     backend::allocator::{
         dmabuf::{Dmabuf, DmabufMapping, DmabufMappingMode, DmabufSyncFailed, DmabufSyncFlags, WeakDmabuf},
-        format::has_alpha,
+        format::{has_alpha, FormatSet},
         Buffer,
     },
     utils::{Buffer as BufferCoords, Physical, Rectangle, Scale, Size, Transform},
@@ -1109,16 +1108,16 @@ impl ImportDma for PixmanRenderer {
         Ok(PixmanTexture(image))
     }
 
-    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = drm_fourcc::DrmFormat>> {
+    fn dmabuf_formats(&self) -> FormatSet {
         lazy_static::lazy_static! {
-            static ref DMABUF_FORMATS: Vec<DrmFormat> = {
+            static ref DMABUF_FORMATS: FormatSet = {
                 SUPPORTED_FORMATS.iter().copied().map(|code| DrmFormat {
                     code,
                     modifier: drm_fourcc::DrmModifier::Linear,
                 }).collect()
             };
         }
-        Box::new(DMABUF_FORMATS.iter().copied())
+        DMABUF_FORMATS.clone()
     }
 }
 
@@ -1164,9 +1163,9 @@ impl Bind<Dmabuf> for PixmanRenderer {
         Ok(())
     }
 
-    fn supported_formats(&self) -> Option<HashSet<DrmFormat>> {
+    fn supported_formats(&self) -> Option<FormatSet> {
         lazy_static::lazy_static! {
-            static ref DMABUF_FORMATS: HashSet<DrmFormat> = {
+            static ref DMABUF_FORMATS: FormatSet = {
                 SUPPORTED_FORMATS.iter().copied().map(|code| DrmFormat {
                     code,
                     modifier: DrmModifier::Linear,
@@ -1199,9 +1198,9 @@ impl Bind<PixmanRenderBuffer> for PixmanRenderer {
         Ok(())
     }
 
-    fn supported_formats(&self) -> Option<HashSet<DrmFormat>> {
+    fn supported_formats(&self) -> Option<FormatSet> {
         lazy_static::lazy_static! {
-            static ref RENDER_BUFFER_FORMATS: HashSet<DrmFormat> = {
+            static ref RENDER_BUFFER_FORMATS: FormatSet = {
                 SUPPORTED_FORMATS.iter().copied().map(|code| DrmFormat {
                     code,
                     modifier: DrmModifier::Linear,
