@@ -1237,6 +1237,10 @@ where
                         )
                         .map_err(Error::Target)?;
                     let sync = frame.finish().map_err(Error::Target)?;
+                    render
+                        .renderer_mut()
+                        .cleanup_texture_cache()
+                        .map_err(Error::Render)?;
 
                     return Ok(sync);
                 }
@@ -1288,6 +1292,10 @@ where
                 }
 
                 if mappings.is_empty() {
+                    render
+                        .renderer_mut()
+                        .cleanup_texture_cache()
+                        .map_err(Error::Render)?;
                     return Ok(sync::SyncPoint::signaled());
                 }
 
@@ -1332,9 +1340,18 @@ where
                             .map_err(Error::Target)?;
                     }
                 }
-                return frame.finish().map_err(Error::Target);
+                let sync = frame.finish().map_err(Error::Target)?;
+                render
+                    .renderer_mut()
+                    .cleanup_texture_cache()
+                    .map_err(Error::Render)?;
+                return Ok(sync);
             }
 
+            render
+                .renderer_mut()
+                .cleanup_texture_cache()
+                .map_err(Error::Render)?;
             return Ok(sync);
         }
 
