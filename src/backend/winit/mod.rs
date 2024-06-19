@@ -115,6 +115,8 @@ where
 
     let event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
 
+    // TODO: Create window in `resumed`?
+    #[allow(deprecated)]
     let window = Arc::new(
         event_loop
             .create_window(attributes)
