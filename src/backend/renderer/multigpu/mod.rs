@@ -634,7 +634,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                         texture.size(),
                         mappings.into_iter(),
                     );
-                    surface.data_map.insert_if_missing(|| texture.0);
+                    surface.data_map.insert_if_missing_threadsafe(|| texture.0);
                 }
 
                 Ok(())
@@ -1801,7 +1801,7 @@ where
         let res = self.import_dmabuf_internal(dmabuf, texture, Some(damage));
         if res.is_ok() {
             if let Some(surface) = surface {
-                surface.data_map.insert_if_missing(|| texture_ref);
+                surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
             }
         }
         res
