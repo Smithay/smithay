@@ -53,6 +53,15 @@ pub mod sync;
 #[cfg(feature = "renderer_test")]
 pub mod test;
 
+/// Hint for DRM backend on how the surface should be presented
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentationMode {
+    /// Vertical synchronization
+    VSync,
+    /// Tearing presentationres
+    Async,
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Texture filtering methods
 pub enum TextureFilter {

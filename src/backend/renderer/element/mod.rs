@@ -33,7 +33,7 @@ use crate::{
 use super::utils::Buffer;
 use super::{
     utils::{CommitCounter, DamageSet, OpaqueRegions},
-    Renderer,
+    PresentationMode, Renderer,
 };
 
 pub mod memory;
@@ -378,6 +378,10 @@ pub trait Element {
     fn kind(&self) -> Kind {
         Kind::default()
     }
+    /// Hint for DRM backend on how the surface should be presented
+    fn presentation_mode(&self) -> Option<PresentationMode> {
+        None
+    }
 }
 
 /// A single render element
@@ -459,6 +463,10 @@ where
 
     fn kind(&self) -> Kind {
         (*self).kind()
+    }
+
+    fn presentation_mode(&self) -> Option<PresentationMode> {
+        (*self).presentation_mode()
     }
 }
 
@@ -750,6 +758,19 @@ macro_rules! render_elements_internal {
                         #[$meta]
                     )*
                     Self::$body(x) => $crate::render_elements_internal!(@call kind; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn presentation_mode(&self) -> Option<$crate::backend::renderer::PresentationMode> {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call presentation_mode; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1465,6 +1486,10 @@ where
 
     fn kind(&self) -> Kind {
         self.0.kind()
+    }
+
+    fn presentation_mode(&self) -> Option<PresentationMode> {
+        self.0.presentation_mode()
     }
 }
 

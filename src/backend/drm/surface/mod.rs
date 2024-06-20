@@ -3,7 +3,7 @@ use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
+use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode, PageFlipFlags};
 use drm::Device as BasicDevice;
 
 use libc::dev_t;
@@ -351,13 +351,13 @@ impl DrmSurface {
     pub fn commit<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
-        event: bool,
+        flip_flags: PageFlipFlags,
     ) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.commit(planes, event),
+            DrmSurfaceInternal::Atomic(surf) => surf.commit(planes, flip_flags),
             DrmSurfaceInternal::Legacy(surf) => {
                 let fb = ensure_legacy_planes(self, planes)?;
-                surf.commit(fb, event)
+                surf.commit(fb, flip_flags)
             }
         }
     }
@@ -373,13 +373,13 @@ impl DrmSurface {
     pub fn page_flip<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
-        event: bool,
+        flip_flags: PageFlipFlags,
     ) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(planes, event),
+            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(planes, flip_flags),
             DrmSurfaceInternal::Legacy(surf) => {
                 let fb = ensure_legacy_planes(self, planes)?;
-                surf.page_flip(fb, event)
+                surf.page_flip(fb, flip_flags)
             }
         }
     }
