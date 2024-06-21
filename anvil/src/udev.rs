@@ -522,7 +522,7 @@ impl DrmLeaseHandler for AnvilState<UdevData> {
             {
                 builder.add_connector(conn);
                 builder.add_crtc(*crtc);
-                let planes = backend.drm.planes(crtc).map_err(LeaseRejected::with_cause)?;
+                let (planes, _) = backend.drm.planes(crtc).map_err(LeaseRejected::with_cause)?;
                 builder.add_plane(planes.primary.handle);
                 if let Some(cursor) = planes.cursor {
                     builder.add_plane(cursor.handle);

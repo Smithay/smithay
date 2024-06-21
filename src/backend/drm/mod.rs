@@ -85,6 +85,7 @@ mod surface;
 use std::sync::Once;
 
 use crate::utils::DevPath;
+use device::PlaneClaimStorage;
 pub use device::{
     DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmEvent, EventMetadata as DrmEventMetadata, PlaneClaim,
     Time as DrmEventTime,
@@ -149,8 +150,9 @@ fn planes(
     dev: &(impl DevPath + ControlDevice),
     crtc: &crtc::Handle,
     has_universal_planes: bool,
-) -> Result<Planes, DrmError> {
-    let mut primary = None;
+    plane_claim_storage: &PlaneClaimStorage,
+) -> Result<(Planes, PlaneClaim), DrmError> {
+    let mut primary: Option<(PlaneInfo, PlaneClaim)> = None;
     let mut cursor = None;
     let mut overlay = Vec::new();
 
@@ -191,7 +193,11 @@ fn planes(
             };
             match type_ {
                 PlaneType::Primary => {
-                    primary = Some(plane_info);
+                    primary = primary.or_else(|| {
+                        plane_claim_storage
+                            .claim(plane_info.handle, *crtc)
+                            .map(|claim| (plane_info, claim))
+                    });
                 }
                 PlaneType::Cursor => {
                     cursor = Some(plane_info);
@@ -203,11 +209,16 @@ fn planes(
         }
     }
 
-    Ok(Planes {
-        primary: primary.expect("Crtc has no primary plane"),
-        cursor: if has_universal_planes { cursor } else { None },
-        overlay: if has_universal_planes { overlay } else { Vec::new() },
-    })
+    let (primary, primary_claim) = primary.expect("Crtc has no primary plane");
+
+    Ok((
+        Planes {
+            primary: primary,
+            cursor: if has_universal_planes { cursor } else { None },
+            overlay: if has_universal_planes { overlay } else { Vec::new() },
+        },
+        primary_claim,
+    ))
 }
 
 fn plane_type(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Result<PlaneType, DrmError> {

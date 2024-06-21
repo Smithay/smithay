@@ -276,8 +276,8 @@ impl DrmDevice {
     }
 
     /// Returns a set of available planes for a given crtc
-    pub fn planes(&self, crtc: &crtc::Handle) -> Result<Planes, Error> {
-        planes(self, crtc, self.has_universal_planes)
+    pub fn planes(&self, crtc: &crtc::Handle) -> Result<(Planes, PlaneClaim), Error> {
+        planes(self, crtc, self.has_universal_planes, &self.plane_claim_storage)
     }
 
     /// Claim a plane so that it won't be used by a different crtc
@@ -327,7 +327,7 @@ impl DrmDevice {
             return Err(Error::DeviceInactive);
         }
 
-        let planes = self.planes(&crtc)?;
+        let (planes, primary_plane_claim) = self.planes(&crtc)?;
         let info = self.get_plane(planes.primary.handle).map_err(|source| {
             Error::Access(AccessError {
                 errmsg: "Failed to get plane info",
@@ -378,6 +378,7 @@ impl DrmDevice {
             planes,
             internal,
             plane_claim_storage: self.plane_claim_storage.clone(),
+            primary_plane_claim,
         })
     }
 

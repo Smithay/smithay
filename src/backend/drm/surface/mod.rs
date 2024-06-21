@@ -30,6 +30,8 @@ pub struct DrmSurface {
     pub(super) planes: Planes,
     pub(super) internal: Arc<DrmSurfaceInternal>,
     pub(super) plane_claim_storage: PlaneClaimStorage,
+    #[allow(dead_code)]
+    pub(super) primary_plane_claim: PlaneClaim,
 }
 
 #[derive(Debug)]
