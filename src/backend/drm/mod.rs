@@ -124,8 +124,8 @@ pub trait Framebuffer: AsRef<framebuffer::Handle> {
 /// A set of planes as supported by a crtc
 #[derive(Debug, Clone)]
 pub struct Planes {
-    /// The primary plane of the crtc (automatically selected for [DrmDevice::create_surface])
-    pub primary: PlaneInfo,
+    /// The primary plane(s) of the crtc
+    pub primary: Vec<PlaneInfo>,
     /// The cursor plane of the crtc, if available
     pub cursor: Option<PlaneInfo>,
     /// Overlay planes supported by the crtc, if available
@@ -150,7 +150,7 @@ fn planes(
     crtc: &crtc::Handle,
     has_universal_planes: bool,
 ) -> Result<Planes, DrmError> {
-    let mut primary = None;
+    let mut primary = Vec::with_capacity(1);
     let mut cursor = None;
     let mut overlay = Vec::new();
 
@@ -191,7 +191,7 @@ fn planes(
             };
             match type_ {
                 PlaneType::Primary => {
-                    primary = Some(plane_info);
+                    primary.push(plane_info);
                 }
                 PlaneType::Cursor => {
                     cursor = Some(plane_info);
@@ -204,7 +204,7 @@ fn planes(
     }
 
     Ok(Planes {
-        primary: primary.expect("Crtc has no primary plane"),
+        primary,
         cursor: if has_universal_planes { cursor } else { None },
         overlay: if has_universal_planes { overlay } else { Vec::new() },
     })

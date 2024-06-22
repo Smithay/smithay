@@ -628,10 +628,10 @@ impl<B> Clone for Owned<B> {
 }
 
 impl<B: Framebuffer> FrameState<B> {
-    fn from_planes(planes: &Planes) -> Self {
+    fn from_planes(primary_plane: plane::Handle, planes: &Planes) -> Self {
         let cursor_plane_count = usize::from(planes.cursor.is_some());
         let mut tmp = SmallVec::with_capacity(planes.overlay.len() + cursor_plane_count + 1);
-        tmp.push((planes.primary.handle, PlaneState::default()));
+        tmp.push((primary_plane, PlaneState::default()));
         if let Some(info) = planes.cursor.as_ref() {
             tmp.push((info.handle, PlaneState::default()));
         }
@@ -1766,7 +1766,7 @@ where
         code: DrmFourcc,
     ) -> Result<(Swapchain<A>, Frame<A, F>, bool), (A, FrameErrorType<A, F>)> {
         // select a format
-        let mut plane_formats = planes.primary.formats.iter().copied().collect::<IndexSet<_>>();
+        let mut plane_formats = drm.plane_info().formats.iter().copied().collect::<IndexSet<_>>();
 
         let opaque_code = get_opaque(code).unwrap_or(code);
         if !plane_formats
@@ -1879,8 +1879,8 @@ where
 
         let mode_size = Size::from((mode.size().0 as i32, mode.size().1 as i32));
 
-        let mut current_frame_state = FrameState::from_planes(planes);
-        let plane_claim = match drm.claim_plane(planes.primary.handle) {
+        let mut current_frame_state = FrameState::from_planes(drm.plane(), planes);
+        let plane_claim = match drm.claim_plane(drm.plane()) {
             Some(claim) => claim,
             None => {
                 warn!("failed to claim primary plane",);
@@ -1910,8 +1910,7 @@ where
             }),
         };
 
-        match current_frame_state.test_state(&drm, supports_fencing, planes.primary.handle, plane_state, true)
-        {
+        match current_frame_state.test_state(&drm, supports_fencing, drm.plane(), plane_state, true) {
             Ok(_) => {
                 debug!("Chosen format: {:?}", dmabuf.format());
                 Ok((swapchain, current_frame_state, use_opaque))
@@ -2031,7 +2030,7 @@ where
                 .unwrap_or(&self.current_frame);
 
             // This will create an empty frame state, all planes are skipped by default
-            let mut next_frame_state = FrameState::from_planes(&self.planes);
+            let mut next_frame_state = FrameState::from_planes(self.surface.plane(), &self.planes);
 
             // We want to set skip to false on all planes that previously had something assigned so that
             // they get cleared when they are not longer used
@@ -2051,13 +2050,10 @@ where
 
         // We want to make sure we can actually scan-out the primary plane, so
         // explicitly set skip to false
-        let plane_claim = self
-            .surface
-            .claim_plane(self.planes.primary.handle)
-            .ok_or_else(|| {
-                error!("failed to claim primary plane");
-                FrameError::PrimaryPlaneClaimFailed
-            })?;
+        let plane_claim = self.surface.claim_plane(self.surface.plane()).ok_or_else(|| {
+            error!("failed to claim primary plane");
+            FrameError::PrimaryPlaneClaimFailed
+        })?;
         let primary_plane_state = PlaneState {
             skip: false,
             needs_test: false,
@@ -2083,7 +2079,7 @@ where
 
         // unconditionally set the primary plane state
         // if this would fail the test we are screwed anyway
-        next_frame_state.set_state(self.planes.primary.handle, primary_plane_state.clone());
+        next_frame_state.set_state(self.surface.plane(), primary_plane_state.clone());
 
         // This holds all elements that are visible on the output
         // A element is considered visible if it intersects with the output geometry
@@ -2189,7 +2185,9 @@ where
                     .planes
                     .overlay
                     .iter()
-                    .filter(|p| p.zpos.unwrap_or_default() < self.planes.primary.zpos.unwrap_or_default())
+                    .filter(|p| {
+                        p.zpos.unwrap_or_default() < self.surface.plane_info().zpos.unwrap_or_default()
+                    })
                     .any(|p| next_frame_state.overlaps(p.handle, element_geometry));
                 !overlaps_with_underlay
                     && (crtc_background_matches_clear_color
@@ -2292,7 +2290,7 @@ where
 
                 // Check if the element we are potentially going to remove is
                 // on the primary plane, cursor plane or an overlay plane
-                let element = if *plane == self.planes.primary.handle {
+                let element = if *plane == self.surface.plane() {
                     primary_plane_scanout_element.take()
                 } else if self
                     .planes
@@ -2328,7 +2326,7 @@ where
             // to make sure we actually have a slot on the primary
             // plane we can render into
             if !removed_overlay_elements.is_empty() {
-                next_frame_state.set_state(self.planes.primary.handle, primary_plane_state);
+                next_frame_state.set_state(self.surface.plane(), primary_plane_state);
             }
 
             removed_overlay_elements.sort_by_key(|(z_index, _)| *z_index);
@@ -2354,7 +2352,7 @@ where
         }
 
         let render = next_frame_state
-            .plane_buffer(self.planes.primary.handle)
+            .plane_buffer(self.surface.plane())
             .map(|config| matches!(&config.buffer, ScanoutBuffer::Swapchain(_)))
             .unwrap_or(false);
 
@@ -2362,10 +2360,10 @@ where
             trace!(
                 "rendering {} elements on the primary {:?}",
                 primary_plane_elements.len(),
-                self.planes.primary.handle,
+                self.surface.plane(),
             );
             let (dmabuf, age) = {
-                let primary_plane_state = next_frame_state.plane_state(self.planes.primary.handle).unwrap();
+                let primary_plane_state = next_frame_state.plane_state(self.surface.plane()).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
                 let slot = match &config.buffer.buffer {
                     ScanoutBuffer::Swapchain(slot) => slot,
@@ -2412,7 +2410,7 @@ where
                         }
                     })
                     .unwrap_or_default();
-                let is_underlay = plane_z_pos < self.planes.primary.zpos.unwrap_or_default();
+                let is_underlay = plane_z_pos < self.surface.plane_info().zpos.unwrap_or_default();
                 if is_underlay {
                     Some(HolepunchRenderElement::from_render_element(id, element, output_scale).into())
                 } else {
@@ -2462,13 +2460,11 @@ where
                     // but now use it for rendering we do not replace the damage which is
                     // the whole plane initially.
                     let had_direct_scan_out = previous_state
-                        .plane_state(self.planes.primary.handle)
+                        .plane_state(self.surface.plane())
                         .map(|state| state.element_state.is_some())
                         .unwrap_or(true);
 
-                    let primary_plane_state = next_frame_state
-                        .plane_state_mut(self.planes.primary.handle)
-                        .unwrap();
+                    let primary_plane_state = next_frame_state.plane_state_mut(self.surface.plane()).unwrap();
                     let config = primary_plane_state.config.as_mut().unwrap();
 
                     if !had_direct_scan_out {
@@ -2496,7 +2492,7 @@ where
 
                             primary_plane_state.skip = true;
                             *config = previous_state
-                                .plane_state(self.planes.primary.handle)
+                                .plane_state(self.surface.plane())
                                 .and_then(|state| state.config.as_ref().cloned())
                                 .unwrap_or_else(|| config.clone());
                         }
@@ -2525,7 +2521,7 @@ where
 
         let primary_plane_element = if render {
             let (slot, sync) = {
-                let primary_plane_state = next_frame_state.plane_state(self.planes.primary.handle).unwrap();
+                let primary_plane_state = next_frame_state.plane_state(self.surface.plane()).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
                 (
                     config.buffer.clone(),
@@ -2602,7 +2598,7 @@ where
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
 
-        if let Some(plane_state) = prepared_frame.frame.plane_state(self.planes.primary.handle) {
+        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane()) {
             if !plane_state.skip {
                 let slot = plane_state.buffer().and_then(|config| match &config.buffer {
                     ScanoutBuffer::Swapchain(slot) => Some(slot),
@@ -2677,7 +2673,7 @@ where
                 // the next call to render_frame
                 let primary_plane_element_state = prepared_frame
                     .frame
-                    .plane_state(self.planes.primary.handle)
+                    .plane_state(self.surface.plane())
                     .and_then(|plane_state| {
                         plane_state
                             .element_state
@@ -2904,7 +2900,7 @@ where
                     trace!(
                         "assigned element {:?} to primary {:?}",
                         element.id(),
-                        self.planes.primary.handle
+                        self.surface.plane()
                     );
                     return Ok(plane);
                 }
@@ -2976,7 +2972,7 @@ where
         E: RenderElement<R>,
     {
         if frame_state
-            .plane_state(self.planes.primary.handle)
+            .plane_state(self.surface.plane())
             .map(|state| state.element_state.is_some())
             .unwrap_or(true)
         {
@@ -2999,14 +2995,16 @@ where
             .planes
             .overlay
             .iter()
-            .filter(|plane| self.planes.primary.zpos.unwrap_or_default() > plane.zpos.unwrap_or_default())
+            .filter(|plane| {
+                self.surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default()
+            })
             .any(|plane| frame_state.is_assigned(plane.handle));
 
         if has_underlay {
             trace!(
                 "failed to assign element {:?} to primary {:?}, already has underlay",
                 element.id(),
-                self.planes.primary.handle
+                self.surface.plane()
             );
             return Err(None);
         }
@@ -3015,7 +3013,13 @@ where
             return Err(Some(RenderingReason::ScanoutFailed));
         }
 
-        let res = self.try_assign_plane(element, &element_config, &self.planes.primary, scale, frame_state);
+        let res = self.try_assign_plane(
+            element,
+            &element_config,
+            self.surface.plane_info(),
+            scale,
+            frame_state,
+        );
 
         if let Err(Some(RenderingReason::ScanoutFailed)) = res {
             element_config.failed_planes.primary = true;
@@ -3570,7 +3574,7 @@ where
                         acc
                     });
             let current_plane_snapshot = PlanesSnapshot {
-                primary: frame_state.is_assigned(self.planes.primary.handle),
+                primary: frame_state.is_assigned(self.surface.plane()),
                 cursor: self
                     .planes
                     .cursor
@@ -3611,8 +3615,8 @@ where
                         let primary_plane_changed = current_plane_snapshot
                             .primary
                             .then(|| {
-                                frame_state.plane_properties(self.planes.primary.handle)
-                                    != previous_frame_state.plane_properties(self.planes.primary.handle)
+                                frame_state.plane_properties(self.surface.plane())
+                                    != previous_frame_state.plane_properties(self.surface.plane())
                             })
                             .unwrap_or(false);
 
@@ -3723,7 +3727,7 @@ where
         });
 
         let primary_plane_has_alpha = frame_state
-            .plane_buffer(self.planes.primary.handle)
+            .plane_buffer(self.surface.plane())
             .map(|state| has_alpha(state.format().code))
             .unwrap_or(false);
 
@@ -3777,7 +3781,8 @@ where
             }
 
             // test if the plane represents an underlay
-            let is_underlay = self.planes.primary.zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
+            let is_underlay =
+                self.surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
 
             if is_underlay && !(element_is_opaque && primary_plane_has_alpha) {
                 trace!(

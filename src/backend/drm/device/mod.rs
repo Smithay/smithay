@@ -328,17 +328,35 @@ impl DrmDevice {
         }
 
         let planes = self.planes(&crtc)?;
-        let info = self.get_plane(planes.primary.handle).map_err(|source| {
-            Error::Access(AccessError {
-                errmsg: "Failed to get plane info",
-                dev: self.dev_path(),
-                source,
-            })
-        })?;
-        let filter = info.possible_crtcs();
-        if !self.resources.filter_crtcs(filter).contains(&crtc) {
-            return Err(Error::PlaneNotCompatible(crtc, planes.primary.handle));
-        }
+
+        let selected_primary_plane = planes.primary.iter().find_map(|plane| {
+            let claim = match self.plane_claim_storage.claim(plane.handle, crtc) {
+                Some(claim) => claim,
+                None => {
+                    tracing::debug!(?crtc, ?plane, "skipping already claimed primary plane");
+                    return None;
+                }
+            };
+            let info = match self.get_plane(plane.handle) {
+                Ok(info) => info,
+                Err(err) => {
+                    tracing::warn!(?crtc, ?err, ?plane, "failed to get primary plane info");
+                    return None;
+                }
+            };
+
+            let filter = info.possible_crtcs();
+            if !self.resources.filter_crtcs(filter).contains(&crtc) {
+                tracing::warn!(?crtc, ?plane, "primary plane not compatible with crtc");
+                return None;
+            }
+
+            Some((plane.clone(), claim))
+        });
+
+        let Some((plane, claim)) = selected_primary_plane else {
+            return Err(Error::NoPlane);
+        };
 
         let active = match &*self.internal {
             DrmDeviceInternal::Atomic(dev) => dev.active.clone(),
@@ -355,7 +373,7 @@ impl DrmDevice {
                 self.internal.clone(),
                 active,
                 crtc,
-                planes.primary.handle,
+                plane.handle,
                 mapping,
                 mode,
                 connectors,
@@ -378,6 +396,7 @@ impl DrmDevice {
             planes,
             internal,
             plane_claim_storage: self.plane_claim_storage.clone(),
+            primary_plane: (plane, claim),
         })
     }
 

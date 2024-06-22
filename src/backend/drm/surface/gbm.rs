@@ -116,13 +116,7 @@ where
         code: Fourcc,
     ) -> Result<(Slot<GbmBuffer>, Swapchain<A>, bool), (A, Error<A::Error>)> {
         // select a format
-        let mut plane_formats = drm
-            .planes()
-            .primary
-            .formats
-            .iter()
-            .copied()
-            .collect::<IndexSet<_>>();
+        let mut plane_formats = drm.plane_info().formats.iter().copied().collect::<IndexSet<_>>();
         let opaque_code = get_opaque(code).unwrap_or(code);
         if !plane_formats
             .iter()

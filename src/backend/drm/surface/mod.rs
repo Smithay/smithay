@@ -13,7 +13,8 @@ pub(super) mod atomic;
 pub(super) mod gbm;
 pub(super) mod legacy;
 use super::{
-    device::PlaneClaimStorage, error::Error, plane_type, DrmDeviceFd, PlaneClaim, PlaneType, Planes,
+    device::PlaneClaimStorage, error::Error, plane_type, DrmDeviceFd, PlaneClaim, PlaneInfo, PlaneType,
+    Planes,
 };
 use crate::utils::DevPath;
 use crate::utils::{Buffer, Physical, Point, Rectangle, Transform};
@@ -30,6 +31,7 @@ pub struct DrmSurface {
     pub(super) planes: Planes,
     pub(super) internal: Arc<DrmSurfaceInternal>,
     pub(super) plane_claim_storage: PlaneClaimStorage,
+    pub(super) primary_plane: (PlaneInfo, PlaneClaim),
 }
 
 #[derive(Debug)]
@@ -194,7 +196,12 @@ impl DrmSurface {
 
     /// Returns the underlying primary [`plane`](drm::control::plane) of this surface
     pub fn plane(&self) -> plane::Handle {
-        self.planes.primary.handle
+        self.primary_plane.0.handle
+    }
+
+    /// Returns the [`PlaneInfo`] of the underlying primary [`plane`](drm::control::plane) of this surface
+    pub fn plane_info(&self) -> &PlaneInfo {
+        &self.primary_plane.0
     }
 
     /// Currently used [`connector`](drm::control::connector)s of this surface
@@ -394,7 +401,7 @@ impl DrmSurface {
     /// Returns `None` if the plane could not be claimed
     pub fn claim_plane(&self, plane: plane::Handle) -> Option<PlaneClaim> {
         // Validate that we are called with an plane that belongs to us
-        if self.planes.primary.handle == plane
+        if self.planes.primary.iter().any(|p| p.handle == plane)
             || self
                 .planes
                 .cursor
