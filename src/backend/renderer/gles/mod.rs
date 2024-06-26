@@ -2116,6 +2116,13 @@ impl Renderer for GlesRenderer {
         // block until the sync point has been reached
         sync.wait().map_err(|_| GlesError::SyncInterrupted)
     }
+
+    #[profiling::function]
+    fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
+        self.make_current()?;
+        self.cleanup();
+        Ok(())
+    }
 }
 
 /// Vertices for instanced rendering.

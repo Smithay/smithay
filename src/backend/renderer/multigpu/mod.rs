@@ -1098,6 +1098,22 @@ where
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.render.renderer_mut().wait(sync).map_err(Error::Render)
     }
+
+    #[profiling::function]
+    fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
+        if let Some(target) = self.target.as_mut() {
+            target
+                .device
+                .renderer_mut()
+                .cleanup_texture_cache()
+                .map_err(Error::Target)?;
+        }
+        self.render
+            .renderer_mut()
+            .cleanup_texture_cache()
+            .map_err(Error::Render)?;
+        Ok(())
+    }
 }
 
 fn create_shared_dma_framebuffer<R, T: GraphicsApi>(
@@ -1224,6 +1240,10 @@ where
                         )
                         .map_err(Error::Target)?;
                     let sync = frame.finish().map_err(Error::Target)?;
+                    render
+                        .renderer_mut()
+                        .cleanup_texture_cache()
+                        .map_err(Error::Render)?;
 
                     return Ok(sync);
                 }
@@ -1275,6 +1295,10 @@ where
                 }
 
                 if mappings.is_empty() {
+                    render
+                        .renderer_mut()
+                        .cleanup_texture_cache()
+                        .map_err(Error::Render)?;
                     return Ok(sync::SyncPoint::signaled());
                 }
 
@@ -1319,9 +1343,18 @@ where
                             .map_err(Error::Target)?;
                     }
                 }
-                return frame.finish().map_err(Error::Target);
+                let sync = frame.finish().map_err(Error::Target)?;
+                render
+                    .renderer_mut()
+                    .cleanup_texture_cache()
+                    .map_err(Error::Render)?;
+                return Ok(sync);
             }
 
+            render
+                .renderer_mut()
+                .cleanup_texture_cache()
+                .map_err(Error::Render)?;
             return Ok(sync);
         }
 
