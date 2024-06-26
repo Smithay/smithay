@@ -36,13 +36,13 @@ mod device;
 mod error;
 pub use self::error::*;
 use crate::backend::SwapBuffersError as GraphicsSwapBuffersError;
-#[cfg(feature = "wayland_frontend")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::utils::{Buffer, Size};
 
 #[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
 pub mod ffi;
 use self::display::EGLDisplayHandle;
-#[cfg(feature = "wayland_frontend")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use self::ffi::egl::types::EGLImage;
 
 pub mod display;
@@ -54,7 +54,7 @@ pub use self::display::EGLDisplay;
 pub use self::surface::EGLSurface;
 
 use std::ffi::CString;
-#[cfg(feature = "wayland_frontend")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::sync::Arc;
 
 /// Error that can happen on optional EGL features
@@ -229,7 +229,7 @@ impl Format {
 }
 
 /// Images of the EGL-based [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer).
-#[cfg(feature = "wayland_frontend")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 #[derive(Debug)]
 pub struct EGLBuffer {
     display: Arc<EGLDisplayHandle>,
@@ -242,7 +242,7 @@ pub struct EGLBuffer {
     images: Vec<EGLImage>,
 }
 
-#[cfg(feature = "wayland_frontend")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl EGLBuffer {
     /// Amount of planes of this EGLBuffer
     #[inline]
@@ -265,7 +265,7 @@ impl EGLBuffer {
     }
 }
 
-#[cfg(feature = "wayland_frontend")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl Drop for EGLBuffer {
     fn drop(&mut self) {
         for image in self.images.drain(..) {

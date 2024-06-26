@@ -15,7 +15,7 @@ use indexmap::IndexSet;
 use libc::c_void;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
-#[cfg(feature = "use_system_lib")]
+#[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_sys::server::wl_display;
 
 use crate::backend::allocator::format::FormatSet;
@@ -1008,19 +1008,19 @@ fn get_dmabuf_formats(
 /// Type to receive [`EGLBuffer`] for EGL-based [`WlBuffer`]s.
 ///
 /// Can be created by using [`EGLDisplay::bind_wl_display`].
-#[cfg(feature = "use_system_lib")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 #[derive(Debug, Clone)]
 pub struct EGLBufferReader {
     display: Arc<EGLDisplayHandle>,
     wayland: Option<Arc<*mut wl_display>>,
 }
 
-#[cfg(feature = "use_system_lib")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 pub(crate) struct WeakBufferReader {
     display: Weak<EGLDisplayHandle>,
 }
 
-#[cfg(feature = "use_system_lib")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl WeakBufferReader {
     pub fn upgrade(&self) -> Option<EGLBufferReader> {
         Some(EGLBufferReader {
@@ -1030,10 +1030,10 @@ impl WeakBufferReader {
     }
 }
 
-#[cfg(feature = "use_system_lib")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 unsafe impl Send for EGLBufferReader {}
 
-#[cfg(feature = "use_system_lib")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl EGLBufferReader {
     fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
         #[allow(clippy::arc_with_non_send_sync)]
@@ -1218,7 +1218,7 @@ impl EGLBufferReader {
     }
 }
 
-#[cfg(feature = "use_system_lib")]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl Drop for EGLBufferReader {
     fn drop(&mut self) {
         if let Some(wayland) = self.wayland.take().and_then(|x| Arc::try_unwrap(x).ok()) {
