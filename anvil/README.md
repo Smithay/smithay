@@ -47,7 +47,6 @@ The currently available backends are:
 |-------------------------------|-----------------|-----------|
 | ANVIL_DRM_DEVICE              | /dev/dri/card0  | tty-udev  |
 | ANVIL_DISABLE_10BIT           | any             | tty-udev  |
-| ANVIL_DISABLE_COLOR_TRANSFORM | any             | tty-udev  |
 | ANVIL_DISABLE_DIRECT_SCANOUT  | any             | tty-udev  |
 | ANVIL_DISABLE_DRM_COMPOSITOR  | any             | tty-udev  |
 | ANVIL_NO_VULKAN               | 1,true,yes,y    | x11       |

@@ -1,9 +1,7 @@
-mod color;
 mod implicit;
 
 use std::fmt::Write;
 
-pub(super) use color::*;
 pub use implicit::*;
 
 // define constants
@@ -236,21 +234,5 @@ pub(super) unsafe fn solid_program(gl: &ffi::Gles2) -> Result<GlesSolidProgram, 
         uniform_color: gl.GetUniformLocation(program, color.as_ptr() as *const ffi::types::GLchar),
         attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
         attrib_position: gl.GetAttribLocation(program, position.as_ptr() as *const ffi::types::GLchar),
-    })
-}
-
-pub(super) unsafe fn color_output_program(
-    gl: &ffi::Gles2,
-    destruction_callback_sender: Sender<CleanupResource>,
-) -> Result<GlesColorOutputProgram, GlesError> {
-    let program = link_program(gl, shaders::OUTPUT_VERTEX_SHADER, shaders::OUTPUT_FRAGMENT_SHADER)?;
-
-    let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-    let tex = CStr::from_bytes_with_nul(b"tex\0").expect("NULL terminated");
-    Ok(GlesColorOutputProgram {
-        program,
-        attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-        uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
-        destruction_callback_sender,
     })
 }

@@ -91,35 +91,12 @@ enum CleanupResource {
 }
 unsafe impl Send for CleanupResource {}
 
-#[derive(Debug)]
-struct ShadowBuffer {
-    texture: ffi::types::GLuint,
-    fbo: ffi::types::GLuint,
-    stencil: ffi::types::GLuint,
-    destruction_callback_sender: Sender<CleanupResource>,
-}
-
-impl Drop for ShadowBuffer {
-    fn drop(&mut self) {
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::FramebufferObject(self.fbo));
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::Texture(self.texture));
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::RenderbufferObject(self.stencil));
-    }
-}
-
 #[derive(Debug, Clone)]
 struct GlesBuffer {
     dmabuf: WeakDmabuf,
     image: EGLImage,
     rbo: ffi::types::GLuint,
     fbo: ffi::types::GLuint,
-    shadow: Option<Rc<ShadowBuffer>>,
 }
 
 /// Offscreen render surface
@@ -166,7 +143,6 @@ impl Drop for GlesRenderbufferInternal {
 #[derive(Debug)]
 enum GlesTarget {
     Image {
-        // GlesBuffer caches the shadow buffer and is renderer-local, so it works around the issue outlined below.
         // TODO: Ideally we would be able to share the texture between renderers with shared EGLContexts though.
         // But we definitly don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
         buf: GlesBuffer,
@@ -174,24 +150,15 @@ enum GlesTarget {
     },
     Surface {
         surface: Rc<EGLSurface>,
-        // TODO: Optimally we would cache this, but care needs to be taken. FBOs are context local, while Textures might be shared.
-        // So we can't just put it in user-data for an `EGLSurface`, as the same surface might be used with multiple shared Contexts.
-        shadow: Option<ShadowBuffer>,
     },
     Texture {
         texture: GlesTexture,
         fbo: ffi::types::GLuint,
-        // TODO: Optimally we would cache this, but care needs to be taken. FBOs are context local, while Textures might be shared.
-        // So we can't just store it in the GlesTexture, but need a renderer-id HashMap for the FBOs.
-        shadow: Option<ShadowBuffer>,
         destruction_callback_sender: Sender<CleanupResource>,
     },
     Renderbuffer {
         buf: GlesRenderbuffer,
         fbo: ffi::types::GLuint,
-        // TODO: Optimally we would cache this, but care needs to be taken. FBOs are context local, while Renderbuffers might be shared.
-        // So we can't just store it in the GlesRenderbuffer, but need a renderer-id HashMap for the FBOs.
-        shadow: Option<ShadowBuffer>,
     },
 }
 
@@ -224,114 +191,19 @@ impl GlesTarget {
     #[profiling::function]
     fn make_current(&self, gl: &ffi::Gles2, egl: &EGLContext) -> Result<(), MakeCurrentError> {
         unsafe {
-            if let GlesTarget::Surface { surface, shadow, .. } = self {
+            if let GlesTarget::Surface { surface, .. } = self {
                 egl.make_current_with_surface(surface)?;
-                if let Some(shadow) = shadow.as_ref() {
-                    gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
-                } else {
-                    gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                }
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
             } else {
                 egl.make_current()?;
                 match self {
-                    GlesTarget::Image { ref buf, .. } => {
-                        if let Some(shadow) = buf.shadow.as_ref() {
-                            gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
-                        } else {
-                            gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo)
-                        }
-                    }
-                    GlesTarget::Texture {
-                        ref fbo, ref shadow, ..
-                    } => {
-                        if let Some(shadow) = shadow.as_ref() {
-                            gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
-                        } else {
-                            gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
-                        }
-                    }
-                    GlesTarget::Renderbuffer {
-                        ref fbo, ref shadow, ..
-                    } => {
-                        if let Some(shadow) = shadow.as_ref() {
-                            gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
-                        } else {
-                            gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
-                        }
-                    }
+                    GlesTarget::Image { ref buf, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo),
+                    GlesTarget::Texture { ref fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
+                    GlesTarget::Renderbuffer { ref fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
                     _ => unreachable!(),
                 }
             }
             Ok(())
-        }
-    }
-
-    #[profiling::function]
-    fn make_current_no_shadow(
-        &self,
-        gl: &ffi::Gles2,
-        egl: &EGLContext,
-        stencil: Option<(ffi::types::GLuint, ffi::types::GLuint)>,
-    ) -> Result<(), GlesError> {
-        unsafe {
-            if let GlesTarget::Surface { surface, .. } = self {
-                egl.make_current_with_surface(surface)?;
-                let size = surface.get_size().ok_or(GlesError::UnexpectedSize)?;
-
-                if let Some((stencil_fbo, _)) = stencil {
-                    gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                    gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, stencil_fbo);
-                    gl.BlitFramebuffer(
-                        0,
-                        0,
-                        size.w,
-                        size.h,
-                        0,
-                        0,
-                        size.w,
-                        size.h,
-                        ffi::STENCIL_BUFFER_BIT,
-                        ffi::NEAREST,
-                    );
-                    gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, 0);
-                }
-            } else {
-                egl.make_current()?;
-                match self {
-                    GlesTarget::Image { ref buf, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo);
-                    }
-                    GlesTarget::Texture { ref fbo, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo);
-                    }
-                    GlesTarget::Renderbuffer { ref fbo, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo);
-                    }
-                    _ => unreachable!(),
-                }
-                if let Some((_, stencil_rbo)) = stencil {
-                    gl.FramebufferRenderbuffer(
-                        ffi::FRAMEBUFFER,
-                        ffi::STENCIL_ATTACHMENT,
-                        ffi::RENDERBUFFER,
-                        stencil_rbo,
-                    );
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn has_shadow(&self) -> bool {
-        self.get_shadow().is_some()
-    }
-
-    fn get_shadow(&self) -> Option<&ShadowBuffer> {
-        match self {
-            GlesTarget::Surface { ref shadow, .. } => shadow.as_ref(),
-            GlesTarget::Image { ref buf, .. } => buf.shadow.as_deref(),
-            GlesTarget::Texture { ref shadow, .. } => shadow.as_ref(),
-            GlesTarget::Renderbuffer { ref shadow, .. } => shadow.as_ref(),
         }
     }
 }
@@ -364,10 +236,10 @@ pub enum Capability {
     Instancing,
     /// GlesRenderer supports blitting between framebuffers
     Blit,
+    /// GlesRenderer supports 10 bit formats
+    _10Bit,
     /// GlesRenderer supports creating of Renderbuffers with usable formats
     Renderbuffer,
-    /// GlesRenderer supports color transformations
-    ColorTransformations,
     /// GlesRenderer supports fencing,
     Fencing,
     /// GlesRenderer supports GL debug
@@ -396,9 +268,6 @@ pub struct GlesRenderer {
     // shaders
     tex_program: GlesTexProgram,
     solid_program: GlesSolidProgram,
-    // color-transformation shaders
-    // TODO new tex/solid? shaders
-    output_program: Option<GlesColorOutputProgram>,
 
     // caches
     buffers: Vec<GlesBuffer>,
@@ -538,18 +407,8 @@ impl GlesRenderer {
         if gl_version >= version::GLES_3_0 {
             capabilities.push(Capability::Blit);
             debug!("Blitting is supported");
-            // required to bind the 16F-buffer we want to use for blending.
-            //
-            // Note: We could technically also have a 16F shadow buffer on 2.0 with GL_OES_texture_half_float.
-            // The problem is, that the main output format we are interested in for this `ABGR2101010` is not renderable on 2.0,
-            // and as far as I know there is no extension to change that. So we could pradoxically not copy the shadow buffer
-            // to our output buffer, *except* if we scanout 16F directly...
-            //
-            // So lets not go down that route and attempt to support color-transformations and HDR stuff with ES 2.0.
-            if exts.iter().any(|ext| ext == "GL_EXT_color_buffer_half_float") {
-                capabilities.push(Capability::ColorTransformations);
-                debug!("Color Transformations are supported");
-            }
+            capabilities.push(Capability::_10Bit);
+            debug!("10-bit formats are supported");
         }
 
         if exts.iter().any(|ext| ext == "GL_OES_EGL_sync") {
@@ -608,14 +467,7 @@ impl GlesRenderer {
         context.make_current()?;
 
         let supported_capabilities = Self::supported_capabilities(&context)?;
-        let mut requested_capabilities = capabilities.into_iter().collect::<Vec<_>>();
-
-        // Color transform requires blit
-        if requested_capabilities.contains(&Capability::ColorTransformations)
-            && !requested_capabilities.contains(&Capability::Blit)
-        {
-            requested_capabilities.push(Capability::Blit);
-        }
+        let requested_capabilities = capabilities.into_iter().collect::<Vec<_>>();
 
         let unsupported_capabilities = requested_capabilities
             .iter()
@@ -628,11 +480,8 @@ impl GlesRenderer {
                 Capability::Instancing => {
                     GlesError::GLExtensionNotSupported(&["GL_EXT_instanced_arrays", "GL_EXT_draw_instanced"])
                 }
-                Capability::Blit => GlesError::GLVersionNotSupported(version::GLES_3_0),
+                Capability::Blit | Capability::_10Bit => GlesError::GLVersionNotSupported(version::GLES_3_0),
                 Capability::Renderbuffer => GlesError::GLExtensionNotSupported(&["GL_OES_rgb8_rgba8"]),
-                Capability::ColorTransformations => {
-                    GlesError::GLExtensionNotSupported(&["GL_EXT_color_buffer_half_float"])
-                }
                 Capability::Fencing => GlesError::GLExtensionNotSupported(&["GL_OES_EGL_sync"]),
                 Capability::Debug => GlesError::GLExtensionNotSupported(&["GL_KHR_debug"]),
             };
@@ -700,10 +549,6 @@ impl GlesRenderer {
         let (tx, rx) = channel();
         let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], tx.clone())?;
         let solid_program = solid_program(&gl)?;
-        let output_program = capabilities
-            .contains(&Capability::ColorTransformations)
-            .then(|| color_output_program(&gl, tx.clone()))
-            .transpose()?;
 
         // Initialize vertices based on drawing methodology.
         let vertices: &[ffi::types::GLfloat] = if capabilities.contains(&Capability::Instancing) {
@@ -747,7 +592,6 @@ impl GlesRenderer {
 
             tex_program,
             solid_program,
-            output_program,
             vbos,
             min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
@@ -1331,13 +1175,7 @@ impl ExportMem for GlesRenderer {
         region: Rectangle<i32, BufferCoord>,
         fourcc: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        if let Some(target) = self.target.as_ref() {
-            target.make_current_no_shadow(&self.gl, &self.egl, None)?;
-        } else {
-            unsafe {
-                self.egl.make_current()?;
-            }
-        }
+        self.make_current()?;
 
         let (_, has_alpha) = self
             .target
@@ -1417,10 +1255,6 @@ impl ExportMem for GlesRenderer {
         let mut pbo = 0;
         let old_target = self.target.take();
         self.bind(texture.clone())?;
-        self.target
-            .as_ref()
-            .unwrap()
-            .make_current_no_shadow(&self.gl, &self.egl, None)?;
 
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
         let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
@@ -1504,87 +1338,6 @@ impl ExportMem for GlesRenderer {
     }
 }
 
-impl GlesRenderer {
-    #[profiling::function]
-    fn create_shadow_buffer(&self, size: Size<i32, BufferCoord>) -> Result<Option<ShadowBuffer>, GlesError> {
-        trace!(?size, "Creating shadow framebuffer");
-
-        self.capabilities
-            .contains(&Capability::ColorTransformations)
-            .then(|| {
-                let mut tex = unsafe {
-                    let mut tex = 0;
-                    self.gl.GenTextures(1, &mut tex);
-                    self.gl.BindTexture(ffi::TEXTURE_2D, tex);
-                    self.gl.TexImage2D(
-                        ffi::TEXTURE_2D,
-                        0,
-                        ffi::RGBA16F as i32,
-                        size.w,
-                        size.h,
-                        0,
-                        ffi::RGBA,
-                        ffi::HALF_FLOAT,
-                        std::ptr::null(),
-                    );
-                    tex
-                };
-
-                let mut fbo = unsafe {
-                    let mut fbo = 0;
-                    self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                    self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                    self.gl.FramebufferTexture2D(
-                        ffi::FRAMEBUFFER,
-                        ffi::COLOR_ATTACHMENT0,
-                        ffi::TEXTURE_2D,
-                        tex,
-                        0,
-                    );
-                    fbo
-                };
-
-                let stencil = unsafe {
-                    let mut rbo = 0;
-
-                    self.gl.GenRenderbuffers(1, &mut rbo);
-                    self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-                    self.gl
-                        .RenderbufferStorage(ffi::RENDERBUFFER, ffi::STENCIL_INDEX8, size.w, size.h);
-
-                    self.gl.FramebufferRenderbuffer(
-                        ffi::FRAMEBUFFER,
-                        ffi::STENCIL_ATTACHMENT,
-                        ffi::RENDERBUFFER,
-                        rbo,
-                    );
-
-                    let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                    self.gl.BindTexture(ffi::TEXTURE_2D, 0);
-                    self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                    self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
-
-                    if status != ffi::FRAMEBUFFER_COMPLETE {
-                        self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                        self.gl.DeleteTextures(1, &mut tex as *mut _);
-                        self.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
-                        return Err(GlesError::FramebufferBindingError);
-                    }
-
-                    rbo
-                };
-
-                Ok(ShadowBuffer {
-                    texture: tex,
-                    fbo,
-                    stencil,
-                    destruction_callback_sender: self.destruction_callback_sender.clone(),
-                })
-            })
-            .transpose()
-    }
-}
-
 impl Bind<Rc<EGLSurface>> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
@@ -1593,32 +1346,15 @@ impl Bind<Rc<EGLSurface>> for GlesRenderer {
             self.egl.make_current()?;
         }
 
-        let bind = || {
-            self.target = Some(GlesTarget::Surface {
-                surface: surface.clone(),
-                shadow: None,
-            });
-            self.make_current()?;
-
-            let size = surface
-                .get_size()
-                .ok_or(GlesError::UnknownSize)?
-                .to_logical(1)
-                .to_buffer(1, Transform::Normal);
-            if let Some(shadow) = self.create_shadow_buffer(size)? {
-                self.target = Some(GlesTarget::Surface {
-                    surface,
-                    shadow: Some(shadow),
-                });
-                self.make_current()?;
-            }
-            std::result::Result::<(), GlesError>::Ok(())
-        };
-        let res = bind();
+        self.target = Some(GlesTarget::Surface {
+            surface: surface.clone(),
+        });
+        let res = self.make_current();
         if res.is_err() {
             let _ = self.unbind();
         }
         res?;
+
         Ok(())
     }
 }
@@ -1675,14 +1411,11 @@ impl Bind<Dmabuf> for GlesRenderer {
                             //TODO wrap image and drop here
                             return Err(GlesError::FramebufferBindingError);
                         }
-                        let shadow = self.create_shadow_buffer(dmabuf.0.size)?;
-
                         let buf = GlesBuffer {
                             dmabuf: dmabuf.weak(),
                             image,
                             rbo,
                             fbo,
-                            shadow: shadow.map(Rc::new),
                         };
 
                         self.buffers.push(buf.clone());
@@ -1737,10 +1470,8 @@ impl Bind<GlesTexture> for GlesRenderer {
                 }
             }
 
-            let shadow = self.create_shadow_buffer(texture.size())?;
             self.target = Some(GlesTarget::Texture {
                 texture,
-                shadow,
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
                 fbo,
             });
@@ -1771,7 +1502,7 @@ impl Offscreen<GlesTexture> for GlesRenderer {
         let (internal, format, layout) =
             fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
         if (internal != ffi::RGBA8 && internal != ffi::BGRA_EXT)
-            && !self.capabilities.contains(&Capability::ColorTransformations)
+            && !self.capabilities.contains(&Capability::_10Bit)
         {
             return Err(GlesError::UnsupportedPixelLayout);
         }
@@ -1826,10 +1557,8 @@ impl Bind<GlesRenderbuffer> for GlesRenderer {
             }
         }
 
-        let shadow = self.create_shadow_buffer(renderbuffer.size())?;
         self.target = Some(GlesTarget::Renderbuffer {
             buf: renderbuffer,
-            shadow,
             fbo,
         });
         self.make_current()?;
@@ -1855,7 +1584,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
         let (internal, _, _) =
             fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
 
-        if internal != ffi::RGBA8 && !self.capabilities.contains(&Capability::ColorTransformations) {
+        if internal != ffi::RGBA8 && !self.capabilities.contains(&Capability::_10Bit) {
             return Err(GlesError::UnsupportedPixelLayout);
         }
 
@@ -2082,12 +1811,7 @@ impl GlesRenderer {
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
-        // Don't expose the shadow buffer outside of a frame
-        if let Some(target) = self.target.as_ref() {
-            target.make_current_no_shadow(&self.gl, &self.egl, None)?;
-        } else {
-            unsafe { self.egl.make_current()? };
-        }
+        self.make_current()?;
         Ok(func(&self.gl))
     }
 
@@ -2309,20 +2033,6 @@ impl Renderer for GlesRenderer {
 
             self.gl.Enable(ffi::BLEND);
             self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
-
-            if self
-                .target
-                .as_ref()
-                .map(|target| target.has_shadow())
-                .unwrap_or(false)
-            {
-                // Enable stencil testing and clear the shadow buffer for blending onto the actual framebuffer in finish
-                self.gl.Enable(ffi::STENCIL_TEST);
-                self.gl.StencilFunc(ffi::ALWAYS, 1, ffi::types::GLuint::MAX);
-                self.gl.StencilOp(ffi::REPLACE, ffi::REPLACE, ffi::REPLACE);
-                self.gl.StencilMask(ffi::types::GLuint::MAX);
-                self.gl.Clear(ffi::COLOR_BUFFER_BIT | ffi::STENCIL_BUFFER_BIT);
-            }
         }
 
         // Handle the width/height swap when the output is rotated by 90°/270°.
@@ -2575,64 +2285,6 @@ impl<'frame> GlesFrame<'frame> {
         unsafe {
             self.renderer.gl.Disable(ffi::SCISSOR_TEST);
             self.renderer.gl.Disable(ffi::BLEND);
-        }
-
-        if let Some(target) = self.renderer.target.as_ref() {
-            if let Some(shadow) = target.get_shadow() {
-                target.make_current_no_shadow(
-                    &self.renderer.gl,
-                    &self.renderer.egl,
-                    Some((shadow.fbo, shadow.stencil)),
-                )?;
-                unsafe {
-                    self.renderer
-                        .gl
-                        .StencilFunc(ffi::NOTEQUAL, 0, ffi::types::GLuint::MAX);
-                    self.renderer.gl.StencilMask(0);
-
-                    self.renderer.gl.ActiveTexture(ffi::TEXTURE0);
-                    self.renderer.gl.BindTexture(ffi::TEXTURE_2D, shadow.texture);
-                    self.renderer.gl.TexParameteri(
-                        ffi::TEXTURE_2D,
-                        ffi::TEXTURE_MIN_FILTER,
-                        ffi::NEAREST as i32,
-                    );
-                    self.renderer.gl.TexParameteri(
-                        ffi::TEXTURE_2D,
-                        ffi::TEXTURE_MAG_FILTER,
-                        ffi::NEAREST as i32,
-                    );
-
-                    let program = self
-                        .renderer
-                        .output_program
-                        .as_ref()
-                        .expect("If we have a shadow buffer we have an output shader");
-                    self.renderer.gl.UseProgram(program.program);
-                    self.renderer.gl.Uniform1i(program.uniform_tex, 0);
-
-                    self.renderer
-                        .gl
-                        .EnableVertexAttribArray(program.attrib_vert as u32);
-                    self.renderer
-                        .gl
-                        .BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
-                    self.renderer.gl.VertexAttribPointer(
-                        program.attrib_vert as u32,
-                        2,
-                        ffi::FLOAT,
-                        ffi::FALSE,
-                        0,
-                        std::ptr::null(),
-                    );
-
-                    self.renderer.gl.DrawArrays(ffi::TRIANGLE_STRIP, 0, 4);
-
-                    self.renderer.gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
-                    self.renderer.gl.DisableVertexAttribArray(0);
-                    self.renderer.gl.Disable(ffi::STENCIL_TEST);
-                }
-            }
         }
 
         // delayed destruction until the next frame rendering.
