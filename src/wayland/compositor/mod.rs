@@ -144,11 +144,6 @@ pub enum Damage {
     Buffer(Rectangle<i32, Buffer>),
 }
 
-#[derive(Debug, Copy, Clone, Default)]
-struct Marker<R> {
-    _r: ::std::marker::PhantomData<R>,
-}
-
 /// The state container associated with a surface
 ///
 /// This general-purpose container provides 2 main storages:
