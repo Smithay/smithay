@@ -65,6 +65,7 @@ pub(crate) struct SharedSurfaceState {
     class: String,
     instance: String,
     startup_id: Option<String>,
+    pid: Option<u32>,
     protocols: Protocols,
     hints: Option<WmHints>,
     normal_hints: Option<WmSizeHints>,
@@ -140,6 +141,7 @@ pub enum WmWindowProperty {
     WindowType,
     MotifHints,
     StartupId,
+    Pid,
 }
 
 impl X11Surface {
@@ -177,6 +179,7 @@ impl X11Surface {
                 class: String::from(""),
                 instance: String::from(""),
                 startup_id: None,
+                pid: None,
                 protocols: Vec::new(),
                 hints: None,
                 normal_hints: None,
@@ -351,6 +354,11 @@ impl X11Surface {
     /// Returns the startup id of the underlying X11 window
     pub fn startup_id(&self) -> Option<String> {
         self.state.lock().unwrap().startup_id.clone()
+    }
+
+    /// Returns the PID of the underlying X11 window
+    pub fn pid(&self) -> Option<u32> {
+        self.state.lock().unwrap().pid
     }
 
     /// Returns if the window is considered to be a popup.
@@ -590,6 +598,7 @@ impl X11Surface {
         self.update_net_window_type()?;
         self.update_motif_hints()?;
         self.update_startup_id()?;
+        self.update_pid()?;
         Ok(())
     }
 
@@ -631,6 +640,11 @@ impl X11Surface {
                 self.update_startup_id()?;
                 Ok(Some(WmWindowProperty::StartupId))
             }
+            atom if atom == self.atoms._NET_WM_PID => {
+                self.update_pid()?;
+                Ok(Some(WmWindowProperty::Pid))
+            }
+
             _ => Ok(None), // unknown
         }
     }
@@ -708,6 +722,14 @@ impl X11Surface {
         if let Some(startup_id) = self.read_window_property_string(self.atoms._NET_STARTUP_ID)? {
             let mut state = self.state.lock().unwrap();
             state.startup_id = Some(startup_id);
+        }
+        Ok(())
+    }
+
+    fn update_pid(&self) -> Result<(), ConnectionError> {
+        if let Some(pid) = self.read_window_property_u32(self.atoms._NET_WM_PID)? {
+            let mut state = self.state.lock().unwrap();
+            state.pid = Some(pid);
         }
         Ok(())
     }
@@ -827,6 +849,24 @@ impl X11Surface {
             x if x == self.atoms.UTF8_STRING => Ok(String::from_utf8(bytes).ok()),
             _ => Ok(None),
         }
+    }
+
+    fn read_window_property_u32(&self, atom: impl Into<Atom>) -> Result<Option<u32>, ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let reply = match conn
+            .get_property(false, self.window, atom, AtomEnum::CARDINAL, 0, 1)?
+            .reply_unchecked()
+        {
+            Ok(Some(reply)) => reply,
+            Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(None),
+            Err(err) => return Err(err),
+        };
+
+        let Some(value) = reply.value32().unwrap().next() else {
+            return Ok(None);
+        };
+
+        Ok(Some(value))
     }
 
     /// Retrieve user_data associated with this X11 window
