@@ -862,11 +862,13 @@ impl X11Surface {
             Err(err) => return Err(err),
         };
 
-        let Some(value) = reply.value32().unwrap().next() else {
-            return Ok(None);
-        };
+        if let Some(value32) = reply.value32() {
+            if let Some(value) = value32.next() {
+                return Ok(Some(value));
+            }
+        }
 
-        Ok(Some(value))
+        Ok(None)
     }
 
     /// Retrieve user_data associated with this X11 window
