@@ -2004,6 +2004,7 @@ where
     .filter(|_| !is_new_buffer)
     .unwrap_or(&damage_slice);
 
+    frame.clear([0.0, 0.0, 0.0, 0.0], damage).map_err(Error::Render)?;
     frame
         .render_texture_from_to(
             src_texture,
