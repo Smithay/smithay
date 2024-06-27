@@ -862,7 +862,7 @@ impl X11Surface {
             Err(err) => return Err(err),
         };
 
-        if let Some(value32) = reply.value32() {
+        if let Some(mut value32) = reply.value32() {
             if let Some(value) = value32.next() {
                 return Ok(Some(value));
             }
