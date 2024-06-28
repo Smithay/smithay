@@ -784,7 +784,22 @@ impl<B: Framebuffer> FrameState<B> {
                 // actually used. We can skip getting a claim here if we have a
                 // config as this means we already claimed the plane for us.
                 if allow_partial_update {
-                    !state.skip
+                    // A partial update would technically only have to include planes that
+                    // actually changed. This includes planes we previously used and have to
+                    // reset and planes we use and want to update.
+                    // Both is already encoded into state.skip, so this should be the only
+                    // thing we have to consider here.
+                    //
+                    // But...Unfortunately some drivers seem to have issues with partial
+                    // updates, at least when it does not contain the primary plane, resulting
+                    // in strange issues like e.g. repeating plane content, side-scrolling planes,
+                    // wrapping planes around edges...
+                    //
+                    // So until these things are fixed just always send the whole state. We do not
+                    // have to send planes we never used, but we include planes we want to reset or
+                    // that explicitly changed represented by !state.skip and all planes currently in
+                    // use represented by having an config defined.
+                    !state.skip || state.config.is_some()
                 } else {
                     state.config.is_some() || surface.claim_plane(*handle).is_some()
                 }
