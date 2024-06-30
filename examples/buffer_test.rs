@@ -1,4 +1,4 @@
-use std::{ffi::CStr, fmt, fs::File, os::unix::io::OwnedFd, path::PathBuf};
+use std::{fmt, fs::File, os::unix::io::OwnedFd, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use smithay::{
@@ -189,11 +189,7 @@ fn buffer_test(args: TestArgs) {
                 Instance::new(Version::VERSION_1_2, None).expect("Unable to create vulkan instance");
             let physical_device = PhysicalDevice::enumerate(&instance)
                 .expect("Failed to enumerate physical devices")
-                .filter(|phd| {
-                    phd.has_device_extension(unsafe {
-                        CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
-                    })
-                })
+                .filter(|phd| phd.has_device_extension(ash::vk::EXT_PHYSICAL_DEVICE_DRM_NAME))
                 .find(|phd| {
                     phd.primary_node().unwrap() == Some(node) || phd.render_node().unwrap() == Some(node)
                 })

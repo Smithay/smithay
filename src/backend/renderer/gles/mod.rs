@@ -1848,36 +1848,28 @@ impl GlesRenderer {
         let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
         let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &debug_shader)? };
 
-        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-        let size = CStr::from_bytes_with_nul(b"size\0").expect("NULL terminated");
-        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
-        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
-
         unsafe {
             Ok(GlesPixelProgram(Rc::new(GlesPixelProgramInner {
                 normal: GlesPixelProgramInternal {
                     program,
                     uniform_matrix: self
                         .gl
-                        .GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
+                        .GetUniformLocation(program, c"matrix".as_ptr() as *const ffi::types::GLchar),
                     uniform_tex_matrix: self
                         .gl
-                        .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
+                        .GetUniformLocation(program, c"tex_matrix".as_ptr() as *const ffi::types::GLchar),
                     uniform_alpha: self
                         .gl
-                        .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
+                        .GetUniformLocation(program, c"alpha".as_ptr() as *const ffi::types::GLchar),
                     uniform_size: self
                         .gl
-                        .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
+                        .GetUniformLocation(program, c"size".as_ptr() as *const ffi::types::GLchar),
                     attrib_vert: self
                         .gl
-                        .GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
+                        .GetAttribLocation(program, c"vert".as_ptr() as *const ffi::types::GLchar),
                     attrib_position: self
                         .gl
-                        .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
+                        .GetAttribLocation(program, c"vert_position".as_ptr() as *const ffi::types::GLchar),
                     additional_uniforms: additional_uniforms
                         .iter()
                         .map(|uniform| {
@@ -1899,22 +1891,23 @@ impl GlesRenderer {
                     program: debug_program,
                     uniform_matrix: self
                         .gl
-                        .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_tex_matrix: self
-                        .gl
-                        .GetUniformLocation(debug_program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
+                        .GetUniformLocation(debug_program, c"matrix".as_ptr() as *const ffi::types::GLchar),
+                    uniform_tex_matrix: self.gl.GetUniformLocation(
+                        debug_program,
+                        c"tex_matrix".as_ptr() as *const ffi::types::GLchar,
+                    ),
                     uniform_alpha: self
                         .gl
-                        .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
+                        .GetUniformLocation(debug_program, c"alpha".as_ptr() as *const ffi::types::GLchar),
                     uniform_size: self
                         .gl
-                        .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
+                        .GetUniformLocation(debug_program, c"size".as_ptr() as *const ffi::types::GLchar),
                     attrib_vert: self
                         .gl
-                        .GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
+                        .GetAttribLocation(debug_program, c"vert".as_ptr() as *const ffi::types::GLchar),
                     attrib_position: self.gl.GetAttribLocation(
                         debug_program,
-                        vert_position.as_ptr() as *const ffi::types::GLchar,
+                        c"vert_position".as_ptr() as *const ffi::types::GLchar,
                     ),
                     additional_uniforms: additional_uniforms
                         .iter()
@@ -1937,7 +1930,7 @@ impl GlesRenderer {
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
                 uniform_tint: self
                     .gl
-                    .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
+                    .GetUniformLocation(debug_program, c"tint".as_ptr() as *const ffi::types::GLchar),
             })))
         }
     }

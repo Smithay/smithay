@@ -142,25 +142,18 @@ pub(super) unsafe fn texture_program(
         let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };
         let debug_program = unsafe { link_program(gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
 
-        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-        let tex = CStr::from_bytes_with_nul(b"tex\0").expect("NULL terminated");
-        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
-        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
-
         Ok(GlesTexProgramVariant {
             normal: GlesTexProgramInternal {
                 program,
-                uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
-                uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
+                uniform_tex: gl.GetUniformLocation(program, c"tex".as_ptr() as *const ffi::types::GLchar),
+                uniform_matrix: gl
+                    .GetUniformLocation(program, c"matrix".as_ptr() as *const ffi::types::GLchar),
                 uniform_tex_matrix: gl
-                    .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-                attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
+                    .GetUniformLocation(program, c"tex_matrix".as_ptr() as *const ffi::types::GLchar),
+                uniform_alpha: gl.GetUniformLocation(program, c"alpha".as_ptr() as *const ffi::types::GLchar),
+                attrib_vert: gl.GetAttribLocation(program, c"vert".as_ptr() as *const ffi::types::GLchar),
                 attrib_vert_position: gl
-                    .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
+                    .GetAttribLocation(program, c"vert_position".as_ptr() as *const ffi::types::GLchar),
                 additional_uniforms: additional_uniforms
                     .iter()
                     .map(|uniform| {
@@ -179,16 +172,20 @@ pub(super) unsafe fn texture_program(
             },
             debug: GlesTexProgramInternal {
                 program: debug_program,
-                uniform_tex: gl.GetUniformLocation(debug_program, tex.as_ptr() as *const ffi::types::GLchar),
+                uniform_tex: gl
+                    .GetUniformLocation(debug_program, c"tex".as_ptr() as *const ffi::types::GLchar),
                 uniform_matrix: gl
-                    .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
+                    .GetUniformLocation(debug_program, c"matrix".as_ptr() as *const ffi::types::GLchar),
                 uniform_tex_matrix: gl
-                    .GetUniformLocation(debug_program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
+                    .GetUniformLocation(debug_program, c"tex_matrix".as_ptr() as *const ffi::types::GLchar),
                 uniform_alpha: gl
-                    .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
-                attrib_vert: gl.GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
-                attrib_vert_position: gl
-                    .GetAttribLocation(debug_program, vert_position.as_ptr() as *const ffi::types::GLchar),
+                    .GetUniformLocation(debug_program, c"alpha".as_ptr() as *const ffi::types::GLchar),
+                attrib_vert: gl
+                    .GetAttribLocation(debug_program, c"vert".as_ptr() as *const ffi::types::GLchar),
+                attrib_vert_position: gl.GetAttribLocation(
+                    debug_program,
+                    c"vert_position".as_ptr() as *const ffi::types::GLchar,
+                ),
                 additional_uniforms: additional_uniforms
                     .iter()
                     .map(|uniform| {
@@ -206,7 +203,7 @@ pub(super) unsafe fn texture_program(
                     .collect(),
             },
             // debug flags
-            uniform_tint: gl.GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
+            uniform_tint: gl.GetUniformLocation(debug_program, c"tint".as_ptr() as *const ffi::types::GLchar),
         })
     };
 
@@ -223,16 +220,11 @@ pub(super) unsafe fn texture_program(
 pub(super) unsafe fn solid_program(gl: &ffi::Gles2) -> Result<GlesSolidProgram, GlesError> {
     let program = link_program(gl, shaders::VERTEX_SHADER_SOLID, shaders::FRAGMENT_SHADER_SOLID)?;
 
-    let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-    let color = CStr::from_bytes_with_nul(b"color\0").expect("NULL terminated");
-    let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-    let position = CStr::from_bytes_with_nul(b"position\0").expect("NULL terminated");
-
     Ok(GlesSolidProgram {
         program,
-        uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-        uniform_color: gl.GetUniformLocation(program, color.as_ptr() as *const ffi::types::GLchar),
-        attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-        attrib_position: gl.GetAttribLocation(program, position.as_ptr() as *const ffi::types::GLchar),
+        uniform_matrix: gl.GetUniformLocation(program, c"matrix".as_ptr() as *const ffi::types::GLchar),
+        uniform_color: gl.GetUniformLocation(program, c"color".as_ptr() as *const ffi::types::GLchar),
+        attrib_vert: gl.GetAttribLocation(program, c"vert".as_ptr() as *const ffi::types::GLchar),
+        attrib_position: gl.GetAttribLocation(program, c"position".as_ptr() as *const ffi::types::GLchar),
     })
 }
