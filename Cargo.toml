@@ -10,7 +10,7 @@ readme = "README.md"
 homepage = "https://smithay.github.io/"
 keywords = ["wayland", "compositor", "graphics", "server"]
 categories = ["gui"]
-rust-version = "1.72.0"
+rust-version = "1.77.0"
 
 [package.metadata.docs.rs]
 features = ["test_all_features"]
