@@ -1,5 +1,6 @@
 //! Implementation of the rendering traits using pixman
 use std::{
+    cell::RefCell,
     rc::Rc,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -71,15 +72,6 @@ enum PixmanTarget {
     RenderBuffer(PixmanRenderBuffer),
 }
 
-impl PixmanTarget {
-    fn image(&self) -> &pixman::Image<'static, 'static> {
-        match self {
-            PixmanTarget::Image { image, .. } => &image.0.image,
-            PixmanTarget::RenderBuffer(render_buffer) => &render_buffer.0,
-        }
-    }
-}
-
 /// Offscreen render buffer
 #[derive(Debug)]
 pub struct PixmanRenderBuffer(pixman::Image<'static, 'static>);
@@ -102,7 +94,7 @@ struct PixmanImageInner {
     #[cfg(feature = "wayland_frontend")]
     buffer: Option<Weak<wl_buffer::WlBuffer>>,
     dmabuf: Option<PixmanDmabufMapping>,
-    image: Image<'static, 'static>,
+    image: RefCell<Image<'static, 'static>>,
     _flipped: bool, /* TODO: What about flipped textures? */
 }
 
@@ -147,7 +139,7 @@ impl From<pixman::Image<'static, 'static>> for PixmanTexture {
             buffer: None,
             dmabuf: None,
             _flipped: false,
-            image,
+            image: RefCell::new(image),
         })))
     }
 }
@@ -179,24 +171,61 @@ impl Drop for DmabufReadGuard {
 struct TextureAccessor<'l> {
     #[cfg(feature = "wayland_frontend")]
     buffer: Option<wl_buffer::WlBuffer>,
-    image: &'l Image<'static, 'static>,
+    image: &'l RefCell<Image<'static, 'static>>,
     _guard: Option<DmabufReadGuard>,
 }
 
 impl<'l> TextureAccessor<'l> {
     fn with_image<F, R>(&self, f: F) -> Result<R, PixmanError>
     where
-        F: FnOnce(&'l Image<'static, 'static>) -> R,
+        F: for<'a> FnOnce(&'a Image<'static, 'static>) -> R,
     {
+        let image = self.image.borrow();
+
         #[cfg(feature = "wayland_frontend")]
         if let Some(buffer) = self.buffer.as_ref() {
             // We only have a buffer in case the image was created from
             // a shm buffer. In this case we need to guard against SIGPIPE
             // when accessing the image
-            return Ok(shm::with_buffer_contents(buffer, |_, _, _| f(self.image))?);
+            return shm::with_buffer_contents(buffer, move |ptr, len, data| {
+                if unsafe { ptr.offset(data.offset as isize) as *mut u32 } != unsafe { image.data() } {
+                    // Our stored data ptr changed, this is most likely the result of a shm pool resize.
+                    // In this case we need to re-map the image
+                    let expected_len = (data.offset + data.stride * data.height) as usize;
+                    if len < expected_len {
+                        return Err(PixmanError::IncompleteBuffer {
+                            expected: expected_len,
+                            actual: len,
+                        });
+                    }
+
+                    let remapped_image = unsafe {
+                        // SAFETY: We guarantee that this image is only used for reading,
+                        // so it is safe to cast the ptr to *mut
+                        Image::from_raw_mut(
+                            image.format(),
+                            data.width as usize,
+                            data.height as usize,
+                            ptr.offset(data.offset as isize) as *mut u32,
+                            data.stride as usize,
+                            false,
+                        )
+                    }
+                    .map_err(|_| PixmanError::ImportFailed)?;
+
+                    // We no longer need the original image, so release it to prevent double borrowing
+                    std::mem::drop(image);
+
+                    let res = f(&remapped_image);
+                    self.image.replace(remapped_image);
+                    Ok(res)
+                } else {
+                    Ok(f(&image))
+                }
+            })?;
         }
 
-        Ok(f(self.image))
+        Ok(f(&image))
     }
 }
 
@@ -209,15 +238,15 @@ impl PixmanTexture {
 
 impl Texture for PixmanTexture {
     fn width(&self) -> u32 {
-        self.0 .0.image.width() as u32
+        self.0 .0.image.borrow().width() as u32
     }
 
     fn height(&self) -> u32 {
-        self.0 .0.image.height() as u32
+        self.0 .0.image.borrow().height() as u32
     }
 
     fn format(&self) -> Option<DrmFourcc> {
-        DrmFourcc::try_from(self.0 .0.image.format()).ok()
+        DrmFourcc::try_from(self.0 .0.image.borrow().format()).ok()
     }
 }
 
@@ -242,12 +271,14 @@ impl<'frame> PixmanFrame<'frame> {
         op: Operation,
         debug: DebugFlags,
     ) -> Result<(), PixmanError> {
-        let target_image = self
-            .renderer
-            .target
-            .as_ref()
-            .ok_or(PixmanError::NoTargetBound)?
-            .image();
+        let binding;
+        let target_image = match self.renderer.target.as_ref().ok_or(PixmanError::NoTargetBound)? {
+            PixmanTarget::Image { image, .. } => {
+                binding = image.0.image.borrow();
+                &*binding
+            }
+            PixmanTarget::RenderBuffer(b) => &b.0,
+        };
 
         let solid = pixman::Solid::new(color).map_err(|_| PixmanError::Unsupported)?;
 
@@ -351,12 +382,14 @@ impl<'frame> Frame for PixmanFrame<'frame> {
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
-        let target_image = self
-            .renderer
-            .target
-            .as_ref()
-            .ok_or(PixmanError::NoTargetBound)?
-            .image();
+        let binding;
+        let target_image = match self.renderer.target.as_ref().ok_or(PixmanError::NoTargetBound)? {
+            PixmanTarget::Image { image, .. } => {
+                binding = image.0.image.borrow();
+                &*binding
+            }
+            PixmanTarget::RenderBuffer(b) => &b.0,
+        };
         let src_image_accessor = texture.accessor()?;
 
         let dst_loc = dst.loc;
@@ -735,7 +768,7 @@ impl PixmanRenderer {
                 dmabuf: dmabuf.weak(),
                 _mapping: dmabuf_mapping,
             }),
-            image,
+            image: RefCell::new(image),
             _flipped: false,
         })))
     }
@@ -847,7 +880,7 @@ impl ImportMem for PixmanRenderer {
             #[cfg(feature = "wayland_frontend")]
             buffer: None,
             dmabuf: None,
-            image,
+            image: RefCell::new(image),
             _flipped: flipped,
         }))))
     }
@@ -868,8 +901,9 @@ impl ImportMem for PixmanRenderer {
             return Err(PixmanError::ImportFailed);
         }
 
-        let stride = texture.0 .0.image.stride();
-        let expected_len = stride * texture.0 .0.image.height();
+        let image = texture.0 .0.image.borrow();
+        let stride = image.stride();
+        let expected_len = stride * image.height();
 
         if data.len() < expected_len {
             return Err(PixmanError::IncompleteBuffer {
@@ -882,9 +916,9 @@ impl ImportMem for PixmanRenderer {
             // SAFETY: As we are never going to write to this image
             // it is safe to cast the passed slice to a mut pointer
             pixman::Image::from_raw_mut(
-                texture.0 .0.image.format(),
-                texture.0 .0.image.width(),
-                texture.0 .0.image.height(),
+                image.format(),
+                image.width(),
+                image.height(),
                 data.as_ptr() as *mut _,
                 stride,
                 false,
@@ -892,7 +926,7 @@ impl ImportMem for PixmanRenderer {
         }
         .map_err(|_| PixmanError::ImportFailed)?;
 
-        texture.0 .0.image.composite32(
+        image.composite32(
             Operation::Src,
             &src_image,
             None,
@@ -950,12 +984,19 @@ impl ExportMem for PixmanRenderer {
                 .map_err(|_| PixmanError::Unsupported)?;
 
         if let Some(target) = self.target.as_ref() {
-            if let PixmanTarget::Image { dmabuf, .. } = target {
-                dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::READ)?;
+            let binding;
+            let target_image = match target {
+                PixmanTarget::Image { dmabuf, image } => {
+                    dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::READ)?;
+                    binding = image.0.image.borrow();
+                    &*binding
+                }
+                PixmanTarget::RenderBuffer(b) => &b.0,
             };
+
             copy_image.composite32(
                 Operation::Src,
-                target.image(),
+                target_image,
                 None,
                 region.loc.into(),
                 (0, 0),
@@ -1086,7 +1127,7 @@ impl ImportMemWl for PixmanRenderer {
         Ok(PixmanTexture(PixmanImage(Rc::new(PixmanImageInner {
             buffer: Some(buffer.downgrade()),
             dmabuf: None,
-            image,
+            image: RefCell::new(image),
             _flipped: false,
         }))))
     }
