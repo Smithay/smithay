@@ -1,0 +1,83 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Grab the pointer."><title>grab_pointer in x11rb::protocol::xproto - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (6868c831a 2024-06-30)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../x11rb/index.html">x11rb</a><span class="version">0.13.1</span></h2></div><div class="sidebar-elems"><h2><a href="index.html">In x11rb::protocol::xproto</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Function <a href="../../index.html">x11rb</a>::<wbr><a href="../index.html">protocol</a>::<wbr><a href="index.html">xproto</a>::<wbr><a class="fn" href="#">grab_pointer</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../src/x11rb/protocol/xproto.rs.html#1131-1155">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><pre class="rust item-decl"><code>pub fn grab_pointer&lt;Conn, A, B, C&gt;(
+    conn: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;Conn</a>,
+    owner_events: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+    grab_window: <a class="type" href="type.Window.html" title="type x11rb::protocol::xproto::Window">Window</a>,
+    event_mask: <a class="struct" href="struct.EventMask.html" title="struct x11rb::protocol::xproto::EventMask">EventMask</a>,
+    pointer_mode: <a class="struct" href="struct.GrabMode.html" title="struct x11rb::protocol::xproto::GrabMode">GrabMode</a>,
+    keyboard_mode: <a class="struct" href="struct.GrabMode.html" title="struct x11rb::protocol::xproto::GrabMode">GrabMode</a>,
+    confine_to: A,
+    cursor: B,
+    time: C,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Conn, <a class="struct" href="struct.GrabPointerReply.html" title="struct x11rb::protocol::xproto::GrabPointerReply">GrabPointerReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;<div class="where">where
+    Conn: <a class="trait" href="../../connection/trait.RequestConnection.html" title="trait x11rb::connection::RequestConnection">RequestConnection</a> + ?<a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html" title="trait core::marker::Sized">Sized</a>,
+    A: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Window.html" title="type x11rb::protocol::xproto::Window">Window</a>&gt;,
+    B: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Cursor.html" title="type x11rb::protocol::xproto::Cursor">Cursor</a>&gt;,
+    C: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Timestamp.html" title="type x11rb::protocol::xproto::Timestamp">Timestamp</a>&gt;,</div></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Grab the pointer.</p>
+<p>Actively grabs control of the pointer. Further pointer events are reported only to the grabbing client. Overrides any active pointer grab by this client.</p>
+<h2 id="fields-1"><a class="doc-anchor" href="#fields-1">§</a>Fields</h2>
+<ul>
+<li><code>event_mask</code> - Specifies which pointer events are reported to the client.</li>
+</ul>
+<p>TODO: which values?</p>
+<ul>
+<li><code>confine_to</code> - Specifies the window to confine the pointer in (the user will not be able to
+move the pointer out of that window).</li>
+</ul>
+<p>The special value <code>XCB_NONE</code> means don’t confine the pointer.</p>
+<ul>
+<li><code>cursor</code> - Specifies the cursor that should be displayed or <code>XCB_NONE</code> to not change the
+cursor.</li>
+<li><code>owner_events</code> - If 1, the <code>grab_window</code> will still get the pointer events. If 0, events are not
+reported to the <code>grab_window</code>.</li>
+<li><code>grab_window</code> - Specifies the window on which the pointer should be grabbed.</li>
+<li><code>time</code> - The time argument allows you to avoid certain circumstances that come up if
+applications take a long time to respond or if there are long network delays.
+Consider a situation where you have two applications, both of which normally
+grab the pointer when clicked on. If both applications specify the timestamp
+from the event, the second application may wake up faster and successfully grab
+the pointer before the first application. The first application then will get
+an indication that the other application grabbed the pointer before its request
+was processed.</li>
+</ul>
+<p>The special value <code>XCB_CURRENT_TIME</code> will be replaced with the current server
+time.</p>
+<ul>
+<li><code>pointer_mode</code> -</li>
+<li><code>keyboard_mode</code> -</li>
+</ul>
+<h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
+<ul>
+<li><code>Value</code> - TODO: reasons?</li>
+<li><code>Window</code> - The specified <code>window</code> does not exist.</li>
+</ul>
+<h2 id="see"><a class="doc-anchor" href="#see">§</a>See</h2>
+<ul>
+<li><code>GrabKeyboard</code>: request</li>
+</ul>
+<h2 id="example"><a class="doc-anchor" href="#example">§</a>Example</h2><div class="example-wrap"><pre class="language-text"><code>/*
+ * Grabs the pointer actively
+ *
+ */
+void my_example(xcb_connection_t *conn, xcb_screen_t *screen, xcb_cursor_t cursor) {
+    xcb_grab_pointer_cookie_t cookie;
+    xcb_grab_pointer_reply_t *reply;
+
+    cookie = xcb_grab_pointer(
+        conn,
+        false,               /* get all pointer events specified by the following mask */
+        screen-&gt;root,        /* grab the root window */
+        XCB_NONE,            /* which events to let through */
+        XCB_GRAB_MODE_ASYNC, /* pointer events should continue as normal */
+        XCB_GRAB_MODE_ASYNC, /* keyboard mode */
+        XCB_NONE,            /* confine_to = in which window should the cursor stay */
+        cursor,              /* we change the cursor to whatever the user wanted */
+        XCB_CURRENT_TIME
+    );
+
+    if ((reply = xcb_grab_pointer_reply(conn, cookie, NULL))) {
+        if (reply-&gt;status == XCB_GRAB_STATUS_SUCCESS)
+            printf(&quot;successfully grabbed the pointer\\n&quot;);
+        free(reply);
+    }
+}
+</code></pre></div></div></details></section></div></main></body></html>
