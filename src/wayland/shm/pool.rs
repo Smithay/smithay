@@ -295,7 +295,7 @@ unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
         mm::mmap_anonymous(
             ptr as *mut std::ffi::c_void,
             size,
-            mm::ProtFlags::READ,
+            mm::ProtFlags::READ | mm::ProtFlags::WRITE,
             mm::MapFlags::PRIVATE | mm::MapFlags::FIXED,
         )
     };
