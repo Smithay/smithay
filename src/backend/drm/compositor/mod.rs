@@ -204,6 +204,15 @@ enum ScanoutBuffer<B: Buffer> {
 }
 
 impl<B: Buffer> ScanoutBuffer<B> {
+    fn acquire_point(&self) -> Option<SyncPoint> {
+        if let Self::Wayland(buffer) = self {
+            return buffer.acquire_point().cloned().map(SyncPoint::from);
+        }
+        None
+    }
+}
+
+impl<B: Buffer> ScanoutBuffer<B> {
     #[inline]
     fn from_underlying_storage(storage: UnderlyingStorage<'_>) -> Option<Self> {
         match storage {
@@ -3969,7 +3978,7 @@ where
             buffer: element_config.buffer.clone(),
             damage_clips,
             plane_claim,
-            sync: None,
+            sync: element_config.buffer.buffer.acquire_point().map(|p| (p, None)),
         };
 
         let is_compatible = previous_state

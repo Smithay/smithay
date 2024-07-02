@@ -85,6 +85,7 @@ use smithay::{
         drm_lease::{
             DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
         },
+        drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjHandler, DrmSyncobjState},
     },
 };
 use smithay_drm_extras::{
@@ -124,9 +125,10 @@ pub struct UdevData {
     pub session: LibSeatSession,
     dh: DisplayHandle,
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
-    primary_gpu: DrmNode,
+    syncobj_state: Option<DrmSyncobjState>,
+    pub primary_gpu: DrmNode,
     gpus: GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
-    backends: HashMap<DrmNode, BackendData>,
+    pub backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, MemoryRenderBuffer)>,
     pointer_element: PointerElement,
     #[cfg(feature = "debug")]
@@ -247,6 +249,7 @@ pub fn run_udev() {
     let data = UdevData {
         dh: display_handle.clone(),
         dmabuf_state: None,
+        syncobj_state: None,
         session,
         primary_gpu,
         gpus,
@@ -434,6 +437,23 @@ pub fn run_udev() {
         });
     });
 
+    // Expose syncobj protocol if supported by primary GPU
+    if let Some(primary_node) = state
+        .backend_data
+        .primary_gpu
+        .node_with_type(NodeType::Primary)
+        .and_then(|x| x.ok())
+    {
+        if let Some(backend) = state.backend_data.backends.get(&primary_node) {
+            let import_device = backend.drm.device_fd().clone();
+            if supports_syncobj_eventfd(&import_device) {
+                let syncobj_state =
+                    DrmSyncobjState::new::<AnvilState<UdevData>>(&display_handle, import_device);
+                state.backend_data.syncobj_state = Some(syncobj_state);
+            }
+        }
+    }
+
     event_loop
         .handle()
         .insert_source(udev_backend, move |event, _, data| match event {
@@ -552,6 +572,13 @@ impl DrmLeaseHandler for AnvilState<UdevData> {
 }
 
 delegate_drm_lease!(AnvilState<UdevData>);
+
+impl DrmSyncobjHandler for AnvilState<UdevData> {
+    fn drm_syncobj_state(&mut self) -> &mut DrmSyncobjState {
+        self.backend_data.syncobj_state.as_mut().unwrap()
+    }
+}
+smithay::delegate_drm_syncobj!(AnvilState<UdevData>);
 
 pub type RenderSurface = GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
 
@@ -743,13 +770,13 @@ impl Drop for SurfaceData {
     }
 }
 
-struct BackendData {
+pub struct BackendData {
     surfaces: HashMap<crtc::Handle, SurfaceData>,
     non_desktop_connectors: Vec<(connector::Handle, crtc::Handle)>,
     leasing_global: Option<DrmLeaseState>,
     active_leases: Vec<DrmLease>,
     gbm: GbmDevice<DrmDeviceFd>,
-    drm: DrmDevice,
+    pub drm: DrmDevice,
     drm_scanner: DrmScanner,
     render_node: DrmNode,
     registration_token: RegistrationToken,
