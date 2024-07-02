@@ -21,9 +21,8 @@ pub struct KeymapFile {
 impl KeymapFile {
     /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
     pub fn new(keymap: &Keymap) -> Self {
-        let name = CString::new("smithay-keymap").unwrap();
         let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
-        let sealed = SealedFile::with_content(name, CString::new(keymap.as_str()).unwrap());
+        let sealed = SealedFile::with_content(c"smithay-keymap", CString::new(keymap.as_str()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
             error!("Error when creating sealed keymap file: {}", err);
@@ -42,8 +41,7 @@ impl KeymapFile {
     pub(crate) fn change_keymap(&mut self, keymap: &Keymap) {
         let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
 
-        let name = CString::new("smithay-keymap-file").unwrap();
-        let sealed = SealedFile::with_content(name, CString::new(keymap.clone()).unwrap());
+        let sealed = SealedFile::with_content(c"smithay-keymap-file", CString::new(keymap.clone()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
             error!("Error when creating sealed keymap file: {}", err);
