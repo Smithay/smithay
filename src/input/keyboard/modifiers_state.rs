@@ -27,6 +27,9 @@ pub struct ModifiersState {
     /// Also known as the "AltGr" key
     pub iso_level3_shift: bool,
 
+    /// The "ISO level 5 shift" key
+    pub iso_level5_shift: bool,
+
     /// Serialized modifier state, as send e.g. by the wl_keyboard protocol
     pub serialized: SerializedMods,
 }
@@ -42,6 +45,9 @@ impl ModifiersState {
         self.num_lock = state.mod_name_is_active(&xkb::MOD_NAME_NUM, xkb::STATE_MODS_EFFECTIVE);
         self.iso_level3_shift =
             state.mod_name_is_active(&xkb::MOD_NAME_ISO_LEVEL3_SHIFT, xkb::STATE_MODS_EFFECTIVE);
+        // https://github.com/rust-x-bindings/xkbcommon-rs/issues/49
+        // self.iso_level5_shift = state.mod_name_is_active(&xkb::MOD_NAME_MOD3, xkb::STATE_MODS_EFFECTIVE);
+        self.iso_level5_shift = state.mod_name_is_active("Mod3", xkb::STATE_MODS_EFFECTIVE);
         self.serialized = serialize_modifiers(state);
     }
 }
