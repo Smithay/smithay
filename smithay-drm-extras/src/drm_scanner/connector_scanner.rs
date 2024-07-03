@@ -33,8 +33,8 @@ impl ConnectorScanner {
     }
 
     /// Should be called on every device changed event
-    pub fn scan(&mut self, drm: &impl ControlDevice) -> ConnectorScanResult {
-        let res_handles = drm.resource_handles().unwrap();
+    pub fn scan(&mut self, drm: &impl ControlDevice) -> std::io::Result<ConnectorScanResult> {
+        let res_handles = drm.resource_handles()?;
         let connector_handles = res_handles.connectors();
 
         let mut added = Vec::new();
@@ -63,10 +63,10 @@ impl ConnectorScanner {
             }
         }
 
-        ConnectorScanResult {
+        Ok(ConnectorScanResult {
             connected: added,
             disconnected: removed,
-        }
+        })
     }
 
     /// Get map of all connectors, connected and disconnected ones.
