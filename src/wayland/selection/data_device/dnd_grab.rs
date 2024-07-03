@@ -237,11 +237,10 @@ where
             }
         }
         if let Some(ref source) = self.data_source {
-            if source.version() >= 3 {
-                source.dnd_drop_performed();
-            }
             if !validated {
                 source.cancelled();
+            } else if source.version() >= wl_data_source::EVT_DND_DROP_PERFORMED_SINCE {
+                source.dnd_drop_performed();
             }
         }
 
