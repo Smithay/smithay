@@ -90,7 +90,7 @@ where
     /// use smithay_drm_extras::drm_scanner::{DrmScanner, DrmScanEvent};
     ///
     /// let mut scanner: DrmScanner = DrmScanner::new();
-    /// let res = scanner.scan_connectors(&drm_device);
+    /// let res = scanner.scan_connectors(&drm_device).expect("failed to scan connectors");
     ///
     /// // You can extract scan info manually
     /// println!("Plugged {} connectors", res.added.len());
@@ -104,8 +104,8 @@ where
     ///     }
     /// }
     /// ```
-    pub fn scan_connectors(&mut self, drm: &impl ControlDevice) -> DrmScanResult {
-        let scan = self.connectors.scan(drm);
+    pub fn scan_connectors(&mut self, drm: &impl ControlDevice) -> std::io::Result<DrmScanResult> {
+        let scan = self.connectors.scan(drm)?;
 
         let removed = scan
             .disconnected
@@ -128,10 +128,10 @@ where
             })
             .collect();
 
-        DrmScanResult {
+        Ok(DrmScanResult {
             disconnected: removed,
             connected: added,
-        }
+        })
     }
 
     /// Get map of all connectors, connected and disconnected ones.

@@ -1131,7 +1131,15 @@ impl AnvilState<UdevData> {
             return;
         };
 
-        for event in device.drm_scanner.scan_connectors(&device.drm) {
+        let scan_result = match device.drm_scanner.scan_connectors(&device.drm) {
+            Ok(scan_result) => scan_result,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to scan connectors");
+                return;
+            }
+        };
+
+        for event in scan_result {
             match event {
                 DrmScanEvent::Connected {
                     connector,
