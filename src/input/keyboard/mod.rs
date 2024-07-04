@@ -50,6 +50,20 @@ where
     );
     /// Hold modifiers were changed on a keyboard from a given seat
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial);
+    /// Keyboard focus of a given seat moved from another handler to this handler
+    fn replace(
+        &self,
+        replaced: <D as SeatHandler>::KeyboardFocus,
+        seat: &Seat<D>,
+        data: &mut D,
+        keys: Vec<KeysymHandle<'_>>,
+        modifiers: ModifiersState,
+        serial: Serial,
+    ) {
+        KeyboardTarget::<D>::leave(&replaced, seat, data, serial);
+        KeyboardTarget::<D>::enter(self, seat, data, keys, serial);
+        KeyboardTarget::<D>::modifiers(self, seat, data, modifiers, serial);
+    }
 }
 
 /// Mapping of the led of a keymap
@@ -1202,51 +1216,56 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: Serial,
     ) {
-        let focus_clone = focus.clone();
-        let same = self
-            .inner
-            .focus
-            .as_ref()
-            .and_then(|f| focus_clone.map(|f2| f.0 == f2))
-            .unwrap_or(false);
+        if let Some(focus) = focus {
+            let old_focus = self.inner.focus.replace((focus.clone(), serial));
+            match (focus, old_focus) {
+                (focus, Some((old_focus, _))) if focus == old_focus => {
+                    trace!("Focus unchanged");
+                }
+                (focus, Some((old_focus, _))) => {
+                    trace!("Focus set to new surface");
+                    let keys = self
+                        .inner
+                        .forwarded_pressed_keys
+                        .iter()
+                        .map(|keycode| {
+                            KeysymHandle {
+                                // Offset the keycode by 8, as the evdev XKB rules reflect X's
+                                // broken keycode system, which starts at 8.
+                                keycode: (keycode + 8).into(),
+                                state: &self.inner.state,
+                                keymap: &self.inner.keymap,
+                            }
+                        })
+                        .collect();
 
-        if !same {
-            // unset old focus
-            if let Some((focus, _)) = self.inner.focus.as_mut() {
-                focus.leave(self.seat, data, serial);
-            };
+                    focus.replace(old_focus, self.seat, data, keys, self.inner.mods_state, serial);
+                    data.focus_changed(self.seat, Some(&focus));
+                }
+                (focus, None) => {
+                    let keys = self
+                        .inner
+                        .forwarded_pressed_keys
+                        .iter()
+                        .map(|keycode| {
+                            KeysymHandle {
+                                // Offset the keycode by 8, as the evdev XKB rules reflect X's
+                                // broken keycode system, which starts at 8.
+                                keycode: (keycode + 8).into(),
+                                state: &self.inner.state,
+                                keymap: &self.inner.keymap,
+                            }
+                        })
+                        .collect();
 
-            // set new focus
-            self.inner.focus = focus.map(|f| (f, serial));
-            if let Some((focus, _)) = self.inner.focus.as_mut() {
-                let keys = self
-                    .inner
-                    .forwarded_pressed_keys
-                    .iter()
-                    .map(|keycode| {
-                        KeysymHandle {
-                            // Offset the keycode by 8, as the evdev XKB rules reflect X's
-                            // broken keycode system, which starts at 8.
-                            keycode: (keycode + 8).into(),
-                            state: &self.inner.state,
-                            keymap: &self.inner.keymap,
-                        }
-                    })
-                    .collect();
-                focus.enter(self.seat, data, keys, serial);
-                focus.modifiers(self.seat, data, self.inner.mods_state, serial);
-            };
-            {
-                let KbdInternal { ref focus, .. } = *self.inner;
-                data.focus_changed(self.seat, focus.as_ref().map(|f| &f.0));
+                    focus.enter(self.seat, data, keys, serial);
+                    focus.modifiers(self.seat, data, self.inner.mods_state, serial);
+                    data.focus_changed(self.seat, Some(&focus));
+                }
             }
-            if self.inner.focus.is_some() {
-                trace!("Focus set to new surface");
-            } else {
-                trace!("Focus unset");
-            }
-        } else {
-            trace!("Focus unchanged");
+        } else if let Some((old_focus, _)) = self.inner.focus.take() {
+            trace!("Focus unset");
+            old_focus.leave(self.seat, data, serial);
         }
     }
 }
