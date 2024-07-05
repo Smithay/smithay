@@ -126,8 +126,8 @@ pub trait Framebuffer: AsRef<framebuffer::Handle> {
 pub struct Planes {
     /// The primary plane(s) of the crtc
     pub primary: Vec<PlaneInfo>,
-    /// The cursor plane of the crtc, if available
-    pub cursor: Option<PlaneInfo>,
+    /// The cursor plane(s) of the crtc, if available
+    pub cursor: Vec<PlaneInfo>,
     /// Overlay planes supported by the crtc, if available
     pub overlay: Vec<PlaneInfo>,
 }
@@ -151,7 +151,7 @@ fn planes(
     has_universal_planes: bool,
 ) -> Result<Planes, DrmError> {
     let mut primary = Vec::with_capacity(1);
-    let mut cursor = None;
+    let mut cursor = Vec::new();
     let mut overlay = Vec::new();
 
     let planes = dev.plane_handles().map_err(|source| {
@@ -194,7 +194,7 @@ fn planes(
                     primary.push(plane_info);
                 }
                 PlaneType::Cursor => {
-                    cursor = Some(plane_info);
+                    cursor.push(plane_info);
                 }
                 PlaneType::Overlay => {
                     overlay.push(plane_info);
@@ -205,7 +205,7 @@ fn planes(
 
     Ok(Planes {
         primary,
-        cursor: if has_universal_planes { cursor } else { None },
+        cursor: if has_universal_planes { cursor } else { Vec::new() },
         overlay: if has_universal_planes { overlay } else { Vec::new() },
     })
 }
