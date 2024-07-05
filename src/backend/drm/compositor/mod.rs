@@ -332,7 +332,7 @@ impl ElementFramebufferCacheKey {
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct PlanesSnapshot {
     primary: bool,
-    cursor: bool,
+    cursor_bitmask: u32,
     overlay_bitmask: u32,
 }
 
@@ -629,12 +629,14 @@ impl<B> Clone for Owned<B> {
 
 impl<B: Framebuffer> FrameState<B> {
     fn from_planes(primary_plane: plane::Handle, planes: &Planes) -> Self {
-        let cursor_plane_count = usize::from(planes.cursor.is_some());
-        let mut tmp = SmallVec::with_capacity(planes.overlay.len() + cursor_plane_count + 1);
+        let mut tmp = SmallVec::with_capacity(planes.overlay.len() + planes.cursor.len() + 1);
         tmp.push((primary_plane, PlaneState::default()));
-        if let Some(info) = planes.cursor.as_ref() {
-            tmp.push((info.handle, PlaneState::default()));
-        }
+        tmp.extend(
+            planes
+                .cursor
+                .iter()
+                .map(|info| (info.handle, PlaneState::default())),
+        );
         tmp.extend(
             planes
                 .overlay
@@ -1649,7 +1651,7 @@ where
 
         // We do not support direct scan-out on legacy
         if surface.is_legacy() {
-            planes.cursor = None;
+            planes.cursor.clear();
             planes.overlay.clear();
         }
 
@@ -2309,13 +2311,7 @@ where
                 // on the primary plane, cursor plane or an overlay plane
                 let element = if *plane == self.surface.plane() {
                     primary_plane_scanout_element.take()
-                } else if self
-                    .planes
-                    .cursor
-                    .as_ref()
-                    .map(|p| *plane == p.handle)
-                    .unwrap_or(false)
-                {
+                } else if self.planes.cursor.iter().any(|p| *plane == p.handle) {
                     cursor_plane_element.take()
                 } else {
                     overlay_plane_elements.shift_remove(plane)
@@ -2947,11 +2943,7 @@ where
             output_transform,
             output_geometry,
         ) {
-            trace!(
-                "assigned element {:?} to cursor {:?}",
-                element.id(),
-                self.planes.cursor.as_ref().map(|p| p.handle)
-            );
+            trace!("assigned element {:?} to cursor {:?}", element.id(), plane.handle);
             return Ok(plane);
         }
 
@@ -2969,7 +2961,11 @@ where
             output_geometry,
         ) {
             Ok(plane) => {
-                trace!("assigned element {:?} to overlay plane", element.id());
+                trace!(
+                    "assigned element {:?} to overlay plane {:?}",
+                    element.id(),
+                    plane.handle
+                );
                 return Ok(plane);
             }
             Err(err) => rendering_reason = rendering_reason.or(err),
@@ -3075,24 +3071,16 @@ where
         R: Renderer,
         E: RenderElement<R>,
     {
-        // if we have no cursor plane we can exit early
-        let plane_info = self.planes.cursor.as_ref()?;
-
-        // something is already assigned to our cursor plane
-        if frame_state.is_assigned(plane_info.handle) {
-            trace!(
-                "skipping element {:?} on cursor {:?}, plane already has element assigned",
-                element.id(),
-                plane_info.handle
-            );
+        let Some(cursor_state) = self.cursor_state.as_mut() else {
+            trace!("no cursor state, skipping cursor rendering");
             return None;
-        }
+        };
 
+        // only try to assgin elements on a cursor plane that indicate so
         if element.kind() != Kind::Cursor {
             trace!(
-                "skipping element {:?} on cursor {:?}, element kind not cursor",
+                "skipping element {:?} on cursor plane(s), element kind not cursor",
                 element.id(),
-                plane_info.handle
             );
             return None;
         }
@@ -3102,16 +3090,61 @@ where
         // if the element is greater than the cursor size we can not
         // use the cursor plane to scan out the element
         if element_size.w > self.cursor_size.w || element_size.h > self.cursor_size.h {
+            trace!("element {:?} too big for cursor plane(s), skipping", element.id(),);
+            return None;
+        }
+
+        // For now we only support a single cursor plane, so first test if we already
+        // assigned something to any cursor plane
+        if let Some(plane_info) = self
+            .planes
+            .cursor
+            .iter()
+            .find(|plane_info| frame_state.is_assigned(plane_info.handle))
+        {
             trace!(
-                "element {:?} too big for cursor {:?}, skipping",
+                "skipping element {:?} on cursor {:?}, plane already has element assigned",
                 element.id(),
-                plane_info.handle,
+                plane_info.handle
             );
             return None;
         }
 
-        let Some(cursor_state) = self.cursor_state.as_mut() else {
-            trace!("no cursor state, skipping cursor rendering");
+        let previous_state = self
+            .pending_frame
+            .as_ref()
+            .map(|pending| &pending.frame)
+            .unwrap_or(&self.current_frame);
+
+        // In case we have multiple cursor planes we will try to keep using
+        // the same cursor plane for as long as possible.
+        // So first we test the previous state for an assigned cursor plane and
+        // if that fails we will try to pick the first unclaimed cursor plane.
+        let Some((plane_info, plane_claim)) = self
+            .planes
+            .cursor
+            .iter()
+            .find_map(|plane_info: &PlaneInfo| {
+                if previous_state.is_assigned(plane_info.handle) {
+                    self.surface
+                        .claim_plane(plane_info.handle)
+                        .map(|claim| (plane_info, claim))
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                self.planes.cursor.iter().find_map(|plane_info| {
+                    self.surface
+                        .claim_plane(plane_info.handle)
+                        .map(|claim| (plane_info, claim))
+                })
+            })
+        else {
+            trace!(
+                "skipping element {:?} on cursor plane(s), no free plane found",
+                element.id(),
+            );
             return None;
         };
 
@@ -3225,15 +3258,6 @@ where
                     "failed to export framebuffer for cursor {:?}: {}",
                     plane_info.handle, err
                 );
-                return None;
-            }
-        };
-
-        // Try to claim the plane, if this fails we can not use it
-        let plane_claim = match self.surface.claim_plane(plane_info.handle) {
-            Some(claim) => claim,
-            None => {
-                trace!("failed to claim {:?}", plane_info.handle);
                 return None;
             }
         };
@@ -3602,14 +3626,20 @@ where
                         }
                         acc
                     });
+            let cursor_bitmask =
+                self.planes
+                    .cursor
+                    .iter()
+                    .enumerate()
+                    .fold(0u32, |mut acc, (index, plane)| {
+                        if frame_state.is_assigned(plane.handle) {
+                            acc |= 1 << index;
+                        }
+                        acc
+                    });
             let current_plane_snapshot = PlanesSnapshot {
                 primary: frame_state.is_assigned(self.surface.plane()),
-                cursor: self
-                    .planes
-                    .cursor
-                    .as_ref()
-                    .map(|plane| frame_state.is_assigned(plane.handle))
-                    .unwrap_or(false),
+                cursor_bitmask,
                 overlay_bitmask,
             };
 

@@ -402,12 +402,7 @@ impl DrmSurface {
     pub fn claim_plane(&self, plane: plane::Handle) -> Option<PlaneClaim> {
         // Validate that we are called with an plane that belongs to us
         if self.planes.primary.iter().any(|p| p.handle == plane)
-            || self
-                .planes
-                .cursor
-                .as_ref()
-                .map(|p| p.handle == plane)
-                .unwrap_or(false)
+            || self.planes.cursor.iter().any(|p| p.handle == plane)
             || self.planes.overlay.iter().any(|p| p.handle == plane)
         {
             self.plane_claim_storage.claim(plane, self.crtc)
