@@ -62,7 +62,7 @@ wayland-protocols-wlr = { version = "0.3.1", features = ["server"], optional = t
 wayland-protocols-misc = { version = "0.3.1", features = ["server"], optional = true }
 wayland-server = { version = "0.31.0", optional = true }
 wayland-sys = { version = "0.31", optional = true }
-wayland-backend = { version = "0.3.0", optional = true }
+wayland-backend = { version = "0.3.5", optional = true }
 winit = { version = "0.30.0", default-features = false, features = ["wayland", "wayland-dlopen", "x11", "rwh_06"], optional = true }
 x11rb = { version = "0.13.0", optional = true }
 xkbcommon = { version = "0.8.0", features = ["wayland"]}
