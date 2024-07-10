@@ -77,8 +77,8 @@ impl<Kind> Copy for Time<Kind> {}
 impl<Kind: NonNegativeClockSource> From<Time<Kind>> for Duration {
     #[inline]
     fn from(time: Time<Kind>) -> Self {
-        debug_assert!(time.tp.tv_sec > 0);
-        debug_assert!(time.tp.tv_nsec > 0);
+        debug_assert!(time.tp.tv_sec >= 0);
+        debug_assert!(time.tp.tv_nsec >= 0);
         Duration::new(time.tp.tv_sec as u64, time.tp.tv_nsec as u32)
     }
 }
