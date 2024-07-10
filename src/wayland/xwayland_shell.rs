@@ -8,7 +8,7 @@
 //!     XWaylandShellState,
 //! };
 //! use smithay::delegate_xwayland_shell;
-//! use x11rb::protocol::xproto::Window as X11Window;
+//! use smithay::xwayland::xwm::{XwmId, X11Surface};
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -25,14 +25,14 @@
 //!         todo!()
 //!     }
 //!
-//!     fn surface_associated(&mut self, _surface: WlSurface, _window: X11Window) {
+//!     fn surface_associated(&mut self, _xwm_id: XwmId, _surface: WlSurface, _window: X11Surface) {
 //!         // Called when XWayland has associated an X11 window with a wl_surface.
 //!         todo!()
 //!     }
 //! }
 //!
 //! #  use smithay::wayland::selection::SelectionTarget;
-//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
+//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, XwmHandler, xwm::{ResizeEdge, Reorder}};
 //! #  use smithay::utils::{Rectangle, Logical};
 //! #  use std::os::unix::io::OwnedFd;
 //! #  use std::process::Stdio;
@@ -71,11 +71,10 @@ use wayland_server::{
     protocol::wl_surface::{self, WlSurface},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
-use x11rb::protocol::xproto::Window as X11Window;
 
 use crate::{
     wayland::compositor,
-    xwayland::{xwm::XwmId, XWaylandClientData, XwmHandler},
+    xwayland::{xwm::XwmId, X11Surface, XWaylandClientData, XwmHandler},
 };
 
 /// The role for an xwayland-associated surface.
@@ -131,7 +130,9 @@ pub trait XWaylandShellHandler {
 
     /// An X11 window has been associated with a wayland surface. This doesn't
     /// take effect until the wl_surface is committed.
-    fn surface_associated(&mut self, _surface: wl_surface::WlSurface, _window: X11Window) {}
+    fn surface_associated(&mut self, xwm: XwmId, wl_surface: wl_surface::WlSurface, surface: X11Surface) {
+        let _ = (xwm, wl_surface, surface);
+    }
 }
 
 /// Represents a pending X11 serial, used to associate X11 windows with wayland
@@ -277,6 +278,7 @@ fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + 'static>(
                         .windows
                         .iter()
                         .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
+                        .cloned()
                     {
                         debug!(
                             window = xsurface.window_id(),
@@ -286,8 +288,7 @@ fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + 'static>(
 
                         xsurface.state.lock().unwrap().wl_surface = Some(surface.clone());
 
-                        let window_id = xsurface.window_id();
-                        XWaylandShellHandler::surface_associated(state, surface.clone(), window_id);
+                        XWaylandShellHandler::surface_associated(state, *xwm_id, surface.clone(), xsurface);
                     } else {
                         warn!(
                             window,
