@@ -113,6 +113,7 @@ use std::{
 use tracing::{debug, debug_span, error, info, trace, warn};
 use wayland_server::{Client, Resource};
 
+pub use x11rb::protocol::xproto::Window as X11Window;
 use x11rb::{
     connection::Connection as _,
     errors::ReplyOrIdError,
@@ -124,8 +125,8 @@ use x11rb::{
             Atom, AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent,
             ConfigureWindowAux, ConnectionExt as _, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask,
             FontWrapper, GcontextWrapper, GetPropertyReply, ImageFormat, PixmapWrapper, PropMode, Property,
-            QueryExtensionReply, Screen, SelectionNotifyEvent, SelectionRequestEvent, StackMode,
-            Window as X11Window, WindowClass, CONFIGURE_NOTIFY_EVENT, SELECTION_NOTIFY_EVENT,
+            QueryExtensionReply, Screen, SelectionNotifyEvent, SelectionRequestEvent, StackMode, WindowClass,
+            CONFIGURE_NOTIFY_EVENT, SELECTION_NOTIFY_EVENT,
         },
         Event,
     },
