@@ -2120,6 +2120,7 @@ where
                         .windows
                         .iter_mut()
                         .find(|x| x.window_id() == msg.window || x.mapped_window_id() == Some(msg.window))
+                        .cloned()
                     {
                         drop(_guard);
 
@@ -2130,7 +2131,6 @@ where
                         let surface_state = xsurface.state.clone();
                         let mut guard = surface_state.lock().unwrap();
                         guard.wl_surface_serial = Some(serial);
-                        let window_id = xsurface.window_id();
 
                         if let Some(wl_surface) =
                             xwayland_shell::XWaylandShellHandler::xwayland_shell_state(state)
@@ -2138,14 +2138,14 @@ where
                                 .clone()
                         {
                             debug!(
-                                window = ?window_id,
+                                window = ?xsurface.window_id(),
                                 wl_surface = ?wl_surface.id().protocol_id(),
                                 "associated X11 window to wl_surface",
                             );
 
                             guard.wl_surface = Some(wl_surface.clone());
                             std::mem::drop(guard);
-                            XWaylandShellHandler::surface_associated(state, wl_surface, window_id);
+                            XWaylandShellHandler::surface_associated(state, xwm_id, wl_surface, xsurface);
                         } else {
                             debug!(
                                 window = ?msg.window,
@@ -2153,7 +2153,7 @@ where
                                 "no matching wl_surface for X11 window",
                             );
                             let xwm = state.xwm_state(xwm_id);
-                            xwm.unpaired_surfaces.insert(serial, window_id);
+                            xwm.unpaired_surfaces.insert(serial, xsurface.window_id());
                             guard.wl_surface = None;
                         }
                     }
