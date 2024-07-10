@@ -492,11 +492,11 @@ impl X11Surface {
         Ok(())
     }
 
-    /// Sets the window as minimized or not.
+    /// Sets the window as suspended/hidden or not.
     ///
-    /// Allows the client to e.g. stop rendering while minimized.
-    pub fn set_minimized(&self, minimized: bool) -> Result<(), ConnectionError> {
-        if minimized {
+    /// Allows the client to e.g. stop rendering.
+    pub fn set_suspended(&self, suspended: bool) -> Result<(), ConnectionError> {
+        if suspended {
             self.change_net_state(&[self.atoms._NET_WM_STATE_HIDDEN], &[])?;
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_HIDDEN])?;
