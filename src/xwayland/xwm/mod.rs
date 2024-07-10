@@ -2143,6 +2143,7 @@ where
                             );
 
                             guard.wl_surface = Some(wl_surface.clone());
+                            std::mem::drop(guard);
                             XWaylandShellHandler::surface_associated(state, wl_surface, window_id);
                         } else {
                             debug!(
