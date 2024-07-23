@@ -3,12 +3,33 @@
 //! This module implement the `linux-drm-syncobj-v1` protocol, used to support
 //! explicit sync.
 //!
-//! Currently, the implementation here assumes
+//! Currently, the implementation here assumes acquire fences are already signalled
+//! when the surface transaction is ready. Use [`DrmSyncPointBlocker`].
 //!
 //! ```no_run
+//! # use smithay::delegate_drm_syncobj;
+//! # use smithay::wayland::drm_syncobj::*;
+//!
 //! pub struct State {
-//!     syncobj_state: DrmSyncobjState,
+//!     syncobj_state: Option<DrmSyncobjState>,
 //! }
+//!
+//! impl DrmSyncobjHandler for State {
+//!     fn drm_syncobj_state(&mut self) -> &mut DrmSyncobjState {
+//!         self.syncobj_state.as_mut().unwrap()
+//!     }
+//! }
+//!
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! # let display_handle = display.handle();
+//! # let import_device = todo!();
+//! let syncobj_state = if supports_syncobj_eventfd(&import_device) {
+//!     Some(DrmSyncobjState::new::<State>(&display_handle, import_device))
+//! } else {
+//!     None
+//! };
+//!
+//! delegate_drm_syncobj!(State);
 //! ```
 
 use std::{cell::RefCell, os::unix::io::AsFd};
