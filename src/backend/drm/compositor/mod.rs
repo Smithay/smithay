@@ -126,6 +126,7 @@ use std::{
     io::ErrorKind,
     os::unix::io::{AsFd, OwnedFd},
     rc::Rc,
+    str::FromStr,
     sync::{Arc, Mutex},
 };
 
@@ -1690,7 +1691,7 @@ where
                     }))
                 })?
             && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?
-            && !is_nvidia;
+            && !(is_nvidia && nvidia_drm_version().unwrap_or((0, 0, 0)) < (560, 35, 3));
 
         for format in color_formats {
             debug!("Testing color format: {}", format);
@@ -4504,4 +4505,13 @@ impl<
             FrameError::FramebufferExport(err) => SwapBuffersError::ContextLost(Box::new(err)),
         }
     }
+}
+
+fn nvidia_drm_version() -> Option<(u32, u32, u32)> {
+    let ver = std::fs::read_to_string("/sys/module/nvidia_drm/version").ok()?;
+    let mut components = ver.trim().split('.');
+    let major = u32::from_str(components.next()?).ok()?;
+    let minor = u32::from_str(components.next()?).ok()?;
+    let patch = u32::from_str(components.next()?).ok()?;
+    Some((major, minor, patch))
 }
