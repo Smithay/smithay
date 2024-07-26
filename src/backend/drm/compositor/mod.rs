@@ -3205,11 +3205,26 @@ where
             return None;
         };
 
+        let cursor_plane_size = if let Some(size_hints) = plane_info.size_hints.as_deref() {
+            // size hints are in order of preference, so we can choose the first one
+            // that can hold the whole element
+            //
+            // Note: we use the legacy cursor size as a pre-check and expect it to hold the
+            // biggest possible size
+            size_hints
+                .iter()
+                .find(|hint| hint.w as i32 >= element_size.w && hint.h as i32 >= element_size.h)
+                .map(|hint| Size::<i32, Physical>::from((hint.w as i32, hint.h as i32)))
+                .unwrap_or(self.cursor_size)
+        } else {
+            self.cursor_size
+        };
+
         // this calculates the location of the cursor plane taking the simulated transform
         // into consideration
         let cursor_plane_location = output_transform
             .transform_point_in(element.location(scale), &output_geometry.size)
-            - output_transform.transform_point_in(Point::default(), &self.cursor_size);
+            - output_transform.transform_point_in(Point::default(), &cursor_plane_size);
 
         let previous_state = self
             .pending_frame
@@ -3234,6 +3249,15 @@ where
             || previous_element_state
                 .map(|element_state| {
                     element_state.id != *element.id() || element.current_commit() != element_state.commit
+                })
+                .unwrap_or(true)
+            || previous_state
+                .plane_state(plane_info.handle)
+                .and_then(|state| {
+                    state
+                        .config
+                        .as_ref()
+                        .map(|config| config.properties.dst.size != cursor_plane_size)
                 })
                 .unwrap_or(true);
 
@@ -3284,8 +3308,8 @@ where
         // if we fail to create a buffer we can just return false and
         // force the cursor to be rendered on the primary plane
         let mut cursor_buffer = match cursor_state.allocator.create_buffer(
-            self.cursor_size.w as u32,
-            self.cursor_size.h as u32,
+            cursor_plane_size.w as u32,
+            cursor_plane_size.h as u32,
             DrmFourcc::Argb8888,
             &[DrmModifier::Linear],
         ) {
@@ -3319,14 +3343,14 @@ where
             }
         };
 
-        let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
+        let cursor_buffer_size = cursor_plane_size.to_logical(1).to_buffer(1, Transform::Normal);
 
         #[cfg(not(feature = "renderer_pixman"))]
         if !copy_element_to_cursor_bo(
             renderer,
             element,
             element_size,
-            self.cursor_size,
+            cursor_plane_size,
             output_transform,
             &cursor_state.framebuffer_exporter,
             &mut cursor_buffer,
@@ -3340,7 +3364,7 @@ where
             renderer,
             element,
             element_size,
-            self.cursor_size,
+            cursor_plane_size,
             output_transform,
             &cursor_state.framebuffer_exporter,
             &mut cursor_buffer,
@@ -3411,10 +3435,10 @@ where
                         .map_err(|_| PixmanError::ImportFailed)?;
                         pixman_renderer.bind(PixmanRenderBuffer::from(cursor_dst))?;
 
-                        let mut frame = pixman_renderer.render(self.cursor_size, output_transform)?;
+                        let mut frame = pixman_renderer.render(cursor_plane_size, output_transform)?;
                         frame.clear(
                             Color32F::TRANSPARENT,
-                            &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
+                            &[Rectangle::from_loc_and_size((0, 0), cursor_plane_size)],
                         )?;
                         let src = element.src();
                         let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
@@ -3449,7 +3473,7 @@ where
         };
 
         let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
-        let dst = Rectangle::from_loc_and_size(cursor_plane_location, self.cursor_size);
+        let dst = Rectangle::from_loc_and_size(cursor_plane_location, cursor_plane_size);
 
         let config = PlaneConfig {
             properties: PlaneProperties {
