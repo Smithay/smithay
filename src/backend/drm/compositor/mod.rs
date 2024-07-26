@@ -1008,7 +1008,7 @@ impl<'a, B: Buffer, F: Framebuffer, E> RenderFrameResult<'a, B, F, E> {
     /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
     pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
-            !element.sync.is_reached() && (!self.supports_fencing || !element.sync.is_exportable())
+            !self.supports_fencing || !element.sync.is_exportable()
         } else {
             false
         }
