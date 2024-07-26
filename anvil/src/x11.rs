@@ -205,7 +205,7 @@ pub fn run_x11() {
 
     #[cfg(feature = "debug")]
     let fps_image =
-        image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
+        image::ImageReader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
             .decode()
             .unwrap();
     #[cfg(feature = "debug")]
