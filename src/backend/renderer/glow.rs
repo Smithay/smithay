@@ -84,8 +84,8 @@ impl GlowRenderer {
     /// # Implementation details
     ///
     /// - Texture handles created by the resulting renderer are valid for every rendered created with an
-    /// `EGLContext` shared with the given one (see `EGLContext::new_shared`) and can be used on
-    /// any of these renderers.
+    ///   `EGLContext` shared with the given one (see `EGLContext::new_shared`) and can be used on
+    ///   any of these renderers.
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.

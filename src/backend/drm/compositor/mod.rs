@@ -978,14 +978,14 @@ pub enum PrimaryPlaneElement<'a, B: Buffer, F: Framebuffer, E> {
 ///
 /// Keeping the buffer longer may cause the following issues:
 /// - **Too much damage** - until the buffer is marked free it is not considered
-/// submitted by the swapchain, causing the age value of newly queried buffers
-/// to be lower than necessary, potentially resulting in more rendering than necessary.
-/// To avoid this make sure the buffer is dropped before starting the next render.
+///   submitted by the swapchain, causing the age value of newly queried buffers
+///   to be lower than necessary, potentially resulting in more rendering than necessary.
+///   To avoid this make sure the buffer is dropped before starting the next render.
 /// - **Exhaustion of swapchain images** - Continuing rendering while holding on
-/// to too many buffers may cause the swapchain to run out of images, returning errors
-/// on rendering until buffers are freed again. The exact amount of images in a
-/// swapchain is an implementation detail, but should generally be expect to be
-/// large enough to hold onto at least one `RenderFrameResult`.
+///   to too many buffers may cause the swapchain to run out of images, returning errors
+///   on rendering until buffers are freed again. The exact amount of images in a
+///   swapchain is an implementation detail, but should generally be expect to be
+///   large enough to hold onto at least one `RenderFrameResult`.
 pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
     /// If this frame contains any changes and should be submitted
     pub is_empty: bool,
@@ -1155,6 +1155,7 @@ where
     where
         E: Element,
     {
+        #[allow(clippy::mutable_key_type)]
         let filter_ids: HashSet<Id> = filter.into_iter().collect();
 
         let mut elements: Vec<FrameResultDamageElement<'_, '_, E, B>> =
@@ -1220,6 +1221,7 @@ where
     {
         let size = size.into();
         let scale = scale.into();
+        #[allow(clippy::mutable_key_type)]
         let filter_ids: HashSet<Id> = filter.into_iter().collect();
         let damage = damage.into_iter().collect::<Vec<_>>();
 

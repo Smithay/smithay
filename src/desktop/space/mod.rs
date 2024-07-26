@@ -103,6 +103,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     where
         P: Into<Point<i32, Logical>>,
     {
+        #[allow(clippy::mutable_key_type)]
         let outputs = if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
             self.elements.remove(pos).outputs
         } else {

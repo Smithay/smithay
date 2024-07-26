@@ -9,7 +9,7 @@
 //! - The [`data_device`](data_device/index.html) module to work with the traditional clipboard selection.
 //! - The [`primary_selection`](primary_selection/index.html) module to work with the primary selection.
 //! - The [`wlr_data_control`](wlr_data_control/index.html) module to hook data control into
-//! clipboard and primary selection
+//!   clipboard and primary selection
 
 use std::os::unix::io::OwnedFd;
 

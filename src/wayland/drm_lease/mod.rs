@@ -483,6 +483,7 @@ impl DrmLeaseState {
 
     /// Withdraw a connector from the set of connectors available for leasing
     pub fn withdraw_connector(&mut self, connector: connector::Handle) {
+        #[allow(clippy::mutable_key_type)]
         let mut clients = HashSet::new();
         if let Some(pos) = self.connectors.iter().position(|conn| conn.handle == connector) {
             let lease_connector = self.connectors.remove(pos);
@@ -511,6 +512,7 @@ impl DrmLeaseState {
     }
 
     fn suspend_internal(&mut self, connectors: Option<&HashSet<connector::Handle>>) {
+        #[allow(clippy::mutable_key_type)]
         let mut clients = HashSet::new();
         for connector in self.connectors.iter_mut().filter(|c| {
             connectors
