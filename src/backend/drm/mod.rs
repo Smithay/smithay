@@ -84,7 +84,7 @@ mod surface;
 
 use std::sync::Once;
 
-use crate::utils::DevPath;
+use crate::utils::{DevPath, Physical, Size};
 pub use device::{
     DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmEvent, EventMetadata as DrmEventMetadata, PlaneClaim,
     Time as DrmEventTime,
@@ -143,6 +143,8 @@ pub struct PlaneInfo {
     pub zpos: Option<i32>,
     /// Formats supported by this plane
     pub formats: FormatSet,
+    /// Recommended plane size in order of preference
+    pub size_hints: Option<Vec<Size<u16, Physical>>>,
 }
 
 fn planes(
@@ -183,11 +185,13 @@ fn planes(
             let zpos = plane_zpos(dev, plane).ok().flatten();
             let type_ = plane_type(dev, plane)?;
             let formats = plane_formats(dev, plane)?;
+            let size_hints = plane_size_hints(dev, plane)?;
             let plane_info = PlaneInfo {
                 handle: plane,
                 type_,
                 zpos,
                 formats,
+                size_hints,
             };
             match type_ {
                 PlaneType::Primary => {
@@ -430,4 +434,83 @@ fn plane_has_property(
         }
     }
     Ok(false)
+}
+
+#[repr(C)]
+// FIXME: use definition from drm_ffi once available
+struct drm_plane_size_hint {
+    width: u16,
+    height: u16,
+}
+
+fn plane_size_hints(
+    dev: &(impl ControlDevice + DevPath),
+    plane: plane::Handle,
+) -> Result<Option<Vec<Size<u16, Physical>>>, DrmError> {
+    let props = dev.get_properties(plane).map_err(|source| {
+        DrmError::Access(AccessError {
+            errmsg: "Failed to get properties of plane",
+            dev: dev.dev_path(),
+            source,
+        })
+    })?;
+    let (ids, vals) = props.as_props_and_values();
+    for (&id, &val) in ids.iter().zip(vals.iter()) {
+        let info = dev.get_property(id).map_err(|source| {
+            DrmError::Access(AccessError {
+                errmsg: "Failed to get property info",
+                dev: dev.dev_path(),
+                source,
+            })
+        })?;
+        if info.name().to_str().map(|x| x == "SIZE_HINTS").unwrap_or(false) {
+            let size_hints = if let drm::control::property::Value::Blob(blob_id) =
+                info.value_type().convert_value(val)
+            {
+                // Note that property value 0 (ie. no blob) is reserved for potential
+                // future use. Current userspace is expected to ignore the property
+                // if the value is 0
+                if blob_id == 0 {
+                    return Ok(None);
+                }
+
+                let blob_info = drm_ffi::mode::get_property_blob(dev.as_fd(), blob_id as u32, None).map_err(
+                    |source| {
+                        DrmError::Access(AccessError {
+                            errmsg: "Failed to get SIZE_HINTS blob info",
+                            dev: dev.dev_path(),
+                            source,
+                        })
+                    },
+                )?;
+
+                let mut data = Vec::with_capacity(blob_info.length as usize);
+                drm_ffi::mode::get_property_blob(dev.as_fd(), blob_id as u32, Some(&mut data)).map_err(
+                    |source| {
+                        DrmError::Access(AccessError {
+                            errmsg: "Failed to get SIZE_HINTS blob data",
+                            dev: dev.dev_path(),
+                            source,
+                        })
+                    },
+                )?;
+
+                let num_size_hints = data.len() / std::mem::size_of::<drm_plane_size_hint>();
+                let size_hints = unsafe {
+                    std::slice::from_raw_parts(data.as_ptr() as *const drm_plane_size_hint, num_size_hints)
+                };
+                Some(
+                    size_hints
+                        .iter()
+                        .map(|size_hint| Size::from((size_hint.width, size_hint.height)))
+                        .collect(),
+                )
+            } else {
+                tracing::debug!(?plane, "SIZE_HINTS property has wrong value type");
+                None
+            };
+            return Ok(size_hints);
+        }
+    }
+    Ok(None)
 }
