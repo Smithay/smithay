@@ -6,7 +6,7 @@
 //! # use smithay::{
 //! #     backend::{
 //! #         allocator::Fourcc,
-//! #         renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
+//! #         renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
 //! #     },
 //! #     utils::{Buffer, Physical, Rectangle, Transform},
 //! # };
@@ -34,14 +34,14 @@
 //! #     fn id(&self) -> usize {
 //! #         unimplemented!()
 //! #     }
-//! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! #     fn draw_solid(
 //! #         &mut self,
 //! #         _dst: Rectangle<i32, Physical>,
 //! #         _damage: &[Rectangle<i32, Physical>],
-//! #         _color: [f32; 4],
+//! #         _color: Color32F,
 //! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
@@ -151,7 +151,7 @@
 use crate::{
     backend::renderer::{
         utils::{CommitCounter, OpaqueRegions},
-        Frame, Renderer,
+        Color32F, Frame, Renderer,
     },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
@@ -164,7 +164,7 @@ pub struct SolidColorBuffer {
     id: Id,
     size: Size<i32, Logical>,
     commit: CommitCounter,
-    color: [f32; 4],
+    color: Color32F,
 }
 
 impl Default for SolidColorBuffer {
@@ -180,10 +180,10 @@ impl Default for SolidColorBuffer {
 
 impl SolidColorBuffer {
     /// Initialize a new solid color buffer with the specified size and color
-    pub fn new(size: impl Into<Size<i32, Logical>>, color: [f32; 4]) -> Self {
+    pub fn new(size: impl Into<Size<i32, Logical>>, color: impl Into<Color32F>) -> Self {
         SolidColorBuffer {
             id: Id::new(),
-            color,
+            color: color.into(),
             commit: CommitCounter::default(),
             size: size.into(),
         }
@@ -203,7 +203,8 @@ impl SolidColorBuffer {
     /// Set a new color on this solid color buffer
     ///
     /// Note: If the color matches the current color this will do nothing
-    pub fn set_color(&mut self, color: [f32; 4]) {
+    pub fn set_color(&mut self, color: impl Into<Color32F>) {
+        let color = color.into();
         if color != self.color {
             self.color = color;
             self.commit.increment();
@@ -213,7 +214,8 @@ impl SolidColorBuffer {
     /// Update the size and color of this solid color buffer
     ///
     /// Note: If the size and color match the current size and color this will do nothing
-    pub fn update(&mut self, size: impl Into<Size<i32, Logical>>, color: [f32; 4]) {
+    pub fn update(&mut self, size: impl Into<Size<i32, Logical>>, color: impl Into<Color32F>) {
+        let color = color.into();
         let size = size.into();
         if size != self.size || color != self.color {
             self.size = size;
@@ -223,7 +225,7 @@ impl SolidColorBuffer {
     }
 
     /// Get the current color of this buffer
-    pub fn color(&self) -> [f32; 4] {
+    pub fn color(&self) -> Color32F {
         self.color
     }
 }
@@ -236,7 +238,7 @@ pub struct SolidColorRenderElement {
     src: Rectangle<f64, Buffer>,
     opaque_regions: Vec<Rectangle<i32, Physical>>,
     commit: CommitCounter,
-    color: [f32; 4],
+    color: Color32F,
     kind: Kind,
 }
 
@@ -250,12 +252,7 @@ impl SolidColorRenderElement {
         kind: Kind,
     ) -> Self {
         let geo = Rectangle::from_loc_and_size(location, buffer.size.to_physical_precise_round(scale));
-        let color = [
-            buffer.color[0] * alpha,
-            buffer.color[1] * alpha,
-            buffer.color[2] * alpha,
-            buffer.color[3] * alpha,
-        ];
+        let color = buffer.color * alpha;
         Self::new(buffer.id.clone(), geo, buffer.commit, color, kind)
     }
 
@@ -264,14 +261,15 @@ impl SolidColorRenderElement {
         id: impl Into<Id>,
         geometry: Rectangle<i32, Physical>,
         commit: impl Into<CommitCounter>,
-        color: [f32; 4],
+        color: impl Into<Color32F>,
         kind: Kind,
     ) -> Self {
+        let color = color.into();
         let src = Rectangle::from_loc_and_size((0, 0), geometry.size)
             .to_f64()
             .to_logical(1f64)
             .to_buffer(1f64, Transform::Normal, &geometry.size.to_f64().to_logical(1f64));
-        let opaque_regions = if color[3] == 1f32 {
+        let opaque_regions = if color.is_opaque() {
             vec![Rectangle::from_loc_and_size((0, 0), geometry.size)]
         } else {
             vec![]
@@ -288,7 +286,7 @@ impl SolidColorRenderElement {
     }
 
     /// Get the current color of this element
-    pub fn color(&self) -> [f32; 4] {
+    pub fn color(&self) -> Color32F {
         self.color
     }
 }
@@ -315,7 +313,7 @@ impl Element for SolidColorRenderElement {
     }
 
     fn alpha(&self) -> f32 {
-        self.color[3]
+        self.color.a()
     }
 
     fn kind(&self) -> Kind {

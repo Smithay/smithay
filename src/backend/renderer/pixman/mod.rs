@@ -33,8 +33,8 @@ use wayland_server::{protocol::wl_buffer, Resource, Weak};
 ))]
 use super::ImportEgl;
 use super::{
-    sync::SyncPoint, Bind, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture,
-    TextureFilter, TextureMapping, Unbind,
+    sync::SyncPoint, Bind, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
+    Texture, TextureFilter, TextureMapping, Unbind,
 };
 
 mod error;
@@ -267,7 +267,7 @@ impl<'frame> PixmanFrame<'frame> {
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        color: [f32; 4],
+        color: Color32F,
         op: Operation,
         debug: DebugFlags,
     ) -> Result<(), PixmanError> {
@@ -280,7 +280,7 @@ impl<'frame> PixmanFrame<'frame> {
             PixmanTarget::RenderBuffer(b) => &b.0,
         };
 
-        let solid = pixman::Solid::new(color).map_err(|_| PixmanError::Unsupported)?;
+        let solid = pixman::Solid::new(color.components()).map_err(|_| PixmanError::Unsupported)?;
 
         let mut clip_region =
             pixman::Region32::init_rect(0, 0, self.output_size.w as u32, self.output_size.h as u32);
@@ -346,7 +346,7 @@ impl<'frame> Frame for PixmanFrame<'frame> {
     }
 
     #[profiling::function]
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+    fn clear(&mut self, color: Color32F, at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         self.draw_solid_color(
             Rectangle::from_loc_and_size((0, 0), self.size),
             at,
@@ -361,9 +361,9 @@ impl<'frame> Frame for PixmanFrame<'frame> {
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        color: [f32; 4],
+        color: Color32F,
     ) -> Result<(), Self::Error> {
-        let op = if color[3] == 1f32 {
+        let op = if color.is_opaque() {
             Operation::Src
         } else {
             Operation::Over

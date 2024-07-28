@@ -27,7 +27,7 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
+//! #     backend::renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
 //! #
@@ -53,14 +53,14 @@
 //! #     type TextureId = FakeTexture;
 //! #
 //! #     fn id(&self) -> usize { unimplemented!() }
-//! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! #     fn draw_solid(
 //! #         &mut self,
 //! #         _dst: Rectangle<i32, Physical>,
 //! #         _damage: &[Rectangle<i32, Physical>],
-//! #         _color: [f32; 4],
+//! #         _color: Color32F,
 //! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
@@ -215,7 +215,7 @@ use super::{
     element::{Element, Id, RenderElement, RenderElementState, RenderElementStates},
     sync::SyncPoint,
     utils::CommitCounter,
-    Bind,
+    Bind, Color32F,
 };
 
 use super::{Renderer, Texture};
@@ -421,7 +421,7 @@ impl OutputDamageTracker {
         buffer: B,
         age: usize,
         elements: &[E],
-        clear_color: [f32; 4],
+        clear_color: Color32F,
     ) -> Result<RenderOutputResult<'_>, Error<R>>
     where
         E: RenderElement<R>,
@@ -434,21 +434,21 @@ impl OutputDamageTracker {
     /// Render this output with the provided [`Renderer`]
     ///
     /// - `elements` for this output in front-to-back order
-    #[instrument(level = "trace", parent = &self.span, skip(renderer, elements))]
+    #[instrument(level = "trace", parent = &self.span, skip(renderer, elements, clear_color))]
     #[profiling::function]
     pub fn render_output<E, R>(
         &mut self,
         renderer: &mut R,
         age: usize,
         elements: &[E],
-        clear_color: [f32; 4],
+        clear_color: impl Into<Color32F>,
     ) -> Result<RenderOutputResult<'_>, Error<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
         <R as Renderer>::TextureId: Texture,
     {
-        self.render_output_internal(renderer, age, elements, clear_color, |_| Ok(()))
+        self.render_output_internal(renderer, age, elements, clear_color.into(), |_| Ok(()))
     }
 
     /// Damage this output and return the damage without actually rendering the difference
@@ -781,7 +781,7 @@ impl OutputDamageTracker {
         renderer: &mut R,
         age: usize,
         elements: &'e [E],
-        clear_color: [f32; 4],
+        clear_color: Color32F,
         pre_render: F,
     ) -> Result<RenderOutputResult<'a>, Error<R>>
     where

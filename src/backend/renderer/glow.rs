@@ -16,7 +16,7 @@ use crate::{
         renderer::{
             element::UnderlyingStorage,
             gles::{element::*, *},
-            sync, Bind, Blit, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
+            sync, Bind, Blit, Color32F, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
             TextureFilter, Unbind,
         },
     },
@@ -254,7 +254,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
     }
 
     #[profiling::function]
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+    fn clear(&mut self, color: Color32F, at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().clear(color, at)
     }
 
@@ -263,7 +263,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        color: [f32; 4],
+        color: Color32F,
     ) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().draw_solid(dst, damage, color)
     }

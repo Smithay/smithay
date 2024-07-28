@@ -27,6 +27,9 @@ pub mod glow;
 #[cfg(feature = "renderer_pixman")]
 pub mod pixman;
 
+mod color;
+pub use color::Color32F;
+
 use crate::backend::allocator::{dmabuf::Dmabuf, Format, Fourcc};
 #[cfg(all(
     feature = "wayland_frontend",
@@ -176,14 +179,14 @@ pub trait Frame {
     ///
     /// This operation is only valid in between a `begin` and `finish`-call.
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error>;
+    fn clear(&mut self, color: Color32F, at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error>;
 
     /// Draw a solid color to the current target at the specified destination with the specified color.
     fn draw_solid(
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        color: [f32; 4],
+        color: Color32F,
     ) -> Result<(), Self::Error>;
 
     /// Render a texture to the current target as a flat 2d-plane at a given

@@ -23,7 +23,7 @@
 //! # use smithay::{
 //! #     backend::allocator::{Fourcc, dmabuf::Dmabuf},
 //! #     backend::renderer::{
-//! #         DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
+//! #         Color32F, DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
 //! #         TextureFilter, sync::SyncPoint,
 //! #     },
 //! #     utils::{Buffer, Physical},
@@ -52,14 +52,14 @@
 //! #     type TextureId = FakeTexture;
 //! #
 //! #     fn id(&self) -> usize { unimplemented!() }
-//! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! #     fn draw_solid(
 //! #         &mut self,
 //! #         _dst: Rectangle<i32, Physical>,
 //! #         _damage: &[Rectangle<i32, Physical>],
-//! #         _color: [f32; 4],
+//! #         _color: Color32F,
 //! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
