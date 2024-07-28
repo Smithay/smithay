@@ -5,7 +5,7 @@ use crate::{
     backend::renderer::{
         damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{AsRenderElements, RenderElement, Wrap},
-        Renderer, Texture,
+        Color32F, Renderer, Texture,
     },
     output::{Output, OutputModeSource, OutputNoMode},
     utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
@@ -682,7 +682,7 @@ pub fn render_output<
     spaces: S,
     custom_elements: &'a [C],
     damage_tracker: &'d mut OutputDamageTracker,
-    clear_color: [f32; 4],
+    clear_color: impl Into<Color32F>,
 ) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R>>
 where
     <R as Renderer>::TextureId: Clone + Texture + 'static,

@@ -14,7 +14,7 @@ use smithay::{
         egl::{EGLContext, EGLDevice, EGLDisplay},
         renderer::{
             gles::{GlesRenderbuffer, GlesRenderer},
-            Bind, ExportMem, Frame, ImportDma, Offscreen, Renderer,
+            Bind, Color32F, ExportMem, Frame, ImportDma, Offscreen, Renderer,
         },
         vulkan::{version::Version, Instance, PhysicalDevice},
     },
@@ -290,25 +290,25 @@ where
         .expect("Failed to create render frame");
     frame
         .clear(
-            [1.0, 0.0, 0.0, 1.0],
+            Color32F::new(1.0, 0.0, 0.0, 1.0),
             &[Rectangle::from_loc_and_size((0, 0), (w / 2, h / 2))],
         )
         .expect("Render error");
     frame
         .clear(
-            [0.0, 1.0, 0.0, 1.0],
+            Color32F::new(0.0, 1.0, 0.0, 1.0),
             &[Rectangle::from_loc_and_size((w / 2, 0), (w / 2, h / 2))],
         )
         .expect("Render error");
     frame
         .clear(
-            [0.0, 0.0, 1.0, 1.0],
+            Color32F::new(0.0, 0.0, 1.0, 1.0),
             &[Rectangle::from_loc_and_size((0, h / 2), (w / 2, h / 2))],
         )
         .expect("Render error");
     frame
         .clear(
-            [1.0, 1.0, 0.0, 1.0],
+            Color32F::new(1.0, 1.0, 0.0, 1.0),
             &[Rectangle::from_loc_and_size((w / 2, h / 2), (w / 2, h / 2))],
         )
         .expect("Render error");

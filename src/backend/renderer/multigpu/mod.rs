@@ -47,8 +47,8 @@ use std::{
 };
 
 use super::{
-    sync::SyncPoint, Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
-    Texture, TextureFilter, TextureMapping, Unbind,
+    sync::SyncPoint, Bind, Blit, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen,
+    Renderer, Texture, TextureFilter, TextureMapping, Unbind,
 };
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
@@ -1226,7 +1226,7 @@ where
                         .map_err(Error::Target)?;
                     frame.wait(&sync).map_err(Error::Target)?;
                     frame
-                        .clear([0.0, 0.0, 0.0, 0.0], &damage)
+                        .clear(Color32F::TRANSPARENT, &damage)
                         .map_err(Error::Target)?;
                     frame
                         .render_texture_from_to(
@@ -1329,7 +1329,9 @@ where
                         let src = Rectangle::from_loc_and_size(damage_rect.loc - rect.loc, damage_rect.size)
                             .to_f64();
                         let damage = &[Rectangle::from_loc_and_size((0, 0), dst.size)];
-                        frame.clear([0.0, 0.0, 0.0, 0.0], &[dst]).map_err(Error::Target)?;
+                        frame
+                            .clear(Color32F::TRANSPARENT, &[dst])
+                            .map_err(Error::Target)?;
                         frame
                             .render_texture_from_to(
                                 &texture,
@@ -1634,7 +1636,7 @@ where
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Error<R, T>> {
+    fn clear(&mut self, color: Color32F, at: &[Rectangle<i32, Physical>]) -> Result<(), Error<R, T>> {
         self.damage.extend(at);
         self.frame
             .as_mut()
@@ -1649,7 +1651,7 @@ where
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        color: [f32; 4],
+        color: Color32F,
     ) -> Result<(), Self::Error> {
         self.damage.extend(damage.iter().copied().map(|mut rect| {
             rect.loc += dst.loc;
@@ -2043,7 +2045,9 @@ where
     .filter(|_| !is_new_buffer)
     .unwrap_or(&damage_slice);
 
-    frame.clear([0.0, 0.0, 0.0, 0.0], damage).map_err(Error::Render)?;
+    frame
+        .clear(Color32F::TRANSPARENT, damage)
+        .map_err(Error::Render)?;
     frame
         .render_texture_from_to(
             src_texture,

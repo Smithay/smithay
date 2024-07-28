@@ -162,7 +162,7 @@ use crate::{
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
-            Bind, Blit, DebugFlags, Frame as RendererFrame, Renderer, Texture,
+            Bind, Blit, Color32F, DebugFlags, Frame as RendererFrame, Renderer, Texture,
         },
         SwapBuffersError,
     },
@@ -1286,7 +1286,7 @@ where
                 .map_err(BlitFrameResultError::Rendering)?;
 
             frame
-                .clear([0f32, 0f32, 0f32, 1f32], &clear_damage)
+                .clear(Color32F::BLACK, &clear_damage)
                 .map_err(BlitFrameResultError::Rendering)?;
 
             sync = Some(frame.finish().map_err(BlitFrameResultError::Rendering)?);
@@ -1954,13 +1954,15 @@ where
         &mut self,
         renderer: &mut R,
         elements: &'a [E],
-        clear_color: [f32; 4],
+        clear_color: impl Into<Color32F>,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
     {
+        let clear_color = clear_color.into();
+
         if !self.surface.is_active() {
             return Err(RenderFrameErrorType::<A, F, R>::PrepareFrame(
                 FrameError::DrmError(DrmError::DeviceInactive),
@@ -2197,8 +2199,8 @@ where
             // on the primary plane.
             let try_assign_primary_plane = if remaining_elements == 1 && primary_plane_elements.is_empty() {
                 let crtc_background_matches_clear_color =
-                    (clear_color[0] == 0f32 && clear_color[1] == 0f32 && clear_color[2] == 0f32)
-                        || clear_color[3] == 0f32;
+                    (clear_color.r() == 0f32 && clear_color.g() == 0f32 && clear_color.b() == 0f32)
+                        || clear_color.a() == 0f32;
                 let element_spans_complete_output = element_geometry.contains_rect(output_geometry);
                 let overlaps_with_underlay = self
                     .planes
@@ -3356,7 +3358,7 @@ where
 
                         let mut frame = pixman_renderer.render(self.cursor_size, output_transform)?;
                         frame.clear(
-                            [0f32, 0f32, 0f32, 0f32],
+                            Color32F::TRANSPARENT,
                             &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
                         )?;
                         let src = element.src();

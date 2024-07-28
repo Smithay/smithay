@@ -11,7 +11,7 @@ use smithay::{
             },
             gles::GlesRenderer,
             utils::{draw_render_elements, on_commit_buffer_handler},
-            Frame, Renderer,
+            Color32F, Frame, Renderer,
         },
         winit::{self, WinitEvent},
     },
@@ -227,7 +227,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>();
 
         let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
-        frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
+        frame.clear(Color32F::new(0.1, 0.0, 0.0, 1.0), &[damage]).unwrap();
         draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
         // We rely on the nested compositor to do the sync for us
         let _ = frame.finish().unwrap();
