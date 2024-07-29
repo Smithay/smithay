@@ -39,6 +39,16 @@ struct V120UserData {
 /// WlSurface role of a cursor image icon
 pub const CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
+impl<D: SeatHandler + 'static> PointerHandle<D> {
+    /// Attempt to retrieve a [`PointerHandle`] from an existing resource
+    ///
+    /// May return `None` for a valid `WlPointer` that was created without
+    /// the keyboard capability.
+    pub fn from_resource(seat: &WlPointer) -> Option<Self> {
+        seat.data::<PointerUserData<D>>()?.handle.clone()
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct WlPointerHandle {
     pub(crate) last_enter: Mutex<Option<Serial>>,

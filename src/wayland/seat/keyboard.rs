@@ -21,7 +21,7 @@ use crate::{
     wayland::{input_method::InputMethodSeat, text_input::TextInputSeat},
 };
 
-impl<D: SeatHandler + 'static> KeyboardHandle<D>
+impl<D> KeyboardHandle<D>
 where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
@@ -79,6 +79,16 @@ where
             }
         }
         self.arc.known_kbds.lock().unwrap().push(kbd);
+    }
+}
+
+impl<D: SeatHandler + 'static> KeyboardHandle<D> {
+    /// Attempt to retrieve a [`KeyboardHandle`] from an existing resource
+    ///
+    /// May return `None` for a valid `WlKeyboard` that was created without
+    /// the keyboard capability.
+    pub fn from_resource(seat: &WlKeyboard) -> Option<Self> {
+        seat.data::<KeyboardUserData<D>>()?.handle.clone()
     }
 }
 
