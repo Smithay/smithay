@@ -22,6 +22,16 @@ impl<D: SeatHandler> TouchHandle<D> {
     }
 }
 
+impl<D: SeatHandler + 'static> TouchHandle<D> {
+    /// Attempt to retrieve a [`TouchHandle`] from an existing resource
+    ///
+    /// May return `None` for a valid `WlTouch` that was created without
+    /// the keyboard capability.
+    pub fn from_resource(seat: &WlTouch) -> Option<Self> {
+        seat.data::<TouchUserData<D>>()?.handle.clone()
+    }
+}
+
 fn for_each_focused_touch<D: SeatHandler + 'static>(
     seat: &Seat<D>,
     surface: &WlSurface,
