@@ -61,7 +61,7 @@ pub struct ViewporterState {
     global: GlobalId,
 }
 
-type ViewporterSurfaceState = Mutex<Option<ViewportMarker>>;
+pub(crate) type ViewporterSurfaceState = Mutex<Option<ViewportMarker>>;
 
 impl ViewporterState {
     /// Create new [`wp_viewporter`] global.
@@ -296,7 +296,7 @@ pub struct ViewportState {
     surface: Weak<wl_surface::WlSurface>,
 }
 
-struct ViewportMarker(Weak<wp_viewport::WpViewport>);
+pub(crate) struct ViewportMarker(Weak<wp_viewport::WpViewport>);
 
 fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
     with_states(surface, |states| {
