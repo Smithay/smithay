@@ -130,8 +130,6 @@ jobs:
         run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
       - name: Downgrade to minimal dependencies
         run: cargo update -Z minimal-versions
-      - name: Fixup ahash with current nightly
-        run: cargo update -p ahash --precise 0.8.7
       - name: Check
         run: cargo check --features "test_all_features"
 
