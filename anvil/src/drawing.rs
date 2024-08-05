@@ -123,27 +123,28 @@ where
 pub static FPS_NUMBERS_PNG: &[u8] = include_bytes!("../resources/numbers.png");
 
 #[cfg(feature = "debug")]
-#[derive(Debug, Clone)]
-pub struct FpsElement<T: Texture> {
+#[derive(Debug)]
+pub struct Fps {
     id: Id,
     fps: fps_ticker::Fps,
     value: u32,
-    texture: T,
     commit_counter: CommitCounter,
 }
 
 #[cfg(feature = "debug")]
-impl<T: Texture> FpsElement<T> {
-    pub fn new(texture: T) -> Self {
-        FpsElement {
+impl Default for Fps {
+    fn default() -> Self {
+        Self {
             id: Id::new(),
-            texture,
             fps: fps_ticker::Fps::default(),
             value: 0,
             commit_counter: CommitCounter::default(),
         }
     }
+}
 
+#[cfg(feature = "debug")]
+impl Fps {
     pub fn tick(&mut self) {
         self.fps.tick();
         let value = self.fps.avg().round() as u32;
@@ -152,6 +153,24 @@ impl<T: Texture> FpsElement<T> {
             self.commit_counter.increment();
         }
     }
+
+    pub fn render_element<T: Texture>(&self, texture: T) -> FpsElement<T> {
+        FpsElement {
+            id: self.id.clone(),
+            value: self.value,
+            commit_counter: self.commit_counter,
+            texture,
+        }
+    }
+}
+
+#[cfg(feature = "debug")]
+#[derive(Debug)]
+pub struct FpsElement<T: Texture> {
+    id: Id,
+    value: u32,
+    commit_counter: CommitCounter,
+    texture: T,
 }
 
 #[cfg(feature = "debug")]
@@ -198,7 +217,7 @@ where
 impl<R> RenderElement<R> for FpsElement<<R as Renderer>::TextureId>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    <R as Renderer>::TextureId: Send + 'static,
 {
     fn draw(
         &self,
