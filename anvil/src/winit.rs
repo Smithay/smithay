@@ -139,7 +139,7 @@ pub fn run_winit() {
         )
         .expect("Unable to upload FPS texture");
     #[cfg(feature = "debug")]
-    let mut fps_element = FpsElement::new(fps_texture);
+    let mut fps = Fps::default();
 
     let render_node = EGLDevice::device_for_display(backend.renderer().egl_context().display())
         .and_then(|device| device.try_get_render_node());
@@ -337,7 +337,7 @@ pub fn run_winit() {
                 }
 
                 #[cfg(feature = "debug")]
-                elements.push(CustomRenderElements::Fps(fps_element.clone()));
+                elements.push(CustomRenderElements::Fps(fps.render_element(fps_texture.clone())));
 
                 render_output(
                     &output,
@@ -439,6 +439,6 @@ pub fn run_winit() {
         }
 
         #[cfg(feature = "debug")]
-        fps_element.tick();
+        fps.tick();
     }
 }

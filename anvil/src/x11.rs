@@ -217,7 +217,7 @@ pub fn run_x11() {
         )
         .expect("Unable to upload FPS texture");
     #[cfg(feature = "debug")]
-    let mut fps_element = FpsElement::new(fps_texture);
+    let mut fps = Fps::default();
     let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
@@ -378,7 +378,7 @@ pub fn run_x11() {
             }
 
             #[cfg(feature = "debug")]
-            elements.push(CustomRenderElements::Fps(fps_element.clone()));
+            elements.push(CustomRenderElements::Fps(fps.render_element(fps_texture.clone())));
 
             let render_res = render_output(
                 &output,
@@ -456,7 +456,7 @@ pub fn run_x11() {
             }
 
             #[cfg(feature = "debug")]
-            fps_element.tick();
+            fps.tick();
             window.set_cursor_visible(cursor_visible);
             profiling::finish_frame!();
         }
