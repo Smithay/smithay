@@ -30,7 +30,7 @@ mod xkb_config;
 pub use xkb_config::XkbConfig;
 
 /// Trait representing object that can receive keyboard interactions
-pub trait KeyboardTarget<D>: IsAlive + PartialEq + Clone + fmt::Debug + Send
+pub trait KeyboardTarget<D>: IsAlive + fmt::Debug + Send
 where
     D: SeatHandler,
 {
