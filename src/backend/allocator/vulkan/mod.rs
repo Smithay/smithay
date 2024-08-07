@@ -447,6 +447,8 @@ impl AsDmabuf for VulkanImage {
             .memory(self.inner.memory);
 
         let fd = unsafe { self.khr_external_memory_fd.get_memory_fd(&create_info) }?;
+        // SAFETY: `vkGetMemoryFdKHR` creates a new file descriptor owned by the caller.
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         let mut builder = Dmabuf::builder(
             self.size(),
             self.format().code,
@@ -469,8 +471,7 @@ impl AsDmabuf for VulkanImage {
             let subresource = vk::ImageSubresource::default().aspect_mask(aspect_mask);
             let layout = unsafe { device.get_image_subresource_layout(self.inner.image, subresource) };
             builder.add_plane(
-                // SAFETY: `vkGetMemoryFdKHR` creates a new file descriptor owned by the caller.
-                unsafe { OwnedFd::from_raw_fd(fd) },
+                fd.try_clone().or(Err(ExportError::Failed))?,
                 idx,
                 layout.offset as u32,
                 layout.row_pitch as u32,
