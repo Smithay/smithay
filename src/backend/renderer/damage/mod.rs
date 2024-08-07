@@ -282,6 +282,7 @@ struct RendererState {
     elements: IndexMap<Id, ElementState>,
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
     opaque_regions: Vec<Rectangle<i32, Physical>>,
+    clear_color: Option<Color32F>,
 }
 
 /// Damage tracker for a single output
@@ -482,6 +483,7 @@ impl OutputDamageTracker {
             output_scale,
             output_transform,
             output_geo,
+            self.last_state.clear_color,
             &mut render_elements,
         );
 
@@ -501,6 +503,7 @@ impl OutputDamageTracker {
         output_scale: Scale<f64>,
         output_transform: Transform,
         output_geo: Rectangle<i32, Physical>,
+        clear_color: Option<Color32F>,
         render_elements: &mut Vec<&'a E>,
     ) -> RenderElementStates
     where
@@ -663,6 +666,7 @@ impl OutputDamageTracker {
 
         if self.last_state.size != Some(output_geo.size)
             || self.last_state.transform != Some(output_transform)
+            || self.last_state.clear_color != clear_color
         {
             // The output geometry or transform changed, so just damage everything
             trace!(
@@ -670,7 +674,9 @@ impl OutputDamageTracker {
                 current_geometry = ?output_geo.size,
                 previous_transform = ?self.last_state.transform,
                 current_transform = ?output_transform,
-                "Output geometry or transform changed, damaging whole output geometry");
+                previous_clear_color = ?self.last_state.clear_color,
+                current_clear_color = ?clear_color,
+                "Output geometry, transform or clear color changed, damaging whole output geometry");
             self.damage.clear();
             self.damage.push(output_geo);
         }
@@ -771,6 +777,7 @@ impl OutputDamageTracker {
             .opaque_regions
             .extend(self.opaque_regions.iter().copied());
         self.last_state.opaque_regions.shrink_to_fit();
+        self.last_state.clear_color = clear_color;
 
         element_render_states
     }
@@ -810,6 +817,7 @@ impl OutputDamageTracker {
             output_scale,
             output_transform,
             output_geo,
+            Some(clear_color),
             &mut render_elements,
         );
 
