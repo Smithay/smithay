@@ -37,8 +37,8 @@ pub use uniform::*;
 use self::version::GlVersion;
 
 use super::{
-    sync::SyncPoint, Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
-    Texture, TextureFilter, TextureMapping, Unbind,
+    sync::SyncPoint, Bind, Blit, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen,
+    Renderer, Texture, TextureFilter, TextureMapping, Unbind,
 };
 use crate::backend::{
     allocator::{
@@ -2190,7 +2190,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), GlesError> {
+    fn clear(&mut self, color: Color32F, at: &[Rectangle<i32, Physical>]) -> Result<(), GlesError> {
         if at.is_empty() {
             return Ok(());
         }
@@ -2214,13 +2214,13 @@ impl<'frame> Frame for GlesFrame<'frame> {
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        color: [f32; 4],
+        color: Color32F,
     ) -> Result<(), Self::Error> {
         if damage.is_empty() {
             return Ok(());
         }
 
-        let is_opaque = color[3] == 1f32;
+        let is_opaque = color.is_opaque();
 
         if is_opaque {
             unsafe {
@@ -2340,7 +2340,7 @@ impl<'frame> GlesFrame<'frame> {
         &mut self,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        color: [f32; 4],
+        color: Color32F,
     ) -> Result<(), GlesError> {
         if damage.is_empty() {
             return Ok(());
@@ -2399,10 +2399,10 @@ impl<'frame> GlesFrame<'frame> {
             gl.UseProgram(self.renderer.solid_program.program);
             gl.Uniform4f(
                 self.renderer.solid_program.uniform_color,
-                color[0],
-                color[1],
-                color[2],
-                color[3],
+                color.r(),
+                color.g(),
+                color.b(),
+                color.a(),
             );
             gl.UniformMatrix3fv(
                 self.renderer.solid_program.uniform_matrix,

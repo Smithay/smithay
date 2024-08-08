@@ -21,6 +21,8 @@ use crate::{
     utils::{Buffer, Physical, Rectangle, Size, Transform},
 };
 
+use super::Color32F;
+
 #[derive(Debug)]
 pub struct DummyRenderer {}
 
@@ -207,7 +209,7 @@ impl Frame for DummyFrame {
         0
     }
 
-    fn clear(&mut self, _color: [f32; 4], _damage: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+    fn clear(&mut self, _color: Color32F, _damage: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -215,7 +217,7 @@ impl Frame for DummyFrame {
         &mut self,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
-        _color: [f32; 4],
+        _color: Color32F,
     ) -> Result<(), Self::Error> {
         Ok(())
     }

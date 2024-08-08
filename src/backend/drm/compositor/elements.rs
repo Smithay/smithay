@@ -2,13 +2,11 @@ use crate::{
     backend::renderer::{
         element::{Element, Id, RenderElement},
         utils::{CommitCounter, DamageSet, OpaqueRegions},
-        Frame, Renderer,
+        Color32F, Frame, Renderer,
     },
     render_elements,
     utils::{Buffer, Physical, Point, Rectangle, Scale, Transform},
 };
-
-pub const COLOR_TRANSPARENT: [f32; 4] = [0f32, 0f32, 0f32, 0f32];
 
 render_elements! {
     pub DrmRenderElements<'a, R, E>;
@@ -48,7 +46,7 @@ where
         _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
         frame.clear(
-            COLOR_TRANSPARENT,
+            Color32F::TRANSPARENT,
             &damage
                 .iter()
                 .cloned()

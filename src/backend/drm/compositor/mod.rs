@@ -162,13 +162,13 @@ use crate::{
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
-            Bind, Blit, DebugFlags, Frame as RendererFrame, Renderer, Texture,
+            Bind, Blit, Color32F, DebugFlags, Frame as RendererFrame, Renderer, Texture,
         },
         SwapBuffersError,
     },
     output::{OutputModeSource, OutputNoMode},
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
-    wayland::shm,
+    wayland::{shm, single_pixel_buffer},
 };
 
 use super::{error::AccessError, DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
@@ -1286,7 +1286,7 @@ where
                 .map_err(BlitFrameResultError::Rendering)?;
 
             frame
-                .clear([0f32, 0f32, 0f32, 1f32], &clear_damage)
+                .clear(Color32F::BLACK, &clear_damage)
                 .map_err(BlitFrameResultError::Rendering)?;
 
             sync = Some(frame.finish().map_err(BlitFrameResultError::Rendering)?);
@@ -1954,13 +1954,15 @@ where
         &mut self,
         renderer: &mut R,
         elements: &'a [E],
-        clear_color: [f32; 4],
+        clear_color: impl Into<Color32F>,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
     {
+        let mut clear_color = clear_color.into();
+
         if !self.surface.is_active() {
             return Err(RenderFrameErrorType::<A, F, R>::PrepareFrame(
                 FrameError::DrmError(DrmError::DeviceInactive),
@@ -2107,7 +2109,7 @@ where
             Vec::with_capacity(elements.len());
 
         let mut element_opaque_regions_workhouse = std::mem::take(&mut self.element_opaque_regions_workhouse);
-        for element in elements.iter() {
+        for (index, element) in elements.iter().enumerate() {
             let element_id = element.id();
             let element_geometry = element.geometry(output_scale);
             let element_loc = element_geometry.loc;
@@ -2163,6 +2165,61 @@ where
                     .filter_map(|geo| geo.intersection(output_geometry)),
             );
 
+            // If the element is completely opaque and spans the whole output nothing below
+            // will be visible. In this case we can short-cut the whole loop and just mark all
+            // remaining elements as skipped.
+            //
+            // We also use this to special case for single pixel buffers that span the whole
+            // output. If the last visible element is a solid color we can override the clear
+            // color and remove the element completely. This will make the element directly above
+            // this element the last element, enabling direct scan-out on the primary plane for it.
+            if element_is_opaque && element_output_geometry.contains_rect(output_geometry) {
+                let element_color = element.underlying_storage(renderer).and_then(|storage| {
+                    if let UnderlyingStorage::Wayland(buffer) = storage {
+                        single_pixel_buffer::get_single_pixel_buffer(buffer)
+                            .ok()
+                            .map(|spb| Color32F::from(spb.rgba32f()))
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(color) = element_color {
+                    clear_color = color;
+
+                    render_element_states
+                        .states
+                        .entry(element_id.clone())
+                        .and_modify(|state| {
+                            if matches!(state.presentation_state, RenderElementPresentationState::Skipped) {
+                                *state = RenderElementState::rendered(element_visible_area);
+                            } else {
+                                state.visible_area += element_visible_area;
+                            }
+                        })
+                        .or_insert_with(|| RenderElementState::rendered(element_visible_area));
+                } else {
+                    output_elements.push((
+                        element,
+                        element_geometry,
+                        element_visible_area,
+                        element_is_opaque,
+                    ));
+                }
+
+                for element in elements.iter().skip(index + 1) {
+                    let element_id = element.id();
+                    // We allow multiple instance of a single element, so do not
+                    // override the state if we already have one
+                    if !render_element_states.states.contains_key(element_id) {
+                        render_element_states
+                            .states
+                            .insert(element_id.clone(), RenderElementState::skipped());
+                    }
+                }
+                break;
+            }
+
             output_elements.push((element, element_geometry, element_visible_area, element_is_opaque));
         }
         self.element_opaque_regions_workhouse = element_opaque_regions_workhouse;
@@ -2197,8 +2254,8 @@ where
             // on the primary plane.
             let try_assign_primary_plane = if remaining_elements == 1 && primary_plane_elements.is_empty() {
                 let crtc_background_matches_clear_color =
-                    (clear_color[0] == 0f32 && clear_color[1] == 0f32 && clear_color[2] == 0f32)
-                        || clear_color[3] == 0f32;
+                    (clear_color.r() == 0f32 && clear_color.g() == 0f32 && clear_color.b() == 0f32)
+                        || clear_color.a() == 0f32;
                 let element_spans_complete_output = element_geometry.contains_rect(output_geometry);
                 let overlaps_with_underlay = self
                     .planes
@@ -3356,7 +3413,7 @@ where
 
                         let mut frame = pixman_renderer.render(self.cursor_size, output_transform)?;
                         frame.clear(
-                            [0f32, 0f32, 0f32, 0f32],
+                            Color32F::TRANSPARENT,
                             &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
                         )?;
                         let src = element.src();

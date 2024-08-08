@@ -79,6 +79,7 @@ use smithay::{
             },
         },
         shm::{ShmHandler, ShmState},
+        single_pixel_buffer::SinglePixelBufferState,
         socket::ListeningSocketSource,
         tablet_manager::{TabletManagerState, TabletSeatHandler},
         text_input::TextInputManagerState,
@@ -150,6 +151,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub xdg_foreign_state: XdgForeignState,
     #[cfg(feature = "xwayland")]
     pub xwayland_shell_state: xwayland_shell::XWaylandShellState,
+    pub single_pixel_buffer_state: SinglePixelBufferState,
 
     pub dnd_icon: Option<WlSurface>,
 
@@ -535,6 +537,8 @@ impl<BackendData: Backend> XdgForeignHandler for AnvilState<BackendData> {
 }
 smithay::delegate_xdg_foreign!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+smithay::delegate_single_pixel_buffer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
@@ -596,6 +600,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let presentation_state = PresentationState::new::<Self>(&dh, clock.id() as u32);
         let fractional_scale_manager_state = FractionalScaleManagerState::new::<Self>(&dh);
         let xdg_foreign_state = XdgForeignState::new::<Self>(&dh);
+        let single_pixel_buffer_state = SinglePixelBufferState::new::<Self>(&dh);
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self, _>(&dh, |_client| true);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
@@ -654,6 +659,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             presentation_state,
             fractional_scale_manager_state,
             xdg_foreign_state,
+            single_pixel_buffer_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
             cursor_status: CursorImageStatus::default_named(),
