@@ -66,7 +66,7 @@ impl<R: Renderer> std::fmt::Debug for PointerRenderElement<R> {
     }
 }
 
-impl<T: Texture + Clone + Send + 'static, R> AsRenderElements<R> for PointerElement
+impl<T: Texture + Clone + 'static, R> AsRenderElements<R> for PointerElement
 where
     R: Renderer<TextureId = T> + ImportAll + ImportMem,
 {
