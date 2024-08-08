@@ -69,6 +69,7 @@ pub mod selection;
 pub mod session_lock;
 pub mod shell;
 pub mod shm;
+pub mod single_pixel_buffer;
 pub mod socket;
 pub mod tablet_manager;
 pub mod text_input;
