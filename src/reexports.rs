@@ -11,6 +11,7 @@ pub use gbm;
 pub use input;
 #[cfg(feature = "renderer_pixman")]
 pub use pixman;
+pub use reis;
 pub use rustix;
 #[cfg(feature = "backend_udev")]
 pub use udev;
