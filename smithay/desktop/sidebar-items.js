@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PopupGrabError","PopupKind","PopupUngrabStrategy","WindowSurface"],"fn":["find_popup_root_surface","get_popup_toplevel_coords","layer_map_for_output"],"mod":["space","utils"],"struct":["LayerMap","LayerSurface","PopupGrab","PopupKeyboardGrab","PopupManager","PopupPointerGrab","Window","WindowSurfaceType"]};

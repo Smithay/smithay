@@ -1,0 +1,144 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A trait to implement a touch grab"><title>TouchGrab in smithay::input::touch - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d10b2a06af903387.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-nightly (3e9bd8b56 2024-08-08)" data-channel="nightly" data-search-js="search-ef54e092fea9c776.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-04a29ac50d05d0b1.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.3.0</span></h2></div><h2 class="location"><a href="#">Touch<wbr>Grab</a></h2><div class="sidebar-elems"><section><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.cancel">cancel</a></li><li><a href="#tymethod.down">down</a></li><li><a href="#tymethod.frame">frame</a></li><li><a href="#tymethod.motion">motion</a></li><li><a href="#tymethod.orientation">orientation</a></li><li><a href="#tymethod.shape">shape</a></li><li><a href="#tymethod.start_data">start_data</a></li><li><a href="#tymethod.unset">unset</a></li><li><a href="#tymethod.up">up</a></li></ul><h3><a href="#implementors">Implementors</a></h3></section><h2><a href="index.html">In smithay::<wbr>input::<wbr>touch</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Trait <a href="../../index.html">smithay</a>::<wbr><a href="../index.html">input</a>::<wbr><a href="index.html">touch</a>::<wbr><a class="trait" href="#">TouchGrab</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../src/smithay/input/touch/grab.rs.html#31-111">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><pre class="rust item-decl"><code>pub trait TouchGrab&lt;D: <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;: <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> {
+    // Required methods
+    fn <a href="#tymethod.down" class="fn">down</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+        focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.TouchFocus" title="type smithay::input::SeatHandler::TouchFocus">TouchFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+        event: &amp;<a class="struct" href="struct.DownEvent.html" title="struct smithay::input::touch::DownEvent">DownEvent</a>,
+        seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.up" class="fn">up</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.UpEvent.html" title="struct smithay::input::touch::UpEvent">UpEvent</a>,
+        seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.motion" class="fn">motion</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+        focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.TouchFocus" title="type smithay::input::SeatHandler::TouchFocus">TouchFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+        event: &amp;<a class="struct" href="struct.MotionEvent.html" title="struct smithay::input::touch::MotionEvent">MotionEvent</a>,
+        seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.frame" class="fn">frame</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+        seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.cancel" class="fn">cancel</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+        seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.shape" class="fn">shape</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.ShapeEvent.html" title="struct smithay::input::touch::ShapeEvent">ShapeEvent</a>,
+        seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.orientation" class="fn">orientation</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.OrientationEvent.html" title="struct smithay::input::touch::OrientationEvent">OrientationEvent</a>,
+        seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.start_data" class="fn">start_data</a>(&amp;self) -&gt; &amp;<a class="struct" href="struct.GrabStartData.html" title="struct smithay::input::touch::GrabStartData">GrabStartData</a>&lt;D&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.unset" class="fn">unset</a>(&amp;mut self, data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>);
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A trait to implement a touch grab</p>
+<p>In some context, it is necessary to temporarily change the behavior of the touch handler. This is
+typically known as a touch grab. A typical example would be, during a drag’n’drop operation,
+the underlying surfaces will no longer receive classic pointer event, but rather special events.</p>
+<p>This trait is the interface to intercept regular touch events and change them as needed, its
+interface mimics the <a href="struct.TouchHandle.html" title="struct smithay::input::touch::TouchHandle"><code>TouchHandle</code></a> interface.</p>
+<p>Any interactions with <a href="struct.TouchHandle.html" title="struct smithay::input::touch::TouchHandle"><code>TouchHandle</code></a>
+should be done using <a href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle"><code>TouchInnerHandle</code></a>, as handle is borrowed/locked before grab methods are called,
+so calling methods on <a href="struct.TouchHandle.html" title="struct smithay::input::touch::TouchHandle"><code>TouchHandle</code></a> would result in a deadlock.</p>
+<p>If your logic decides that the grab should end, both <a href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle"><code>TouchInnerHandle</code></a>
+and <a href="struct.TouchHandle.html" title="struct smithay::input::touch::TouchHandle"><code>TouchHandle</code></a> have
+a method to change it.</p>
+<p>When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
+the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
+rather than trying to guess when the grab will end.</p>
+</div></details><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.down" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#40-47">source</a><h4 class="code-header">fn <a href="#tymethod.down" class="fn">down</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+    focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.TouchFocus" title="type smithay::input::SeatHandler::TouchFocus">TouchFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+    event: &amp;<a class="struct" href="struct.DownEvent.html" title="struct smithay::input::touch::DownEvent">DownEvent</a>,
+    seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+)</h4></section></summary><div class="docblock"><p>A new touch point appeared</p>
+<p>This method allows you attach additional behavior to a down event, possibly altering it.
+You generally will want to invoke <a href="struct.TouchInnerHandle.html#method.down" title="method smithay::input::touch::TouchInnerHandle::down"><code>TouchInnerHandle::down</code></a> as part of your processing. If you
+don’t, the rest of the compositor will behave as if the down event never occurred.</p>
+<p>Some grabs (such as drag’n’drop, shell resize and motion) drop down events while they are active,
+the default touch grab will keep the focus on the surface that started the grab.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.up" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#56">source</a><h4 class="code-header">fn <a href="#tymethod.up" class="fn">up</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.UpEvent.html" title="struct smithay::input::touch::UpEvent">UpEvent</a>,
+    seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+)</h4></section></summary><div class="docblock"><p>A touch point disappeared</p>
+<p>This method allows you attach additional behavior to a up event, possibly altering it.
+You generally will want to invoke <a href="struct.TouchInnerHandle.html#method.up" title="method smithay::input::touch::TouchInnerHandle::up"><code>TouchInnerHandle::up</code></a> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the up event never occurred.</p>
+<p>Some grabs (such as drag’n’drop, shell resize and motion) drop up events while they are active,
+but will end when the touch point that initiated the grab disappeared.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.motion" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#67-74">source</a><h4 class="code-header">fn <a href="#tymethod.motion" class="fn">motion</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+    focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.TouchFocus" title="type smithay::input::SeatHandler::TouchFocus">TouchFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+    event: &amp;<a class="struct" href="struct.MotionEvent.html" title="struct smithay::input::touch::MotionEvent">MotionEvent</a>,
+    seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+)</h4></section></summary><div class="docblock"><p>A touch point has changed coordinates.</p>
+<p>This method allows you attach additional behavior to a motion event, possibly altering it.
+You generally will want to invoke <a href="struct.TouchInnerHandle.html#method.motion" title="method smithay::input::touch::TouchInnerHandle::motion"><code>TouchInnerHandle::motion</code></a> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the motion event never occurred.</p>
+<p><strong>Note</strong> that this is <strong>not</strong> intended to update the focus of the touch point, the focus
+is only set on a down event. The focus provided to this function can be used to find DnD
+targets during touch motion.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.frame" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#83">source</a><h4 class="code-header">fn <a href="#tymethod.frame" class="fn">frame</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+    seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+)</h4></section></summary><div class="docblock"><p>Marks the end of a set of events that logically belong together.</p>
+<p>This method allows you attach additional behavior to a frame event, possibly altering it.
+You generally will want to invoke <a href="struct.TouchInnerHandle.html#method.frame" title="method smithay::input::touch::TouchInnerHandle::frame"><code>TouchInnerHandle::frame</code></a> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the frame event never occurred.</p>
+<p>This will to be called after one or more calls to down/motion events.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.cancel" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#92">source</a><h4 class="code-header">fn <a href="#tymethod.cancel" class="fn">cancel</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+    seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+)</h4></section></summary><div class="docblock"><p>A touch session has been cancelled.</p>
+<p>This method allows you attach additional behavior to a cancel event, possibly altering it.
+You generally will want to invoke <a href="struct.TouchInnerHandle.html#method.cancel" title="method smithay::input::touch::TouchInnerHandle::cancel"><code>TouchInnerHandle::cancel</code></a> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the cancel event never occurred.</p>
+<p>Usually called in case the compositor decides the touch stream is a global gesture.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.shape" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#95">source</a><h4 class="code-header">fn <a href="#tymethod.shape" class="fn">shape</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.ShapeEvent.html" title="struct smithay::input::touch::ShapeEvent">ShapeEvent</a>,
+    seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+)</h4></section></summary><div class="docblock"><p>A touch point has changed its shape.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.orientation" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#98-104">source</a><h4 class="code-header">fn <a href="#tymethod.orientation" class="fn">orientation</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.TouchInnerHandle.html" title="struct smithay::input::touch::TouchInnerHandle">TouchInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.OrientationEvent.html" title="struct smithay::input::touch::OrientationEvent">OrientationEvent</a>,
+    seq: <a class="struct" href="../../utils/struct.Serial.html" title="struct smithay::utils::Serial">Serial</a>,
+)</h4></section></summary><div class="docblock"><p>A touch point has changed its orientation.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.start_data" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#107">source</a><h4 class="code-header">fn <a href="#tymethod.start_data" class="fn">start_data</a>(&amp;self) -&gt; &amp;<a class="struct" href="struct.GrabStartData.html" title="struct smithay::input::touch::GrabStartData">GrabStartData</a>&lt;D&gt;</h4></section></summary><div class="docblock"><p>The data about the event that started the grab.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.unset" class="method"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#110">source</a><h4 class="code-header">fn <a href="#tymethod.unset" class="fn">unset</a>(&amp;mut self, data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>)</h4></section></summary><div class="docblock"><p>The grab has been unset or replaced with another grab.</p>
+</div></details></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-TouchGrab%3CD%3E-for-DefaultGrab" class="impl"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#149-216">source</a><a href="#impl-TouchGrab%3CD%3E-for-DefaultGrab" class="anchor">§</a><h3 class="code-header">impl&lt;D: <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a> + 'static&gt; <a class="trait" href="trait.TouchGrab.html" title="trait smithay::input::touch::TouchGrab">TouchGrab</a>&lt;D&gt; for <a class="struct" href="struct.DefaultGrab.html" title="struct smithay::input::touch::DefaultGrab">DefaultGrab</a></h3></section><section id="impl-TouchGrab%3CD%3E-for-TouchDownGrab%3CD%3E" class="impl"><a class="src rightside" href="../../../src/smithay/input/touch/grab.rs.html#239-299">source</a><a href="#impl-TouchGrab%3CD%3E-for-TouchDownGrab%3CD%3E" class="anchor">§</a><h3 class="code-header">impl&lt;D: <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a> + 'static&gt; <a class="trait" href="trait.TouchGrab.html" title="trait smithay::input::touch::TouchGrab">TouchGrab</a>&lt;D&gt; for <a class="struct" href="struct.TouchDownGrab.html" title="struct smithay::input::touch::TouchDownGrab">TouchDownGrab</a>&lt;D&gt;</h3></section></div><script src="../../../trait.impl/smithay/input/touch/grab/trait.TouchGrab.js" async></script></section></div></main></body></html>

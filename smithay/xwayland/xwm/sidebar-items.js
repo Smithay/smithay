@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Reorder","ResizeEdge","SelectionError","WmWindowProperty","WmWindowType","X11SurfaceError"],"struct":["Atoms","X11Surface","X11Wm","XwmId"],"trait":["X11Relatable","XwmHandler"],"type":["X11Window"]};
