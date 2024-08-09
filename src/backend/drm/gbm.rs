@@ -85,7 +85,9 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
          * not knowing its layout can result in garbage being displayed. In
          * short, importing a buffer to KMS requires explicit modifiers. */
         if dmabuf.format().modifier != DrmModifier::Invalid {
-            return Ok(Some(framebuffer_from_dmabuf(drm, gbm, dmabuf, use_opaque)?));
+            return Ok(Some(framebuffer_from_dmabuf(
+                drm, gbm, dmabuf, use_opaque, false,
+            )?));
         }
     }
 
@@ -106,6 +108,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
                 pitches: None,
             },
             use_opaque,
+            true,
         )
         .map_err(Error::Drm)?;
 
@@ -140,6 +143,7 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
     gbm: &gbm::Device<A>,
     dmabuf: &Dmabuf,
     use_opaque: bool,
+    allow_legacy: bool,
 ) -> Result<GbmFramebuffer, Error> {
     let bo: GbmBuffer = dmabuf
         .import_to(gbm, gbm::BufferObjectFlags::SCANOUT)
@@ -167,6 +171,7 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
             pitches: Some(pitches),
         },
         use_opaque,
+        allow_legacy,
     )
     .map_err(Error::Drm)
     .map(|(fb, format)| GbmFramebuffer {
@@ -191,6 +196,7 @@ pub fn framebuffer_from_bo(
             pitches: None,
         },
         use_opaque,
+        true,
     )
     .map(|(fb, format)| GbmFramebuffer {
         fb,
@@ -289,6 +295,7 @@ fn framebuffer_from_bo_internal<D>(
     drm: &D,
     bo: BufferObjectInternal<'_>,
     use_opaque: bool,
+    allow_legacy: bool,
 ) -> Result<(framebuffer::Handle, drm_fourcc::DrmFormat), AccessError>
 where
     D: drm::control::Device + DevPath,
@@ -326,9 +333,17 @@ where
     let (fb, format) = match ret {
         Ok(fb) => fb,
         Err(source) => {
-            warn_legacy_fb_export();
+            if !allow_legacy {
+                return Err(AccessError {
+                    errmsg: "Failed to add framebuffer",
+                    dev: drm.dev_path(),
+                    source,
+                });
+            }
 
             // We only support this as a fallback of last resort like xf86-video-modesetting does.
+            warn_legacy_fb_export();
+
             if bo.plane_count().unwrap() > 1 {
                 return Err(AccessError {
                     errmsg: "Failed to add framebuffer",
