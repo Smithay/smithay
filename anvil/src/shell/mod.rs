@@ -2,6 +2,10 @@ use std::cell::RefCell;
 
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::XWaylandClientData;
+
+#[cfg(feature = "udev")]
+use smithay::wayland::drm_syncobj::DrmSyncobjCachedState;
+
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
@@ -111,7 +115,17 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
 
     fn new_surface(&mut self, surface: &WlSurface) {
         add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+            #[cfg(feature = "udev")]
+            let mut acquire_point = None;
             let maybe_dmabuf = with_states(surface, |surface_data| {
+                #[cfg(feature = "udev")]
+                acquire_point.clone_from(
+                    &surface_data
+                        .cached_state
+                        .get::<DrmSyncobjCachedState>()
+                        .pending()
+                        .acquire_point,
+                );
                 surface_data
                     .cached_state
                     .get::<SurfaceAttributes>()
@@ -124,6 +138,21 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
                     })
             });
             if let Some(dmabuf) = maybe_dmabuf {
+                #[cfg(feature = "udev")]
+                if let Some(acquire_point) = acquire_point {
+                    if let Ok((blocker, source)) = acquire_point.generate_blocker() {
+                        let client = surface.client().unwrap();
+                        let res = state.handle.insert_source(source, move |_, _, data| {
+                            let dh = data.display_handle.clone();
+                            data.client_compositor_state(&client).blocker_cleared(data, &dh);
+                            Ok(())
+                        });
+                        if res.is_ok() {
+                            add_blocker(surface, blocker);
+                            return;
+                        }
+                    }
+                }
                 if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
                     if let Some(client) = surface.client() {
                         let res = state.handle.insert_source(source, move |_, _, data| {
