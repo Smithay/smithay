@@ -7,6 +7,8 @@ pub use calloop;
 pub use drm;
 #[cfg(feature = "backend_gbm")]
 pub use gbm;
+#[cfg(feature = "renderer_glow")]
+pub use glow;
 #[cfg(feature = "backend_libinput")]
 pub use input;
 #[cfg(feature = "renderer_pixman")]
