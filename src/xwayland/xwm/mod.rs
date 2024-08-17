@@ -216,7 +216,7 @@ pub use self::atoms::Atoms;
 
 use super::XWaylandClientData;
 
-crate::utils::ids::id_gen!(next_xwm_id, XWM_ID, XWM_IDS);
+crate::utils::ids::id_gen!(xwm_id);
 
 /// Id of an X11 WM
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -411,7 +411,7 @@ impl Drop for X11Wm {
     fn drop(&mut self) {
         // TODO: Not really needed for Xwayland, but maybe cleanup set root properties?
         let _ = self.conn.destroy_window(self.wm_window);
-        XWM_IDS.lock().unwrap().remove(&self.id.0);
+        xwm_id::remove(self.id.0);
     }
 }
 
@@ -682,7 +682,7 @@ impl X11Wm {
         D: xwayland_shell::XWaylandShellHandler,
         D: 'static,
     {
-        let id = XwmId(next_xwm_id());
+        let id = XwmId(xwm_id::next());
         let span = debug_span!("xwayland_wm", id = id.0);
         let _guard = span.enter();
 

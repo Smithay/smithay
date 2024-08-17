@@ -43,7 +43,7 @@ pub mod surface;
 pub mod texture;
 pub mod utils;
 
-crate::utils::ids::id_gen!(next_external_id, EXTERNAL_ID, EXTERNAL_IDS);
+crate::utils::ids::id_gen!(external_id);
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 /// A unique id for a [`RenderElement`]
@@ -61,13 +61,13 @@ struct ExternalId(usize);
 
 impl ExternalId {
     fn new() -> Self {
-        ExternalId(next_external_id())
+        ExternalId(external_id::next())
     }
 }
 
 impl Drop for ExternalId {
     fn drop(&mut self) {
-        EXTERNAL_IDS.lock().unwrap().remove(&self.0);
+        external_id::remove(self.0);
     }
 }
 
