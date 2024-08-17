@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-crate::utils::ids::id_gen!(next_hooks_id, HOOK_ID, HOOKS_IDS);
+crate::utils::ids::id_gen!(hooks_id);
 
 /// Unique hook identifier used to unregister commit/descruction hooks
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -23,7 +23,7 @@ impl<T: ?Sized> Clone for Hook<T> {
 impl<T: ?Sized> Hook<T> {
     pub fn new(cb: Arc<T>) -> Self {
         Self {
-            id: HookId(next_hooks_id()),
+            id: HookId(hooks_id::next()),
             cb,
         }
     }
@@ -31,6 +31,6 @@ impl<T: ?Sized> Hook<T> {
 
 impl<T: ?Sized> Drop for Hook<T> {
     fn drop(&mut self) {
-        HOOKS_IDS.lock().unwrap().remove(&self.id.0);
+        hooks_id::remove(self.id.0);
     }
 }

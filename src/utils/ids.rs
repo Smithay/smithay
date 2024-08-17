@@ -1,36 +1,32 @@
 macro_rules! id_gen {
-    ($func_name:ident, $id_name:ident, $ids_name:ident) => {
-        static $id_name: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        lazy_static::lazy_static! {
-            static ref $ids_name: std::sync::Mutex<std::collections::HashSet<usize>> =
-                std::sync::Mutex::new(std::collections::HashSet::new());
-        }
+    ($mod_name:ident) => {
+        mod $mod_name {
+            use once_cell::sync::Lazy;
+            use std::{collections::HashSet, sync::Mutex};
 
-        fn $func_name() -> usize {
-            let mut ids = $ids_name.lock().unwrap();
-            if ids.len() == usize::MAX {
-                panic!("Out of ids");
+            static ID_DATA: Lazy<Mutex<(HashSet<usize>, usize)>> =
+                Lazy::new(|| Mutex::new((HashSet::new(), 0)));
+
+            pub(crate) fn next() -> usize {
+                let (id_set, counter) = &mut *ID_DATA.lock().unwrap();
+
+                if id_set.len() == usize::MAX {
+                    panic!("Out of ids");
+                }
+
+                while !id_set.insert(*counter) {
+                    *counter = counter.wrapping_add(1);
+                }
+
+                let new_id = *counter;
+                *counter = counter.wrapping_add(1);
+
+                new_id
             }
 
-            let id = loop {
-                let new_id = $id_name.fetch_update(
-                    std::sync::atomic::Ordering::SeqCst,
-                    std::sync::atomic::Ordering::SeqCst,
-                    |mut id| {
-                        while ids.iter().any(|k| *k == id) {
-                            id += 1;
-                        }
-                        id += 1;
-                        Some(id)
-                    },
-                );
-                if let Ok(id) = new_id {
-                    break id;
-                }
-            };
-
-            ids.insert(id);
-            id
+            pub(crate) fn remove(id: usize) -> bool {
+                ID_DATA.lock().unwrap().0.remove(&id)
+            }
         }
     };
 }

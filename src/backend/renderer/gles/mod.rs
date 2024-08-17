@@ -73,11 +73,11 @@ pub mod ffi {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
 }
 
-crate::utils::ids::id_gen!(next_renderer_id, RENDERER_ID, RENDERER_IDS);
+crate::utils::ids::id_gen!(renderer_id);
 struct RendererId(usize);
 impl Drop for RendererId {
     fn drop(&mut self) {
-        RENDERER_IDS.lock().unwrap().remove(&self.0);
+        renderer_id::remove(self.0);
     }
 }
 
@@ -577,7 +577,7 @@ impl GlesRenderer {
 
         context
             .user_data()
-            .insert_if_missing_threadsafe(|| RendererId(next_renderer_id()));
+            .insert_if_missing_threadsafe(|| RendererId(renderer_id::next()));
         drop(_guard);
 
         let renderer = GlesRenderer {

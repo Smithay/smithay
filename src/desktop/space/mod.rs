@@ -32,7 +32,7 @@ pub use self::element::*;
 use self::output::*;
 pub use self::utils::*;
 
-crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
+crate::utils::ids::id_gen!(space_id);
 
 #[derive(Debug)]
 struct InnerElement<E> {
@@ -66,14 +66,14 @@ impl<E: SpaceElement> PartialEq for Space<E> {
 impl<E: SpaceElement> Drop for Space<E> {
     #[inline]
     fn drop(&mut self) {
-        SPACE_IDS.lock().unwrap().remove(&self.id);
+        space_id::remove(self.id);
     }
 }
 
 impl<E: SpaceElement> Default for Space<E> {
     #[inline]
     fn default() -> Self {
-        let id = next_space_id();
+        let id = space_id::next();
         let span = debug_span!("desktop_space", id);
 
         Self {

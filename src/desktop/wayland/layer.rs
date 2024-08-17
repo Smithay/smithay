@@ -26,7 +26,7 @@ use std::{
 
 use crate::desktop::WindowSurfaceType;
 
-crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
+crate::utils::ids::id_gen!(layer_id);
 
 /// Map of [`LayerSurface`]s on an [`Output`]
 #[derive(Debug)]
@@ -501,7 +501,7 @@ pub(crate) struct LayerSurfaceInner {
 impl Drop for LayerSurfaceInner {
     #[inline]
     fn drop(&mut self) {
-        LAYER_IDS.lock().unwrap().remove(&self.id);
+        layer_id::remove(self.id);
     }
 }
 
@@ -516,7 +516,7 @@ impl LayerSurface {
     /// Create a new [`LayerSurface`] from a given [`WlrLayerSurface`] and its namespace.
     pub fn new(surface: WlrLayerSurface, namespace: String) -> LayerSurface {
         LayerSurface(Arc::new(LayerSurfaceInner {
-            id: next_layer_id(),
+            id: layer_id::next(),
             surface,
             namespace,
             userdata: UserDataMap::new(),

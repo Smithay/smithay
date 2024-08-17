@@ -699,7 +699,7 @@ impl DmabufState {
             + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let id = next_global_id();
+        let id = global_id::next();
 
         let formats = formats
             .or_else(|| default_feedback.map(|f| f.main_formats()))
@@ -785,7 +785,7 @@ impl DmabufState {
     /// It is highly recommended you disable the global before destroying it and ensure all child objects have
     /// been destroyed.
     pub fn destroy_global<D: 'static>(&mut self, display: &DisplayHandle, global: DmabufGlobal) {
-        if DMABUF_GLOBAL_IDS.lock().unwrap().remove(&global.id) {
+        if global_id::remove(global.id) {
             if let Some(global_state) = self.globals.remove(&global.id) {
                 display.remove_global::<D>(global_state.id);
             }
@@ -1234,4 +1234,4 @@ impl DmabufParamsData {
     }
 }
 
-id_gen!(next_global_id, DMABUF_GLOBAL_ID, DMABUF_GLOBAL_IDS);
+id_gen!(global_id);

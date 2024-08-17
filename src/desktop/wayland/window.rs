@@ -25,7 +25,7 @@ use wayland_protocols::{
 };
 use wayland_server::protocol::wl_surface;
 
-crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
+crate::utils::ids::id_gen!(window_id);
 
 /// Represents the surface of a [`Window`]
 #[derive(Debug)]
@@ -48,7 +48,7 @@ pub(crate) struct WindowInner {
 
 impl Drop for WindowInner {
     fn drop(&mut self) {
-        WINDOW_IDS.lock().unwrap().remove(&self.id);
+        window_id::remove(self.id);
     }
 }
 
@@ -112,7 +112,7 @@ impl Window {
 
     /// Construct a new [`Window`] from a xdg toplevel surface
     pub fn new_wayland_window(toplevel: ToplevelSurface) -> Window {
-        let id = next_window_id();
+        let id = window_id::next();
 
         Window(Arc::new(WindowInner {
             id,
@@ -126,7 +126,7 @@ impl Window {
     /// Construct a new [`Window`] from an X11 surface
     #[cfg(feature = "xwayland")]
     pub fn new_x11_window(surface: X11Surface) -> Window {
-        let id = next_window_id();
+        let id = window_id::next();
 
         Window(Arc::new(WindowInner {
             id,
