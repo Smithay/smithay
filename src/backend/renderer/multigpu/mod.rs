@@ -1449,7 +1449,7 @@ impl MultiTexture {
         })))
     }
 
-    fn get<A: GraphicsApi + 'static>(
+    pub fn get<A: GraphicsApi + 'static>(
         &self,
         render: &DrmNode,
     ) -> Option<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>
