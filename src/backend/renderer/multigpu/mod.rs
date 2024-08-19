@@ -1449,6 +1449,12 @@ impl MultiTexture {
         })))
     }
 
+    /// Attempt to get a texture of type `T: Renderer::TextureId` given the renderer type `A` for the given `DrmNode`.
+    ///
+    /// Will return `None` if either:
+    ///
+    /// - No textures are available for the Renderer type `A``
+    /// - No texture of type `T` is available for the given `DrmNode`
     pub fn get<A: GraphicsApi + 'static>(
         &self,
         render: &DrmNode,
