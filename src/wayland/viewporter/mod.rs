@@ -167,7 +167,7 @@ where
 
                 // only add the pre-commit hook once for the surface
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(&surface, viewport_commit_hook);
+                    compositor::add_pre_commit_hook::<D, _>(&surface, viewport_pre_commit_hook);
                 }
             }
             wp_viewporter::Request::Destroy => {
@@ -298,7 +298,11 @@ pub struct ViewportState {
 
 pub(crate) struct ViewportMarker(Weak<wp_viewport::WpViewport>);
 
-fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
+fn viewport_pre_commit_hook<D: 'static>(
+    _state: &mut D,
+    _dh: &DisplayHandle,
+    surface: &wl_surface::WlSurface,
+) {
     with_states(surface, |states| {
         states
             .data_map

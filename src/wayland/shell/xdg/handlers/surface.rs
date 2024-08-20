@@ -121,7 +121,7 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(
+                    compositor::add_post_commit_hook::<D, _>(
                         surface,
                         super::super::ToplevelSurface::commit_hook,
                     );
@@ -199,7 +199,14 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(surface, super::super::PopupSurface::commit_hook);
+                    compositor::add_pre_commit_hook::<D, _>(
+                        surface,
+                        super::super::PopupSurface::pre_commit_hook,
+                    );
+                    compositor::add_post_commit_hook::<D, _>(
+                        surface,
+                        super::super::PopupSurface::post_commit_hook,
+                    );
                 }
 
                 let popup = data_init.init(

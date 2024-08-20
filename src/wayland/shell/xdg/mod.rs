@@ -1851,11 +1851,11 @@ impl PopupSurface {
         self.send_configure_internal(Some(token))
     }
 
-    /// Handles the role specific commit logic
+    /// Handles the role specific commit error checking
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook<D: 'static>(
+    pub(crate) fn pre_commit_hook<D: 'static>(
         _state: &mut D,
         _dh: &DisplayHandle,
         surface: &wl_surface::WlSurface,
@@ -1879,9 +1879,18 @@ impl PopupSurface {
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
             );
-            return;
         }
+    }
 
+    /// Handles the role specific commit state application
+    ///
+    /// This should be called when the underlying WlSurface
+    /// applies a wl_surface.commit state.
+    pub(crate) fn post_commit_hook<D: 'static>(
+        _state: &mut D,
+        _dh: &DisplayHandle,
+        surface: &wl_surface::WlSurface,
+    ) {
         compositor::with_states(surface, |states| {
             let mut attributes = states
                 .data_map
@@ -1897,7 +1906,6 @@ impl PopupSurface {
                     }
                 }
             }
-            !attributes.initial_configure_sent
         });
     }
 

@@ -104,7 +104,7 @@ where
                 compositor::add_pre_commit_hook::<D, _>(&surface, |_state, _dh, surface| {
                     compositor::with_states(surface, |states| {
                         let attributes = states.data_map.get::<Mutex<LockSurfaceAttributes>>();
-                        let mut attributes = attributes.unwrap().lock().unwrap();
+                        let attributes = attributes.unwrap().lock().unwrap();
 
                         let Some(state) = attributes.last_acked else {
                             attributes.surface.post_error(
@@ -125,7 +125,6 @@ where
                                         ext_session_lock_surface_v1::Error::NullBuffer,
                                         "Surface attached a NULL buffer.",
                                     );
-                                    return;
                                 }
                                 BufferAssignment::NewBuffer(buffer) => {
                                     if let Some(buf_size) = buffer_dimensions(buffer) {
@@ -154,14 +153,21 @@ where
                                                 ext_session_lock_surface_v1::Error::DimensionsMismatch,
                                                 "Surface dimensions do not match acked configure.",
                                             );
-                                            return;
                                         }
                                     }
                                 }
                             }
                         }
+                    });
+                });
+                compositor::add_post_commit_hook::<D, _>(&surface, |_state, _dh, surface| {
+                    compositor::with_states(surface, |states| {
+                        let attributes = states.data_map.get::<Mutex<LockSurfaceAttributes>>();
+                        let mut attributes = attributes.unwrap().lock().unwrap();
 
-                        attributes.current = state;
+                        if let Some(state) = attributes.last_acked {
+                            attributes.current = state;
+                        }
                     });
                 });
 
