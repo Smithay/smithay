@@ -299,7 +299,7 @@ fn add_constraint<D: SeatHandler + 'static>(
     });
 
     if added {
-        compositor::add_pre_commit_hook(surface, commit_hook::<D>);
+        compositor::add_post_commit_hook(surface, commit_hook::<D>);
     }
 }
 

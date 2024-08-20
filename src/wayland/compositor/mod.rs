@@ -438,6 +438,12 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a pre-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *before* the new state is merged into the current state.
+///
+/// Protocol implementations should use this for error checking, but they should **not** apply
+/// state changes here, since the commit may be further arbitrarily delayed by blockers. Use a
+/// post-commit hook to apply state changes (i.e. copy last acked state to current).
+///
+/// Compositors should use this for adding blockers if needed, e.g. the DMA-BUF readiness blocker.
 pub fn add_pre_commit_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
 where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
@@ -461,7 +467,11 @@ where
 
 /// Register a post-commit hook to be invoked on surface commit
 ///
-/// It'll be invoked on surface commit, *after* the new state is merged into the current state.
+/// It'll be invoked on surface commit, *after* the new state is merged into the current state,
+/// after all commit blockers complete.
+///
+/// Protocol implementations should apply state changes here, i.e. copy last acked state into
+/// current.
 pub fn add_post_commit_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
 where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,

@@ -124,7 +124,7 @@ where
                 if initial {
                     compositor::add_pre_commit_hook::<D, _>(&wl_surface, |_state, _dh, surface| {
                         compositor::with_states(surface, |states| {
-                            let mut guard = states
+                            let guard = states
                                 .data_map
                                 .get::<Mutex<LayerSurfaceAttributes>>()
                                 .unwrap()
@@ -147,8 +147,18 @@ where
                                     zwlr_layer_surface_v1::Error::InvalidSize,
                                     "height 0 requested without setting top and bottom anchors",
                                 );
-                                return;
                             }
+                        });
+                    });
+
+                    compositor::add_post_commit_hook::<D, _>(&wl_surface, |_state, _dh, surface| {
+                        compositor::with_states(surface, |states| {
+                            let mut guard = states
+                                .data_map
+                                .get::<Mutex<LayerSurfaceAttributes>>()
+                                .unwrap()
+                                .lock()
+                                .unwrap();
 
                             if let Some(state) = guard.last_acked.clone() {
                                 guard.current = state;
