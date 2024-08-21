@@ -3,7 +3,7 @@
 //! This protocol is meant for describing outputs in a way
 //! which is more in line with the concept of an output on desktop oriented systems.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{atomic::Ordering, Arc, Mutex};
 
 use tracing::trace;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
@@ -11,7 +11,7 @@ use wayland_server::{protocol::wl_output::WlOutput, Resource, Weak};
 
 use crate::utils::{Logical, Physical, Point, Size, Transform};
 
-use super::{Mode, Scale};
+use super::{Mode, OutputUserData, Scale, XdgOutputUserData};
 
 #[derive(Debug)]
 pub(crate) struct Inner {
@@ -54,13 +54,20 @@ impl XdgOutput {
 
     pub(super) fn add_instance(&self, xdg_output: &ZxdgOutputV1, wl_output: &WlOutput) {
         let mut inner = self.inner.lock().unwrap();
+        let client_scale = wl_output
+            .data::<OutputUserData>()
+            .unwrap()
+            .client_scale
+            .load(Ordering::Acquire);
 
-        xdg_output.logical_position(inner.logical_position.x, inner.logical_position.y);
+        let logical_position = inner.logical_position.to_client(client_scale as i32);
+        xdg_output.logical_position(logical_position.x, logical_position.y);
 
         if let Some(size) = inner.physical_size {
             let logical_size = size
                 .to_f64()
                 .to_logical(inner.scale.fractional_scale())
+                .to_client(client_scale as f64)
                 .to_i32_round();
             let transformed_size = inner.transform.transform_size(logical_size);
             xdg_output.logical_size(transformed_size.w, transformed_size.h);
@@ -108,19 +115,25 @@ impl XdgOutput {
                 continue;
             };
 
-            if new_mode.is_some() | new_scale.is_some() {
+            let data = instance.data::<XdgOutputUserData>().unwrap();
+            let client_scale = data.client_scale.load(Ordering::Acquire);
+            let scale_changed = client_scale != data.last_client_scale.swap(client_scale, Ordering::AcqRel);
+
+            if new_mode.is_some() || new_scale.is_some() || scale_changed {
                 if let Some(size) = output.physical_size {
                     let logical_size = size
                         .to_f64()
                         .to_logical(output.scale.fractional_scale())
+                        .to_client(client_scale as f64)
                         .to_i32_round();
                     let transformed_size = output.transform.transform_size(logical_size);
                     instance.logical_size(transformed_size.w, transformed_size.h);
                 }
             }
 
-            if new_location.is_some() {
-                instance.logical_position(output.logical_position.x, output.logical_position.y);
+            if new_location.is_some() || scale_changed {
+                let logical_position = output.logical_position.to_client(client_scale as i32);
+                instance.logical_position(logical_position.x, logical_position.y);
             }
 
             // xdg_output.done() is deprecated since version 3

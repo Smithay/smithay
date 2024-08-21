@@ -84,7 +84,10 @@
 //! delegate_relative_pointer!(State);
 //! ```
 
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc, Mutex,
+};
 
 use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_manager_v1::{self, ZwpRelativePointerManagerV1},
@@ -116,17 +119,29 @@ impl WpRelativePointerHandle {
         self.known_relative_pointers.lock().unwrap().push(pointer);
     }
 
-    pub(super) fn relative_motion(&self, surface: &WlSurface, event: &RelativeMotionEvent) {
+    pub(super) fn relative_motion<D: SeatHandler + 'static>(
+        &self,
+        surface: &WlSurface,
+        event: &RelativeMotionEvent,
+    ) {
         self.for_each_focused_pointer(surface, |ptr| {
+            let client_scale = ptr
+                .data::<RelativePointerUserData<D>>()
+                .unwrap()
+                .client_scale
+                .load(Ordering::Acquire);
+            let delta = event.delta.to_client(client_scale as f64);
+            let delta_unaccel = event.delta_unaccel.to_client(client_scale as f64);
+
             let utime_hi = (event.utime >> 32) as u32;
             let utime_lo = (event.utime & 0xffffffff) as u32;
             ptr.relative_motion(
                 utime_hi,
                 utime_lo,
-                event.delta.x,
-                event.delta.y,
-                event.delta_unaccel.x,
-                event.delta_unaccel.y,
+                delta.x,
+                delta.y,
+                delta_unaccel.x,
+                delta_unaccel.y,
             );
         })
     }
@@ -145,6 +160,7 @@ impl WpRelativePointerHandle {
 #[derive(Debug)]
 pub struct RelativePointerUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
+    client_scale: Arc<AtomicU32>,
 }
 
 /// State of the relative pointer manager
@@ -192,12 +208,13 @@ where
     ) {
         match request {
             zwp_relative_pointer_manager_v1::Request::GetRelativePointer { id, pointer } => {
-                let handle = &pointer.data::<PointerUserData<D>>().unwrap().handle;
+                let data = pointer.data::<PointerUserData<D>>().unwrap();
                 let user_data = RelativePointerUserData {
-                    handle: handle.clone(),
+                    handle: data.handle.clone(),
+                    client_scale: data.client_scale.clone(),
                 };
                 let pointer = data_init.init(id, user_data);
-                if let Some(handle) = handle {
+                if let Some(handle) = &data.handle {
                     handle.wp_relative.new_relative_pointer(pointer);
                 }
             }

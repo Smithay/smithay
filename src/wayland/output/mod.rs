@@ -22,9 +22,12 @@
 //! # extern crate wayland_server;
 //! # extern crate smithay;
 //! use smithay::delegate_output;
+//! # use smithay::delegate_compositor;
 //! use smithay::output::{Output, PhysicalProperties, Scale, Mode, Subpixel};
 //! use smithay::utils::Transform;
 //! use smithay::wayland::output::OutputHandler;
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
+//! # use smithay::reexports::wayland_server::{Client, protocol::wl_surface::WlSurface};
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -57,11 +60,23 @@
 //! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
 //!
 //! impl OutputHandler for State {}
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &WlSurface) {}
+//! # }
+//!
 //! delegate_output!(State);
+//! # delegate_compositor!(State);
 //! ```
 
 mod handlers;
 pub(crate) mod xdg;
+
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
 use crate::output::{Inner, Mode, Output, OutputData, Scale, Subpixel};
 
@@ -127,9 +142,21 @@ impl OutputManagerState {
 }
 
 /// User data for WlOutput
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct OutputUserData {
     pub(crate) global_data: OutputData,
+    last_client_scale: AtomicU32,
+    client_scale: Arc<AtomicU32>,
+}
+
+impl Clone for OutputUserData {
+    fn clone(&self) -> Self {
+        OutputUserData {
+            global_data: self.global_data.clone(),
+            last_client_scale: AtomicU32::new(self.last_client_scale.load(Ordering::Acquire)),
+            client_scale: self.client_scale.clone(),
+        }
+    }
 }
 
 impl Inner {
@@ -216,16 +243,19 @@ impl Output {
                 continue;
             };
 
+            let data = output.data::<OutputUserData>().unwrap();
+            let client_scale = data.client_scale.load(Ordering::Acquire);
+            let scale_changed = client_scale != data.last_client_scale.swap(client_scale, Ordering::AcqRel);
+
             if let Some(mode) = new_mode {
                 output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
             }
             if new_transform.is_some() || new_location.is_some() {
                 inner.send_geometry_to(&output);
             }
-            if let Some(scale) = new_scale {
-                if output.version() >= 2 {
-                    output.scale(scale.integer_scale());
-                }
+            if (new_scale.is_some() || scale_changed) && output.version() >= 2 {
+                let scale = (inner.scale.integer_scale() / client_scale as i32).min(1);
+                output.scale(scale);
             }
             if output.version() >= 2 {
                 output.done();

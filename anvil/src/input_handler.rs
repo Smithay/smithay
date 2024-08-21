@@ -1007,7 +1007,7 @@ impl AnvilState<UdevData> {
 
         if let Some(rect) = output_geometry {
             let tool = evt.tool();
-            tablet_seat.add_tool::<Self>(dh, &tool);
+            tablet_seat.add_tool::<Self>(self, dh, &tool);
 
             let pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 

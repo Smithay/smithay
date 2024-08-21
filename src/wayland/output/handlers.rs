@@ -1,3 +1,8 @@
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
+
 use tracing::{trace, warn, warn_span};
 use wayland_protocols::xdg::xdg_output::zv1::server::{
     zxdg_output_manager_v1::{self, ZxdgOutputManagerV1},
@@ -7,6 +12,8 @@ use wayland_server::{
     protocol::wl_output::{self, Mode as WMode, WlOutput},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
+
+use crate::wayland::compositor::CompositorHandler;
 
 use super::{xdg::XdgOutput, Output, OutputHandler, OutputManagerState, OutputUserData, WlOutputData};
 
@@ -19,6 +26,7 @@ where
     D: GlobalDispatch<WlOutput, WlOutputData>,
     D: Dispatch<WlOutput, OutputUserData>,
     D: OutputHandler,
+    D: CompositorHandler,
     D: 'static,
 {
     fn bind(
@@ -29,10 +37,13 @@ where
         global_data: &WlOutputData,
         data_init: &mut DataInit<'_, D>,
     ) {
+        let client_scale = state.client_compositor_state(client).clone_client_scale();
         let output = data_init.init(
             resource,
             OutputUserData {
                 global_data: global_data.inner.clone(),
+                last_client_scale: AtomicU32::new(client_scale.load(Ordering::Acquire)),
+                client_scale,
             },
         );
 
@@ -152,11 +163,12 @@ impl<D> Dispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState
 where
     D: Dispatch<ZxdgOutputManagerV1, ()>,
     D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
+    D: CompositorHandler,
     D: 'static,
 {
     fn request(
-        _state: &mut D,
-        _client: &Client,
+        state: &mut D,
+        client: &Client,
         _resource: &ZxdgOutputManagerV1,
         request: zxdg_output_manager_v1::Request,
         _data: &(),
@@ -177,7 +189,15 @@ where
                     inner.xdg_output = Some(xdg_output.clone());
                 }
 
-                let id = data_init.init(id, XdgOutputUserData { xdg_output });
+                let client_scale = state.client_compositor_state(client).clone_client_scale();
+                let id = data_init.init(
+                    id,
+                    XdgOutputUserData {
+                        xdg_output,
+                        last_client_scale: AtomicU32::new(client_scale.load(Ordering::Acquire)),
+                        client_scale,
+                    },
+                );
 
                 inner.xdg_output.as_ref().unwrap().add_instance(&id, &wl_output);
             }
@@ -191,6 +211,8 @@ where
 #[derive(Debug)]
 pub struct XdgOutputUserData {
     xdg_output: XdgOutput,
+    pub(super) last_client_scale: AtomicU32,
+    pub(super) client_scale: Arc<AtomicU32>,
 }
 
 impl<D> Dispatch<ZxdgOutputV1, XdgOutputUserData, D> for OutputManagerState

@@ -1,4 +1,7 @@
-use std::{fmt, sync::Mutex};
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc, Mutex,
+};
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
@@ -23,7 +26,7 @@ use crate::{
         },
         Seat,
     },
-    utils::Serial,
+    utils::{Client, Point, Serial},
     wayland::{compositor, pointer_constraints::with_pointer_constraint},
 };
 
@@ -60,11 +63,17 @@ impl WlPointerHandle {
         self.known_pointers.lock().unwrap().push(pointer.downgrade());
     }
 
-    fn enter(&self, surface: &WlSurface, event: &MotionEvent) {
+    fn enter<D: SeatHandler + 'static>(&self, surface: &WlSurface, event: &MotionEvent) {
         *self.last_enter.lock().unwrap() = Some(event.serial);
 
         self.for_each_focused_pointer(surface, |ptr| {
-            ptr.enter(event.serial.into(), surface, event.location.x, event.location.y);
+            let client_scale = ptr
+                .data::<PointerUserData<D>>()
+                .unwrap()
+                .client_scale
+                .load(Ordering::Acquire);
+            let location = event.location.to_client(client_scale as f64);
+            ptr.enter(event.serial.into(), surface, location.x, location.y);
         })
     }
 
@@ -79,9 +88,15 @@ impl WlPointerHandle {
         *self.last_enter.lock().unwrap() = None;
     }
 
-    fn motion(&self, surface: &WlSurface, event: &MotionEvent) {
+    fn motion<D: SeatHandler + 'static>(&self, surface: &WlSurface, event: &MotionEvent) {
         self.for_each_focused_pointer(surface, |ptr| {
-            ptr.motion(event.time, event.location.x, event.location.y);
+            let client_scale = ptr
+                .data::<PointerUserData<D>>()
+                .unwrap()
+                .client_scale
+                .load(Ordering::Acquire);
+            let location = event.location.to_client(client_scale as f64);
+            ptr.motion(event.time, location.x, location.y);
         })
     }
 
@@ -91,7 +106,7 @@ impl WlPointerHandle {
         })
     }
 
-    fn axis(&self, surface: &WlSurface, details: AxisFrame) {
+    fn axis<D: SeatHandler + 'static>(&self, surface: &WlSurface, details: AxisFrame) {
         self.for_each_focused_pointer(surface, |ptr| {
             if ptr.version() >= 5 {
                 // axis source
@@ -161,6 +176,11 @@ impl WlPointerHandle {
                 }
             }
             // axis
+            let client_scale = ptr
+                .data::<PointerUserData<D>>()
+                .unwrap()
+                .client_scale
+                .load(Ordering::Acquire);
             if details.axis.0 != 0.0 {
                 if ptr.version() >= 9 {
                     ptr.axis_relative_direction(
@@ -168,13 +188,21 @@ impl WlPointerHandle {
                         details.relative_direction.0.into(),
                     );
                 }
-                ptr.axis(details.time, WlAxis::HorizontalScroll, details.axis.0);
+                ptr.axis(
+                    details.time,
+                    WlAxis::HorizontalScroll,
+                    details.axis.0 * client_scale as f64,
+                );
             }
             if details.axis.1 != 0.0 {
                 if ptr.version() >= 9 {
                     ptr.axis_relative_direction(WlAxis::VerticalScroll, details.relative_direction.1.into());
                 }
-                ptr.axis(details.time, WlAxis::VerticalScroll, details.axis.1);
+                ptr.axis(
+                    details.time,
+                    WlAxis::VerticalScroll,
+                    details.axis.1 * client_scale as f64,
+                );
             }
         })
     }
@@ -207,7 +235,7 @@ where
 {
     fn enter(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         if let Some(pointer) = seat.get_pointer() {
-            pointer.wl_pointer.enter(self, event);
+            pointer.wl_pointer.enter::<D>(self, event);
         }
     }
 
@@ -232,13 +260,13 @@ where
 
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         if let Some(pointer) = seat.get_pointer() {
-            pointer.wl_pointer.motion(self, event);
+            pointer.wl_pointer.motion::<D>(self, event);
         }
     }
 
     fn relative_motion(&self, seat: &Seat<D>, _data: &mut D, event: &RelativeMotionEvent) {
         if let Some(pointer) = seat.get_pointer() {
-            pointer.wp_relative.relative_motion(self, event);
+            pointer.wp_relative.relative_motion::<D>(self, event);
         }
     }
 
@@ -250,7 +278,7 @@ where
 
     fn axis(&self, seat: &Seat<D>, _data: &mut D, details: AxisFrame) {
         if let Some(pointer) = seat.get_pointer() {
-            pointer.wl_pointer.axis(self, details);
+            pointer.wl_pointer.axis::<D>(self, details);
         }
     }
 
@@ -310,16 +338,10 @@ where
 }
 
 /// User data for pointer
+#[derive(Debug)]
 pub struct PointerUserData<D: SeatHandler> {
     pub(crate) handle: Option<PointerHandle<D>>,
-}
-
-impl<D: SeatHandler> fmt::Debug for PointerUserData<D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PointerUserData")
-            .field("handle", &self.handle)
-            .finish()
-    }
+    pub(crate) client_scale: Arc<AtomicU32>,
 }
 
 impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
@@ -370,13 +392,20 @@ where
                                     hotspot: (0, 0).into(),
                                 })
                             });
+                            let client_scale = pointer
+                                .data::<PointerUserData<D>>()
+                                .unwrap()
+                                .client_scale
+                                .load(Ordering::Acquire);
+                            let hotspot = Point::<i32, Client>::from((hotspot_x, hotspot_y))
+                                .to_logical(client_scale as i32);
                             states
                                 .data_map
                                 .get::<Mutex<CursorImageAttributes>>()
                                 .unwrap()
                                 .lock()
                                 .unwrap()
-                                .hotspot = (hotspot_x, hotspot_y).into();
+                                .hotspot = hotspot;
                         });
 
                         CursorImageStatus::Surface(surface)

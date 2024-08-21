@@ -7,10 +7,13 @@
 //! ```
 //! use smithay::{
 //!     delegate_seat, delegate_virtual_keyboard_manager,
+//! #   delegate_compositor
 //! };
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+//! # use smithay::reexports::wayland_server::Client;
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
@@ -39,6 +42,12 @@
 //! // to avoid untrusted clients requesting a new keyboard
 //! VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_client| true);
 //!
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &WlSurface) {}
+//! # }
+//! # delegate_compositor!(State);
 //! ```
 //!
 

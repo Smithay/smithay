@@ -4,10 +4,13 @@
 //!
 //! ```
 //! use smithay::{delegate_seat, delegate_tablet_manager};
+//! # use smithay::delegate_compositor;
 //! use smithay::backend::input::TabletToolDescriptor;
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::tablet_manager::{TabletManagerState, TabletDescriptor, TabletSeatHandler};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+//! # use smithay::reexports::wayland_server::Client;
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //! # let mut display = Display::<State>::new().unwrap();
@@ -60,6 +63,13 @@
 //!     }
 //! }
 //! delegate_tablet_manager!(State);
+//!
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &WlSurface) {}
+//! # }
+//! # delegate_compositor!(State);
 //! ```
 //! ```ignore
 //! // Init the manager global
@@ -104,6 +114,8 @@ pub(crate) mod tablet_tool;
 pub use tablet::{TabletDescriptor, TabletHandle, TabletUserData};
 pub use tablet_seat::{TabletSeatHandle, TabletSeatHandler, TabletSeatUserData};
 pub use tablet_tool::{TabletToolHandle, TabletToolUserData};
+
+use super::compositor::CompositorHandler;
 
 /// Extends [Seat] with graphic tablet specific functionality
 pub trait TabletSeatTrait {
@@ -172,9 +184,10 @@ where
     D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
     D: SeatHandler + TabletSeatHandler + 'static,
+    D: CompositorHandler,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         client: &Client,
         _: &ZwpTabletManagerV2,
         request: zwp_tablet_manager_v2::Request,
@@ -197,7 +210,7 @@ where
                     },
                 );
 
-                handle.add_instance::<D>(dh, &instance, client);
+                handle.add_instance::<D>(state, dh, &instance, client);
             }
             zwp_tablet_manager_v2::Request::Destroy => {
                 // Nothing to do
