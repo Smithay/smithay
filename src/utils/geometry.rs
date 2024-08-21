@@ -8,6 +8,11 @@ use wayland_server::protocol::wl_output::Transform as WlTransform;
 #[derive(Debug)]
 pub struct Logical;
 
+/// Type-level marker for the client logical coordinate space
+#[derive(Debug)]
+#[cfg(feature = "wayland_frontend")]
+pub(crate) struct Client;
+
 /// Type-level marker for the physical coordinate space
 #[derive(Debug)]
 pub struct Physical;
@@ -454,6 +459,17 @@ impl<N: fmt::Debug, S> fmt::Debug for Point<N, S> {
 
 impl<N: Coordinate> Point<N, Logical> {
     #[inline]
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) fn to_client(self, scale: impl Into<Scale<N>>) -> Point<N, Client> {
+        let scale: Scale<N> = scale.into();
+        Point {
+            x: self.x.upscale(scale.x),
+            y: self.y.upscale(scale.y),
+            _kind: std::marker::PhantomData,
+        }
+    }
+
+    #[inline]
     /// Convert this logical point to physical coordinate space according to given scale factor
     pub fn to_physical(self, scale: impl Into<Scale<N>>) -> Point<N, Physical> {
         let scale = scale.into();
@@ -507,6 +523,19 @@ impl<N: Coordinate> Point<N, Logical> {
         Point {
             x: point.x.upscale(scale.x),
             y: point.y.upscale(scale.y),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<N: Coordinate> Point<N, Client> {
+    #[inline]
+    pub(crate) fn to_logical(self, scale: impl Into<Scale<N>>) -> Point<N, Logical> {
+        let scale = scale.into();
+        Point {
+            x: self.x.downscale(scale.x),
+            y: self.y.downscale(scale.y),
             _kind: std::marker::PhantomData,
         }
     }
@@ -769,6 +798,17 @@ impl<N: fmt::Debug, S> fmt::Debug for Size<N, S> {
 
 impl<N: Coordinate> Size<N, Logical> {
     #[inline]
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) fn to_client(self, scale: impl Into<Scale<N>>) -> Size<N, Client> {
+        let scale = scale.into();
+        Size {
+            w: self.w.upscale(scale.x),
+            h: self.h.upscale(scale.y),
+            _kind: std::marker::PhantomData,
+        }
+    }
+
+    #[inline]
     /// Convert this logical size to physical coordinate space according to given scale factor
     pub fn to_physical(self, scale: impl Into<Scale<N>>) -> Size<N, Physical> {
         let scale = scale.into();
@@ -818,6 +858,19 @@ impl<N: Coordinate> Size<N, Logical> {
             h: self.h.upscale(scale.y),
             _kind: std::marker::PhantomData,
         })
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<N: Coordinate> Size<N, Client> {
+    #[inline]
+    pub(crate) fn to_logical(self, scale: impl Into<Scale<N>>) -> Size<N, Logical> {
+        let scale = scale.into();
+        Size {
+            w: self.w.downscale(scale.x),
+            h: self.h.downscale(scale.y),
+            _kind: std::marker::PhantomData,
+        }
     }
 }
 
@@ -1273,6 +1326,16 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
 }
 
 impl<N: Coordinate> Rectangle<N, Logical> {
+    #[inline]
+    #[cfg(feature = "xwayland")]
+    pub(crate) fn to_client(self, scale: impl Into<Scale<N>>) -> Rectangle<N, Client> {
+        let scale = scale.into();
+        Rectangle {
+            loc: self.loc.to_client(scale),
+            size: self.size.to_client(scale),
+        }
+    }
+
     /// Convert this logical rectangle to physical coordinate space according to given scale factor
     #[inline]
     pub fn to_physical(self, scale: impl Into<Scale<N>>) -> Rectangle<N, Physical> {
@@ -1338,6 +1401,18 @@ impl<N: Coordinate> Rectangle<N, Logical> {
                 h: rect.size.h.upscale(scale.y),
                 _kind: std::marker::PhantomData,
             },
+        }
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<N: Coordinate> Rectangle<N, Client> {
+    #[inline]
+    pub(crate) fn to_logical(self, scale: impl Into<Scale<N>>) -> Rectangle<N, Logical> {
+        let scale = scale.into();
+        Rectangle {
+            loc: self.loc.to_logical(scale),
+            size: self.size.to_logical(scale),
         }
     }
 }
