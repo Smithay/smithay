@@ -65,6 +65,30 @@ impl<Kind> Time<Kind> {
     }
 }
 
+impl Time<Monotonic> {
+    /// Returns the time in milliseconds
+    ///
+    /// This should match timestamps from libinput:
+    /// https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html
+    pub fn as_millis(&self) -> u32 {
+        // Assume monotonic clock (but not realitime) fits as milliseconds in 32-bit
+        debug_assert!(self.tp.tv_sec >= 0);
+        debug_assert!(self.tp.tv_nsec >= 0);
+        self.tp.tv_sec as u32 * 1000 + self.tp.tv_nsec as u32 / 1000000
+    }
+
+    /// Returns the time in microseconds
+    ///
+    /// This should match timestamps from libinput:
+    /// https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html
+    pub fn as_micros(&self) -> u64 {
+        // Assume monotonic clock (but not realitime) fits as microseconds in 64-bit
+        debug_assert!(self.tp.tv_sec >= 0);
+        debug_assert!(self.tp.tv_nsec >= 0);
+        self.tp.tv_sec as u64 * 1000000 + self.tp.tv_nsec as u64 / 1000
+    }
+}
+
 impl<Kind> Clone for Time<Kind> {
     #[inline]
     fn clone(&self) -> Self {
