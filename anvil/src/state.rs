@@ -684,6 +684,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn start_xwayland(&mut self) {
         use std::process::Stdio;
 
+        use smithay::wayland::compositor::CompositorHandler;
+
         let (xwayland, client) = XWayland::spawn(
             &self.display_handle,
             None,
@@ -702,6 +704,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     x11_socket,
                     display_number,
                 } => {
+                    let xwayland_scale = std::env::var("ANVIL_XWAYLAND_SCALE")
+                        .ok()
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(1);
+                    data.client_compositor_state(&client)
+                        .set_client_scale(xwayland_scale);
                     let mut wm = X11Wm::start_wm(data.handle.clone(), x11_socket, client.clone())
                         .expect("Failed to attach X11 Window Manager");
 
