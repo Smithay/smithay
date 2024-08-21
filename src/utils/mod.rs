@@ -18,6 +18,8 @@ pub use fd::*;
 #[cfg(feature = "wayland_frontend")]
 pub(crate) mod sealed_file;
 
+#[cfg(feature = "wayland_frontend")]
+pub(crate) use self::geometry::Client;
 pub use self::geometry::{
     Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform,
 };
