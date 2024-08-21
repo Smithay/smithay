@@ -8,10 +8,13 @@
 //! ```
 //! use smithay::{
 //!     delegate_seat, delegate_text_input_manager,
+//! #   delegate_compositor,
 //! };
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::text_input::TextInputManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+//! # use smithay::reexports::wayland_server::Client;
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
@@ -39,6 +42,12 @@
 //! // Add the seat state to your state and create manager global
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &WlSurface) {}
+//! # }
+//! # delegate_compositor!(State);
 //! ```
 //!
 

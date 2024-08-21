@@ -1,4 +1,7 @@
-use std::fmt;
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
 use wayland_server::{
     backend::ClientId,
@@ -9,7 +12,7 @@ use wayland_server::{
 use super::{SeatHandler, SeatState};
 use crate::input::touch::TouchTarget;
 use crate::input::{
-    touch::{MotionEvent, OrientationEvent, ShapeEvent},
+    touch::{MotionEvent, OrientationEvent, ShapeEvent, UpEvent},
     Seat,
 };
 use crate::{input::touch::DownEvent, wayland::seat::wl_surface::WlSurface};
@@ -62,18 +65,24 @@ where
         let serial = event.serial;
         let slot = event.slot;
         for_each_focused_touch(seat, self, seq, |touch| {
+            let client_scale = touch
+                .data::<TouchUserData<D>>()
+                .unwrap()
+                .client_scale
+                .load(Ordering::Acquire);
+            let location = event.location.to_client(client_scale as f64);
             touch.down(
                 serial.into(),
                 event.time,
                 self,
                 slot.into(),
-                event.location.x,
-                event.location.y,
+                location.x,
+                location.y,
             );
         })
     }
 
-    fn up(&self, seat: &Seat<D>, _data: &mut D, event: &crate::input::touch::UpEvent, seq: Serial) {
+    fn up(&self, seat: &Seat<D>, _data: &mut D, event: &UpEvent, seq: Serial) {
         let serial = event.serial;
         let slot = event.slot;
         for_each_focused_touch(seat, self, seq, |touch| {
@@ -84,7 +93,13 @@ where
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent, seq: Serial) {
         let slot = event.slot;
         for_each_focused_touch(seat, self, seq, |touch| {
-            touch.motion(event.time, slot.into(), event.location.x, event.location.y);
+            let client_scale = touch
+                .data::<TouchUserData<D>>()
+                .unwrap()
+                .client_scale
+                .load(Ordering::Acquire);
+            let location = event.location.to_client(client_scale as f64);
+            touch.motion(event.time, slot.into(), location.x, location.y);
         })
     }
 
@@ -116,16 +131,10 @@ where
 }
 
 /// User data for touch
+#[derive(Debug)]
 pub struct TouchUserData<D: SeatHandler> {
     pub(crate) handle: Option<TouchHandle<D>>,
-}
-
-impl<D: SeatHandler> fmt::Debug for TouchUserData<D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TouchUserData")
-            .field("handle", &self.handle)
-            .finish()
-    }
+    pub(crate) client_scale: Arc<AtomicU32>,
 }
 
 impl<D> Dispatch<WlTouch, TouchUserData<D>, D> for SeatState<D>

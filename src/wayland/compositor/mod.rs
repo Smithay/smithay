@@ -246,6 +246,8 @@ pub struct SurfaceAttributes {
     /// An example possibility would be to trigger it once the frame
     /// associated with this commit has been displayed on the screen.
     pub frame_callbacks: Vec<wl_callback::WlCallback>,
+
+    pub(crate) client_scale: u32,
 }
 
 impl Default for SurfaceAttributes {
@@ -259,6 +261,7 @@ impl Default for SurfaceAttributes {
             input_region: None,
             damage: Vec::new(),
             frame_callbacks: Vec::new(),
+            client_scale: 1,
         }
     }
 }

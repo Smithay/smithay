@@ -17,7 +17,7 @@ use wayland_server::{
 
 use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
-    Logical, Point,
+    Client, Logical, Point,
 };
 
 use super::{
@@ -119,6 +119,7 @@ impl Cacheable for SurfaceAttributes {
             opaque_region: self.opaque_region.clone(),
             input_region: self.input_region.clone(),
             frame_callbacks: std::mem::take(&mut self.frame_callbacks),
+            client_scale: self.client_scale,
         }
     }
     fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
@@ -143,6 +144,7 @@ impl Cacheable for SurfaceAttributes {
         into.opaque_region = self.opaque_region;
         into.input_region = self.input_region;
         into.frame_callbacks.extend(self.frame_callbacks);
+        into.client_scale = self.client_scale;
     }
 }
 
@@ -163,7 +165,7 @@ where
 {
     fn request(
         state: &mut D,
-        _client: &wayland_server::Client,
+        client: &wayland_server::Client,
         surface: &WlSurface,
         request: wl_surface::Request,
         _data: &SurfaceUserData,
@@ -172,7 +174,7 @@ where
     ) {
         match request {
             wl_surface::Request::Attach { buffer, x, y } => {
-                let offset: Point<i32, Logical> = (x, y).into();
+                let offset: Point<i32, Client> = (x, y).into();
                 let offset = (x != 0 || y != 0).then_some(offset);
 
                 // If version predates 5 just use the offset
@@ -190,6 +192,9 @@ where
                     None
                 };
 
+                let client_scale = state.client_compositor_state(client).client_scale() as i32;
+                let offset = offset.map(|p| p.to_logical(client_scale));
+
                 PrivateSurfaceData::with_states(surface, |states| {
                     let mut guard = states.cached_state.get::<SurfaceAttributes>();
                     let pending = guard.pending();
@@ -206,16 +211,17 @@ where
                 });
             }
             wl_surface::Request::Damage { x, y, width, height } => {
+                let client_scale = state.client_compositor_state(client).client_scale() as i32;
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .get::<SurfaceAttributes>()
                         .pending()
                         .damage
-                        .push(Damage::Surface(Rectangle::from_loc_and_size(
-                            (x, y),
-                            (width, height),
-                        )));
+                        .push(Damage::Surface(
+                            Rectangle::<i32, Client>::from_loc_and_size((x, y), (width, height))
+                                .to_logical(client_scale),
+                        ));
                 });
             }
             wl_surface::Request::Frame { callback } => {
@@ -257,6 +263,15 @@ where
                 });
             }
             wl_surface::Request::Commit => {
+                let client_scale = state.client_compositor_state(client).client_scale();
+                PrivateSurfaceData::with_states(surface, |states| {
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .client_scale = client_scale;
+                });
+
                 PrivateSurfaceData::invoke_pre_commit_hooks(state, handle, surface);
 
                 PrivateSurfaceData::commit(surface, handle, state);
@@ -299,12 +314,13 @@ where
                 });
             }
             wl_surface::Request::Offset { x, y } => {
+                let client_scale = state.client_compositor_state(client).client_scale() as i32;
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .get::<SurfaceAttributes>()
                         .pending()
-                        .buffer_delta = Some((x, y).into());
+                        .buffer_delta = Some(Point::<i32, Client>::from((x, y)).to_logical(client_scale));
                 });
             }
             wl_surface::Request::Destroy => {
@@ -358,8 +374,8 @@ where
     D: CompositorHandler,
 {
     fn request(
-        _state: &mut D,
-        _client: &wayland_server::Client,
+        state: &mut D,
+        client: &wayland_server::Client,
         _resource: &WlRegion,
         request: wl_region::Request,
         data: &RegionUserData,
@@ -367,14 +383,16 @@ where
         _init: &mut wayland_server::DataInit<'_, D>,
     ) {
         let mut guard = data.inner.lock().unwrap();
+        let client_scale = state.client_compositor_state(client).client_scale() as i32;
+
         match request {
             wl_region::Request::Add { x, y, width, height } => guard.rects.push((
                 RectangleKind::Add,
-                Rectangle::from_loc_and_size((x, y), (width, height)),
+                Rectangle::<i32, Client>::from_loc_and_size((x, y), (width, height)).to_logical(client_scale),
             )),
             wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
                 RectangleKind::Subtract,
-                Rectangle::from_loc_and_size((x, y), (width, height)),
+                Rectangle::<i32, Client>::from_loc_and_size((x, y), (width, height)).to_logical(client_scale),
             )),
             wl_region::Request::Destroy => {
                 // all is handled by our destructor
@@ -533,8 +551,8 @@ where
     D: 'static,
 {
     fn request(
-        _state: &mut D,
-        _client: &wayland_server::Client,
+        state: &mut D,
+        client: &wayland_server::Client,
         subsurface: &WlSubsurface,
         request: wl_subsurface::Request,
         data: &SubsurfaceUserData,
@@ -543,12 +561,13 @@ where
     ) {
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
+                let client_scale = state.client_compositor_state(client).client_scale() as i32;
                 PrivateSurfaceData::with_states(&data.surface, |state| {
                     state
                         .cached_state
                         .get::<SubsurfaceCachedState>()
                         .pending()
-                        .location = (x, y).into();
+                        .location = Point::<i32, Client>::from((x, y)).to_logical(client_scale);
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {

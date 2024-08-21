@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
-use smithay::delegate_seat;
 use smithay::input::{keyboard::FilterResult, Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::wl_surface::WlSurface,
     Display, ListeningSocket,
 };
+use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
+use smithay::{delegate_compositor, delegate_seat};
 
 struct App {
+    compositor_state: CompositorState,
     seat_state: SeatState<Self>,
     seat: Seat<Self>,
 }
@@ -30,10 +32,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
     let dh = display.handle();
 
+    let compositor_state = CompositorState::new::<App>(&dh);
     let mut seat_state = SeatState::new();
     let seat = seat_state.new_wl_seat(&dh, "Example");
 
-    let mut state = App { seat_state, seat };
+    let mut state = App {
+        compositor_state,
+        seat_state,
+        seat,
+    };
 
     let keyboard = state.seat.add_keyboard(Default::default(), 25, 600)?;
 
@@ -47,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let client = display
                 .handle()
-                .insert_client(stream, Arc::new(ClientState))
+                .insert_client(stream, Arc::new(ClientState(CompositorClientState::default())))
                 .unwrap();
             clients.push(client);
         }
@@ -74,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-struct ClientState;
+struct ClientState(CompositorClientState);
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {
         println!("initialized");
@@ -85,4 +92,17 @@ impl ClientData for ClientState {
     }
 }
 
+impl CompositorHandler for App {
+    fn compositor_state(&mut self) -> &mut CompositorState {
+        &mut self.compositor_state
+    }
+
+    fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState {
+        &client.get_data::<ClientState>().unwrap().0
+    }
+
+    fn commit(&mut self, _surface: &WlSurface) {}
+}
+
+delegate_compositor!(App);
 delegate_seat!(App);

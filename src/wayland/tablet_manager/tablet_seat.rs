@@ -5,8 +5,8 @@ use wayland_protocols::wp::tablet::zv2::server::{
 };
 use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
-use crate::backend::input::TabletToolDescriptor;
 use crate::input::pointer::CursorImageStatus;
+use crate::{backend::input::TabletToolDescriptor, wayland::compositor::CompositorHandler};
 
 use super::{
     tablet::TabletUserData,
@@ -58,11 +58,17 @@ pub struct TabletSeatHandle {
 }
 
 impl TabletSeatHandle {
-    pub(super) fn add_instance<D>(&self, dh: &DisplayHandle, seat: &ZwpTabletSeatV2, client: &Client)
-    where
+    pub(super) fn add_instance<D>(
+        &self,
+        state: &mut D,
+        dh: &DisplayHandle,
+        seat: &ZwpTabletSeatV2,
+        client: &Client,
+    ) where
         D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: TabletSeatHandler + 'static,
+        D: CompositorHandler,
     {
         let mut inner = self.inner.lock().unwrap();
 
@@ -73,7 +79,7 @@ impl TabletSeatHandle {
 
         // Notify new instance about available tools
         for (desc, tool) in inner.tools.iter_mut() {
-            tool.new_instance::<D>(client, dh, seat, desc);
+            tool.new_instance(state, client, dh, seat, desc);
         }
 
         inner.instances.push(seat.downgrade());
@@ -142,10 +148,16 @@ impl TabletSeatHandle {
     ///
     /// Returns new [TabletToolHandle] if tool was not know by this seat, if tool was already know it returns existing handle,
     /// it allows you to send tool input events to clients.
-    pub fn add_tool<D>(&self, dh: &DisplayHandle, tool_desc: &TabletToolDescriptor) -> TabletToolHandle
+    pub fn add_tool<D>(
+        &self,
+        state: &mut D,
+        dh: &DisplayHandle,
+        tool_desc: &TabletToolDescriptor,
+    ) -> TabletToolHandle
     where
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: TabletSeatHandler + 'static,
+        D: CompositorHandler,
     {
         let inner = &mut *self.inner.lock().unwrap();
 
@@ -161,7 +173,7 @@ impl TabletSeatHandle {
                 };
 
                 if let Ok(client) = dh.get_client(seat.id()) {
-                    tool.new_instance::<D>(&client, dh, &seat, tool_desc);
+                    tool.new_instance(state, &client, dh, &seat, tool_desc);
                 }
             }
             tool
