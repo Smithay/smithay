@@ -21,7 +21,7 @@
 use std::io::Error as IoError;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use calloop::generic::Generic;
 use calloop::{EventSource, Interest, PostAction, Readiness, Token};
@@ -52,7 +52,7 @@ use crate::{
             Bind,
         },
     },
-    utils::{Physical, Rectangle, Size},
+    utils::{Clock, Monotonic, Physical, Rectangle, Size},
 };
 
 mod input;
@@ -204,7 +204,7 @@ where
         WinitEventLoop {
             inner: WinitEventLoopInner {
                 scale_factor: window.scale_factor(),
-                start_time: Instant::now(),
+                clock: Clock::<Monotonic>::new(),
                 key_counter: 0,
                 window,
                 is_x11,
@@ -360,7 +360,7 @@ where
 #[derive(Debug)]
 struct WinitEventLoopInner {
     window: Arc<WinitWindow>,
-    start_time: Instant,
+    clock: Clock<Monotonic>,
     key_counter: u32,
     is_x11: bool,
     scale_factor: f64,
@@ -418,7 +418,7 @@ struct WinitEventLoopApp<'a, F: FnMut(WinitEvent)> {
 
 impl<'a, F: FnMut(WinitEvent)> WinitEventLoopApp<'a, F> {
     fn timestamp(&self) -> u64 {
-        self.inner.start_time.elapsed().as_micros() as u64
+        self.inner.clock.now().as_micros()
     }
 }
 
