@@ -612,7 +612,7 @@ impl AnvilState<UdevData> {
                             &MotionEvent {
                                 location,
                                 serial: SCOUNTER.next_serial(),
-                                time: 0,
+                                time: self.clock.now().as_millis(),
                             },
                         );
                         pointer.frame(self);
@@ -650,7 +650,7 @@ impl AnvilState<UdevData> {
                             &MotionEvent {
                                 location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
-                                time: 0,
+                                time: self.clock.now().as_millis(),
                             },
                         );
                         pointer.frame(self);
@@ -689,7 +689,7 @@ impl AnvilState<UdevData> {
                             &MotionEvent {
                                 location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
-                                time: 0,
+                                time: self.clock.now().as_millis(),
                             },
                         );
                         pointer.frame(self);
@@ -955,7 +955,7 @@ impl AnvilState<UdevData> {
                 &MotionEvent {
                     location: pointer_location,
                     serial: SCOUNTER.next_serial(),
-                    time: 0,
+                    time: self.clock.now().as_millis(),
                 },
             );
 
@@ -1022,7 +1022,7 @@ impl AnvilState<UdevData> {
                 &MotionEvent {
                     location: pointer_location,
                     serial: SCOUNTER.next_serial(),
-                    time: 0,
+                    time: evt.time_msec(),
                 },
             );
             pointer.frame(self);
