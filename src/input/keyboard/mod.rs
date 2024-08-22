@@ -24,7 +24,7 @@ mod keymap_file;
 pub use keymap_file::KeymapFile;
 
 mod modifiers_state;
-pub use modifiers_state::ModifiersState;
+pub use modifiers_state::{ModifiersState, SerializedMods};
 
 mod xkb_config;
 pub use xkb_config::XkbConfig;

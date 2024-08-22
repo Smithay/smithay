@@ -50,11 +50,16 @@ impl ModifiersState {
     }
 }
 
+/// Serialized modifier state
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SerializedMods {
+    /// Depressed modifiers
     pub depressed: u32,
+    /// Latched modifiers
     pub latched: u32,
+    /// Locked modifiers
     pub locked: u32,
+    /// Effective keyboard layout
     pub layout_effective: u32,
 }
 
