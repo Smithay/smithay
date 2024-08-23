@@ -138,6 +138,8 @@ use x11rb::{
     COPY_DEPTH_FROM_PARENT,
 };
 
+pub mod settings;
+use settings::{NameError, Value, XSettings};
 mod surface;
 pub use self::surface::*;
 
@@ -202,6 +204,7 @@ mod atoms {
             _NET_WM_STATE_FULLSCREEN,
             _NET_WM_STATE_FOCUSED,
             _NET_SUPPORTING_WM_CHECK,
+            _XSETTINGS_SETTINGS,
 
             // selection
             _WL_SELECTION,
@@ -212,6 +215,7 @@ mod atoms {
             TIMESTAMP,
             INCR,
             DELETE,
+            _XSETTINGS_S0,
         }
     }
 }
@@ -393,6 +397,7 @@ pub struct X11Wm {
     screen: Screen,
     wm_window: X11Window,
     atoms: Atoms,
+    xsettings: XSettings,
 
     pub(crate) unpaired_surfaces: HashMap<u64, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
@@ -668,6 +673,23 @@ impl From<ConnectionError> for SelectionError {
     }
 }
 
+/// Errors generated updating XSETTINGS
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    /// X11 Error occured updating XSETTINGS
+    #[error(transparent)]
+    X11Error(#[from] ConnectionError),
+    /// A provided name isn't allowed
+    #[error("Name '{name}' isn't valid: {error}")]
+    NameError {
+        /// Name that failed to parse
+        name: String,
+        #[source]
+        /// Validation error
+        error: NameError,
+    },
+}
+
 impl X11Wm {
     /// Start a new window manager for a given Xwayland connection
     ///
@@ -695,7 +717,6 @@ impl X11Wm {
         let stream = DefaultStream::from_unix_stream(connection)?.0;
         let conn = RustConnection::connect_to_stream(stream, screen)?;
         let atoms = Atoms::new(&conn)?.reply()?;
-
         let screen = conn.setup().roots[0].clone();
 
         {
@@ -812,6 +833,7 @@ impl X11Wm {
             "Smithay X WM".as_bytes(),
         )?;
         debug!(window = win, "Created WM Window");
+        let xsettings = XSettings::new(&conn, screen.root_depth, screen.root, &atoms)?;
         conn.flush()?;
 
         let conn = Arc::new(conn);
@@ -842,6 +864,7 @@ impl X11Wm {
             client_scale,
             screen,
             atoms,
+            xsettings,
             wm_window: win,
             _xfixes_data,
             clipboard,
@@ -1239,6 +1262,22 @@ impl X11Wm {
         self.conn.flush()?;
         Ok(())
     }
+
+    /// Updates XSETTINGS with the newly provided name/value-pairs.
+    pub fn set_xsettings(
+        &mut self,
+        settings: impl Iterator<Item = (String, Value)>,
+    ) -> Result<(), SettingsError> {
+        for (name, value) in settings {
+            self.xsettings
+                .set(name.clone(), value)
+                .map_err(move |error| SettingsError::NameError { name, error })?;
+        }
+
+        self.xsettings.update(&self.conn)?;
+
+        Ok(())
+    }
 }
 
 fn handle_event<D>(
@@ -1285,6 +1324,7 @@ where
     match event {
         Event::CreateNotify(n) => {
             if n.window == xwm.wm_window
+                || n.window == xwm.xsettings.window
                 || n.window == xwm.clipboard.window
                 || xwm.clipboard.incoming.iter().any(|i| n.window == i.window)
                 || n.window == xwm.primary.window
