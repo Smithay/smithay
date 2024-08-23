@@ -585,7 +585,8 @@ impl LayerSurface {
         let mut bounding_box = self.bbox();
         let surface = self.0.surface.wl_surface();
         for (popup, location) in PopupManager::popups_for_surface(surface) {
-            bounding_box = bounding_box.merge(bbox_from_surface_tree(popup.wl_surface(), location));
+            let offset = location - popup.geometry().loc;
+            bounding_box = bounding_box.merge(bbox_from_surface_tree(popup.wl_surface(), offset));
         }
 
         bounding_box
@@ -605,7 +606,8 @@ impl LayerSurface {
         if surface_type.contains(WindowSurfaceType::POPUP) {
             for (popup, location) in PopupManager::popups_for_surface(surface) {
                 let surface = popup.wl_surface();
-                if let Some(result) = under_from_surface_tree(surface, point, location, surface_type) {
+                let offset = location - popup.geometry().loc;
+                if let Some(result) = under_from_surface_tree(surface, point, offset, surface_type) {
                     return Some(result);
                 }
             }
