@@ -48,7 +48,7 @@ use wayland_server::{
 
 use crate::utils::user_data::UserDataMap;
 
-/// Handler for security context protocol
+/// Handler for foreign toplevel list protocol
 pub trait ForeignToplevelListHandler:
     GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>
     + Dispatch<ExtForeignToplevelListV1, ()>
