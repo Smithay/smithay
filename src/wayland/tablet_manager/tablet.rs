@@ -9,6 +9,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
 };
 use wayland_server::{
     backend::ClientId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, Resource,
+    Weak,
 };
 
 use crate::backend::input::Device;
@@ -39,7 +40,7 @@ impl<D: Device> From<&D> for TabletDescriptor {
 
 #[derive(Debug, Default)]
 struct Tablet {
-    instances: Vec<ZwpTabletV2>,
+    instances: Vec<Weak<ZwpTabletV2>>,
 }
 
 /// Handle to a tablet device
@@ -79,7 +80,7 @@ impl TabletHandle {
 
         wl_tablet.done();
 
-        self.inner.lock().unwrap().instances.push(wl_tablet);
+        self.inner.lock().unwrap().instances.push(wl_tablet.downgrade());
     }
 
     pub(super) fn with_focused_tablet<F>(&self, focus: &WlSurface, cb: F)
@@ -92,9 +93,10 @@ impl TabletHandle {
             .unwrap()
             .instances
             .iter()
-            .find(|i| Resource::id(*i).same_client_as(&focus.id()))
+            .find(|i| i.id().same_client_as(&focus.id()))
+            .and_then(|t| t.upgrade().ok())
         {
-            cb(instance);
+            cb(&instance);
         }
     }
 }
@@ -127,6 +129,6 @@ where
             .lock()
             .unwrap()
             .instances
-            .retain(|i| Resource::id(i) != Resource::id(tablet));
+            .retain(|i| i.id() != Resource::id(tablet));
     }
 }
