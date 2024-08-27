@@ -3,7 +3,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_tool_v2::ZwpTabletToolV2,
     zwp_tablet_v2::ZwpTabletV2,
 };
-use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
+use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
 use crate::backend::input::TabletToolDescriptor;
 use crate::input::pointer::CursorImageStatus;
@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub(crate) struct TabletSeat {
-    instances: Vec<ZwpTabletSeatV2>,
+    instances: Vec<Weak<ZwpTabletSeatV2>>,
     tablets: HashMap<TabletDescriptor, TabletHandle>,
     tools: HashMap<TabletToolDescriptor, TabletToolHandle>,
 }
@@ -76,7 +76,7 @@ impl TabletSeatHandle {
             tool.new_instance::<D>(client, dh, seat, desc);
         }
 
-        inner.instances.push(seat.clone());
+        inner.instances.push(seat.downgrade());
     }
 
     /// Add a new tablet to a seat.
@@ -99,8 +99,12 @@ impl TabletSeatHandle {
             let mut tablet = TabletHandle::default();
             // Create new tablet instance for every seat instance
             for seat in instances.iter() {
+                let Ok(seat) = seat.upgrade() else {
+                    continue;
+                };
+
                 if let Ok(client) = dh.get_client(seat.id()) {
-                    tablet.new_instance::<D>(&client, dh, seat, tablet_desc);
+                    tablet.new_instance::<D>(&client, dh, &seat, tablet_desc);
                 }
             }
             tablet
@@ -152,8 +156,12 @@ impl TabletSeatHandle {
             let mut tool = TabletToolHandle::default();
             // Create new tool instance for every seat instance
             for seat in instances.iter() {
+                let Ok(seat) = seat.upgrade() else {
+                    continue;
+                };
+
                 if let Ok(client) = dh.get_client(seat.id()) {
-                    tool.new_instance::<D>(&client, dh, seat, tool_desc);
+                    tool.new_instance::<D>(&client, dh, &seat, tool_desc);
                 }
             }
             tool
