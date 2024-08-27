@@ -19,6 +19,8 @@ pub use xkbcommon::xkb::{self, keysyms, Keycode, Keysym};
 use super::{GrabStatus, Seat, SeatHandler};
 
 #[cfg(feature = "wayland_frontend")]
+use wayland_server::Weak;
+#[cfg(feature = "wayland_frontend")]
 mod keymap_file;
 #[cfg(feature = "wayland_frontend")]
 pub use keymap_file::KeymapFile;
@@ -167,7 +169,7 @@ unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
     fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
-        // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
+        // we create a new context for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
         // sure nothing goes wrong.
         //
@@ -280,7 +282,7 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     #[cfg(feature = "wayland_frontend")]
     pub(crate) keymap: Mutex<KeymapFile>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_kbds: Mutex<Vec<wayland_server::protocol::wl_keyboard::WlKeyboard>>,
+    pub(crate) known_kbds: Mutex<Vec<Weak<wayland_server::protocol::wl_keyboard::WlKeyboard>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) last_enter: Mutex<Option<Serial>>,
     pub(crate) span: tracing::Span,
@@ -695,6 +697,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         // Update keymap for every wl_keyboard.
         let known_kbds = &self.arc.known_kbds;
         for kbd in &*known_kbds.lock().unwrap() {
+            let Ok(kbd) = kbd.upgrade() else {
+                continue;
+            };
+
             let res = keymap_file.with_fd(kbd.version() >= 7, |fd, size| {
                 kbd.keymap(KeymapFormat::XkbV1, fd.as_fd(), size as u32)
             });
@@ -1042,13 +1048,16 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         guard.repeat_rate = rate;
         #[cfg(feature = "wayland_frontend")]
         for kbd in &*self.arc.known_kbds.lock().unwrap() {
+            let Ok(kbd) = kbd.upgrade() else {
+                continue;
+            };
             kbd.repeat_info(rate, delay);
         }
     }
 
     /// Access the [`Serial`] of the last `keyboard_enter` event, if that focus is still active.
     ///
-    /// In other words this will return `None` again, once a `keyboard_leave` occured.
+    /// In other words this will return `None` again, once a `keyboard_leave` occurred.
     #[cfg(feature = "wayland_frontend")]
     pub fn last_enter(&self) -> Option<Serial> {
         *self.arc.last_enter.lock().unwrap()
@@ -1175,7 +1184,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
             keyboard_handle.send_keymap(data, &Some(focus), &keymap_file, mods);
         }
 
-        // key event must be sent before modifers event for libxkbcommon
+        // key event must be sent before modifiers event for libxkbcommon
         // to process them correctly
         let key = KeysymHandle {
             keycode: (keycode + 8).into(),

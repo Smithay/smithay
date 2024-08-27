@@ -78,7 +78,7 @@ where
                 );
             }
         }
-        self.arc.known_kbds.lock().unwrap().push(kbd);
+        self.arc.known_kbds.lock().unwrap().push(kbd.downgrade());
     }
 }
 
@@ -141,6 +141,10 @@ pub(crate) fn for_each_focused_kbds<D: SeatHandler + 'static>(
     if let Some(keyboard) = seat.get_keyboard() {
         let inner = keyboard.arc.known_kbds.lock().unwrap();
         for kbd in &*inner {
+            let Ok(kbd) = kbd.upgrade() else {
+                continue;
+            };
+
             if kbd.id().same_client_as(&surface.id()) {
                 f(kbd.clone())
             }
