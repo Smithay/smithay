@@ -225,7 +225,7 @@ pub(crate) struct Inner {
 
     // used by the wayland::output module.
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) instances: Vec<WlOutput>,
+    pub(crate) instances: Vec<wayland_server::Weak<WlOutput>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) handle: Option<WeakHandle>,
     #[cfg(feature = "wayland_frontend")]

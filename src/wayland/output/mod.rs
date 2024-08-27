@@ -201,7 +201,7 @@ impl Output {
     ) {
         let inner = self.inner.0.lock().unwrap();
         // XdgOutput has to be updated before WlOutput
-        // Because WlOutput::done() has to allways be called last
+        // Because WlOutput::done() has to always be called last
         if let Some(xdg_output) = inner.xdg_output.as_ref() {
             xdg_output.change_current_state(new_mode, new_scale, new_location, new_transform);
         }
@@ -212,11 +212,15 @@ impl Output {
         }
 
         for output in &inner.instances {
+            let Ok(output) = output.upgrade() else {
+                continue;
+            };
+
             if let Some(mode) = new_mode {
                 output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
             }
             if new_transform.is_some() || new_location.is_some() {
-                inner.send_geometry_to(output);
+                inner.send_geometry_to(&output);
             }
             if let Some(scale) = new_scale {
                 if output.version() >= 2 {
@@ -249,6 +253,7 @@ impl Output {
         let data = self.inner.0.lock().unwrap();
         data.instances
             .iter()
+            .filter_map(|output| output.upgrade().ok())
             .filter(|output| {
                 data.handle
                     .as_ref()
@@ -257,7 +262,6 @@ impl Output {
                     .map(|output_client| output_client == client)
                     .unwrap_or(false)
             })
-            .cloned()
             .collect()
     }
 
