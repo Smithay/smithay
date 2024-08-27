@@ -53,6 +53,7 @@ pub mod cursor_shape;
 pub mod dmabuf;
 #[cfg(feature = "backend_drm")]
 pub mod drm_lease;
+pub mod foreign_toplevel_list;
 pub mod fractional_scale;
 pub mod idle_inhibit;
 pub mod idle_notify;
