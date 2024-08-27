@@ -18,7 +18,7 @@ use crate::{input::touch::TouchHandle, utils::Serial};
 impl<D: SeatHandler> TouchHandle<D> {
     pub(crate) fn new_touch(&self, touch: WlTouch) {
         let mut guard = self.known_instances.lock().unwrap();
-        guard.push((touch, None));
+        guard.push((touch.downgrade(), None));
     }
 }
 
@@ -41,6 +41,10 @@ fn for_each_focused_touch<D: SeatHandler + 'static>(
     if let Some(touch) = seat.get_touch() {
         let mut inner = touch.known_instances.lock().unwrap();
         for (ptr, last_seq) in &mut *inner {
+            let Ok(ptr) = ptr.upgrade() else {
+                continue;
+            };
+
             if ptr.id().same_client_as(&surface.id()) && last_seq.map(|last| last < seq).unwrap_or(true) {
                 *last_seq = Some(seq);
                 f(ptr.clone());

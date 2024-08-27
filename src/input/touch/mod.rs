@@ -5,6 +5,8 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use tracing::{info_span, instrument};
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::Weak;
 
 use crate::backend::input::TouchSlot;
 use crate::utils::{IsAlive, Logical, Point, Serial, SerialCounter};
@@ -28,7 +30,7 @@ pub struct TouchHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<TouchInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_instances:
-        Arc<Mutex<Vec<(wayland_server::protocol::wl_touch::WlTouch, Option<Serial>)>>>,
+        Arc<Mutex<Vec<(Weak<wayland_server::protocol::wl_touch::WlTouch>, Option<Serial>)>>>,
     pub(crate) span: tracing::Span,
 }
 
