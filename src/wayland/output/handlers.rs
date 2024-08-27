@@ -85,7 +85,7 @@ where
             }
         }
 
-        inner.instances.push(output.clone());
+        inner.instances.push(output.downgrade());
 
         drop(inner);
         let o = Output {
