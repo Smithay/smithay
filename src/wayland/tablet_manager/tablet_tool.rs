@@ -10,6 +10,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
 };
 use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::Weak;
 use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
 
 use crate::{utils::Serial, wayland::compositor};
@@ -20,7 +21,7 @@ use super::TabletManagerState;
 
 #[derive(Debug, Default)]
 pub(crate) struct TabletTool {
-    instances: Vec<ZwpTabletToolV2>,
+    instances: Vec<Weak<ZwpTabletToolV2>>,
     pub(crate) focus: Option<WlSurface>,
 
     is_down: bool,
@@ -44,7 +45,7 @@ impl TabletTool {
     ) {
         let wl_tool = self.instances.iter().find(|i| i.id().same_client_as(&focus.id()));
 
-        if let Some(wl_tool) = wl_tool {
+        if let Some(wl_tool) = wl_tool.and_then(|tool| tool.upgrade().ok()) {
             tablet.with_focused_tablet(&focus, |wl_tablet| {
                 wl_tool.proximity_in(serial.into(), wl_tablet, &focus);
                 // proximity_in has to be followed by motion event (required by protocol)
@@ -61,7 +62,7 @@ impl TabletTool {
         if let Some(ref focus) = self.focus {
             let wl_tool = self.instances.iter().find(|i| i.id().same_client_as(&focus.id()));
 
-            if let Some(wl_tool) = wl_tool {
+            if let Some(wl_tool) = wl_tool.and_then(|tool| tool.upgrade().ok()) {
                 if self.is_down {
                     wl_tool.up();
                     self.is_down = false;
@@ -76,7 +77,12 @@ impl TabletTool {
 
     fn tip_down(&mut self, serial: Serial, time: u32) {
         if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self.instances.iter().find(|i| i.id().same_client_as(&focus.id())) {
+            if let Some(wl_tool) = self
+                .instances
+                .iter()
+                .find(|i| i.id().same_client_as(&focus.id()))
+                .and_then(|tool| tool.upgrade().ok())
+            {
                 if !self.is_down {
                     wl_tool.down(serial.into());
                     wl_tool.frame(time);
@@ -89,7 +95,12 @@ impl TabletTool {
 
     fn tip_up(&mut self, time: u32) {
         if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self.instances.iter().find(|i| i.id().same_client_as(&focus.id())) {
+            if let Some(wl_tool) = self
+                .instances
+                .iter()
+                .find(|i| i.id().same_client_as(&focus.id()))
+                .and_then(|tool| tool.upgrade().ok())
+            {
                 if self.is_down {
                     wl_tool.up();
                     wl_tool.frame(time);
@@ -115,6 +126,7 @@ impl TabletTool {
                         .instances
                         .iter()
                         .find(|i| i.id().same_client_as(&focus.0.id()))
+                        .and_then(|tool| tool.upgrade().ok())
                     {
                         let srel_loc = pos - focus.1;
                         wl_tool.motion(srel_loc.x, srel_loc.y);
@@ -188,7 +200,12 @@ impl TabletTool {
     /// Sent whenever a button on the tool is pressed or released.
     fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
         if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self.instances.iter().find(|i| i.id().same_client_as(&focus.id())) {
+            if let Some(wl_tool) = self
+                .instances
+                .iter()
+                .find(|i| i.id().same_client_as(&focus.id()))
+                .and_then(|tool| tool.upgrade().ok())
+            {
                 wl_tool.button(serial.into(), button, state.into());
                 wl_tool.frame(time);
             }
@@ -198,7 +215,7 @@ impl TabletTool {
 
 impl Drop for TabletTool {
     fn drop(&mut self) {
-        for instance in self.instances.iter() {
+        for instance in self.instances.iter().filter_map(|tool| tool.upgrade().ok()) {
             // This event is sent when the tool is removed from the system and will send no further events.
             instance.removed();
         }
@@ -277,7 +294,7 @@ impl TabletToolHandle {
         }
 
         wl_tool.done();
-        self.inner.lock().unwrap().instances.push(wl_tool);
+        self.inner.lock().unwrap().instances.push(wl_tool.downgrade());
     }
 
     /// Notify that this tool is focused on a certain surface.
