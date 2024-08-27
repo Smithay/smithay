@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use tracing::trace;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
-use wayland_server::{protocol::wl_output::WlOutput, Resource};
+use wayland_server::{protocol::wl_output::WlOutput, Resource, Weak};
 
 use crate::utils::{Logical, Physical, Point, Size, Transform};
 
@@ -23,7 +23,7 @@ pub(crate) struct Inner {
     pub(super) scale: Scale,
     transform: Transform,
 
-    pub instances: Vec<ZxdgOutputV1>,
+    pub instances: Vec<Weak<ZxdgOutputV1>>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ impl XdgOutput {
 
         wl_output.done();
 
-        inner.instances.push(xdg_output.clone());
+        inner.instances.push(xdg_output.downgrade());
     }
 
     pub(super) fn change_current_state(
@@ -104,6 +104,10 @@ impl XdgOutput {
         }
 
         for instance in output.instances.iter() {
+            let Ok(instance) = instance.upgrade() else {
+                continue;
+            };
+
             if new_mode.is_some() | new_scale.is_some() {
                 if let Some(size) = output.physical_size {
                     let logical_size = size
