@@ -9,7 +9,7 @@ use wayland_server::{
         },
         wl_surface::WlSurface,
     },
-    Dispatch, DisplayHandle, Resource,
+    Dispatch, DisplayHandle, Resource, Weak,
 };
 
 use crate::{
@@ -52,12 +52,12 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 #[derive(Debug, Default)]
 pub(crate) struct WlPointerHandle {
     pub(crate) last_enter: Mutex<Option<Serial>>,
-    known_pointers: Mutex<Vec<WlPointer>>,
+    known_pointers: Mutex<Vec<Weak<WlPointer>>>,
 }
 
 impl WlPointerHandle {
     pub(super) fn new_pointer(&self, pointer: WlPointer) {
-        self.known_pointers.lock().unwrap().push(pointer);
+        self.known_pointers.lock().unwrap().push(pointer.downgrade());
     }
 
     fn enter(&self, surface: &WlSurface, event: &MotionEvent) {
@@ -190,6 +190,10 @@ impl WlPointerHandle {
     fn for_each_focused_pointer(&self, surface: &WlSurface, mut f: impl FnMut(WlPointer)) {
         let inner = self.known_pointers.lock().unwrap();
         for ptr in &*inner {
+            let Ok(ptr) = ptr.upgrade() else {
+                continue;
+            };
+
             if ptr.id().same_client_as(&surface.id()) {
                 f(ptr.clone())
             }
