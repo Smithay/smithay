@@ -19,7 +19,7 @@ pub use xkbcommon::xkb::{self, keysyms, Keycode, Keysym};
 use super::{GrabStatus, Seat, SeatHandler};
 
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::Weak;
+use wayland_server::{Resource, Weak};
 #[cfg(feature = "wayland_frontend")]
 mod keymap_file;
 #[cfg(feature = "wayland_frontend")]
@@ -1051,7 +1051,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             let Ok(kbd) = kbd.upgrade() else {
                 continue;
             };
-            kbd.repeat_info(rate, delay);
+            if kbd.version() >= 4 {
+                kbd.repeat_info(rate, delay);
+            }
         }
     }
 
