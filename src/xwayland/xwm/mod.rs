@@ -1583,6 +1583,12 @@ where
                     )?;
                     {
                         let mut state = surface.state.lock().unwrap();
+                        conn.reparent_window(
+                            n.window,
+                            xwm.screen.root,
+                            state.geometry.loc.x as i16,
+                            state.geometry.loc.y as i16,
+                        )?;
                         if let Some(frame) = state.mapped_onto.take() {
                             conn.destroy_window(frame)?;
                         }
