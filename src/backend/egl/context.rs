@@ -419,12 +419,12 @@ impl EGLContext {
     }
 
     /// Returns the egl config for this context
-    pub fn config_id(&self) -> ffi::egl::types::EGLConfig {
+    pub const fn config_id(&self) -> ffi::egl::types::EGLConfig {
         self.config_id
     }
 
     /// Returns the pixel format of the main framebuffer of the context.
-    pub fn pixel_format(&self) -> Option<PixelFormat> {
+    pub const fn pixel_format(&self) -> Option<PixelFormat> {
         self.pixel_format
     }
 
@@ -448,17 +448,17 @@ impl EGLContext {
     }
 
     /// Returns the display which created this context.
-    pub fn display(&self) -> &EGLDisplay {
+    pub const fn display(&self) -> &EGLDisplay {
         &self.display
     }
 
     /// Returns a list of formats for dmabufs that can be rendered to.
-    pub fn dmabuf_render_formats(&self) -> &FormatSet {
+    pub const fn dmabuf_render_formats(&self) -> &FormatSet {
         self.display.dmabuf_render_formats()
     }
 
     /// Returns a list of formats for dmabufs that can be used as textures.
-    pub fn dmabuf_texture_formats(&self) -> &FormatSet {
+    pub const fn dmabuf_texture_formats(&self) -> &FormatSet {
         self.display.dmabuf_texture_formats()
     }
 
@@ -473,7 +473,7 @@ impl EGLContext {
     /// Get a raw handle to the underlying context.
     ///
     /// The pointer will become invalid, when this struct is destroyed.
-    pub fn get_context_handle(&self) -> ffi::egl::types::EGLContext {
+    pub const fn get_context_handle(&self) -> ffi::egl::types::EGLContext {
         self.context
     }
 }
@@ -545,7 +545,7 @@ pub struct PixelFormatRequirements {
 
 impl PixelFormatRequirements {
     /// Format selection to get a 8-bit color format with alpha, depth and stencil bits
-    pub fn _8_bit() -> Self {
+    pub const fn _8_bit() -> Self {
         PixelFormatRequirements {
             hardware_accelerated: Some(true),
             color_bits: Some(24),
@@ -558,7 +558,7 @@ impl PixelFormatRequirements {
     }
 
     /// Format selection to get a 10-bit color format with alpha, depth and stencil bits
-    pub fn _10_bit() -> Self {
+    pub const fn _10_bit() -> Self {
         PixelFormatRequirements {
             hardware_accelerated: Some(true),
             color_bits: Some(30),
@@ -571,7 +571,7 @@ impl PixelFormatRequirements {
     }
 
     /// Format selection to get a 10-bit color format based on floating point values with alpha, depth and stencil bits
-    pub fn _10f_bit() -> Self {
+    pub const fn _10f_bit() -> Self {
         PixelFormatRequirements {
             hardware_accelerated: Some(true),
             color_bits: Some(48),

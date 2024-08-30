@@ -217,7 +217,7 @@ impl DrmLease {
         self.planes.keys()
     }
     /// Lease Id
-    pub fn id(&self) -> u32 {
+    pub const fn id(&self) -> u32 {
         self.lease_id.get()
     }
 
@@ -620,7 +620,7 @@ impl DrmLeaseState {
     }
 
     /// [`DrmNode`] belonging to this DRM lease global
-    pub fn node(&self) -> DrmNode {
+    pub const fn node(&self) -> DrmNode {
         self.node
     }
 

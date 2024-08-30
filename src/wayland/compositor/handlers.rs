@@ -481,7 +481,7 @@ pub struct SubsurfaceUserData {
 
 impl SubsurfaceUserData {
     /// Returns the surface for this subsurface (not to be confused with the parent surface).
-    pub fn surface(&self) -> &WlSurface {
+    pub const fn surface(&self) -> &WlSurface {
         &self.surface
     }
 }
@@ -518,7 +518,7 @@ pub(crate) struct SubsurfaceState {
 }
 
 impl SubsurfaceState {
-    fn new() -> SubsurfaceState {
+    const fn new() -> SubsurfaceState {
         SubsurfaceState {
             sync: AtomicBool::new(true),
         }

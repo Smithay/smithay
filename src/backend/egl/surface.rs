@@ -218,12 +218,12 @@ impl EGLSurface {
     }
 
     /// Returns the egl config for this context
-    pub fn config_id(&self) -> ffi::egl::types::EGLConfig {
+    pub const fn config_id(&self) -> ffi::egl::types::EGLConfig {
         self.config_id
     }
 
     /// Returns the pixel format of the main framebuffer of the context.
-    pub fn pixel_format(&self) -> PixelFormat {
+    pub const fn pixel_format(&self) -> PixelFormat {
         self.pixel_format
     }
 

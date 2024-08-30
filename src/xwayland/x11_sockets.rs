@@ -115,7 +115,7 @@ impl X11Lock {
         }
     }
 
-    pub(crate) fn display_number(&self) -> u32 {
+    pub(crate) const fn display_number(&self) -> u32 {
         self.display
     }
 }

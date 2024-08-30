@@ -43,7 +43,7 @@ impl From<PopupKind> for WlSurface {
 impl PopupKind {
     /// Retrieves the underlying [`WlSurface`]
     #[inline]
-    pub fn wl_surface(&self) -> &WlSurface {
+    pub const fn wl_surface(&self) -> &WlSurface {
         match *self {
             PopupKind::Xdg(ref t) => t.wl_surface(),
             PopupKind::InputMethod(ref t) => t.wl_surface(),

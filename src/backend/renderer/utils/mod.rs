@@ -177,7 +177,7 @@ impl<N: Clone, Kind> DamageSnapshot<N, Kind> {
     /// and provided to the next call of [`damage_since`](DamageSnapshot::damage_since)
     /// to query the damage between these two [`CommitCounter`]s.
     #[inline]
-    pub fn current_commit(&self) -> CommitCounter {
+    pub const fn current_commit(&self) -> CommitCounter {
         self.commit_counter
     }
 
@@ -248,7 +248,7 @@ impl<N: Clone, Kind> DamageBag<N, Kind> {
 
     /// Gets the current [`CommitCounter`] of this tracker
     #[inline]
-    pub fn current_commit(&self) -> CommitCounter {
+    pub const fn current_commit(&self) -> CommitCounter {
         self.state.current_commit()
     }
 

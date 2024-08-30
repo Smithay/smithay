@@ -310,13 +310,13 @@ where
     }
 
     /// Returns the serial that was used to grab the popup
-    pub fn serial(&self) -> Serial {
+    pub const fn serial(&self) -> Serial {
         self.serial
     }
 
     /// Returns the previous serial that was used to grab
     /// the parent popup in case of nested grabs
-    pub fn previous_serial(&self) -> Option<Serial> {
+    pub const fn previous_serial(&self) -> Option<Serial> {
         self.previous_serial
     }
 
@@ -363,7 +363,7 @@ where
     /// The focus of the [`KeyboardGrabStartData`] will always be the root
     /// of the popup grab, e.g. the surface of the toplevel, to make sure
     /// the grab is not automatically unset.
-    pub fn keyboard_grab_start_data(&self) -> &KeyboardGrabStartData<D> {
+    pub const fn keyboard_grab_start_data(&self) -> &KeyboardGrabStartData<D> {
         &self.keyboard_grab_start_data
     }
 
@@ -372,7 +372,7 @@ where
     /// The focus of the [`PointerGrabStartData`] will always be the root
     /// of the popup grab, e.g. the surface of the toplevel, to make sure
     /// the grab is not automatically unset.
-    pub fn pointer_grab_start_data(&self) -> &PointerGrabStartData<D> {
+    pub const fn pointer_grab_start_data(&self) -> &PointerGrabStartData<D> {
         &self.pointer_grab_start_data
     }
 

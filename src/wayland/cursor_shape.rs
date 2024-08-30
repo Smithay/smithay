@@ -295,7 +295,7 @@ where
     }
 }
 
-fn shape_to_cursor_icon(shape: Shape) -> CursorIcon {
+const fn shape_to_cursor_icon(shape: Shape) -> CursorIcon {
     match shape {
         Shape::Default => CursorIcon::Default,
         Shape::ContextMenu => CursorIcon::ContextMenu,

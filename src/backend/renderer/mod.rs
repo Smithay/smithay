@@ -69,7 +69,7 @@ pub enum TextureFilter {
 impl Transform {
     /// A projection matrix to apply this transformation
     #[inline]
-    pub fn matrix(&self) -> Matrix3<f32> {
+    pub const fn matrix(&self) -> Matrix3<f32> {
         match self {
             Transform::Normal => Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
             Transform::_90 => Matrix3::new(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),

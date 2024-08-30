@@ -180,14 +180,14 @@ pub mod gbm;
 use elements::*;
 
 impl RenderElementState {
-    pub(crate) fn zero_copy(visible_area: usize) -> Self {
+    pub(crate) const fn zero_copy(visible_area: usize) -> Self {
         RenderElementState {
             visible_area,
             presentation_state: RenderElementPresentationState::ZeroCopy,
         }
     }
 
-    pub(crate) fn rendering_with_reason(reason: RenderingReason) -> Self {
+    pub(crate) const fn rendering_with_reason(reason: RenderingReason) -> Self {
         RenderElementState {
             visible_area: 0,
             presentation_state: RenderElementPresentationState::Rendering { reason: Some(reason) },
@@ -2905,7 +2905,7 @@ where
     }
 
     /// Returns the current enabled [`DebugFlags`]
-    pub fn debug_flags(&self) -> DebugFlags {
+    pub const fn debug_flags(&self) -> DebugFlags {
         self.debug_flags
     }
 
@@ -2915,7 +2915,7 @@ where
     }
 
     /// Get the format of the underlying swapchain
-    pub fn format(&self) -> DrmFourcc {
+    pub const fn format(&self) -> DrmFourcc {
         self.swapchain.format()
     }
 
@@ -4205,7 +4205,7 @@ fn apply_underlying_storage_transform(
 }
 
 #[inline]
-fn apply_output_transform(transform: Transform, output_transform: Transform) -> Transform {
+const fn apply_output_transform(transform: Transform, output_transform: Transform) -> Transform {
     match (transform, output_transform) {
         (Transform::Normal, output_transform) => output_transform,
 

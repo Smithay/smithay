@@ -65,12 +65,12 @@ impl DrmNode {
     }
 
     /// Returns the type of the DRM node.
-    pub fn ty(&self) -> NodeType {
+    pub const fn ty(&self) -> NodeType {
         self.ty
     }
 
     /// Returns the device_id of the underlying DRM node.
-    pub fn dev_id(&self) -> dev_t {
+    pub const fn dev_id(&self) -> dev_t {
         self.dev
     }
 
@@ -148,7 +148,7 @@ impl NodeType {
     /// Returns a string representing the prefix of a minor device's name.
     ///
     /// For example, on Linux with a primary node, the returned string would be `card`.
-    pub fn minor_name_prefix(&self) -> &str {
+    pub const fn minor_name_prefix(&self) -> &str {
         match self {
             NodeType::Primary => PRIMARY_NAME,
             NodeType::Control => CONTROL_NAME,

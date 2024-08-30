@@ -27,7 +27,7 @@
 //!    }
 //!
 //!    fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState {
-//!        &client.get_data::<ClientState>().unwrap().compositor_state    
+//!        &client.get_data::<ClientState>().unwrap().compositor_state
 //!    }
 //!
 //!    fn commit(&mut self, surface: &WlSurface) {
@@ -88,7 +88,7 @@ pub struct ContentTypeSurfaceCachedState {
 
 impl ContentTypeSurfaceCachedState {
     /// This informs the compositor that the client believes it is displaying buffers matching this content type.
-    pub fn content_type(&self) -> &wp_content_type_v1::Type {
+    pub const fn content_type(&self) -> &wp_content_type_v1::Type {
         &self.content_type
     }
 }
@@ -117,7 +117,7 @@ struct ContentTypeSurfaceData {
 }
 
 impl ContentTypeSurfaceData {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             is_resource_attached: AtomicBool::new(false),
         }

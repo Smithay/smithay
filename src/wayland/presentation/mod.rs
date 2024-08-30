@@ -198,7 +198,7 @@ pub struct PresentationFeedbackCallback {
 
 impl PresentationFeedbackCallback {
     /// Get the id of the clock that was used at bind
-    pub fn clk_id(&self) -> u32 {
+    pub const fn clk_id(&self) -> u32 {
         self.clk_id
     }
 

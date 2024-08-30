@@ -90,7 +90,7 @@ impl SealedFile {
     }
 
     // Only used in KeymapFile which is under the wayland_frontend feature
-    pub fn size(&self) -> usize {
+    pub const fn size(&self) -> usize {
         self.size
     }
 }

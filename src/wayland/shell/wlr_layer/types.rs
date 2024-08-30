@@ -139,14 +139,14 @@ impl Anchor {
     ///
     /// If it is anchored to `left` and `right` anchor at the same time
     /// it returns `true`
-    pub fn anchored_horizontally(&self) -> bool {
+    pub const fn anchored_horizontally(&self) -> bool {
         self.contains(Self::LEFT) && self.contains(Self::RIGHT)
     }
     /// Check if anchored vertically
     ///
     /// If it is anchored to `top` and `bottom` anchor at the same time
     /// it returns `true`
-    pub fn anchored_vertically(&self) -> bool {
+    pub const fn anchored_vertically(&self) -> bool {
         self.contains(Self::TOP) && self.contains(Self::BOTTOM)
     }
 }

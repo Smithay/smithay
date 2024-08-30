@@ -190,17 +190,17 @@ impl DrmSurface {
     }
 
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
-    pub fn crtc(&self) -> crtc::Handle {
+    pub const fn crtc(&self) -> crtc::Handle {
         self.crtc
     }
 
     /// Returns the underlying primary [`plane`](drm::control::plane) of this surface
-    pub fn plane(&self) -> plane::Handle {
+    pub const fn plane(&self) -> plane::Handle {
         self.primary_plane.0.handle
     }
 
     /// Returns the [`PlaneInfo`] of the underlying primary [`plane`](drm::control::plane) of this surface
-    pub fn plane_info(&self) -> &PlaneInfo {
+    pub const fn plane_info(&self) -> &PlaneInfo {
         &self.primary_plane.0
     }
 
@@ -392,12 +392,12 @@ impl DrmSurface {
     }
 
     /// Returns a set of available planes for this surface
-    pub fn planes(&self) -> &Planes {
+    pub const fn planes(&self) -> &Planes {
         &self.planes
     }
 
     /// Claim a plane so that it won't be used by a different crtc
-    ///  
+    ///
     /// Returns `None` if the plane could not be claimed
     pub fn claim_plane(&self, plane: plane::Handle) -> Option<PlaneClaim> {
         // Validate that we are called with an plane that belongs to us

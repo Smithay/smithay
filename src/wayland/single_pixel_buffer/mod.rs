@@ -97,12 +97,12 @@ pub struct SinglePixelBufferUserData {
 
 impl SinglePixelBufferUserData {
     /// Check if pixel has alpha
-    pub fn has_alpha(&self) -> bool {
+    pub const fn has_alpha(&self) -> bool {
         self.a != u32::MAX
     }
 
     /// RGAB8888 color buffer
-    pub fn rgba8888(&self) -> [u8; 4] {
+    pub const fn rgba8888(&self) -> [u8; 4] {
         let divisor = u32::MAX / 255;
 
         [

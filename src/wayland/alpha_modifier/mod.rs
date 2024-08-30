@@ -30,7 +30,7 @@
 //!    }
 //!
 //!    fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState {
-//!        &client.get_data::<ClientState>().unwrap().compositor_state    
+//!        &client.get_data::<ClientState>().unwrap().compositor_state
 //!    }
 //!
 //!    fn commit(&mut self, surface: &WlSurface) {
@@ -88,7 +88,7 @@ pub struct AlphaModifierSurfaceCachedState {
 
 impl AlphaModifierSurfaceCachedState {
     /// Alpha multiplier for the surface
-    pub fn multiplier(&self) -> Option<u32> {
+    pub const fn multiplier(&self) -> Option<u32> {
         self.multiplier
     }
 
@@ -121,7 +121,7 @@ struct AlphaModifierSurfaceData {
 }
 
 impl AlphaModifierSurfaceData {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             is_resource_attached: AtomicBool::new(false),
         }

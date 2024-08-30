@@ -59,7 +59,7 @@ impl X11Surface {
     }
 
     /// Returns the format of the buffers the surface accepts.
-    pub fn format(&self) -> DrmFourcc {
+    pub const fn format(&self) -> DrmFourcc {
         self.format
     }
 

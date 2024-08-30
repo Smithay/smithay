@@ -139,7 +139,7 @@ pub enum RenderElementPresentationState {
 #[derive(Debug, Clone, Copy)]
 pub struct RenderElementState {
     /// Holds the physical visible area of the element on the output in pixels.
-    ///  
+    ///
     /// Note: If the presentation_state is [`RenderElementPresentationState::Skipped`] this will be zero.
     pub visible_area: usize,
     /// Holds the presentation state of the element on the output
@@ -154,7 +154,7 @@ impl RenderElementState {
         }
     }
 
-    pub(crate) fn rendered(visible_area: usize) -> Self {
+    pub(crate) const fn rendered(visible_area: usize) -> Self {
         RenderElementState {
             visible_area,
             presentation_state: RenderElementPresentationState::Rendering { reason: None },

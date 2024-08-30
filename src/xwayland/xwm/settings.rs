@@ -211,7 +211,7 @@ impl XSettings {
 }
 
 impl Value {
-    fn _type(&self) -> i8 {
+    const fn _type(&self) -> i8 {
         match self {
             Value::Integer(_) => 0,
             Value::String(_) => 1,

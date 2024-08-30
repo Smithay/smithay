@@ -236,7 +236,7 @@ impl UniformValue {
     }
 
     /// Returns the type of this uniform value
-    pub fn type_(&self) -> UniformType {
+    pub const fn type_(&self) -> UniformType {
         match self {
             UniformValue::_1f(_) => UniformType::_1f,
             UniformValue::_2f(_, _) => UniformType::_2f,

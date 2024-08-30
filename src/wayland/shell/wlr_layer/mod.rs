@@ -74,7 +74,7 @@ pub use types::{Anchor, ExclusiveZone, KeyboardInteractivity, Layer, Margins};
 /// The role of a wlr_layer_shell_surface
 pub const LAYER_SURFACE_ROLE: &str = "zwlr_layer_surface_v1";
 
-/// Data associated with XDG popup surface  
+/// Data associated with XDG popup surface
 ///
 /// ```no_run
 /// use smithay::wayland::compositor;
@@ -431,7 +431,7 @@ impl LayerSurface {
     ///
     /// Returns `None` if the layer surface actually no longer exists.
     #[inline]
-    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+    pub const fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
 

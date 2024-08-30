@@ -51,7 +51,7 @@ impl LibinputInputBackend {
     }
 
     /// Returns a reference to the underlying libinput context
-    pub fn context(&self) -> &libinput::Libinput {
+    pub const fn context(&self) -> &libinput::Libinput {
         &self.context
     }
 }

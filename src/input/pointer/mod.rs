@@ -1063,7 +1063,7 @@ pub struct GestureHoldEndEvent {
 
 impl AxisFrame {
     /// Create a new frame of axis events
-    pub fn new(time: u32) -> Self {
+    pub const fn new(time: u32) -> Self {
         AxisFrame {
             source: None,
             relative_direction: (AxisRelativeDirection::Identical, AxisRelativeDirection::Identical),
@@ -1081,13 +1081,13 @@ impl AxisFrame {
     ///
     /// Using the [`AxisSource::Finger`] requires a stop event to be send,
     /// when the user lifts off the finger (not necessarily in the same frame).
-    pub fn source(mut self, source: AxisSource) -> Self {
+    pub const fn source(mut self, source: AxisSource) -> Self {
         self.source = Some(source);
         self
     }
 
     /// Specify the direction of the physical motion, relative to axis direction
-    pub fn relative_direction(mut self, axis: Axis, relative_direction: AxisRelativeDirection) -> Self {
+    pub const fn relative_direction(mut self, axis: Axis, relative_direction: AxisRelativeDirection) -> Self {
         match axis {
             Axis::Horizontal => {
                 self.relative_direction.0 = relative_direction;
@@ -1135,7 +1135,7 @@ impl AxisFrame {
     ///
     /// This event is required for sources of the [`AxisSource::Finger`] type
     /// and otherwise optional.
-    pub fn stop(mut self, axis: Axis) -> Self {
+    pub const fn stop(mut self, axis: Axis) -> Self {
         match axis {
             Axis::Horizontal => {
                 self.stop.0 = true;

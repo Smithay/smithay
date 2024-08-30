@@ -60,12 +60,12 @@ impl PopupSurface {
 
     /// Access to the underlying `wl_surface` of this popup
     #[inline]
-    pub fn wl_surface(&self) -> &WlSurface {
+    pub const fn wl_surface(&self) -> &WlSurface {
         &self.surface
     }
 
     /// Access to the parent surface associated with this popup
-    pub fn get_parent(&self) -> Option<&PopupParent> {
+    pub const fn get_parent(&self) -> Option<&PopupParent> {
         self.parent.as_ref()
     }
 

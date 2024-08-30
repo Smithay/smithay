@@ -435,7 +435,7 @@ pub struct WindowBuilder<'a> {
 impl<'a> WindowBuilder<'a> {
     #[allow(clippy::new_without_default)]
     /// Returns a new builder.
-    pub fn new() -> WindowBuilder<'a> {
+    pub const fn new() -> WindowBuilder<'a> {
         WindowBuilder {
             name: None,
             size: None,
@@ -443,7 +443,7 @@ impl<'a> WindowBuilder<'a> {
     }
 
     /// Sets the title of the window that will be created by the builder.
-    pub fn title(self, name: &'a str) -> Self {
+    pub const fn title(self, name: &'a str) -> Self {
         Self {
             name: Some(name),
             ..self
@@ -454,7 +454,7 @@ impl<'a> WindowBuilder<'a> {
     ///
     /// There is no guarantee the size specified here will be the actual size of the window when it is
     /// presented.
-    pub fn size(self, size: Size<u16, Logical>) -> Self {
+    pub const fn size(self, size: Size<u16, Logical>) -> Self {
         Self {
             size: Some(size),
             ..self

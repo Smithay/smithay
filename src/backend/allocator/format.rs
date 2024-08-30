@@ -127,7 +127,7 @@ macro_rules! format_tables {
             }
         }
 
-        fn _impl_formats() -> &'static [$crate::backend::allocator::Fourcc] {
+        const fn _impl_formats() -> &'static [$crate::backend::allocator::Fourcc] {
             &[
                 $(
                     $crate::backend::allocator::Fourcc::$fourcc,
