@@ -88,8 +88,8 @@ use smithay::{
     },
 };
 use smithay_drm_extras::{
+    display_info,
     drm_scanner::{DrmScanEvent, DrmScanner},
-    edid::EdidInfo,
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -929,9 +929,17 @@ impl AnvilState<UdevData> {
             })
             .unwrap_or(false);
 
-        let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
-            .map(|info| (info.manufacturer, info.model))
-            .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
+        let display_info = display_info::for_connector(&device.drm, connector.handle());
+
+        let make = display_info
+            .as_ref()
+            .and_then(|info| info.make())
+            .unwrap_or_else(|| "Unknown".into());
+
+        let model = display_info
+            .as_ref()
+            .and_then(|info| info.model())
+            .unwrap_or_else(|| "Unknown".into());
 
         if non_desktop {
             info!("Connector {} is non-desktop, setting up for leasing", output_name);

@@ -2,7 +2,7 @@
 
 This crate contains some extra abstractions and helpers over DRM
 
-- `edid` module is responsible for extraction of information from DRM connectors (`model` and `manufacturer`) 
+- `display_info` module is responsible for extraction of information from DRM connectors (`model` and `manufacturer`) 
 - `drm_scanner` module contains helpers for detecting connector connected and disconnected events as well as mapping crtc to them.
   - `ConnectorScanner` is responsible for tracking connected/disconnected events.
   - `CrtcMapper` trait and `SimpleCrtcMapper` are meant for mapping crtc to connector.
