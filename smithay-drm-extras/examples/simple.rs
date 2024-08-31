@@ -2,8 +2,8 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use ::drm::control::{connector, crtc};
 use smithay_drm_extras::{
+    display_info,
     drm_scanner::{self, DrmScanEvent},
-    edid::EdidInfo,
 };
 
 use smithay::{
@@ -135,9 +135,17 @@ impl State {
         if let Some(device) = self.devices.get_mut(&node) {
             let name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
 
-            let (manufacturer, model) = EdidInfo::for_connector(&device.drm, connector.handle())
-                .map(|info| (info.manufacturer, info.model))
-                .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
+            let display_info = display_info::for_connector(&device.drm, connector.handle());
+
+            let manufacturer = display_info
+                .as_ref()
+                .and_then(|info| info.make())
+                .unwrap_or_else(|| "Unknown".into());
+
+            let model = display_info
+                .as_ref()
+                .and_then(|info| info.model())
+                .unwrap_or_else(|| "Unknown".into());
 
             println!("Connected:");
             dbg!(name);
@@ -166,7 +174,11 @@ impl State {
             return;
         };
 
-        for event in device.drm_scanner.scan_connectors(&device.drm) {
+        for event in device
+            .drm_scanner
+            .scan_connectors(&device.drm)
+            .expect("failed to scan connectors")
+        {
             match event {
                 DrmScanEvent::Connected {
                     connector,
