@@ -95,7 +95,11 @@
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    any::Any,
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use wayland_server::{
     backend::GlobalId,
@@ -110,7 +114,10 @@ use wayland_server::{
 mod handlers;
 mod pool;
 
-use crate::{backend::allocator::format::get_bpp, utils::UnmanagedResource};
+use crate::{
+    backend::allocator::format::get_bpp,
+    utils::{hook::Hook, HookId, UnmanagedResource},
+};
 
 use self::pool::Pool;
 
@@ -463,11 +470,33 @@ pub struct ShmPoolUserData {
     inner: Arc<Pool>,
 }
 
+type DestructionHook = dyn Fn(&mut dyn Any, &wl_buffer::WlBuffer) + Send + Sync;
+
 /// User data of shm WlBuffer
 #[derive(Debug)]
 pub struct ShmBufferUserData {
     pub(crate) pool: Arc<Pool>,
     pub(crate) data: BufferData,
+    destruction_hooks: Mutex<Vec<Hook<DestructionHook>>>,
+}
+
+impl ShmBufferUserData {
+    pub(crate) fn add_destruction_hook(
+        &self,
+        hook: impl Fn(&mut dyn Any, &wl_buffer::WlBuffer) + Send + Sync + 'static,
+    ) -> HookId {
+        let hook: Hook<DestructionHook> = Hook::new(Arc::new(hook));
+        let id = hook.id;
+        self.destruction_hooks.lock().unwrap().push(hook);
+        id
+    }
+
+    pub(crate) fn remove_destruction_hook(&self, hook_id: HookId) {
+        let mut guard = self.destruction_hooks.lock().unwrap();
+        if let Some(id) = guard.iter().position(|hook| hook.id != hook_id) {
+            guard.remove(id);
+        }
+    }
 }
 
 #[allow(missing_docs)] // TODO

@@ -107,7 +107,6 @@
 
 mod cache;
 mod handlers;
-mod hook;
 mod transaction;
 mod tree;
 
@@ -118,11 +117,11 @@ use std::{any::Any, sync::Mutex};
 
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
-pub use self::hook::HookId;
 use self::transaction::TransactionQueue;
 pub use self::transaction::{Blocker, BlockerState};
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
+pub use crate::utils::hook::HookId;
 use crate::utils::Transform;
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
 use wayland_server::backend::GlobalId;

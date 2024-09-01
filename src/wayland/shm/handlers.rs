@@ -171,6 +171,7 @@ where
                                 stride,
                                 format,
                             },
+                            destruction_hooks: Default::default(),
                         };
 
                         data_init.init(buffer, data);
@@ -213,6 +214,7 @@ where
 impl<D> Dispatch<wl_buffer::WlBuffer, ShmBufferUserData, D> for ShmState
 where
     D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler,
+    D: 'static,
 {
     fn request(
         _data: &mut D,
@@ -232,7 +234,13 @@ where
         }
     }
 
-    fn destroyed(data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer, _udata: &ShmBufferUserData) {
+    fn destroyed(data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer, udata: &ShmBufferUserData) {
+        // Clone to drop the mutex guard
+        let destruction_hooks = udata.destruction_hooks.lock().unwrap().clone();
+        for hook in destruction_hooks.iter() {
+            (hook.cb)(data, buffer);
+        }
+
         data.buffer_destroyed(buffer);
     }
 }
