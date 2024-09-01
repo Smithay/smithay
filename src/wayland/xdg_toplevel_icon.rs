@@ -19,15 +19,18 @@ use wayland_protocols::xdg::{
     },
 };
 use wayland_server::{
-    backend::GlobalId,
+    backend::{ClientId, GlobalId},
     protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-use crate::wayland::{
-    compositor::{self, Cacheable},
-    shell::xdg::XdgShellSurfaceUserData,
-    shm::ShmBufferUserData,
+use crate::{
+    utils::HookId,
+    wayland::{
+        compositor::{self, Cacheable},
+        shell::xdg::XdgShellSurfaceUserData,
+        shm::ShmBufferUserData,
+    },
 };
 
 /// Handler trait for xdg toplevel icon events.
@@ -110,6 +113,7 @@ struct IconData {
 pub struct XdgToplevelIconUserData {
     builder: Mutex<IconData>,
     constructed: once_cell::sync::OnceCell<IconData>,
+    buffer_destruction_hooks: Mutex<Vec<(WlBuffer, HookId)>>,
 }
 
 impl XdgToplevelIconUserData {
@@ -129,6 +133,43 @@ impl XdgToplevelIconUserData {
         self.builder.lock().unwrap().icon_name = Some(icon_name)
     }
 
+    fn register_buffer_destruction_hook(
+        &self,
+        buffer: WlBuffer,
+        shm: &ShmBufferUserData,
+        hook: impl Fn() + Send + Sync + 'static,
+    ) {
+        let buffer_destruction_hook = shm.add_destruction_hook(move |_, _| hook());
+        self.buffer_destruction_hooks
+            .lock()
+            .unwrap()
+            .push((buffer, buffer_destruction_hook));
+    }
+
+    fn unregister_buffer_destruction_hook(&self, buffer: &WlBuffer) {
+        let mut guard = self.buffer_destruction_hooks.lock().unwrap();
+
+        if let Some((buffer, hook)) = guard
+            .iter()
+            .position(|(b, _)| b == buffer)
+            .map(|id| guard.remove(id))
+        {
+            if let Some(shm) = buffer.data::<ShmBufferUserData>() {
+                shm.remove_destruction_hook(hook);
+            }
+        }
+    }
+
+    fn unregister_all_hooks(&self) {
+        let mut guard = self.buffer_destruction_hooks.lock().unwrap();
+
+        for (buffer, hook) in guard.drain(..) {
+            if let Some(shm) = buffer.data::<ShmBufferUserData>() {
+                shm.remove_destruction_hook(hook);
+            }
+        }
+    }
+
     fn add_buffer(&self, buffer: WlBuffer, scale: i32, shm: &ShmBufferUserData) {
         debug_assert!(!self.is_immutable());
 
@@ -142,9 +183,12 @@ impl XdgToplevelIconUserData {
             let same_height = existing_data.height == shm.data.height;
             let same_scale = *existing_scale == scale;
 
+            // If this icon instance already has a buffer of the same size and scale from a previous 'add_buffer' request,
+            // data from the last request overrides the preexisting pixel data.
             if same_width && same_height && same_scale {
-                // If this icon instance already has a buffer of the same size and scale from a previous 'add_buffer' request,
-                // data from the last request overrides the preexisting pixel data.
+                // The existing buffer will not be used, so let's assume we don't care about it's
+                // destruction
+                self.unregister_buffer_destruction_hook(existing_buffer);
                 *existing_buffer = buffer;
                 return;
             }
@@ -310,11 +354,31 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, XdgToplevelIconUserD
                     return;
                 };
 
+                // Let's listen for buffer destruction event to catch no_buffer protocol error
+                // This hook has to be unregistered once the icon is destroyed
+                data.register_buffer_destruction_hook(buffer.clone(), shm, {
+                    let icon = icon.clone();
+                    move || {
+                        icon.post_error(
+                            xdg_toplevel_icon_v1::Error::NoBuffer,
+                            "The provided buffer has been destroyed before the toplevel icon",
+                        )
+                    }
+                });
                 data.add_buffer(buffer.clone(), scale, shm);
             }
             Request::Destroy => {}
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(
+        _state: &mut D,
+        _client: ClientId,
+        _resource: &XdgToplevelIconV1,
+        data: &XdgToplevelIconUserData,
+    ) {
+        data.unregister_all_hooks();
     }
 }
 
