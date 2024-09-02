@@ -402,6 +402,11 @@ impl FormatSet {
             inner: self.formats.intersection(&other.formats),
         }
     }
+
+    /// Get access to the underlying storage.
+    pub fn indexset(&self) -> &IndexSet<Format> {
+        &self.formats
+    }
 }
 
 /// A lazy iterator producing elements in the intersection of [`FormatSet`]s.
