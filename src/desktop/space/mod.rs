@@ -158,7 +158,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 
     /// Iterate elements in z-order back to front
-    pub fn elements(&self) -> impl DoubleEndedIterator<Item = &E> {
+    pub fn elements(&self) -> impl DoubleEndedIterator<Item = &E> + ExactSizeIterator {
         self.elements.iter().map(|e| &e.element)
     }
 
