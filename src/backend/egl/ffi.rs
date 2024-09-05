@@ -142,11 +142,11 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
 pub mod egl {
     use super::*;
     use libloading::Library;
+    use once_cell::sync::Lazy;
     use std::sync::Once;
 
-    lazy_static::lazy_static! {
-        pub static ref LIB: Library = unsafe { Library::new("libEGL.so.1") }.expect("Failed to load LibEGL");
-    }
+    pub static LIB: Lazy<Library> =
+        Lazy::new(|| unsafe { Library::new("libEGL.so.1") }.expect("Failed to load LibEGL"));
 
     pub static LOAD: Once = Once::new();
     pub static DEBUG: Once = Once::new();
