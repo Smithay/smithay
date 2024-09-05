@@ -13,6 +13,7 @@ use std::{
 
 use indexmap::IndexSet;
 use libc::c_void;
+use once_cell::sync::Lazy;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
@@ -40,12 +41,8 @@ use crate::{
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-lazy_static::lazy_static! {
-    pub(crate) static ref BUFFER_READER: Mutex<Option<WeakBufferReader>> = Mutex::new(None);
-}
-lazy_static::lazy_static! {
-    static ref DISPLAYS: Mutex<HashSet<WeakEGLDisplayHandle>> = Mutex::new(HashSet::new());
-}
+pub(crate) static BUFFER_READER: Mutex<Option<WeakBufferReader>> = Mutex::new(None);
+static DISPLAYS: Lazy<Mutex<HashSet<WeakEGLDisplayHandle>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.

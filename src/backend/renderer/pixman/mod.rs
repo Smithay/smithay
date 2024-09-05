@@ -6,6 +6,7 @@ use std::{
 };
 
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
+use once_cell::sync::Lazy;
 use pixman::{Filter, FormatCode, Image, Operation, Repeat};
 use tracing::warn;
 
@@ -41,30 +42,26 @@ mod error;
 
 pub use error::*;
 
-lazy_static::lazy_static! {
-    static ref SUPPORTED_FORMATS: Vec<drm_fourcc::DrmFourcc> = {
-        vec![
-            #[cfg(target_endian = "little")]
-            DrmFourcc::Rgb565,
-            DrmFourcc::Xrgb8888,
-            DrmFourcc::Argb8888,
-            DrmFourcc::Xbgr8888,
-            DrmFourcc::Abgr8888,
-            DrmFourcc::Rgbx8888,
-            DrmFourcc::Rgba8888,
-            DrmFourcc::Bgrx8888,
-            DrmFourcc::Bgra8888,
-            #[cfg(target_endian = "little")]
-            DrmFourcc::Xrgb2101010,
-            #[cfg(target_endian = "little")]
-            DrmFourcc::Argb2101010,
-            #[cfg(target_endian = "little")]
-            DrmFourcc::Xbgr2101010,
-            #[cfg(target_endian = "little")]
-            DrmFourcc::Abgr2101010,
-        ]
-    };
-}
+const SUPPORTED_FORMATS: &[DrmFourcc] = &[
+    #[cfg(target_endian = "little")]
+    DrmFourcc::Rgb565,
+    DrmFourcc::Xrgb8888,
+    DrmFourcc::Argb8888,
+    DrmFourcc::Xbgr8888,
+    DrmFourcc::Abgr8888,
+    DrmFourcc::Rgbx8888,
+    DrmFourcc::Rgba8888,
+    DrmFourcc::Bgrx8888,
+    DrmFourcc::Bgra8888,
+    #[cfg(target_endian = "little")]
+    DrmFourcc::Xrgb2101010,
+    #[cfg(target_endian = "little")]
+    DrmFourcc::Argb2101010,
+    #[cfg(target_endian = "little")]
+    DrmFourcc::Xbgr2101010,
+    #[cfg(target_endian = "little")]
+    DrmFourcc::Abgr2101010,
+];
 
 #[derive(Debug)]
 enum PixmanTarget {
@@ -944,7 +941,7 @@ impl ImportMem for PixmanRenderer {
         Ok(())
     }
 
-    fn mem_formats(&self) -> Box<dyn Iterator<Item = drm_fourcc::DrmFourcc>> {
+    fn mem_formats(&self) -> Box<dyn Iterator<Item = DrmFourcc>> {
         Box::new(SUPPORTED_FORMATS.iter().copied())
     }
 }
@@ -1155,14 +1152,16 @@ impl ImportDma for PixmanRenderer {
     }
 
     fn dmabuf_formats(&self) -> FormatSet {
-        lazy_static::lazy_static! {
-            static ref DMABUF_FORMATS: FormatSet = {
-                SUPPORTED_FORMATS.iter().copied().map(|code| DrmFormat {
-                    code,
-                    modifier: drm_fourcc::DrmModifier::Linear,
-                }).collect()
-            };
-        }
+        static DMABUF_FORMATS: Lazy<FormatSet> = Lazy::new(|| {
+            SUPPORTED_FORMATS
+                .iter()
+                .map(|code| DrmFormat {
+                    code: *code,
+                    modifier: DrmModifier::Linear,
+                })
+                .collect()
+        });
+
         DMABUF_FORMATS.clone()
     }
 }
@@ -1210,14 +1209,16 @@ impl Bind<Dmabuf> for PixmanRenderer {
     }
 
     fn supported_formats(&self) -> Option<FormatSet> {
-        lazy_static::lazy_static! {
-            static ref DMABUF_FORMATS: FormatSet = {
-                SUPPORTED_FORMATS.iter().copied().map(|code| DrmFormat {
-                    code,
+        static DMABUF_FORMATS: Lazy<FormatSet> = Lazy::new(|| {
+            SUPPORTED_FORMATS
+                .iter()
+                .map(|code| DrmFormat {
+                    code: *code,
                     modifier: DrmModifier::Linear,
-                }).collect()
-            };
-        }
+                })
+                .collect()
+        });
+
         Some(DMABUF_FORMATS.clone())
     }
 }
@@ -1245,14 +1246,16 @@ impl Bind<PixmanRenderBuffer> for PixmanRenderer {
     }
 
     fn supported_formats(&self) -> Option<FormatSet> {
-        lazy_static::lazy_static! {
-            static ref RENDER_BUFFER_FORMATS: FormatSet = {
-                SUPPORTED_FORMATS.iter().copied().map(|code| DrmFormat {
-                    code,
+        static RENDER_BUFFER_FORMATS: Lazy<FormatSet> = Lazy::new(|| {
+            SUPPORTED_FORMATS
+                .iter()
+                .map(|code| DrmFormat {
+                    code: *code,
                     modifier: DrmModifier::Linear,
-                }).collect()
-            };
-        }
+                })
+                .collect()
+        });
+
         Some(RENDER_BUFFER_FORMATS.clone())
     }
 }
