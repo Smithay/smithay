@@ -11,9 +11,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use tracing::{info, trace};
-use wayland_server::backend::ClientData;
-use wayland_server::backend::DisconnectReason;
+use tracing::{error, info, trace};
+use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use wayland_server::{Client, DisplayHandle};
 
 use crate::{utils::user_data::UserDataMap, wayland::compositor::CompositorClientState};
@@ -367,7 +366,13 @@ pub struct XWaylandClientData {
     data_map: UserDataMap,
 }
 
-impl ClientData for XWaylandClientData {}
+impl ClientData for XWaylandClientData {
+    fn disconnected(&self, _client_id: ClientId, reason: DisconnectReason) {
+        if let DisconnectReason::ProtocolError(err) = reason {
+            error!("Xwayland disconnected: {}", err);
+        }
+    }
+}
 
 impl XWaylandClientData {
     /// Access user_data map for a xwayland client
