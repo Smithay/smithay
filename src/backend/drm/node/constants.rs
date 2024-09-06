@@ -6,7 +6,7 @@
 pub const DRM_MAJOR: u32 = 145;
 
 #[cfg(target_os = "netbsd")]
-pub const DRM_MAJOR: u32 = 34;
+pub const DRM_MAJOR: u32 = 180;
 
 #[cfg(all(target_os = "openbsd", target_arch = "x86"))]
 pub const DRM_MAJOR: u32 = 88;

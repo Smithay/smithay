@@ -340,7 +340,7 @@ fn dev_path(dev: dev_t, ty: NodeType) -> io::Result<PathBuf> {
     ))
 }
 
-#[cfg(target_os = "openbsd")]
+#[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
 fn dev_path(dev: dev_t, ty: NodeType) -> io::Result<PathBuf> {
     use std::io::ErrorKind;
 
@@ -380,7 +380,7 @@ fn dev_path(dev: dev_t, ty: NodeType) -> io::Result<PathBuf> {
     ))
 }
 
-#[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
+#[cfg(any(target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
 fn get_minor_base(type_: NodeType) -> u32 {
     match type_ {
         NodeType::Primary => 0,
