@@ -7,8 +7,9 @@ use std::{
         net::UnixStream,
         process::CommandExt,
     },
-    process::Command,
+    process::{Child, Command},
     sync::{Arc, Mutex},
+    thread,
 };
 
 use tracing::{error, info, trace};
@@ -185,7 +186,7 @@ impl XWayland {
 
         info!("spawning XWayland instance");
 
-        let _ = command.spawn()?;
+        let child = command.spawn()?;
 
         // SAFETY: RawFd's AsRawFd impl is infallible.
         let wrapper = unsafe { calloop::generic::FdWrapper::new(displayfd_recv.as_raw_fd()) };
@@ -210,6 +211,7 @@ impl XWayland {
                 #[cfg(feature = "wayland_frontend")]
                 compositor_state: CompositorClientState::default(),
                 data_map,
+                child: Mutex::new(Some(child)),
             }),
         )?;
 
@@ -364,6 +366,7 @@ pub struct XWaylandClientData {
     #[cfg(feature = "wayland_frontend")]
     pub compositor_state: CompositorClientState,
     data_map: UserDataMap,
+    child: Mutex<Option<Child>>,
 }
 
 impl ClientData for XWaylandClientData {
@@ -371,6 +374,15 @@ impl ClientData for XWaylandClientData {
         if let DisconnectReason::ProtocolError(err) = reason {
             error!("Xwayland disconnected: {}", err);
         }
+
+        let mut child = self.child.lock().unwrap().take().unwrap();
+        thread::spawn(move || {
+            if let Ok(status) = child.wait() {
+                if !status.success() {
+                    error!("Xwayland terminated: {}", status);
+                }
+            }
+        });
     }
 }
 
