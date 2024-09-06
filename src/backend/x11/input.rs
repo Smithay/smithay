@@ -122,7 +122,10 @@ impl PointerAxisEvent<X11Input> for X11MouseWheelEvent {
 
     fn amount_v120(&self, axis: Axis) -> Option<f64> {
         if self.axis == axis {
-            Some(self.amount * 120.)
+            match axis {
+                Axis::Vertical => Some(-self.amount * 120.),
+                Axis::Horizontal => Some(self.amount * 120.),
+            }
         } else {
             Some(0.0)
         }
