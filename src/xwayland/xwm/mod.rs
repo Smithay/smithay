@@ -386,6 +386,9 @@ pub trait XwmHandler {
     fn cleared_selection(&mut self, xwm: XwmId, selection: SelectionTarget) {
         let _ = (xwm, selection);
     }
+
+    /// WM has lost connection to X server
+    fn disconnected(&mut self, _xwm: XwmId) {}
 }
 
 /// The runtime state of an reparenting XWayland window manager.
@@ -878,9 +881,14 @@ impl X11Wm {
         };
 
         let event_handle = handle.clone();
-        handle.insert_source(source, move |event, _, data| {
-            if let Err(err) = handle_event(&event_handle, data, id, event) {
-                warn!(id = id.0, err = ?err, "Failed to handle X11 event");
+        handle.insert_source(source, move |event, _, data| match event {
+            calloop::channel::Event::Msg(event) => {
+                if let Err(err) = handle_event(&event_handle, data, id, event) {
+                    warn!(id = id.0, err = ?err, "Failed to handle X11 event");
+                }
+            }
+            calloop::channel::Event::Closed => {
+                data.disconnected(id);
             }
         })?;
         Ok(wm)

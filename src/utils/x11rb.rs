@@ -92,7 +92,7 @@ impl Drop for X11Source {
 }
 
 impl EventSource for X11Source {
-    type Event = Event;
+    type Event = ChannelEvent<Event>;
     type Metadata = ();
     type Ret = ();
     type Error = ChannelError;
@@ -108,9 +108,11 @@ impl EventSource for X11Source {
         C: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
         if let Some(channel) = &mut self.channel {
-            channel.process_events(readiness, token, move |event, meta| match event {
-                ChannelEvent::Closed => warn!("Event thread exited"),
-                ChannelEvent::Msg(event) => callback(event, meta),
+            channel.process_events(readiness, token, move |event, meta| {
+                if matches!(event, ChannelEvent::Closed) {
+                    warn!("Event thread exited");
+                }
+                callback(event, meta)
             })
         } else {
             Ok(PostAction::Remove)
