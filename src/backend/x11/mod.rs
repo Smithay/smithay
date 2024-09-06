@@ -578,8 +578,11 @@ impl EventSource for X11Backend {
 
         let post_action = self
             .source
-            .process_events(readiness, token, |event, _| {
-                X11Inner::process_event(&inner, event, &mut callback);
+            .process_events(readiness, token, |event, _| match event {
+                calloop::channel::Event::Msg(event) => {
+                    X11Inner::process_event(&inner, event, &mut callback);
+                }
+                calloop::channel::Event::Closed => {}
             })
             .map_err(|_| X11Error::ConnectionLost)?;
 
