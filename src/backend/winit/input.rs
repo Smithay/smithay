@@ -142,8 +142,8 @@ impl PointerAxisEvent<WinitInput> for WinitMouseWheelEvent {
 
     fn amount(&self, axis: Axis) -> Option<f64> {
         match (axis, self.delta) {
-            (Axis::Horizontal, MouseScrollDelta::PixelDelta(delta)) => Some(delta.x),
-            (Axis::Vertical, MouseScrollDelta::PixelDelta(delta)) => Some(delta.y),
+            (Axis::Horizontal, MouseScrollDelta::PixelDelta(delta)) => Some(-delta.x),
+            (Axis::Vertical, MouseScrollDelta::PixelDelta(delta)) => Some(-delta.y),
             (_, MouseScrollDelta::LineDelta(_, _)) => None,
         }
     }
@@ -151,8 +151,8 @@ impl PointerAxisEvent<WinitInput> for WinitMouseWheelEvent {
     // TODO: Use high-res scroll where backend supports it
     fn amount_v120(&self, axis: Axis) -> Option<f64> {
         match (axis, self.delta) {
-            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) => Some(x as f64 * 120.),
-            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) => Some(y as f64 * 120.),
+            (Axis::Horizontal, MouseScrollDelta::LineDelta(x, _)) => Some(-x as f64 * 120.),
+            (Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) => Some(-y as f64 * 120.),
             (_, MouseScrollDelta::PixelDelta(_)) => None,
         }
     }
