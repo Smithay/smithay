@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, RwLock,
 };
 
 use drm::control::atomic::AtomicModeReq;
@@ -85,7 +85,7 @@ pub struct AtomicDrmDevice {
     pub(crate) fd: DrmDeviceFd,
     pub(crate) active: Arc<AtomicBool>,
     old_state: OldState,
-    pub(crate) prop_mapping: PropMapping,
+    pub(crate) prop_mapping: Arc<RwLock<PropMapping>>,
     pub(super) span: tracing::Span,
 }
 
@@ -96,7 +96,7 @@ impl AtomicDrmDevice {
             fd,
             active,
             old_state: (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-            prop_mapping: PropMapping::default(),
+            prop_mapping: Default::default(),
             span,
         };
         let _guard = dev.span.enter();
@@ -119,7 +119,7 @@ impl AtomicDrmDevice {
         })?;
 
         let mut old_state = dev.old_state.clone();
-        let mut mapping = dev.prop_mapping.clone();
+        let mut mapping = dev.prop_mapping.write().unwrap();
 
         // This helper function takes a snapshot of the current device properties.
         // (everything in the atomic api is set via properties.)
@@ -136,8 +136,7 @@ impl AtomicDrmDevice {
         map_props(&dev.fd, &planes, &mut mapping.planes)?;
 
         dev.old_state = old_state;
-        dev.prop_mapping = mapping;
-        trace!("Mapping: {:#?}", dev.prop_mapping);
+        trace!("Mapping: {:#?}", mapping);
 
         // If the user does not explicitly requests us to skip this,
         // we clear out the complete connector<->crtc mapping on device creation.
@@ -155,6 +154,7 @@ impl AtomicDrmDevice {
             dev.reset_state()?;
         }
 
+        drop(mapping);
         drop(_guard);
         Ok(dev)
     }
@@ -182,25 +182,24 @@ impl AtomicDrmDevice {
             })
         })?;
 
+        let prop_mapping = self.prop_mapping.read().unwrap();
+
         // Disable all connectors (otherwise we might run into conflicting commits when restarting the rendering loop)
         let mut req = AtomicModeReq::new();
         for conn in res_handles.connectors() {
-            let prop = self
-                .prop_mapping
+            let prop = prop_mapping
                 .conn_prop_handle(*conn, "CRTC_ID")
                 .expect("Unknown property CRTC_ID");
             req.add_property(*conn, prop, property::Value::CRTC(None));
         }
         // Disable all planes
         for plane in plane_handles {
-            let prop = self
-                .prop_mapping
+            let prop = prop_mapping
                 .plane_prop_handle(plane, "CRTC_ID")
                 .expect("Unknown property CRTC_ID");
             req.add_property(plane, prop, property::Value::CRTC(None));
 
-            let prop = self
-                .prop_mapping
+            let prop = prop_mapping
                 .plane_prop_handle(plane, "FB_ID")
                 .expect("Unknown property FB_ID");
             req.add_property(plane, prop, property::Value::Framebuffer(None));
@@ -208,12 +207,10 @@ impl AtomicDrmDevice {
         // A crtc without a connector has no mode, we also need to reset that.
         // Otherwise the commit will not be accepted.
         for crtc in res_handles.crtcs() {
-            let mode_prop = self
-                .prop_mapping
+            let mode_prop = prop_mapping
                 .crtc_prop_handle(*crtc, "MODE_ID")
                 .expect("Unknown property MODE_ID");
-            let active_prop = self
-                .prop_mapping
+            let active_prop = prop_mapping
                 .crtc_prop_handle(*crtc, "ACTIVE")
                 .expect("Unknown property ACTIVE");
             req.add_property(*crtc, active_prop, property::Value::Boolean(false));
