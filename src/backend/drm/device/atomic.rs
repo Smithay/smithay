@@ -23,17 +23,19 @@ type OldState = (
     Vec<(plane::Handle, PropertyValueSet)>,
 );
 
-pub type Mapping = (
-    HashMap<connector::Handle, HashMap<String, property::Handle>>,
-    HashMap<crtc::Handle, HashMap<String, property::Handle>>,
-    HashMap<plane::Handle, HashMap<String, property::Handle>>,
-);
+#[derive(Clone, Debug, Default)]
+pub struct PropMapping {
+    pub connectors: HashMap<connector::Handle, HashMap<String, property::Handle>>,
+    pub crtcs: HashMap<crtc::Handle, HashMap<String, property::Handle>>,
+    pub planes: HashMap<plane::Handle, HashMap<String, property::Handle>>,
+}
+
 #[derive(Debug)]
 pub struct AtomicDrmDevice {
     pub(crate) fd: DrmDeviceFd,
     pub(crate) active: Arc<AtomicBool>,
     old_state: OldState,
-    pub(crate) prop_mapping: Mapping,
+    pub(crate) prop_mapping: PropMapping,
     pub(super) span: tracing::Span,
 }
 
@@ -44,7 +46,7 @@ impl AtomicDrmDevice {
             fd,
             active,
             old_state: (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-            prop_mapping: (HashMap::new(), HashMap::new(), HashMap::new()),
+            prop_mapping: PropMapping::default(),
             span,
         };
         let _guard = dev.span.enter();
@@ -79,9 +81,9 @@ impl AtomicDrmDevice {
         // And because the mapping is not consistent across devices,
         // we also need to lookup the handle for a property name.
         // And we do this a fair bit, so lets cache that mapping.
-        map_props(&dev.fd, res_handles.connectors(), &mut mapping.0)?;
-        map_props(&dev.fd, res_handles.crtcs(), &mut mapping.1)?;
-        map_props(&dev.fd, &planes, &mut mapping.2)?;
+        map_props(&dev.fd, res_handles.connectors(), &mut mapping.connectors)?;
+        map_props(&dev.fd, res_handles.crtcs(), &mut mapping.crtcs)?;
+        map_props(&dev.fd, &planes, &mut mapping.planes)?;
 
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
@@ -135,7 +137,7 @@ impl AtomicDrmDevice {
         for conn in res_handles.connectors() {
             let prop = self
                 .prop_mapping
-                .0
+                .connectors
                 .get(conn)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
@@ -146,7 +148,7 @@ impl AtomicDrmDevice {
         for plane in plane_handles {
             let prop = self
                 .prop_mapping
-                .2
+                .planes
                 .get(&plane)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
@@ -155,7 +157,7 @@ impl AtomicDrmDevice {
 
             let prop = self
                 .prop_mapping
-                .2
+                .planes
                 .get(&plane)
                 .expect("Unknown handle")
                 .get("FB_ID")
@@ -167,14 +169,14 @@ impl AtomicDrmDevice {
         for crtc in res_handles.crtcs() {
             let mode_prop = self
                 .prop_mapping
-                .1
+                .crtcs
                 .get(crtc)
                 .expect("Unknown handle")
                 .get("MODE_ID")
                 .expect("Unknown property MODE_ID");
             let active_prop = self
                 .prop_mapping
-                .1
+                .crtcs
                 .get(crtc)
                 .expect("Unknown handle")
                 .get("ACTIVE")
