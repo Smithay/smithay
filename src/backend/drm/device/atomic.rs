@@ -187,52 +187,37 @@ impl AtomicDrmDevice {
         for conn in res_handles.connectors() {
             let prop = self
                 .prop_mapping
-                .connectors
-                .get(conn)
-                .expect("Unknown handle")
-                .get("CRTC_ID")
+                .conn_prop_handle(*conn, "CRTC_ID")
                 .expect("Unknown property CRTC_ID");
-            req.add_property(*conn, *prop, property::Value::CRTC(None));
+            req.add_property(*conn, prop, property::Value::CRTC(None));
         }
         // Disable all planes
         for plane in plane_handles {
             let prop = self
                 .prop_mapping
-                .planes
-                .get(&plane)
-                .expect("Unknown handle")
-                .get("CRTC_ID")
+                .plane_prop_handle(plane, "CRTC_ID")
                 .expect("Unknown property CRTC_ID");
-            req.add_property(plane, *prop, property::Value::CRTC(None));
+            req.add_property(plane, prop, property::Value::CRTC(None));
 
             let prop = self
                 .prop_mapping
-                .planes
-                .get(&plane)
-                .expect("Unknown handle")
-                .get("FB_ID")
+                .plane_prop_handle(plane, "FB_ID")
                 .expect("Unknown property FB_ID");
-            req.add_property(plane, *prop, property::Value::Framebuffer(None));
+            req.add_property(plane, prop, property::Value::Framebuffer(None));
         }
         // A crtc without a connector has no mode, we also need to reset that.
         // Otherwise the commit will not be accepted.
         for crtc in res_handles.crtcs() {
             let mode_prop = self
                 .prop_mapping
-                .crtcs
-                .get(crtc)
-                .expect("Unknown handle")
-                .get("MODE_ID")
+                .crtc_prop_handle(*crtc, "MODE_ID")
                 .expect("Unknown property MODE_ID");
             let active_prop = self
                 .prop_mapping
-                .crtcs
-                .get(crtc)
-                .expect("Unknown handle")
-                .get("ACTIVE")
+                .crtc_prop_handle(*crtc, "ACTIVE")
                 .expect("Unknown property ACTIVE");
-            req.add_property(*crtc, *active_prop, property::Value::Boolean(false));
-            req.add_property(*crtc, *mode_prop, property::Value::Unknown(0));
+            req.add_property(*crtc, active_prop, property::Value::Boolean(false));
+            req.add_property(*crtc, mode_prop, property::Value::Unknown(0));
         }
         self.fd
             .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req)
