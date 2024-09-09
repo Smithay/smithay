@@ -92,16 +92,7 @@ impl State {
         // make sure the mapping is up to date
         map_props(fd, res_handles.connectors(), &mut prop_mapping.connectors)?;
         for conn in res_handles.connectors() {
-            let crtc_prop = prop_mapping
-                .connectors
-                .get(conn)
-                .expect("Unknown handle")
-                .get("CRTC_ID")
-                .ok_or_else(|| Error::UnknownProperty {
-                    handle: (*conn).into(),
-                    name: "CRTC_ID",
-                })
-                .copied()?;
+            let crtc_prop = prop_mapping.conn_prop_handle(*conn, "CRTC_ID")?;
             if let (Ok(crtc_prop_info), Ok(props)) = (fd.get_property(crtc_prop), fd.get_properties(*conn)) {
                 let (ids, vals) = props.as_props_and_values();
                 for (&id, &val) in ids.iter().zip(vals.iter()) {
