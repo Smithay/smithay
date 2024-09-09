@@ -751,7 +751,7 @@ impl AtomicDrmSurface {
         for conn in new_connectors {
             req.add_property(
                 *conn,
-                conn_prop_handle(&prop_mapping, *conn, "CRTC_ID")?,
+                prop_mapping.conn_prop_handle(*conn, "CRTC_ID")?,
                 property::Value::CRTC(Some(self.crtc)),
             );
         }
@@ -763,7 +763,7 @@ impl AtomicDrmSurface {
         for conn in removed_connectors {
             req.add_property(
                 *conn,
-                conn_prop_handle(&prop_mapping, *conn, "CRTC_ID")?,
+                prop_mapping.conn_prop_handle(*conn, "CRTC_ID")?,
                 property::Value::CRTC(None),
             );
         }
@@ -772,7 +772,7 @@ impl AtomicDrmSurface {
         if let Some(blob) = blob {
             req.add_property(
                 self.crtc,
-                crtc_prop_handle(&prop_mapping, self.crtc, "MODE_ID")?,
+                prop_mapping.crtc_prop_handle(self.crtc, "MODE_ID")?,
                 blob,
             );
         }
@@ -780,7 +780,7 @@ impl AtomicDrmSurface {
         // we also need to set this crtc active
         req.add_property(
             self.crtc,
-            crtc_prop_handle(&prop_mapping, self.crtc, "ACTIVE")?,
+            prop_mapping.crtc_prop_handle(self.crtc, "ACTIVE")?,
             property::Value::Boolean(true),
         );
 
@@ -791,63 +791,63 @@ impl AtomicDrmSurface {
                 // connect the plane to the CRTC
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_ID")?,
+                    prop_mapping.plane_prop_handle(*handle, "CRTC_ID")?,
                     property::Value::CRTC(Some(self.crtc)),
                 );
 
                 // Set the fb for the plane
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "FB_ID")?,
+                    prop_mapping.plane_prop_handle(*handle, "FB_ID")?,
                     property::Value::Framebuffer(Some(config.fb)),
                 );
 
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_X")?,
+                    prop_mapping.plane_prop_handle(*handle, "SRC_X")?,
                     // these are 16.16. fixed point
                     property::Value::UnsignedRange(to_fixed(config.src.loc.x) as u64),
                 );
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_Y")?,
+                    prop_mapping.plane_prop_handle(*handle, "SRC_Y")?,
                     // these are 16.16. fixed point
                     property::Value::UnsignedRange(to_fixed(config.src.loc.y) as u64),
                 );
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_W")?,
+                    prop_mapping.plane_prop_handle(*handle, "SRC_W")?,
                     // these are 16.16. fixed point
                     property::Value::UnsignedRange(to_fixed(config.src.size.w) as u64),
                 );
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_H")?,
+                    prop_mapping.plane_prop_handle(*handle, "SRC_H")?,
                     // these are 16.16. fixed point
                     property::Value::UnsignedRange(to_fixed(config.src.size.h) as u64),
                 );
 
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_X")?,
+                    prop_mapping.plane_prop_handle(*handle, "CRTC_X")?,
                     property::Value::SignedRange(config.dst.loc.x as i64),
                 );
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_Y")?,
+                    prop_mapping.plane_prop_handle(*handle, "CRTC_Y")?,
                     property::Value::SignedRange(config.dst.loc.y as i64),
                 );
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_W")?,
+                    prop_mapping.plane_prop_handle(*handle, "CRTC_W")?,
                     property::Value::UnsignedRange(config.dst.size.w as u64),
                 );
                 req.add_property(
                     *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_H")?,
+                    prop_mapping.plane_prop_handle(*handle, "CRTC_H")?,
                     property::Value::UnsignedRange(config.dst.size.h as u64),
                 );
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "rotation") {
+                if let Ok(prop) = prop_mapping.plane_prop_handle(*handle, "rotation") {
                     req.add_property(
                         *handle,
                         prop,
@@ -863,7 +863,7 @@ impl AtomicDrmSurface {
                         name: "rotation",
                     });
                 }
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "alpha") {
+                if let Ok(prop) = prop_mapping.plane_prop_handle(*handle, "alpha") {
                     req.add_property(
                         *handle,
                         prop,
@@ -876,14 +876,14 @@ impl AtomicDrmSurface {
                         name: "alpha",
                     });
                 }
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "FB_DAMAGE_CLIPS") {
+                if let Ok(prop) = prop_mapping.plane_prop_handle(*handle, "FB_DAMAGE_CLIPS") {
                     if let Some(damage) = config.damage_clips.as_ref() {
                         req.add_property(*handle, prop, *damage);
                     } else {
                         req.add_property(*handle, prop, property::Value::Blob(0));
                     }
                 }
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "IN_FENCE_FD") {
+                if let Ok(prop) = prop_mapping.plane_prop_handle(*handle, "IN_FENCE_FD") {
                     if let Some(fence) = config.fence.as_ref().map(|f| f.as_raw_fd()) {
                         req.add_property(*handle, prop, property::Value::SignedRange(fence as i64));
                     } else {
@@ -999,76 +999,76 @@ impl AtomicDrmSurface {
 
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "CRTC_ID")?,
+            prop_mapping.plane_prop_handle(plane, "CRTC_ID")?,
             property::Value::CRTC(None),
         );
 
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "FB_ID")?,
+            prop_mapping.plane_prop_handle(plane, "FB_ID")?,
             property::Value::Framebuffer(None),
         );
 
         // reset the plane properties
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "SRC_X")?,
+            prop_mapping.plane_prop_handle(plane, "SRC_X")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "SRC_Y")?,
+            prop_mapping.plane_prop_handle(plane, "SRC_Y")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "SRC_W")?,
+            prop_mapping.plane_prop_handle(plane, "SRC_W")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "SRC_H")?,
+            prop_mapping.plane_prop_handle(plane, "SRC_H")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
 
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "CRTC_X")?,
+            prop_mapping.plane_prop_handle(plane, "CRTC_X")?,
             property::Value::SignedRange(0i64),
         );
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "CRTC_Y")?,
+            prop_mapping.plane_prop_handle(plane, "CRTC_Y")?,
             property::Value::SignedRange(0i64),
         );
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "CRTC_W")?,
+            prop_mapping.plane_prop_handle(plane, "CRTC_W")?,
             property::Value::UnsignedRange(0u64),
         );
         req.add_property(
             plane,
-            plane_prop_handle(&prop_mapping, plane, "CRTC_H")?,
+            prop_mapping.plane_prop_handle(plane, "CRTC_H")?,
             property::Value::UnsignedRange(0u64),
         );
-        if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "rotation") {
+        if let Ok(prop) = prop_mapping.plane_prop_handle(plane, "rotation") {
             req.add_property(
                 plane,
                 prop,
                 property::Value::Bitmask(DrmRotation::from(Transform::Normal).bits() as u64),
             );
         }
-        if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "alpha") {
+        if let Ok(prop) = prop_mapping.plane_prop_handle(plane, "alpha") {
             req.add_property(plane, prop, property::Value::UnsignedRange(0xffff));
         }
-        if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "FB_DAMAGE_CLIPS") {
+        if let Ok(prop) = prop_mapping.plane_prop_handle(plane, "FB_DAMAGE_CLIPS") {
             req.add_property(plane, prop, property::Value::Blob(0));
         }
-        if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "IN_FENCE_FD") {
+        if let Ok(prop) = prop_mapping.plane_prop_handle(plane, "IN_FENCE_FD") {
             req.add_property(plane, prop, property::Value::SignedRange(-1));
         }
 
@@ -1126,57 +1126,6 @@ impl Drop for AtomicDrmSurface {
             warn!("Unable to clear state: {}", err);
         }
     }
-}
-
-pub(crate) fn conn_prop_handle(
-    prop_mapping: &PropMapping,
-    handle: connector::Handle,
-    name: &'static str,
-) -> Result<property::Handle, Error> {
-    prop_mapping
-        .connectors
-        .get(&handle)
-        .expect("Unknown handle")
-        .get(name)
-        .ok_or_else(|| Error::UnknownProperty {
-            handle: handle.into(),
-            name,
-        })
-        .copied()
-}
-
-pub(crate) fn crtc_prop_handle(
-    prop_mapping: &PropMapping,
-    handle: crtc::Handle,
-    name: &'static str,
-) -> Result<property::Handle, Error> {
-    prop_mapping
-        .crtcs
-        .get(&handle)
-        .expect("Unknown handle")
-        .get(name)
-        .ok_or_else(|| Error::UnknownProperty {
-            handle: handle.into(),
-            name,
-        })
-        .copied()
-}
-
-pub(crate) fn plane_prop_handle(
-    prop_mapping: &PropMapping,
-    handle: plane::Handle,
-    name: &'static str,
-) -> Result<property::Handle, Error> {
-    prop_mapping
-        .planes
-        .get(&handle)
-        .expect("Unknown handle")
-        .get(name)
-        .ok_or_else(|| Error::UnknownProperty {
-            handle: handle.into(),
-            name,
-        })
-        .copied()
 }
 
 #[inline]

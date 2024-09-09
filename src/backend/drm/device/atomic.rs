@@ -30,6 +30,56 @@ pub struct PropMapping {
     pub planes: HashMap<plane::Handle, HashMap<String, property::Handle>>,
 }
 
+impl PropMapping {
+    pub(crate) fn conn_prop_handle(
+        &self,
+        handle: connector::Handle,
+        name: &'static str,
+    ) -> Result<property::Handle, Error> {
+        self.connectors
+            .get(&handle)
+            .expect("Unknown handle")
+            .get(name)
+            .ok_or_else(|| Error::UnknownProperty {
+                handle: handle.into(),
+                name,
+            })
+            .copied()
+    }
+
+    pub(crate) fn crtc_prop_handle(
+        &self,
+        handle: crtc::Handle,
+        name: &'static str,
+    ) -> Result<property::Handle, Error> {
+        self.crtcs
+            .get(&handle)
+            .expect("Unknown handle")
+            .get(name)
+            .ok_or_else(|| Error::UnknownProperty {
+                handle: handle.into(),
+                name,
+            })
+            .copied()
+    }
+
+    pub(crate) fn plane_prop_handle(
+        &self,
+        handle: plane::Handle,
+        name: &'static str,
+    ) -> Result<property::Handle, Error> {
+        self.planes
+            .get(&handle)
+            .expect("Unknown handle")
+            .get(name)
+            .ok_or_else(|| Error::UnknownProperty {
+                handle: handle.into(),
+                name,
+            })
+            .copied()
+    }
+}
+
 #[derive(Debug)]
 pub struct AtomicDrmDevice {
     pub(crate) fd: DrmDeviceFd,
