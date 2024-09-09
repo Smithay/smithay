@@ -18,7 +18,7 @@ use crate::{
     backend::{
         allocator::format::{get_bpp, get_depth},
         drm::{
-            device::atomic::{map_props, Mapping},
+            device::atomic::{map_props, PropMapping},
             device::DrmDeviceInternal,
             error::Error,
             plane_type, DrmDeviceFd,
@@ -50,7 +50,7 @@ impl State {
     fn current_state<A: DevPath + ControlDevice>(
         fd: &A,
         crtc: crtc::Handle,
-        prop_mapping: &mut Mapping,
+        prop_mapping: &mut PropMapping,
     ) -> Result<Self, Error> {
         let crtc_info = fd.get_crtc(crtc).map_err(|source| {
             Error::Access(AccessError {
@@ -90,10 +90,10 @@ impl State {
         // If they don't match, `commit_pending` will return true and they will be changed on the next `commit`.
         let mut current_connectors = HashSet::new();
         // make sure the mapping is up to date
-        map_props(fd, res_handles.connectors(), &mut prop_mapping.0)?;
+        map_props(fd, res_handles.connectors(), &mut prop_mapping.connectors)?;
         for conn in res_handles.connectors() {
             let crtc_prop = prop_mapping
-                .0
+                .connectors
                 .get(conn)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
@@ -124,7 +124,7 @@ impl State {
         // Changing a CRTC to active might require a modeset
         let mut active = None;
         if let Ok(props) = fd.get_properties(crtc) {
-            let active_prop = prop_mapping.1.get(&crtc).and_then(|m| m.get("ACTIVE"));
+            let active_prop = prop_mapping.crtcs.get(&crtc).and_then(|m| m.get("ACTIVE"));
             let (ids, vals) = props.as_props_and_values();
             for (&id, &val) in ids.iter().zip(vals.iter()) {
                 if Some(&id) == active_prop {
@@ -159,7 +159,7 @@ pub struct AtomicDrmSurface {
     crtc: crtc::Handle,
     plane: plane::Handle,
     used_planes: Mutex<HashSet<plane::Handle>>,
-    prop_mapping: RwLock<Mapping>,
+    prop_mapping: RwLock<PropMapping>,
     state: RwLock<State>,
     pending: RwLock<State>,
     pub(super) span: tracing::Span,
@@ -172,7 +172,7 @@ impl AtomicDrmSurface {
         active: Arc<AtomicBool>,
         crtc: crtc::Handle,
         plane: plane::Handle,
-        mut prop_mapping: Mapping,
+        mut prop_mapping: PropMapping,
         mode: Mode,
         connectors: &[connector::Handle],
     ) -> Result<Self, Error> {
@@ -283,7 +283,9 @@ impl AtomicDrmSurface {
     fn ensure_props_known(&self, conns: &[connector::Handle]) -> Result<(), Error> {
         let mapping_exists = {
             let prop_mapping = self.prop_mapping.read().unwrap();
-            conns.iter().all(|conn| prop_mapping.0.contains_key(conn))
+            conns
+                .iter()
+                .all(|conn| prop_mapping.connectors.contains_key(conn))
         };
         if !mapping_exists {
             map_props(
@@ -298,7 +300,7 @@ impl AtomicDrmSurface {
                         })
                     })?
                     .connectors(),
-                &mut self.prop_mapping.write().unwrap().0,
+                &mut self.prop_mapping.write().unwrap().connectors,
             )?;
         }
         Ok(())
@@ -949,7 +951,7 @@ impl AtomicDrmSurface {
         let prop_mapping = self.prop_mapping.read().unwrap();
         for conn in current.connectors.iter() {
             let prop = prop_mapping
-                .0
+                .connectors
                 .get(conn)
                 .expect("Unknown Handle")
                 .get("CRTC_ID")
@@ -957,13 +959,13 @@ impl AtomicDrmSurface {
             req.add_property(*conn, *prop, property::Value::CRTC(None));
         }
         let active_prop = prop_mapping
-            .1
+            .crtcs
             .get(&self.crtc)
             .expect("Unknown Handle")
             .get("ACTIVE")
             .expect("Unknown property ACTIVE");
         let mode_prop = prop_mapping
-            .1
+            .crtcs
             .get(&self.crtc)
             .expect("Unknown Handle")
             .get("MODE_ID")
@@ -1127,12 +1129,12 @@ impl Drop for AtomicDrmSurface {
 }
 
 pub(crate) fn conn_prop_handle(
-    prop_mapping: &Mapping,
+    prop_mapping: &PropMapping,
     handle: connector::Handle,
     name: &'static str,
 ) -> Result<property::Handle, Error> {
     prop_mapping
-        .0
+        .connectors
         .get(&handle)
         .expect("Unknown handle")
         .get(name)
@@ -1144,12 +1146,12 @@ pub(crate) fn conn_prop_handle(
 }
 
 pub(crate) fn crtc_prop_handle(
-    prop_mapping: &Mapping,
+    prop_mapping: &PropMapping,
     handle: crtc::Handle,
     name: &'static str,
 ) -> Result<property::Handle, Error> {
     prop_mapping
-        .1
+        .crtcs
         .get(&handle)
         .expect("Unknown handle")
         .get(name)
@@ -1161,12 +1163,12 @@ pub(crate) fn crtc_prop_handle(
 }
 
 pub(crate) fn plane_prop_handle(
-    prop_mapping: &Mapping,
+    prop_mapping: &PropMapping,
     handle: plane::Handle,
     name: &'static str,
 ) -> Result<property::Handle, Error> {
     prop_mapping
-        .2
+        .planes
         .get(&handle)
         .expect("Unknown handle")
         .get(name)
