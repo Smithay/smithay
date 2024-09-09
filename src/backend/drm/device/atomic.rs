@@ -182,7 +182,11 @@ impl AtomicDrmDevice {
             })
         })?;
 
-        let prop_mapping = self.prop_mapping.read().unwrap();
+        let mut prop_mapping = self.prop_mapping.write().unwrap();
+
+        // Make sure the mapping is up to date
+        prop_mapping.connectors.clear();
+        map_props(&self.fd, res_handles.connectors(), &mut prop_mapping.connectors)?;
 
         // Disable all connectors (otherwise we might run into conflicting commits when restarting the rendering loop)
         let mut req = AtomicModeReq::new();
