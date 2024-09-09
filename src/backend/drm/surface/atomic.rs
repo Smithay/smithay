@@ -150,7 +150,7 @@ pub struct AtomicDrmSurface {
     crtc: crtc::Handle,
     plane: plane::Handle,
     used_planes: Mutex<HashSet<plane::Handle>>,
-    prop_mapping: RwLock<PropMapping>,
+    prop_mapping: Arc<RwLock<PropMapping>>,
     state: RwLock<State>,
     pending: RwLock<State>,
     pub(super) span: tracing::Span,
@@ -163,7 +163,7 @@ impl AtomicDrmSurface {
         active: Arc<AtomicBool>,
         crtc: crtc::Handle,
         plane: plane::Handle,
-        mut prop_mapping: PropMapping,
+        prop_mapping: Arc<RwLock<PropMapping>>,
         mode: Mode,
         connectors: &[connector::Handle],
     ) -> Result<Self, Error> {
@@ -174,7 +174,7 @@ impl AtomicDrmSurface {
             crtc, plane, mode, connectors
         );
 
-        let state = State::current_state(&*fd, crtc, &mut prop_mapping)?;
+        let state = State::current_state(&*fd, crtc, &mut prop_mapping.write().unwrap())?;
         let blob = fd.create_property_blob(&mode).map_err(|source| {
             Error::Access(AccessError {
                 errmsg: "Failed to create Property Blob for mode",
@@ -196,7 +196,7 @@ impl AtomicDrmSurface {
             crtc,
             plane,
             used_planes: Mutex::new(HashSet::new()),
-            prop_mapping: RwLock::new(prop_mapping),
+            prop_mapping,
             state: RwLock::new(state),
             pending: RwLock::new(pending),
             span,
