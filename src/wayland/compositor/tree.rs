@@ -1,9 +1,14 @@
-use crate::{utils::Serial, wayland::compositor::SUBSURFACE_ROLE};
+use crate::{
+    utils::{
+        hook::{Hook, HookId},
+        Serial,
+    },
+    wayland::compositor::SUBSURFACE_ROLE,
+};
 
 use super::{
     cache::MultiCache,
     handlers::{is_effectively_sync, SurfaceUserData},
-    hook::{Hook, HookId},
     transaction::{Blocker, PendingTransaction, TransactionQueue},
     BufferAssignment, CompositorHandler, SurfaceAttributes, SurfaceData,
 };

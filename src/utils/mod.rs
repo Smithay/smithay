@@ -30,6 +30,11 @@ pub use serial::*;
 mod clock;
 pub use clock::*;
 
+#[cfg(feature = "wayland_frontend")]
+pub(crate) mod hook;
+#[cfg(feature = "wayland_frontend")]
+pub use hook::HookId;
+
 /// This resource is not managed by Smithay
 #[derive(Debug)]
 pub struct UnmanagedResource;
