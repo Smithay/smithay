@@ -162,6 +162,30 @@ impl Xkb {
     pub unsafe fn state(&self) -> &xkb::State {
         &self.state
     }
+
+    /// Get the active layout of the keyboard.
+    pub fn active_layout(&self) -> Layout {
+        (0..self.keymap.num_layouts())
+            .find(|&idx| self.state.layout_index_is_active(idx, XKB_STATE_LAYOUT_EFFECTIVE))
+            .map(Layout)
+            .unwrap_or_default()
+    }
+
+    /// Get the human readable name for the layout.
+    pub fn layout_name(&self, layout: Layout) -> &str {
+        self.keymap.layout_get_name(layout.0)
+    }
+
+    /// Iterate over layouts present in the keymap.
+    pub fn layouts(&self) -> Box<dyn Iterator<Item = Layout>> {
+        Box::new((0..self.keymap.num_layouts()).map(Layout))
+    }
+
+    /// Returns the syms for the underlying keycode without any modifications by the current keymap
+    /// state applied.
+    pub fn raw_syms_for_key_in_layout(&self, keycode: Keycode, layout: Layout) -> &[Keysym] {
+        self.keymap.key_get_syms_by_level(keycode, layout.0, 0)
+    }
 }
 
 impl fmt::Debug for Xkb {
@@ -369,6 +393,11 @@ impl<'a> fmt::Debug for KeysymHandle<'a> {
 }
 
 impl<'a> KeysymHandle<'a> {
+    /// Get the reference to the xkb state.
+    pub fn xkb(&self) -> &Xkb {
+        self.xkb
+    }
+
     /// Returns the sym for the underlying keycode with all modifications by the current keymap state applied.
     ///
     /// This function is similar to [`KeysymHandle::modified_syms`], but is intended for cases where the user
@@ -409,12 +438,12 @@ impl<'a> KeysymHandle<'a> {
         };
 
         // Try to look other layouts and find the one with ascii character.
-        for layout in self.layouts() {
+        for layout in self.xkb.layouts() {
             if layout == effective_layout {
                 continue;
             }
 
-            if let Some(keysym) = self.raw_syms_for_key_in_layout(self.keycode, layout).first() {
+            if let Some(keysym) = self.xkb.raw_syms_for_key_in_layout(self.keycode, layout).first() {
                 // NOTE: Only check for ascii non-control characters, since control ones are
                 // layout agnostic.
                 if keysym
@@ -447,6 +476,11 @@ pub struct XkbContext<'a> {
 }
 
 impl<'a> XkbContext<'a> {
+    /// Get the reference to the xkb state.
+    pub fn xkb(&self) -> &Xkb {
+        self.xkb
+    }
+
     /// Set layout of the keyboard to the given index.
     pub fn set_layout(&mut self, layout: Layout) {
         let state = self.xkb.state.update_mask(
@@ -468,14 +502,14 @@ impl<'a> XkbContext<'a> {
 
     /// Switches layout forward cycling when it reaches the end.
     pub fn cycle_next_layout(&mut self) {
-        let next_layout = (self.active_layout().0 + 1) % self.xkb.keymap.num_layouts();
+        let next_layout = (self.xkb.active_layout().0 + 1) % self.xkb.keymap.num_layouts();
         self.set_layout(Layout(next_layout));
     }
 
     /// Switches layout backward cycling when it reaches the start.
     pub fn cycle_prev_layout(&mut self) {
         let num_layouts = self.xkb.keymap.num_layouts();
-        let next_layout = (num_layouts + self.active_layout().0 - 1) % num_layouts;
+        let next_layout = (num_layouts + self.xkb.active_layout().0 - 1) % num_layouts;
         self.set_layout(Layout(next_layout));
     }
 }
@@ -486,51 +520,6 @@ impl<'a> fmt::Debug for XkbContext<'a> {
             .field("mods_state", &self.mods_state)
             .field("mods_changed", &self.mods_changed)
             .finish()
-    }
-}
-
-/// Query and manipulate Xkb layouts.
-pub trait XkbContextHandler {
-    /// Get the reference to the xkb state.
-    fn xkb(&self) -> &Xkb;
-
-    /// Get the active layout of the keyboard.
-    fn active_layout(&self) -> Layout {
-        (0..self.xkb().keymap.num_layouts())
-            .find(|&idx| {
-                self.xkb()
-                    .state
-                    .layout_index_is_active(idx, XKB_STATE_LAYOUT_EFFECTIVE)
-            })
-            .map(Layout)
-            .unwrap_or_default()
-    }
-
-    /// Get the human readable name for the layout.
-    fn layout_name(&self, layout: Layout) -> &str {
-        self.xkb().keymap.layout_get_name(layout.0)
-    }
-
-    /// Iterate over layouts present in the keymap.
-    fn layouts(&self) -> Box<dyn Iterator<Item = Layout>> {
-        Box::new((0..self.xkb().keymap.num_layouts()).map(Layout))
-    }
-
-    /// Returns the syms for the underlying keycode without any modifications by the current keymap
-    /// state applied.
-    fn raw_syms_for_key_in_layout(&self, keycode: Keycode, layout: Layout) -> &[Keysym] {
-        self.xkb().keymap.key_get_syms_by_level(keycode, layout.0, 0)
-    }
-}
-
-impl<'a> XkbContextHandler for XkbContext<'a> {
-    fn xkb(&self) -> &Xkb {
-        &self.xkb
-    }
-}
-impl<'a> XkbContextHandler for KeysymHandle<'a> {
-    fn xkb(&self) -> &Xkb {
-        &self.xkb
     }
 }
 
