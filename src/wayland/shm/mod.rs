@@ -154,7 +154,7 @@ impl ShmState {
         formats.insert(wl_shm::Format::Argb8888);
         formats.insert(wl_shm::Format::Xrgb8888);
 
-        let shm = display.create_global::<D, WlShm, _>(1, ());
+        let shm = display.create_global::<D, WlShm, _>(2, ());
 
         ShmState { formats, shm }
     }
