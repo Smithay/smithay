@@ -72,6 +72,16 @@ profiling = "1.0"
 smallvec = "1.11"
 pixman = { version = "0.1.0", features = ["drm-fourcc"], optional = true }
 
+[patch.crates-io]
+wayland-egl = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-protocols = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-protocols-wlr = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-protocols-misc = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-server = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-client = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-sys = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-backend = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
+wayland-scanner = { git = "https://github.com/Smithay/wayland-rs", rev = "54be7ba016cb4eb9fc0553ece867768549182f6c" }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
