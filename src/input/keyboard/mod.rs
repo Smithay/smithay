@@ -788,7 +788,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         // Construct the Keymap internally instead of accepting one as input
         // because libxkbcommon is not thread-safe.
         let keymap = xkb::Keymap::new_from_string(
-            &xkb::Context::new(0),
+            &self.arc.internal.lock().unwrap().xkb.context,
             keymap,
             xkb::KEYMAP_FORMAT_TEXT_V1,
             xkb::KEYMAP_COMPILE_NO_FLAGS,
