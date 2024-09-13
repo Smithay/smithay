@@ -61,6 +61,7 @@ where
 
         let (pool, fd, size) = match request {
             Request::CreatePool { id: pool, fd, size } => (pool, fd, size),
+            Request::Release => return,
             _ => unreachable!(),
         };
 
