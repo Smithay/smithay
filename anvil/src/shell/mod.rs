@@ -152,6 +152,22 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             }
             if let Some(window) = self.window_for_surface(&root) {
                 window.0.on_commit();
+
+                if &root == surface {
+                    let buffer_offset = with_states(surface, |states| {
+                        states
+                            .cached_state
+                            .get::<SurfaceAttributes>()
+                            .current()
+                            .buffer_delta
+                            .take()
+                    });
+
+                    if let Some(buffer_offset) = buffer_offset {
+                        let current_loc = self.space.element_location(&window).unwrap();
+                        self.space.map_element(window, current_loc + buffer_offset, false);
+                    }
+                }
             }
         }
         self.popups.commit(surface);
