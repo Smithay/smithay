@@ -346,24 +346,30 @@ pub fn run_x11() {
             } else {
                 (0, 0).into()
             };
-            let cursor_pos = state.pointer.current_location() - cursor_hotspot.to_f64();
-            let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+            let cursor_pos = state.pointer.current_location();
 
             pointer_element.set_status(state.cursor_status.clone());
-            elements.extend(pointer_element.render_elements(
-                &mut backend_data.renderer,
-                cursor_pos_scaled,
-                scale,
-                1.0,
-            ));
+            elements.extend(
+                pointer_element.render_elements(
+                    &mut backend_data.renderer,
+                    (cursor_pos - cursor_hotspot.to_f64())
+                        .to_physical(scale)
+                        .to_i32_round(),
+                    scale,
+                    1.0,
+                ),
+            );
 
             // draw the dnd icon if any
-            if let Some(surface) = state.dnd_icon.as_ref() {
-                if surface.alive() {
+            if let Some(icon) = state.dnd_icon.as_ref() {
+                let dnd_icon_pos = (cursor_pos + icon.offset.to_f64())
+                    .to_physical(scale)
+                    .to_i32_round();
+                if icon.surface.alive() {
                     elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
-                        &smithay::desktop::space::SurfaceTree::from_surface(surface),
+                        &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
                         &mut backend_data.renderer,
-                        cursor_pos_scaled,
+                        dnd_icon_pos,
                         scale,
                         1.0,
                     ));

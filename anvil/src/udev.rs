@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::state::SurfaceDmabufFeedback;
+use crate::state::{DndIcon, SurfaceDmabufFeedback};
 use crate::{
     drawing::*,
     render::*,
@@ -1567,7 +1567,7 @@ fn render_surface<'a>(
     pointer_location: Point<f64, Logical>,
     pointer_image: &MemoryRenderBuffer,
     pointer_element: &mut PointerElement,
-    dnd_icon: &Option<wl_surface::WlSurface>,
+    dnd_icon: &Option<DndIcon>,
     cursor_status: &mut CursorImageStatus,
     clock: &Clock<Monotonic>,
     show_window_preview: bool,
@@ -1591,8 +1591,7 @@ fn render_surface<'a>(
         } else {
             (0, 0).into()
         };
-        let cursor_pos = pointer_location - output_geometry.loc.to_f64() - cursor_hotspot.to_f64();
-        let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+        let cursor_pos = pointer_location - output_geometry.loc.to_f64();
 
         // set cursor
         pointer_element.set_buffer(pointer_image.clone());
@@ -1611,16 +1610,28 @@ fn render_surface<'a>(
             pointer_element.set_status(cursor_status.clone());
         }
 
-        custom_elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale, 1.0));
+        custom_elements.extend(
+            pointer_element.render_elements(
+                renderer,
+                (cursor_pos - cursor_hotspot.to_f64())
+                    .to_physical(scale)
+                    .to_i32_round(),
+                scale,
+                1.0,
+            ),
+        );
 
         // draw the dnd icon if applicable
         {
-            if let Some(wl_surface) = dnd_icon.as_ref() {
-                if wl_surface.alive() {
+            if let Some(icon) = dnd_icon.as_ref() {
+                let dnd_icon_pos = (cursor_pos + icon.offset.to_f64())
+                    .to_physical(scale)
+                    .to_i32_round();
+                if icon.surface.alive() {
                     custom_elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
-                        &SurfaceTree::from_surface(wl_surface),
+                        &SurfaceTree::from_surface(&icon.surface),
                         renderer,
-                        cursor_pos_scaled,
+                        dnd_icon_pos,
                         scale,
                         1.0,
                     ));
