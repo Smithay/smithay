@@ -178,6 +178,21 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             });
         }
 
+        if matches!(&self.dnd_icon, Some(icon) if &icon.surface == surface) {
+            let dnd_icon = self.dnd_icon.as_mut().unwrap();
+            with_states(&dnd_icon.surface, |states| {
+                let buffer_delta = states
+                    .cached_state
+                    .get::<SurfaceAttributes>()
+                    .current()
+                    .buffer_delta
+                    .take()
+                    .unwrap_or_default();
+                tracing::trace!(offset = ?dnd_icon.offset, ?buffer_delta, "moving dnd offset");
+                dnd_icon.offset += buffer_delta;
+            });
+        }
+
         ensure_initial_configure(surface, &self.space, &mut self.popups)
     }
 }
