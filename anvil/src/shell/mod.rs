@@ -8,6 +8,7 @@ use smithay::{
         layer_map_for_output, space::SpaceElement, LayerSurface, PopupKind, PopupManager, Space,
         WindowSurfaceType,
     },
+    input::pointer::{CursorImageStatus, CursorImageSurfaceData},
     output::Output,
     reexports::{
         calloop::Interest,
@@ -154,6 +155,28 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             }
         }
         self.popups.commit(surface);
+
+        if matches!(&self.cursor_status, CursorImageStatus::Surface(cursor_surface) if cursor_surface == surface)
+        {
+            with_states(surface, |states| {
+                let cursor_image_attributes = states.data_map.get::<CursorImageSurfaceData>();
+
+                if let Some(mut cursor_image_attributes) =
+                    cursor_image_attributes.map(|attrs| attrs.lock().unwrap())
+                {
+                    let buffer_delta = states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .current()
+                        .buffer_delta
+                        .take();
+                    if let Some(buffer_delta) = buffer_delta {
+                        tracing::trace!(hotspot = ?cursor_image_attributes.hotspot, ?buffer_delta, "decrementing cursor hotspot");
+                        cursor_image_attributes.hotspot -= buffer_delta;
+                    }
+                }
+            });
+        }
 
         ensure_initial_configure(surface, &self.space, &mut self.popups)
     }
