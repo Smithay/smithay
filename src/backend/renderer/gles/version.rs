@@ -1,6 +1,7 @@
-use std::{ffi::CStr, os::raw::c_char};
-
-use scan_fmt::scan_fmt;
+use std::{
+    ffi::{CStr, CString},
+    os::raw::c_char,
+};
 
 use super::ffi::{self, Gles2};
 
@@ -36,18 +37,57 @@ impl PartialOrd for GlVersion {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid version string {0:?}")]
+pub struct GlVersionParseError(CString);
+
 impl TryFrom<&CStr> for GlVersion {
-    type Error = scan_fmt::parse::ScanError;
+    type Error = GlVersionParseError;
 
     fn try_from(value: &CStr) -> Result<Self, Self::Error> {
-        scan_fmt!(&value.to_string_lossy(), "{d}.{d}", i32, i32)
-            .or_else(|_| scan_fmt!(&value.to_string_lossy(), "OpenGL ES {d}.{d}", i32, i32))
-            .map(|(major, minor)| GlVersion::new(major, minor))
+        let mut bytes = value.to_bytes();
+
+        let prefix = b"OpenGL ES ";
+        if bytes.starts_with(prefix) {
+            // Strip the prefix
+            bytes = &bytes[prefix.len()..];
+        }
+
+        let ascii_to_int = |ch: u8| (ch - b'0') as u32;
+
+        let mut iter = bytes.iter();
+
+        let mut major: Option<u32> = None;
+        let mut minor: Option<u32> = None;
+
+        for v in &mut iter {
+            if v.is_ascii_digit() {
+                major = Some(major.unwrap_or(0) * 10 + ascii_to_int(*v));
+            } else if *v == b'.' {
+                break;
+            } else {
+                // Neither digit nor '.', so let's assume invalid string
+                return Err(GlVersionParseError(value.to_owned()));
+            }
+        }
+
+        for v in iter {
+            if v.is_ascii_digit() {
+                minor = Some(minor.unwrap_or(0) * 10 + ascii_to_int(*v));
+            } else {
+                break;
+            }
+        }
+
+        major
+            .zip(minor)
+            .map(|(major, minor)| GlVersion::new(major as i32, minor as i32))
+            .ok_or_else(|| GlVersionParseError(value.to_owned()))
     }
 }
 
 impl TryFrom<&Gles2> for GlVersion {
-    type Error = scan_fmt::parse::ScanError;
+    type Error = GlVersionParseError;
 
     fn try_from(value: &Gles2) -> Result<Self, Self::Error> {
         let version = unsafe { CStr::from_ptr(value.GetString(ffi::VERSION) as *const c_char) };
@@ -61,8 +101,18 @@ mod tests {
     use std::{convert::TryFrom, ffi::CStr, os::raw::c_char};
 
     #[test]
+    fn test_parse_1234_4321() {
+        let gl_version = b"1234.4321 Mesa 20.3.5\0";
+        let gl_version_str = unsafe { CStr::from_ptr(gl_version.as_ptr() as *const c_char) };
+        assert_eq!(
+            GlVersion::try_from(gl_version_str).unwrap(),
+            GlVersion::new(1234, 4321)
+        )
+    }
+
+    #[test]
     fn test_parse_mesa_3_2() {
-        let gl_version = "OpenGL ES 3.2 Mesa 20.3.5";
+        let gl_version = b"OpenGL ES 3.2 Mesa 20.3.5\0";
         let gl_version_str = unsafe { CStr::from_ptr(gl_version.as_ptr() as *const c_char) };
         assert_eq!(GlVersion::try_from(gl_version_str).unwrap(), GlVersion::new(3, 2))
     }
