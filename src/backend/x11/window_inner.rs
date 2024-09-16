@@ -23,6 +23,7 @@ use x11rb::{
     protocol::{
         present::{self, ConnectionExt as _},
         xfixes::ConnectionExt as _,
+        xinput::{self, ConnectionExt as _},
         xproto::{
             self as x11, AtomEnum, ConnectionExt, CreateWindowAux, Depth, EventMask, PropMode, Screen,
             UnmapNotifyEvent, WindowClass,
@@ -112,14 +113,6 @@ impl WindowInner {
             .event_mask(
                 EventMask::EXPOSURE // Be told when the window is exposed
             | EventMask::STRUCTURE_NOTIFY
-            | EventMask::KEY_PRESS // Key press and release
-            | EventMask::KEY_RELEASE
-            | EventMask::BUTTON_PRESS // Mouse button press and release
-            | EventMask::BUTTON_RELEASE
-            | EventMask::POINTER_MOTION // Mouse movement
-            | EventMask::ENTER_WINDOW // Track whether the cursor enters of leaves the window.
-            | EventMask::LEAVE_WINDOW
-            | EventMask::FOCUS_CHANGE
             | EventMask::EXPOSURE
             | EventMask::NO_EVENT,
             )
@@ -139,6 +132,24 @@ impl WindowInner {
             WindowClass::INPUT_OUTPUT,
             visual_id,
             &window_aux,
+        )?;
+
+        connection.xinput_xi_select_events(
+            window,
+            &[xinput::EventMask {
+                deviceid: 1, // AllMasterDevices
+                mask: vec![
+                    xinput::XIEventMask::KEY_PRESS
+                        | xinput::XIEventMask::KEY_RELEASE
+                        | xinput::XIEventMask::BUTTON_PRESS
+                        | xinput::XIEventMask::BUTTON_RELEASE
+                        | xinput::XIEventMask::MOTION
+                        | xinput::XIEventMask::ENTER
+                        | xinput::XIEventMask::LEAVE
+                        | xinput::XIEventMask::FOCUS_IN
+                        | xinput::XIEventMask::FOCUS_OUT,
+                ],
+            }],
         )?;
 
         // We only ever need one event id since we will only ever have one event context.

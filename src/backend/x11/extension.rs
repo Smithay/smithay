@@ -50,26 +50,28 @@ macro_rules! extensions {
 
                         if connection.extension_information(X11_EXTENSION_NAME)?.is_some() {
                             let version = connection.$extension_fn($req_major, $req_minor)?.reply()?;
+                            let major_version = u32::from(version.major_version);
+                            let minor_version = u32::from(version.minor_version);
 
                             #[allow(unused_comparisons)] // Macro comparisons
-                            if version.major_version >= $req_major
-                                || (version.major_version == $req_major && version.minor_version >= $req_minor)
+                            if major_version >= $req_major
+                                || (major_version == $req_major && minor_version >= $req_minor)
                             {
                                 info!(
                                     "Loaded extension {} version {}.{}",
                                     X11_EXTENSION_NAME,
-                                    version.major_version,
-                                    version.minor_version,
+                                    major_version,
+                                    minor_version,
                                 );
 
-                                Some((version.major_version, version.minor_version))
+                                Some((major_version, minor_version))
                             } else {
                                 if $required {
                                     error!(
                                         "required extension {} version is too low (have {}.{}, expected {}.{})",
                                         X11_EXTENSION_NAME,
-                                        version.major_version,
-                                        version.minor_version,
+                                        major_version,
+                                        minor_version,
                                         $req_major,
                                         $req_minor,
                                     );
@@ -78,8 +80,8 @@ macro_rules! extensions {
                                         name: X11_EXTENSION_NAME,
                                         required_major: $req_major,
                                         required_minor: $req_minor,
-                                        available_major: version.major_version,
-                                        available_minor: version.minor_version,
+                                        available_major: major_version,
+                                        available_minor: minor_version,
                                     }.into());
                                 } else {
                                     None
@@ -132,5 +134,12 @@ extensions! {
         required: true,
         minimum: (1, 0),
         request: (1, 2),
+    },
+
+    xinput {
+        xinput_xi_query_version,
+        required: true,
+        minimum: (2, 0),
+        request: (2, 4),
     },
 }
