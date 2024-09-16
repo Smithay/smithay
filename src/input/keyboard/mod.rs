@@ -177,8 +177,8 @@ impl Xkb {
     }
 
     /// Iterate over layouts present in the keymap.
-    pub fn layouts(&self) -> Box<dyn Iterator<Item = Layout>> {
-        Box::new((0..self.keymap.num_layouts()).map(Layout))
+    pub fn layouts(&self) -> impl Iterator<Item = Layout> {
+        (0..self.keymap.num_layouts()).map(Layout)
     }
 
     /// Returns the syms for the underlying keycode without any modifications by the current keymap
