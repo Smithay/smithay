@@ -111,6 +111,7 @@ use x11rb::{
     protocol::{
         self as x11,
         dri3::ConnectionExt as _,
+        xinput,
         xproto::{ColormapAlloc, ConnectionExt, CreateWindowAux, VisualClass, WindowClass, WindowWrapper},
         ErrorKind,
     },
@@ -792,6 +793,10 @@ impl X11Inner {
             }
 
             x11::Event::XinputKeyPress(key_press) => {
+                if key_press.flags.contains(xinput::KeyEventFlags::KEY_REPEAT) {
+                    return;
+                }
+
                 if let Some(window) = X11Inner::window_ref_from_id(inner, &key_press.event) {
                     // Do not hold the lock.
                     let count = { inner.lock().unwrap().key_counter.fetch_add(1, Ordering::SeqCst) + 1 };
