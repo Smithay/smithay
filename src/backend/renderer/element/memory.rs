@@ -327,7 +327,7 @@ struct MemoryRenderBufferInner {
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     damage_bag: DamageBag<i32, Buffer>,
-    textures: HashMap<(TypeId, usize), Box<dyn std::any::Any + Send>>,
+    textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
 }
 
@@ -414,7 +414,7 @@ impl MemoryRenderBufferInner {
     ) -> Result<<R as Renderer>::TextureId, <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
-        <R as Renderer>::TextureId: Send + Clone + 'static,
+        <R as Renderer>::TextureId: Clone + 'static,
     {
         let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
         let current_commit = self.damage_bag.current_commit();
@@ -596,7 +596,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
     ) -> Result<Self, <R as Renderer>::Error>
     where
         R: ImportMem,
-        <R as Renderer>::TextureId: Send + Clone + 'static,
+        <R as Renderer>::TextureId: Clone + 'static,
     {
         let mut inner = buffer.inner.lock().unwrap();
         let texture = inner.import_texture(renderer)?;
