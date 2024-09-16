@@ -674,7 +674,7 @@ impl X11Inner {
         // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
 
         match event {
-            x11::Event::FocusIn(focus_in) => {
+            x11::Event::XinputFocusIn(focus_in) => {
                 callback(
                     Focus {
                         focused: true,
@@ -684,7 +684,7 @@ impl X11Inner {
                 );
             }
 
-            x11::Event::FocusOut(focus_out) => {
+            x11::Event::XinputFocusOut(focus_out) => {
                 callback(
                     Focus {
                         focused: false,
@@ -694,7 +694,7 @@ impl X11Inner {
                 );
             }
 
-            x11::Event::ButtonPress(button_press) => {
+            x11::Event::XinputButtonPress(button_press) => {
                 if let Some(window) = X11Inner::window_ref_from_id(inner, &button_press.event) {
                     // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
                     // up, down, right and left. For scrolling, a press event is emitted and a
@@ -752,7 +752,7 @@ impl X11Inner {
                                 event: InputEvent::PointerButton {
                                     event: X11MouseInputEvent {
                                         time: button_press.time,
-                                        raw: button_press.detail as u32,
+                                        raw: button_press.detail,
                                         state: ButtonState::Pressed,
                                         window,
                                     },
@@ -765,7 +765,7 @@ impl X11Inner {
                 }
             }
 
-            x11::Event::ButtonRelease(button_release) => {
+            x11::Event::XinputButtonRelease(button_release) => {
                 // Ignore release tick because this event is always sent immediately after the press
                 // tick for scrolling and the backend will dispatch release event automatically during
                 // the press event.
@@ -779,7 +779,7 @@ impl X11Inner {
                             event: InputEvent::PointerButton {
                                 event: X11MouseInputEvent {
                                     time: button_release.time,
-                                    raw: button_release.detail as u32,
+                                    raw: button_release.detail,
                                     state: ButtonState::Released,
                                     window,
                                 },
@@ -791,7 +791,7 @@ impl X11Inner {
                 }
             }
 
-            x11::Event::KeyPress(key_press) => {
+            x11::Event::XinputKeyPress(key_press) => {
                 if let Some(window) = X11Inner::window_ref_from_id(inner, &key_press.event) {
                     // Do not hold the lock.
                     let count = { inner.lock().unwrap().key_counter.fetch_add(1, Ordering::SeqCst) + 1 };
@@ -814,7 +814,7 @@ impl X11Inner {
                 }
             }
 
-            x11::Event::KeyRelease(key_release) => {
+            x11::Event::XinputKeyRelease(key_release) => {
                 if let Some(window) = X11Inner::window_ref_from_id(inner, &key_release.event) {
                     let count = {
                         let key_counter = inner.lock().unwrap().key_counter.clone();
@@ -845,13 +845,13 @@ impl X11Inner {
                 }
             }
 
-            x11::Event::MotionNotify(motion_notify) => {
+            x11::Event::XinputMotion(motion_notify) => {
                 if let Some(window) =
                     X11Inner::window_ref_from_id(inner, &motion_notify.event).and_then(|w| w.upgrade())
                 {
                     // Use event_x/y since those are relative the the window receiving events.
-                    let x = motion_notify.event_x as f64;
-                    let y = motion_notify.event_y as f64;
+                    let x = fixed_point_to_float(motion_notify.event_x);
+                    let y = fixed_point_to_float(motion_notify.event_y);
 
                     let window_size = { *window.size.lock().unwrap() };
 
@@ -907,7 +907,7 @@ impl X11Inner {
                 }
             }
 
-            x11::Event::EnterNotify(enter_notify) => {
+            x11::Event::XinputEnter(enter_notify) => {
                 if let Some(window) =
                     X11Inner::window_ref_from_id(inner, &enter_notify.event).and_then(|w| w.upgrade())
                 {
@@ -915,7 +915,7 @@ impl X11Inner {
                 }
             }
 
-            x11::Event::LeaveNotify(leave_notify) => {
+            x11::Event::XinputLeave(leave_notify) => {
                 if let Some(window) =
                     X11Inner::window_ref_from_id(inner, &leave_notify.event).and_then(|w| w.upgrade())
                 {
@@ -977,6 +977,12 @@ impl X11Inner {
             _ => (),
         }
     }
+}
+
+fn fixed_point_to_float(value: i32) -> f64 {
+    let int = value >> 16;
+    let frac = value & 0xffff;
+    int as f64 + frac as f64 / u16::MAX as f64
 }
 
 fn egl_init(_: &X11Inner) -> Result<(DrmNode, OwnedFd), EGLInitError> {
