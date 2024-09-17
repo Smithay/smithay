@@ -82,7 +82,7 @@ use crate::{
         allocator::{Allocator, Swapchain},
         drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
         egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
-        input::{Axis, ButtonState, InputEvent, KeyState},
+        input::{Axis, ButtonState, InputEvent, KeyState, Keycode},
     },
     utils::{x11rb::X11Source, Logical, Size},
 };
@@ -801,12 +801,7 @@ impl X11Inner {
                             event: InputEvent::Keyboard {
                                 event: X11KeyboardInputEvent {
                                     time: key_press.time,
-                                    // X11's keycodes are +8 relative to the libinput keycodes
-                                    // that are expected, so subtract 8 from each keycode to
-                                    // match libinput.
-                                    //
-                                    // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                                    key: key_press.detail as u32 - 8,
+                                    key: Keycode::from(key_press.detail),
                                     count,
                                     state: KeyState::Pressed,
                                     window,
@@ -837,12 +832,7 @@ impl X11Inner {
                             event: InputEvent::Keyboard {
                                 event: X11KeyboardInputEvent {
                                     time: key_release.time,
-                                    // X11's keycodes are +8 relative to the libinput keycodes
-                                    // that are expected, so subtract 8 from each keycode to
-                                    // match libinput.
-                                    //
-                                    // https://github.com/freedesktop/xorg-xf86-input-libinput/blob/master/src/xf86libinput.c#L54
-                                    key: key_release.detail as u32 - 8,
+                                    key: Keycode::from(key_release.detail),
                                     count,
                                     state: KeyState::Released,
                                     window,

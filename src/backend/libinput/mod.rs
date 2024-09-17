@@ -111,9 +111,9 @@ impl backend::Event<LibinputInputBackend> for event::keyboard::KeyboardKeyEvent 
 }
 
 impl backend::KeyboardKeyEvent<LibinputInputBackend> for event::keyboard::KeyboardKeyEvent {
-    fn key_code(&self) -> u32 {
+    fn key_code(&self) -> backend::Keycode {
         use input::event::keyboard::KeyboardEventTrait;
-        self.key()
+        (self.key() + 8).into()
     }
 
     fn state(&self) -> backend::KeyState {

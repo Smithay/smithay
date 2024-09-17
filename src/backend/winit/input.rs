@@ -7,9 +7,9 @@ use winit::{
 
 use crate::backend::input::{
     self, AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device,
-    DeviceCapability, Event, InputBackend, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchEvent, TouchMotionEvent, TouchSlot,
-    TouchUpEvent, UnusedEvent,
+    DeviceCapability, Event, InputBackend, KeyState, KeyboardKeyEvent, Keycode, PointerAxisEvent,
+    PointerButtonEvent, PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchEvent,
+    TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent,
 };
 
 /// Marker used to define the `InputBackend` types for the winit backend.
@@ -65,8 +65,8 @@ impl Event<WinitInput> for WinitKeyboardInputEvent {
 }
 
 impl KeyboardKeyEvent<WinitInput> for WinitKeyboardInputEvent {
-    fn key_code(&self) -> u32 {
-        self.key
+    fn key_code(&self) -> Keycode {
+        (self.key + 8).into()
     }
 
     fn state(&self) -> KeyState {
