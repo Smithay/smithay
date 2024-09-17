@@ -148,7 +148,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
         let keycode = evt.key_code();
         let state = evt.state();
-        debug!(keycode, ?state, "key");
+        debug!(?keycode, ?state, "key");
         let serial = SCOUNTER.next_serial();
         let time = Event::time_msec(&evt);
         let mut suppressed_keys = self.suppressed_keys.clone();
@@ -571,7 +571,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         for keycode in keyboard.pressed_keys() {
             keyboard.input(
                 self,
-                keycode.raw(),
+                keycode,
                 KeyState::Released,
                 SCOUNTER.next_serial(),
                 0,

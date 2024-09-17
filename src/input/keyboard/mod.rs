@@ -133,8 +133,8 @@ impl LedState {
 pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
-    pub(crate) pressed_keys: HashSet<u32>,
-    pub(crate) forwarded_pressed_keys: HashSet<u32>,
+    pub(crate) pressed_keys: HashSet<Keycode>,
+    pub(crate) forwarded_pressed_keys: HashSet<Keycode>,
     pub(crate) mods_state: ModifiersState,
     context: xkb::Context,
     pub(crate) keymap: xkb::Keymap,
@@ -198,7 +198,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
     }
 
     // returns whether the modifiers or led state has changed
-    fn key_input(&mut self, keycode: u32, state: KeyState) -> (bool, bool) {
+    fn key_input(&mut self, keycode: Keycode, state: KeyState) -> (bool, bool) {
         // track pressed keys as xkbcommon does not seem to expose it :(
         let direction = match state {
             KeyState::Pressed => {
@@ -214,7 +214,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         // update state
         // Offset the keycode by 8, as the evdev XKB rules reflect X's
         // broken keycode system, which starts at 8.
-        let state_components = self.state.update_key((keycode + 8).into(), direction);
+        let state_components = self.state.update_key(keycode, direction);
         let modifiers_changed = state_components != 0;
         if modifiers_changed {
             self.mods_state.update_with(&self.state);
@@ -560,7 +560,7 @@ pub trait KeyboardGrab<D: SeatHandler> {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        keycode: u32,
+        keycode: Keycode,
         state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
@@ -726,7 +726,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         let mut state = xkb::State::new(&keymap);
         for key in &internal.pressed_keys {
-            state.update_key((key + 8).into(), xkb::KeyDirection::Down);
+            state.update_key(*key, xkb::KeyDirection::Down);
         }
 
         let led_mapping = LedMapping::from_keymap(&keymap);
@@ -891,7 +891,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     pub fn input<T, F>(
         &self,
         data: &mut D,
-        keycode: u32,
+        keycode: Keycode,
         state: KeyState,
         serial: Serial,
         time: u32,
@@ -918,7 +918,13 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// Prefer using [`KeyboardHandle::input`] if this decision can be done synchronously
     /// in the `filter` closure.
-    pub fn input_intercept<T, F>(&self, data: &mut D, keycode: u32, state: KeyState, filter: F) -> (T, bool)
+    pub fn input_intercept<T, F>(
+        &self,
+        data: &mut D,
+        keycode: Keycode,
+        state: KeyState,
+        filter: F,
+    ) -> (T, bool)
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
     {
@@ -927,9 +933,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut guard = self.arc.internal.lock().unwrap();
         let (mods_changed, leds_changed) = guard.key_input(keycode, state);
         let key_handle = KeysymHandle {
-            // Offset the keycode by 8, as the evdev XKB rules reflect X's
-            // broken keycode system, which starts at 8.
-            keycode: (keycode + 8).into(),
+            keycode,
             state: &guard.state,
             keymap: &guard.keymap,
         };
@@ -953,7 +957,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     pub fn input_forward(
         &self,
         data: &mut D,
-        keycode: u32,
+        keycode: Keycode,
         state: KeyState,
         serial: Serial,
         time: u32,
@@ -1001,7 +1005,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Return the key codes of the currently pressed keys.
     pub fn pressed_keys(&self) -> HashSet<Keycode> {
         let guard = self.arc.internal.lock().unwrap();
-        guard.pressed_keys.iter().map(|&code| code.into()).collect()
+        guard.pressed_keys.clone()
     }
 
     /// Iterate over the keysyms of the currently pressed keys.
@@ -1015,8 +1019,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             let handles = guard
                 .pressed_keys
                 .iter()
-                .map(|code| KeysymHandle {
-                    keycode: (code + 8).into(),
+                .map(|keycode| KeysymHandle {
+                    keycode: *keycode,
                     state: &guard.state,
                     keymap: &guard.keymap,
                 })
@@ -1150,9 +1154,9 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
     }
 
     /// Convert a given keycode as a [`KeysymHandle`] modified by this keyboards state
-    pub fn keysym_handle(&self, keycode: u32) -> KeysymHandle<'_> {
+    pub fn keysym_handle(&self, keycode: Keycode) -> KeysymHandle<'_> {
         KeysymHandle {
-            keycode: (keycode + 8).into(),
+            keycode,
             state: &self.inner.state,
             keymap: &self.inner.keymap,
         }
@@ -1167,7 +1171,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
     pub fn input(
         &mut self,
         data: &mut D,
-        keycode: u32,
+        keycode: Keycode,
         key_state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
@@ -1189,7 +1193,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         // key event must be sent before modifiers event for libxkbcommon
         // to process them correctly
         let key = KeysymHandle {
-            keycode: (keycode + 8).into(),
+            keycode,
             state: &self.inner.state,
             keymap: &self.inner.keymap,
         };
@@ -1239,14 +1243,10 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                         .inner
                         .forwarded_pressed_keys
                         .iter()
-                        .map(|keycode| {
-                            KeysymHandle {
-                                // Offset the keycode by 8, as the evdev XKB rules reflect X's
-                                // broken keycode system, which starts at 8.
-                                keycode: (keycode + 8).into(),
-                                state: &self.inner.state,
-                                keymap: &self.inner.keymap,
-                            }
+                        .map(|keycode| KeysymHandle {
+                            keycode: *keycode,
+                            state: &self.inner.state,
+                            keymap: &self.inner.keymap,
                         })
                         .collect();
 
@@ -1258,14 +1258,10 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                         .inner
                         .forwarded_pressed_keys
                         .iter()
-                        .map(|keycode| {
-                            KeysymHandle {
-                                // Offset the keycode by 8, as the evdev XKB rules reflect X's
-                                // broken keycode system, which starts at 8.
-                                keycode: (keycode + 8).into(),
-                                state: &self.inner.state,
-                                keymap: &self.inner.keymap,
-                            }
+                        .map(|keycode| KeysymHandle {
+                            keycode: *keycode,
+                            state: &self.inner.state,
+                            keymap: &self.inner.keymap,
                         })
                         .collect();
 
@@ -1289,7 +1285,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        keycode: u32,
+        keycode: Keycode,
         state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
