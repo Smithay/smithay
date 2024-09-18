@@ -219,8 +219,7 @@ impl Instance {
 
         // Enable debug layers if present and debug assertions are enabled.
         if cfg!(debug_assertions) {
-            const VALIDATION: &CStr =
-                unsafe { CStr::from_bytes_with_nul_unchecked(b"VK_LAYER_KHRONOS_validation\0") };
+            const VALIDATION: &CStr = c"VK_LAYER_KHRONOS_validation";
 
             if available_layers
                 .iter()
@@ -256,8 +255,7 @@ impl Instance {
             app_info.map(|info| CString::new(info.name).expect("app name contains null terminator"));
         let mut app_info = vk::ApplicationInfo::default()
             .api_version(api_version.to_raw())
-            // SAFETY: null terminated with no interior null bytes.
-            .engine_name(unsafe { CStr::from_bytes_with_nul_unchecked(b"Smithay\0") })
+            .engine_name(c"Smithay")
             .engine_version(Version::SMITHAY.to_raw());
 
         if let Some(app_version) = app_version {
