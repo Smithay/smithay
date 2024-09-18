@@ -15,8 +15,8 @@ pub use self::alive_tracker::IsAlive;
 mod fd;
 pub use fd::*;
 
-#[cfg(feature = "wayland_frontend")]
-pub(crate) mod sealed_file;
+mod sealed_file;
+pub use sealed_file::SealedFile;
 
 #[cfg(feature = "wayland_frontend")]
 pub(crate) use self::geometry::Client;

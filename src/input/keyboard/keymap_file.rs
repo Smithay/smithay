@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::error;
 use xkbcommon::xkb::{self, Keymap, KEYMAP_FORMAT_TEXT_V1};
 
-use crate::utils::sealed_file::SealedFile;
+use crate::utils::SealedFile;
 
 /// Keymap ID, uniquely identifying the keymap without requiring a full content hash.
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);

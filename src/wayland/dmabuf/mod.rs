@@ -220,7 +220,7 @@ use crate::{
         dmabuf::{Dmabuf, DmabufFlags, Plane},
         Format, Fourcc, Modifier,
     },
-    utils::{ids::id_gen, sealed_file::SealedFile, UnmanagedResource},
+    utils::{ids::id_gen, SealedFile, UnmanagedResource},
 };
 
 use super::{buffer::BufferHandler, compositor};

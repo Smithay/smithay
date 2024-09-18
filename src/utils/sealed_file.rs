@@ -1,8 +1,3 @@
-//! A file whose fd cannot be written by other processes
-//!
-//! This mechanism is useful for giving clients access to large amounts of
-//! information such as keymaps without them being able to write to the handle.
-
 use std::{
     ffi::CString,
     fs::File,
@@ -10,17 +5,27 @@ use std::{
     os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd},
 };
 
+/// A file whose fd cannot be written by other processes
+///
+/// This mechanism is useful for giving clients access to large amounts of
+/// information such as keymaps without them being able to write to the handle.
+///
+/// On Linux, Android, and FreeBSD, this uses a sealed memfd. On other platforms
+/// it creates a POSIX shared memory object with `shm_open`, opens a read-only
+/// copy, and unlinks it.
 #[derive(Debug)]
-pub(crate) struct SealedFile {
+pub struct SealedFile {
     file: File,
     size: usize,
 }
 
 impl SealedFile {
+    /// Create a `[SealedFile]` with the given nul-terminated C string.
     pub fn with_content(name: CString, contents: CString) -> Result<Self, std::io::Error> {
         Self::with_data(name, contents.as_bytes_with_nul())
     }
 
+    /// Create a `[SealedFile]` with the given binary data.
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "android"))]
     pub fn with_data(name: CString, data: &[u8]) -> Result<Self, std::io::Error> {
         use rustix::fs::{MemfdFlags, SealFlags};
@@ -45,6 +50,7 @@ impl SealedFile {
         })
     }
 
+    /// Create a `[SealedFile]` with the given binary data.
     #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "android")))]
     pub fn with_data(name: CString, data: &[u8]) -> Result<Self, std::io::Error> {
         use rand::{distributions::Alphanumeric, Rng};
@@ -89,7 +95,7 @@ impl SealedFile {
         })
     }
 
-    // Only used in KeymapFile which is under the wayland_frontend feature
+    /// Size of the data contained in the sealed file.
     pub fn size(&self) -> usize {
         self.size
     }
