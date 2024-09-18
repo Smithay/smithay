@@ -162,6 +162,26 @@ impl ForeignToplevelHandle {
         resource.data::<Self>().cloned()
     }
 
+    /// Retrieve [`ExtForeignToplevelHandleV1`](wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1)
+    /// instances for this handle.
+    pub fn resources(&self) -> Vec<ExtForeignToplevelHandleV1> {
+        let inner = self.inner.0.lock().unwrap();
+        inner
+            .instances
+            .iter()
+            .filter_map(|weak| weak.upgrade().ok())
+            .collect()
+    }
+
+    /// Retrieve [`ExtForeignToplevelHandleV1`](wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1)
+    /// instances for this handle of a given [`Client`](wayland_server::Client).
+    pub fn resources_for_client(&self, client: &Client) -> Vec<ExtForeignToplevelHandleV1> {
+        self.resources()
+            .into_iter()
+            .filter(|handle| handle.client().as_ref().is_some_and(|c| c == client))
+            .collect()
+    }
+
     /// Access the [UserDataMap] associated with this [ForeignToplevelHandle]
     pub fn user_data(&self) -> &UserDataMap {
         &self.inner.1
