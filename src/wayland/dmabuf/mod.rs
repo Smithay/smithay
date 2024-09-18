@@ -189,7 +189,7 @@ mod dispatch;
 
 use std::{
     collections::HashMap,
-    ffi::CString,
+    ffi::CStr,
     ops::Sub,
     os::unix::io::AsFd,
     sync::{
@@ -397,7 +397,7 @@ impl DmabufFeedbackBuilder {
             .flat_map(DmabufFeedbackFormat::to_ne_bytes)
             .collect::<Vec<_>>();
 
-        let name = CString::new("smithay-dmabuffeedback-format-table").unwrap();
+        let name = CStr::from_bytes_with_nul(b"smithay-dmabuffeedback-format-table\0").unwrap();
         let format_table_file = SealedFile::with_data(name, &formats)?;
 
         // remove all formats from the main tranche that are already covered
