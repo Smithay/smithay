@@ -376,7 +376,7 @@ pub(crate) struct RelativePosition {
 }
 
 impl RelativePosition {
-    pub(crate) fn new(x: f64, y: f64) -> Self {
+    pub(crate) const fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
 }

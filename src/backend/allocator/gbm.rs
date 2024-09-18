@@ -154,7 +154,7 @@ impl<A: AsFd + 'static> AsFd for GbmAllocator<A> {
 impl<A: AsFd + 'static> GbmAllocator<A> {
     /// Create a new [`GbmAllocator`] from a [`GbmDevice`] with some default usage flags,
     /// to be used when [`Allocator::create_buffer`] is invoked.
-    pub fn new(device: GbmDevice<A>, default_flags: GbmBufferFlags) -> GbmAllocator<A> {
+    pub const fn new(device: GbmDevice<A>, default_flags: GbmBufferFlags) -> GbmAllocator<A> {
         GbmAllocator {
             device,
             default_flags,

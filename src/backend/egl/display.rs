@@ -581,7 +581,7 @@ impl EGLDisplay {
     }
 
     /// Returns the runtime egl version of this display
-    pub fn get_egl_version(&self) -> (i32, i32) {
+    pub const fn get_egl_version(&self) -> (i32, i32) {
         self.egl_version
     }
 
@@ -591,12 +591,12 @@ impl EGLDisplay {
     }
 
     /// Returns a list of formats for dmabufs that can be rendered to.
-    pub fn dmabuf_render_formats(&self) -> &FormatSet {
+    pub const fn dmabuf_render_formats(&self) -> &FormatSet {
         &self.dmabuf_render_formats
     }
 
     /// Returns a list of formats for dmabufs that can be used as textures.
-    pub fn dmabuf_texture_formats(&self) -> &FormatSet {
+    pub const fn dmabuf_texture_formats(&self) -> &FormatSet {
         &self.dmabuf_import_formats
     }
 

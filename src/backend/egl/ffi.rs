@@ -18,7 +18,7 @@ pub type NativeDisplayType = *const c_void;
 pub type NativePixmapType = *const c_void;
 pub type NativeWindowType = *const c_void;
 
-fn error_str(error: egl::types::EGLenum) -> &'static str {
+const fn error_str(error: egl::types::EGLenum) -> &'static str {
     match error {
         egl::SUCCESS => "SUCCESS",
         egl::NOT_INITIALIZED => "NOT_INITIALIZED",
@@ -77,7 +77,7 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
         ptr,
     };
 
-    fn constrain<F>(f: F) -> F
+    const fn constrain<F>(f: F) -> F
     where
         F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
     {

@@ -214,7 +214,7 @@ impl RendererSurfaceState {
     ///
     /// The position should be saved after calling [`damage_since`](RendererSurfaceState::damage_since) and
     /// provided as the commit in the next call.
-    pub fn current_commit(&self) -> CommitCounter {
+    pub const fn current_commit(&self) -> CommitCounter {
         self.damage.current_commit()
     }
 
@@ -244,12 +244,12 @@ impl RendererSurfaceState {
     }
 
     /// Returns the scale of the current attached buffer
-    pub fn buffer_scale(&self) -> i32 {
+    pub const fn buffer_scale(&self) -> i32 {
         self.buffer_scale
     }
 
     /// Returns the transform of the current attached buffer
-    pub fn buffer_transform(&self) -> Transform {
+    pub const fn buffer_transform(&self) -> Transform {
         self.buffer_transform
     }
 
@@ -263,7 +263,7 @@ impl RendererSurfaceState {
 
     /// Get the attached buffer.
     /// Can be used to check if surface is mapped
-    pub fn buffer(&self) -> Option<&Buffer> {
+    pub const fn buffer(&self) -> Option<&Buffer> {
         self.buffer.as_ref()
     }
 
@@ -293,7 +293,7 @@ impl RendererSurfaceState {
     }
 
     /// Gets the [`SurfaceView`] of this surface
-    pub fn view(&self) -> Option<SurfaceView> {
+    pub const fn view(&self) -> Option<SurfaceView> {
         self.surface_view
     }
 

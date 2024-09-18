@@ -427,19 +427,19 @@ impl PhysicalDevice {
     /// returns the version the device can actually support, based on the instance’s, `api_version`.
     ///
     /// The Vulkan specification provides more information about the version requirements: <https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#fundamentals-validusage-versions>
-    pub fn api_version(&self) -> Version {
+    pub const fn api_version(&self) -> Version {
         self.info.api_version
     }
 
     /// Returns the device type.
     ///
     /// This may be used during device selection to choose a higher performance GPU.
-    pub fn ty(&self) -> vk::PhysicalDeviceType {
+    pub const fn ty(&self) -> vk::PhysicalDeviceType {
         self.info.properties.device_type
     }
 
     /// Returns the Vulkan 1.0 physical device features.
-    pub fn features(&self) -> vk::PhysicalDeviceFeatures {
+    pub const fn features(&self) -> vk::PhysicalDeviceFeatures {
         self.info.features
     }
 
@@ -447,24 +447,24 @@ impl PhysicalDevice {
     ///
     /// Some properties such as the device name can be obtained using other functions defined on
     /// [`PhysicalDevice`].
-    pub fn properties(&self) -> vk::PhysicalDeviceProperties {
+    pub const fn properties(&self) -> vk::PhysicalDeviceProperties {
         self.info.properties
     }
 
     /// Returns the device's descriptor set properties.
     ///
     /// This also describes the maximum memory allocation size.
-    pub fn properties_maintenance_3(&self) -> vk::PhysicalDeviceMaintenance3Properties<'_> {
+    pub const fn properties_maintenance_3(&self) -> vk::PhysicalDeviceMaintenance3Properties<'_> {
         self.info.maintenance_3
     }
 
     /// Information about universally unique identifiers (UUIDs) that identify this device.
-    pub fn id_properties(&self) -> vk::PhysicalDeviceIDProperties<'_> {
+    pub const fn id_properties(&self) -> vk::PhysicalDeviceIDProperties<'_> {
         self.info.id
     }
 
     /// Returns the physical device limits.
-    pub fn limits(&self) -> vk::PhysicalDeviceLimits {
+    pub const fn limits(&self) -> vk::PhysicalDeviceLimits {
         self.info.properties.limits
     }
 
@@ -474,7 +474,7 @@ impl PhysicalDevice {
     /// * The Vulkan implementation is not at least 1.2
     /// * If the Vulkan implementation is not at least Vulkan 1.2, the `VK_KHR_driver_properties` device
     ///   extension is not available.
-    pub fn driver(&self) -> Option<&DriverInfo> {
+    pub const fn driver(&self) -> Option<&DriverInfo> {
         self.info.driver.as_ref()
     }
 
@@ -601,12 +601,12 @@ impl PhysicalDevice {
     ///
     /// The handle refers to a specific physical device advertised by the instance. This handle is only valid
     /// for the lifetime of the instance.
-    pub fn handle(&self) -> vk::PhysicalDevice {
+    pub const fn handle(&self) -> vk::PhysicalDevice {
         self.phd
     }
 
     /// The instance which provided this physical device.
-    pub fn instance(&self) -> &Instance {
+    pub const fn instance(&self) -> &Instance {
         &self.instance
     }
 }

@@ -123,7 +123,7 @@ impl PartialEq for LockSurface {
 }
 
 impl LockSurface {
-    pub(crate) fn new(surface: WlSurface, shell_surface: ExtSessionLockSurfaceV1) -> Self {
+    pub(crate) const fn new(surface: WlSurface, shell_surface: ExtSessionLockSurfaceV1) -> Self {
         Self {
             surface,
             shell_surface,
@@ -185,7 +185,7 @@ impl LockSurface {
 
     /// Access the underlying [`WlSurface`].
     #[inline]
-    pub fn wl_surface(&self) -> &WlSurface {
+    pub const fn wl_surface(&self) -> &WlSurface {
         &self.surface
     }
 

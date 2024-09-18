@@ -202,7 +202,7 @@ impl Scale {
     }
 
     /// Returns the fractional scale (calculated if necessary)
-    pub fn fractional_scale(&self) -> f64 {
+    pub const fn fractional_scale(&self) -> f64 {
         match self {
             Scale::Integer(scale) => *scale as f64,
             Scale::Fractional(scale) => *scale,

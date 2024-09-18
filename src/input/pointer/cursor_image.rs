@@ -13,7 +13,7 @@ pub struct CursorImageAttributes {
     pub hotspot: Point<i32, Logical>,
 }
 
-/// Data associated with XDG toplevel surface  
+/// Data associated with XDG toplevel surface
 ///
 /// ```no_run
 /// # #[cfg(feature = "wayland_frontend")]
@@ -44,7 +44,7 @@ pub enum CursorImageStatus {
 
 impl CursorImageStatus {
     /// Get default `Named` cursor.
-    pub fn default_named() -> Self {
+    pub const fn default_named() -> Self {
         Self::Named(CursorIcon::Default)
     }
 }

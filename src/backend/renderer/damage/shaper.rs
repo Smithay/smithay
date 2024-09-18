@@ -273,7 +273,7 @@ enum DamageSplitAxis {
 
 impl DamageSplitAxis {
     /// Invert the split direction.
-    fn invert(self) -> Self {
+    const fn invert(self) -> Self {
         match self {
             DamageSplitAxis::X => DamageSplitAxis::Y,
             DamageSplitAxis::Y => DamageSplitAxis::X,

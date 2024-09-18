@@ -687,7 +687,7 @@ pub struct Size<N, Kind> {
 impl<N: Coordinate, Kind> Size<N, Kind> {
     /// Convert this [`Size`] to a [`Point`] with the same coordinates
     #[inline]
-    pub fn to_point(self) -> Point<N, Kind> {
+    pub const fn to_point(self) -> Point<N, Kind> {
         Point {
             x: self.w,
             y: self.h,
@@ -1526,7 +1526,7 @@ impl Transform {
     ///
     /// Flipping is preserved and 180/Normal transformation are uneffected.
     #[inline]
-    pub fn invert(&self) -> Transform {
+    pub const fn invert(&self) -> Transform {
         match self {
             Transform::Normal => Transform::Normal,
             Transform::Flipped => Transform::Flipped,
@@ -1601,7 +1601,7 @@ impl Transform {
     }
 
     /// Returns true if the transformation would flip contents
-    pub fn flipped(&self) -> bool {
+    pub const fn flipped(&self) -> bool {
         !matches!(
             self,
             Transform::Normal | Transform::_90 | Transform::_180 | Transform::_270
@@ -1610,7 +1610,7 @@ impl Transform {
 
     /// Returns the angle (in degrees) of the transformation
     #[inline]
-    pub fn degrees(&self) -> u32 {
+    pub const fn degrees(&self) -> u32 {
         match self {
             Transform::Normal | Transform::Flipped => 0,
             Transform::_90 | Transform::Flipped90 => 90,

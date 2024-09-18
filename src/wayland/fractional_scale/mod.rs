@@ -245,7 +245,7 @@ impl FractionalScaleState {
     }
 
     /// Returns the current preferred scale
-    pub fn preferred_scale(&self) -> Option<f64> {
+    pub const fn preferred_scale(&self) -> Option<f64> {
         self.preferred_scale
     }
 }

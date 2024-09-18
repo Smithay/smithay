@@ -814,7 +814,7 @@ pub enum InputEvent<B: InputBackend> {
 ///
 /// Taken from https://sources.debian.org/src/xserver-xorg-input-libinput/1.1.0-1/src/xf86libinput.c/?hl=1508#L236-L252
 #[cfg(any(feature = "backend_winit", feature = "backend_x11"))]
-pub(crate) fn xorg_mouse_to_libinput(xorg: u32) -> u32 {
+pub(crate) const fn xorg_mouse_to_libinput(xorg: u32) -> u32 {
     match xorg {
         0 => 0,
         1 => 0x110,            // BTN_LEFT

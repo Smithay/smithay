@@ -198,12 +198,12 @@ impl X11Surface {
     }
 
     /// Returns the id of the X11Wm responsible for this surface, if any
-    pub fn xwm_id(&self) -> Option<XwmId> {
+    pub const fn xwm_id(&self) -> Option<XwmId> {
         self.xwm
     }
 
     /// X11 protocol id of the underlying window
-    pub fn window_id(&self) -> X11Window {
+    pub const fn window_id(&self) -> X11Window {
         self.window
     }
 
@@ -250,7 +250,7 @@ impl X11Surface {
     }
 
     /// Returns if this window has the override redirect flag set or not
-    pub fn is_override_redirect(&self) -> bool {
+    pub const fn is_override_redirect(&self) -> bool {
         self.override_redirect
     }
 

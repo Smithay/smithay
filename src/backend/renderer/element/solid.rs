@@ -225,7 +225,7 @@ impl SolidColorBuffer {
     }
 
     /// Get the current color of this buffer
-    pub fn color(&self) -> Color32F {
+    pub const fn color(&self) -> Color32F {
         self.color
     }
 }
@@ -286,7 +286,7 @@ impl SolidColorRenderElement {
     }
 
     /// Get the current color of this element
-    pub fn color(&self) -> Color32F {
+    pub const fn color(&self) -> Color32F {
         self.color
     }
 }

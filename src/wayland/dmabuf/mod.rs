@@ -271,7 +271,7 @@ struct DmabufFeedbackFormat {
 }
 
 impl DmabufFeedbackFormat {
-    fn to_ne_bytes(self) -> [u8; 16] {
+    const fn to_ne_bytes(self) -> [u8; 16] {
         let format: [u8; 4] = self.format.to_ne_bytes();
         let reserved: [u8; 4] = self._reserved.to_ne_bytes();
         let modifier: [u8; 8] = self.modifier.to_ne_bytes();
@@ -967,7 +967,12 @@ impl ImportNotifier {
         self.drop_ignore = true;
     }
 
-    fn new(params: ZwpLinuxBufferParamsV1, display: DisplayHandle, dmabuf: Dmabuf, import: Import) -> Self {
+    const fn new(
+        params: ZwpLinuxBufferParamsV1,
+        display: DisplayHandle,
+        dmabuf: Dmabuf,
+        import: Import,
+    ) -> Self {
         Self {
             inner: params,
             display,

@@ -388,7 +388,7 @@ impl ClientData for XWaylandClientData {
 
 impl XWaylandClientData {
     /// Access user_data map for a xwayland client
-    pub fn user_data(&self) -> &UserDataMap {
+    pub const fn user_data(&self) -> &UserDataMap {
         &self.data_map
     }
 }

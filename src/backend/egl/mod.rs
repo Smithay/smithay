@@ -219,7 +219,7 @@ pub enum Format {
 impl Format {
     /// Amount of planes this format uses
     #[inline]
-    pub fn num_planes(&self) -> usize {
+    pub const fn num_planes(&self) -> usize {
         match *self {
             Format::RGB | Format::RGBA | Format::External => 1,
             Format::Y_UV | Format::Y_XUXV => 2,

@@ -37,7 +37,7 @@ pub struct DumbAllocator {
 
 impl DumbAllocator {
     /// Create a new [`DumbAllocator`] from a [`DrmDeviceFd`].
-    pub fn new(fd: DrmDeviceFd) -> Self {
+    pub const fn new(fd: DrmDeviceFd) -> Self {
         DumbAllocator { fd }
     }
 }
@@ -96,7 +96,7 @@ impl DumbBuffer {
     ///
     /// Note: This handle will become invalid, once the `DumbBuffer` wrapper is dropped
     /// or the device used to create is closed. Do not copy this handle and assume it keeps being valid.
-    pub fn handle(&self) -> &Handle {
+    pub const fn handle(&self) -> &Handle {
         &self.handle
     }
 }

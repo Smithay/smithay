@@ -37,7 +37,7 @@ pub struct Clock<Kind: ClockSource> {
 impl<Kind: ClockSource> Clock<Kind> {
     /// Initialize a new clock
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Clock { _kind: PhantomData }
     }
 
@@ -47,7 +47,7 @@ impl<Kind: ClockSource> Clock<Kind> {
     }
 
     /// Gets the id of the clock
-    pub fn id(&self) -> ClockId {
+    pub const fn id(&self) -> ClockId {
         Kind::ID
     }
 }

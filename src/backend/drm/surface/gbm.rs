@@ -460,7 +460,7 @@ where
     }
 
     /// Tries to mark a [`connector`](drm::control::connector)
-    /// for removal on the next commit.    
+    /// for removal on the next commit.
     pub fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error<A::Error>> {
         self.drm.remove_connector(connector).map_err(Error::DrmError)
     }
@@ -470,19 +470,19 @@ where
     /// Fails if one new `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
-    /// [`Mode`](drm::control::Mode).    
+    /// [`Mode`](drm::control::Mode).
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error<A::Error>> {
         self.drm.set_connectors(connectors).map_err(Error::DrmError)
     }
 
     /// Returns the currently active [`Mode`](drm::control::Mode)
-    /// of the underlying [`crtc`](drm::control::crtc)    
+    /// of the underlying [`crtc`](drm::control::crtc)
     pub fn current_mode(&self) -> Mode {
         self.drm.current_mode()
     }
 
     /// Returns the currently pending [`Mode`](drm::control::Mode)
-    /// to be used after the next commit.    
+    /// to be used after the next commit.
     pub fn pending_mode(&self) -> Mode {
         self.drm.pending_mode()
     }
@@ -506,7 +506,7 @@ where
     }
 
     /// Get the format of the underlying swapchain
-    pub fn format(&self) -> Fourcc {
+    pub const fn format(&self) -> Fourcc {
         self.swapchain.format()
     }
 }

@@ -365,7 +365,7 @@ xdg_role!(
     }
 );
 
-/// Data associated with XDG toplevel surface  
+/// Data associated with XDG toplevel surface
 ///
 /// ```no_run
 /// use smithay::wayland::compositor;
@@ -439,7 +439,7 @@ xdg_role!(
     }
 );
 
-/// Data associated with XDG popup surface  
+/// Data associated with XDG popup surface
 ///
 /// ```no_run
 /// use smithay::wayland::compositor;
@@ -769,7 +769,10 @@ impl PositionerState {
     }
 }
 
-fn compute_offsets(target: Rectangle<i32, Logical>, popup: Rectangle<i32, Logical>) -> (i32, i32, i32, i32) {
+const fn compute_offsets(
+    target: Rectangle<i32, Logical>,
+    popup: Rectangle<i32, Logical>,
+) -> (i32, i32, i32, i32) {
     let off_left = target.loc.x - popup.loc.x;
     let off_right = (popup.loc.x + popup.size.w) - (target.loc.x + target.size.w);
     let off_top = target.loc.y - popup.loc.y;
@@ -777,7 +780,7 @@ fn compute_offsets(target: Rectangle<i32, Logical>, popup: Rectangle<i32, Logica
     (off_left, off_right, off_top, off_bottom)
 }
 
-fn invert_anchor_x(anchor: Anchor) -> Anchor {
+const fn invert_anchor_x(anchor: Anchor) -> Anchor {
     match anchor {
         Anchor::Left => Anchor::Right,
         Anchor::Right => Anchor::Left,
@@ -789,7 +792,7 @@ fn invert_anchor_x(anchor: Anchor) -> Anchor {
     }
 }
 
-fn invert_anchor_y(anchor: Anchor) -> Anchor {
+const fn invert_anchor_y(anchor: Anchor) -> Anchor {
     match anchor {
         Anchor::Top => Anchor::Bottom,
         Anchor::Bottom => Anchor::Top,
@@ -801,7 +804,7 @@ fn invert_anchor_y(anchor: Anchor) -> Anchor {
     }
 }
 
-fn invert_gravity_x(gravity: Gravity) -> Gravity {
+const fn invert_gravity_x(gravity: Gravity) -> Gravity {
     match gravity {
         Gravity::Left => Gravity::Right,
         Gravity::Right => Gravity::Left,
@@ -813,7 +816,7 @@ fn invert_gravity_x(gravity: Gravity) -> Gravity {
     }
 }
 
-fn invert_gravity_y(gravity: Gravity) -> Gravity {
+const fn invert_gravity_y(gravity: Gravity) -> Gravity {
     match gravity {
         Gravity::Top => Gravity::Bottom,
         Gravity::Bottom => Gravity::Top,
@@ -1587,12 +1590,12 @@ impl ToplevelSurface {
 
     /// Access the underlying `wl_surface` of this toplevel surface
     #[inline]
-    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+    pub const fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
 
     /// Access the underlying `xdg_toplevel` of this toplevel surface
-    pub fn xdg_toplevel(&self) -> &xdg_toplevel::XdgToplevel {
+    pub const fn xdg_toplevel(&self) -> &xdg_toplevel::XdgToplevel {
         &self.shell_surface
     }
 
@@ -1950,12 +1953,12 @@ impl PopupSurface {
 
     /// Access the underlying `wl_surface` of this popup surface
     #[inline]
-    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+    pub const fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
 
     /// Access the underlying `xdg_popup` of this popup surface
-    pub fn xdg_popup(&self) -> &xdg_popup::XdgPopup {
+    pub const fn xdg_popup(&self) -> &xdg_popup::XdgPopup {
         &self.shell_surface
     }
 

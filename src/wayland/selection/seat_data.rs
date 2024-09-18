@@ -106,12 +106,12 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
     }
 
     /// Get the current selection which will be used as a clipboard selection.
-    pub fn get_clipboard_selection(&self) -> Option<&OfferReplySource<U>> {
+    pub const fn get_clipboard_selection(&self) -> Option<&OfferReplySource<U>> {
         self.clipboard_selection.as_ref()
     }
 
     /// Get the current selection which will be used as a primary selection.
-    pub fn get_primary_selection(&self) -> Option<&OfferReplySource<U>> {
+    pub const fn get_primary_selection(&self) -> Option<&OfferReplySource<U>> {
         self.primary_selection.as_ref()
     }
 

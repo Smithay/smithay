@@ -23,31 +23,31 @@ impl Color32F {
 impl Color32F {
     /// Red color component
     #[inline]
-    pub fn r(&self) -> f32 {
+    pub const fn r(&self) -> f32 {
         self.0[0]
     }
 
     /// Green color component
     #[inline]
-    pub fn g(&self) -> f32 {
+    pub const fn g(&self) -> f32 {
         self.0[1]
     }
 
     /// Blue color component
     #[inline]
-    pub fn b(&self) -> f32 {
+    pub const fn b(&self) -> f32 {
         self.0[2]
     }
 
     /// Alpha color component
     #[inline]
-    pub fn a(&self) -> f32 {
+    pub const fn a(&self) -> f32 {
         self.0[3]
     }
 
     /// Color components
     #[inline]
-    pub fn components(self) -> [f32; 4] {
+    pub const fn components(self) -> [f32; 4] {
         self.0
     }
 }
