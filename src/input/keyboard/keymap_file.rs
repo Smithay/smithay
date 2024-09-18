@@ -1,11 +1,11 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tracing::error;
 use xkbcommon::xkb::{self, Keymap, KEYMAP_FORMAT_TEXT_V1};
 
-use crate::utils::sealed_file::SealedFile;
+use crate::utils::SealedFile;
 
 /// Keymap ID, uniquely identifying the keymap without requiring a full content hash.
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -21,9 +21,9 @@ pub struct KeymapFile {
 impl KeymapFile {
     /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
     pub fn new(keymap: &Keymap) -> Self {
-        let name = CString::new("smithay-keymap").unwrap();
+        let name = CStr::from_bytes_with_nul(b"smithay-keymap\0").unwrap();
         let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
-        let sealed = SealedFile::with_content(name, CString::new(keymap.as_str()).unwrap());
+        let sealed = SealedFile::with_content(name, &CString::new(keymap.as_str()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
             error!("Error when creating sealed keymap file: {}", err);
@@ -42,8 +42,8 @@ impl KeymapFile {
     pub(crate) fn change_keymap(&mut self, keymap: &Keymap) {
         let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
 
-        let name = CString::new("smithay-keymap-file").unwrap();
-        let sealed = SealedFile::with_content(name, CString::new(keymap.clone()).unwrap());
+        let name = CStr::from_bytes_with_nul(b"smithay-keymap-file\0").unwrap();
+        let sealed = SealedFile::with_content(name, &CString::new(keymap.clone()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
             error!("Error when creating sealed keymap file: {}", err);
