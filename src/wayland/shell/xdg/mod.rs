@@ -1527,6 +1527,25 @@ impl ToplevelSurface {
         serial
     }
 
+    /// A newly-unmapped toplevel surface has to perform the initial commit-configure sequence as if it was
+    /// a new toplevel.
+    ///
+    /// This method is used to mark a sufrace for reinitialization.
+    ///
+    /// Calls [`compositor::with_states`] internally.
+    pub fn reset_initial_configure_sent(&self) {
+        compositor::with_states(&self.wl_surface, |states| {
+            let mut data = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            data.initial_configure_sent = false;
+            data.initial_decoration_configure_sent = false;
+        });
+    }
+
     /// Handles the role specific commit logic
     ///
     /// This should be called when the underlying WlSurface
@@ -1841,6 +1860,24 @@ impl PopupSurface {
         let serial = self.send_configure_internal(None);
 
         Ok(serial)
+    }
+
+    /// A newly-unmapped popup surface has to perform the initial commit-configure sequence as if it was
+    /// a new popup.
+    ///
+    /// This method is used to mark a sufrace for reinitialization.
+    ///
+    /// Calls [`compositor::with_states`] internally.
+    pub fn reset_initial_configure_sent(&self) {
+        compositor::with_states(&self.wl_surface, |states| {
+            let mut data = states
+                .data_map
+                .get::<XdgPopupSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            data.initial_configure_sent = false;
+        });
     }
 
     /// Send a configure event, including the `repositioned` event to the client
