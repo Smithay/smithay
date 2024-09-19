@@ -191,9 +191,6 @@ macro_rules! xdg_role {
                 /// during the first commit a initial
                 /// configure event is sent to the client
                 pub initial_configure_sent: bool,
-                /// An `zxdg_toplevel_decoration_v1::configure` event has been sent
-                /// to the client.
-                pub initial_decoration_configure_sent: bool,
                 /// Holds the configures the server has sent out
                 /// to the client waiting to be acknowledged by
                 /// the client. All pending configures that are older
@@ -293,7 +290,6 @@ macro_rules! xdg_role {
                     configure_serial: None,
                     pending_configures: Vec::new(),
                     initial_configure_sent: false,
-                    initial_decoration_configure_sent: false,
                     server_pending: None,
                     last_acked: None,
                     current: Default::default(),
@@ -361,7 +357,10 @@ xdg_role!(
         ///
         /// For D-Bus activatable applications, the app ID is used as the D-Bus
         /// service name.
-        pub app_id: Option<String>
+        pub app_id: Option<String>,
+        /// An `zxdg_toplevel_decoration_v1::configure` event has been sent
+        /// to the client.
+        pub initial_decoration_configure_sent: bool
     }
 );
 
