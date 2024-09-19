@@ -31,7 +31,7 @@ use smithay::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
                 WlrLayerShellState,
             },
-            xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData},
+            xdg::XdgToplevelSurfaceData,
         },
     },
 };
@@ -322,16 +322,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
             }
         };
 
-        let initial_configure_sent = with_states(surface, |states| {
-            states
-                .data_map
-                .get::<XdgPopupSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
-        if !initial_configure_sent {
+        if !popup.is_initial_configure_sent() {
             // NOTE: This should never fail as the initial configure is always
             // allowed.
             popup.send_configure().expect("initial configure failed");

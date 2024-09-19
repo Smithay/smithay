@@ -311,7 +311,11 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         // The protocol demands us to always reply with a configure,
         // regardless of we fulfilled the request or not
-        surface.send_configure();
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        } else {
+            // Will be sent during initial configure
+        }
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
@@ -367,7 +371,11 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         // The protocol demands us to always reply with a configure,
         // regardless of we fulfilled the request or not
-        surface.send_configure();
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        } else {
+            // Will be sent during initial configure
+        }
     }
 
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
