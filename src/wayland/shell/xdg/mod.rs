@@ -1527,6 +1527,22 @@ impl ToplevelSurface {
         serial
     }
 
+    /// Did the surface sent the initial
+    /// configure event to the client.
+    ///
+    /// Calls [`compositor::with_states`] internally.
+    pub fn is_initial_configure_sent(&self) -> bool {
+        compositor::with_states(&self.wl_surface, |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        })
+    }
+
     /// Handles the role specific commit logic
     ///
     /// This should be called when the underlying WlSurface
@@ -1841,6 +1857,22 @@ impl PopupSurface {
         let serial = self.send_configure_internal(None);
 
         Ok(serial)
+    }
+
+    /// Did the surface sent the initial
+    /// configure event to the client.
+    ///
+    /// Calls [`compositor::with_states`] internally.
+    pub fn is_initial_configure_sent(&self) -> bool {
+        compositor::with_states(&self.wl_surface, |states| {
+            states
+                .data_map
+                .get::<XdgPopupSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        })
     }
 
     /// Send a configure event, including the `repositioned` event to the client

@@ -75,7 +75,7 @@ use smithay::{
             wlr_layer::WlrLayerShellState,
             xdg::{
                 decoration::{XdgDecorationHandler, XdgDecorationState},
-                ToplevelSurface, XdgShellState, XdgToplevelSurfaceData,
+                ToplevelSurface, XdgShellState,
             },
         },
         shm::{ShmHandler, ShmState},
@@ -427,16 +427,7 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
             });
         });
 
-        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
-        if initial_configure_sent {
+        if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
         }
     }
@@ -445,16 +436,8 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
-        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
-        if initial_configure_sent {
+
+        if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
         }
     }

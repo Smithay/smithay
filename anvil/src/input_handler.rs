@@ -27,10 +27,7 @@ use smithay::{
         compositor::with_states,
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
-        shell::{
-            wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
-            xdg::XdgToplevelSurfaceData,
-        },
+        shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
     },
 };
 
@@ -122,16 +119,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                                 false
                             }
                         });
-                        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
-                            states
-                                .data_map
-                                .get::<XdgToplevelSurfaceData>()
-                                .unwrap()
-                                .lock()
-                                .unwrap()
-                                .initial_configure_sent
-                        });
-                        if mode_changed && initial_configure_sent {
+
+                        if mode_changed && toplevel.is_initial_configure_sent() {
                             toplevel.send_pending_configure();
                         }
                     }
