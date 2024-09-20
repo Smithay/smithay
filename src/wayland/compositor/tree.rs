@@ -1,5 +1,3 @@
-#[cfg(feature = "backend_drm")]
-use crate::wayland::drm_syncobj::DrmSyncobjCachedState;
 use crate::{
     utils::{
         hook::{Hook, HookId},
@@ -152,25 +150,9 @@ impl PrivateSurfaceData {
         if let Some(BufferAssignment::NewBuffer(buffer)) = guard.pending().buffer.take() {
             buffer.release();
         };
-        drop(guard);
-        #[cfg(feature = "backend_drm")]
-        let mut guard = my_data.public_data.cached_state.get::<DrmSyncobjCachedState>();
-        #[cfg(feature = "backend_drm")]
-        if let Some(release_point) = &guard.pending().release_point {
-            if let Err(err) = release_point.signal() {
-                tracing::error!("Failed to signal syncobj release point: {}", err);
-            }
-        }
-        #[cfg(feature = "backend_drm")]
-        if let Some(release_point) = &guard.current().release_point {
-            if let Err(err) = release_point.signal() {
-                tracing::error!("Failed to signal syncobj release point: {}", err);
-            }
-        }
 
         let hooks = my_data.destruction_hooks.clone();
         // don't hold the mutex while the hooks are invoked
-        #[cfg(feature = "backend_drm")]
         drop(guard);
         drop(my_data);
         for hook in hooks {

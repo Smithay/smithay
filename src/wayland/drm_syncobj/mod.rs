@@ -226,6 +226,22 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
     });
 }
 
+fn destruction_hook<D: DrmSyncobjHandler>(_data: &mut D, surface: &WlSurface) {
+    compositor::with_states(surface, |states| {
+        let mut cached = states.cached_state.get::<DrmSyncobjCachedState>();
+        if let Some(release_point) = &cached.pending().release_point {
+            if let Err(err) = release_point.signal() {
+                tracing::error!("Failed to signal syncobj release point: {}", err);
+            }
+        }
+        if let Some(release_point) = &cached.current().release_point {
+            if let Err(err) = release_point.signal() {
+                tracing::error!("Failed to signal syncobj release point: {}", err);
+            }
+        }
+    });
+}
+
 impl<D> Dispatch<WpLinuxDrmSyncobjManagerV1, (), D> for DrmSyncobjState
 where
     D: Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData>,
@@ -269,6 +285,7 @@ where
                         .insert_if_missing(|| RefCell::new(Some(syncobj_surface)))
                 });
                 compositor::add_pre_commit_hook::<D, _>(&surface, commit_hook);
+                compositor::add_destruction_hook::<D, _>(&surface, destruction_hook);
             }
             wp_linux_drm_syncobj_manager_v1::Request::ImportTimeline { id, fd } => {
                 match DrmTimeline::new(&state.drm_syncobj_state().import_device, fd.as_fd()) {
