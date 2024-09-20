@@ -432,8 +432,14 @@ impl<'a> KeysymHandle<'a> {
     pub fn raw_latin_sym_or_raw_current_sym(&self) -> Option<Keysym> {
         let xkb = self.xkb.lock().unwrap();
         let effective_layout = Layout(xkb.state.key_get_layout(self.keycode));
+
+        // don't call `self.raw_syms()` to avoid a deadlock
+        // and an unnecessary allocation into a Vec
+        let raw_syms =
+            xkb.keymap
+                .key_get_syms_by_level(self.keycode, xkb.state.key_get_layout(self.keycode), 0);
         // NOTE: There's always a keysym in the current layout given that we have modified_sym.
-        let base_sym = *self.raw_syms().first()?;
+        let base_sym = *raw_syms.first()?;
 
         // If the character is ascii or non-printable, return it.
         if base_sym.key_char().map(|ch| ch.is_ascii()).unwrap_or(true) {
