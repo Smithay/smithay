@@ -83,6 +83,31 @@ pub struct Buffer {
 }
 
 impl Buffer {
+    /// Create a buffer with implicit sync
+    pub fn with_implicit(buffer: WlBuffer) -> Self {
+        Self {
+            inner: Arc::new(InnerBuffer {
+                buffer,
+                #[cfg(feature = "backend_drm")]
+                acquire_point: None,
+                #[cfg(feature = "backend_drm")]
+                release_point: None,
+            }),
+        }
+    }
+
+    /// Create a buffer with explicit acquire and release sync points
+    #[cfg(feature = "backend_drm")]
+    pub fn with_explicit(buffer: WlBuffer, acquire_point: DrmSyncPoint, release_point: DrmSyncPoint) -> Self {
+        Self {
+            inner: Arc::new(InnerBuffer {
+                buffer,
+                acquire_point: Some(acquire_point),
+                release_point: Some(release_point),
+            }),
+        }
+    }
+
     #[cfg(feature = "backend_drm")]
     #[allow(dead_code)]
     pub(crate) fn acquire_point(&self) -> Option<&DrmSyncPoint> {
