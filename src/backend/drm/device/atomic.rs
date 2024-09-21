@@ -138,6 +138,8 @@ impl AtomicDrmDevice {
         dev.old_state = old_state;
         trace!("Mapping: {:#?}", mapping);
 
+        drop(mapping);
+
         // If the user does not explicitly requests us to skip this,
         // we clear out the complete connector<->crtc mapping on device creation.
         //
@@ -154,7 +156,6 @@ impl AtomicDrmDevice {
             dev.reset_state()?;
         }
 
-        drop(mapping);
         drop(_guard);
         Ok(dev)
     }
