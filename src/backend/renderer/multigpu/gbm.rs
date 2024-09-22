@@ -310,7 +310,7 @@ where
                     .find_map(|renderer| Self::try_import_egl(renderer.renderer_mut(), buffer).ok())
             })
         {
-            let texture = MultiTexture::from_surface(surface, dmabuf.size());
+            let texture = MultiTexture::from_surface(surface, dmabuf.size(), dmabuf.format());
             let texture_ref = texture.0.clone();
             let res = self.import_dmabuf_internal(&dmabuf, texture, Some(damage));
             if res.is_ok() {
