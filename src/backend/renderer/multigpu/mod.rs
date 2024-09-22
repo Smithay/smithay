@@ -533,7 +533,7 @@ impl<A: GraphicsApi> GpuManager<A> {
         match buffer_type(buffer) {
             Some(BufferType::Dma) => {
                 let dmabuf = get_dmabuf(buffer).unwrap();
-                let mut texture = MultiTexture::from_surface(Some(surface), dmabuf.size());
+                let mut texture = MultiTexture::from_surface(Some(surface), dmabuf.size(), dmabuf.format());
 
                 if !self.devices.iter().any(|device| target_node == *device.node()) {
                     return Err(Error::DeviceMissing);
@@ -1394,6 +1394,8 @@ struct MultiTextureInternal {
     textures: HashMap<TypeId, HashMap<DrmNode, GpuSingleTexture>>,
     size: Size<i32, BufferCoords>,
     format: Option<Fourcc>,
+    #[allow(dead_code)]
+    buffer_format: Format,
 }
 // SAFETY: We require `Send` for textures of renderers suitable for the MultiRenderer.
 //  Type erasure just forces us to do this instead.
@@ -1422,6 +1424,7 @@ impl MultiTexture {
     fn from_surface(
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         size: Size<i32, BufferCoords>,
+        buffer_format: Format,
     ) -> MultiTexture {
         let internal = surface
             .and_then(|surface| {
@@ -1435,23 +1438,27 @@ impl MultiTexture {
                     textures: HashMap::new(),
                     size,
                     format: None,
+                    buffer_format,
                 }))
             });
         {
             let mut internal = internal.lock().unwrap();
-            if internal.size != size {
+            if internal.size != size || internal.buffer_format != buffer_format {
                 internal.textures.clear();
+                internal.format = None;
                 internal.size = size;
+                internal.buffer_format = buffer_format;
             }
         }
         MultiTexture(internal)
     }
 
-    fn new(size: Size<i32, BufferCoords>) -> MultiTexture {
+    fn new(size: Size<i32, BufferCoords>, buffer_format: Format) -> MultiTexture {
         MultiTexture(Arc::new(Mutex::new(MultiTextureInternal {
             textures: HashMap::new(),
             size,
             format: None,
+            buffer_format,
         })))
     }
 
@@ -1750,9 +1757,19 @@ where
             .renderer_mut()
             .import_shm_buffer(buffer, surface, damage)
             .map_err(Error::Render)?;
-        let dimensions = shm::with_buffer_contents(buffer, |_, _, data| (data.width, data.height).into())
-            .map_err(|_| Error::ImportFailed)?;
-        let mut texture = MultiTexture::from_surface(surface, dimensions);
+        let (dimensions, format) = shm::with_buffer_contents(buffer, |_, _, data| {
+            Ok((
+                (data.width, data.height).into(),
+                shm::shm_format_to_fourcc(data.format)
+                    .map(|code| Format {
+                        code,
+                        modifier: Modifier::Linear,
+                    })
+                    .ok_or(Error::ImportFailed)?,
+            ))
+        })
+        .map_err(|_| Error::ImportFailed)??;
+        let mut texture = MultiTexture::from_surface(surface, dimensions, format);
         texture.insert_texture::<R>(*self.render.node(), shm_texture);
         Ok(texture)
     }
@@ -1789,7 +1806,13 @@ where
             .renderer_mut()
             .import_memory(data, format, size, flipped)
             .map_err(Error::Render)?;
-        let mut texture = MultiTexture::new(size);
+        let mut texture = MultiTexture::new(
+            size,
+            Format {
+                code: format,
+                modifier: Modifier::Linear,
+            },
+        );
         texture.insert_texture::<R>(*self.render.node(), mem_texture);
         Ok(texture)
     }
@@ -1841,7 +1864,7 @@ where
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         let dmabuf = get_dmabuf(buffer).expect("import_dma_buffer without checking buffer type?");
-        let texture = MultiTexture::from_surface(surface, dmabuf.size());
+        let texture = MultiTexture::from_surface(surface, dmabuf.size(), dmabuf.format());
         let texture_ref = texture.0.clone();
         let res = self.import_dmabuf_internal(dmabuf, texture, Some(damage));
         if res.is_ok() {
@@ -1883,7 +1906,7 @@ where
         dmabuf: &Dmabuf,
         damage: Option<&[Rectangle<i32, BufferCoords>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        let texture = MultiTexture::new(dmabuf.size());
+        let texture = MultiTexture::new(dmabuf.size(), dmabuf.format());
         self.import_dmabuf_internal(dmabuf, texture, damage)
     }
 }
