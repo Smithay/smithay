@@ -316,15 +316,12 @@ impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSy
     fn request(
         _state: &mut D,
         _client: &Client,
-        _resource: &WpLinuxDrmSyncobjSurfaceV1,
+        resource: &WpLinuxDrmSyncobjSurfaceV1,
         request: wp_linux_drm_syncobj_surface_v1::Request,
         data: &DrmSyncobjSurfaceData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let Ok(surface) = data.surface.upgrade() else {
-            return;
-        };
         match request {
             wp_linux_drm_syncobj_surface_v1::Request::Destroy => {}
             wp_linux_drm_syncobj_surface_v1::Request::SetAcquirePoint {
@@ -332,6 +329,14 @@ impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSy
                 point_hi,
                 point_lo,
             } => {
+                let Ok(surface) = data.surface.upgrade() else {
+                    resource.post_error(
+                        wp_linux_drm_syncobj_surface_v1::Error::NoSurface,
+                        "Set acquire point for destroyed surface.",
+                    );
+                    return;
+                };
+
                 let sync_point = DrmSyncPoint {
                     timeline: timeline
                         .data::<DrmSyncobjTimelineData>()
@@ -351,6 +356,14 @@ impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSy
                 point_hi,
                 point_lo,
             } => {
+                let Ok(surface) = data.surface.upgrade() else {
+                    resource.post_error(
+                        wp_linux_drm_syncobj_surface_v1::Error::NoSurface,
+                        "Set release point for destroyed surface.",
+                    );
+                    return;
+                };
+
                 let sync_point = DrmSyncPoint {
                     timeline: timeline
                         .data::<DrmSyncobjTimelineData>()
