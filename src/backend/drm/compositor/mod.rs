@@ -131,7 +131,7 @@ use std::{
 };
 
 use drm::{
-    control::{connector, crtc, framebuffer, plane, Mode, PlaneType},
+    control::{connector, crtc, framebuffer, plane, Device as _, Mode, PlaneType},
     Device, DriverCapability,
 };
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -202,6 +202,22 @@ enum ScanoutBuffer<B: Buffer> {
     Wayland(crate::backend::renderer::utils::Buffer),
     Swapchain(Slot<B>),
     Cursor(GbmBuffer),
+}
+
+impl<B: Buffer> ScanoutBuffer<B> {
+    fn acquire_point(
+        &self,
+        signaled_fence: Option<&Arc<OwnedFd>>,
+    ) -> Option<(SyncPoint, Option<Arc<OwnedFd>>)> {
+        if let Self::Wayland(buffer) = self {
+            // Assume `DrmSyncobjBlocker` is used, so acquire point has already
+            // been signaled. Instead of converting with `SyncPoint::from`.
+            if buffer.acquire_point().is_some() {
+                return Some((SyncPoint::signaled(), signaled_fence.cloned()));
+            }
+        }
+        None
+    }
 }
 
 impl<B: Buffer> ScanoutBuffer<B> {
@@ -1567,6 +1583,7 @@ where
     supports_fencing: bool,
     direct_scanout: bool,
     reset_pending: bool,
+    signaled_fence: Option<Arc<OwnedFd>>,
 
     framebuffer_exporter: F,
 
@@ -1633,6 +1650,24 @@ where
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
     ) -> FrameResult<Self, A, F> {
+        let signaled_fence = match surface.create_syncobj(true) {
+            Ok(signaled_syncobj) => match surface.syncobj_to_fd(signaled_syncobj, true) {
+                Ok(signaled_fence) => {
+                    let _ = surface.destroy_syncobj(signaled_syncobj);
+                    Some(Arc::new(signaled_fence))
+                }
+                Err(err) => {
+                    tracing::warn!(?err, "failed to export signaled syncobj");
+                    let _ = surface.destroy_syncobj(signaled_syncobj);
+                    None
+                }
+            },
+            Err(err) => {
+                tracing::warn!(?err, "failed to create signaled syncobj");
+                None
+            }
+        };
+
         let span = info_span!(
             parent: None,
             "drm_compositor",
@@ -1735,6 +1770,7 @@ where
                         primary_is_opaque: is_opaque,
                         direct_scanout: true,
                         reset_pending: true,
+                        signaled_fence,
                         current_frame,
                         pending_frame: None,
                         queued_frame: None,
@@ -4095,7 +4131,10 @@ where
             buffer: element_config.buffer.clone(),
             damage_clips,
             plane_claim,
-            sync: None,
+            sync: element_config
+                .buffer
+                .buffer
+                .acquire_point(self.signaled_fence.as_ref()),
         };
 
         let is_compatible = previous_state
