@@ -48,7 +48,7 @@ thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = const { Cell::n
 
 /// SAFETY:
 /// This will be only set in the `SIGBUS_INIT` closure, hence only once!
-static mut OLD_SIGBUS_HANDLER: Option<libc::sigaction> = None;
+static mut OLD_SIGBUS_HANDLER: libc::sigaction = unsafe { mem::zeroed() };
 static SIGBUS_INIT: Once = Once::new();
 
 #[derive(Debug)]
@@ -313,7 +313,7 @@ unsafe fn place_sigbus_handler() {
         action.sa_sigaction = sigbus_handler as _;
         action.sa_flags = libc::SA_SIGINFO | libc::SA_NODEFER;
 
-        let old_action = OLD_SIGBUS_HANDLER.insert(mem::zeroed());
+        let old_action = std::ptr::addr_of_mut!(OLD_SIGBUS_HANDLER);
         if libc::sigaction(libc::SIGBUS, &action, old_action) == -1 {
             let e = rustix::io::Errno::from_raw_os_error(errno::errno().0);
             panic!("sigaction failed for SIGBUS handler: {:?}", e);
@@ -326,7 +326,7 @@ unsafe fn reraise_sigbus() {
     unsafe {
         libc::sigaction(
             libc::SIGBUS,
-            OLD_SIGBUS_HANDLER.as_ref().unwrap(),
+            std::ptr::addr_of_mut!(OLD_SIGBUS_HANDLER),
             ptr::null_mut(),
         );
         libc::raise(libc::SIGBUS);
