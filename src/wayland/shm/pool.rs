@@ -8,7 +8,7 @@ use std::{
     ptr,
     sync::{
         mpsc::{sync_channel, SyncSender},
-        Once, RwLock,
+        Once, OnceLock, RwLock,
     },
     thread,
 };
@@ -46,9 +46,7 @@ static DROP_THIS: Lazy<SyncSender<InnerPool>> = Lazy::new(|| {
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = const { Cell::new((ptr::null_mut(), false)) });
 
-/// SAFETY:
-/// This will be only set in the `SIGBUS_INIT` closure, hence only once!
-static mut OLD_SIGBUS_HANDLER: Option<libc::sigaction> = None;
+static OLD_SIGBUS_HANDLER: OnceLock<libc::sigaction> = OnceLock::new();
 static SIGBUS_INIT: Once = Once::new();
 
 #[derive(Debug)]
@@ -313,22 +311,19 @@ unsafe fn place_sigbus_handler() {
         action.sa_sigaction = sigbus_handler as _;
         action.sa_flags = libc::SA_SIGINFO | libc::SA_NODEFER;
 
-        let old_action = OLD_SIGBUS_HANDLER.insert(mem::zeroed());
-        if libc::sigaction(libc::SIGBUS, &action, old_action) == -1 {
+        let mut old_action = mem::zeroed();
+        if libc::sigaction(libc::SIGBUS, &action, &mut old_action) == -1 {
             let e = rustix::io::Errno::from_raw_os_error(errno::errno().0);
             panic!("sigaction failed for SIGBUS handler: {:?}", e);
         }
+        OLD_SIGBUS_HANDLER.set(old_action).map_err(|_| ()).unwrap();
     }
 }
 
 unsafe fn reraise_sigbus() {
     // reset the old sigaction
     unsafe {
-        libc::sigaction(
-            libc::SIGBUS,
-            OLD_SIGBUS_HANDLER.as_ref().unwrap(),
-            ptr::null_mut(),
-        );
+        libc::sigaction(libc::SIGBUS, OLD_SIGBUS_HANDLER.get().unwrap(), ptr::null_mut());
         libc::raise(libc::SIGBUS);
     }
 }
