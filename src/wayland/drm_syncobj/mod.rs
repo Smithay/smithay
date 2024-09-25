@@ -51,7 +51,7 @@ use wayland_server::{
 };
 
 use super::{
-    compositor::{self, with_states, BufferAssignment, Cacheable, SurfaceAttributes},
+    compositor::{self, with_states, BufferAssignment, Cacheable, HookId, SurfaceAttributes},
     dmabuf::get_dmabuf,
 };
 use crate::backend::drm::DrmDeviceFd;
@@ -273,10 +273,15 @@ where
                     );
                     return;
                 }
+                let commit_hook_id = compositor::add_pre_commit_hook::<D, _>(&surface, commit_hook);
+                let destruction_hook_id =
+                    compositor::add_destruction_hook::<D, _>(&surface, destruction_hook);
                 let syncobj_surface = data_init.init::<_, _>(
                     id,
                     DrmSyncobjSurfaceData {
                         surface: surface.downgrade(),
+                        commit_hook_id,
+                        destruction_hook_id,
                     },
                 );
                 with_states(&surface, |states| {
@@ -284,8 +289,6 @@ where
                         .data_map
                         .insert_if_missing(|| RefCell::new(Some(syncobj_surface)))
                 });
-                compositor::add_pre_commit_hook::<D, _>(&surface, commit_hook);
-                compositor::add_destruction_hook::<D, _>(&surface, destruction_hook);
             }
             wp_linux_drm_syncobj_manager_v1::Request::ImportTimeline { id, fd } => {
                 match DrmTimeline::new(&state.drm_syncobj_state().import_device, fd.as_fd()) {
@@ -310,9 +313,14 @@ where
 #[derive(Debug)]
 pub struct DrmSyncobjSurfaceData {
     surface: Weak<WlSurface>,
+    commit_hook_id: HookId,
+    destruction_hook_id: HookId,
 }
 
-impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSyncobjState {
+impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSyncobjState
+where
+    D: DrmSyncobjHandler,
+{
     fn request(
         _state: &mut D,
         _client: &Client,
@@ -323,7 +331,28 @@ impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData, D> for DrmSy
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
-            wp_linux_drm_syncobj_surface_v1::Request::Destroy => {}
+            wp_linux_drm_syncobj_surface_v1::Request::Destroy => {
+                if let Ok(surface) = data.surface.upgrade() {
+                    compositor::remove_pre_commit_hook(&surface, data.commit_hook_id);
+                    compositor::remove_destruction_hook(&surface, data.destruction_hook_id);
+                    with_states(&surface, |states| {
+                        *states
+                            .data_map
+                            .get::<RefCell<Option<WpLinuxDrmSyncobjSurfaceV1>>>()
+                            .unwrap()
+                            .borrow_mut() = None;
+                        // Committed sync points should still be used, but pending points can
+                        // be cleared.
+                        let mut cached = states.cached_state.get::<DrmSyncobjCachedState>();
+                        cached.pending().acquire_point = None;
+                        if let Some(release_point) = cached.pending().release_point.take() {
+                            if let Err(err) = release_point.signal() {
+                                tracing::error!("Failed to signal syncobj release point: {}", err);
+                            }
+                        }
+                    });
+                }
+            }
             wp_linux_drm_syncobj_surface_v1::Request::SetAcquirePoint {
                 timeline,
                 point_hi,
