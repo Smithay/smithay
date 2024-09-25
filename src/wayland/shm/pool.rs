@@ -8,7 +8,7 @@ use std::{
     ptr,
     sync::{
         mpsc::{sync_channel, SyncSender},
-        Once, OnceLock, RwLock,
+        OnceLock, RwLock,
     },
     thread,
 };
@@ -47,7 +47,6 @@ static DROP_THIS: Lazy<SyncSender<InnerPool>> = Lazy::new(|| {
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = const { Cell::new((ptr::null_mut(), false)) });
 
 static OLD_SIGBUS_HANDLER: OnceLock<libc::sigaction> = OnceLock::new();
-static SIGBUS_INIT: Once = Once::new();
 
 #[derive(Debug)]
 pub struct Pool {
@@ -108,9 +107,7 @@ impl InnerPool {
     #[instrument(level = "trace", skip_all, name = "wayland_shm")]
     pub fn with_data<T, F: FnOnce(*const u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
-        SIGBUS_INIT.call_once(|| unsafe {
-            place_sigbus_handler();
-        });
+        unsafe { place_sigbus_handler() };
 
         let pool_guard = self.map.read().unwrap();
 
@@ -144,9 +141,7 @@ impl InnerPool {
     #[instrument(level = "trace", skip_all, name = "wayland_shm")]
     pub fn with_data_mut<T, F: FnOnce(*mut u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
-        SIGBUS_INIT.call_once(|| unsafe {
-            place_sigbus_handler();
-        });
+        unsafe { place_sigbus_handler() };
 
         // This is actually a write access.
         #[allow(clippy::readonly_write_lock)]
@@ -300,24 +295,26 @@ unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
     ret.map(|_| ()).map_err(|_| ())
 }
 
-/// SAFETY: This function will be called only ONCE and that is in the closure of
-/// `SIGBUS_INIT`.
+/// The sigbus handler will be placed only once
 unsafe fn place_sigbus_handler() {
-    // create our sigbus handler
-    unsafe {
-        // We use `mem::zeroed()` because regular struct init as well as struct update syntax require all fields to be public
-        // and libc does not guarantee that for all targets
-        let mut action: libc::sigaction = mem::zeroed();
-        action.sa_sigaction = sigbus_handler as _;
-        action.sa_flags = libc::SA_SIGINFO | libc::SA_NODEFER;
+    let _ = OLD_SIGBUS_HANDLER.get_or_init(|| {
+        // create our sigbus handler
+        unsafe {
+            // We use `mem::zeroed()` because regular struct init as well as struct update syntax require all fields to be public
+            // and libc does not guarantee that for all targets
+            let mut action: libc::sigaction = mem::zeroed();
+            action.sa_sigaction = sigbus_handler as _;
+            action.sa_flags = libc::SA_SIGINFO | libc::SA_NODEFER;
 
-        let mut old_action = mem::zeroed();
-        if libc::sigaction(libc::SIGBUS, &action, &mut old_action) == -1 {
-            let e = rustix::io::Errno::from_raw_os_error(errno::errno().0);
-            panic!("sigaction failed for SIGBUS handler: {:?}", e);
+            let mut old_action = mem::zeroed();
+            if libc::sigaction(libc::SIGBUS, &action, &mut old_action) == -1 {
+                let e = rustix::io::Errno::from_raw_os_error(errno::errno().0);
+                panic!("sigaction failed for SIGBUS handler: {:?}", e);
+            }
+
+            old_action
         }
-        OLD_SIGBUS_HANDLER.set(old_action).map_err(|_| ()).unwrap();
-    }
+    });
 }
 
 unsafe fn reraise_sigbus() {
