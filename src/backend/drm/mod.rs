@@ -78,7 +78,6 @@ pub mod dumb;
 mod error;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
-pub mod node;
 
 mod surface;
 
@@ -89,11 +88,11 @@ pub use device::{
     DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmEvent, EventMetadata as DrmEventMetadata, PlaneClaim,
     Time as DrmEventTime,
 };
+pub use drm::node::{CreateDrmNodeError, DrmNode, NodeType};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 pub use error::AccessError as DrmAccessError;
 pub use error::Error as DrmError;
 use indexmap::IndexSet;
-pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
 pub use surface::{DrmSurface, PlaneConfig, PlaneDamageClips, PlaneState};

@@ -80,13 +80,14 @@ mod window_inner;
 use crate::{
     backend::{
         allocator::{Allocator, Swapchain},
-        drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
+        drm::{CreateDrmNodeError, DrmNode, NodeType},
         egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
         input::{Axis, ButtonState, InputEvent, KeyState, Keycode},
     },
     utils::{x11rb::X11Source, Logical, Size},
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
+use drm::node::path_to_type;
 use drm_fourcc::{DrmFourcc, DrmModifier};
 /*
 use nix::{
