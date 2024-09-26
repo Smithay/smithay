@@ -37,7 +37,7 @@ drm = { version = "0.12.0", optional = true }
 drm-ffi = { version = "0.8.0", optional = true }
 errno = "0.3.5"
 gbm = { version = "0.15.0", optional = true, default-features = false, features = ["drm-support"] }
-glow = { version = "0.12", optional = true }
+glow = { version = "0.14", optional = true }
 input = { version = "0.9.0", default-features = false, features=["libinput_1_19"], optional = true }
 indexmap = "2.0"
 libc = "0.2.103"
