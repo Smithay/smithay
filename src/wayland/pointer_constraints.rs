@@ -183,6 +183,7 @@ impl PointerConstraint {
         }
     }
 
+    /// Commits the pending state of the constraint, and returns the cursor position hint if it has changed.
     fn commit(&mut self) -> Option<Point<f64, Logical>> {
         match self {
             Self::Confined(confined) => {
