@@ -435,6 +435,23 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         self.inner.lock().unwrap().location
     }
 
+    /// Update the current location of this pointer in the global space,
+    /// without sending any event and without updating the focus.
+    ///
+    /// This is useful when the pointer is only moved by relative events,
+    /// such as when a pointer lock is held by the focused surface.
+    /// The client can give us a cursor position hint, which corresponds to
+    /// the actual location the client may be rendering a pointer at.
+    /// This position hint should be used as the initial location
+    /// when the pointer lock is deactivated.
+    ///
+    /// The next time [Self::motion] is called, the focus will be
+    /// updated accordingly as if this function was never called.
+    /// Clients will never be notified of a location hint.
+    pub fn set_location_hint(&self, location: Point<f64, Logical>) {
+        self.inner.lock().unwrap().location = location;
+    }
+
     /// Access the [`Serial`] of the last `pointer_enter` event, if that focus is still active.
     ///
     /// In other words this will return `None` again, once a `pointer_leave` event occurred.

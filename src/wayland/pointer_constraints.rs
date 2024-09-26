@@ -36,6 +36,18 @@ pub trait PointerConstraintsHandler: SeatHandler {
     ///
     /// Use [`with_pointer_constraint`] to access the constraint.
     fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>);
+
+    /// The client holding a LockedPointer has commited a cursor position hint.
+    ///
+    /// This is emitted upon a surface commit if the cursor position hint has been updated.
+    ///
+    /// Use [`with_pointer_constraint`] to access the constraint and check if it is active.
+    fn cursor_position_hint(
+        &mut self,
+        surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        location: Point<f64, Logical>,
+    );
 }
 
 /// Constraint confining pointer to a region of the surface
@@ -171,14 +183,18 @@ impl PointerConstraint {
         }
     }
 
-    fn commit(&mut self) {
+    fn commit(&mut self) -> Option<Point<f64, Logical>> {
         match self {
             Self::Confined(confined) => {
                 confined.region.clone_from(&confined.pending_region);
+                None
             }
             Self::Locked(locked) => {
                 locked.region.clone_from(&locked.pending_region);
-                locked.cursor_position_hint = locked.pending_cursor_position_hint;
+                locked.pending_cursor_position_hint.take().map(|hint| {
+                    locked.cursor_position_hint = Some(hint);
+                    hint
+                })
             }
         }
     }
@@ -243,13 +259,28 @@ pub fn with_pointer_constraint<
     })
 }
 
-fn commit_hook<D: SeatHandler + 'static>(_: &mut D, _dh: &DisplayHandle, surface: &WlSurface) {
-    with_constraint_data::<D, _, _>(surface, |data| {
+fn commit_hook<D: SeatHandler + PointerConstraintsHandler + 'static>(
+    state: &mut D,
+    _dh: &DisplayHandle,
+    surface: &WlSurface,
+) {
+    // `with_constraint_data` locks the pointer constraints,
+    // so we collect the hints first into a Vec, then release the mutex
+    // and only once the mutex is released, we call the handler method.
+    //
+    // This is to avoid deadlocks when the handler method might try to access the constraints again.
+    // It's not a hypothetical, it bit me while implementing the position hint functionality.
+    let position_hints = with_constraint_data::<D, _, _>(surface, |data| {
         let data = data.unwrap();
-        for constraint in data.constraints.values_mut() {
-            constraint.commit();
-        }
-    })
+        data.constraints
+            .iter_mut()
+            .filter_map(|(pointer, constraint)| constraint.commit().map(|hint| (pointer.clone(), hint)))
+            .collect::<Vec<_>>()
+    });
+
+    for (pointer, hint) in position_hints {
+        state.cursor_position_hint(surface, &pointer, hint);
+    }
 }
 
 /// Get `PointerConstraintData` associated with a surface, if any.
@@ -272,7 +303,7 @@ fn with_constraint_data<
 }
 
 /// Add constraint for surface, or raise protocol error if one exists
-fn add_constraint<D: SeatHandler + 'static>(
+fn add_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
     pointer_constraints: &ZwpPointerConstraintsV1,
     surface: &WlSurface,
     pointer: &PointerHandle<D>,
