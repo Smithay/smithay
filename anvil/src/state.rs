@@ -365,6 +365,29 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
             });
         }
     }
+
+    fn cursor_position_hint(
+        &mut self,
+        surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        location: Point<f64, Logical>,
+    ) {
+        if with_pointer_constraint(surface, pointer, |constraint| {
+            constraint.map_or(false, |c| c.is_active())
+        }) {
+            let origin = self
+                .space
+                .elements()
+                .find_map(|window| {
+                    (window.wl_surface().as_deref() == Some(surface)).then(|| window.geometry())
+                })
+                .unwrap_or_default()
+                .loc
+                .to_f64();
+
+            pointer.set_location_hint(origin + location);
+        }
+    }
 }
 delegate_pointer_constraints!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
