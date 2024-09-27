@@ -385,7 +385,7 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
                 .loc
                 .to_f64();
 
-            pointer.set_location_hint(origin + location);
+            pointer.set_location(origin + location);
         }
     }
 }

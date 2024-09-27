@@ -448,7 +448,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// The next time [Self::motion] is called, the focus will be
     /// updated accordingly as if this function was never called.
     /// Clients will never be notified of a location hint.
-    pub fn set_location_hint(&self, location: Point<f64, Logical>) {
+    pub fn set_location(&self, location: Point<f64, Logical>) {
         self.inner.lock().unwrap().location = location;
     }
 
