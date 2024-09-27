@@ -438,6 +438,9 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// Update the current location of this pointer in the global space,
     /// without sending any event and without updating the focus.
     ///
+    /// If you want to update the location, and update the focus,
+    /// and send events, use [Self::motion] instead of this.
+    ///
     /// This is useful when the pointer is only moved by relative events,
     /// such as when a pointer lock is held by the focused surface.
     /// The client can give us a cursor position hint, which corresponds to
