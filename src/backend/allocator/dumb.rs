@@ -37,7 +37,7 @@ pub struct DumbAllocator {
 
 impl DumbAllocator {
     /// Create a new [`DumbAllocator`] from a [`DrmDeviceFd`].
-    pub const fn new(fd: DrmDeviceFd) -> Self {
+    pub fn new(fd: DrmDeviceFd) -> Self {
         DumbAllocator { fd }
     }
 }

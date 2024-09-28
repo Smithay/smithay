@@ -384,7 +384,7 @@ impl<'a> KeysymHandle<'a> {
     }
 
     /// Returns the raw code in X keycode system (shifted by 8)
-    pub const fn raw_code(&'a self) -> Keycode {
+    pub fn raw_code(&'a self) -> Keycode {
         self.keycode
     }
 }

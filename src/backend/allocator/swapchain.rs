@@ -255,7 +255,7 @@ where
     }
 
     /// Get set format
-    pub const fn format(&self) -> Fourcc {
+    pub fn format(&self) -> Fourcc {
         self.fourcc
     }
 }
