@@ -345,7 +345,7 @@ impl VulkanAllocator {
     }
 
     /// Returns the [`PhysicalDevice`] this allocator was created with.
-    pub const fn physical_device(&self) -> &PhysicalDevice {
+    pub fn physical_device(&self) -> &PhysicalDevice {
         &self.phd
     }
 }

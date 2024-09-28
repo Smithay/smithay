@@ -2905,7 +2905,7 @@ where
     }
 
     /// Returns the current enabled [`DebugFlags`]
-    pub const fn debug_flags(&self) -> DebugFlags {
+    pub fn debug_flags(&self) -> DebugFlags {
         self.debug_flags
     }
 
@@ -2915,7 +2915,7 @@ where
     }
 
     /// Get the format of the underlying swapchain
-    pub const fn format(&self) -> DrmFourcc {
+    pub fn format(&self) -> DrmFourcc {
         self.swapchain.format()
     }
 

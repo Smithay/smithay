@@ -431,7 +431,7 @@ impl LayerSurface {
     ///
     /// Returns `None` if the layer surface actually no longer exists.
     #[inline]
-    pub const fn wl_surface(&self) -> &wl_surface::WlSurface {
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
 

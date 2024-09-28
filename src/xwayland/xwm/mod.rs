@@ -887,7 +887,7 @@ impl X11Wm {
     }
 
     /// Id of this X11 WM
-    pub const fn id(&self) -> XwmId {
+    pub fn id(&self) -> XwmId {
         self.id
     }
 

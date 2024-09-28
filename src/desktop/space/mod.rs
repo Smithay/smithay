@@ -87,7 +87,7 @@ impl<E: SpaceElement> Default for Space<E> {
 
 impl<E: SpaceElement + PartialEq> Space<E> {
     /// Gets the id of this space
-    pub const fn id(&self) -> usize {
+    pub fn id(&self) -> usize {
         self.id
     }
 

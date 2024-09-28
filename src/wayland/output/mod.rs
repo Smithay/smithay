@@ -115,7 +115,7 @@ pub trait OutputHandler {
 
 impl OutputManagerState {
     /// Create new output manager
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             xdg_output_manager: None,
         }

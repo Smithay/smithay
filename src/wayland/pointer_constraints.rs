@@ -50,7 +50,7 @@ pub struct ConfinedPointer {
 
 impl ConfinedPointer {
     /// Region in which to confine the pointer
-    pub const fn region(&self) -> Option<&RegionAttributes> {
+    pub fn region(&self) -> Option<&RegionAttributes> {
         self.region.as_ref()
     }
 }
@@ -69,12 +69,12 @@ pub struct LockedPointer {
 
 impl LockedPointer {
     /// Region in which to activate the lock
-    pub const fn region(&self) -> Option<&RegionAttributes> {
+    pub fn region(&self) -> Option<&RegionAttributes> {
         self.region.as_ref()
     }
 
     /// Position the client is rendering a cursor, if any
-    pub const fn cursor_position_hint(&self) -> Option<Point<f64, Logical>> {
+    pub fn cursor_position_hint(&self) -> Option<Point<f64, Logical>> {
         self.cursor_position_hint
     }
 }
@@ -157,14 +157,14 @@ impl PointerConstraint {
     }
 
     /// Region in which to lock or confine the pointer
-    pub const fn region(&self) -> Option<&RegionAttributes> {
+    pub fn region(&self) -> Option<&RegionAttributes> {
         match self {
             PointerConstraint::Confined(confined) => confined.region(),
             PointerConstraint::Locked(locked) => locked.region(),
         }
     }
 
-    const fn lifetime(&self) -> WEnum<Lifetime> {
+    fn lifetime(&self) -> WEnum<Lifetime> {
         match self {
             PointerConstraint::Confined(confined) => confined.lifetime,
             PointerConstraint::Locked(locked) => locked.lifetime,

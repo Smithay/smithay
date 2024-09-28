@@ -44,7 +44,7 @@ pub enum CursorImageStatus {
 
 impl CursorImageStatus {
     /// Get default `Named` cursor.
-    pub const fn default_named() -> Self {
+    pub fn default_named() -> Self {
         Self::Named(CursorIcon::Default)
     }
 }

@@ -1590,12 +1590,12 @@ impl ToplevelSurface {
 
     /// Access the underlying `wl_surface` of this toplevel surface
     #[inline]
-    pub const fn wl_surface(&self) -> &wl_surface::WlSurface {
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
 
     /// Access the underlying `xdg_toplevel` of this toplevel surface
-    pub const fn xdg_toplevel(&self) -> &xdg_toplevel::XdgToplevel {
+    pub fn xdg_toplevel(&self) -> &xdg_toplevel::XdgToplevel {
         &self.shell_surface
     }
 
@@ -1953,12 +1953,12 @@ impl PopupSurface {
 
     /// Access the underlying `wl_surface` of this popup surface
     #[inline]
-    pub const fn wl_surface(&self) -> &wl_surface::WlSurface {
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
 
     /// Access the underlying `xdg_popup` of this popup surface
-    pub const fn xdg_popup(&self) -> &xdg_popup::XdgPopup {
+    pub fn xdg_popup(&self) -> &xdg_popup::XdgPopup {
         &self.shell_surface
     }
 

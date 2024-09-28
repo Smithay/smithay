@@ -277,17 +277,17 @@ impl MemoryBuffer {
     }
 
     /// Get the size of this buffer
-    pub const fn size(&self) -> Size<i32, Buffer> {
+    pub fn size(&self) -> Size<i32, Buffer> {
         self.size
     }
 
     /// Get the format of this buffer
-    pub const fn format(&self) -> Fourcc {
+    pub fn format(&self) -> Fourcc {
         self.format
     }
 
     /// Get the stride of this buffer
-    pub const fn stride(&self) -> i32 {
+    pub fn stride(&self) -> i32 {
         self.stride
     }
 

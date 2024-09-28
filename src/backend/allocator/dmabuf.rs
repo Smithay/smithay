@@ -424,12 +424,12 @@ pub struct DmabufMapping {
 
 impl DmabufMapping {
     /// Access the raw pointer of the mapping
-    pub const fn ptr(&self) -> *mut std::ffi::c_void {
+    pub fn ptr(&self) -> *mut std::ffi::c_void {
         self.ptr
     }
 
     /// Access the length of the mapping
-    pub const fn length(&self) -> usize {
+    pub fn length(&self) -> usize {
         self.len
     }
 }

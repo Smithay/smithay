@@ -134,7 +134,7 @@ impl LayerMap {
     }
 
     /// Return the area of this output, that is not exclusive to any [`LayerSurface`]s.
-    pub const fn non_exclusive_zone(&self) -> Rectangle<i32, Logical> {
+    pub fn non_exclusive_zone(&self) -> Rectangle<i32, Logical> {
         self.zone
     }
 

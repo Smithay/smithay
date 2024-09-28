@@ -139,14 +139,14 @@ pub enum DrmDeviceInternal {
 }
 
 impl DrmDeviceInternal {
-    pub(crate) const fn device_fd(&self) -> &DrmDeviceFd {
+    pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
         match self {
             DrmDeviceInternal::Atomic(dev) => &dev.fd,
             DrmDeviceInternal::Legacy(dev) => &dev.fd,
         }
     }
 
-    const fn span(&self) -> &tracing::Span {
+    fn span(&self) -> &tracing::Span {
         match self {
             DrmDeviceInternal::Atomic(internal) => &internal.span,
             DrmDeviceInternal::Legacy(internal) => &internal.span,
@@ -292,7 +292,7 @@ impl DrmDevice {
     /// Note: In case of universal planes this is the
     /// maximum size of a buffer that can be used on
     /// the cursor plane.
-    pub const fn cursor_size(&self) -> Size<u32, Buffer> {
+    pub fn cursor_size(&self) -> Size<u32, Buffer> {
         self.cursor_size
     }
 
@@ -401,7 +401,7 @@ impl DrmDevice {
     }
 
     /// Returns the device_id of the underlying drm node
-    pub const fn device_id(&self) -> dev_t {
+    pub fn device_id(&self) -> dev_t {
         self.dev_id
     }
 

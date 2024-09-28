@@ -32,7 +32,7 @@ pub struct EGLFence(Arc<InnerEGLFence>);
 
 impl EGLFence {
     /// Returns whether the display supports creating fences from native fences
-    pub const fn supports_importing(display: &EGLDisplay) -> bool {
+    pub fn supports_importing(display: &EGLDisplay) -> bool {
         display.supports_native_fences
     }
 

@@ -407,7 +407,7 @@ impl OutputDamageTracker {
     }
 
     /// Get the [`OutputModeSource`] of the [`OutputDamageTracker`]
-    pub const fn mode(&self) -> &OutputModeSource {
+    pub fn mode(&self) -> &OutputModeSource {
         &self.mode
     }
 

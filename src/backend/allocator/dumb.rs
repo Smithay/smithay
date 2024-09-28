@@ -96,7 +96,7 @@ impl DumbBuffer {
     ///
     /// Note: This handle will become invalid, once the `DumbBuffer` wrapper is dropped
     /// or the device used to create is closed. Do not copy this handle and assume it keeps being valid.
-    pub const fn handle(&self) -> &Handle {
+    pub fn handle(&self) -> &Handle {
         &self.handle
     }
 }

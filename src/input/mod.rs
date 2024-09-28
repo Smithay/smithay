@@ -278,7 +278,7 @@ impl<D: SeatHandler> Default for SeatState<D> {
 
 impl<D: SeatHandler> SeatState<D> {
     /// Create new delegate SeatState
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self { seats: Vec::new() }
     }
 

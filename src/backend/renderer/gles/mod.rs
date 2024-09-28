@@ -1794,7 +1794,7 @@ impl GlesRenderer {
     /// and no guarantee is made about what can or cannot be changed.
     /// To make sure a certain modification does not interfere with
     /// the renderer's behaviour, check the source.
-    pub const fn egl_context(&self) -> &EGLContext {
+    pub fn egl_context(&self) -> &EGLContext {
         &self.egl
     }
 

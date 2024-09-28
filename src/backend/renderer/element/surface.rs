@@ -429,12 +429,12 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
     }
 
     /// Get the view into the surface
-    pub const fn view(&self) -> SurfaceView {
+    pub fn view(&self) -> SurfaceView {
         self.view
     }
 
     /// Get the buffer texture
-    pub const fn texture(&self) -> &WaylandSurfaceTexture<R> {
+    pub fn texture(&self) -> &WaylandSurfaceTexture<R> {
         &self.texture
     }
 }

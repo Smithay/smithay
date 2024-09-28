@@ -190,17 +190,17 @@ impl DrmSurface {
     }
 
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
-    pub const fn crtc(&self) -> crtc::Handle {
+    pub fn crtc(&self) -> crtc::Handle {
         self.crtc
     }
 
     /// Returns the underlying primary [`plane`](drm::control::plane) of this surface
-    pub const fn plane(&self) -> plane::Handle {
+    pub fn plane(&self) -> plane::Handle {
         self.primary_plane.0.handle
     }
 
     /// Returns the [`PlaneInfo`] of the underlying primary [`plane`](drm::control::plane) of this surface
-    pub const fn plane_info(&self) -> &PlaneInfo {
+    pub fn plane_info(&self) -> &PlaneInfo {
         &self.primary_plane.0
     }
 
@@ -392,7 +392,7 @@ impl DrmSurface {
     }
 
     /// Returns a set of available planes for this surface
-    pub const fn planes(&self) -> &Planes {
+    pub fn planes(&self) -> &Planes {
         &self.planes
     }
 

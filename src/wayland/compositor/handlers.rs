@@ -481,7 +481,7 @@ pub struct SubsurfaceUserData {
 
 impl SubsurfaceUserData {
     /// Returns the surface for this subsurface (not to be confused with the parent surface).
-    pub const fn surface(&self) -> &WlSurface {
+    pub fn surface(&self) -> &WlSurface {
         &self.surface
     }
 }

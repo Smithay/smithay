@@ -91,7 +91,7 @@ impl KeymapFile {
     }
 
     /// Get this keymap's unique ID.
-    pub(crate) const fn id(&self) -> usize {
+    pub(crate) fn id(&self) -> usize {
         self.id
     }
 }

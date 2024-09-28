@@ -419,12 +419,12 @@ impl EGLContext {
     }
 
     /// Returns the egl config for this context
-    pub const fn config_id(&self) -> ffi::egl::types::EGLConfig {
+    pub fn config_id(&self) -> ffi::egl::types::EGLConfig {
         self.config_id
     }
 
     /// Returns the pixel format of the main framebuffer of the context.
-    pub const fn pixel_format(&self) -> Option<PixelFormat> {
+    pub fn pixel_format(&self) -> Option<PixelFormat> {
         self.pixel_format
     }
 
@@ -448,17 +448,17 @@ impl EGLContext {
     }
 
     /// Returns the display which created this context.
-    pub const fn display(&self) -> &EGLDisplay {
+    pub fn display(&self) -> &EGLDisplay {
         &self.display
     }
 
     /// Returns a list of formats for dmabufs that can be rendered to.
-    pub const fn dmabuf_render_formats(&self) -> &FormatSet {
+    pub fn dmabuf_render_formats(&self) -> &FormatSet {
         self.display.dmabuf_render_formats()
     }
 
     /// Returns a list of formats for dmabufs that can be used as textures.
-    pub const fn dmabuf_texture_formats(&self) -> &FormatSet {
+    pub fn dmabuf_texture_formats(&self) -> &FormatSet {
         self.display.dmabuf_texture_formats()
     }
 
@@ -473,7 +473,7 @@ impl EGLContext {
     /// Get a raw handle to the underlying context.
     ///
     /// The pointer will become invalid, when this struct is destroyed.
-    pub const fn get_context_handle(&self) -> ffi::egl::types::EGLContext {
+    pub fn get_context_handle(&self) -> ffi::egl::types::EGLContext {
         self.context
     }
 }

@@ -294,7 +294,7 @@ mod list {
             unsafe { self.append_ptr(p) };
         }
 
-        pub const fn iter(&self) -> AppendListIterator<'_, T> {
+        pub fn iter(&self) -> AppendListIterator<'_, T> {
             AppendListIterator(&self.0)
         }
 

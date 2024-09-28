@@ -247,7 +247,7 @@ impl MemMap {
         }
     }
 
-    const fn size(&self) -> usize {
+    fn size(&self) -> usize {
         self.size
     }
 

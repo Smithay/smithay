@@ -77,7 +77,7 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
         ptr,
     };
 
-    const fn constrain<F>(f: F) -> F
+    fn constrain<F>(f: F) -> F
     where
         F: for<'a> Fn(&'a str) -> *const ::std::os::raw::c_void,
     {

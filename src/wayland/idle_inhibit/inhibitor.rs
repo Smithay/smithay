@@ -15,7 +15,7 @@ pub struct IdleInhibitorState {
 
 impl IdleInhibitorState {
     /// Create `zwp_idle_inhibitor_v1` state.
-    pub const fn new(surface: WlSurface) -> Self {
+    pub fn new(surface: WlSurface) -> Self {
         Self { surface }
     }
 }
