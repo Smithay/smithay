@@ -2460,7 +2460,7 @@ impl<'frame> GlesFrame<'frame> {
     /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
     #[instrument(level = "trace", skip(self), parent = &self.span)]
     #[profiling::function]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::same_name_method, clippy::too_many_arguments)]
     pub fn render_texture_from_to(
         &mut self,
         texture: &GlesTexture,
