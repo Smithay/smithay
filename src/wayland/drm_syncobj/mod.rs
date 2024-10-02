@@ -203,11 +203,11 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                 } else if let (Some(acquire), Some(release)) =
                     (pending.acquire_point.as_ref(), pending.release_point.as_ref())
                 {
-                    if acquire.timeline == release.timeline && acquire.point <= release.point {
+                    if acquire.timeline == release.timeline && release.point <= acquire.point {
                         syncobj_surface.post_error(
                             wp_linux_drm_syncobj_surface_v1::Error::ConflictingPoints as u32,
                             format!(
-                                "release point '{}' is not greater than acquire point '{}'",
+                                "release point {} is not greater than acquire point {}",
                                 release.point, acquire.point
                             ),
                         );
