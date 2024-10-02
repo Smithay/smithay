@@ -98,91 +98,12 @@ pub fn run_winit() {
     let mut display_handle = display.handle();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let (mut backend, mut winit) = match winit::init::<GlesRenderer>() {
+    let mut winit = match winit::init::<GlesRenderer>() {
         Ok(ret) => ret,
         Err(err) => {
             error!("Failed to initialize Winit backend: {}", err);
             return;
         }
-    };
-    let size = backend.window_size();
-
-    let mode = Mode {
-        size,
-        refresh: 60_000,
-    };
-    let output = Output::new(
-        OUTPUT_NAME.to_string(),
-        PhysicalProperties {
-            size: (0, 0).into(),
-            subpixel: Subpixel::Unknown,
-            make: "Smithay".into(),
-            model: "Winit".into(),
-        },
-    );
-    let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
-    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
-    output.set_preferred(mode);
-
-    #[cfg(feature = "debug")]
-    let fps_image =
-        image::ImageReader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
-            .decode()
-            .unwrap();
-    #[cfg(feature = "debug")]
-    let fps_texture = backend
-        .renderer()
-        .import_memory(
-            &fps_image.to_rgba8(),
-            Fourcc::Abgr8888,
-            (fps_image.width() as i32, fps_image.height() as i32).into(),
-            false,
-        )
-        .expect("Unable to upload FPS texture");
-    #[cfg(feature = "debug")]
-    let mut fps_element = FpsElement::new(fps_texture);
-
-    let render_node = EGLDevice::device_for_display(backend.renderer().egl_context().display())
-        .and_then(|device| device.try_get_render_node());
-
-    let dmabuf_default_feedback = match render_node {
-        Ok(Some(node)) => {
-            let dmabuf_formats = backend.renderer().dmabuf_formats();
-            let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
-                .build()
-                .unwrap();
-            Some(dmabuf_default_feedback)
-        }
-        Ok(None) => {
-            warn!("failed to query render node, dmabuf will use v3");
-            None
-        }
-        Err(err) => {
-            warn!(?err, "failed to egl device for display, dmabuf will use v3");
-            None
-        }
-    };
-
-    // if we failed to build dmabuf feedback we fall back to dmabuf v3
-    // Note: egl on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
-    let dmabuf_state = if let Some(default_feedback) = dmabuf_default_feedback {
-        let mut dmabuf_state = DmabufState::new();
-        let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<WinitData>>(
-            &display.handle(),
-            &default_feedback,
-        );
-        (dmabuf_state, dmabuf_global, Some(default_feedback))
-    } else {
-        let dmabuf_formats = backend.renderer().dmabuf_formats();
-        let mut dmabuf_state = DmabufState::new();
-        let dmabuf_global =
-            dmabuf_state.create_global::<AnvilState<WinitData>>(&display.handle(), dmabuf_formats);
-        (dmabuf_state, dmabuf_global, None)
-    };
-
-    #[cfg(feature = "egl")]
-    if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
-        info!("EGL hardware-acceleration enabled");
     };
 
     let data = {
@@ -212,6 +133,96 @@ pub fn run_winit() {
 
     while state.running.load(Ordering::SeqCst) {
         let status = winit.dispatch_new_events(|event| match event {
+            WinitEvent::WindowCreated(backend) => {
+                let size = backend.window_size();
+
+                let mode = Mode {
+                    size,
+                    refresh: 60_000,
+                };
+                let output = Output::new(
+                    OUTPUT_NAME.to_string(),
+                    PhysicalProperties {
+                        size: (0, 0).into(),
+                        subpixel: Subpixel::Unknown,
+                        make: "Smithay".into(),
+                        model: "Winit".into(),
+                    },
+                );
+                let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
+                output.change_current_state(
+                    Some(mode),
+                    Some(Transform::Flipped180),
+                    None,
+                    Some((0, 0).into()),
+                );
+                output.set_preferred(mode);
+
+                #[cfg(feature = "debug")]
+                let fps_image = image::ImageReader::with_format(
+                    std::io::Cursor::new(FPS_NUMBERS_PNG),
+                    image::ImageFormat::Png,
+                )
+                .decode()
+                .unwrap();
+                #[cfg(feature = "debug")]
+                let fps_texture = backend
+                    .renderer()
+                    .import_memory(
+                        &fps_image.to_rgba8(),
+                        Fourcc::Abgr8888,
+                        (fps_image.width() as i32, fps_image.height() as i32).into(),
+                        false,
+                    )
+                    .expect("Unable to upload FPS texture");
+                #[cfg(feature = "debug")]
+                let mut fps_element = FpsElement::new(fps_texture);
+
+                let render_node = EGLDevice::device_for_display(backend.renderer().egl_context().display())
+                    .and_then(|device| device.try_get_render_node());
+
+                let dmabuf_default_feedback = match render_node {
+                    Ok(Some(node)) => {
+                        let dmabuf_formats = backend.renderer().dmabuf_formats();
+                        let dmabuf_default_feedback =
+                            DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
+                                .build()
+                                .unwrap();
+                        Some(dmabuf_default_feedback)
+                    }
+                    Ok(None) => {
+                        warn!("failed to query render node, dmabuf will use v3");
+                        None
+                    }
+                    Err(err) => {
+                        warn!(?err, "failed to egl device for display, dmabuf will use v3");
+                        None
+                    }
+                };
+
+                // if we failed to build dmabuf feedback we fall back to dmabuf v3
+                // Note: egl on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
+                let dmabuf_state = if let Some(default_feedback) = dmabuf_default_feedback {
+                    let mut dmabuf_state = DmabufState::new();
+                    let dmabuf_global = dmabuf_state
+                        .create_global_with_default_feedback::<AnvilState<WinitData>>(
+                            &display.handle(),
+                            &default_feedback,
+                        );
+                    (dmabuf_state, dmabuf_global, Some(default_feedback))
+                } else {
+                    let dmabuf_formats = backend.renderer().dmabuf_formats();
+                    let mut dmabuf_state = DmabufState::new();
+                    let dmabuf_global = dmabuf_state
+                        .create_global::<AnvilState<WinitData>>(&display.handle(), dmabuf_formats);
+                    (dmabuf_state, dmabuf_global, None)
+                };
+
+                #[cfg(feature = "egl")]
+                if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
+                    info!("EGL hardware-acceleration enabled");
+                };
+            }
             WinitEvent::Resized { size, .. } => {
                 // We only have one output
                 let output = state.space.outputs().next().unwrap().clone();
