@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Event"],"fn":["channel","sync_channel"],"struct":["Channel","ChannelError","Sender","SyncSender"]};
