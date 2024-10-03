@@ -169,7 +169,9 @@ impl DmabufHandler for AnvilState<UdevData> {
             .and_then(|mut renderer| renderer.import_dmabuf(&dmabuf, None))
             .is_ok()
         {
-            dmabuf.set_node(self.backend_data.primary_gpu);
+            if dmabuf.node().is_none() {
+                dmabuf.set_node(self.backend_data.primary_gpu);
+            }
             let _ = notifier.successful::<AnvilState<UdevData>>();
         } else {
             notifier.failed();
@@ -831,17 +833,25 @@ fn get_surface_dmabuf_feedback(
     let builder = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), primary_formats);
     let render_feedback = builder
         .clone()
-        .add_preference_tranche(render_node.dev_id(), None, render_formats.clone())
+        .add_preference_tranche(
+            render_node.dev_id(),
+            zwp_linux_dmabuf_feedback_v1::TrancheFlags::Sampling,
+            render_formats.clone(),
+        )
         .build()
         .unwrap();
 
     let scanout_feedback = builder
         .add_preference_tranche(
             surface.device_fd().dev_id().unwrap(),
-            Some(zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout),
+            zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout,
             planes_formats,
         )
-        .add_preference_tranche(render_node.dev_id(), None, render_formats)
+        .add_preference_tranche(
+            render_node.dev_id(),
+            zwp_linux_dmabuf_feedback_v1::TrancheFlags::Sampling,
+            render_formats,
+        )
         .build()
         .unwrap();
 
