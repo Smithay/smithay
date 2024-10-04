@@ -484,6 +484,8 @@ pub fn run_udev() {
     #[cfg(feature = "xwayland")]
     state.start_xwayland();
 
+    crate::libei::listen_eis(&event_loop.handle());
+
     /*
      * And run our loop
      */

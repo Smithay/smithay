@@ -69,7 +69,7 @@ encoding_rs = { version = "0.8.33", optional = true }
 profiling = "1.0"
 smallvec = "1.11"
 pixman = { version = "0.1.0", features = ["drm-fourcc"], optional = true }
-
+reis = { git = "https://github.com/ids1024/reis", features = ["calloop"] }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
