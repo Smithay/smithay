@@ -2,13 +2,13 @@
 
 use crate::{
     backend::renderer::{
-        element::{Element, Id, Kind, RenderElement, UnderlyingStorage},
-        utils::{CommitCounter, OpaqueRegions},
+        element::{texture::TextureRenderElement, Element, Id, Kind, RenderElement, UnderlyingStorage},
+        utils::{CommitCounter, DamageSet, OpaqueRegions},
     },
-    utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform},
+    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Transform},
 };
 
-use super::{GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, Uniform};
+use super::{GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexProgram, GlesTexture, Uniform};
 
 /// Render element for drawing with a gles2 pixel shader
 #[derive(Debug, Clone)]
@@ -127,5 +127,99 @@ impl RenderElement<GlesRenderer> for PixelShaderElement {
     #[inline]
     fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
         None
+    }
+}
+
+/// Render element for drawing with a gles2 texture shader
+#[derive(Debug)]
+pub struct TextureShaderElement {
+    inner: TextureRenderElement<GlesTexture>,
+    program: GlesTexProgram,
+    id: Id,
+    additional_uniforms: Vec<Uniform<'static>>,
+}
+
+impl TextureShaderElement {
+    /// Create a new [`TextureShaderElement`] from a [`TextureRenderElement`] and a
+    /// [`GlesTexProgram`], which can be constructed using
+    /// [`GlesRenderer::compile_custom_texture_shader`]
+    pub fn new(
+        inner: TextureRenderElement<GlesTexture>,
+        program: GlesTexProgram,
+        additional_uniforms: Vec<Uniform<'_>>,
+    ) -> Self {
+        Self {
+            inner,
+            program,
+            id: Id::new(),
+
+            additional_uniforms: additional_uniforms.into_iter().map(|u| u.into_owned()).collect(),
+        }
+    }
+}
+
+impl Element for TextureShaderElement {
+    fn id(&self) -> &Id {
+        &self.id
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        self.inner.current_commit()
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.inner.geometry(scale)
+    }
+
+    fn transform(&self) -> Transform {
+        self.inner.transform()
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        self.inner.src()
+    }
+
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+        self.inner.damage_since(scale, commit)
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        self.inner.opaque_regions(scale)
+    }
+
+    fn alpha(&self) -> f32 {
+        self.inner.alpha()
+    }
+
+    fn kind(&self) -> Kind {
+        self.inner.kind()
+    }
+
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        self.inner.location(scale)
+    }
+}
+
+impl RenderElement<GlesRenderer> for TextureShaderElement {
+    #[profiling::function]
+    fn draw(
+        &self,
+        frame: &mut GlesFrame<'_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        frame.render_texture_from_to(
+            &self.inner.texture,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+            self.transform(),
+            self.alpha(),
+            Some(&self.program),
+            &self.additional_uniforms,
+        )
     }
 }
