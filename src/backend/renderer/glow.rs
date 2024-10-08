@@ -553,3 +553,21 @@ impl RenderElement<GlowRenderer> for PixelShaderElement {
         RenderElement::<GlesRenderer>::underlying_storage(self, renderer.borrow_mut())
     }
 }
+
+impl RenderElement<GlowRenderer> for TextureShaderElement {
+    #[profiling::function]
+    fn draw(
+        &self,
+        frame: &mut GlowFrame<'_>,
+        src: Rectangle<f64, BufferCoord>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), GlesError> {
+        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage, opaque_regions)
+    }
+
+    fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage<'_>> {
+        RenderElement::<GlesRenderer>::underlying_storage(self, renderer.borrow_mut())
+    }
+}

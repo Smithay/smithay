@@ -627,7 +627,7 @@ pub struct TextureRenderElement<T> {
     location: Point<f64, Physical>,
     id: Id,
     renderer_id: usize,
-    texture: T,
+    pub(crate) texture: T,
     scale: i32,
     transform: Transform,
     alpha: f32,
