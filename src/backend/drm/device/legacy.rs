@@ -202,9 +202,9 @@ where
                         conn,
                         *handle,
                         if enabled {
-                            0 /*DRM_MODE_DPMS_ON*/
+                            drm_ffi::DRM_MODE_DPMS_ON.into()
                         } else {
-                            3 /*DRM_MODE_DPMS_OFF*/
+                            drm_ffi::DRM_MODE_DPMS_OFF.into()
                         },
                     )
                     .map_err(|source| {
