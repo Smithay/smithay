@@ -3,7 +3,7 @@ use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevic
 use std::collections::HashSet;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
 };
 
 use crate::backend::drm::error::AccessError;
@@ -18,7 +18,6 @@ use tracing::{debug, info, info_span, instrument, trace};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
-    pub active: bool,
     pub mode: Mode,
     pub connectors: HashSet<connector::Handle>,
 }
@@ -74,9 +73,6 @@ impl State {
         // we need to be sure, we require a mode to always be set without relying on the compiler.
         // So we cheat, because it works and is easier to handle later.
         Ok(State {
-            // On legacy there is not (reliable) way to read-back the dpms state.
-            // So we just always assume it is off.
-            active: false,
             mode: current_mode.unwrap_or_else(|| unsafe { std::mem::zeroed() }),
             connectors: current_connectors,
         })
@@ -90,6 +86,7 @@ pub struct LegacyDrmSurface {
     crtc: crtc::Handle,
     state: RwLock<State>,
     pending: RwLock<State>,
+    dpms: Mutex<bool>,
     pub(super) span: tracing::Span,
 }
 
@@ -107,7 +104,6 @@ impl LegacyDrmSurface {
 
         let state = State::current_state(&*fd, crtc)?;
         let pending = State {
-            active: true,
             mode,
             connectors: connectors.iter().copied().collect(),
         };
@@ -119,6 +115,7 @@ impl LegacyDrmSurface {
             crtc,
             state: RwLock::new(state),
             pending: RwLock::new(pending),
+            dpms: Mutex::new(true),
             span,
         };
 
@@ -238,6 +235,13 @@ impl LegacyDrmSurface {
 
         let mut current = self.state.write().unwrap();
         let pending = self.pending.read().unwrap();
+        let mut dpms = self.dpms.lock().unwrap();
+
+        if !*dpms {
+            let connectors = current.connectors.intersection(&pending.connectors);
+            set_connector_state(&*self.fd, connectors.copied(), true)?;
+            *dpms = true;
+        }
 
         {
             let removed = current.connectors.difference(&pending.connectors);
@@ -334,6 +338,13 @@ impl LegacyDrmSurface {
 
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
+        }
+
+        let current = self.state.read().unwrap();
+        let mut dpms = self.dpms.lock().unwrap();
+        if !*dpms {
+            set_connector_state(&*self.fd, current.connectors.iter().copied(), true)?;
+            *dpms = true;
         }
 
         ControlDevice::page_flip(
@@ -456,6 +467,16 @@ impl LegacyDrmSurface {
 
     pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
         self.fd.device_fd()
+    }
+
+    pub fn disable(&self) -> Result<(), Error> {
+        let current = self.state.read().unwrap();
+        let mut dpms = self.dpms.lock().unwrap();
+        if *dpms {
+            set_connector_state(&*self.fd, current.connectors.iter().copied(), false)?;
+            *dpms = false;
+        }
+        Ok(())
     }
 }
 
