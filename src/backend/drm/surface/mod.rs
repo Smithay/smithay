@@ -441,6 +441,17 @@ impl DrmSurface {
             DrmSurfaceInternal::Legacy(surf) => &surf.span,
         }
     }
+
+    /// Disable the output, setting DPMS state to off.
+    ///
+    /// The surface will be re-enabled on the next [`page_flip`][Self::page_flip] or
+    /// [`commit`][Self::commit].
+    pub fn disable(&self) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.disable(),
+            DrmSurfaceInternal::Legacy(surf) => surf.disable(),
+        }
+    }
 }
 
 fn ensure_legacy_planes<'a>(
