@@ -1081,6 +1081,10 @@ impl AtomicDrmSurface {
     pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
         self.fd.device_fd()
     }
+
+    pub fn clear(&self) -> Result<(), Error> {
+        self.clear_state()
+    }
 }
 
 struct TestBuffer {

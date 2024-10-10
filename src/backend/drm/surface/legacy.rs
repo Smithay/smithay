@@ -3,7 +3,7 @@ use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevic
 use std::collections::HashSet;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
 };
 
 use crate::backend::drm::error::AccessError;
@@ -86,6 +86,7 @@ pub struct LegacyDrmSurface {
     crtc: crtc::Handle,
     state: RwLock<State>,
     pending: RwLock<State>,
+    dpms: Mutex<bool>,
     pub(super) span: tracing::Span,
 }
 
@@ -114,6 +115,7 @@ impl LegacyDrmSurface {
             crtc,
             state: RwLock::new(state),
             pending: RwLock::new(pending),
+            dpms: Mutex::new(true),
             span,
         };
 
@@ -233,6 +235,13 @@ impl LegacyDrmSurface {
 
         let mut current = self.state.write().unwrap();
         let pending = self.pending.read().unwrap();
+        let mut dpms = self.dpms.lock().unwrap();
+
+        if !*dpms {
+            let connectors = current.connectors.intersection(&pending.connectors);
+            set_connector_state(&*self.fd, connectors.copied(), true)?;
+            *dpms = true;
+        }
 
         {
             let removed = current.connectors.difference(&pending.connectors);
@@ -329,6 +338,13 @@ impl LegacyDrmSurface {
 
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
+        }
+
+        let current = self.state.read().unwrap();
+        let mut dpms = self.dpms.lock().unwrap();
+        if !*dpms {
+            set_connector_state(&*self.fd, current.connectors.iter().copied(), true)?;
+            *dpms = true;
         }
 
         ControlDevice::page_flip(
@@ -451,6 +467,16 @@ impl LegacyDrmSurface {
 
     pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
         self.fd.device_fd()
+    }
+
+    pub fn clear(&self) -> Result<(), Error> {
+        let current = self.state.read().unwrap();
+        let mut dpms = self.dpms.lock().unwrap();
+        if *dpms {
+            set_connector_state(&*self.fd, current.connectors.iter().copied(), false)?;
+            *dpms = false;
+        }
+        Ok(())
     }
 }
 
