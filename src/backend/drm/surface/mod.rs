@@ -441,6 +441,17 @@ impl DrmSurface {
             DrmSurfaceInternal::Legacy(surf) => &surf.span,
         }
     }
+
+    /// Clear the surface, setting DPMS state to off and disabling all planes.
+    ///
+    /// The surface will be re-enabled on the next [`page_flip`][Self::page_flip] or
+    /// [`commit`][Self::commit].
+    pub fn clear(&self) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.clear(),
+            DrmSurfaceInternal::Legacy(surf) => surf.clear(),
+        }
+    }
 }
 
 fn ensure_legacy_planes<'a>(

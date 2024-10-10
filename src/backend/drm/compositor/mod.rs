@@ -4216,6 +4216,24 @@ where
             Err(Some(RenderingReason::ScanoutFailed))
         }
     }
+
+    /// Clear the surface, setting DPMS state to off, disabling all planes,
+    /// and clearing the pending frame.
+    ///
+    /// Calling [`queue_frame`][Self::queue_frame] will re-enable.
+    pub fn clear(&mut self) -> Result<(), DrmError> {
+        self.surface.clear()?;
+
+        self.current_frame
+            .planes
+            .iter_mut()
+            .for_each(|(_, state)| *state = Default::default());
+        self.pending_frame = None;
+        self.queued_frame = None;
+        self.next_frame = None;
+
+        Ok(())
+    }
 }
 
 #[inline]
