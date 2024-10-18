@@ -47,6 +47,7 @@
 
 pub mod alpha_modifier;
 pub mod buffer;
+pub mod commit_timing;
 pub mod compositor;
 pub mod content_type;
 pub mod cursor_shape;
