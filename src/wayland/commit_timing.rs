@@ -1,3 +1,7 @@
+use crate::{
+    utils::{Clock, Monotonic, Time},
+    wayland::compositor::{Blocker, BlockerState}
+};
 use std::time::Duration;
 use wayland_protocols::wp::commit_timing::v1::server::{wp_commit_timer_v1, wp_commit_timing_manager_v1};
 use wayland_server::{
@@ -5,7 +9,25 @@ use wayland_server::{
     Resource, WEnum, Weak,
 };
 
-pub struct CommitTimingState {}
+// TODO add in pre_commit_hook
+struct CommitTimingBlocker {
+    // TODO presentation protocol allows different clock ids
+    time: Time<Monotonic>
+}
+
+impl Blocker for CommitTimingBlocker {
+    fn state(&self) -> BlockerState {
+        let now = Clock::<Monotonic>::new().now();
+        if now >= self.time {
+            BlockerState::Released
+        } else {
+            BlockerState::Pending
+        }
+    }
+}
+
+pub struct CommitTimingState {
+}
 
 impl CommitTimingState {
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
@@ -115,7 +137,7 @@ where
                 tv_nsec,
             } => {
                 let secs = (u64::from(tv_sec_hi) << 32) + u64::from(tv_sec_lo);
-                let duration = Duration::new(secs, tv_nsec);
+                let time = Time::<Monotonic>::from(Duration::new(secs, tv_nsec));
             }
             wp_commit_timer_v1::Request::Destroy => {}
             _ => unreachable!(),
