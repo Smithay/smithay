@@ -79,6 +79,7 @@ impl DrmSyncPoint {
     }
 
     /// Wait for sync point.
+    #[allow(clippy::same_name_method)]
     pub fn wait(&self, timeout_nsec: i64) -> io::Result<()> {
         self.timeline.0.device.syncobj_timeline_wait(
             &[self.timeline.0.syncobj],
