@@ -254,7 +254,7 @@ impl Output {
                 inner.send_geometry_to(&output);
             }
             if (new_scale.is_some() || scale_changed) && output.version() >= 2 {
-                let scale = (inner.scale.integer_scale() / client_scale as i32).min(1);
+                let scale = (inner.scale.integer_scale() / client_scale as i32).max(1);
                 output.scale(scale);
             }
             if output.version() >= 2 {
