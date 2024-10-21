@@ -46,8 +46,10 @@ use smithay::{
     },
     utils::{Clock, Logical, Monotonic, Point, Rectangle},
     wayland::{
+        commit_timing::CommitTimingState,
         compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         dmabuf::DmabufFeedback,
+        fifo::FifoState,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
         input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
         keyboard_shortcuts_inhibit::{
@@ -565,6 +567,10 @@ smithay::delegate_xdg_foreign!(@<BackendData: Backend + 'static> AnvilState<Back
 
 smithay::delegate_single_pixel_buffer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+smithay::delegate_fifo!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+smithay::delegate_commit_timing!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
@@ -644,6 +650,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 .get_data::<ClientState>()
                 .map_or(true, |client_state| client_state.security_context.is_none())
         });
+        FifoState::new::<Self, _>(&dh, |_| true);
+        CommitTimingState::new::<Self, _>(&dh, |_| true);
 
         // init input
         let seat_name = backend_data.seat_name();
