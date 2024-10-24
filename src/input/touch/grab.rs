@@ -1,5 +1,7 @@
 use std::fmt;
 
+use downcast_rs::{impl_downcast, Downcast};
+
 use crate::{
     backend::input::TouchSlot,
     input::SeatHandler,
@@ -28,7 +30,7 @@ use super::{DownEvent, MotionEvent, OrientationEvent, ShapeEvent, TouchInnerHand
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait TouchGrab<D: SeatHandler>: Send {
+pub trait TouchGrab<D: SeatHandler>: Send + Downcast {
     /// A new touch point appeared
     ///
     /// This method allows you attach additional behavior to a down event, possibly altering it.
@@ -109,6 +111,8 @@ pub trait TouchGrab<D: SeatHandler>: Send {
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
 }
+
+impl_downcast!(TouchGrab<D> where D: SeatHandler);
 
 /// Data about the event that started the grab.
 pub struct GrabStartData<D: SeatHandler> {
