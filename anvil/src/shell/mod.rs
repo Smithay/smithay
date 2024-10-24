@@ -7,7 +7,7 @@ use smithay::xwayland::XWaylandClientData;
 use smithay::wayland::drm_syncobj::DrmSyncobjCachedState;
 
 use smithay::{
-    backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state},
+    backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
         layer_map_for_output, space::SpaceElement, LayerSurface, PopupKind, PopupManager, Space,
         WindowSurfaceType,
@@ -304,8 +304,6 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
         |_, _, _| true,
     );
 
-    let is_mapped = with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false);
-
     if let Some(window) = space
         .elements()
         .find(|window| window.wl_surface().map(|s| &*s == surface).unwrap_or(false))
@@ -325,9 +323,6 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
             });
             if !initial_configure_sent {
                 toplevel.send_configure();
-            } else if !is_mapped {
-                // After xdg surface unmaps it has to perform the initial commit-configure sequence again
-                toplevel.reset_initial_configure_sent();
             }
         }
 
@@ -360,9 +355,6 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
             // NOTE: This should never fail as the initial configure is always
             // allowed.
             popup.send_configure().expect("initial configure failed");
-        } else if !is_mapped {
-            // After xdg surface unmaps it has to perform the initial commit-configure sequence again
-            popup.reset_initial_configure_sent();
         }
 
         return;

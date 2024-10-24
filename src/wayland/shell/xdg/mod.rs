@@ -1547,6 +1547,8 @@ impl ToplevelSurface {
     ///
     /// This method is used to mark a surface for reinitialization.
     ///
+    /// NOTE: If you are using smithay's rendering abstractions you don't have to call this manually
+    ///
     /// Calls [`compositor::with_states`] internally.
     pub fn reset_initial_configure_sent(&self) {
         compositor::with_states(&self.wl_surface, |states| {
@@ -1570,6 +1572,10 @@ impl ToplevelSurface {
         _dh: &DisplayHandle,
         surface: &wl_surface::WlSurface,
     ) {
+        let is_mapped = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
+            state.buffer().is_some()
+        });
+
         compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
@@ -1577,6 +1583,16 @@ impl ToplevelSurface {
                 .unwrap()
                 .lock()
                 .unwrap();
+
+            // This can be None if rendering utils are not used by the user
+            if let Some(is_mapped) = is_mapped {
+                // After xdg surface unmaps it has to perform the initial commit-configure sequence again
+                if !is_mapped {
+                    guard.initial_configure_sent = false;
+                    guard.initial_decoration_configure_sent = false;
+                }
+            }
+
             if let Some(state) = guard.last_acked.clone() {
                 guard.current = state;
             }
@@ -1898,6 +1914,8 @@ impl PopupSurface {
     ///
     /// This method is used to mark a surface for reinitialization.
     ///
+    /// NOTE: If you are using smithay's rendering abstractions you don't have to call this manually
+    ///
     /// Calls [`compositor::with_states`] internally.
     pub fn reset_initial_configure_sent(&self) {
         compositor::with_states(&self.wl_surface, |states| {
@@ -1959,6 +1977,10 @@ impl PopupSurface {
         _dh: &DisplayHandle,
         surface: &wl_surface::WlSurface,
     ) {
+        let is_mapped = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
+            state.buffer().is_some()
+        });
+
         compositor::with_states(surface, |states| {
             let mut attributes = states
                 .data_map
@@ -1967,6 +1989,15 @@ impl PopupSurface {
                 .lock()
                 .unwrap();
             attributes.committed = true;
+
+            // This can be None if rendering utils are not used by the user
+            if let Some(is_mapped) = is_mapped {
+                // After xdg surface unmaps it has to perform the initial commit-configure sequence again
+                if !is_mapped {
+                    attributes.initial_configure_sent = false;
+                }
+            }
+
             if attributes.initial_configure_sent {
                 if let Some(state) = attributes.last_acked {
                     if state != attributes.current {
