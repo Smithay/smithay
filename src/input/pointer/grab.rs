@@ -336,13 +336,21 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
     fn unset(&mut self, _data: &mut D) {}
 }
 
-// A click grab, basic grab started when an user clicks a surface
-// to maintain it focused until the user releases the click.
-//
-// In case the user maintains several simultaneous clicks, release
-// the grab once all are released.
-struct ClickGrab<D: SeatHandler> {
+/// A click grab, basic grab started when an user clicks a surface
+/// to maintain it focused until the user releases the click.
+///
+/// In case the user maintains several simultaneous clicks, release
+/// the grab once all are released.
+pub struct ClickGrab<D: SeatHandler> {
     start_data: GrabStartData<D>,
+}
+
+impl<D: SeatHandler + 'static> fmt::Debug for ClickGrab<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClickGrab")
+            .field("start_data", &self.start_data)
+            .finish()
+    }
 }
 
 impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {

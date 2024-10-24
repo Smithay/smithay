@@ -100,6 +100,8 @@ mod server_dnd_grab;
 mod source;
 
 pub use device::{DataDeviceUserData, DND_ICON_ROLE};
+pub use dnd_grab::DnDGrab;
+pub use server_dnd_grab::ServerDnDGrab;
 pub use source::{with_source_metadata, DataSourceUserData, SourceMetadata};
 
 use super::{

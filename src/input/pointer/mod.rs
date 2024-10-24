@@ -18,7 +18,7 @@ pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CursorImageSurf
 
 mod grab;
 use grab::DefaultGrab;
-pub use grab::{GrabStartData, PointerGrab};
+pub use grab::{ClickGrab, GrabStartData, PointerGrab};
 use tracing::{info_span, instrument};
 
 /// An handle to a pointer handler
