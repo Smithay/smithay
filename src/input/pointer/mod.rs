@@ -207,6 +207,16 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         }
     }
 
+    /// Calls `f` with the active grab, if any.
+    pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn PointerGrab<D>) -> T) -> Option<T> {
+        let guard = self.inner.lock().unwrap();
+        if let GrabStatus::Active(s, g) = &guard.grab {
+            Some(f(*s, &**g))
+        } else {
+            None
+        }
+    }
+
     /// Notify that the pointer moved
     ///
     /// You provide the new location of the pointer, in the form of:

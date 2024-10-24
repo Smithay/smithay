@@ -269,6 +269,16 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         }
     }
 
+    /// Calls `f` with the active grab, if any.
+    pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn TouchGrab<D>) -> T) -> Option<T> {
+        let guard = self.inner.lock().unwrap();
+        if let GrabStatus::Active(s, g) = &guard.grab {
+            Some(f(*s, &**g))
+        } else {
+            None
+        }
+    }
+
     /// Notify that a new touch point appeared
     ///
     /// You provide the location of the touch, in the form of:
