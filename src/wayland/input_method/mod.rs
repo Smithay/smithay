@@ -81,7 +81,7 @@ use crate::{
 };
 
 pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
-pub use input_method_keyboard_grab::InputMethodKeyboardUserData;
+pub use input_method_keyboard_grab::{InputMethodKeyboardGrab, InputMethodKeyboardUserData};
 pub use input_method_popup_surface::InputMethodPopupSurfaceUserData;
 
 use super::text_input::TextInputHandle;
