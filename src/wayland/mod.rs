@@ -80,6 +80,7 @@ pub mod viewporter;
 pub mod virtual_keyboard;
 pub mod xdg_activation;
 pub mod xdg_foreign;
+pub mod xdg_system_bell;
 pub mod xdg_toplevel_icon;
 #[cfg(feature = "xwayland")]
 pub mod xwayland_keyboard_grab;
