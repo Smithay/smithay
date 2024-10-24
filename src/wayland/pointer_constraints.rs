@@ -482,11 +482,22 @@ where
                     }
                 });
             }
-            zwp_confined_pointer_v1::Request::Destroy => {
-                remove_constraint(&data.surface, pointer);
-            }
+            zwp_confined_pointer_v1::Request::Destroy => {}
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(
+        _state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &ZwpConfinedPointerV1,
+        data: &PointerConstraintUserData<D>,
+    ) {
+        let Some(pointer) = &data.pointer else {
+            return;
+        };
+
+        remove_constraint(&data.surface, pointer);
     }
 }
 
@@ -524,11 +535,22 @@ where
                     }
                 });
             }
-            zwp_locked_pointer_v1::Request::Destroy => {
-                remove_constraint(&data.surface, pointer);
-            }
+            zwp_locked_pointer_v1::Request::Destroy => {}
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(
+        _state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &ZwpLockedPointerV1,
+        data: &PointerConstraintUserData<D>,
+    ) {
+        let Some(pointer) = &data.pointer else {
+            return;
+        };
+
+        remove_constraint(&data.surface, pointer);
     }
 }
 
