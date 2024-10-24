@@ -246,8 +246,8 @@ pub struct Output {
 /// Weak variant of an [`Output`]
 ///
 /// Does not keep associated user data alive,
-/// and can be used to referr to a potentially already destroyed output.
-#[derive(Debug, Clone)]
+/// and can be used to refer to a potentially already destroyed output.
+#[derive(Debug, Default, Clone)]
 pub struct WeakOutput {
     pub(crate) inner: Weak<(Mutex<Inner>, UserDataMap)>,
 }
