@@ -2,6 +2,7 @@
 
 use crate::backend::input::KeyState;
 use crate::utils::{IsAlive, Serial, SERIAL_COUNTER};
+use downcast_rs::{impl_downcast, Downcast};
 use std::collections::HashSet;
 #[cfg(feature = "wayland_frontend")]
 use std::sync::RwLock;
@@ -590,7 +591,7 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait KeyboardGrab<D: SeatHandler> {
+pub trait KeyboardGrab<D: SeatHandler>: Downcast {
     /// An input was reported.
     ///
     /// `modifiers` are only passed when their state actually changes. The modifier must be
@@ -622,6 +623,8 @@ pub trait KeyboardGrab<D: SeatHandler> {
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
 }
+
+impl_downcast!(KeyboardGrab<D> where D: SeatHandler);
 
 /// An handle to a keyboard handler
 ///
@@ -915,6 +918,16 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         match &guard.grab {
             GrabStatus::Active(_, g) => Some(g.start_data().clone()),
             _ => None,
+        }
+    }
+
+    /// Calls `f` with the active grab, if any.
+    pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn KeyboardGrab<D>) -> T) -> Option<T> {
+        let guard = self.arc.internal.lock().unwrap();
+        if let GrabStatus::Active(s, g) = &guard.grab {
+            Some(f(*s, &**g))
+        } else {
+            None
         }
     }
 
