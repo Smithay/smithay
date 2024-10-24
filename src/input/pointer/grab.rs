@@ -1,5 +1,7 @@
 use std::fmt;
 
+use downcast_rs::{impl_downcast, Downcast};
+
 use crate::{
     backend::input::ButtonState,
     input::SeatHandler,
@@ -32,7 +34,7 @@ use super::{
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait PointerGrab<D: SeatHandler>: Send {
+pub trait PointerGrab<D: SeatHandler>: Send + Downcast {
     /// A motion was reported
     ///
     /// This method allows you attach additional behavior to a motion event, possibly altering it.
@@ -169,6 +171,8 @@ pub trait PointerGrab<D: SeatHandler>: Send {
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
 }
+
+impl_downcast!(PointerGrab<D> where D: SeatHandler);
 
 /// Data about the event that started the grab.
 pub struct GrabStartData<D: SeatHandler> {
