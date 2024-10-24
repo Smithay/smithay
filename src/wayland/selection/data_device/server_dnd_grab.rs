@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    fmt,
     os::unix::io::OwnedFd,
     sync::{Arc, Mutex},
 };
@@ -33,7 +34,8 @@ use crate::{
 
 use super::{DataDeviceHandler, DataDeviceUserData, ServerDndGrabHandler, SourceMetadata};
 
-pub(crate) struct ServerDnDGrab<D: SeatHandler> {
+/// Grab during a compositor-initiated DnD operation.
+pub struct ServerDnDGrab<D: SeatHandler> {
     dh: DisplayHandle,
     pointer_start_data: Option<PointerGrabStartData<D>>,
     touch_start_data: Option<TouchGrabStartData<D>>,
@@ -42,6 +44,21 @@ pub(crate) struct ServerDnDGrab<D: SeatHandler> {
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
     offer_data: Option<Arc<Mutex<ServerDndOfferData>>>,
     seat: Seat<D>,
+}
+
+impl<D: SeatHandler + 'static> fmt::Debug for ServerDnDGrab<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServerDnDGrab")
+            .field("dh", &self.dh)
+            .field("pointer_start_data", &self.pointer_start_data)
+            .field("touch_start_data", &self.touch_start_data)
+            .field("metadata", &self.metadata)
+            .field("current_focus", &self.current_focus)
+            .field("pending_offers", &self.pending_offers)
+            .field("offer_data", &self.offer_data)
+            .field("seat", &self.seat)
+            .finish()
+    }
 }
 
 impl<D: SeatHandler> ServerDnDGrab<D> {

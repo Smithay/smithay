@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    fmt,
     os::unix::io::{AsFd, OwnedFd},
     sync::{Arc, Mutex},
 };
@@ -32,7 +33,8 @@ use crate::{
 
 use super::{with_source_metadata, ClientDndGrabHandler, DataDeviceHandler};
 
-pub(crate) struct DnDGrab<D: SeatHandler> {
+/// Grab during a client-initiated DnD operation.
+pub struct DnDGrab<D: SeatHandler> {
     dh: DisplayHandle,
     pointer_start_data: Option<PointerGrabStartData<D>>,
     touch_start_data: Option<TouchGrabStartData<D>>,
@@ -43,6 +45,23 @@ pub(crate) struct DnDGrab<D: SeatHandler> {
     icon: Option<WlSurface>,
     origin: WlSurface,
     seat: Seat<D>,
+}
+
+impl<D: SeatHandler + 'static> fmt::Debug for DnDGrab<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DnDGrab")
+            .field("dh", &self.dh)
+            .field("pointer_start_data", &self.pointer_start_data)
+            .field("touch_start_data", &self.touch_start_data)
+            .field("data_source", &self.data_source)
+            .field("current_focus", &self.current_focus)
+            .field("pending_offers", &self.pending_offers)
+            .field("offer_data", &self.offer_data)
+            .field("icon", &self.icon)
+            .field("origin", &self.origin)
+            .field("seat", &self.seat)
+            .finish()
+    }
 }
 
 impl<D: SeatHandler> DnDGrab<D> {
