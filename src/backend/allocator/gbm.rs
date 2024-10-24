@@ -26,6 +26,8 @@ pub struct GbmBuffer {
     format: Format,
 }
 
+unsafe impl Sync for GbmBuffer {}
+
 #[cfg(feature = "backend_drm")]
 impl PlanarBuffer for GbmBuffer {
     #[inline]

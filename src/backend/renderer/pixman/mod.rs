@@ -685,6 +685,8 @@ pub struct PixmanRenderer {
     dmabuf_cache: Vec<PixmanImage>,
 }
 
+unsafe impl Send for PixmanRenderer {}
+
 impl PixmanRenderer {
     /// Creates a new pixman renderer
     pub fn new() -> Result<Self, PixmanError> {

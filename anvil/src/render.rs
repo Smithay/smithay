@@ -1,15 +1,13 @@
 use smithay::{
     backend::renderer::{
-        damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
-        element::{
+        damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult}, element::{
             surface::WaylandSurfaceRenderElement,
             utils::{
                 ConstrainAlign, ConstrainScaleBehavior, CropRenderElement, RelocateRenderElement,
                 RescaleRenderElement,
             },
             AsRenderElements, RenderElement, Wrap,
-        },
-        ImportAll, ImportMem, Renderer,
+        }, Color32F, ImportAll, ImportMem, Renderer
     },
     desktop::space::{
         constrain_space_element, ConstrainBehavior, ConstrainReference, Space, SpaceRenderElements,
@@ -142,7 +140,7 @@ pub fn output_elements<R>(
     custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
     renderer: &mut R,
     show_window_preview: bool,
-) -> (Vec<OutputRenderElements<R, WindowRenderElement<R>>>, [f32; 4])
+) -> (Vec<OutputRenderElements<R, WindowRenderElement<R>>>, Color32F)
 where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Clone + 'static,
