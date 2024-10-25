@@ -1,0 +1,10 @@
+[package]
+name = "test_clients"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+smithay-client-toolkit = "0.19.2"
+tracing = { version = "0.1.37" }
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
