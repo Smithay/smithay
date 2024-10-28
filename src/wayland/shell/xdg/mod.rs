@@ -205,6 +205,8 @@ macro_rules! xdg_role {
                 pub last_acked: Option<$state>,
                 /// Holds the current state after a successful commit.
                 pub current: $state,
+                /// Does the surface have a buffer (updated on every commit)
+                has_buffer: bool,
 
                 $(
                     $(#[$attributes_field_meta])*
@@ -293,6 +295,7 @@ macro_rules! xdg_role {
                     server_pending: None,
                     last_acked: None,
                     current: Default::default(),
+                    has_buffer: false,
 
                     $(
                         $attributes_field_name: Default::default(),
@@ -1572,7 +1575,7 @@ impl ToplevelSurface {
         _dh: &DisplayHandle,
         surface: &wl_surface::WlSurface,
     ) {
-        let is_mapped = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
+        let has_buffer = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
             state.buffer().is_some()
         });
 
@@ -1585,12 +1588,15 @@ impl ToplevelSurface {
                 .unwrap();
 
             // This can be None if rendering utils are not used by the user
-            if let Some(is_mapped) = is_mapped {
-                // After xdg surface unmaps it has to perform the initial commit-configure sequence again
-                if !is_mapped {
+            if let Some(has_buffer) = has_buffer {
+                // The surface was mapped in the past, and now got unmapped
+                if guard.has_buffer && !has_buffer {
+                    // After xdg surface unmaps it has to perform the initial commit-configure sequence again
                     guard.initial_configure_sent = false;
                     guard.initial_decoration_configure_sent = false;
                 }
+
+                guard.has_buffer = has_buffer;
             }
 
             if let Some(state) = guard.last_acked.clone() {
@@ -1977,7 +1983,7 @@ impl PopupSurface {
         _dh: &DisplayHandle,
         surface: &wl_surface::WlSurface,
     ) {
-        let is_mapped = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
+        let has_buffer = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
             state.buffer().is_some()
         });
 
@@ -1991,11 +1997,14 @@ impl PopupSurface {
             attributes.committed = true;
 
             // This can be None if rendering utils are not used by the user
-            if let Some(is_mapped) = is_mapped {
-                // After xdg surface unmaps it has to perform the initial commit-configure sequence again
-                if !is_mapped {
+            if let Some(has_buffer) = has_buffer {
+                // The surface was mapped in the past, and now got unmapped
+                if attributes.has_buffer && !has_buffer {
+                    // After xdg surface unmaps it has to perform the initial commit-configure sequence again
                     attributes.initial_configure_sent = false;
                 }
+
+                attributes.has_buffer = has_buffer;
             }
 
             if attributes.initial_configure_sent {
