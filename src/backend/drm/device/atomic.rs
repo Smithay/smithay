@@ -338,7 +338,7 @@ where
         })
         .map_err(|source| {
             Error::Access(AccessError {
-                errmsg: "Error reading properties on {:?}",
+                errmsg: "Error reading properties",
                 dev: fd.dev_path(),
                 source,
             })
