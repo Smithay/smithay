@@ -7,14 +7,17 @@ use crate::wayland::compositor;
 use _session_lock::ext_session_lock_surface_v1::{Error, ExtSessionLockSurfaceV1, Request};
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
 use crate::wayland::session_lock::{SessionLockHandler, SessionLockManagerState};
 
 /// User data for ext-session-lock surfaces.
 #[derive(Debug)]
 pub struct ExtLockSurfaceUserData {
-    pub(crate) surface: WlSurface,
+    // `LockSurfaceAttributes` stored in the surface `data_map` contains a
+    // `ExtSessionLockSurfaceV1`. So this reference needs to be weak to avoid a
+    // cycle.
+    pub(crate) surface: Weak<WlSurface>,
 }
 
 impl<D> Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData, D> for SessionLockManagerState
@@ -34,15 +37,19 @@ where
     ) {
         match request {
             Request::AckConfigure { serial } => {
+                let Ok(surface) = data.surface.upgrade() else {
+                    return;
+                };
+
                 // Find configure for this serial.
                 let serial = Serial::from(serial);
-                let configure = compositor::with_states(&data.surface, |states| {
+                let configure = compositor::with_states(&surface, |states| {
                     let surface_data = states.data_map.get::<Mutex<LockSurfaceAttributes>>();
                     surface_data.unwrap().lock().unwrap().ack_configure(serial)
                 });
 
                 match configure {
-                    Some(configure) => state.ack_configure(data.surface.clone(), configure),
+                    Some(configure) => state.ack_configure(surface.clone(), configure),
                     None => lock_surface.post_error(
                         Error::InvalidSerial,
                         format!("wrong configure serial: {}", <u32>::from(serial)),
