@@ -79,7 +79,7 @@ where
                 }
 
                 let data = ExtLockSurfaceUserData {
-                    surface: surface.clone(),
+                    surface: surface.downgrade(),
                 };
                 let lock_surface = data_init.init(id, data);
 
