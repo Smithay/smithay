@@ -18,6 +18,28 @@ use super::primary_selection::PrimaryDeviceUserData;
 use super::private::selection_dispatch;
 use super::wlr_data_control::DataControlDeviceUserData;
 
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum DataDeviceKind {
+    Core,
+    Primary,
+    WlrDataControl,
+    ExtDataControl,
+}
+
+impl DataDeviceKind {
+    pub(super) fn from_device_type_id(id: TypeId) -> Option<Self> {
+        let kind = match id {
+            _ if id == TypeId::of::<WlDataDevice>() => Self::Core,
+            _ if id == TypeId::of::<PrimaryDevice>() => Self::Primary,
+            _ if id == TypeId::of::<ZwlrDataControlDeviceV1>() => Self::WlrDataControl,
+            _ if id == TypeId::of::<ExtDataControlDeviceV1>() => Self::ExtDataControl,
+            _ => return None,
+        };
+
+        Some(kind)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataControlDevice {
     Wlr(ZwlrDataControlDeviceV1),
