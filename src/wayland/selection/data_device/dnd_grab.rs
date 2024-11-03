@@ -263,7 +263,7 @@ where
             }
         }
 
-        ClientDndGrabHandler::dropped(data, self.seat.clone());
+        ClientDndGrabHandler::dropped(data, self.current_focus.clone(), validated, self.seat.clone());
         self.icon = None;
         // in all cases abandon the drop
         // no more buttons are pressed, release the grab
