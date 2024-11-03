@@ -1,6 +1,3 @@
-use std::any::Any;
-use std::any::TypeId;
-
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_device_v1::ExtDataControlDeviceV1;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
@@ -16,6 +13,14 @@ use super::offer::SelectionOffer;
 use super::primary_selection::PrimaryDeviceUserData;
 use super::private::selection_dispatch;
 use super::wlr_data_control::DataControlDeviceUserData;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum DataDeviceKind {
+    Core,
+    Primary,
+    WlrDataControl,
+    ExtDataControl,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DataControlDevice {
@@ -100,13 +105,12 @@ impl SelectionDevice {
         selection_dispatch!(self; Self(device) => device.id())
     }
 
-    /// Get the [`TypeId`] of the underlying data device provider.
-    pub fn inner_type_id(&self) -> TypeId {
+    pub fn device_kind(&self) -> DataDeviceKind {
         match self {
-            Self::DataDevice(device) => device.type_id(),
-            Self::Primary(device) => device.type_id(),
-            Self::DataControl(DataControlDevice::Wlr(device)) => device.type_id(),
-            Self::DataControl(DataControlDevice::Ext(device)) => device.type_id(),
+            Self::DataDevice(_) => DataDeviceKind::Core,
+            Self::Primary(_) => DataDeviceKind::Primary,
+            Self::DataControl(DataControlDevice::Wlr(_)) => DataDeviceKind::WlrDataControl,
+            Self::DataControl(DataControlDevice::Ext(_)) => DataDeviceKind::ExtDataControl,
         }
     }
 
