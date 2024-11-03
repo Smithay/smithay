@@ -4,14 +4,14 @@ use wayland_server::{Client, DisplayHandle, Resource};
 
 use crate::utils::IsAlive;
 
-use super::device::SelectionDevice;
+use super::device::{DataControlDevice, SelectionDevice};
 use super::offer::{OfferReplySource, SelectionOffer};
 use super::{SelectionHandler, SelectionTarget};
 
 /// Seat data used to handle regular selection operations.
 ///
-/// The data is shared accross primary, data device, and data control selections.
-pub struct SeatData<U: Clone + Sync + Send + 'static> {
+/// The data is shared across primary, data device, and data control selections.
+pub(crate) struct SeatData<U: Clone + Sync + Send + 'static> {
     known_devices: Vec<SelectionDevice>,
     clipboard_selection: Option<OfferReplySource<U>>,
     clipboard_selection_focus: Option<Client>,
@@ -20,7 +20,7 @@ pub struct SeatData<U: Clone + Sync + Send + 'static> {
 }
 
 impl<U: Clone + Send + Sync + 'static> SeatData<U> {
-    /// Create a new [`SeatData`] with emply selections and without focusing any client.
+    /// Create a new [`SeatData`] with empty selections and without focusing any client.
     pub fn new() -> Self {
         Default::default()
     }
@@ -166,12 +166,13 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                 // later on.
                 SelectionDevice::DataDevice(_) => ty == SelectionTarget::Clipboard,
                 SelectionDevice::Primary(_) => ty == SelectionTarget::Primary,
-                SelectionDevice::DataControl(data_control) => {
+                SelectionDevice::DataControl(DataControlDevice::Wlr(data_control)) => {
                     // Primary selection is available for data control only since v2.
                     update_data_control
                         && (data_control.version() >= EVT_PRIMARY_SELECTION_SINCE
                             || ty != SelectionTarget::Primary)
                 }
+                SelectionDevice::DataControl(DataControlDevice::Ext(_)) => update_data_control,
             })
         {
             // Data control doesn't require focus and should always get selection updates, unless
@@ -198,7 +199,10 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                     // DataControl devices is the client itself, however other devices use
                     // the currently focused one as a client.
                     let client_id = match device {
-                        SelectionDevice::DataControl(device) => {
+                        SelectionDevice::DataControl(DataControlDevice::Wlr(device)) => {
+                            dh.get_client(device.id()).ok().map(|c| c.id())
+                        }
+                        SelectionDevice::DataControl(DataControlDevice::Ext(device)) => {
                             dh.get_client(device.id()).ok().map(|c| c.id())
                         }
                         _ => client.map(|c| c.id()),
