@@ -7,8 +7,9 @@ use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_offer_v1::{
     self, ZwpPrimarySelectionOfferV1 as PrimaryOffer,
 };
+use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_offer_v1::{
-    self, ZwlrDataControlOfferV1 as DataControlOffer,
+    self, ZwlrDataControlOfferV1,
 };
 use wayland_server::backend::protocol::Message;
 use wayland_server::backend::ObjectId;
@@ -23,6 +24,10 @@ use zwlr_data_control_offer_v1::Request as DataControlRequest;
 use zwp_primary_selection_offer_v1::Request as PrimaryRequest;
 
 use crate::input::Seat;
+use crate::wayland::gen::ext_data_control::v1::server::ext_data_control_device_v1::ExtDataControlDeviceV1;
+use crate::wayland::gen::ext_data_control::v1::server::ext_data_control_offer_v1::{
+    self, ExtDataControlOfferV1,
+};
 
 use super::device::SelectionDevice;
 use super::private::selection_dispatch;
@@ -51,6 +56,24 @@ impl<U: Clone + Send + Sync + 'static> OfferReplySource<U> {
         match self {
             OfferReplySource::Client(source) => source.contains_mime_type(mime_type),
             OfferReplySource::Compositor(source) => source.mime_types.contains(mime_type),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataControlOffer {
+    Wlr(ZwlrDataControlOfferV1),
+    Ext(ExtDataControlOfferV1),
+}
+
+impl DataControlOffer {
+    /// Advertise offered MIME type
+    ///
+    /// Sent immediately after creating the wlr_data_control_offer object. One event per offered MIME type.
+    fn offer(&self, mime_type: String) {
+        match self {
+            Self::Wlr(obj) => obj.offer(mime_type),
+            Self::Ext(obj) => obj.offer(mime_type),
         }
     }
 }
@@ -88,8 +111,12 @@ impl SelectionOffer {
             WlDataOffer::interface()
         } else if type_id == TypeId::of::<PrimaryDevice>() {
             PrimaryOffer::interface()
+        } else if type_id == TypeId::of::<ZwlrDataControlDeviceV1>() {
+            ZwlrDataControlOfferV1::interface()
+        } else if type_id == TypeId::of::<ExtDataControlDeviceV1>() {
+            ExtDataControlOfferV1::interface()
         } else {
-            DataControlOffer::interface()
+            unreachable!()
         };
 
         let offer = backend
@@ -100,8 +127,16 @@ impl SelectionOffer {
             Self::DataDevice(WlDataOffer::from_id(dh, offer).unwrap())
         } else if type_id == TypeId::of::<PrimaryDevice>() {
             Self::Primary(PrimaryOffer::from_id(dh, offer).unwrap())
+        } else if type_id == TypeId::of::<ZwlrDataControlDeviceV1>() {
+            Self::DataControl(DataControlOffer::Wlr(
+                ZwlrDataControlOfferV1::from_id(dh, offer).unwrap(),
+            ))
+        } else if type_id == TypeId::of::<ExtDataControlDeviceV1>() {
+            Self::DataControl(DataControlOffer::Ext(
+                ExtDataControlOfferV1::from_id(dh, offer).unwrap(),
+            ))
         } else {
-            Self::DataControl(DataControlOffer::from_id(dh, offer).unwrap())
+            unreachable!()
         }
     }
 
@@ -149,10 +184,22 @@ where
             } else {
                 return None;
             }
-        } else if let Ok((_resource, DataControlRequest::Receive { mime_type, fd })) =
-            DataControlOffer::parse_request(&dh, msg)
-        {
-            (mime_type, fd, "data_control_offer")
+        } else if type_id == TypeId::of::<ZwlrDataControlDeviceV1>() {
+            if let Ok((_resource, DataControlRequest::Receive { mime_type, fd })) =
+                ZwlrDataControlOfferV1::parse_request(&dh, msg)
+            {
+                (mime_type, fd, "wlr_data_control_offer")
+            } else {
+                return None;
+            }
+        } else if type_id == TypeId::of::<ExtDataControlDeviceV1>() {
+            if let Ok((_resource, ext_data_control_offer_v1::Request::Receive { mime_type, fd })) =
+                ExtDataControlOfferV1::parse_request(&dh, msg)
+            {
+                (mime_type, fd, "ext_data_control_offer")
+            } else {
+                return None;
+            }
         } else {
             return None;
         };

@@ -8,17 +8,84 @@ use wayland_server::protocol::wl_data_device::WlDataDevice;
 use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::Resource;
 
+use crate::wayland::gen::ext_data_control::v1::server::ext_data_control_device_v1::ExtDataControlDeviceV1;
+
 use super::data_device::DataDeviceUserData;
+use super::ext_data_control::ExtDataControlDeviceUserData;
+use super::offer::DataControlOffer;
 use super::offer::SelectionOffer;
 use super::primary_selection::PrimaryDeviceUserData;
 use super::private::selection_dispatch;
 use super::wlr_data_control::DataControlDeviceUserData;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataControlDevice {
+    Wlr(ZwlrDataControlDeviceV1),
+    Ext(ExtDataControlDeviceV1),
+}
+
+impl DataControlDevice {
+    fn data_offer(&self, offer: &DataControlOffer) {
+        match (self, offer) {
+            (Self::Wlr(obj), DataControlOffer::Wlr(offer)) => obj.data_offer(offer),
+            (Self::Ext(obj), DataControlOffer::Ext(offer)) => obj.data_offer(offer),
+            _ => unreachable!(),
+        }
+    }
+
+    fn selection(&self, offer: Option<&DataControlOffer>) {
+        match (self, offer) {
+            (Self::Wlr(obj), Some(DataControlOffer::Wlr(offer))) => obj.selection(Some(offer)),
+            (Self::Ext(obj), Some(DataControlOffer::Ext(offer))) => obj.selection(Some(offer)),
+            (Self::Wlr(obj), None) => obj.selection(None),
+            (Self::Ext(obj), None) => obj.selection(None),
+            _ => unreachable!(),
+        }
+    }
+
+    fn primary_selection(&self, offer: Option<&DataControlOffer>) {
+        match (self, offer) {
+            (Self::Wlr(obj), Some(DataControlOffer::Wlr(offer))) => obj.primary_selection(Some(offer)),
+            (Self::Ext(obj), Some(DataControlOffer::Ext(offer))) => obj.primary_selection(Some(offer)),
+            (Self::Wlr(obj), None) => obj.selection(None),
+            (Self::Ext(obj), None) => obj.selection(None),
+            _ => unreachable!(),
+        }
+    }
+
+    fn wl_seat(&self) -> WlSeat {
+        match self {
+            Self::Wlr(device) => {
+                let data: &DataControlDeviceUserData = device.data().unwrap();
+                data.wl_seat.clone()
+            }
+            Self::Ext(device) => {
+                let data: &ExtDataControlDeviceUserData = device.data().unwrap();
+                data.wl_seat.clone()
+            }
+        }
+    }
+
+    fn id(&self) -> ObjectId {
+        match self {
+            Self::Wlr(obj) => obj.id(),
+            Self::Ext(obj) => obj.id(),
+        }
+    }
+
+    fn version(&self) -> u32 {
+        match self {
+            Self::Wlr(obj) => obj.version(),
+            Self::Ext(obj) => obj.version(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionDevice {
     DataDevice(WlDataDevice),
     Primary(PrimaryDevice),
-    DataControl(ZwlrDataControlDeviceV1),
+    DataControl(DataControlDevice),
 }
 
 impl SelectionDevice {
@@ -36,7 +103,12 @@ impl SelectionDevice {
 
     /// Get the [`TypeId`] of the underlying data device provider.
     pub fn inner_type_id(&self) -> TypeId {
-        selection_dispatch!(self; Self(device) => device.type_id())
+        match self {
+            Self::DataDevice(device) => device.type_id(),
+            Self::Primary(device) => device.type_id(),
+            Self::DataControl(DataControlDevice::Wlr(device)) => device.type_id(),
+            Self::DataControl(DataControlDevice::Ext(device)) => device.type_id(),
+        }
     }
 
     /// [`WlSeat`] associated with this device.
@@ -50,10 +122,7 @@ impl SelectionDevice {
                 let data: &PrimaryDeviceUserData = device.data().unwrap();
                 data.wl_seat.clone()
             }
-            SelectionDevice::DataControl(device) => {
-                let data: &DataControlDeviceUserData = device.data().unwrap();
-                data.wl_seat.clone()
-            }
+            SelectionDevice::DataControl(device) => device.wl_seat(),
         }
     }
 
