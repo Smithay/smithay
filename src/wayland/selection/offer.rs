@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::os::unix::io::OwnedFd;
 use std::sync::Arc;
 
@@ -95,15 +94,13 @@ impl SelectionOffer {
         // NOTE: the types are tied to the `SelectionDevice`, so every
         // RTTI like checking is safe and reliable.
 
-        let type_id = device.inner_type_id();
+        let device_kind = device.device_kind();
         let data = Arc::new(OfferReplyData {
-            type_id,
+            device_kind,
             seat: device.seat(),
             source: data,
         });
         let backend = dh.backend_handle();
-
-        let device_kind = DataDeviceKind::from_device_type_id(type_id).unwrap();
 
         let interface = match device_kind {
             DataDeviceKind::Core => WlDataOffer::interface(),
@@ -134,7 +131,7 @@ impl SelectionOffer {
 }
 
 struct OfferReplyData<U: Clone + Send + Sync + 'static> {
-    type_id: TypeId,
+    device_kind: DataDeviceKind,
     source: OfferReplySource<U>,
     seat: WlSeat,
 }
@@ -151,12 +148,11 @@ where
         msg: Message<ObjectId, OwnedFd>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
-        let type_id = self.type_id;
 
         // NOTE: we can't parse message more than once, since it expects the `OwnedFd` which
         // we can't clone. To achieve that, we use RTTI passed along the selection data, to
         // make the parsing work only once.
-        let (mime_type, fd, object_name) = match DataDeviceKind::from_device_type_id(type_id)? {
+        let (mime_type, fd, object_name) = match self.device_kind {
             DataDeviceKind::Core => {
                 if let Ok((_resource, DataOfferRequest::Receive { mime_type, fd })) =
                     WlDataOffer::parse_request(&dh, msg)

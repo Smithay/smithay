@@ -1,6 +1,3 @@
-use std::any::Any;
-use std::any::TypeId;
-
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
 use wayland_server::backend::ObjectId;
@@ -18,26 +15,12 @@ use super::primary_selection::PrimaryDeviceUserData;
 use super::private::selection_dispatch;
 use super::wlr_data_control::DataControlDeviceUserData;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(super) enum DataDeviceKind {
     Core,
     Primary,
     WlrDataControl,
     ExtDataControl,
-}
-
-impl DataDeviceKind {
-    pub(super) fn from_device_type_id(id: TypeId) -> Option<Self> {
-        let kind = match id {
-            _ if id == TypeId::of::<WlDataDevice>() => Self::Core,
-            _ if id == TypeId::of::<PrimaryDevice>() => Self::Primary,
-            _ if id == TypeId::of::<ZwlrDataControlDeviceV1>() => Self::WlrDataControl,
-            _ if id == TypeId::of::<ExtDataControlDeviceV1>() => Self::ExtDataControl,
-            _ => return None,
-        };
-
-        Some(kind)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,13 +106,12 @@ impl SelectionDevice {
         selection_dispatch!(self; Self(device) => device.id())
     }
 
-    /// Get the [`TypeId`] of the underlying data device provider.
-    pub fn inner_type_id(&self) -> TypeId {
+    pub fn device_kind(&self) -> DataDeviceKind {
         match self {
-            Self::DataDevice(device) => device.type_id(),
-            Self::Primary(device) => device.type_id(),
-            Self::DataControl(DataControlDevice::Wlr(device)) => device.type_id(),
-            Self::DataControl(DataControlDevice::Ext(device)) => device.type_id(),
+            Self::DataDevice(_) => DataDeviceKind::Core,
+            Self::Primary(_) => DataDeviceKind::Primary,
+            Self::DataControl(DataControlDevice::Wlr(_)) => DataDeviceKind::WlrDataControl,
+            Self::DataControl(DataControlDevice::Ext(_)) => DataDeviceKind::ExtDataControl,
         }
     }
 
