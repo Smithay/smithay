@@ -1,24 +1,19 @@
-use std::any::TypeId;
 use std::os::unix::io::OwnedFd;
 use std::sync::Arc;
 
 use tracing::debug;
-use wayland_protocols::ext::data_control::v1::server::ext_data_control_device_v1::ExtDataControlDeviceV1;
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_offer_v1::{
     self, ExtDataControlOfferV1,
 };
-use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_offer_v1::{
     self, ZwpPrimarySelectionOfferV1 as PrimaryOffer,
 };
-use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_offer_v1::{
     self, ZwlrDataControlOfferV1,
 };
 use wayland_server::backend::protocol::Message;
 use wayland_server::backend::ObjectId;
 use wayland_server::backend::{ClientId, Handle, ObjectData};
-use wayland_server::protocol::wl_data_device::WlDataDevice;
 use wayland_server::protocol::wl_data_offer;
 use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::DisplayHandle;
@@ -29,7 +24,7 @@ use zwp_primary_selection_offer_v1::Request as PrimaryRequest;
 
 use crate::input::Seat;
 
-use super::device::SelectionDevice;
+use super::device::{DataDeviceKind, SelectionDevice};
 use super::private::selection_dispatch;
 use super::source::{CompositorSelectionProvider, SelectionSourceProvider};
 use super::SelectionHandler;
@@ -99,44 +94,34 @@ impl SelectionOffer {
         // NOTE: the types are tied to the `SelectionDevice`, so every
         // RTTI like checking is safe and reliable.
 
-        let type_id = device.inner_type_id();
+        let device_kind = device.device_kind();
         let data = Arc::new(OfferReplyData {
-            type_id,
+            device_kind,
             seat: device.seat(),
             source: data,
         });
         let backend = dh.backend_handle();
 
-        let interface = if type_id == TypeId::of::<WlDataDevice>() {
-            WlDataOffer::interface()
-        } else if type_id == TypeId::of::<PrimaryDevice>() {
-            PrimaryOffer::interface()
-        } else if type_id == TypeId::of::<ZwlrDataControlDeviceV1>() {
-            ZwlrDataControlOfferV1::interface()
-        } else if type_id == TypeId::of::<ExtDataControlDeviceV1>() {
-            ExtDataControlOfferV1::interface()
-        } else {
-            unreachable!()
+        let interface = match device_kind {
+            DataDeviceKind::Core => WlDataOffer::interface(),
+            DataDeviceKind::Primary => PrimaryOffer::interface(),
+            DataDeviceKind::WlrDataControl => ZwlrDataControlOfferV1::interface(),
+            DataDeviceKind::ExtDataControl => ExtDataControlOfferV1::interface(),
         };
 
         let offer = backend
             .create_object::<D>(client_id, interface, device.version(), data)
             .unwrap();
 
-        if type_id == TypeId::of::<WlDataDevice>() {
-            Self::DataDevice(WlDataOffer::from_id(dh, offer).unwrap())
-        } else if type_id == TypeId::of::<PrimaryDevice>() {
-            Self::Primary(PrimaryOffer::from_id(dh, offer).unwrap())
-        } else if type_id == TypeId::of::<ZwlrDataControlDeviceV1>() {
-            Self::DataControl(DataControlOffer::Wlr(
+        match device_kind {
+            DataDeviceKind::Core => Self::DataDevice(WlDataOffer::from_id(dh, offer).unwrap()),
+            DataDeviceKind::Primary => Self::Primary(PrimaryOffer::from_id(dh, offer).unwrap()),
+            DataDeviceKind::WlrDataControl => Self::DataControl(DataControlOffer::Wlr(
                 ZwlrDataControlOfferV1::from_id(dh, offer).unwrap(),
-            ))
-        } else if type_id == TypeId::of::<ExtDataControlDeviceV1>() {
-            Self::DataControl(DataControlOffer::Ext(
+            )),
+            DataDeviceKind::ExtDataControl => Self::DataControl(DataControlOffer::Ext(
                 ExtDataControlOfferV1::from_id(dh, offer).unwrap(),
-            ))
-        } else {
-            unreachable!()
+            )),
         }
     }
 
@@ -146,7 +131,7 @@ impl SelectionOffer {
 }
 
 struct OfferReplyData<U: Clone + Send + Sync + 'static> {
-    type_id: TypeId,
+    device_kind: DataDeviceKind,
     source: OfferReplySource<U>,
     seat: WlSeat,
 }
@@ -163,45 +148,47 @@ where
         msg: Message<ObjectId, OwnedFd>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
-        let type_id = self.type_id;
 
         // NOTE: we can't parse message more than once, since it expects the `OwnedFd` which
         // we can't clone. To achieve that, we use RTTI passed along the selection data, to
         // make the parsing work only once.
-        let (mime_type, fd, object_name) = if type_id == TypeId::of::<WlDataDevice>() {
-            if let Ok((_resource, DataOfferRequest::Receive { mime_type, fd })) =
-                WlDataOffer::parse_request(&dh, msg)
-            {
-                (mime_type, fd, "wl_data_offer")
-            } else {
-                return None;
+        let (mime_type, fd, object_name) = match self.device_kind {
+            DataDeviceKind::Core => {
+                if let Ok((_resource, DataOfferRequest::Receive { mime_type, fd })) =
+                    WlDataOffer::parse_request(&dh, msg)
+                {
+                    (mime_type, fd, "wl_data_offer")
+                } else {
+                    return None;
+                }
             }
-        } else if type_id == TypeId::of::<PrimaryDevice>() {
-            if let Ok((_resource, PrimaryRequest::Receive { mime_type, fd })) =
-                PrimaryOffer::parse_request(&dh, msg)
-            {
-                (mime_type, fd, "primary_selection_offer")
-            } else {
-                return None;
+            DataDeviceKind::Primary => {
+                if let Ok((_resource, PrimaryRequest::Receive { mime_type, fd })) =
+                    PrimaryOffer::parse_request(&dh, msg)
+                {
+                    (mime_type, fd, "primary_selection_offer")
+                } else {
+                    return None;
+                }
             }
-        } else if type_id == TypeId::of::<ZwlrDataControlDeviceV1>() {
-            if let Ok((_resource, DataControlRequest::Receive { mime_type, fd })) =
-                ZwlrDataControlOfferV1::parse_request(&dh, msg)
-            {
-                (mime_type, fd, "wlr_data_control_offer")
-            } else {
-                return None;
+            DataDeviceKind::WlrDataControl => {
+                if let Ok((_resource, DataControlRequest::Receive { mime_type, fd })) =
+                    ZwlrDataControlOfferV1::parse_request(&dh, msg)
+                {
+                    (mime_type, fd, "wlr_data_control_offer")
+                } else {
+                    return None;
+                }
             }
-        } else if type_id == TypeId::of::<ExtDataControlDeviceV1>() {
-            if let Ok((_resource, ext_data_control_offer_v1::Request::Receive { mime_type, fd })) =
-                ExtDataControlOfferV1::parse_request(&dh, msg)
-            {
-                (mime_type, fd, "ext_data_control_offer")
-            } else {
-                return None;
+            DataDeviceKind::ExtDataControl => {
+                if let Ok((_resource, ext_data_control_offer_v1::Request::Receive { mime_type, fd })) =
+                    ExtDataControlOfferV1::parse_request(&dh, msg)
+                {
+                    (mime_type, fd, "ext_data_control_offer")
+                } else {
+                    return None;
+                }
             }
-        } else {
-            return None;
         };
 
         if !self.source.contains_mime_type(&mime_type) {
