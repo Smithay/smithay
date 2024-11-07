@@ -128,7 +128,7 @@ impl Clone for PlaneDamageClips {
 }
 
 /// State of a single plane
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PlaneState<'a> {
     /// Handle of the plane
     pub handle: plane::Handle,
@@ -139,7 +139,7 @@ pub struct PlaneState<'a> {
 }
 
 /// Configuration for a single plane
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PlaneConfig<'a> {
     /// Source [`Rectangle`] of the attached framebuffer
     pub src: Rectangle<f64, Buffer>,
@@ -155,6 +155,17 @@ pub struct PlaneConfig<'a> {
     pub fb: framebuffer::Handle,
     /// Optional fence
     pub fence: Option<BorrowedFd<'a>>,
+}
+
+/// VRR support state
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VrrSupport {
+    /// VRR is generally not supported
+    NotSupported,
+    /// VRR is supported, but changing it requires a modeset
+    RequiresModeset,
+    /// VRR is supported and can be changed without a modeset
+    Supported,
 }
 
 #[derive(Debug)]
@@ -290,6 +301,43 @@ impl DrmSurface {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.use_mode(mode),
             DrmSurfaceInternal::Legacy(surf) => surf.use_mode(mode),
+        }
+    }
+
+    /// Returns if Variable Refresh Rate is advertised as supported by the given connector.
+    ///
+    /// Note: This will always return [`VrrSupport::NotSupported`] if the underlying
+    /// implementation is using the legacy DRM api.
+    pub fn vrr_supported(&self, conn: connector::Handle) -> Result<VrrSupport, Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.vrr_supported(conn),
+            DrmSurfaceInternal::Legacy(_) => Ok(VrrSupport::NotSupported),
+        }
+    }
+
+    /// Returns whether the next frame state would set Variable Refresh Rate as enabled.
+    ///
+    /// Note: This will always return `false` if the underlying implementation is using the
+    /// legacy DRM api.
+    pub fn vrr_enabled(&self) -> bool {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.vrr_enabled(),
+            DrmSurfaceInternal::Legacy(_) => false,
+        }
+    }
+
+    /// Tries to set Variable Refresh Rate (VRR) for the next frame.
+    ///
+    /// Doing so might cause [`DrmSurface::commit_pending`] to return `true`.
+    /// Check [`DrmSurface::vrr_supported`], which indicates if VRR can be
+    /// used without a modeset on the attached connectors.
+    pub fn use_vrr(&self, vrr: bool) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.use_vrr(vrr),
+            DrmSurfaceInternal::Legacy(_) => Err(Error::UnknownProperty {
+                handle: self.crtc.into(),
+                name: "VRR_ENABLED",
+            }),
         }
     }
 

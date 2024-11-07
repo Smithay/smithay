@@ -172,7 +172,10 @@ use crate::{
     wayland::{shm, single_pixel_buffer},
 };
 
-use super::{error::AccessError, DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
+use super::{
+    error::AccessError, surface::VrrSupport, DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo,
+    Planes,
+};
 
 pub mod dumb;
 mod elements;
@@ -2662,6 +2665,24 @@ where
             PrimaryPlaneElement::Element(primary_plane_scanout_element.unwrap())
         };
 
+        // if the update only contains a cursor position update, skip it for vrr
+        if self.vrr_enabled()
+            && allow_partial_update
+            && next_frame_state.planes.iter().all(|(plane, state)| {
+                state.skip
+                    || (self.planes.cursor.iter().any(|p| *plane == p.handle)
+                        && state.buffer().map(|b| &b.fb)
+                            == previous_state.plane_buffer(*plane).map(|b| &b.fb))
+            })
+        {
+            for plane in self.planes.cursor.iter() {
+                let Some(state) = next_frame_state.plane_state_mut(plane.handle) else {
+                    continue;
+                };
+                state.skip = true;
+            }
+        }
+
         let next_frame = PreparedFrame {
             kind: if allow_partial_update {
                 PreparedFrameKind::Partial
@@ -2928,6 +2949,27 @@ where
         let (w, h) = mode.size();
         self.swapchain.resize(w as _, h as _);
         Ok(())
+    }
+
+    /// Returns if Variable Refresh Rate is advertised as supported by the given connector.
+    ///
+    /// See [`DrmSurface::vrr_supported`] for more details.
+    pub fn vrr_supported(&self, conn: connector::Handle) -> FrameResult<VrrSupport, A, F> {
+        self.surface.vrr_supported(conn).map_err(FrameError::DrmError)
+    }
+
+    /// Returns if Variable Refresh Rate is currently enabled for frames composed by this [`DrmCompositor`].
+    pub fn vrr_enabled(&self) -> bool {
+        self.surface.vrr_enabled()
+    }
+
+    /// Tries to set variable refresh rate (VRR) for the next frame.
+    ///
+    /// Doing so might cause the next frame to trigger a modeset.
+    /// Check [`DrmCompositor::vrr_supported`], which indicates if VRR can be
+    /// used without a modeset on the attached connectors.
+    pub fn use_vrr(&mut self, vrr: bool) -> FrameResult<(), A, F> {
+        self.surface.use_vrr(vrr).map_err(FrameError::DrmError)
     }
 
     /// Set the [`DebugFlags`] to use
