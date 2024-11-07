@@ -1,4 +1,6 @@
 use drm::control::atomic::AtomicModeReq;
+use drm::control::connector::Interface;
+use drm::control::property::ValueType;
 use drm::control::Device as ControlDevice;
 use drm::control::{
     connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType,
@@ -6,10 +8,9 @@ use drm::control::{
 
 use std::collections::HashSet;
 use std::os::unix::io::AsRawFd;
-use std::sync::Mutex;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, RwLock,
+    Arc, Mutex, RwLock,
 };
 
 use crate::backend::drm::error::AccessError;
@@ -29,20 +30,24 @@ use crate::{
 
 use tracing::{debug, info, info_span, instrument, trace, warn};
 
-use super::{PlaneConfig, PlaneState};
+use super::{PlaneConfig, PlaneState, VrrSupport};
 
 #[derive(Debug, Clone)]
 pub struct State {
     pub active: bool,
     pub mode: Mode,
     pub blob: property::Value<'static>,
+    pub vrr: bool,
     pub connectors: HashSet<connector::Handle>,
 }
 
 impl PartialEq for State {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.active == other.active && self.mode == other.mode && self.connectors == other.connectors
+        self.active == other.active
+            && self.mode == other.mode
+            && self.vrr == other.vrr
+            && self.connectors == other.connectors
     }
 }
 
@@ -110,16 +115,22 @@ impl State {
             }
         }
 
-        // Get the current active (dpms) state of the CRTC
+        // Get the current active (dpms) state and vrr state of the CRTC
         //
         // Changing a CRTC to active might require a modeset
         let mut active = None;
+        let mut vrr = None;
         if let Ok(props) = fd.get_properties(crtc) {
             let active_prop = prop_mapping.crtcs.get(&crtc).and_then(|m| m.get("ACTIVE"));
+            let vrr_prop = prop_mapping.crtcs.get(&crtc).and_then(|m| m.get("VRR_ENABLED"));
             let (ids, vals) = props.as_props_and_values();
             for (&id, &val) in ids.iter().zip(vals.iter()) {
                 if Some(&id) == active_prop {
                     active = property::ValueType::Boolean.convert_value(val).as_boolean();
+                    break;
+                }
+                if Some(&id) == vrr_prop {
+                    vrr = property::ValueType::Boolean.convert_value(val).as_boolean();
                     break;
                 }
             }
@@ -131,6 +142,8 @@ impl State {
             active: active.unwrap_or(false),
             mode: current_mode,
             blob: current_blob,
+            // If we don't know the VRR state, the driver doesn't support the property
+            vrr: vrr.unwrap_or(false),
             connectors: current_connectors,
         })
     }
@@ -140,6 +153,7 @@ impl State {
         self.blob = property::Value::Unknown(0);
         self.connectors.clear();
         self.active = false;
+        self.vrr = false;
     }
 }
 
@@ -186,6 +200,7 @@ impl AtomicDrmSurface {
             active: true,
             mode,
             blob,
+            vrr: false,
             connectors: connectors.iter().copied().collect(),
         };
 
@@ -338,6 +353,7 @@ impl AtomicDrmSurface {
                     }),
                 }],
                 Some(pending.blob),
+                pending.vrr,
             )?;
             self.fd
                 .atomic_commit(
@@ -390,6 +406,7 @@ impl AtomicDrmSurface {
                 }),
             }],
             Some(pending.blob),
+            pending.vrr,
         )?;
         self.fd
             .atomic_commit(
@@ -444,6 +461,7 @@ impl AtomicDrmSurface {
                 }),
             }],
             Some(pending.blob),
+            pending.vrr,
         )?;
 
         self.fd
@@ -496,6 +514,7 @@ impl AtomicDrmSurface {
                 }),
             }],
             Some(new_blob),
+            pending.vrr,
         )?;
         if let Err(err) = self
             .fd
@@ -516,6 +535,126 @@ impl AtomicDrmSurface {
         Ok(())
     }
 
+    pub fn vrr_supported(&self, conn: connector::Handle) -> Result<VrrSupport, Error> {
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
+        let props = self.prop_mapping.read().unwrap();
+        if self
+            .prop_mapping
+            .read()
+            .unwrap()
+            .crtc_prop_handle(self.crtc, "VRR_ENABLED")
+            .is_err()
+        {
+            return Ok(VrrSupport::NotSupported);
+        }
+
+        if let Some(vrr_prop) = props
+            .connectors
+            .get(&conn)
+            .and_then(|props| props.get("vrr_capable"))
+        {
+            for (prop, value) in self.fd.get_properties(conn).map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Error querying properties",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
+            })? {
+                if prop == *vrr_prop {
+                    let interface = self
+                        .fd
+                        .get_connector(conn, false)
+                        .map_err(|source| {
+                            Error::Access(AccessError {
+                                errmsg: "Error querying connector",
+                                dev: self.fd.dev_path(),
+                                source,
+                            })
+                        })?
+                        .interface();
+
+                    // see: https://gitlab.freedesktop.org/drm/amd/-/issues/2200#note_2159982
+                    // Currently setting VRR for HDMI connectors will cause flickering despite not needing `ALLOW_MODESET`
+                    // TODO: Once the kernel is fixed, do actual test commits with and without `ALLOW_MODESET`.
+                    return Ok(
+                        match ValueType::Boolean.convert_value(value).as_boolean().unwrap() {
+                            true if interface == Interface::HDMIA || interface == Interface::HDMIB => {
+                                VrrSupport::RequiresModeset
+                            }
+                            true => VrrSupport::Supported,
+                            false => VrrSupport::NotSupported,
+                        },
+                    );
+                }
+            }
+        }
+
+        Ok(VrrSupport::NotSupported)
+    }
+
+    pub fn vrr_enabled(&self) -> bool {
+        self.pending.read().unwrap().vrr
+    }
+
+    pub fn use_vrr(&self, value: bool) -> Result<(), Error> {
+        let mut current = self.state.write().unwrap();
+        let mut pending = self.pending.write().unwrap();
+        if pending.vrr == value {
+            return Ok(());
+        }
+
+        if value
+            && self
+                .prop_mapping
+                .read()
+                .unwrap()
+                .crtc_prop_handle(self.crtc, "VRR_ENABLED")
+                .is_err()
+        {
+            return Err(Error::UnknownProperty {
+                handle: self.crtc.into(),
+                name: "VRR_ENABLED",
+            });
+        }
+
+        let test_buffer = self.create_test_buffer(pending.mode.size(), self.plane)?;
+        let plane_config = PlaneState {
+            handle: self.plane,
+            config: Some(PlaneConfig {
+                src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
+                dst: Rectangle::from_loc_and_size(
+                    Point::default(),
+                    (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                ),
+                transform: Transform::Normal,
+                alpha: 1.0,
+                damage_clips: None,
+                fb: test_buffer.fb,
+                fence: None,
+            }),
+        };
+
+        if *current == *pending {
+            // Try a non modesetting commit
+            if self
+                .test_state_internal([plane_config.clone()], false, &current, &pending)
+                .is_ok()
+            {
+                current.vrr = value;
+                pending.vrr = value;
+                return Ok(());
+            }
+        }
+
+        // Try a modeset commit
+        self.test_state_internal([plane_config], true, &current, &pending)?;
+        pending.vrr = value;
+        Ok(())
+    }
+
     pub fn commit_pending(&self) -> bool {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
@@ -531,17 +670,33 @@ impl AtomicDrmSurface {
             return Err(Error::DeviceInactive);
         }
 
-        let planes = planes.into_iter().collect::<Vec<_>>();
-
         let current = self.state.read().unwrap();
         let pending = self.pending.read().unwrap();
+
+        self.test_state_internal(planes, allow_modeset, &current, &pending)
+    }
+
+    fn test_state_internal<'a>(
+        &self,
+        planes: impl IntoIterator<Item = PlaneState<'a>>,
+        allow_modeset: bool,
+        current: &'_ State,
+        pending: &'_ State,
+    ) -> Result<(), Error> {
+        let planes = planes.into_iter().collect::<Vec<_>>();
 
         let current_conns = current.connectors.clone();
         let pending_conns = pending.connectors.clone();
         let mut removed = current_conns.difference(&pending_conns);
         let mut added = pending_conns.difference(&current_conns);
 
-        let req = self.build_request(&mut added, &mut removed, &*planes, Some(pending.blob))?;
+        let req = self.build_request(
+            &mut added,
+            &mut removed,
+            &*planes,
+            Some(pending.blob),
+            pending.vrr,
+        )?;
 
         let flags = if allow_modeset {
             AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY
@@ -605,7 +760,13 @@ impl AtomicDrmSurface {
 
         // test the new config and return the request if it would be accepted by the driver.
         let req = {
-            let req = self.build_request(&mut added, &mut removed, &*planes, Some(pending.blob))?;
+            let req = self.build_request(
+                &mut added,
+                &mut removed,
+                &*planes,
+                Some(pending.blob),
+                pending.vrr,
+            )?;
 
             if let Err(err) = self.fd.atomic_commit(
                 AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
@@ -683,7 +844,13 @@ impl AtomicDrmSurface {
         let planes = planes.into_iter().collect::<Vec<_>>();
 
         // page flips work just like commits with fewer parameters..
-        let req = self.build_request(&mut [].iter(), &mut [].iter(), &*planes, None)?;
+        let req = self.build_request(
+            &mut [].iter(),
+            &mut [].iter(),
+            &*planes,
+            None,
+            self.state.read().unwrap().vrr,
+        )?;
 
         // .. and without `AtomicCommitFlags::AllowModeset`.
         // If we would set anything here, that would require a modeset, this would fail,
@@ -729,6 +896,7 @@ impl AtomicDrmSurface {
         removed_connectors: &mut dyn Iterator<Item = &connector::Handle>,
         planes: impl IntoIterator<Item = &'a PlaneState<'a>>,
         blob: Option<property::Value<'static>>,
+        vrr: bool,
     ) -> Result<AtomicModeReq, Error> {
         let prop_mapping = self.prop_mapping.read().unwrap();
 
@@ -774,6 +942,15 @@ impl AtomicDrmSurface {
             prop_mapping.crtc_prop_handle(self.crtc, "ACTIVE")?,
             property::Value::Boolean(true),
         );
+
+        if let Ok(vrr_prop) = prop_mapping.crtc_prop_handle(self.crtc, "VRR_ENABLED") {
+            req.add_property(self.crtc, vrr_prop, property::Value::Boolean(vrr));
+        } else if vrr {
+            return Err(Error::UnknownProperty {
+                handle: self.crtc.into(),
+                name: "VRR_ENABLED",
+            });
+        }
 
         for plane_state in planes.into_iter() {
             let handle = &plane_state.handle;

@@ -18,7 +18,7 @@ use crate::utils::{DevPath, Physical, Point, Rectangle, Transform};
 
 use tracing::{debug, error, info_span, instrument, trace, warn};
 
-use super::{PlaneConfig, PlaneDamageClips, PlaneState};
+use super::{PlaneConfig, PlaneDamageClips, PlaneState, VrrSupport};
 
 #[derive(Debug)]
 struct QueuedFb<U> {
@@ -498,6 +498,29 @@ where
         let (w, h) = mode.size();
         self.swapchain.resize(w as _, h as _);
         Ok(())
+    }
+
+    /// Returns if Variable Refresh Rate is advertised as supported by the given connector.
+    ///
+    /// See [`DrmSurface::vrr_supported`] for more details.
+    pub fn vrr_supported(&self, conn: connector::Handle) -> Result<VrrSupport, Error<A::Error>> {
+        self.drm.vrr_supported(conn).map_err(Error::DrmError)
+    }
+
+    /// Returns whether the next frame state would set Variable Refresh Rate as enabled.
+    ///
+    /// See [`DrmSurface::vrr_enabled`] for more details.
+    pub fn vrr_enabled(&self) -> bool {
+        self.drm.vrr_enabled()
+    }
+
+    /// Tries to set Variable Refresh Rate (VRR) for the next frame.
+    //
+    /// Doing so might cause the next frame to trigger a modeset.
+    /// Check [`GbmBufferedSurface::vrr_supported`], which indicates if VRR can be
+    /// used without a modeset on the attached connectors./
+    pub fn use_vrr(&self, vrr: bool) -> Result<(), Error<A::Error>> {
+        self.drm.use_vrr(vrr).map_err(Error::DrmError)
     }
 
     /// Returns a reference to the underlying drm surface
