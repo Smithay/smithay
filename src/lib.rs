@@ -7,7 +7,7 @@
 //!
 //! This crate is a general framework for building wayland compositors. It currently focuses on low-level,
 //! helpers and abstractions, handling most of the system-level and wayland protocol interactions.
-//! The window management and drawing logic is however at the time not provided (but helpers for this
+//! The window management and drawing logic is however at this time not provided (but helpers for this
 //! are planned for future version).
 //!
 //! ## Structure of the crate
@@ -33,11 +33,11 @@
 //! client requests, user input, or hardware events such as `vblank`).
 //!
 //! Using a callback-heavy structure however poses the question of state management: a lot of state needs
-//! to be accessed from many different callbacks. To avoid an heavy requirement on shared pointers such
+//! to be accessed from many different callbacks. To avoid a heavy requirement on shared pointers such
 //! as `Rc` and `Arc` and the synchronization they require, [`calloop`] allows you to provide a mutable
-//! reference to a value, that will be passed down to most callbacks. This structure provides
+//! reference to a value that will be passed down to most callbacks. This structure provides
 //! easy access to a centralized mutable state without synchronization (as the callback invocation is
-//! *always* sequential), and is the recommended way to of structuring your compositor.
+//! *always* sequential), and is the recommended way of structuring your compositor.
 //! TODO: Add a section here how this links to wayland-server's `Dispatch` and link to the wayland-server
 //! docs, once they exist for 0.30.
 //!
