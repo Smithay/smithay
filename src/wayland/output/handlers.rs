@@ -41,13 +41,13 @@ where
         let output = data_init.init(
             resource,
             OutputUserData {
-                global_data: global_data.inner.clone(),
+                output: global_data.output.clone(),
                 last_client_scale: AtomicU32::new(client_scale.load(Ordering::Acquire)),
                 client_scale,
             },
         );
 
-        let mut inner = global_data.inner.0.lock().unwrap();
+        let mut inner = global_data.output.inner.0.lock().unwrap();
 
         let span = warn_span!("output_bind", name = inner.name);
         let _enter = span.enter();
@@ -99,10 +99,7 @@ where
         inner.instances.push(output.downgrade());
 
         drop(inner);
-        let o = Output {
-            inner: global_data.inner.clone(),
-        };
-        state.output_bound(o, output);
+        state.output_bound(global_data.output.clone(), output);
     }
 }
 
@@ -127,7 +124,8 @@ where
         output: &WlOutput,
         data: &OutputUserData,
     ) {
-        data.global_data
+        data.output
+            .inner
             .0
             .lock()
             .unwrap()

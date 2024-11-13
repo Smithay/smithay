@@ -78,7 +78,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::output::{Inner, Mode, Output, OutputData, Scale, Subpixel};
+use crate::output::{Inner, Mode, Output, Scale, Subpixel};
 
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
@@ -104,7 +104,7 @@ pub struct OutputManagerState {
 /// Internal data of a wl_output global
 #[derive(Debug)]
 pub struct WlOutputData {
-    inner: OutputData,
+    output: Output,
 }
 
 /// Events initiated by the clients interacting with outputs
@@ -144,7 +144,7 @@ impl OutputManagerState {
 /// User data for WlOutput
 #[derive(Debug)]
 pub struct OutputUserData {
-    pub(crate) global_data: OutputData,
+    pub(crate) output: Output,
     last_client_scale: AtomicU32,
     client_scale: Arc<AtomicU32>,
 }
@@ -152,7 +152,7 @@ pub struct OutputUserData {
 impl Clone for OutputUserData {
     fn clone(&self) -> Self {
         OutputUserData {
-            global_data: self.global_data.clone(),
+            output: self.output.clone(),
             last_client_scale: AtomicU32::new(self.last_client_scale.load(Ordering::Acquire)),
             client_scale: self.client_scale.clone(),
         }
@@ -204,19 +204,12 @@ impl Output {
     {
         info!(output = self.name(), "Creating new wl_output");
         self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
-        display.create_global::<D, WlOutput, _>(
-            4,
-            WlOutputData {
-                inner: self.inner.clone(),
-            },
-        )
+        display.create_global::<D, WlOutput, _>(4, WlOutputData { output: self.clone() })
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
     pub fn from_resource(output: &WlOutput) -> Option<Output> {
-        output.data::<OutputUserData>().map(|ud| Output {
-            inner: ud.global_data.clone(),
-        })
+        output.data::<OutputUserData>().map(|ud| ud.output.clone())
     }
 
     pub(crate) fn wl_change_current_state(
