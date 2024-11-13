@@ -943,6 +943,25 @@ impl<N: Coordinate, Kind> AddAssign for Size<N, Kind> {
     }
 }
 
+impl<N: Coordinate, Kind> Sub for Size<N, Kind> {
+    type Output = Size<N, Kind>;
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        debug_assert!(
+            self.w >= rhs.w && self.h >= rhs.h,
+            "Attempting to subtract bigger from smaller size: {:?} - {:?}",
+            (&self.w, &self.h),
+            (&rhs.w, &rhs.h),
+        );
+
+        Size {
+            w: self.w.saturating_sub(rhs.w),
+            h: self.h.saturating_sub(rhs.h),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<N: Coordinate, Kind> SubAssign for Size<N, Kind> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
