@@ -29,6 +29,8 @@ pub struct Raw;
 pub trait Coordinate:
     Sized + Add<Self, Output = Self> + Sub<Self, Output = Self> + PartialOrd + Default + Copy + fmt::Debug
 {
+    /// A Coordinate that is 0
+    const ZERO: Self;
     /// Downscale the coordinate
     fn downscale(self, scale: Self) -> Self;
     /// Upscale the coordinate
@@ -77,6 +79,8 @@ macro_rules! unsigned_coordinate_impl {
 
     ($ty:ty) => {
         impl Coordinate for $ty {
+            const ZERO: $ty = 0;
+
             #[inline]
             fn downscale(self, scale: Self) -> Self {
                 self / scale
@@ -142,6 +146,8 @@ macro_rules! signed_coordinate_impl {
 
     ($ty:ty) => {
         impl Coordinate for $ty {
+            const ZERO: $ty = 0;
+
             #[inline]
             fn downscale(self, scale: Self) -> Self {
                 self / scale
@@ -206,6 +212,8 @@ macro_rules! floating_point_coordinate_impl {
 
     ($ty:ty) => {
         impl Coordinate for $ty {
+            const ZERO: $ty = 0.0;
+
             #[inline]
             fn downscale(self, scale: Self) -> Self {
                 self / scale
@@ -947,16 +955,9 @@ impl<N: Coordinate, Kind> Sub for Size<N, Kind> {
     type Output = Size<N, Kind>;
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
-        debug_assert!(
-            self.w >= rhs.w && self.h >= rhs.h,
-            "Attempting to subtract bigger from smaller size: {:?} - {:?}",
-            (&self.w, &self.h),
-            (&rhs.w, &rhs.h),
-        );
-
         Size {
-            w: self.w.saturating_sub(rhs.w),
-            h: self.h.saturating_sub(rhs.h),
+            w: self.w.saturating_sub(rhs.w).max(N::ZERO),
+            h: self.h.saturating_sub(rhs.h).max(N::ZERO),
             _kind: std::marker::PhantomData,
         }
     }
@@ -965,15 +966,8 @@ impl<N: Coordinate, Kind> Sub for Size<N, Kind> {
 impl<N: Coordinate, Kind> SubAssign for Size<N, Kind> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
-        debug_assert!(
-            self.w >= rhs.w && self.h >= rhs.h,
-            "Attempting to subtract bigger from smaller size: {:?} - {:?}",
-            (&self.w, &self.h),
-            (&rhs.w, &rhs.h),
-        );
-
-        self.w = self.w.saturating_sub(rhs.w);
-        self.h = self.h.saturating_sub(rhs.h);
+        self.w = self.w.saturating_sub(rhs.w).max(N::ZERO);
+        self.h = self.h.saturating_sub(rhs.h).max(N::ZERO);
     }
 }
 
@@ -1924,5 +1918,15 @@ mod tests {
         let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
         let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
         assert!(!main.overlaps(right));
+    }
+
+    #[test]
+    fn size_sub_saturate_zero() {
+        let bigger = Size::<_, Logical>::from((10, 10));
+        let mut smaller = Size::<_, Logical>::from((5, 5));
+
+        assert_eq!(smaller - bigger, Size::from((0, 0)));
+        smaller -= bigger;
+        assert_eq!(smaller, Size::from((0, 0)));
     }
 }
