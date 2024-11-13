@@ -78,7 +78,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::output::{Inner, Mode, Output, Scale, Subpixel};
+use crate::output::{Inner, Mode, Output, Scale, Subpixel, WeakOutput};
 
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
@@ -144,7 +144,7 @@ impl OutputManagerState {
 /// User data for WlOutput
 #[derive(Debug)]
 pub struct OutputUserData {
-    pub(crate) output: Output,
+    pub(crate) output: WeakOutput,
     last_client_scale: AtomicU32,
     client_scale: Arc<AtomicU32>,
 }
@@ -209,7 +209,7 @@ impl Output {
 
     /// Attempt to retrieve a [`Output`] from an existing resource
     pub fn from_resource(output: &WlOutput) -> Option<Output> {
-        output.data::<OutputUserData>().map(|ud| ud.output.clone())
+        output.data::<OutputUserData>().and_then(|ud| ud.output.upgrade())
     }
 
     pub(crate) fn wl_change_current_state(

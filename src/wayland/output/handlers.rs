@@ -41,7 +41,7 @@ where
         let output = data_init.init(
             resource,
             OutputUserData {
-                output: global_data.output.clone(),
+                output: global_data.output.downgrade(),
                 last_client_scale: AtomicU32::new(client_scale.load(Ordering::Acquire)),
                 client_scale,
             },
@@ -124,13 +124,14 @@ where
         output: &WlOutput,
         data: &OutputUserData,
     ) {
-        data.output
-            .inner
-            .0
-            .lock()
-            .unwrap()
-            .instances
-            .retain(|o| o.id() != output.id());
+        if let Some(o) = data.output.upgrade() {
+            o.inner
+                .0
+                .lock()
+                .unwrap()
+                .instances
+                .retain(|o| o.id() != output.id());
+        }
     }
 }
 
