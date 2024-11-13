@@ -240,7 +240,7 @@ pub(crate) struct Inner {
 /// about any change in the properties of this output.
 #[derive(Debug, Clone)]
 pub struct Output {
-    pub(crate) inner: OutputData,
+    pub(crate) inner: Arc<(Mutex<Inner>, UserDataMap)>,
 }
 
 /// Weak variant of an [`Output`]
@@ -251,9 +251,6 @@ pub struct Output {
 pub struct WeakOutput {
     pub(crate) inner: Weak<(Mutex<Inner>, UserDataMap)>,
 }
-
-/// Data of an Output
-pub(crate) type OutputData = Arc<(Mutex<Inner>, UserDataMap)>;
 
 impl Output {
     /// Create a new output with given name and physical properties.
