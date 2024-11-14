@@ -46,7 +46,7 @@ use smithay::{
 };
 use tracing::{error, info, warn};
 
-use crate::state::{post_repaint, take_presentation_feedback, AnvilState, Backend};
+use crate::state::{take_presentation_feedback, AnvilState, Backend};
 use crate::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";
@@ -235,6 +235,14 @@ pub fn run_winit() {
 
         // drawing logic
         {
+            let now = state.clock.now();
+            let frame_target = now
+                + output
+                    .current_mode()
+                    .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
+                    .unwrap_or_default();
+            state.pre_repaint(&output, frame_target);
+
             let backend = &mut state.backend_data.backend;
 
             // draw the cursor as relevant
@@ -383,15 +391,12 @@ pub fn run_winit() {
 
                     backend.window().set_cursor_visible(cursor_visible);
 
-                    // Send frame events so that client start drawing their next frame
-                    let time = state.clock.now();
-                    post_repaint(&output, &render_output_result.states, &state.space, None, time);
-
+                    let states = render_output_result.states;
                     if has_rendered {
                         let mut output_presentation_feedback =
-                            take_presentation_feedback(&output, &state.space, &render_output_result.states);
+                            take_presentation_feedback(&output, &state.space, &states);
                         output_presentation_feedback.presented(
-                            time,
+                            frame_target,
                             output
                                 .current_mode()
                                 .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
@@ -400,6 +405,9 @@ pub fn run_winit() {
                             wp_presentation_feedback::Kind::Vsync,
                         )
                     }
+
+                    // Send frame events so that client start drawing their next frame
+                    state.post_repaint(&output, frame_target, None, &states);
                 }
                 Err(SwapBuffersError::ContextLost(err)) => {
                     #[cfg(feature = "debug")]
