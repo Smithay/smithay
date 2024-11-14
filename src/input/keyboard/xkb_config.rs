@@ -1,3 +1,4 @@
+use std::fs::File;
 pub use xkbcommon::xkb;
 
 /// Configuration for xkbcommon.
@@ -27,19 +28,34 @@ pub struct XkbConfig<'a> {
     /// preferences, like which key combinations are used for switching layouts, or which key is the
     /// Compose key.
     pub options: Option<String>,
+    /// Path to a file from which the keymap can be compiled. Allows the user to provide a
+    /// stand-alone keymap file that will be used instead of a system keymap.
+    pub file: Option<String>,
 }
 
 impl<'a> XkbConfig<'a> {
     pub(crate) fn compile_keymap(&self, context: &xkb::Context) -> Result<xkb::Keymap, ()> {
-        xkb::Keymap::new_from_names(
-            context,
-            self.rules,
-            self.model,
-            self.layout,
-            self.variant,
-            self.options.clone(),
-            xkb::KEYMAP_COMPILE_NO_FLAGS,
-        )
-        .ok_or(())
+        match &self.file {
+            Some(f) => {
+                let mut file = File::open(f).map_err(|_| ())?;
+                xkb::Keymap::new_from_file(
+                    context,
+                    &mut file,
+                    xkb::KEYMAP_FORMAT_TEXT_V1,
+                    xkb::KEYMAP_COMPILE_NO_FLAGS,
+                )
+                .ok_or(())
+            }
+            None => xkb::Keymap::new_from_names(
+                context,
+                self.rules,
+                self.model,
+                self.layout,
+                self.variant,
+                self.options.clone(),
+                xkb::KEYMAP_COMPILE_NO_FLAGS,
+            )
+            .ok_or(()),
+        }
     }
 }
