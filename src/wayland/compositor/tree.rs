@@ -306,7 +306,8 @@ impl PrivateSurfaceData {
         }
         my_data
             .pending_transaction
-            .insert_state(surface.clone(), my_data.current_txid);
+            .insert_state(surface.clone(), current_txid);
+        my_data.current_txid.0 = my_data.current_txid.0.wrapping_add(1);
         if !is_sync {
             let client = match surface.client() {
                 Some(client) => client,
