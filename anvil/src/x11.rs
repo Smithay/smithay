@@ -6,7 +6,7 @@ use std::{
 use crate::{
     drawing::*,
     render::*,
-    state::{post_repaint, take_presentation_feedback, AnvilState, Backend},
+    state::{take_presentation_feedback, AnvilState, Backend},
 };
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
@@ -297,6 +297,14 @@ pub fn run_x11() {
         if state.backend_data.render {
             profiling::scope!("render_frame");
 
+            let now = state.clock.now();
+            let frame_target = now
+                + output
+                    .current_mode()
+                    .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
+                    .unwrap_or_default();
+            state.pre_repaint(&output, frame_target);
+
             let backend_data = &mut state.backend_data;
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
             #[cfg(feature = "debug")]
@@ -400,15 +408,14 @@ pub fn run_x11() {
                         true
                     };
 
-                    // Send frame events so that client start drawing their next frame
-                    let time = state.clock.now();
-                    post_repaint(&output, &render_output_result.states, &state.space, None, time);
-
+                    let states = render_output_result.states;
+                    #[cfg(feature = "debug")]
+                    let rendered = render_output_result.damage.is_some();
                     if render_output_result.damage.is_some() {
                         let mut output_presentation_feedback =
-                            take_presentation_feedback(&output, &state.space, &render_output_result.states);
+                            take_presentation_feedback(&output, &state.space, &states);
                         output_presentation_feedback.presented(
-                            time,
+                            frame_target,
                             output
                                 .current_mode()
                                 .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
@@ -419,7 +426,7 @@ pub fn run_x11() {
                     }
 
                     #[cfg(feature = "debug")]
-                    if render_output_result.damage.is_some() {
+                    if rendered {
                         if let Some(renderdoc) = state.renderdoc.as_mut() {
                             renderdoc.end_frame_capture(
                                 state.backend_data.renderer.egl_context().get_context_handle(),
@@ -434,6 +441,9 @@ pub fn run_x11() {
                     }
 
                     state.backend_data.render = !submitted;
+
+                    // Send frame events so that client start drawing their next frame
+                    state.post_repaint(&output, frame_target, None, &states);
                 }
                 Err(err) => {
                     #[cfg(feature = "debug")]

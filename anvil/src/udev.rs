@@ -11,7 +11,7 @@ use crate::{
     drawing::*,
     render::*,
     shell::WindowElement,
-    state::{post_repaint, take_presentation_feedback, AnvilState, Backend},
+    state::{take_presentation_feedback, AnvilState, Backend},
 };
 #[cfg(feature = "renderer_sync")]
 use smithay::backend::drm::compositor::PrimaryPlaneElement;
@@ -74,14 +74,16 @@ use smithay::{
             linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1,
             presentation_time::server::wp_presentation_feedback,
         },
-        wayland_server::{backend::GlobalId, protocol::wl_surface, Display, DisplayHandle},
-    },
-    utils::{Clock, DeviceFd, IsAlive, Logical, Monotonic, Physical, Point, Rectangle, Scale, Transform},
-    wayland::{
-        compositor,
-        dmabuf::{
-            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier,
+        wayland_server::{
+            backend::GlobalId,
+            protocol::wl_surface::{self},
+            Display, DisplayHandle,
         },
+    },
+    utils::{DeviceFd, IsAlive, Logical, Monotonic, Physical, Point, Rectangle, Scale, Time, Transform},
+    wayland::{
+        compositor::{self},
+        dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier},
         drm_lease::{
             DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
         },
@@ -353,7 +355,8 @@ pub fn run_udev() {
                             warn!("Failed to reset drm surface state: {}", err);
                         }
                     }
-                    data.handle.insert_idle(move |data| data.render(node, None));
+                    data.handle
+                        .insert_idle(move |data| data.render(node, None, data.clock.now()));
                 }
             }
         })
@@ -743,11 +746,6 @@ impl SurfaceComposition {
     }
 }
 
-struct DrmSurfaceDmabufFeedback {
-    render_feedback: DmabufFeedback,
-    scanout_feedback: DmabufFeedback,
-}
-
 struct SurfaceData {
     dh: DisplayHandle,
     device_id: DrmNode,
@@ -758,7 +756,7 @@ struct SurfaceData {
     fps: fps_ticker::Fps,
     #[cfg(feature = "debug")]
     fps_element: Option<FpsElement<MultiTexture>>,
-    dmabuf_feedback: Option<DrmSurfaceDmabufFeedback>,
+    dmabuf_feedback: Option<SurfaceDmabufFeedback>,
 }
 
 impl Drop for SurfaceData {
@@ -800,7 +798,7 @@ fn get_surface_dmabuf_feedback(
     render_node: DrmNode,
     gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
     composition: &SurfaceComposition,
-) -> Option<DrmSurfaceDmabufFeedback> {
+) -> Option<SurfaceDmabufFeedback> {
     let primary_formats = gpus.single_renderer(&primary_gpu).ok()?.dmabuf_formats();
     let render_formats = gpus.single_renderer(&render_node).ok()?.dmabuf_formats();
 
@@ -844,7 +842,7 @@ fn get_surface_dmabuf_feedback(
         .build()
         .unwrap();
 
-    Some(DrmSurfaceDmabufFeedback {
+    Some(SurfaceDmabufFeedback {
         render_feedback,
         scanout_feedback,
     })
@@ -1265,6 +1263,24 @@ impl AnvilState<UdevData> {
             return;
         };
 
+        let tp = metadata.as_ref().and_then(|metadata| match metadata.time {
+            smithay::backend::drm::DrmEventTime::Monotonic(tp) => Some(tp),
+            smithay::backend::drm::DrmEventTime::Realtime(_) => None,
+        });
+
+        let seq = metadata.as_ref().map(|metadata| metadata.sequence).unwrap_or(0);
+
+        let (clock, flags) = if let Some(tp) = tp {
+            (
+                tp.into(),
+                wp_presentation_feedback::Kind::Vsync
+                    | wp_presentation_feedback::Kind::HwClock
+                    | wp_presentation_feedback::Kind::HwCompletion,
+            )
+        } else {
+            (self.clock.now(), wp_presentation_feedback::Kind::Vsync)
+        };
+
         let schedule_render = match surface
             .compositor
             .frame_submitted()
@@ -1272,23 +1288,6 @@ impl AnvilState<UdevData> {
         {
             Ok(user_data) => {
                 if let Some(mut feedback) = user_data.flatten() {
-                    let tp = metadata.as_ref().and_then(|metadata| match metadata.time {
-                        smithay::backend::drm::DrmEventTime::Monotonic(tp) => Some(tp),
-                        smithay::backend::drm::DrmEventTime::Realtime(_) => None,
-                    });
-                    let seq = metadata.as_ref().map(|metadata| metadata.sequence).unwrap_or(0);
-
-                    let (clock, flags) = if let Some(tp) = tp {
-                        (
-                            tp.into(),
-                            wp_presentation_feedback::Kind::Vsync
-                                | wp_presentation_feedback::Kind::HwClock
-                                | wp_presentation_feedback::Kind::HwCompletion,
-                        )
-                    } else {
-                        (self.clock.now(), wp_presentation_feedback::Kind::Vsync)
-                    };
-
                     feedback.presented(
                         clock,
                         output
@@ -1330,6 +1329,9 @@ impl AnvilState<UdevData> {
                 Some(mode) => mode.refresh,
                 None => return,
             };
+
+            let next_frame_target = clock + Duration::from_millis(1_000_000 / output_refresh as u64);
+
             // What are we trying to solve by introducing a delay here:
             //
             // Basically it is all about latency of client provided buffers.
@@ -1378,7 +1380,7 @@ impl AnvilState<UdevData> {
 
             self.handle
                 .insert_source(timer, move |_, _, data| {
-                    data.render(dev_id, Some(crtc));
+                    data.render(dev_id, Some(crtc), next_frame_target);
                     TimeoutAction::Drop
                 })
                 .expect("failed to schedule frame timer");
@@ -1386,7 +1388,7 @@ impl AnvilState<UdevData> {
     }
 
     // If crtc is `Some()`, render it, else render all crtcs
-    fn render(&mut self, node: DrmNode, crtc: Option<crtc::Handle>) {
+    fn render(&mut self, node: DrmNode, crtc: Option<crtc::Handle>, frame_target: Time<Monotonic>) {
         let device_backend = match self.backend_data.backends.get_mut(&node) {
             Some(backend) => backend,
             None => {
@@ -1396,17 +1398,33 @@ impl AnvilState<UdevData> {
         };
 
         if let Some(crtc) = crtc {
-            self.render_surface(node, crtc);
+            self.render_surface(node, crtc, frame_target);
         } else {
             let crtcs: Vec<_> = device_backend.surfaces.keys().copied().collect();
             for crtc in crtcs {
-                self.render_surface(node, crtc);
+                self.render_surface(node, crtc, frame_target);
             }
         };
     }
 
-    fn render_surface(&mut self, node: DrmNode, crtc: crtc::Handle) {
+    fn render_surface(&mut self, node: DrmNode, crtc: crtc::Handle, frame_target: Time<Monotonic>) {
         profiling::scope!("render_surface", &format!("{crtc:?}"));
+
+        let output = if let Some(output) = self.space.outputs().find(|o| {
+            o.user_data().get::<UdevOutputId>()
+                == Some(&UdevOutputId {
+                    device_id: node,
+                    crtc,
+                })
+        }) {
+            output.clone()
+        } else {
+            // somehow we got called with an invalid output
+            return;
+        };
+
+        self.pre_repaint(&output, frame_target);
+
         let device = if let Some(device) = self.backend_data.backends.get_mut(&node) {
             device
         } else {
@@ -1462,19 +1480,6 @@ impl AnvilState<UdevData> {
                 buffer
             });
 
-        let output = if let Some(output) = self.space.outputs().find(|o| {
-            o.user_data().get::<UdevOutputId>()
-                == Some(&UdevOutputId {
-                    device_id: surface.device_id,
-                    crtc,
-                })
-        }) {
-            output.clone()
-        } else {
-            // somehow we got called with an invalid output
-            return;
-        };
-
         let result = render_surface(
             surface,
             &mut renderer,
@@ -1485,11 +1490,14 @@ impl AnvilState<UdevData> {
             &mut self.backend_data.pointer_element,
             &self.dnd_icon,
             &mut self.cursor_status,
-            &self.clock,
             self.show_window_preview,
         );
-        let reschedule = match &result {
-            Ok(has_rendered) => !has_rendered,
+        let reschedule = match result {
+            Ok((has_rendered, states)) => {
+                let dmabuf_feedback = surface.dmabuf_feedback.clone();
+                self.post_repaint(&output, frame_target, dmabuf_feedback, &states);
+                !has_rendered
+            }
             Err(err) => {
                 warn!("Error during rendering: {:?}", err);
                 match err {
@@ -1520,19 +1528,22 @@ impl AnvilState<UdevData> {
                 Some(mode) => mode.refresh,
                 None => return,
             };
+
             // If reschedule is true we either hit a temporary failure or more likely rendering
             // did not cause any damage on the output. In this case we just re-schedule a repaint
             // after approx. one frame to re-test for damage.
-            let reschedule_duration = Duration::from_millis((1_000_000f32 / output_refresh as f32) as u64);
+            let next_frame_target = frame_target + Duration::from_millis(1_000_000 / output_refresh as u64);
+            let reschedule_timeout =
+                Duration::from(next_frame_target).saturating_sub(self.clock.now().into());
             trace!(
                 "reschedule repaint timer with delay {:?} on {:?}",
-                reschedule_duration,
+                reschedule_timeout,
                 crtc,
             );
-            let timer = Timer::from_duration(reschedule_duration);
+            let timer = Timer::from_duration(reschedule_timeout);
             self.handle
                 .insert_source(timer, move |_, _, data| {
-                    data.render(node, Some(crtc));
+                    data.render(node, Some(crtc), next_frame_target);
                     TimeoutAction::Drop
                 })
                 .expect("failed to schedule frame timer");
@@ -1595,9 +1606,8 @@ fn render_surface<'a>(
     pointer_element: &mut PointerElement,
     dnd_icon: &Option<DndIcon>,
     cursor_status: &mut CursorImageStatus,
-    clock: &Clock<Monotonic>,
     show_window_preview: bool,
-) -> Result<bool, SwapBuffersError> {
+) -> Result<(bool, RenderElementStates), SwapBuffersError> {
     let output_geometry = space.output_geometry(output).unwrap();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
@@ -1684,20 +1694,6 @@ fn render_surface<'a>(
         .compositor
         .render_frame::<_, _, GlesTexture>(renderer, &elements, clear_color)?;
 
-    post_repaint(
-        output,
-        &states,
-        space,
-        surface
-            .dmabuf_feedback
-            .as_ref()
-            .map(|feedback| SurfaceDmabufFeedback {
-                render_feedback: &feedback.render_feedback,
-                scanout_feedback: &feedback.scanout_feedback,
-            }),
-        clock.now(),
-    );
-
     if rendered {
         let output_presentation_feedback = take_presentation_feedback(output, space, &states);
         let damage = damage.cloned();
@@ -1707,7 +1703,7 @@ fn render_surface<'a>(
             .map_err(Into::<SwapBuffersError>::into)?;
     }
 
-    Ok(rendered)
+    Ok((rendered, states))
 }
 
 fn initial_render(
