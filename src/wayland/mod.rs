@@ -55,6 +55,7 @@ pub mod dmabuf;
 pub mod drm_lease;
 #[cfg(feature = "backend_drm")]
 pub mod drm_syncobj;
+pub mod fifo;
 pub mod foreign_toplevel_list;
 pub mod fractional_scale;
 pub mod idle_inhibit;
