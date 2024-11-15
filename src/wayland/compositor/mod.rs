@@ -118,7 +118,7 @@ use std::{any::Any, sync::Mutex};
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::transaction::TransactionQueue;
-pub use self::transaction::{Blocker, BlockerState};
+pub use self::transaction::{Barrier, Blocker, BlockerState};
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
 pub use crate::utils::hook::HookId;
