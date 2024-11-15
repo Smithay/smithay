@@ -41,7 +41,7 @@
 use std::{
     collections::HashSet,
     fmt,
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
@@ -65,6 +65,47 @@ pub enum BlockerState {
     Released,
     /// The block got cancelled and changes should be discarded
     Cancelled,
+}
+
+/// A simple [`Blocker`] barrier
+#[derive(Debug, Clone)]
+pub struct Barrier(Arc<AtomicBool>);
+
+impl PartialEq for Barrier {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+impl Eq for Barrier {}
+
+impl Barrier {
+    /// Initialize a new [`Barrier`] with the provided state
+    pub fn new(signaled: bool) -> Self {
+        Self(Arc::new(AtomicBool::new(signaled)))
+    }
+
+    /// Query if this barrier has been signaled
+    #[inline]
+    pub fn is_signaled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Signal this barrier
+    #[inline]
+    pub fn signal(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release)
+    }
+}
+
+impl Blocker for Barrier {
+    fn state(&self) -> BlockerState {
+        if self.is_signaled() {
+            BlockerState::Released
+        } else {
+            BlockerState::Pending
+        }
+    }
 }
 
 #[derive(Default)]
