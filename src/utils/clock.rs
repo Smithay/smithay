@@ -1,5 +1,5 @@
 use rustix::time::{ClockId, Timespec};
-use std::{cmp::Ordering, marker::PhantomData, time::Duration};
+use std::{cmp::Ordering, marker::PhantomData, ops::Add, time::Duration};
 
 /// Marker for clock source that never returns a negative [`Time`]
 pub trait NonNegativeClockSource: ClockSource {}
@@ -169,6 +169,12 @@ impl<Kind> From<Timespec> for Time<Kind> {
     }
 }
 
+impl<Kind> From<Time<Kind>> for Timespec {
+    fn from(value: Time<Kind>) -> Self {
+        value.tp
+    }
+}
+
 const NANOS_PER_SEC: rustix::time::Nsecs = 1_000_000_000;
 
 fn saturating_sub_timespec(lhs: Timespec, rhs: Timespec) -> Option<Duration> {
@@ -185,6 +191,20 @@ fn saturating_sub_timespec(lhs: Timespec, rhs: Timespec) -> Option<Duration> {
         Some(Duration::new(secs as u64, nanos as u32))
     } else {
         None
+    }
+}
+
+impl<T, Kind> Add<T> for Time<Kind>
+where
+    T: Into<Time<Kind>>,
+{
+    type Output = Time<Kind>;
+
+    fn add(self, rhs: T) -> Self::Output {
+        let rhs = rhs.into();
+        let tv_nsec = (self.tp.tv_nsec + rhs.tp.tv_nsec) % NANOS_PER_SEC;
+        let tv_sec = (self.tp.tv_sec + rhs.tp.tv_sec) + ((self.tp.tv_nsec + rhs.tp.tv_nsec) / NANOS_PER_SEC);
+        Self::from(Timespec { tv_sec, tv_nsec })
     }
 }
 
