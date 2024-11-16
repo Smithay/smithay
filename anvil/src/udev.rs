@@ -308,7 +308,6 @@ pub fn run_udev() {
         })
         .unwrap();
 
-    let handle = event_loop.handle();
     event_loop
         .handle()
         .insert_source(notifier, move |event, &mut (), data| match event {
@@ -354,7 +353,7 @@ pub fn run_udev() {
                             warn!("Failed to reset drm surface state: {}", err);
                         }
                     }
-                    handle.insert_idle(move |data| data.render(node, None));
+                    data.handle.insert_idle(move |data| data.render(node, None));
                 }
             }
         })
