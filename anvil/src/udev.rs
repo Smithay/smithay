@@ -88,6 +88,7 @@ use smithay::{
             DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
         },
         drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjHandler, DrmSyncobjState},
+        presentation::Refresh,
     },
 };
 use smithay_drm_extras::{
@@ -1292,8 +1293,10 @@ impl AnvilState<UdevData> {
                         clock,
                         output
                             .current_mode()
-                            .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
-                            .unwrap_or_default(),
+                            .map(|mode| {
+                                Refresh::fixed(Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
+                            })
+                            .unwrap_or(Refresh::Unknown),
                         seq as u64,
                         flags,
                     );

@@ -38,7 +38,7 @@
 //! # use smithay::{output::{Output, PhysicalProperties, Subpixel}, wayland::compositor::with_states};
 //! # use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, Resource};
 //! # use std::time::Duration;
-//! use smithay::wayland::presentation::PresentationFeedbackCachedState;
+//! use smithay::wayland::presentation::{PresentationFeedbackCachedState, Refresh};
 //! use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 //!
 //! # struct State;
@@ -63,7 +63,7 @@
 //! // ... send frame callbacks and present frame
 //!
 //! # let time = Duration::ZERO;
-//! # let refresh = Duration::from_secs_f64(1_000f64 / 60_000f64);
+//! # let refresh = Refresh::fixed(Duration::from_secs_f64(1_000f64 / 60_000f64));
 //! # let seq = 0;
 //! for feedback in presentation_feedbacks {
 //!     feedback.presented(&output, time, refresh, seq, wp_presentation_feedback::Kind::Vsync);
@@ -80,6 +80,8 @@ use wayland_server::{
 use crate::output::Output;
 
 use super::compositor::{with_states, Cacheable};
+
+const EVT_PRESENTED_VARIABLE_SINCE: u32 = 2;
 
 /// State of the wp_presentation global
 #[derive(Debug)]
@@ -100,7 +102,7 @@ impl PresentationState {
             + 'static,
     {
         PresentationState {
-            global: display.create_global::<D, wp_presentation::WpPresentation, u32>(1, clk_id),
+            global: display.create_global::<D, wp_presentation::WpPresentation, u32>(2, clk_id),
         }
     }
 
@@ -154,7 +156,7 @@ where
                         .cached_state
                         .get::<PresentationFeedbackCachedState>()
                         .pending()
-                        .add_callback(surface.clone(), *data, callback);
+                        .add_callback(&surface, *data, callback);
                 });
             }
             wp_presentation::Request::Destroy => {
@@ -196,6 +198,31 @@ pub struct PresentationFeedbackCallback {
     callback: wp_presentation_feedback::WpPresentationFeedback,
 }
 
+/// Refresh of the output on which the surface was presented
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Refresh {
+    /// The output does not have a known refresh rate
+    Unknown,
+    /// The output has a variable refresh rate
+    ///
+    /// The passed refresh rate has to correspond to the minimum (fastest) rate
+    Variable(Duration),
+    /// The output has a fixed rate
+    Fixed(Duration),
+}
+
+impl Refresh {
+    /// Construct a [`Refresh::Variable`] from a [`Duration`]
+    pub fn variable(min: impl Into<Duration>) -> Self {
+        Self::Variable(min.into())
+    }
+
+    /// Construct a [`Refresh::Fixed`] from a [`Duration`]
+    pub fn fixed(rate: impl Into<Duration>) -> Self {
+        Self::Fixed(rate.into())
+    }
+}
+
 impl PresentationFeedbackCallback {
     /// Get the id of the clock that was used at bind
     pub fn clk_id(&self) -> u32 {
@@ -207,7 +234,7 @@ impl PresentationFeedbackCallback {
         self,
         output: &Output,
         time: impl Into<Duration>,
-        refresh: impl Into<Duration>,
+        refresh: Refresh,
         seq: u64,
         flags: wp_presentation_feedback::Kind,
     ) {
@@ -233,11 +260,22 @@ impl PresentationFeedbackCallback {
             self.callback.sync_output(&output);
         }
 
+        // Since version 2 wp_presentation supports variable refresh rates,
+        // in which case the minimum (fastest rate) refresh is sent.
+        // Clients binding an earlier version shall receive a zero refresh in this case.
+        let refresh = match refresh {
+            Refresh::Fixed(duration) => duration,
+            Refresh::Variable(duration) if self.callback.version() >= EVT_PRESENTED_VARIABLE_SINCE => {
+                duration
+            }
+            _ => Duration::ZERO,
+        };
+
         let time = time.into();
         let tv_sec_hi = (time.as_secs() >> 32) as u32;
         let tv_sec_lo = (time.as_secs() & 0xFFFFFFFF) as u32;
         let tv_nsec = time.subsec_nanos();
-        let refresh = refresh.into().as_nanos() as u32;
+        let refresh = refresh.as_nanos() as u32;
         let seq_hi = (seq >> 32) as u32;
         let seq_lo = (seq & 0xFFFFFFFF) as u32;
 
@@ -262,7 +300,7 @@ pub struct PresentationFeedbackCachedState {
 impl PresentationFeedbackCachedState {
     fn add_callback(
         &mut self,
-        surface: wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         clk_id: u32,
         callback: wp_presentation_feedback::WpPresentationFeedback,
     ) {

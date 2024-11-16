@@ -42,6 +42,7 @@ use smithay::{
         dmabuf::{
             DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier,
         },
+        presentation::Refresh,
     },
 };
 use tracing::{error, info, warn};
@@ -399,8 +400,10 @@ pub fn run_winit() {
                             frame_target,
                             output
                                 .current_mode()
-                                .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
-                                .unwrap_or_default(),
+                                .map(|mode| {
+                                    Refresh::fixed(Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
+                                })
+                                .unwrap_or(Refresh::Unknown),
                             0,
                             wp_presentation_feedback::Kind::Vsync,
                         )
