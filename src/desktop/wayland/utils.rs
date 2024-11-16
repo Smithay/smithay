@@ -13,7 +13,7 @@ use crate::{
     wayland::{
         compositor::{with_surface_tree_downward, SurfaceAttributes, SurfaceData, TraversalAction},
         dmabuf::{DmabufFeedback, SurfaceDmabufFeedbackState},
-        presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback},
+        presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback, Refresh},
     },
 };
 use std::{cell::RefCell, sync::Mutex, time::Duration};
@@ -339,13 +339,11 @@ impl SurfacePresentationFeedback {
         output: &Output,
         clk_id: u32,
         time: impl Into<Duration>,
-        refresh: impl Into<Duration>,
+        refresh: Refresh,
         seq: u64,
         flags: wp_presentation_feedback::Kind,
     ) {
         let time = time.into();
-        let refresh = refresh.into();
-
         for callback in self.callbacks.drain(..) {
             if callback.clk_id() == clk_id {
                 callback.presented(output, time, refresh, seq, flags | self.flags)
@@ -401,7 +399,7 @@ impl OutputPresentationFeedback {
     pub fn presented<T, Kind>(
         &mut self,
         time: T,
-        refresh: impl Into<Duration>,
+        refresh: Refresh,
         seq: u64,
         flags: wp_presentation_feedback::Kind,
     ) where
@@ -409,7 +407,6 @@ impl OutputPresentationFeedback {
         Kind: crate::utils::NonNegativeClockSource,
     {
         let time = time.into();
-        let refresh = refresh.into();
         let clk_id = Kind::ID as u32;
         if let Some(output) = self.output.upgrade() {
             for mut callback in self.callbacks.drain(..) {
