@@ -111,10 +111,9 @@ impl Smallvil {
         // Clients will connect to this socket.
         let socket_name = listening_socket.socket_name().to_os_string();
 
-        let handle = event_loop.handle();
+        let loop_handle = event_loop.handle();
 
-        event_loop
-            .handle()
+        loop_handle
             .insert_source(listening_socket, move |client_stream, _, state| {
                 // Inside the callback, you should insert the client into the display.
                 //
@@ -127,7 +126,7 @@ impl Smallvil {
             .expect("Failed to init the wayland event source.");
 
         // You also need to add the display itself to the event loop, so that client events will be processed by wayland-server.
-        handle
+        loop_handle
             .insert_source(
                 Generic::new(display, Interest::READ, Mode::Level),
                 |_, display, state| {
