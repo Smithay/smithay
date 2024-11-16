@@ -104,7 +104,7 @@ pub struct OutputManagerState {
 /// Internal data of a wl_output global
 #[derive(Debug)]
 pub struct WlOutputData {
-    output: Output,
+    output: WeakOutput,
 }
 
 /// Events initiated by the clients interacting with outputs
@@ -204,7 +204,12 @@ impl Output {
     {
         info!(output = self.name(), "Creating new wl_output");
         self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
-        display.create_global::<D, WlOutput, _>(4, WlOutputData { output: self.clone() })
+        display.create_global::<D, WlOutput, _>(
+            4,
+            WlOutputData {
+                output: self.downgrade(),
+            },
+        )
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource

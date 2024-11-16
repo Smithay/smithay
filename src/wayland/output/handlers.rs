@@ -38,16 +38,22 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         let client_scale = state.client_compositor_state(client).clone_client_scale();
-        let output = data_init.init(
+
+        let Some(output) = global_data.output.upgrade() else {
+            tracing::warn!("trying to bind a destroyed output, forgot to disable a output global?");
+            return;
+        };
+
+        let wl_output = data_init.init(
             resource,
             OutputUserData {
-                output: global_data.output.downgrade(),
+                output: global_data.output.clone(),
                 last_client_scale: AtomicU32::new(client_scale.load(Ordering::Acquire)),
                 client_scale,
             },
         );
 
-        let mut inner = global_data.output.inner.0.lock().unwrap();
+        let mut inner = output.inner.0.lock().unwrap();
 
         let span = warn_span!("output_bind", name = inner.name);
         let _enter = span.enter();
@@ -64,7 +70,7 @@ where
             warn!("Output is used with not preferred mode set");
         }
 
-        inner.send_geometry_to(&output);
+        inner.send_geometry_to(&wl_output);
 
         for &mode in &inner.modes {
             let mut flags = WMode::empty();
@@ -74,32 +80,32 @@ where
             if Some(mode) == inner.preferred_mode {
                 flags |= WMode::Preferred;
             }
-            output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
+            wl_output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
         }
 
-        if output.version() >= 4 {
-            output.name(inner.name.clone());
-            output.description(inner.description.clone())
+        if wl_output.version() >= 4 {
+            wl_output.name(inner.name.clone());
+            wl_output.description(inner.description.clone())
         }
 
-        if output.version() >= 2 {
-            output.scale(inner.scale.integer_scale());
-            output.done();
+        if wl_output.version() >= 2 {
+            wl_output.scale(inner.scale.integer_scale());
+            wl_output.done();
         }
 
         // Send enter for surfaces already on this output.
         for surface in &inner.surfaces {
             if let Ok(surface) = surface.upgrade() {
                 if surface.client().as_ref() == Some(client) {
-                    surface.enter(&output);
+                    surface.enter(&wl_output);
                 }
             }
         }
 
-        inner.instances.push(output.downgrade());
+        inner.instances.push(wl_output.downgrade());
 
         drop(inner);
-        state.output_bound(global_data.output.clone(), output);
+        state.output_bound(output, wl_output);
     }
 }
 
