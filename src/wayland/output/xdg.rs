@@ -97,6 +97,8 @@ impl XdgOutput {
     ) {
         let mut output = self.inner.lock().unwrap();
 
+        let new_transform = new_transform.map(|x| x.into());
+
         if let Some(new_mode) = new_mode {
             output.physical_size = Some(new_mode.size);
         }
@@ -107,7 +109,7 @@ impl XdgOutput {
             output.logical_position = new_location;
         }
         if let Some(new_transform) = new_transform {
-            output.transform = new_transform.into();
+            output.transform = new_transform;
         }
 
         for instance in output.instances.iter() {
@@ -119,7 +121,7 @@ impl XdgOutput {
             let client_scale = data.client_scale.load(Ordering::Acquire);
             let scale_changed = client_scale != data.last_client_scale.swap(client_scale, Ordering::AcqRel);
 
-            if new_mode.is_some() || new_scale.is_some() || scale_changed {
+            if new_mode.is_some() || new_scale.is_some() || new_transform.is_some() || scale_changed {
                 if let Some(size) = output.physical_size {
                     let logical_size = size
                         .to_f64()
