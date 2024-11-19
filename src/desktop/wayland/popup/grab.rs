@@ -21,7 +21,7 @@ use crate::{
         SeatHandler,
     },
     utils::{DeadResource, IsAlive, Logical, Point, Serial, SERIAL_COUNTER},
-    wayland::{compositor::get_role, seat::WaylandFocus, shell::xdg::XDG_POPUP_ROLE},
+    wayland::seat::WaylandFocus,
 };
 
 use thiserror::Error;
@@ -122,28 +122,20 @@ impl PopupGrabInner {
 
     pub(super) fn grab(&self, popup: &PopupKind, serial: Serial) -> Result<Option<Serial>, PopupGrabError> {
         let parent = popup.parent().ok_or(DeadResource)?;
-        let parent_role = get_role(&parent);
 
         self.cleanup();
 
         let mut guard = self.internal.lock().unwrap();
 
-        match guard.current_grab() {
-            Some(grab) => {
-                if grab != &parent {
-                    // If the parent is a grabbing popup which has already been dismissed, this popup will be immediately dismissed.
-                    if guard.is_dismissed(&parent) {
-                        return Err(PopupGrabError::ParentDismissed);
-                    }
+        if let Some(grab) = guard.current_grab() {
+            if grab != &parent {
+                // If the parent is a grabbing popup which has already been dismissed, this popup will be immediately dismissed.
+                if guard.is_dismissed(&parent) {
+                    return Err(PopupGrabError::ParentDismissed);
+                }
 
-                    // If the parent is a popup that did not take an explicit grab, an error will be raised.
-                    return Err(PopupGrabError::NotTheTopmostPopup);
-                }
-            }
-            None => {
-                if parent_role == Some(XDG_POPUP_ROLE) {
-                    return Err(PopupGrabError::NotTheTopmostPopup);
-                }
+                // If the parent is a popup that did not take an explicit grab, an error will be raised.
+                return Err(PopupGrabError::NotTheTopmostPopup);
             }
         }
 
