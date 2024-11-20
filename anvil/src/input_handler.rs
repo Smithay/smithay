@@ -924,15 +924,7 @@ impl AnvilState<UdevData> {
     fn on_tablet_tool_axis<B: InputBackend>(&mut self, evt: B::TabletToolAxisEvent) {
         let tablet_seat = self.seat.tablet_seat();
 
-        let output_geometry = self
-            .space
-            .outputs()
-            .next()
-            .map(|o| self.space.output_geometry(o).unwrap());
-
-        if let Some(rect) = output_geometry {
-            let pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
-
+        if let Some(pointer_location) = self.touch_location_transformed(&evt) {
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
@@ -988,17 +980,9 @@ impl AnvilState<UdevData> {
     ) {
         let tablet_seat = self.seat.tablet_seat();
 
-        let output_geometry = self
-            .space
-            .outputs()
-            .next()
-            .map(|o| self.space.output_geometry(o).unwrap());
-
-        if let Some(rect) = output_geometry {
+        if let Some(pointer_location) = self.touch_location_transformed(&evt) {
             let tool = evt.tool();
             tablet_seat.add_tool::<Self>(self, dh, &tool);
-
-            let pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
