@@ -49,6 +49,27 @@ impl backend::TabletToolTipEvent<LibinputInputBackend> for tablet_tool::TabletTo
     }
 }
 
+impl<E> backend::AbsolutePositionEvent<LibinputInputBackend> for E
+where
+    E: IsTabletEvent + event::EventTrait,
+{
+    fn x(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::x(self)
+    }
+
+    fn y(&self) -> f64 {
+        tablet_tool::TabletToolEventTrait::y(self)
+    }
+
+    fn x_transformed(&self, width: i32) -> f64 {
+        tablet_tool::TabletToolEventTrait::x_transformed(self, width as u32)
+    }
+
+    fn y_transformed(&self, height: i32) -> f64 {
+        tablet_tool::TabletToolEventTrait::y_transformed(self, height as u32)
+    }
+}
+
 impl<E> backend::TabletToolEvent<LibinputInputBackend> for E
 where
     E: IsTabletEvent + event::EventTrait,
@@ -94,22 +115,6 @@ where
 
     fn delta_y(&self) -> f64 {
         tablet_tool::TabletToolEventTrait::dy(self)
-    }
-
-    fn x(&self) -> f64 {
-        tablet_tool::TabletToolEventTrait::x(self)
-    }
-
-    fn y(&self) -> f64 {
-        tablet_tool::TabletToolEventTrait::y(self)
-    }
-
-    fn x_transformed(&self, width: i32) -> f64 {
-        tablet_tool::TabletToolEventTrait::x_transformed(self, width as u32)
-    }
-
-    fn y_transformed(&self, height: i32) -> f64 {
-        tablet_tool::TabletToolEventTrait::y_transformed(self, height as u32)
     }
 
     fn distance(&self) -> f64 {

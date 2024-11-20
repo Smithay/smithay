@@ -1,5 +1,5 @@
-use super::{ButtonState, Event, InputBackend, UnusedEvent};
-use crate::utils::{Logical, Point, Raw, Size};
+use super::{AbsolutePositionEvent, ButtonState, Event, InputBackend, UnusedEvent};
+use crate::utils::{Logical, Point};
 use bitflags::bitflags;
 
 /// Description of physical tablet tool
@@ -61,27 +61,16 @@ bitflags! {
 }
 
 /// Tablet tool event
-pub trait TabletToolEvent<B: InputBackend> {
+///
+/// The [AbsolutePositionEvent] implementation for tablet tool events produces (untransformed)
+/// coordinates in mm from the top left corner of the tablet in its current logical orientation.
+pub trait TabletToolEvent<B: InputBackend>: AbsolutePositionEvent<B> {
     /// Get tablet tool that caused this event
     fn tool(&self) -> TabletToolDescriptor;
 
     /// Delta between the last and new pointer device position interpreted as pixel movement
     fn delta(&self) -> Point<f64, Logical> {
         (self.delta_x(), self.delta_y()).into()
-    }
-
-    /// Tool position in the device's native coordinate space
-    fn position(&self) -> Point<f64, Raw> {
-        (self.x(), self.y()).into()
-    }
-
-    /// Tool position converted into the target coordinate space.
-    fn position_transformed(&self, coordinate_space: Size<i32, Logical>) -> Point<f64, Logical> {
-        (
-            self.x_transformed(coordinate_space.w),
-            self.y_transformed(coordinate_space.h),
-        )
-            .into()
     }
 
     /// Returns the current tilt along the (X,Y) axis of the tablet's current logical
@@ -107,18 +96,6 @@ pub trait TabletToolEvent<B: InputBackend> {
     /// Delta on the y axis between the last and new pointer device position interpreted as pixel movement
     fn delta_y(&self) -> f64;
 
-    /// Returns the x coordinate of the tablet tool, in mm from the top left corner of the tablet in its current logical orientation.
-    fn x(&self) -> f64;
-    /// Returns the y coordinate of the tablet tool, in mm from the top left corner of the tablet in its current logical orientation.
-    fn y(&self) -> f64;
-
-    /// Return the current absolute X coordinate of the tablet tool event, transformed to screen coordinates.
-    fn x_transformed(&self, width: i32) -> f64;
-    /// Return the current absolute Y coordinate of the tablet tool event, transformed to screen coordinates.
-    fn y_transformed(&self, height: i32) -> f64;
-
-    /// Returns the current distance from the tablet's sensor, normalized to the range [0, 1]
-    ///
     /// If this axis does not exist on the current tool, this function returns 0.
     fn distance(&self) -> f64;
 
@@ -200,18 +177,6 @@ impl<B: InputBackend> TabletToolEvent<B> for UnusedEvent {
         match *self {}
     }
     fn delta_y(&self) -> f64 {
-        match *self {}
-    }
-    fn x(&self) -> f64 {
-        match *self {}
-    }
-    fn y(&self) -> f64 {
-        match *self {}
-    }
-    fn x_transformed(&self, _width: i32) -> f64 {
-        match *self {}
-    }
-    fn y_transformed(&self, _height: i32) -> f64 {
         match *self {}
     }
     fn distance(&self) -> f64 {
