@@ -3431,7 +3431,6 @@ where
             element_size,
             cursor_plane_size,
             output_transform,
-            &cursor_state.framebuffer_exporter,
             &mut cursor_buffer,
         ) {
             tracing::trace!("failed to copy element to cursor bo, skipping element on cursor plane");
@@ -3445,7 +3444,6 @@ where
             element_size,
             cursor_plane_size,
             output_transform,
-            &cursor_state.framebuffer_exporter,
             &mut cursor_buffer,
         ) {
             profiling::scope!("render cursor plane");
@@ -3493,8 +3491,7 @@ where
             }?;
 
             let ret = cursor_buffer
-                .map_mut::<_, _, Result<_, <PixmanRenderer as Renderer>::Error>>(
-                    &cursor_state.framebuffer_exporter,
+                .map_mut::<_, Result<_, <PixmanRenderer as Renderer>::Error>>(
                     0,
                     0,
                     cursor_buffer_size.w as u32,
@@ -3538,17 +3535,10 @@ where
 
             _ = pixman_renderer.unbind();
 
-            match ret {
-                Err(err) => {
-                    debug!("{err}");
-                    return None;
-                }
-                Ok(Err(err)) => {
-                    debug!("{err}");
-                    return None;
-                }
-                Ok(Ok(_)) => (),
-            };
+            if let Err(err) = ret {
+                debug!("{err}");
+                return None;
+            }
         };
 
         let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
@@ -4375,19 +4365,17 @@ fn apply_output_transform(transform: Transform, output_transform: Transform) -> 
 }
 
 #[profiling::function]
-fn copy_element_to_cursor_bo<R, E, T>(
+fn copy_element_to_cursor_bo<R, E>(
     renderer: &mut R,
     element: &E,
     element_size: Size<i32, Physical>,
     cursor_size: Size<i32, Physical>,
     output_transform: Transform,
-    device: &GbmDevice<T>,
     bo: &mut GbmBuffer,
 ) -> bool
 where
     R: Renderer,
     E: RenderElement<R>,
-    T: AsFd + 'static,
 {
     // Without access to the underlying storage we can not copy anything
     let Some(underlying_storage) = element.underlying_storage(renderer) else {
@@ -4407,15 +4395,13 @@ where
     }
 
     let bo_format = bo.format().code;
-    let Ok(bo_stride) = bo.stride() else {
-        return false;
-    };
+    let bo_stride = bo.stride();
 
     let mut copy_to_bo = |src, src_stride, src_height| {
         if src_stride == bo_stride as i32 {
-            matches!(bo.write(src), Ok(Ok(_)))
+            bo.write(src).is_ok()
         } else {
-            let res = bo.map_mut(device, 0, 0, cursor_size.w as u32, cursor_size.h as u32, |mbo| {
+            let res = bo.map_mut(0, 0, cursor_size.w as u32, cursor_size.h as u32, |mbo| {
                 let dst = mbo.buffer_mut();
                 for row in 0..src_height {
                     let src_row_start = (row * src_stride) as usize;
@@ -4427,7 +4413,7 @@ where
                     dst_row.copy_from_slice(src_row);
                 }
             });
-            matches!(res, Ok(Ok(_)))
+            res.is_ok()
         }
     };
 
