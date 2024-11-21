@@ -94,13 +94,13 @@ impl GbmBuffer {
     /// Gbm might otherwise give us the underlying or a non-sensical modifier,
     /// which can fail in various other apis.
     pub fn from_bo(bo: BufferObject<()>, implicit: bool) -> Self {
-        let size = (bo.width().unwrap_or(0) as i32, bo.height().unwrap_or(0) as i32).into();
+        let size = (bo.width() as i32, bo.height() as i32).into();
         let format = Format {
-            code: bo.format().unwrap_or(Fourcc::Argb8888), // we got to return something, but this should never happen anyway
+            code: bo.format(),
             modifier: if implicit {
                 Modifier::Invalid
             } else {
-                bo.modifier().unwrap_or(Modifier::Invalid)
+                bo.modifier()
             },
         };
         Self { bo, size, format }
@@ -242,9 +242,6 @@ impl Buffer for GbmBuffer {
 /// Errors during conversion to a dmabuf handle from a gbm buffer object
 #[derive(thiserror::Error, Debug)]
 pub enum GbmConvertError {
-    /// The gbm device was destroyed
-    #[error("The gbm device was destroyed")]
-    DeviceDestroyed(#[from] gbm::DeviceDestroyedError),
     /// The buffer consists out of multiple file descriptions, which is currently unsupported
     #[error("Buffer consists out of multiple file descriptors, which is currently unsupported")]
     UnsupportedBuffer,
@@ -253,23 +250,13 @@ pub enum GbmConvertError {
     InvalidFD(#[from] gbm::InvalidFdError),
 }
 
-impl From<gbm::FdError> for GbmConvertError {
-    #[inline]
-    fn from(err: gbm::FdError) -> Self {
-        match err {
-            gbm::FdError::DeviceDestroyed(err) => err.into(),
-            gbm::FdError::InvalidFd(err) => err.into(),
-        }
-    }
-}
-
 impl AsDmabuf for GbmBuffer {
     type Error = GbmConvertError;
 
     #[cfg(feature = "backend_gbm_has_fd_for_plane")]
     #[profiling::function]
     fn export(&self) -> Result<Dmabuf, GbmConvertError> {
-        let planes = self.plane_count()? as i32;
+        let planes = self.plane_count() as i32;
 
         let mut builder = Dmabuf::builder_from_buffer(self, DmabufFlags::empty());
         for idx in 0..planes {
@@ -279,13 +266,13 @@ impl AsDmabuf for GbmBuffer {
                 // SAFETY: `gbm_bo_get_fd_for_plane` returns a new fd owned by the caller.
                 fd,
                 idx as u32,
-                self.offset(idx)?,
-                self.stride_for_plane(idx)?,
+                self.offset(idx),
+                self.stride_for_plane(idx),
             );
         }
 
         #[cfg(feature = "backend_drm")]
-        if let Some(node) = self.device_fd().ok().and_then(|fd| DrmNode::from_file(fd).ok()) {
+        if let Ok(node) = DrmNode::from_file(self.device_fd()) {
             builder.set_node(node);
         }
 

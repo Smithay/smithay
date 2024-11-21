@@ -197,10 +197,10 @@ where
         };
         let format = Format {
             code,
-            modifier: buffer.modifier().unwrap(), // no guarantee
-                                                  // that this is stable across allocations, but
-                                                  // we want to print that here for debugging proposes.
-                                                  // It has no further use.
+            modifier: buffer.modifier(), // no guarantee
+                                         // that this is stable across allocations, but
+                                         // we want to print that here for debugging proposes.
+                                         // It has no further use.
         };
 
         let use_opaque = !plane_formats.iter().any(|f| f.code == code);

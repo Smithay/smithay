@@ -344,7 +344,7 @@ where
             // We only support this as a fallback of last resort like xf86-video-modesetting does.
             warn_legacy_fb_export();
 
-            if bo.plane_count().unwrap() > 1 {
+            if bo.plane_count() > 1 {
                 return Err(AccessError {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),
