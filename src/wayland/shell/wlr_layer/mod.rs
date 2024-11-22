@@ -495,6 +495,12 @@ impl LayerSurface {
             attributes.current.clone()
         })
     }
+
+    /// Access the underlying `zwlr_layer_surface_v1` of this layer surface
+    ///
+    pub fn shell_surface(&self) -> &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1 {
+        &self.shell_surface
+    }
 }
 
 /// A configure message for layer surfaces
