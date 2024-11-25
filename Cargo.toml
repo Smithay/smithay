@@ -67,7 +67,7 @@ winit = { version = "0.30.0", default-features = false, features = ["wayland", "
 x11rb = { version = "0.13.0", optional = true }
 xkbcommon = { version = "0.8.0", features = ["wayland"]}
 encoding_rs = { version = "0.8.33", optional = true }
-profiling = "1.0"
+profiling = "1.0.13"
 smallvec = "1.11"
 pixman = { version = "0.1.0", features = ["drm-fourcc"], optional = true }
 
