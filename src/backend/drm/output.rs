@@ -1,7 +1,9 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
+    fmt,
     os::fd::AsFd,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, TryLockError},
 };
 
 use drm::control::{self, connector, crtc, Mode};
@@ -34,7 +36,7 @@ pub struct DrmOutputManager<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
     G: AsFd + 'static,
 {
     device: DrmDevice,
@@ -46,11 +48,33 @@ where
     renderer_formats: Vec<DrmFormat>,
 }
 
+impl<A, F, U, G> fmt::Debug for DrmOutputManager<A, F, U, G>
+where
+    A: Allocator + fmt::Debug,
+    <A as Allocator>::Buffer: fmt::Debug,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + fmt::Debug,
+    U: fmt::Debug,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
+    G: AsFd + fmt::Debug + 'static,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DrmOutputManager")
+            .field("device", &self.device)
+            .field("allocator", &self.allocator)
+            .field("exporter", &self.exporter)
+            .field("gbm", &self.gbm)
+            .field("compositor", &self.compositor)
+            .field("color_formats", &self.color_formats)
+            .field("renderer_formats", &self.renderer_formats)
+            .finish()
+    }
+}
+
 impl<A, F, U, G> DrmOutputManager<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
     G: AsFd + 'static,
 {
     pub fn device(&self) -> &DrmDevice {
@@ -104,6 +128,7 @@ where
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
         std::marker::Send + std::marker::Sync + 'static,
     G: AsFd + std::clone::Clone + 'static,
+    U: 'static,
 {
     pub fn new(
         device: DrmDevice,
@@ -124,7 +149,7 @@ where
         }
     }
 
-    pub fn initialize_output<R, E, RE>(
+    pub fn initialize_output<'a, R, E, RE>(
         &mut self,
         renderer: &mut R,
         crtc: crtc::Handle,
@@ -143,10 +168,10 @@ where
         >,
     >
     where
-        E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
+        E: RenderElement<R> + 'a,
+        R: Renderer + Bind<Dmabuf> + 'a,
         <R as Renderer>::TextureId: Texture + 'static,
-        RE: for<'r> Fn(&'r crtc::Handle) -> (&'r [E], Color32F),
+        RE: for<'c> Fn(&'c crtc::Handle, &mut R) -> (Vec<E>, Color32F),
     {
         let output_mode_source = output_mode_source.into();
 
@@ -205,10 +230,10 @@ where
                 for (handle, compositor) in write_guard.iter_mut() {
                     let mut compositor = compositor.lock().unwrap();
 
-                    let (elements, clear_color) = render_elements(handle);
+                    let (elements, clear_color) = render_elements(handle, renderer);
                     compositor.reset_buffer_ages();
                     compositor
-                        .render_frame(renderer, elements, clear_color, FrameMode::COMPOSITE)
+                        .render_frame(renderer, &elements, clear_color, FrameMode::COMPOSITE)
                         .map_err(DrmOutputManagerError::RenderFrame)?;
                     compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
 
@@ -220,7 +245,7 @@ where
                     }
 
                     compositor
-                        .render_frame(renderer, elements, clear_color, FrameMode::COMPOSITE)
+                        .render_frame(renderer, &elements, clear_color, FrameMode::COMPOSITE)
                         .map_err(DrmOutputManagerError::RenderFrame)?;
                     compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
                 }
@@ -262,9 +287,9 @@ where
 
         let compositor = write_guard.get_mut(&crtc).unwrap();
         let mut compositor = compositor.lock().unwrap();
-        let (elements, clear_color) = render_elements(&crtc);
+        let (elements, clear_color) = render_elements(&crtc, renderer);
         compositor
-            .render_frame(renderer, elements, clear_color, FrameMode::COMPOSITE)
+            .render_frame(renderer, &elements, clear_color, FrameMode::COMPOSITE)
             .map_err(DrmOutputManagerError::RenderFrame)?;
         compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
 
@@ -321,6 +346,26 @@ where
 {
     crtc: crtc::Handle,
     compositor: CompositorList<A, F, U, G>,
+}
+
+impl<A, F, U, G> fmt::Debug for DrmOutput<A, F, U, G>
+where
+    A: Allocator + fmt::Debug,
+    <A as Allocator>::Buffer: fmt::Debug,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + fmt::Debug,
+    U: fmt::Debug,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
+    G: AsFd + fmt::Debug + 'static,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut d = f.debug_struct("DrmOutput");
+        match self.compositor.try_read() {
+            Ok(guard) => d.field("compositor", &guard.get(&self.crtc)),
+            Err(TryLockError::Poisoned(err)) => d.field("compositor", &&**err.get_ref()),
+            Err(TryLockError::WouldBlock) => d.field("compositor", &"<locked>"),
+        };
+        d.finish()
+    }
 }
 
 impl<A, F, U, G> DrmOutput<A, F, U, G>
