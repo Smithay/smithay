@@ -46,6 +46,7 @@ impl ExportFramebuffer<DumbBuffer> for DrmDeviceFd {
     #[inline]
     fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, DumbBuffer>) -> bool {
         match buffer {
+            #[cfg(feature = "wayland_frontend")]
             ExportBuffer::Wayland(_) => false,
             ExportBuffer::Allocator(_) => true,
         }
