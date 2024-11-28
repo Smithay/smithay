@@ -58,7 +58,7 @@
 //! # use std::{collections::HashSet, mem::MaybeUninit};
 //! #
 //! use smithay::{
-//!     backend::drm::{compositor::DrmCompositor, DrmSurface},
+//!     backend::drm::{compositor::{DrmCompositor, FrameMode}, DrmSurface},
 //!     output::{Output, PhysicalProperties, Subpixel},
 //!     utils::Size,
 //! };
@@ -104,7 +104,7 @@
 //!
 //! # let elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _>(&mut renderer, &elements, CLEAR_COLOR)
+//!     .render_frame::<_, _>(&mut renderer, &elements, CLEAR_COLOR, FrameMode::ALL)
 //!     .expect("failed to render frame");
 //!
 //! if !render_frame_result.is_empty {
@@ -1011,6 +1011,22 @@ where
     }
 }
 
+bitflags::bitflags! {
+    /// Possible flags for a DMA buffer
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct FrameMode: u32 {
+        /// Allow to realize the frame by compositing elements on the primary plane
+        const COMPOSITE = 1;
+        const PRIMARY_PLANE_SCANOUT = 2;
+        const OVERLAY_PLANE_SCANOUT = 4;
+        const CURSOR_PLANE_SCANOUT = 8;
+        /// Allow to realize the frame by assigning elements on planes
+        const SCANOUT = Self::PRIMARY_PLANE_SCANOUT.bits() | Self::OVERLAY_PLANE_SCANOUT.bits() | Self::CURSOR_PLANE_SCANOUT.bits();
+
+        const ALL = Self::COMPOSITE.bits() | Self::SCANOUT.bits();
+    }
+}
+
 /// Composite an output using a combination of planes and rendering
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
@@ -1031,7 +1047,6 @@ where
     primary_plane_element_id: Id,
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
     supports_fencing: bool,
-    direct_scanout: bool,
     reset_pending: bool,
     signaled_fence: Option<Arc<OwnedFd>>,
 
@@ -1216,7 +1231,6 @@ where
                         primary_plane_element_id: Id::new(),
                         primary_plane_damage_bag: DamageBag::new(4),
                         primary_is_opaque: is_opaque,
-                        direct_scanout: true,
                         reset_pending: true,
                         signaled_fence,
                         current_frame,
@@ -1251,13 +1265,6 @@ where
             }
         }
         Err(error.unwrap())
-    }
-
-    /// Enable or disable direct scanout.
-    ///
-    /// This is mostly useful for debugging purposes.
-    pub fn use_direct_scanout(&mut self, enabled: bool) {
-        self.direct_scanout = enabled;
     }
 
     fn find_supported_format(
@@ -1441,6 +1448,7 @@ where
         renderer: &mut R,
         elements: &'a [E],
         clear_color: impl Into<Color32F>,
+        frame_mode: FrameMode,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
@@ -1777,6 +1785,7 @@ where
                 output_transform,
                 output_geometry,
                 try_assign_primary_plane,
+                frame_mode,
             ) {
                 Ok(direct_scan_out_plane) => {
                     match direct_scan_out_plane.type_ {
@@ -2478,13 +2487,14 @@ where
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         try_assign_primary_plane: bool,
+        frame_mode: FrameMode,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer + Bind<Dmabuf>,
         E: RenderElement<R>,
     {
         // Check if we have a free plane, otherwise we can exit early
-        if !self.direct_scanout {
+        if !frame_mode.intersects(FrameMode::SCANOUT) {
             trace!(
                 "skipping direct scan-out for element {:?}, no free planes",
                 element.id()
@@ -2505,6 +2515,7 @@ where
                 frame_state,
                 output_transform,
                 output_geometry,
+                frame_mode,
             ) {
                 Ok(plane) => {
                     trace!(
@@ -2527,6 +2538,7 @@ where
             frame_state,
             output_transform,
             output_geometry,
+            frame_mode,
         ) {
             trace!("assigned element {:?} to cursor {:?}", element.id(), plane.handle);
             return Ok(plane);
@@ -2544,6 +2556,7 @@ where
             frame_state,
             output_transform,
             output_geometry,
+            frame_mode,
         ) {
             Ok(plane) => {
                 trace!(
@@ -2573,11 +2586,16 @@ where
         frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
+        frame_mode: FrameMode,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
+        if !frame_mode.contains(FrameMode::PRIMARY_PLANE_SCANOUT) {
+            return Err(None);
+        }
+
         if frame_state
             .plane_state(self.surface.plane())
             .map(|state| state.element_state.is_some())
@@ -2648,11 +2666,16 @@ where
         frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
+        frame_mode: FrameMode,
     ) -> Option<PlaneAssignment>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
+        if !frame_mode.contains(FrameMode::CURSOR_PLANE_SCANOUT) {
+            return None;
+        }
+
         let Some(cursor_state) = self.cursor_state.as_mut() else {
             trace!("no cursor state, skipping cursor rendering");
             return None;
@@ -3339,11 +3362,16 @@ where
         frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
+        frame_mode: FrameMode,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
+        if !frame_mode.contains(FrameMode::OVERLAY_PLANE_SCANOUT) {
+            return Err(None);
+        }
+
         let element_id = element.id();
 
         // Check if we have a free plane, otherwise we can exit early
