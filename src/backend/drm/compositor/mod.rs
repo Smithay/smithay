@@ -120,11 +120,10 @@
 //! }
 //! ```
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Debug,
     io::ErrorKind,
     os::unix::io::{AsFd, OwnedFd},
-    rc::Rc,
     str::FromStr,
     sync::Arc,
 };
@@ -161,12 +160,12 @@ use crate::{
                 RenderElementStates, RenderingReason, UnderlyingStorage,
             },
             sync::SyncPoint,
-            utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
-            Bind, Blit, Color32F, DebugFlags, Frame as RendererFrame, Renderer, Texture,
+            utils::{CommitCounter, DamageBag},
+            Bind, Color32F, DebugFlags, Frame as RendererFrame, Renderer, Texture,
         },
         SwapBuffersError,
     },
-    output::{OutputModeSource, OutputNoMode},
+    output::OutputModeSource,
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{shm, single_pixel_buffer},
 };
@@ -179,8 +178,10 @@ use super::{
 };
 
 mod elements;
+mod frame_result;
 
 use elements::*;
+pub use frame_result::*;
 
 impl RenderElementState {
     pub(crate) fn zero_copy(visible_area: usize) -> Self {
@@ -202,8 +203,18 @@ impl RenderElementState {
 #[derive(Debug)]
 enum ScanoutBuffer<B: Buffer> {
     Wayland(crate::backend::renderer::utils::Buffer),
-    Swapchain(Slot<B>),
-    Cursor(GbmBuffer),
+    Swapchain(Arc<Slot<B>>),
+    Cursor(Arc<GbmBuffer>),
+}
+
+impl<B: Buffer> Clone for ScanoutBuffer<B> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Wayland(arg0) => Self::Wayland(arg0.clone()),
+            Self::Swapchain(arg0) => Self::Swapchain(arg0.clone()),
+            Self::Cursor(arg0) => Self::Cursor(arg0.clone()),
+        }
+    }
 }
 
 impl<B: Buffer> ScanoutBuffer<B> {
@@ -277,7 +288,16 @@ where
 
 struct DrmScanoutBuffer<B: Buffer, F: Framebuffer> {
     buffer: ScanoutBuffer<B>,
-    fb: OwnedFramebuffer<DrmFramebuffer<F>>,
+    fb: CachedDrmFramebuffer<F>,
+}
+
+impl<B: Buffer, F: Framebuffer> Clone for DrmScanoutBuffer<B, F> {
+    fn clone(&self) -> Self {
+        DrmScanoutBuffer {
+            buffer: self.buffer.clone(),
+            fb: self.fb.clone(),
+        }
+    }
 }
 
 impl<B, F> std::fmt::Debug for DrmScanoutBuffer<B, F>
@@ -377,7 +397,7 @@ where
     fb_cache: SmallVec<
         [(
             ElementFramebufferCacheKey,
-            Result<OwnedFramebuffer<B>, ExportBufferError>,
+            Result<CachedDrmFramebuffer<B>, ExportBufferError>,
         ); 4],
     >,
 }
@@ -390,7 +410,7 @@ where
     fn get(
         &self,
         cache_key: &ElementFramebufferCacheKey,
-    ) -> Option<Result<&OwnedFramebuffer<B>, ExportBufferError>> {
+    ) -> Option<Result<&CachedDrmFramebuffer<B>, ExportBufferError>> {
         self.fb_cache.iter().find_map(|(k, r)| {
             if k == cache_key {
                 Some(r.as_ref().map_err(|err| *err))
@@ -404,7 +424,7 @@ where
     fn insert(
         &mut self,
         cache_key: ElementFramebufferCacheKey,
-        fb: Result<OwnedFramebuffer<B>, ExportBufferError>,
+        fb: Result<CachedDrmFramebuffer<B>, ExportBufferError>,
     ) {
         self.fb_cache.push((cache_key, fb));
     }
@@ -446,31 +466,31 @@ impl PlaneProperties {
     }
 }
 
-struct ElementPlaneConfig<'a, B> {
+struct ElementPlaneConfig<'a, B: Buffer, F: Framebuffer> {
     z_index: usize,
     geometry: Rectangle<i32, Physical>,
     properties: PlaneProperties,
-    buffer: Owned<B>,
+    buffer: DrmScanoutBuffer<B, F>,
     failed_planes: &'a mut PlanesSnapshot,
 }
 
 #[derive(Debug)]
-struct PlaneConfig<B> {
+struct PlaneConfig<B: Buffer, F: Framebuffer> {
     pub properties: PlaneProperties,
-    pub buffer: Owned<B>,
+    pub buffer: DrmScanoutBuffer<B, F>,
     pub damage_clips: Option<PlaneDamageClips>,
     pub plane_claim: PlaneClaim,
     pub sync: Option<(SyncPoint, Option<Arc<OwnedFd>>)>,
 }
 
-impl<B> PlaneConfig<B> {
+impl<B: Buffer, F: Framebuffer> PlaneConfig<B, F> {
     #[inline]
-    pub fn is_compatible(&self, other: &PlaneConfig<B>) -> bool {
+    pub fn is_compatible(&self, other: &PlaneConfig<B, F>) -> bool {
         self.properties.is_compatible(&other.properties)
     }
 }
 
-impl<B> Clone for PlaneConfig<B> {
+impl<B: Buffer, F: Framebuffer> Clone for PlaneConfig<B, F> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -491,14 +511,14 @@ struct PlaneElementState {
 }
 
 #[derive(Debug)]
-struct PlaneState<B> {
+struct PlaneState<B: Buffer, F: Framebuffer> {
     skip: bool,
     needs_test: bool,
     element_state: Option<PlaneElementState>,
-    config: Option<PlaneConfig<B>>,
+    config: Option<PlaneConfig<B, F>>,
 }
 
-impl<B> Default for PlaneState<B> {
+impl<B: Buffer, F: Framebuffer> Default for PlaneState<B, F> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -510,10 +530,10 @@ impl<B> Default for PlaneState<B> {
     }
 }
 
-impl<B> PlaneState<B> {
+impl<B: Buffer, F: Framebuffer> PlaneState<B, F> {
     #[inline]
-    fn buffer(&self) -> Option<&B> {
-        self.config.as_ref().map(|config| &*config.buffer)
+    fn buffer(&self) -> Option<&DrmScanoutBuffer<B, F>> {
+        self.config.as_ref().map(|config| &config.buffer)
     }
 
     #[inline]
@@ -526,7 +546,7 @@ impl<B> PlaneState<B> {
     }
 }
 
-impl<B> Clone for PlaneState<B> {
+impl<B: Buffer, F: Framebuffer> Clone for PlaneState<B, F> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -539,11 +559,11 @@ impl<B> Clone for PlaneState<B> {
 }
 
 #[derive(Debug)]
-struct FrameState<B: AsRef<framebuffer::Handle>> {
-    planes: SmallVec<[(plane::Handle, PlaneState<B>); 10]>,
+struct FrameState<B: Buffer, F: Framebuffer> {
+    planes: SmallVec<[(plane::Handle, PlaneState<B, F>); 10]>,
 }
 
-impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
+impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     #[inline]
     fn is_assigned(&self, handle: plane::Handle) -> bool {
         self.planes
@@ -573,14 +593,14 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
     }
 
     #[inline]
-    fn plane_state(&self, handle: plane::Handle) -> Option<&PlaneState<B>> {
+    fn plane_state(&self, handle: plane::Handle) -> Option<&PlaneState<B, F>> {
         self.planes
             .iter()
             .find_map(|(p, state)| if *p == handle { Some(state) } else { None })
     }
 
     #[inline]
-    fn plane_state_mut(&mut self, handle: plane::Handle) -> Option<&mut PlaneState<B>> {
+    fn plane_state_mut(&mut self, handle: plane::Handle) -> Option<&mut PlaneState<B, F>> {
         self.planes
             .iter_mut()
             .find_map(|(p, state)| if *p == handle { Some(state) } else { None })
@@ -594,59 +614,13 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
     }
 
     #[inline]
-    fn plane_buffer(&self, handle: plane::Handle) -> Option<&B> {
+    fn plane_buffer(&self, handle: plane::Handle) -> Option<&DrmScanoutBuffer<B, F>> {
         self.plane_state(handle)
-            .and_then(|state| state.config.as_ref().map(|config| &*config.buffer))
+            .and_then(|state| state.config.as_ref().map(|config| &config.buffer))
     }
 }
 
-#[derive(Debug)]
-struct Owned<B>(Rc<B>);
-
-impl<B> std::ops::Deref for Owned<B> {
-    type Target = B;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<B> From<B> for Owned<B> {
-    #[inline]
-    fn from(outer: B) -> Self {
-        Self(Rc::new(outer))
-    }
-}
-
-impl<B> AsRef<framebuffer::Handle> for Owned<B>
-where
-    B: Framebuffer,
-{
-    #[inline]
-    fn as_ref(&self) -> &framebuffer::Handle {
-        (*self.0).as_ref()
-    }
-}
-
-impl<B> Framebuffer for Owned<B>
-where
-    B: Framebuffer,
-{
-    #[inline]
-    fn format(&self) -> drm_fourcc::DrmFormat {
-        (*self.0).format()
-    }
-}
-
-impl<B> Clone for Owned<B> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<B: Framebuffer> FrameState<B> {
+impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     fn from_planes(primary_plane: plane::Handle, planes: &Planes) -> Self {
         let mut tmp = SmallVec::with_capacity(planes.overlay.len() + planes.cursor.len() + 1);
         tmp.push((primary_plane, PlaneState::default()));
@@ -667,10 +641,10 @@ impl<B: Framebuffer> FrameState<B> {
     }
 }
 
-impl<B: Framebuffer> FrameState<B> {
+impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     #[profiling::function]
     #[inline]
-    fn set_state(&mut self, plane: plane::Handle, state: PlaneState<B>) {
+    fn set_state(&mut self, plane: plane::Handle, state: PlaneState<B, F>) {
         let current_config = match self.plane_state_mut(plane) {
             Some(config) => config,
             None => return,
@@ -684,7 +658,7 @@ impl<B: Framebuffer> FrameState<B> {
         surface: &DrmSurface,
         supports_fencing: bool,
         plane: plane::Handle,
-        state: PlaneState<B>,
+        state: PlaneState<B, F>,
         allow_modeset: bool,
     ) -> Result<(), DrmError> {
         let current_config = match self.plane_state_mut(plane) {
@@ -843,12 +817,8 @@ impl<B: Framebuffer> FrameState<B> {
     }
 }
 
-type Frame<A, F> = FrameState<
-    DrmScanoutBuffer<
-        <A as Allocator>::Buffer,
-        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-    >,
->;
+type CompositorFrameState<A, F> =
+    FrameState<<A as Allocator>::Buffer, <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer>;
 
 type FrameErrorType<A, F> = FrameError<
     <A as Allocator>::Error,
@@ -856,444 +826,14 @@ type FrameErrorType<A, F> = FrameError<
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
 >;
 
-type FrameResult<T, A, F> = Result<T, FrameErrorType<A, F>>;
+pub(crate) type FrameResult<T, A, F> = Result<T, FrameErrorType<A, F>>;
 
-type RenderFrameErrorType<A, F, R> = RenderFrameError<
+pub(crate) type RenderFrameErrorType<A, F, R> = RenderFrameError<
     <A as Allocator>::Error,
     <<A as Allocator>::Buffer as AsDmabuf>::Error,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
     R,
 >;
-
-#[derive(Debug)]
-/// Defines the element for the primary plane in cases where a composited buffer was used.
-pub struct PrimarySwapchainElement<B: Buffer, F: Framebuffer> {
-    /// The slot from the swapchain
-    slot: Owned<DrmScanoutBuffer<B, F>>,
-    /// Sync point
-    pub sync: SyncPoint,
-    /// The transform applied during rendering
-    pub transform: Transform,
-    /// The damage on the primary plane
-    pub damage: DamageSnapshot<i32, BufferCoords>,
-}
-
-impl<B: Buffer, F: Framebuffer> PrimarySwapchainElement<B, F> {
-    /// Access the underlying swapchain buffer
-    #[inline]
-    pub fn buffer(&self) -> &B {
-        match &self.slot.0.buffer {
-            ScanoutBuffer::Swapchain(slot) => slot,
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug)]
-/// Defines the element for the primary plane
-pub enum PrimaryPlaneElement<'a, B: Buffer, F: Framebuffer, E> {
-    /// A slot from the swapchain was used for rendering
-    /// the primary plane
-    Swapchain(PrimarySwapchainElement<B, F>),
-    /// An element has been assigned for direct scan-out
-    Element(&'a E),
-}
-
-/// Result for [`DrmCompositor::render_frame`]
-///
-/// **Note**: This struct may contain a reference to the composited buffer
-/// of the primary display plane. Dropping it will remove said reference and
-/// allows the buffer to be reused.
-///
-/// Keeping the buffer longer may cause the following issues:
-/// - **Too much damage** - until the buffer is marked free it is not considered
-///   submitted by the swapchain, causing the age value of newly queried buffers
-///   to be lower than necessary, potentially resulting in more rendering than necessary.
-///   To avoid this make sure the buffer is dropped before starting the next render.
-/// - **Exhaustion of swapchain images** - Continuing rendering while holding on
-///   to too many buffers may cause the swapchain to run out of images, returning errors
-///   on rendering until buffers are freed again. The exact amount of images in a
-///   swapchain is an implementation detail, but should generally be expect to be
-///   large enough to hold onto at least one `RenderFrameResult`.
-pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
-    /// If this frame contains any changes and should be submitted
-    pub is_empty: bool,
-    /// The render element states of this frame
-    pub states: RenderElementStates,
-    /// Element for the primary plane
-    pub primary_element: PrimaryPlaneElement<'a, B, F, E>,
-    /// Overlay elements in front to back order
-    pub overlay_elements: Vec<&'a E>,
-    /// Optional cursor plane element
-    ///
-    /// If set always above all other elements
-    pub cursor_element: Option<&'a E>,
-
-    primary_plane_element_id: Id,
-    supports_fencing: bool,
-}
-
-impl<B: Buffer, F: Framebuffer, E> RenderFrameResult<'_, B, F, E> {
-    /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
-    pub fn needs_sync(&self) -> bool {
-        if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
-            !self.supports_fencing || !element.sync.is_exportable()
-        } else {
-            false
-        }
-    }
-}
-
-struct SwapchainElement<'a, 'b, B: Buffer> {
-    id: Id,
-    slot: &'a Slot<B>,
-    transform: Transform,
-    damage: &'b DamageSnapshot<i32, BufferCoords>,
-}
-
-impl<B: Buffer> Element for SwapchainElement<'_, '_, B> {
-    fn id(&self) -> &Id {
-        &self.id
-    }
-
-    fn current_commit(&self) -> CommitCounter {
-        self.damage.current_commit()
-    }
-
-    fn src(&self) -> Rectangle<f64, BufferCoords> {
-        Rectangle::from_loc_and_size((0, 0), self.slot.size()).to_f64()
-    }
-
-    fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(
-            (0, 0),
-            self.slot.size().to_logical(1, self.transform).to_physical(1),
-        )
-    }
-
-    fn transform(&self) -> Transform {
-        self.transform
-    }
-
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
-        self.damage
-            .damage_since(commit)
-            .map(|d| {
-                d.into_iter()
-                    .map(|d| d.to_logical(1, self.transform, &self.slot.size()).to_physical(1))
-                    .collect()
-            })
-            .unwrap_or_else(|| DamageSet::from_slice(&[self.geometry(scale)]))
-    }
-
-    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-        OpaqueRegions::from_slice(&[self.geometry(scale)])
-    }
-}
-
-enum FrameResultDamageElement<'a, 'b, E, B: Buffer> {
-    Element(&'a E),
-    Swapchain(SwapchainElement<'a, 'b, B>),
-}
-
-impl<E, B> Element for FrameResultDamageElement<'_, '_, E, B>
-where
-    E: Element,
-    B: Buffer,
-{
-    fn id(&self) -> &Id {
-        match self {
-            FrameResultDamageElement::Element(e) => e.id(),
-            FrameResultDamageElement::Swapchain(e) => e.id(),
-        }
-    }
-
-    fn current_commit(&self) -> CommitCounter {
-        match self {
-            FrameResultDamageElement::Element(e) => e.current_commit(),
-            FrameResultDamageElement::Swapchain(e) => e.current_commit(),
-        }
-    }
-
-    fn src(&self) -> Rectangle<f64, BufferCoords> {
-        match self {
-            FrameResultDamageElement::Element(e) => e.src(),
-            FrameResultDamageElement::Swapchain(e) => e.src(),
-        }
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        match self {
-            FrameResultDamageElement::Element(e) => e.geometry(scale),
-            FrameResultDamageElement::Swapchain(e) => e.geometry(scale),
-        }
-    }
-
-    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
-        match self {
-            FrameResultDamageElement::Element(e) => e.location(scale),
-            FrameResultDamageElement::Swapchain(e) => e.location(scale),
-        }
-    }
-
-    fn transform(&self) -> Transform {
-        match self {
-            FrameResultDamageElement::Element(e) => e.transform(),
-            FrameResultDamageElement::Swapchain(e) => e.transform(),
-        }
-    }
-
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
-        match self {
-            FrameResultDamageElement::Element(e) => e.damage_since(scale, commit),
-            FrameResultDamageElement::Swapchain(e) => e.damage_since(scale, commit),
-        }
-    }
-
-    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-        match self {
-            FrameResultDamageElement::Element(e) => e.opaque_regions(scale),
-            FrameResultDamageElement::Swapchain(e) => e.opaque_regions(scale),
-        }
-    }
-}
-
-/// Error for [`RenderFrameResult::blit_frame_result`]
-#[derive(Debug, thiserror::Error)]
-pub enum BlitFrameResultError<R: std::error::Error, E: std::error::Error> {
-    /// A render error occurred
-    #[error(transparent)]
-    Rendering(R),
-    /// A error occurred during exporting the buffer
-    #[error(transparent)]
-    Export(E),
-}
-
-impl<B, F, E> RenderFrameResult<'_, B, F, E>
-where
-    B: Buffer,
-    F: Framebuffer,
-{
-    /// Get the damage of this frame for the specified dtr and age
-    pub fn damage_from_age<'d>(
-        &self,
-        damage_tracker: &'d mut OutputDamageTracker,
-        age: usize,
-        filter: impl IntoIterator<Item = Id>,
-    ) -> Result<(Option<&'d Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
-    where
-        E: Element,
-    {
-        #[allow(clippy::mutable_key_type)]
-        let filter_ids: HashSet<Id> = filter.into_iter().collect();
-
-        let mut elements: Vec<FrameResultDamageElement<'_, '_, E, B>> =
-            Vec::with_capacity(usize::from(self.cursor_element.is_some()) + self.overlay_elements.len() + 1);
-        if let Some(cursor) = self.cursor_element {
-            if !filter_ids.contains(cursor.id()) {
-                elements.push(FrameResultDamageElement::Element(cursor));
-            }
-        }
-
-        elements.extend(
-            self.overlay_elements
-                .iter()
-                .filter(|e| !filter_ids.contains(e.id()))
-                .map(|e| FrameResultDamageElement::Element(*e)),
-        );
-
-        let primary_render_element = match &self.primary_element {
-            PrimaryPlaneElement::Swapchain(PrimarySwapchainElement {
-                slot,
-                transform,
-                damage,
-                ..
-            }) => FrameResultDamageElement::Swapchain(SwapchainElement {
-                id: self.primary_plane_element_id.clone(),
-                transform: *transform,
-                slot: match &slot.0.buffer {
-                    ScanoutBuffer::Swapchain(slot) => slot,
-                    _ => unreachable!(),
-                },
-                damage,
-            }),
-            PrimaryPlaneElement::Element(e) => FrameResultDamageElement::Element(*e),
-        };
-
-        elements.push(primary_render_element);
-
-        damage_tracker.damage_output(age, &elements)
-    }
-}
-
-impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
-where
-    B: Buffer + AsDmabuf,
-    <B as AsDmabuf>::Error: std::fmt::Debug,
-    F: Framebuffer,
-{
-    /// Blit the frame result into a currently bound buffer
-    #[allow(clippy::too_many_arguments)]
-    pub fn blit_frame_result<R>(
-        &self,
-        size: impl Into<Size<i32, Physical>>,
-        transform: Transform,
-        scale: impl Into<Scale<f64>>,
-        renderer: &mut R,
-        damage: impl IntoIterator<Item = Rectangle<i32, Physical>>,
-        filter: impl IntoIterator<Item = Id>,
-    ) -> Result<SyncPoint, BlitFrameResultError<<R as Renderer>::Error, <B as AsDmabuf>::Error>>
-    where
-        R: Renderer + Blit<Dmabuf>,
-        <R as Renderer>::TextureId: 'static,
-        E: Element + RenderElement<R>,
-    {
-        let size = size.into();
-        let scale = scale.into();
-        #[allow(clippy::mutable_key_type)]
-        let filter_ids: HashSet<Id> = filter.into_iter().collect();
-        let damage = damage.into_iter().collect::<Vec<_>>();
-
-        // If we have no damage we can exit early
-        if damage.is_empty() {
-            return Ok(SyncPoint::signaled());
-        }
-
-        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
-
-        let mut elements_to_render: Vec<&'a E> =
-            Vec::with_capacity(usize::from(self.cursor_element.is_some()) + self.overlay_elements.len() + 1);
-
-        if let Some(cursor_element) = self.cursor_element.as_ref() {
-            if !filter_ids.contains(cursor_element.id()) {
-                elements_to_render.push(*cursor_element);
-                opaque_regions.extend(cursor_element.opaque_regions(scale));
-            }
-        }
-
-        for element in self
-            .overlay_elements
-            .iter()
-            .filter(|e| !filter_ids.contains(e.id()))
-        {
-            elements_to_render.push(element);
-            opaque_regions.extend(element.opaque_regions(scale));
-        }
-
-        let primary_dmabuf = match &self.primary_element {
-            PrimaryPlaneElement::Swapchain(PrimarySwapchainElement { slot, sync, .. }) => {
-                let dmabuf = match &slot.0.buffer {
-                    ScanoutBuffer::Swapchain(slot) => slot.export().map_err(BlitFrameResultError::Export)?,
-                    _ => unreachable!(),
-                };
-                let size = dmabuf.size();
-                let geometry = Rectangle::from_loc_and_size(
-                    (0, 0),
-                    size.to_logical(1, Transform::Normal).to_physical(1),
-                );
-                opaque_regions.push(geometry);
-                Some((sync.clone(), dmabuf, geometry))
-            }
-            PrimaryPlaneElement::Element(e) => {
-                elements_to_render.push(*e);
-                opaque_regions.extend(e.opaque_regions(scale));
-                None
-            }
-        };
-
-        let clear_damage =
-            Rectangle::subtract_rects_many_in_place(damage.clone(), opaque_regions.iter().copied());
-
-        let mut sync: Option<SyncPoint> = None;
-        if !clear_damage.is_empty() {
-            trace!("clearing frame damage {:#?}", clear_damage);
-
-            let mut frame = renderer
-                .render(size, transform)
-                .map_err(BlitFrameResultError::Rendering)?;
-
-            frame
-                .clear(Color32F::BLACK, &clear_damage)
-                .map_err(BlitFrameResultError::Rendering)?;
-
-            sync = Some(frame.finish().map_err(BlitFrameResultError::Rendering)?);
-        }
-
-        // first do the potential blit
-        if let Some((sync, dmabuf, geometry)) = primary_dmabuf {
-            let blit_damage = damage
-                .iter()
-                .filter_map(|d| d.intersection(geometry))
-                .collect::<Vec<_>>();
-
-            trace!("blitting frame with damage: {:#?}", blit_damage);
-
-            renderer.wait(&sync).map_err(BlitFrameResultError::Rendering)?;
-            for rect in blit_damage {
-                renderer
-                    .blit_from(
-                        dmabuf.clone(),
-                        rect,
-                        rect,
-                        crate::backend::renderer::TextureFilter::Linear,
-                    )
-                    .map_err(BlitFrameResultError::Rendering)?;
-            }
-        }
-
-        // then render the remaining elements if any
-        if !elements_to_render.is_empty() {
-            trace!("drawing {} frame element(s)", elements_to_render.len());
-
-            let mut frame = renderer
-                .render(size, transform)
-                .map_err(BlitFrameResultError::Rendering)?;
-
-            for element in elements_to_render.iter().rev() {
-                let src = element.src();
-                let dst = element.geometry(scale);
-                let element_damage = damage
-                    .iter()
-                    .filter_map(|d| {
-                        d.intersection(dst).map(|mut d| {
-                            d.loc -= dst.loc;
-                            d
-                        })
-                    })
-                    .collect::<Vec<_>>();
-
-                // no need to render without damage
-                if element_damage.is_empty() {
-                    continue;
-                }
-
-                trace!("drawing frame element with damage: {:#?}", element_damage);
-
-                element
-                    .draw(&mut frame, src, dst, &element_damage, &[])
-                    .map_err(BlitFrameResultError::Rendering)?;
-            }
-
-            Ok(frame.finish().map_err(BlitFrameResultError::Rendering)?)
-        } else {
-            Ok(sync.unwrap_or_default())
-        }
-    }
-}
-
-impl<B: Buffer + std::fmt::Debug, F: Framebuffer + std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug
-    for RenderFrameResult<'_, B, F, E>
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RenderFrameResult")
-            .field("is_empty", &self.is_empty)
-            .field("states", &self.states)
-            .field("primary_element", &self.primary_element)
-            .field("overlay_elements", &self.overlay_elements)
-            .field("cursor_element", &self.cursor_element)
-            .finish()
-    }
-}
 
 #[derive(Debug)]
 struct CursorState<G: AsFd + 'static> {
@@ -1395,7 +935,7 @@ impl From<&PlaneInfo> for PlaneAssignment {
 }
 
 struct PendingFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
-    frame: Frame<A, F>,
+    frame: CompositorFrameState<A, F>,
     user_data: U,
 }
 
@@ -1443,7 +983,7 @@ enum PreparedFrameKind {
 }
 
 struct PreparedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> {
-    frame: Frame<A, F>,
+    frame: CompositorFrameState<A, F>,
     kind: PreparedFrameKind,
 }
 
@@ -1497,7 +1037,7 @@ where
 
     framebuffer_exporter: F,
 
-    current_frame: Frame<A, F>,
+    current_frame: CompositorFrameState<A, F>,
     pending_frame: Option<PendingFrame<A, F, U>>,
     queued_frame: Option<QueuedFrame<A, F, U>>,
     next_frame: Option<PreparedFrame<A, F>>,
@@ -1507,10 +1047,8 @@ where
     cursor_size: Size<i32, Physical>,
     cursor_state: Option<CursorState<G>>,
 
-    element_states:
-        IndexMap<Id, ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>,
-    previous_element_states:
-        IndexMap<Id, ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>,
+    element_states: IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
+    previous_element_states: IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
     opaque_regions: Vec<Rectangle<i32, Physical>>,
     element_opaque_regions_workhouse: Vec<Rectangle<i32, Physical>>,
 
@@ -1730,7 +1268,7 @@ where
         framebuffer_exporter: &F,
         mut renderer_formats: Vec<DrmFormat>,
         code: DrmFourcc,
-    ) -> Result<(Swapchain<A>, Frame<A, F>, bool), (A, FrameErrorType<A, F>)> {
+    ) -> Result<(Swapchain<A>, FrameState<A::Buffer, F::Framebuffer>, bool), (A, FrameErrorType<A, F>)> {
         // select a format
         let mut plane_formats = drm.plane_info().formats.iter().copied().collect::<IndexSet<_>>();
 
@@ -1832,14 +1370,15 @@ where
             Ok(None) => return Err((swapchain.allocator, FrameError::NoFramebuffer)),
             Err(err) => return Err((swapchain.allocator, FrameError::FramebufferExport(err))),
         };
-        buffer
-            .userdata()
-            .insert_if_missing(|| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
+        buffer.userdata().insert_if_missing(|| {
+            let init = CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer));
+            init
+        });
 
         let mode = drm.pending_mode();
         let handle = buffer
             .userdata()
-            .get::<OwnedFramebuffer<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>()
+            .get::<CachedDrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>()
             .unwrap()
             .clone();
 
@@ -1866,10 +1405,10 @@ where
                     alpha: 1.0,
                     format: buffer.format(),
                 },
-                buffer: Owned::from(DrmScanoutBuffer {
-                    buffer: ScanoutBuffer::Swapchain(buffer),
+                buffer: DrmScanoutBuffer {
+                    buffer: ScanoutBuffer::Swapchain(Arc::new(buffer)),
                     fb: handle,
-                }),
+                },
                 damage_clips: None,
                 plane_claim,
                 sync: None,
@@ -1957,7 +1496,7 @@ where
         // it and use the Slot userdata to cache it
         let maybe_buffer = primary_plane_buffer
             .userdata()
-            .get::<OwnedFramebuffer<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>();
+            .get::<CachedDrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>();
         if maybe_buffer.is_none() {
             let fb_buffer = self
                 .framebuffer_exporter
@@ -1970,13 +1509,13 @@ where
                 .ok_or(FrameError::NoFramebuffer)?;
             primary_plane_buffer
                 .userdata()
-                .insert_if_missing(|| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
+                .insert_if_missing(|| CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
         }
 
         // This unwrap is safe as we error out above if we were unable to export a framebuffer
         let fb = primary_plane_buffer
             .userdata()
-            .get::<OwnedFramebuffer<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>()
+            .get::<CachedDrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>()
             .unwrap()
             .clone();
 
@@ -1990,7 +1529,10 @@ where
 
         // So first we want to create a clean state, for that we have to reset all overlay and cursor planes
         // to nothing. We only want to test if the primary plane alone can be used for scan-out.
-        let mut next_frame_state = {
+        let mut next_frame_state: FrameState<
+            <A as Allocator>::Buffer,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
+        > = {
             let previous_state = self
                 .pending_frame
                 .as_ref()
@@ -2022,7 +1564,10 @@ where
             error!("failed to claim primary plane");
             FrameError::PrimaryPlaneClaimFailed
         })?;
-        let primary_plane_state = PlaneState {
+        let primary_plane_state: PlaneState<
+            <A as Allocator>::Buffer,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
+        > = PlaneState {
             skip: false,
             needs_test: false,
             element_state: None,
@@ -2035,10 +1580,10 @@ where
                     alpha: 1.0,
                     format: primary_plane_buffer.format(),
                 },
-                buffer: Owned::from(DrmScanoutBuffer {
-                    buffer: ScanoutBuffer::Swapchain(primary_plane_buffer),
+                buffer: DrmScanoutBuffer {
+                    buffer: ScanoutBuffer::Swapchain(Arc::new(primary_plane_buffer)),
                     fb,
-                }),
+                },
                 damage_clips: None,
                 plane_claim,
                 sync: None,
@@ -2370,7 +1915,7 @@ where
 
         let render = next_frame_state
             .plane_buffer(self.surface.plane())
-            .map(|config| matches!(&config.buffer, ScanoutBuffer::Swapchain(_)))
+            .map(|config| matches!(config.buffer, ScanoutBuffer::Swapchain(_)))
             .unwrap_or(false);
 
         if render {
@@ -2926,13 +2471,10 @@ where
         element_zindex: usize,
         element_geometry: Rectangle<i32, Physical>,
         element_is_opaque: bool,
-        element_states: &mut IndexMap<
-            Id,
-            ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
-        >,
+        element_states: &mut IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
         primary_plane_elements: &[&'a E],
         scale: Scale<f64>,
-        frame_state: &mut Frame<A, F>,
+        frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         try_assign_primary_plane: bool,
@@ -3026,12 +2568,9 @@ where
         element: &'a E,
         element_zindex: usize,
         element_geometry: Rectangle<i32, Physical>,
-        element_states: &mut IndexMap<
-            Id,
-            ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
-        >,
+        element_states: &mut IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
         scale: Scale<f64>,
-        frame_state: &mut Frame<A, F>,
+        frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
@@ -3106,7 +2645,7 @@ where
         element_zindex: usize,
         element_geometry: Rectangle<i32, Physical>,
         scale: Scale<f64>,
-        frame_state: &mut Frame<A, F>,
+        frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Option<PlaneAssignment>
@@ -3459,10 +2998,10 @@ where
                 transform: Transform::Normal,
                 format: framebuffer.format(),
             },
-            buffer: Owned::from(DrmScanoutBuffer {
-                buffer: ScanoutBuffer::Cursor(cursor_buffer),
-                fb: OwnedFramebuffer::new(DrmFramebuffer::Gbm(framebuffer)),
-            }),
+            buffer: DrmScanoutBuffer {
+                buffer: ScanoutBuffer::Cursor(Arc::new(cursor_buffer)),
+                fb: CachedDrmFramebuffer::new(DrmFramebuffer::Gbm(framebuffer)),
+            },
             damage_clips: None,
             plane_claim,
             sync: None,
@@ -3536,21 +3075,16 @@ where
         element: &E,
         element_zindex: usize,
         element_geometry: Rectangle<i32, Physical>,
-        element_states: &'a mut IndexMap<
-            Id,
-            ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
-        >,
-        frame_state: &mut Frame<A, F>,
+        element_states: &'a mut IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
+        frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         allow_opaque_fallback: bool,
     ) -> Result<
         ElementPlaneConfig<
             'a,
-            DrmScanoutBuffer<
-                <A as Allocator>::Buffer,
-                <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-            >,
+            <A as Allocator>::Buffer,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
         >,
         ExportBufferError,
     >
@@ -3591,7 +3125,9 @@ where
                 },
             );
         }
-        let element_fb_cache = element_states
+        let element_fb_cache: &mut ElementFramebufferCache<
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
+        > = element_states
             .get_mut(element_id)
             .map(|state| &mut state.fb_cache)
             .unwrap();
@@ -3616,7 +3152,7 @@ where
                     ExportBufferError::ExportFailed
                 })
                 .and_then(|fb| {
-                    fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
+                    fb.map(|fb| CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb)))
                         .ok_or(ExportBufferError::Unsupported)
                 });
 
@@ -3637,7 +3173,8 @@ where
             );
         }
 
-        let fb = element_fb_cache.get(&element_cache_key).unwrap()?;
+        let fb: &CachedDrmFramebuffer<<F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer> =
+            element_fb_cache.get(&element_cache_key).unwrap()?;
 
         let src = element.src();
         let dst = output_transform.transform_rect_in(element_geometry, &output_geometry.size);
@@ -3656,12 +3193,13 @@ where
             transform,
             format: fb.format(),
         };
-        let buffer = ScanoutBuffer::from_underlying_storage(underlying_storage)
-            .map(|buffer| {
-                Owned::from(DrmScanoutBuffer {
-                    fb: fb.clone(),
-                    buffer,
-                })
+        let buffer: DrmScanoutBuffer<
+            <A as Allocator>::Buffer,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
+        > = ScanoutBuffer::from_underlying_storage(underlying_storage)
+            .map(|buffer| DrmScanoutBuffer {
+                fb: fb.clone(),
+                buffer,
             })
             .ok_or(ExportBufferError::Unsupported)?;
 
@@ -3795,13 +3333,10 @@ where
         element_zindex: usize,
         element_geometry: Rectangle<i32, Physical>,
         element_is_opaque: bool,
-        element_states: &mut IndexMap<
-            Id,
-            ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
-        >,
+        element_states: &mut IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
         primary_plane_elements: &[&'a E],
         scale: Scale<f64>,
-        frame_state: &mut Frame<A, F>,
+        frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
@@ -3880,10 +3415,8 @@ where
         let mut test_overlay_plane = |plane: &PlaneInfo,
                                       element_config: &ElementPlaneConfig<
             '_,
-            DrmScanoutBuffer<
-                <A as Allocator>::Buffer,
-                <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-            >,
+            <A as Allocator>::Buffer,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
         >| {
             // something is already assigned to our overlay plane
             if frame_state.is_assigned(plane.handle) {
@@ -3996,14 +3529,12 @@ where
         element: &E,
         element_config: &ElementPlaneConfig<
             '_,
-            DrmScanoutBuffer<
-                <A as Allocator>::Buffer,
-                <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-            >,
+            <A as Allocator>::Buffer,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
         >,
         plane: &PlaneInfo,
         scale: Scale<f64>,
-        frame_state: &mut Frame<A, F>,
+        frame_state: &mut CompositorFrameState<A, F>,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
@@ -4359,43 +3890,43 @@ where
     }
 }
 
-struct OwnedFramebuffer<B: Framebuffer>(Rc<B>);
+struct CachedDrmFramebuffer<B: Framebuffer>(Arc<DrmFramebuffer<B>>);
 
-impl<B: Framebuffer> PartialEq for OwnedFramebuffer<B> {
+impl<B: Framebuffer> PartialEq for CachedDrmFramebuffer<B> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         AsRef::<framebuffer::Handle>::as_ref(&self) == AsRef::<framebuffer::Handle>::as_ref(&other)
     }
 }
 
-impl<B: Framebuffer + std::fmt::Debug> std::fmt::Debug for OwnedFramebuffer<B> {
+impl<B: Framebuffer + std::fmt::Debug> std::fmt::Debug for CachedDrmFramebuffer<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("OwnedFramebuffer").field(&self.0).finish()
+        f.debug_tuple("CachedDrmFramebuffer").field(&self.0).finish()
     }
 }
 
-impl<B: Framebuffer> OwnedFramebuffer<B> {
+impl<B: Framebuffer> CachedDrmFramebuffer<B> {
     #[inline]
-    fn new(buffer: B) -> Self {
-        OwnedFramebuffer(Rc::new(buffer))
+    fn new(buffer: DrmFramebuffer<B>) -> Self {
+        CachedDrmFramebuffer(Arc::new(buffer))
     }
 }
 
-impl<B: Framebuffer> Clone for OwnedFramebuffer<B> {
+impl<B: Framebuffer> Clone for CachedDrmFramebuffer<B> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<B: Framebuffer> AsRef<framebuffer::Handle> for OwnedFramebuffer<B> {
+impl<B: Framebuffer> AsRef<framebuffer::Handle> for CachedDrmFramebuffer<B> {
     #[inline]
     fn as_ref(&self) -> &framebuffer::Handle {
         (*self.0).as_ref()
     }
 }
 
-impl<B: Framebuffer> Framebuffer for OwnedFramebuffer<B> {
+impl<B: Framebuffer> Framebuffer for CachedDrmFramebuffer<B> {
     #[inline]
     fn format(&self) -> drm_fourcc::DrmFormat {
         (*self.0).format()
