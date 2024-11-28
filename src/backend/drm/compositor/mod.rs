@@ -1108,7 +1108,7 @@ where
         planes: Option<Planes>,
         mut allocator: A,
         framebuffer_exporter: F,
-        color_formats: &[DrmFourcc],
+        color_formats: impl IntoIterator<Item = DrmFourcc>,
         renderer_formats: impl IntoIterator<Item = DrmFormat>,
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
@@ -1200,9 +1200,9 @@ where
                 allocator,
                 &framebuffer_exporter,
                 renderer_formats.clone(),
-                *format,
+                format,
             ) {
-                Ok((swapchain, current_frame, is_opaque)) => {
+                Ok((swapchain, is_opaque)) => {
                     let cursor_state = gbm.map(|gbm| {
                         #[cfg(feature = "renderer_pixman")]
                         let pixman_renderer = match PixmanRenderer::new() {
@@ -1226,6 +1226,7 @@ where
                     });
 
                     let overlay_plane_element_ids = OverlayPlaneElementIds::from_planes(&planes);
+                    let current_frame = FrameState::from_planes(surface.plane(), &planes);
 
                     let drm_renderer = DrmCompositor {
                         primary_plane_element_id: Id::new(),
@@ -1267,16 +1268,170 @@ where
         Err(error.unwrap())
     }
 
-    fn find_supported_format(
-        drm: Arc<DrmSurface>,
+    pub fn with_format(
+        output_mode_source: impl Into<OutputModeSource> + Debug,
+        surface: DrmSurface,
+        planes: Option<Planes>,
+        allocator: A,
+        framebuffer_exporter: F,
+        code: DrmFourcc,
+        modifiers: impl IntoIterator<Item = DrmModifier>,
+        cursor_size: Size<u32, BufferCoords>,
+        gbm: Option<GbmDevice<G>>,
+    ) -> FrameResult<Self, A, F> {
+        let signaled_fence = match surface.create_syncobj(true) {
+            Ok(signaled_syncobj) => match surface.syncobj_to_fd(signaled_syncobj, true) {
+                Ok(signaled_fence) => {
+                    let _ = surface.destroy_syncobj(signaled_syncobj);
+                    Some(Arc::new(signaled_fence))
+                }
+                Err(err) => {
+                    tracing::warn!(?err, "failed to export signaled syncobj");
+                    let _ = surface.destroy_syncobj(signaled_syncobj);
+                    None
+                }
+            },
+            Err(err) => {
+                tracing::warn!(?err, "failed to create signaled syncobj");
+                None
+            }
+        };
+
+        let span = info_span!(
+            parent: None,
+            "drm_compositor",
+            device = ?surface.dev_path(),
+            crtc = ?surface.crtc(),
+        );
+
+        let output_mode_source = output_mode_source.into();
+
+        let surface = Arc::new(surface);
+        let mut planes = match planes {
+            Some(planes) => planes,
+            None => surface.planes().clone(),
+        };
+
+        // We do not support direct scan-out on legacy
+        if surface.is_legacy() {
+            planes.cursor.clear();
+            planes.overlay.clear();
+        }
+
+        // The selection algorithm expects the planes to be ordered form front to back
+        planes
+            .overlay
+            .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
+
+        let driver = surface.get_driver().map_err(|err| {
+            FrameError::DrmError(DrmError::Access(AccessError {
+                errmsg: "Failed to query drm driver",
+                dev: surface.dev_path(),
+                source: err,
+            }))
+        })?;
+        // `IN_FENCE_FD` makes commit fail on Nvidia driver
+        // https://github.com/NVIDIA/open-gpu-kernel-modules/issues/622
+        let is_nvidia = driver.name().to_string_lossy().to_lowercase().contains("nvidia")
+            || driver
+                .description()
+                .to_string_lossy()
+                .to_lowercase()
+                .contains("nvidia");
+
+        let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
+        let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
+        let supports_fencing = !surface.is_legacy()
+            && surface
+                .get_driver_capability(DriverCapability::SyncObj)
+                .map(|val| val != 0)
+                .map_err(|err| {
+                    FrameError::DrmError(DrmError::Access(AccessError {
+                        errmsg: "Failed to query driver capability",
+                        dev: surface.dev_path(),
+                        source: err,
+                    }))
+                })?
+            && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?
+            && !(is_nvidia && nvidia_drm_version().unwrap_or((0, 0, 0)) < (560, 35, 3));
+
+        let (swapchain, is_opaque) = Self::test_format(
+            &surface,
+            supports_fencing,
+            &planes,
+            allocator,
+            &framebuffer_exporter,
+            code,
+            modifiers,
+        )
+        .map_err(|(_, err)| err)?;
+
+        let cursor_state = gbm.map(|gbm| {
+            #[cfg(feature = "renderer_pixman")]
+            let pixman_renderer = match PixmanRenderer::new() {
+                Ok(pixman_renderer) => Some(pixman_renderer),
+                Err(err) => {
+                    tracing::warn!(?err, "failed to initialize pixman renderer for cursor plane");
+                    None
+                }
+            };
+
+            let cursor_allocator =
+                GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
+            CursorState {
+                allocator: cursor_allocator,
+                framebuffer_exporter: gbm,
+                previous_output_scale: None,
+                previous_output_transform: None,
+                #[cfg(feature = "renderer_pixman")]
+                pixman_renderer,
+            }
+        });
+
+        let overlay_plane_element_ids = OverlayPlaneElementIds::from_planes(&planes);
+        let current_frame = FrameState::from_planes(surface.plane(), &planes);
+
+        let drm_renderer = DrmCompositor {
+            primary_plane_element_id: Id::new(),
+            primary_plane_damage_bag: DamageBag::new(4),
+            primary_is_opaque: is_opaque,
+            reset_pending: true,
+            signaled_fence,
+            current_frame,
+            pending_frame: None,
+            queued_frame: None,
+            next_frame: None,
+            swapchain,
+            framebuffer_exporter,
+            cursor_size,
+            cursor_state,
+            surface,
+            damage_tracker,
+            output_mode_source,
+            planes,
+            overlay_plane_element_ids,
+            element_states: IndexMap::new(),
+            previous_element_states: IndexMap::new(),
+            opaque_regions: Vec::new(),
+            element_opaque_regions_workhouse: Vec::new(),
+            supports_fencing,
+            debug_flags: DebugFlags::empty(),
+            span,
+        };
+
+        Ok(drm_renderer)
+    }
+
+    fn test_format(
+        drm: &DrmSurface,
         supports_fencing: bool,
         planes: &Planes,
         allocator: A,
         framebuffer_exporter: &F,
-        mut renderer_formats: Vec<DrmFormat>,
         code: DrmFourcc,
-    ) -> Result<(Swapchain<A>, FrameState<A::Buffer, F::Framebuffer>, bool), (A, FrameErrorType<A, F>)> {
-        // select a format
+        modifiers: impl IntoIterator<Item = DrmModifier>,
+    ) -> Result<(Swapchain<A>, bool), (A, FrameErrorType<A, F>)> {
+        let modifiers = modifiers.into_iter().collect::<IndexSet<_>>();
         let mut plane_formats = drm.plane_info().formats.iter().copied().collect::<IndexSet<_>>();
 
         let opaque_code = get_opaque(code).unwrap_or(code);
@@ -1287,63 +1442,25 @@ where
             return Err((allocator, FrameError::NoSupportedPlaneFormat));
         }
         plane_formats.retain(|fmt| fmt.code == code || fmt.code == opaque_code);
-        renderer_formats.retain(|fmt| fmt.code == code);
 
-        trace!("Plane formats: {:?}", plane_formats);
-        trace!("Renderer formats: {:?}", renderer_formats);
+        if plane_formats.is_empty() {
+            return Err((allocator, FrameError::NoSupportedPlaneFormat));
+        }
 
         let plane_modifiers = plane_formats
             .iter()
             .map(|fmt| fmt.modifier)
             .collect::<IndexSet<_>>();
-        let renderer_modifiers = renderer_formats
-            .iter()
-            .map(|fmt| fmt.modifier)
-            .collect::<IndexSet<_>>();
-        debug!(
-            "Remaining intersected modifiers: {:?}",
-            plane_modifiers
-                .intersection(&renderer_modifiers)
-                .collect::<IndexSet<_>>()
-        );
 
-        if plane_formats.is_empty() {
+        let swapchain_modifiers = plane_modifiers
+            .intersection(&modifiers)
+            .copied()
+            .collect::<Vec<_>>();
+
+        if swapchain_modifiers.is_empty() {
             return Err((allocator, FrameError::NoSupportedPlaneFormat));
-        } else if renderer_formats.is_empty() {
-            return Err((allocator, FrameError::NoSupportedRendererFormat));
         }
 
-        let formats = {
-            // Special case: if a format supports explicit LINEAR (but no implicit Modifiers)
-            // and the other doesn't support any modifier, force Implicit.
-            // This should at least result in a working pipeline possibly with a linear buffer,
-            // but we cannot be sure.
-            if (plane_formats.len() == 1
-                && plane_formats.iter().next().unwrap().modifier == DrmModifier::Invalid
-                && renderer_formats
-                    .iter()
-                    .all(|x| x.modifier != DrmModifier::Invalid)
-                && renderer_formats.iter().any(|x| x.modifier == DrmModifier::Linear))
-                || (renderer_formats.len() == 1
-                    && renderer_formats.first().unwrap().modifier == DrmModifier::Invalid
-                    && plane_formats.iter().all(|x| x.modifier != DrmModifier::Invalid)
-                    && plane_formats.iter().any(|x| x.modifier == DrmModifier::Linear))
-            {
-                vec![DrmFormat {
-                    code,
-                    modifier: DrmModifier::Invalid,
-                }]
-            } else {
-                plane_modifiers
-                    .intersection(&renderer_modifiers)
-                    .cloned()
-                    .map(|modifier| DrmFormat { code, modifier })
-                    .collect::<Vec<_>>()
-            }
-        };
-        debug!("Testing Formats: {:?}", formats);
-
-        let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
         let mode = drm.pending_mode();
 
         let mut swapchain: Swapchain<A> = Swapchain::new(
@@ -1351,7 +1468,7 @@ where
             mode.size().0 as u32,
             mode.size().1 as u32,
             code,
-            modifiers,
+            swapchain_modifiers,
         );
 
         // Test format
@@ -1423,19 +1540,108 @@ where
         };
 
         match current_frame_state.test_state(&drm, supports_fencing, drm.plane(), plane_state, true) {
-            Ok(_) => {
-                debug!("Chosen format: {:?}", dmabuf.format());
-                Ok((swapchain, current_frame_state, use_opaque))
-            }
+            Ok(_) => Ok((swapchain, use_opaque)),
             Err(err) => {
                 warn!(
-                    "Mode-setting failed with automatically selected buffer format {:?}: {}",
+                    "Mode-setting failed with buffer format {:?}: {}",
                     dmabuf.format(),
                     err
                 );
                 Err((swapchain.allocator, err.into()))
             }
         }
+    }
+
+    fn find_supported_format(
+        drm: Arc<DrmSurface>,
+        supports_fencing: bool,
+        planes: &Planes,
+        allocator: A,
+        framebuffer_exporter: &F,
+        mut renderer_formats: Vec<DrmFormat>,
+        code: DrmFourcc,
+    ) -> Result<(Swapchain<A>, bool), (A, FrameErrorType<A, F>)> {
+        // select a format
+        let mut plane_formats = drm.plane_info().formats.iter().copied().collect::<IndexSet<_>>();
+
+        let opaque_code = get_opaque(code).unwrap_or(code);
+        if !plane_formats
+            .iter()
+            .any(|fmt| fmt.code == code || fmt.code == opaque_code)
+        {
+            return Err((allocator, FrameError::NoSupportedPlaneFormat));
+        }
+        plane_formats.retain(|fmt| fmt.code == code || fmt.code == opaque_code);
+        renderer_formats.retain(|fmt| fmt.code == code);
+
+        trace!("Plane formats: {:?}", plane_formats);
+        trace!("Renderer formats: {:?}", renderer_formats);
+
+        let plane_modifiers = plane_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<IndexSet<_>>();
+        let renderer_modifiers = renderer_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<IndexSet<_>>();
+        debug!(
+            "Remaining intersected modifiers: {:?}",
+            plane_modifiers
+                .intersection(&renderer_modifiers)
+                .collect::<IndexSet<_>>()
+        );
+
+        if plane_formats.is_empty() {
+            return Err((allocator, FrameError::NoSupportedPlaneFormat));
+        } else if renderer_formats.is_empty() {
+            return Err((allocator, FrameError::NoSupportedRendererFormat));
+        }
+
+        let formats = {
+            // Special case: if a format supports explicit LINEAR (but no implicit Modifiers)
+            // and the other doesn't support any modifier, force Implicit.
+            // This should at least result in a working pipeline possibly with a linear buffer,
+            // but we cannot be sure.
+            if (plane_formats.len() == 1
+                && plane_formats.iter().next().unwrap().modifier == DrmModifier::Invalid
+                && renderer_formats
+                    .iter()
+                    .all(|x| x.modifier != DrmModifier::Invalid)
+                && renderer_formats.iter().any(|x| x.modifier == DrmModifier::Linear))
+                || (renderer_formats.len() == 1
+                    && renderer_formats.first().unwrap().modifier == DrmModifier::Invalid
+                    && plane_formats.iter().all(|x| x.modifier != DrmModifier::Invalid)
+                    && plane_formats.iter().any(|x| x.modifier == DrmModifier::Linear))
+            {
+                vec![DrmFormat {
+                    code,
+                    modifier: DrmModifier::Invalid,
+                }]
+            } else {
+                plane_modifiers
+                    .intersection(&renderer_modifiers)
+                    .cloned()
+                    .map(|modifier| DrmFormat { code, modifier })
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        debug!("Testing Formats: {:?}", formats);
+
+        let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
+
+        let (swapchain, use_opaque) = Self::test_format(
+            &*drm,
+            supports_fencing,
+            planes,
+            allocator,
+            framebuffer_exporter,
+            code,
+            modifiers,
+        )?;
+
+        Ok((swapchain, use_opaque))
     }
 
     /// Render the next frame
@@ -2458,6 +2664,29 @@ where
     /// Get the format of the underlying swapchain
     pub fn format(&self) -> DrmFourcc {
         self.swapchain.format()
+    }
+
+    pub fn set_format(
+        &mut self,
+        allocator: A,
+        code: DrmFourcc,
+        modifiers: impl IntoIterator<Item = DrmModifier>,
+    ) -> Result<(), FrameErrorType<A, F>> {
+        let (swapchain, is_oapque) = Self::test_format(
+            &self.surface,
+            self.supports_fencing,
+            &self.planes,
+            allocator,
+            &self.framebuffer_exporter,
+            code,
+            modifiers,
+        )
+        .map_err(|(_, err)| err)?;
+
+        self.swapchain = swapchain;
+        self.primary_is_opaque = is_oapque;
+
+        Ok(())
     }
 
     /// Change the output mode source.
