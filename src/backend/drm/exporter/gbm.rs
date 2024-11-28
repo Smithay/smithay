@@ -34,6 +34,7 @@ impl<A: AsFd + 'static> ExportFramebuffer<GbmBuffer> for gbm::Device<A> {
     }
 
     #[inline]
+    #[cfg(feature = "wayland_frontend")]
     fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, GbmBuffer>) -> bool {
         match buffer {
             #[cfg(not(all(feature = "backend_egl", feature = "use_system_lib")))]
@@ -47,6 +48,14 @@ impl<A: AsFd + 'static> ExportFramebuffer<GbmBuffer> for gbm::Device<A> {
                 Some(crate::backend::renderer::BufferType::Dma)
                     | Some(crate::backend::renderer::BufferType::Egl)
             ),
+            ExportBuffer::Allocator(_) => true,
+        }
+    }
+
+    #[inline]
+    #[cfg(not(feature = "wayland_frontend"))]
+    fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, GbmBuffer>) -> bool {
+        match buffer {
             ExportBuffer::Allocator(_) => true,
         }
     }
