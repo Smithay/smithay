@@ -2429,6 +2429,41 @@ where
         Ok(())
     }
 
+    pub fn commit_frame(&mut self) -> FrameResult<(), A, F> {
+        if !self.surface.is_active() {
+            return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
+        }
+
+        let mut prepared_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        if prepared_frame.is_empty() {
+            return Err(FrameErrorType::<A, F>::EmptyFrame);
+        }
+
+        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane()) {
+            if !plane_state.skip {
+                let slot = plane_state.buffer().and_then(|config| match &config.buffer {
+                    ScanoutBuffer::Swapchain(slot) => Some(slot),
+                    _ => None,
+                });
+
+                if let Some(slot) = slot {
+                    self.swapchain.submitted(slot);
+                }
+            }
+        }
+
+        let flip = prepared_frame
+            .frame
+            .commit(&self.surface, self.supports_fencing, false, false);
+
+        if flip.is_ok() {
+            self.queued_frame = None;
+            self.pending_frame = None;
+        }
+
+        self.handle_flip(prepared_frame, None, flip)
+    }
+
     /// Re-evaluates the current state of the crtc and forces calls to [`render_frame`](DrmCompositor::render_frame)
     /// to return `false` for [`RenderFrameResult::is_empty`] until a frame is queued with [`queue_frame`](DrmCompositor::queue_frame).
     ///
@@ -2462,13 +2497,22 @@ where
                 .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
         };
 
+        self.handle_flip(prepared_frame, Some(user_data), flip)
+    }
+
+    fn handle_flip(
+        &mut self,
+        prepared_frame: PreparedFrame<A, F>,
+        user_data: Option<U>,
+        flip: Result<(), crate::backend::drm::error::Error>,
+    ) -> FrameResult<(), A, F> {
         match flip {
             Ok(_) => {
                 if prepared_frame.kind == PreparedFrameKind::Full {
                     self.reset_pending = false;
                 }
 
-                self.pending_frame = Some(PendingFrame {
+                self.pending_frame = user_data.map(|user_data| PendingFrame {
                     frame: prepared_frame.frame,
                     user_data,
                 });
@@ -4295,4 +4339,17 @@ fn nvidia_drm_version() -> Option<(u32, u32, u32)> {
     let minor = u32::from_str(components.next()?).ok()?;
     let patch = u32::from_str(components.next()?).ok()?;
     Some((major, minor, patch))
+}
+
+#[test]
+fn drm_compositor_is_send() {
+    use std::marker::PhantomData;
+
+    use crate::backend::drm::DrmDeviceFd;
+
+    fn is_send<T: Send>() {
+        let _ = PhantomData::<T>;
+    }
+
+    is_send::<DrmCompositor<GbmAllocator<DrmDeviceFd>, GbmDevice<DrmDeviceFd>, (), DrmDeviceFd>>();
 }
