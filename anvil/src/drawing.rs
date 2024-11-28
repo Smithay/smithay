@@ -6,8 +6,7 @@ use smithay::{
             memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
             surface::WaylandSurfaceRenderElement,
             AsRenderElements, Kind,
-        },
-        ImportAll, ImportMem, Renderer, Texture,
+        }, Color32F, ImportAll, ImportMem, Renderer, Texture
     },
     input::pointer::CursorImageStatus,
     render_elements,
@@ -23,8 +22,8 @@ use smithay::{
     utils::{Buffer, Logical, Rectangle, Size, Transform},
 };
 
-pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
-pub static CLEAR_COLOR_FULLSCREEN: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+pub static CLEAR_COLOR: Color32F = Color32F::new(0.8, 0.8, 0.9, 1.0);
+pub static CLEAR_COLOR_FULLSCREEN: Color32F = Color32F::new(0.0, 0.0, 0.0, 0.0);
 
 pub struct PointerElement {
     buffer: Option<MemoryRenderBuffer>,
