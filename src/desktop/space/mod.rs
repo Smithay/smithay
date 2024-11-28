@@ -683,7 +683,7 @@ pub fn render_output<
     custom_elements: &'a [C],
     damage_tracker: &'d mut OutputDamageTracker,
     clear_color: impl Into<Color32F>,
-) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R>>
+) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R::Error>>
 where
     <R as Renderer>::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,

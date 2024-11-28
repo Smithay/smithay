@@ -302,10 +302,10 @@ pub struct OutputDamageTracker {
 
 /// Errors thrown by [`OutputDamageTracker::render_output`]
 #[derive(thiserror::Error)]
-pub enum Error<R: Renderer> {
+pub enum Error<E: std::error::Error> {
     /// The provided [`Renderer`] returned an error
     #[error(transparent)]
-    Rendering(R::Error),
+    Rendering(E),
     /// The given [`Output`] has no mode set
     #[error(transparent)]
     OutputNoMode(#[from] OutputNoMode),
@@ -332,7 +332,7 @@ impl RenderOutputResult<'_> {
     }
 }
 
-impl<R: Renderer> std::fmt::Debug for Error<R> {
+impl<E: std::error::Error> std::fmt::Debug for Error<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Rendering(err) => std::fmt::Debug::fmt(err, f),
@@ -423,7 +423,7 @@ impl OutputDamageTracker {
         age: usize,
         elements: &[E],
         clear_color: Color32F,
-    ) -> Result<RenderOutputResult<'_>, Error<R>>
+    ) -> Result<RenderOutputResult<'_>, Error<R::Error>>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<B>,
@@ -443,7 +443,7 @@ impl OutputDamageTracker {
         age: usize,
         elements: &[E],
         clear_color: impl Into<Color32F>,
-    ) -> Result<RenderOutputResult<'_>, Error<R>>
+    ) -> Result<RenderOutputResult<'_>, Error<R::Error>>
     where
         E: RenderElement<R>,
         R: Renderer,
@@ -790,7 +790,7 @@ impl OutputDamageTracker {
         elements: &'e [E],
         clear_color: Color32F,
         pre_render: F,
-    ) -> Result<RenderOutputResult<'a>, Error<R>>
+    ) -> Result<RenderOutputResult<'a>, Error<R::Error>>
     where
         E: RenderElement<R>,
         R: Renderer,

@@ -832,7 +832,7 @@ pub(crate) type RenderFrameErrorType<A, F, R> = RenderFrameError<
     <A as Allocator>::Error,
     <<A as Allocator>::Buffer as AsDmabuf>::Error,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-    R,
+    <R as Renderer>::Error,
 >;
 
 #[derive(Debug)]
@@ -1454,6 +1454,7 @@ where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
+        <R as Renderer>::Error: Send + Sync + 'static,
     {
         let mut clear_color = clear_color.into();
 
@@ -4009,7 +4010,7 @@ pub enum RenderFrameError<
     A: std::error::Error + Send + Sync + 'static,
     B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
-    R: Renderer,
+    R: std::error::Error + Send + Sync + 'static,
 > {
     /// Preparing the frame encountered an error
     #[error(transparent)]
@@ -4024,7 +4025,7 @@ where
     A: std::error::Error + Send + Sync + 'static,
     B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
-    R: Renderer,
+    R: std::error::Error + Send + Sync + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
