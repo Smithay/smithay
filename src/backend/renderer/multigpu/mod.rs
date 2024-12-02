@@ -971,7 +971,10 @@ where
 {
     type Error = Error<R, T>;
     type TextureId = MultiTexture;
-    type Frame<'frame> = MultiFrame<'render, 'target, 'frame, R, T> where Self: 'frame;
+    type Frame<'frame>
+        = MultiFrame<'render, 'target, 'frame, R, T>
+    where
+        Self: 'frame;
 
     fn id(&self) -> usize {
         self.render.renderer().id()
