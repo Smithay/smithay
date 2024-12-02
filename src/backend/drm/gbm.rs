@@ -211,7 +211,7 @@ struct BufferObjectInternal<'a> {
     offsets: Option<[u32; 4]>,
 }
 
-impl<'a> std::ops::Deref for BufferObjectInternal<'a> {
+impl std::ops::Deref for BufferObjectInternal<'_> {
     type Target = GbmBuffer;
 
     #[inline]
@@ -220,7 +220,7 @@ impl<'a> std::ops::Deref for BufferObjectInternal<'a> {
     }
 }
 
-impl<'a> PlanarBuffer for BufferObjectInternal<'a> {
+impl PlanarBuffer for BufferObjectInternal<'_> {
     #[inline]
     fn size(&self) -> (u32, u32) {
         PlanarBuffer::size(self.bo)
@@ -253,7 +253,7 @@ impl<'a> PlanarBuffer for BufferObjectInternal<'a> {
 }
 
 struct OpaqueBufferWrapper<'a, B>(&'a B);
-impl<'a, B> PlanarBuffer for OpaqueBufferWrapper<'a, B>
+impl<B> PlanarBuffer for OpaqueBufferWrapper<'_, B>
 where
     B: PlanarBuffer,
 {

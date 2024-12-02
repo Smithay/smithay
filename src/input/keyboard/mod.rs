@@ -388,7 +388,7 @@ pub struct KeysymHandle<'a> {
     keycode: Keycode,
 }
 
-impl<'a> fmt::Debug for KeysymHandle<'a> {
+impl fmt::Debug for KeysymHandle<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.keycode)
     }
@@ -485,7 +485,7 @@ pub struct XkbContext<'a> {
     leds_mapping: &'a LedMapping,
 }
 
-impl<'a> XkbContext<'a> {
+impl XkbContext<'_> {
     /// Get the reference to the xkb state.
     pub fn xkb(&self) -> &Mutex<Xkb> {
         self.xkb
@@ -530,7 +530,7 @@ impl<'a> XkbContext<'a> {
     }
 }
 
-impl<'a> fmt::Debug for XkbContext<'a> {
+impl fmt::Debug for XkbContext<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("XkbContext")
             .field("mods_state", &self.mods_state)
@@ -1159,7 +1159,7 @@ pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
     seat: &'a Seat<D>,
 }
 
-impl<'a, D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'a, D> {
+impl<D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'_, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KeyboardInnerHandle")
             .field("inner", &self.inner)
@@ -1168,7 +1168,7 @@ impl<'a, D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'a, D> {
     }
 }
 
-impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
+impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
     /// Change the current grab on this keyboard to the provided grab
     ///
     /// Overwrites any current grab.

@@ -118,7 +118,7 @@ pub(super) enum SpaceElements<'a, E> {
     Element(&'a InnerElement<E>),
 }
 
-impl<'a, E> SpaceElements<'a, E>
+impl<E> SpaceElements<'_, E>
 where
     E: SpaceElement,
 {

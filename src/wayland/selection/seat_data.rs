@@ -142,7 +142,7 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
         };
 
         // Clear selection if it's no longer alive.
-        if selection.as_ref().map_or(false, |selection| {
+        if selection.as_ref().is_some_and(|selection| {
             if let OfferReplySource::Client(source) = selection {
                 !source.alive()
             } else {

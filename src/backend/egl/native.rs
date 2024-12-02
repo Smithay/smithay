@@ -80,7 +80,7 @@ pub struct EGLPlatform<'a> {
     _phantom: PhantomData<&'a c_void>,
 }
 
-impl<'a> EGLPlatform<'a> {
+impl EGLPlatform<'_> {
     /// Create a `EGLPlatform<'a>` for the provided platform.
     ///
     /// # Arguments
@@ -116,7 +116,7 @@ impl<'a> EGLPlatform<'a> {
     }
 }
 
-impl<'a> Debug for EGLPlatform<'a> {
+impl Debug for EGLPlatform<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EGLPlatform")
             .field("platform_name", &self.platform_name)

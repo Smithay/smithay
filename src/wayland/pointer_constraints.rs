@@ -108,7 +108,7 @@ pub struct PointerConstraintRef<'a, D: SeatHandler + 'static> {
     entry: hash_map::OccupiedEntry<'a, PointerHandle<D>, PointerConstraint>,
 }
 
-impl<'a, D: SeatHandler + 'static> ops::Deref for PointerConstraintRef<'a, D> {
+impl<D: SeatHandler + 'static> ops::Deref for PointerConstraintRef<'_, D> {
     type Target = PointerConstraint;
 
     fn deref(&self) -> &Self::Target {
@@ -116,7 +116,7 @@ impl<'a, D: SeatHandler + 'static> ops::Deref for PointerConstraintRef<'a, D> {
     }
 }
 
-impl<'a, D: SeatHandler + 'static> PointerConstraintRef<'a, D> {
+impl<D: SeatHandler + 'static> PointerConstraintRef<'_, D> {
     /// Send `locked`/`unlocked`
     ///
     /// This is not sent automatically since compositors may have different

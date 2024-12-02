@@ -236,7 +236,7 @@ pub struct FractionalScaleState {
 impl FractionalScaleState {
     /// Set the preferred scale
     pub fn set_preferred_scale(&mut self, scale: f64) {
-        if self.preferred_scale.map_or(true, |preferred| preferred != scale) {
+        if self.preferred_scale != Some(scale) {
             if let Some(obj) = &self.fractional_scale {
                 obj.preferred_scale(f64::round(scale * 120.0) as u32);
             }

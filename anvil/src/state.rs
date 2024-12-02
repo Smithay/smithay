@@ -378,7 +378,7 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         location: Point<f64, Logical>,
     ) {
         if with_pointer_constraint(surface, pointer, |constraint| {
-            constraint.map_or(false, |c| c.is_active())
+            constraint.is_some_and(|c| c.is_active())
         }) {
             let origin = self
                 .space

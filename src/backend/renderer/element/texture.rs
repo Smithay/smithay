@@ -591,7 +591,7 @@ pub struct RenderContext<'a, T> {
     opaque_regions: Option<Option<Vec<Rectangle<i32, Buffer>>>>,
 }
 
-impl<'a, T> RenderContext<'a, T> {
+impl<T> RenderContext<'_, T> {
     /// Draw to the buffer
     pub fn draw<F, E>(&mut self, f: F) -> Result<(), E>
     where
@@ -608,7 +608,7 @@ impl<'a, T> RenderContext<'a, T> {
     }
 }
 
-impl<'a, T> Drop for RenderContext<'a, T> {
+impl<T> Drop for RenderContext<'_, T> {
     fn drop(&mut self) {
         self.buffer
             .damage_tracker

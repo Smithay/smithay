@@ -416,13 +416,13 @@ struct WinitEventLoopApp<'a, F: FnMut(WinitEvent)> {
     callback: F,
 }
 
-impl<'a, F: FnMut(WinitEvent)> WinitEventLoopApp<'a, F> {
+impl<F: FnMut(WinitEvent)> WinitEventLoopApp<'_, F> {
     fn timestamp(&self) -> u64 {
         self.inner.clock.now().as_micros()
     }
 }
 
-impl<'a, F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'a, F> {
+impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
         (self.callback)(WinitEvent::Input(InputEvent::DeviceAdded {
             device: WinitVirtualDevice,

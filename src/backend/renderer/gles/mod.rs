@@ -306,7 +306,7 @@ pub struct GlesFrame<'frame> {
     span: EnteredSpan,
 }
 
-impl<'frame> fmt::Debug for GlesFrame<'frame> {
+impl fmt::Debug for GlesFrame<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlesFrame")
             .field("renderer", &self.renderer)
@@ -1981,7 +1981,7 @@ impl GlesRenderer {
     }
 }
 
-impl<'frame> GlesFrame<'frame> {
+impl GlesFrame<'_> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -2180,7 +2180,7 @@ static OUTPUT_VERTS: [ffi::types::GLfloat; 8] = [
     1.0, -1.0, // bottom left
 ];
 
-impl<'frame> Frame for GlesFrame<'frame> {
+impl Frame for GlesFrame<'_> {
     type TextureId = GlesTexture;
     type Error = GlesError;
 
@@ -2280,7 +2280,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
     }
 }
 
-impl<'frame> GlesFrame<'frame> {
+impl GlesFrame<'_> {
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<SyncPoint, GlesError> {
         let _guard = self.span.enter();
@@ -2939,7 +2939,7 @@ impl<'frame> GlesFrame<'frame> {
     }
 }
 
-impl<'frame> Drop for GlesFrame<'frame> {
+impl Drop for GlesFrame<'_> {
     fn drop(&mut self) {
         match self.finish_internal() {
             Ok(sync) => {

@@ -401,7 +401,7 @@ pub struct TouchInnerHandle<'a, D: SeatHandler> {
     seat: &'a Seat<D>,
 }
 
-impl<'a, D: SeatHandler> fmt::Debug for TouchInnerHandle<'a, D> {
+impl<D: SeatHandler> fmt::Debug for TouchInnerHandle<'_, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TouchInnerHandle")
             .field("inner", &self.inner)
@@ -410,7 +410,7 @@ impl<'a, D: SeatHandler> fmt::Debug for TouchInnerHandle<'a, D> {
     }
 }
 
-impl<'a, D: SeatHandler + 'static> TouchInnerHandle<'a, D> {
+impl<D: SeatHandler + 'static> TouchInnerHandle<'_, D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.

@@ -1026,7 +1026,7 @@ pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
     supports_fencing: bool,
 }
 
-impl<'a, B: Buffer, F: Framebuffer, E> RenderFrameResult<'a, B, F, E> {
+impl<B: Buffer, F: Framebuffer, E> RenderFrameResult<'_, B, F, E> {
     /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
     pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
@@ -1044,7 +1044,7 @@ struct SwapchainElement<'a, 'b, B: Buffer> {
     damage: &'b DamageSnapshot<i32, BufferCoords>,
 }
 
-impl<'a, 'b, B: Buffer> Element for SwapchainElement<'a, 'b, B> {
+impl<B: Buffer> Element for SwapchainElement<'_, '_, B> {
     fn id(&self) -> &Id {
         &self.id
     }
@@ -1089,7 +1089,7 @@ enum FrameResultDamageElement<'a, 'b, E, B: Buffer> {
     Swapchain(SwapchainElement<'a, 'b, B>),
 }
 
-impl<'a, 'b, E, B> Element for FrameResultDamageElement<'a, 'b, E, B>
+impl<E, B> Element for FrameResultDamageElement<'_, '_, E, B>
 where
     E: Element,
     B: Buffer,
@@ -1162,7 +1162,7 @@ pub enum BlitFrameResultError<R: std::error::Error, E: std::error::Error> {
     Export(E),
 }
 
-impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
+impl<B, F, E> RenderFrameResult<'_, B, F, E>
 where
     B: Buffer,
     F: Framebuffer,
@@ -1374,8 +1374,8 @@ where
     }
 }
 
-impl<'a, B: Buffer + std::fmt::Debug, F: Framebuffer + std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug
-    for RenderFrameResult<'a, B, F, E>
+impl<B: Buffer + std::fmt::Debug, F: Framebuffer + std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug
+    for RenderFrameResult<'_, B, F, E>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RenderFrameResult")

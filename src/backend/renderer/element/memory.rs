@@ -528,7 +528,7 @@ pub struct RenderContext<'a> {
     opaque_regions: Option<Option<Vec<Rectangle<i32, Buffer>>>>,
 }
 
-impl<'a> RenderContext<'a> {
+impl RenderContext<'_> {
     /// Resize the buffer
     ///
     /// Note that this will also reset the opaque regions.
@@ -556,7 +556,7 @@ impl<'a> RenderContext<'a> {
     }
 }
 
-impl<'a> Drop for RenderContext<'a> {
+impl Drop for RenderContext<'_> {
     fn drop(&mut self) {
         self.buffer.damage_bag.add(std::mem::take(&mut self.damage));
         if let Some(opaque_regions) = self.opaque_regions.take() {

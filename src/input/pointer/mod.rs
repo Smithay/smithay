@@ -502,7 +502,7 @@ pub struct PointerInnerHandle<'a, D: SeatHandler> {
     seat: &'a Seat<D>,
 }
 
-impl<'a, D: SeatHandler> fmt::Debug for PointerInnerHandle<'a, D> {
+impl<D: SeatHandler> fmt::Debug for PointerInnerHandle<'_, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInnerHandle")
             .field("inner", &self.inner)
@@ -511,7 +511,7 @@ impl<'a, D: SeatHandler> fmt::Debug for PointerInnerHandle<'a, D> {
     }
 }
 
-impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
+impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
@@ -952,7 +952,7 @@ pub struct RelativeMotionEvent {
 }
 
 /// Pointer button event
-
+///
 /// Mouse button click and release notifications.
 /// The location of the click is given by the last motion or enter event.
 #[derive(Debug, Clone, Copy)]

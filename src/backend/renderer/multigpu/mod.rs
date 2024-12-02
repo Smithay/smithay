@@ -713,7 +713,7 @@ pub struct MultiRenderer<'render, 'target, R: GraphicsApi, T: GraphicsApi> {
     span: tracing::Span,
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> fmt::Debug for MultiRenderer<'render, 'target, R, T> {
+impl<R: GraphicsApi, T: GraphicsApi> fmt::Debug for MultiRenderer<'_, '_, R, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MultiRenderer")
             .field("render", &self.render)
@@ -723,16 +723,16 @@ impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> fmt::Debug for MultiRende
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> AsRef<<R::Device as ApiDevice>::Renderer>
-    for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> AsRef<<R::Device as ApiDevice>::Renderer>
+    for MultiRenderer<'_, '_, R, T>
 {
     fn as_ref(&self) -> &<R::Device as ApiDevice>::Renderer {
         self.render.renderer()
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> AsMut<<R::Device as ApiDevice>::Renderer>
-    for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> AsMut<<R::Device as ApiDevice>::Renderer>
+    for MultiRenderer<'_, '_, R, T>
 {
     fn as_mut(&mut self) -> &mut <R::Device as ApiDevice>::Renderer {
         self.render.renderer_mut()
@@ -774,8 +774,7 @@ struct TargetData<'target, T: GraphicsApi> {
     format: Fourcc,
 }
 
-impl<'render, 'target, 'frame, R: GraphicsApi + 'frame, T: GraphicsApi> fmt::Debug
-    for MultiFrame<'render, 'target, 'frame, R, T>
+impl<'frame, R: GraphicsApi + 'frame, T: GraphicsApi> fmt::Debug for MultiFrame<'_, '_, 'frame, R, T>
 where
     R: 'static,
     R::Error: 'static,
@@ -800,7 +799,7 @@ where
     }
 }
 
-impl<'target, T: GraphicsApi> fmt::Debug for TargetData<'target, T>
+impl<T: GraphicsApi> fmt::Debug for TargetData<'_, T>
 where
     T::Device: fmt::Debug,
     <<T::Device as ApiDevice>::Renderer as Renderer>::TextureId: fmt::Debug,
@@ -817,9 +816,9 @@ where
 // These casts are ok, because the frame cannot outlive the MultiFrame,
 // see MultiRenderer::render for how this hack works and why it is necessary.
 
-impl<'render, 'target, 'frame, R: GraphicsApi, T: GraphicsApi>
+impl<'frame, R: GraphicsApi, T: GraphicsApi>
     AsRef<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame>>
-    for MultiFrame<'render, 'target, 'frame, R, T>
+    for MultiFrame<'_, '_, 'frame, R, T>
 where
     R: 'static,
     R::Error: 'static,
@@ -834,9 +833,9 @@ where
     }
 }
 
-impl<'render, 'target, 'frame, R: GraphicsApi, T: GraphicsApi>
+impl<'frame, R: GraphicsApi, T: GraphicsApi>
     AsMut<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame>>
-    for MultiFrame<'render, 'target, 'frame, R, T>
+    for MultiFrame<'_, '_, 'frame, R, T>
 where
     R: 'static,
     R::Error: 'static,
@@ -851,7 +850,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> Unbind for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> Unbind for MultiRenderer<'_, '_, R, T>
 where
     <T::Device as ApiDevice>::Renderer: Unbind,
     <R::Device as ApiDevice>::Renderer: Unbind,
@@ -876,8 +875,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi, Target> Offscreen<Target>
-    for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi, Target> Offscreen<Target> for MultiRenderer<'_, '_, R, T>
 where
     <T::Device as ApiDevice>::Renderer: Offscreen<Target>,
     <R::Device as ApiDevice>::Renderer: Offscreen<Target>,
@@ -919,8 +917,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi, Target> Bind<Target>
-    for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi, Target> Bind<Target> for MultiRenderer<'_, '_, R, T>
 where
     <T::Device as ApiDevice>::Renderer: Bind<Target>,
     <R::Device as ApiDevice>::Renderer: Bind<Target>,
@@ -1187,7 +1184,7 @@ where
     Ok(dmabuf)
 }
 
-impl<'render, 'target, 'frame, R: GraphicsApi, T: GraphicsApi> MultiFrame<'render, 'target, 'frame, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> MultiFrame<'_, '_, '_, R, T>
 where
     R: 'static,
     R::Error: 'static,
@@ -1371,8 +1368,7 @@ where
     }
 }
 
-impl<'render, 'target, 'frame, R: GraphicsApi, T: GraphicsApi> Drop
-    for MultiFrame<'render, 'target, 'frame, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> Drop for MultiFrame<'_, '_, '_, R, T>
 where
     R: 'static,
     R::Error: 'static,
@@ -1629,8 +1625,7 @@ impl Texture for MultiTexture {
     }
 }
 
-impl<'render, 'target, 'frame, R: GraphicsApi, T: GraphicsApi> Frame
-    for MultiFrame<'render, 'target, 'frame, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> Frame for MultiFrame<'_, '_, '_, R, T>
 where
     R: 'static,
     R::Error: 'static,
@@ -1734,7 +1729,7 @@ where
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> ImportMemWl for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> ImportMemWl for MultiRenderer<'_, '_, R, T>
 where
     <R::Device as ApiDevice>::Renderer: ImportMemWl,
     // We need this because the Renderer-impl does and ImportMem requires Renderer
@@ -1782,7 +1777,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> ImportMem for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> ImportMem for MultiRenderer<'_, '_, R, T>
 where
     <R::Device as ApiDevice>::Renderer: ImportMem,
     // We need this because the Renderer-impl does and ImportMem requires Renderer
@@ -1843,7 +1838,7 @@ where
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> ImportDmaWl for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> ImportDmaWl for MultiRenderer<'_, '_, R, T>
 where
     <R::Device as ApiDevice>::Renderer: ImportDmaWl + ImportMem + ExportMem,
     <T::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem,
@@ -1879,7 +1874,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> ImportDma for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> ImportDma for MultiRenderer<'_, '_, R, T>
 where
     <R::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem,
@@ -2394,7 +2389,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> MultiRenderer<'_, '_, R, T>
 where
     <R::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
     <T::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem,
@@ -2592,7 +2587,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> ExportMem for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi> ExportMem for MultiRenderer<'_, '_, R, T>
 where
     <T::Device as ApiDevice>::Renderer: ExportMem,
     <R::Device as ApiDevice>::Renderer: ExportMem,
@@ -2683,8 +2678,7 @@ where
     }
 }
 
-impl<'render, 'target, R: GraphicsApi, T: GraphicsApi, BlitTarget> Blit<BlitTarget>
-    for MultiRenderer<'render, 'target, R, T>
+impl<R: GraphicsApi, T: GraphicsApi, BlitTarget> Blit<BlitTarget> for MultiRenderer<'_, '_, R, T>
 where
     <R::Device as ApiDevice>::Renderer: Blit<BlitTarget> + Bind<BlitTarget>,
     <T::Device as ApiDevice>::Renderer: Blit<BlitTarget> + Bind<BlitTarget>,

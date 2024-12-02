@@ -516,7 +516,7 @@ where
     if handle
         .grab_start_data()
         .and_then(|data| data.focus)
-        .map_or(false, |focus| focus.0.same_client_as(object_id))
+        .is_some_and(|focus| focus.0.same_client_as(object_id))
     {
         return true;
     }
@@ -527,7 +527,7 @@ where
         .lock()
         .unwrap()
         .as_ref()
-        .map_or(false, |last_serial| *last_serial == serial)
+        .is_some_and(|last_serial| *last_serial == serial)
     {
         return false; // Ignore mismatches in serial
     }
@@ -540,5 +540,5 @@ where
         .unwrap()
         .focus
         .as_ref()
-        .map_or(false, |(focus, _)| focus.same_client_as(object_id))
+        .is_some_and(|(focus, _)| focus.same_client_as(object_id))
 }
