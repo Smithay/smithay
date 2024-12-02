@@ -245,7 +245,7 @@ struct TestRenderElement<'a, R> {
     _phantom: PhantomData<R>,
 }
 
-impl<'a, R> Element for TestRenderElement<'a, R>
+impl<R> Element for TestRenderElement<'_, R>
 where
     R: Renderer,
 {
@@ -270,7 +270,7 @@ where
     }
 }
 
-impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
+impl<R> RenderElement<R> for TestRenderElement<'_, R>
 where
     R: Renderer,
 {

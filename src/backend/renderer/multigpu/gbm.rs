@@ -266,7 +266,7 @@ impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, R, A> ImportEgl for MultiRenderer<'a, 'b, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
+impl<R, A> ImportEgl for MultiRenderer<'_, '_, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
 where
     A: AsFd + Clone + 'static,
     R: From<GlesRenderer>
@@ -326,7 +326,7 @@ where
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, R, A> MultiRenderer<'a, 'b, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
+impl<R, A> MultiRenderer<'_, '_, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
 where
     A: AsFd + Clone + 'static,
     R: From<GlesRenderer>

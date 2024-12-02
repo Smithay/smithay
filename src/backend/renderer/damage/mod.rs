@@ -322,7 +322,7 @@ pub struct RenderOutputResult<'a> {
     pub states: RenderElementStates,
 }
 
-impl<'a> RenderOutputResult<'a> {
+impl RenderOutputResult<'_> {
     fn skipped(states: RenderElementStates) -> Self {
         Self {
             sync: SyncPoint::signaled(),

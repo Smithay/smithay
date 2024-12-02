@@ -29,7 +29,7 @@ pub struct XkbConfig<'a> {
     pub options: Option<String>,
 }
 
-impl<'a> XkbConfig<'a> {
+impl XkbConfig<'_> {
     pub(crate) fn compile_keymap(&self, context: &xkb::Context) -> Result<xkb::Keymap, ()> {
         xkb::Keymap::new_from_names(
             context,

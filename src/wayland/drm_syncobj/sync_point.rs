@@ -128,7 +128,7 @@ impl Fence for DrmSyncPoint {
         self.timeline
             .query_signalled_point()
             .ok()
-            .map_or(false, |point| point >= self.point)
+            .is_some_and(|point| point >= self.point)
     }
 
     fn wait(&self) -> Result<(), Interrupted> {

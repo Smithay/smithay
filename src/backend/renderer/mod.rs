@@ -791,7 +791,7 @@ pub fn buffer_has_alpha(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
     }
 
     if let Ok(has_alpha) = crate::wayland::shm::with_buffer_contents(buffer, |_, _, data| {
-        shm_format_to_fourcc(data.format).map_or(false, has_alpha)
+        shm_format_to_fourcc(data.format).is_some_and(has_alpha)
     }) {
         return Some(has_alpha);
     }

@@ -145,10 +145,7 @@ impl LockSurface {
 
     /// Get the current pending configure state.
     pub fn get_pending_state(&self, attributes: &mut LockSurfaceAttributes) -> Option<LockSurfaceState> {
-        let server_pending = match attributes.server_pending.take() {
-            Some(state) => state,
-            None => return None,
-        };
+        let server_pending = attributes.server_pending.take()?;
 
         // Get the last pending state.
         let pending = attributes.pending_configures.last();

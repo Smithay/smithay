@@ -172,7 +172,7 @@ struct TextureAccessor<'l> {
     _guard: Option<DmabufReadGuard>,
 }
 
-impl<'l> TextureAccessor<'l> {
+impl TextureAccessor<'_> {
     fn with_image<F, R>(&self, f: F) -> Result<R, PixmanError>
     where
         F: for<'a> FnOnce(&'a Image<'static, 'static>) -> R,
@@ -259,7 +259,7 @@ pub struct PixmanFrame<'frame> {
     finished: AtomicBool,
 }
 
-impl<'frame> PixmanFrame<'frame> {
+impl PixmanFrame<'_> {
     fn draw_solid_color(
         &mut self,
         dst: Rectangle<i32, Physical>,
@@ -333,7 +333,7 @@ impl<'frame> PixmanFrame<'frame> {
     }
 }
 
-impl<'frame> Frame for PixmanFrame<'frame> {
+impl Frame for PixmanFrame<'_> {
     type Error = PixmanError;
 
     type TextureId = PixmanTexture;
@@ -636,7 +636,7 @@ impl<'frame> Frame for PixmanFrame<'frame> {
     }
 }
 
-impl<'frame> PixmanFrame<'frame> {
+impl PixmanFrame<'_> {
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<SyncPoint, PixmanError> {
         if self.finished.swap(true, Ordering::SeqCst) {
@@ -658,7 +658,7 @@ impl<'frame> PixmanFrame<'frame> {
     }
 }
 
-impl<'frame> Drop for PixmanFrame<'frame> {
+impl Drop for PixmanFrame<'_> {
     fn drop(&mut self) {
         match self.finish_internal() {
             Ok(sync) => {

@@ -134,7 +134,7 @@ impl GlowRenderer {
     }
 }
 
-impl<'frame> GlowFrame<'frame> {
+impl GlowFrame<'_> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -245,7 +245,7 @@ impl Renderer for GlowRenderer {
     }
 }
 
-impl<'frame> Frame for GlowFrame<'frame> {
+impl Frame for GlowFrame<'_> {
     type TextureId = GlesTexture;
     type Error = GlesError;
 
@@ -330,7 +330,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
     }
 }
 
-impl<'frame> GlowFrame<'frame> {
+impl GlowFrame<'_> {
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<sync::SyncPoint, GlesError> {
         if let Some(frame) = self.frame.take() {
@@ -341,7 +341,7 @@ impl<'frame> GlowFrame<'frame> {
     }
 }
 
-impl<'frame> Drop for GlowFrame<'frame> {
+impl Drop for GlowFrame<'_> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
             warn!("Ignored error finishing GlowFrame on drop: {}", err);

@@ -56,7 +56,7 @@ impl Framebuffer for DumbFramebuffer {
 
 struct PlanarDumbBuffer<'a>(&'a DumbBuffer);
 
-impl<'a> Buffer for PlanarDumbBuffer<'a> {
+impl Buffer for PlanarDumbBuffer<'_> {
     #[inline]
     fn size(&self) -> Size<i32, BufferCoords> {
         self.0.size()
@@ -68,7 +68,7 @@ impl<'a> Buffer for PlanarDumbBuffer<'a> {
     }
 }
 
-impl<'a> PlanarBuffer for PlanarDumbBuffer<'a> {
+impl PlanarBuffer for PlanarDumbBuffer<'_> {
     #[inline]
     fn size(&self) -> (u32, u32) {
         let size = self.0.size();
@@ -102,7 +102,7 @@ impl<'a> PlanarBuffer for PlanarDumbBuffer<'a> {
 }
 
 struct OpaqueBufferWrapper<'a, B>(&'a B);
-impl<'a, B> PlanarBuffer for OpaqueBufferWrapper<'a, B>
+impl<B> PlanarBuffer for OpaqueBufferWrapper<'_, B>
 where
     B: PlanarBuffer,
 {

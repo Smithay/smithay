@@ -203,7 +203,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
             .known_seats
             .iter()
             .filter_map(|w| w.upgrade().ok())
-            .filter(|s| s.client().map_or(false, |c| &c == client))
+            .filter(|s| s.client().is_some_and(|c| &c == client))
             .collect()
     }
 
