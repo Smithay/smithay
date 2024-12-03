@@ -168,9 +168,9 @@ struct TextureAccessor<'l> {
 impl TextureAccessor<'_> {
     fn with_image<F, R>(&self, f: F) -> Result<R, PixmanError>
     where
-        F: for<'a> FnOnce(&'a Image<'static, 'static>) -> R,
+        F: for<'a> FnOnce(&'a mut Image<'static, 'static>) -> R,
     {
-        let image = self.image.borrow();
+        let mut image = self.image.borrow_mut();
 
         #[cfg(feature = "wayland_frontend")]
         if let Some(buffer) = self.buffer.as_ref() {
@@ -189,7 +189,7 @@ impl TextureAccessor<'_> {
                         });
                     }
 
-                    let remapped_image = unsafe {
+                    let mut remapped_image = unsafe {
                         // SAFETY: We guarantee that this image is only used for reading,
                         // so it is safe to cast the ptr to *mut
                         Image::from_raw_mut(
@@ -206,16 +206,16 @@ impl TextureAccessor<'_> {
                     // We no longer need the original image, so release it to prevent double borrowing
                     std::mem::drop(image);
 
-                    let res = f(&remapped_image);
+                    let res = f(&mut remapped_image);
                     self.image.replace(remapped_image);
                     Ok(res)
                 } else {
-                    Ok(f(&image))
+                    Ok(f(&mut image))
                 }
             })?;
         }
 
-        Ok(f(&image))
+        Ok(f(&mut image))
     }
 }
 
@@ -261,13 +261,13 @@ impl PixmanFrame<'_> {
         op: Operation,
         debug: DebugFlags,
     ) -> Result<(), PixmanError> {
-        let binding;
-        let target_image = match self.renderer.target.as_ref().ok_or(PixmanError::NoTargetBound)? {
+        let mut binding;
+        let target_image = match self.renderer.target.as_mut().ok_or(PixmanError::NoTargetBound)? {
             PixmanTarget::Image { image, .. } => {
-                binding = image.0.image.borrow();
-                &*binding
+                binding = image.0.image.borrow_mut();
+                &mut *binding
             }
-            PixmanTarget::RenderBuffer(b) => &b.0,
+            PixmanTarget::RenderBuffer(b) => &mut b.0,
         };
 
         let solid = pixman::Solid::new(color.components()).map_err(|_| PixmanError::Unsupported)?;
@@ -372,13 +372,13 @@ impl Frame for PixmanFrame<'_> {
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
-        let binding;
-        let target_image = match self.renderer.target.as_ref().ok_or(PixmanError::NoTargetBound)? {
+        let mut binding;
+        let target_image = match self.renderer.target.as_mut().ok_or(PixmanError::NoTargetBound)? {
             PixmanTarget::Image { image, .. } => {
-                binding = image.0.image.borrow();
-                &*binding
+                binding = image.0.image.borrow_mut();
+                &mut *binding
             }
-            PixmanTarget::RenderBuffer(b) => &b.0,
+            PixmanTarget::RenderBuffer(b) => &mut b.0,
         };
         let src_image_accessor = texture.accessor()?;
 
@@ -899,7 +899,7 @@ impl ImportMem for PixmanRenderer {
             return Err(PixmanError::ImportFailed);
         }
 
-        let image = texture.0 .0.image.borrow();
+        let mut image = texture.0 .0.image.borrow_mut();
         let stride = image.stride();
         let expected_len = stride * image.height();
 
@@ -977,7 +977,7 @@ impl ExportMem for PixmanRenderer {
     ) -> Result<Self::TextureMapping, <Self as Renderer>::Error> {
         let format_code =
             pixman::FormatCode::try_from(format).map_err(|_| PixmanError::UnsupportedPixelFormat(format))?;
-        let copy_image =
+        let mut copy_image =
             pixman::Image::new(format_code, region.size.w as usize, region.size.h as usize, false)
                 .map_err(|_| PixmanError::Unsupported)?;
 
@@ -1019,7 +1019,7 @@ impl ExportMem for PixmanRenderer {
         let accessor = texture.accessor()?;
         let format_code =
             pixman::FormatCode::try_from(format).map_err(|_| PixmanError::UnsupportedPixelFormat(format))?;
-        let copy_image =
+        let mut copy_image =
             pixman::Image::new(format_code, region.size.w as usize, region.size.h as usize, false)
                 .map_err(|_| PixmanError::Unsupported)?;
         accessor.with_image(|image| {
