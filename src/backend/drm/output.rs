@@ -175,6 +175,21 @@ where
         f(&*write_guard)
     }
 
+    pub fn use_mode<R, E>(&mut self, crtc: crtc::Handle) -> DrmModeSwitcher<A, F, U, G, R, E>
+    where
+        E: RenderElement<R>,
+        R: Renderer + Bind<Dmabuf>,
+        <R as Renderer>::TextureId: Texture + 'static,
+        <R as Renderer>::Error: Send + Sync + 'static,
+    {
+        DrmModeSwitcher {
+            compositor: self.compositor.clone(),
+            crtc: crtc,
+            render_elements: HashMap::new(),
+            _renderer: PhantomData,
+        }
+    }
+
     pub fn reset_format<R, E, RE>(
         &mut self,
         renderer: &mut R,
