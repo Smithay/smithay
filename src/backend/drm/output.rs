@@ -503,11 +503,74 @@ where
         self.with_compositor(|compositor| compositor.commit_frame())
     }
 
-    pub fn use_mode<R, E, RE>(
+    pub fn use_mode<R, E>(&mut self) -> DrmModeSwitcher<A, F, U, G, R, E>
+    where
+        E: RenderElement<R>,
+        R: Renderer + Bind<Dmabuf>,
+        <R as Renderer>::TextureId: Texture + 'static,
+        <R as Renderer>::Error: Send + Sync + 'static,
+    {
+        DrmModeSwitcher {
+            compositor: self.compositor.clone(),
+            crtc: self.crtc,
+            render_elements: HashMap::new(),
+            _renderer: PhantomData,
+        }
+    }
+}
+
+pub struct DrmModeSwitcher<A, F, U, G, R, E>
+where
+    A: Allocator + std::clone::Clone,
+    <A as Allocator>::Buffer: AsDmabuf,
+    <A as Allocator>::Error: Send + Sync + 'static,
+    <<A as Allocator>::Buffer as AsDmabuf>::Error: std::marker::Send + std::marker::Sync + 'static,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
+        std::marker::Send + std::marker::Sync + 'static,
+    G: AsFd + std::clone::Clone + 'static,
+    E: RenderElement<R>,
+    R: Renderer + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+{
+    compositor: CompositorList<A, F, U, G>,
+    crtc: crtc::Handle,
+    render_elements: HashMap<crtc::Handle, (Vec<E>, Color32F)>,
+    _renderer: PhantomData<R>,
+}
+
+impl<A, F, U, G, R, E> DrmModeSwitcher<A, F, U, G, R, E>
+where
+    A: Allocator + std::clone::Clone,
+    <A as Allocator>::Buffer: AsDmabuf,
+    <A as Allocator>::Error: Send + Sync + 'static,
+    <<A as Allocator>::Buffer as AsDmabuf>::Error: std::marker::Send + std::marker::Sync + 'static,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
+        std::marker::Send + std::marker::Sync + 'static,
+    G: AsFd + std::clone::Clone + 'static,
+    E: RenderElement<R>,
+    R: Renderer + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+{
+    pub fn add_render_contents(
         &mut self,
+        crtc: &crtc::Handle,
+        clear_color: Color32F,
+        elements: impl IntoIterator<Item = E>,
+    ) {
+        self.render_elements
+            .insert(*crtc, (elements.into_iter().collect(), clear_color));
+    }
+
+    pub fn commit(
+        self,
         renderer: &mut R,
         mode: Mode,
-        render_elements: RE,
     ) -> Result<
         (),
         DrmOutputManagerError<
@@ -516,32 +579,36 @@ where
             <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
             R::Error,
         >,
-    >
-    where
-        E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
-        RE: for<'r> Fn(&'r crtc::Handle) -> (&'r [E], Color32F),
-    {
-        let mut res = self.with_compositor(|compositor| compositor.use_mode(mode));
+    > {
+        let mut res = {
+            let read_guard = self.compositor.read().unwrap();
+            let mut compositor_guard = read_guard.get(&self.crtc).unwrap().lock().unwrap();
+            compositor_guard.use_mode(mode)
+        };
+
         if res.is_err() {
             let mut write_guard = self.compositor.write().unwrap();
 
             for (handle, compositor) in write_guard.iter_mut() {
                 let mut compositor = compositor.lock().unwrap();
 
-                let (elements, clear_color) = render_elements(handle);
+                let (elements, clear_color) = self
+                    .render_elements
+                    .get(handle)
+                    .map(|(ref elements, ref color)| (&**elements, color))
+                    .unwrap_or((&[], &Color32F::BLACK));
                 compositor.reset_buffer_ages();
                 compositor
-                    .render_frame(renderer, elements, clear_color, FrameMode::COMPOSITE)
+                    .render_frame(renderer, elements, *clear_color, FrameMode::COMPOSITE)
                     .map_err(DrmOutputManagerError::RenderFrame)?;
                 compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
             }
+
             let compositor = write_guard.get_mut(&self.crtc).unwrap();
             let mut compositor = compositor.lock().unwrap();
             res = compositor.use_mode(mode);
         }
+
         res.map_err(DrmOutputManagerError::Frame)
     }
 }
