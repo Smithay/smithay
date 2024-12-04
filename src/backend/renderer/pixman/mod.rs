@@ -1,8 +1,7 @@
 //! Implementation of the rendering traits using pixman
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
 };
 
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -91,12 +90,12 @@ struct PixmanImageInner {
     #[cfg(feature = "wayland_frontend")]
     buffer: Option<wl_buffer::WlBuffer>,
     dmabuf: Option<PixmanDmabufMapping>,
-    image: RefCell<Image<'static, 'static>>,
+    image: Mutex<Image<'static, 'static>>,
     _flipped: bool, /* TODO: What about flipped textures? */
 }
 
 #[derive(Debug, Clone)]
-struct PixmanImage(Rc<PixmanImageInner>);
+struct PixmanImage(Arc<PixmanImageInner>);
 
 impl PixmanImage {
     #[profiling::function]
@@ -124,12 +123,12 @@ pub struct PixmanTexture(PixmanImage);
 impl From<pixman::Image<'static, 'static>> for PixmanTexture {
     #[inline]
     fn from(image: pixman::Image<'static, 'static>) -> Self {
-        Self(PixmanImage(Rc::new(PixmanImageInner {
+        Self(PixmanImage(Arc::new(PixmanImageInner {
             #[cfg(feature = "wayland_frontend")]
             buffer: None,
             dmabuf: None,
             _flipped: false,
-            image: RefCell::new(image),
+            image: Mutex::new(image),
         })))
     }
 }
@@ -161,7 +160,7 @@ impl Drop for DmabufReadGuard {
 struct TextureAccessor<'l> {
     #[cfg(feature = "wayland_frontend")]
     buffer: Option<wl_buffer::WlBuffer>,
-    image: &'l RefCell<Image<'static, 'static>>,
+    image: &'l Mutex<Image<'static, 'static>>,
     _guard: Option<DmabufReadGuard>,
 }
 
@@ -170,7 +169,7 @@ impl TextureAccessor<'_> {
     where
         F: for<'a> FnOnce(&'a mut Image<'static, 'static>) -> R,
     {
-        let mut image = self.image.borrow_mut();
+        let mut image = self.image.lock().unwrap();
 
         #[cfg(feature = "wayland_frontend")]
         if let Some(buffer) = self.buffer.as_ref() {
@@ -189,7 +188,7 @@ impl TextureAccessor<'_> {
                         });
                     }
 
-                    let mut remapped_image = unsafe {
+                    let remapped_image = unsafe {
                         // SAFETY: We guarantee that this image is only used for reading,
                         // so it is safe to cast the ptr to *mut
                         Image::from_raw_mut(
@@ -203,11 +202,9 @@ impl TextureAccessor<'_> {
                     }
                     .map_err(|_| PixmanError::ImportFailed)?;
 
-                    // We no longer need the original image, so release it to prevent double borrowing
-                    std::mem::drop(image);
+                    *image = remapped_image;
 
-                    let res = f(&mut remapped_image);
-                    self.image.replace(remapped_image);
+                    let res = f(&mut image);
                     Ok(res)
                 } else {
                     Ok(f(&mut image))
@@ -228,15 +225,15 @@ impl PixmanTexture {
 
 impl Texture for PixmanTexture {
     fn width(&self) -> u32 {
-        self.0 .0.image.borrow().width() as u32
+        self.0 .0.image.lock().unwrap().width() as u32
     }
 
     fn height(&self) -> u32 {
-        self.0 .0.image.borrow().height() as u32
+        self.0 .0.image.lock().unwrap().height() as u32
     }
 
     fn format(&self) -> Option<DrmFourcc> {
-        DrmFourcc::try_from(self.0 .0.image.borrow().format()).ok()
+        DrmFourcc::try_from(self.0 .0.image.lock().unwrap().format()).ok()
     }
 }
 
@@ -264,7 +261,7 @@ impl PixmanFrame<'_> {
         let mut binding;
         let target_image = match self.renderer.target.as_mut().ok_or(PixmanError::NoTargetBound)? {
             PixmanTarget::Image { image, .. } => {
-                binding = image.0.image.borrow_mut();
+                binding = image.0.image.lock().unwrap();
                 &mut *binding
             }
             PixmanTarget::RenderBuffer(b) => &mut b.0,
@@ -375,7 +372,7 @@ impl Frame for PixmanFrame<'_> {
         let mut binding;
         let target_image = match self.renderer.target.as_mut().ok_or(PixmanError::NoTargetBound)? {
             PixmanTarget::Image { image, .. } => {
-                binding = image.0.image.borrow_mut();
+                binding = image.0.image.lock().unwrap();
                 &mut *binding
             }
             PixmanTarget::RenderBuffer(b) => &mut b.0,
@@ -754,14 +751,14 @@ impl PixmanRenderer {
         }
         .map_err(|_| PixmanError::ImportFailed)?;
 
-        Ok(PixmanImage(Rc::new(PixmanImageInner {
+        Ok(PixmanImage(Arc::new(PixmanImageInner {
             #[cfg(feature = "wayland_frontend")]
             buffer: None,
             dmabuf: Some(PixmanDmabufMapping {
                 dmabuf: dmabuf.weak(),
                 _mapping: dmabuf_mapping,
             }),
-            image: RefCell::new(image),
+            image: Mutex::new(image),
             _flipped: false,
         })))
     }
@@ -874,11 +871,11 @@ impl ImportMem for PixmanRenderer {
         unsafe {
             std::ptr::copy_nonoverlapping(data.as_ptr(), image.data() as *mut u8, expected_len);
         }
-        Ok(PixmanTexture(PixmanImage(Rc::new(PixmanImageInner {
+        Ok(PixmanTexture(PixmanImage(Arc::new(PixmanImageInner {
             #[cfg(feature = "wayland_frontend")]
             buffer: None,
             dmabuf: None,
-            image: RefCell::new(image),
+            image: Mutex::new(image),
             _flipped: flipped,
         }))))
     }
@@ -899,7 +896,7 @@ impl ImportMem for PixmanRenderer {
             return Err(PixmanError::ImportFailed);
         }
 
-        let mut image = texture.0 .0.image.borrow_mut();
+        let mut image = texture.0 .0.image.lock().unwrap();
         let stride = image.stride();
         let expected_len = stride * image.height();
 
@@ -986,7 +983,7 @@ impl ExportMem for PixmanRenderer {
             let target_image = match target {
                 PixmanTarget::Image { dmabuf, image } => {
                     dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::READ)?;
-                    binding = image.0.image.borrow();
+                    binding = image.0.image.lock().unwrap();
                     &*binding
                 }
                 PixmanTarget::RenderBuffer(b) => &b.0,
@@ -1122,10 +1119,10 @@ impl ImportMemWl for PixmanRenderer {
             .map_err(|_| PixmanError::ImportFailed)?;
             std::result::Result::<_, PixmanError>::Ok(image)
         })??;
-        Ok(PixmanTexture(PixmanImage(Rc::new(PixmanImageInner {
+        Ok(PixmanTexture(PixmanImage(Arc::new(PixmanImageInner {
             buffer: Some(buffer.clone()),
             dmabuf: None,
-            image: RefCell::new(image),
+            image: Mutex::new(image),
             _flipped: false,
         }))))
     }
