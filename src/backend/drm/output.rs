@@ -167,6 +167,14 @@ where
         }
     }
 
+    pub fn with_compositors<R>(
+        &mut self,
+        f: impl FnOnce(&HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>) -> R,
+    ) -> R {
+        let write_guard = self.compositor.write().unwrap();
+        f(&*write_guard)
+    }
+
     pub fn reset_format<R, E, RE>(
         &mut self,
         renderer: &mut R,
