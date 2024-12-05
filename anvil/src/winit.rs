@@ -57,8 +57,6 @@ pub struct WinitData {
     damage_tracker: OutputDamageTracker,
     dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
     full_redraw: u8,
-    #[cfg(feature = "debug")]
-    pub fps: fps_ticker::Fps,
 }
 
 impl DmabufHandler for AnvilState<WinitData> {
@@ -194,8 +192,6 @@ pub fn run_winit() {
             damage_tracker,
             dmabuf_state,
             full_redraw: 0,
-            #[cfg(feature = "debug")]
-            fps: fps_ticker::Fps::default(),
         }
     };
     let mut state = AnvilState::init(display, event_loop.handle(), data, true);
@@ -258,11 +254,6 @@ pub fn run_winit() {
             let cursor_visible = !matches!(state.cursor_status, CursorImageStatus::Surface(_));
 
             pointer_element.set_status(state.cursor_status.clone());
-
-            #[cfg(feature = "debug")]
-            let fps = state.backend_data.fps.avg().round() as u32;
-            #[cfg(feature = "debug")]
-            fps_element.update_fps(fps);
 
             let full_redraw = &mut state.backend_data.full_redraw;
             *full_redraw = full_redraw.saturating_sub(1);
@@ -448,6 +439,6 @@ pub fn run_winit() {
         }
 
         #[cfg(feature = "debug")]
-        state.backend_data.fps.tick();
+        fps_element.tick();
     }
 }

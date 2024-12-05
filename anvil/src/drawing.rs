@@ -126,6 +126,7 @@ pub static FPS_NUMBERS_PNG: &[u8] = include_bytes!("../resources/numbers.png");
 #[derive(Debug, Clone)]
 pub struct FpsElement<T: Texture> {
     id: Id,
+    fps: fps_ticker::Fps,
     value: u32,
     texture: T,
     commit_counter: CommitCounter,
@@ -137,14 +138,17 @@ impl<T: Texture> FpsElement<T> {
         FpsElement {
             id: Id::new(),
             texture,
+            fps: fps_ticker::Fps::default(),
             value: 0,
             commit_counter: CommitCounter::default(),
         }
     }
 
-    pub fn update_fps(&mut self, fps: u32) {
-        if self.value != fps {
-            self.value = fps;
+    pub fn tick(&mut self) {
+        self.fps.tick();
+        let value = self.fps.avg().round() as u32;
+        if self.value != value {
+            self.value = value;
             self.commit_counter.increment();
         }
     }
