@@ -239,6 +239,14 @@ impl<A: GraphicsApi> GpuManager<A> {
         Ok(&self.devices)
     }
 
+    /// Get all devices enumerated by the API.
+    pub fn devices_mut(&mut self) -> Result<&mut [A::Device], A::Error> {
+        if self.api.needs_enumeration() {
+            self.api.enumerate(&mut self.devices)?;
+        }
+        Ok(&mut self.devices)
+    }
+
     /// Create a [`MultiRenderer`] from a single device.
     ///
     /// This a convenience function to deal with the same types even, if you only need one device.
