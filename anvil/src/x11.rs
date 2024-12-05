@@ -66,8 +66,6 @@ pub struct X11Data {
     dmabuf_state: DmabufState,
     _dmabuf_global: DmabufGlobal,
     _dmabuf_default_feedback: DmabufFeedback,
-    #[cfg(feature = "debug")]
-    fps: fps_ticker::Fps,
 }
 
 impl DmabufHandler for AnvilState<X11Data> {
@@ -244,8 +242,6 @@ pub fn run_x11() {
         dmabuf_state,
         _dmabuf_global: dmabuf_global,
         _dmabuf_default_feedback: dmabuf_default_feedback,
-        #[cfg(feature = "debug")]
-        fps: fps_ticker::Fps::default(),
     };
 
     let mut state = AnvilState::init(display, event_loop.handle(), data, true);
@@ -308,10 +304,6 @@ pub fn run_x11() {
 
             let backend_data = &mut state.backend_data;
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
-            #[cfg(feature = "debug")]
-            let fps = backend_data.fps.avg().round() as u32;
-            #[cfg(feature = "debug")]
-            fps_element.update_fps(fps);
 
             let (buffer, age) = backend_data.surface.buffer().expect("gbm device was destroyed");
             if let Err(err) = backend_data.renderer.bind(buffer) {
@@ -464,7 +456,7 @@ pub fn run_x11() {
             }
 
             #[cfg(feature = "debug")]
-            state.backend_data.fps.tick();
+            fps_element.tick();
             window.set_cursor_visible(cursor_visible);
             profiling::finish_frame!();
         }

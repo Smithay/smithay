@@ -754,8 +754,6 @@ struct SurfaceData {
     global: Option<GlobalId>,
     compositor: SurfaceComposition,
     #[cfg(feature = "debug")]
-    fps: fps_ticker::Fps,
-    #[cfg(feature = "debug")]
     fps_element: Option<FpsElement<MultiTexture>>,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
 }
@@ -1108,8 +1106,6 @@ impl AnvilState<UdevData> {
                 render_node: device.render_node,
                 global: Some(global),
                 compositor,
-                #[cfg(feature = "debug")]
-                fps: fps_ticker::Fps::default(),
                 #[cfg(feature = "debug")]
                 fps_element,
                 dmabuf_feedback,
@@ -1681,9 +1677,8 @@ fn render_surface<'a>(
 
     #[cfg(feature = "debug")]
     if let Some(element) = surface.fps_element.as_mut() {
-        element.update_fps(surface.fps.avg().round() as u32);
-        surface.fps.tick();
         custom_elements.push(CustomRenderElements::Fps(element.clone()));
+        element.tick();
     }
 
     let (elements, clear_color) =
