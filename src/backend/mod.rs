@@ -103,6 +103,8 @@ pub mod winit;
 #[cfg(feature = "backend_x11")]
 pub mod x11;
 
+pub mod libei;
+
 /// Error that can happen when swapping buffers.
 #[derive(Debug, thiserror::Error)]
 pub enum SwapBuffersError {
