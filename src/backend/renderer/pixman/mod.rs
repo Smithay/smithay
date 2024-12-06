@@ -25,7 +25,7 @@ use crate::{
     wayland::{compositor::SurfaceData, shm},
 };
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{protocol::wl_buffer, Resource, Weak};
+use wayland_server::protocol::wl_buffer;
 
 #[cfg(all(
     feature = "wayland_frontend",
@@ -89,7 +89,7 @@ struct PixmanDmabufMapping {
 #[derive(Debug)]
 struct PixmanImageInner {
     #[cfg(feature = "wayland_frontend")]
-    buffer: Option<Weak<wl_buffer::WlBuffer>>,
+    buffer: Option<wl_buffer::WlBuffer>,
     dmabuf: Option<PixmanDmabufMapping>,
     image: RefCell<Image<'static, 'static>>,
     _flipped: bool, /* TODO: What about flipped textures? */
@@ -101,13 +101,6 @@ struct PixmanImage(Rc<PixmanImageInner>);
 impl PixmanImage {
     #[profiling::function]
     fn accessor<'l>(&'l self) -> Result<TextureAccessor<'l>, PixmanError> {
-        #[cfg(feature = "wayland_frontend")]
-        let buffer = if let Some(buffer) = self.0.buffer.as_ref() {
-            Some(buffer.upgrade().map_err(|_| PixmanError::BufferDestroyed)?)
-        } else {
-            None
-        };
-
         let guard = if let Some(mapping) = self.0.dmabuf.as_ref() {
             let dmabuf = mapping.dmabuf.upgrade().ok_or(PixmanError::BufferDestroyed)?;
             Some(DmabufReadGuard::new(dmabuf)?)
@@ -117,7 +110,7 @@ impl PixmanImage {
 
         Ok(TextureAccessor {
             #[cfg(feature = "wayland_frontend")]
-            buffer,
+            buffer: self.0.buffer.clone(),
             image: &self.0.image,
             _guard: guard,
         })
@@ -1127,7 +1120,7 @@ impl ImportMemWl for PixmanRenderer {
             std::result::Result::<_, PixmanError>::Ok(image)
         })??;
         Ok(PixmanTexture(PixmanImage(Rc::new(PixmanImageInner {
-            buffer: Some(buffer.downgrade()),
+            buffer: Some(buffer.clone()),
             dmabuf: None,
             image: RefCell::new(image),
             _flipped: false,
