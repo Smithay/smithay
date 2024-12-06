@@ -739,6 +739,9 @@ impl PixmanRenderer {
             });
         }
 
+        dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::READ)?;
+        dmabuf.sync_plane(0, DmabufSyncFlags::END | DmabufSyncFlags::READ)?;
+
         let image: Image<'_, '_> = unsafe {
             pixman::Image::from_raw_mut(
                 format,
