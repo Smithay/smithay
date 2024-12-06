@@ -627,7 +627,6 @@ impl GlesRenderer {
 
     #[profiling::function]
     fn cleanup(&mut self) {
-        #[cfg(feature = "wayland_frontend")]
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
         // Free outdated buffer resources
         // TODO: Replace with `drain_filter` once it lands
