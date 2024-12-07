@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Switch","SwitchEvent","SwitchState"],"struct":["SwitchToggleEvent"],"trait":["SwitchEventTrait"]};
