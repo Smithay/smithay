@@ -76,8 +76,11 @@ pub(crate) mod device;
 #[cfg(feature = "backend_drm")]
 pub mod dumb;
 mod error;
+pub mod exporter;
+pub mod format_selection;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
+pub mod output;
 
 mod surface;
 
