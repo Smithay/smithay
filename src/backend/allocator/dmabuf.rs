@@ -434,6 +434,12 @@ impl DmabufMapping {
     }
 }
 
+// SAFETY: The caller is responsible for accessing the data without assuming
+// another process isn't mutating it, regardless of how many threads this is
+// referenced in.
+unsafe impl Send for DmabufMapping {}
+unsafe impl Sync for DmabufMapping {}
+
 impl Drop for DmabufMapping {
     fn drop(&mut self) {
         let _ = unsafe { rustix::mm::munmap(self.ptr, self.len) };
