@@ -2710,6 +2710,11 @@ where
         self.swapchain.format()
     }
 
+    /// Get the allowed modifiers of the underlying swapchain
+    pub fn modifiers(&self) -> &[DrmModifier] {
+        self.swapchain.modifiers()
+    }
+
     pub fn set_format(
         &mut self,
         allocator: A,
