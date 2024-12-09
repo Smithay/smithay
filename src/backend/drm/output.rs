@@ -152,19 +152,186 @@ where
     pub fn initialize_output<'a, R, E>(
         &'a mut self,
         crtc: crtc::Handle,
-    ) -> DrmOutputBuilder<'a, A, F, U, G, R, E>
+        mode: control::Mode,
+        connectors: &[connector::Handle],
+        output_mode_source: impl Into<OutputModeSource> + std::fmt::Debug,
+        planes: Option<Planes>,
+        renderer: &mut R,
+        render_elements: &DrmOutputRenderElements<R, E>,
+    ) -> Result<
+        DrmOutput<A, F, U, G>,
+        DrmOutputManagerError<
+            <A as Allocator>::Error,
+            <<A as Allocator>::Buffer as AsDmabuf>::Error,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
+            R::Error,
+        >,
+    >
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
         <R as Renderer>::Error: Send + Sync + 'static,
     {
-        DrmOutputBuilder {
-            manager: self,
-            crtc,
-            render_elements: HashMap::new(),
-            _renderer: PhantomData,
+        let output_mode_source = output_mode_source.into();
+
+        let mut write_guard = self.compositor.write().unwrap();
+        if write_guard.contains_key(&crtc) {
+            return Err(DrmOutputManagerError::DuplicateCrtc(crtc));
         }
+
+        let mut create_compositor =
+            |implicit_modifiers: bool| -> FrameResult<DrmCompositor<A, F, U, G>, A, F> {
+                let surface = self.device.create_surface(crtc, mode, connectors)?;
+
+                if implicit_modifiers {
+                    DrmCompositor::<A, F, U, G>::new(
+                        output_mode_source.clone(),
+                        surface,
+                        planes.clone(),
+                        self.allocator.clone(),
+                        self.exporter.clone(),
+                        self.color_formats.iter().copied(),
+                        self.renderer_formats
+                            .iter()
+                            .filter(|f| f.modifier == DrmModifier::Invalid)
+                            .copied(),
+                        self.device.cursor_size(),
+                        self.gbm.clone(),
+                    )
+                } else {
+                    DrmCompositor::<A, F, U, G>::new(
+                        output_mode_source.clone(),
+                        surface,
+                        planes.clone(),
+                        self.allocator.clone(),
+                        self.exporter.clone(),
+                        self.color_formats.iter().copied(),
+                        self.renderer_formats.iter().copied(),
+                        self.device.cursor_size(),
+                        self.gbm.clone(),
+                    )
+                }
+            };
+
+        let compositor = create_compositor(false);
+
+        // Okay, so this can fail for various reasons...
+        //
+        //  Enabling an additional CRTC might fail because the bandwidth
+        //  requirement is higher then supported with the current configuration.
+        //
+        // * Bandwidth limitation caused by overlay plane usage:
+        //   Each overlay plane requires some certain bandwidth and we only
+        //   test that during plane assignment implicitly through an atomic test.
+        //   When trying to enable an additional CRTC we might hit some limit and the
+        //   only way to resolve this might be to disable all overlay planes and
+        //   retry enabling the CRTC.
+        //
+        // * Bandwidth limitation caused by the primary plane format:
+        //   Different formats (might) require a higher memory bandwidth than others.
+        //   This also applies to the same fourcc with different modifiers. For example
+        //   the Intel CCS Formats use an additional plane to transport meta-data.
+        //   So if we fail to enable an additional CRTC we might be able to resolve
+        //   the issue by using a different format. Again the only way to know is by
+        //   trying out what works.
+        //
+        // So for now we try to disable overlay planes first. If that doesn't work,
+        // we set the modifiers to `Invalid` (for now) to give the driver the opportunity
+        // to re-allocate in the background. (TODO: Do this ourselves).
+
+        match compositor {
+            Ok(compositor) => {
+                write_guard.insert(crtc, Mutex::new(compositor));
+            }
+            Err(err) => {
+                tracing::warn!(
+                    ?crtc,
+                    ?err,
+                    "failed to initialize crtc, trying to lower bandwidth"
+                );
+
+                for compositor in write_guard.values_mut() {
+                    let mut compositor = compositor.lock().unwrap();
+                    compositor.reset_buffer_ages();
+                    render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                }
+
+                let compositor = create_compositor(false);
+
+                match compositor {
+                    Ok(compositor) => {
+                        write_guard.insert(crtc, Mutex::new(compositor));
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?crtc,
+                            ?err,
+                            "failed to initialize crtc, trying implicit modifiers"
+                        );
+
+                        for compositor in write_guard.values_mut() {
+                            let mut compositor = compositor.lock().unwrap();
+
+                            let current_format = compositor.format();
+                            if let Err(err) = compositor.set_format(
+                                self.allocator.clone(),
+                                current_format,
+                                [DrmModifier::Invalid],
+                            ) {
+                                tracing::warn!(?err, "failed to set new format");
+                                continue;
+                            }
+
+                            render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                        }
+
+                        let compositor = create_compositor(true);
+
+                        match compositor {
+                            Ok(compositor) => {
+                                write_guard.insert(crtc, Mutex::new(compositor));
+                            }
+                            Err(err) => {
+                                // try to reset formats
+                                for compositor in write_guard.values_mut() {
+                                    let mut compositor = compositor.lock().unwrap();
+
+                                    let current_format = compositor.format();
+                                    if let Err(err) = compositor.set_format(
+                                        self.allocator.clone(),
+                                        current_format,
+                                        self.renderer_formats
+                                            .iter()
+                                            .filter(|f| f.code == current_format)
+                                            .map(|f| f.modifier),
+                                    ) {
+                                        tracing::warn!(?err, "failed to reset format");
+                                        continue;
+                                    }
+
+                                    render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                                }
+
+                                return Err(DrmOutputManagerError::Frame(err));
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        // We need to render the new output once to lock in the primary plane as used with the new format, so we don't hit the bandwidth issue,
+        // when downstream potentially uses `FrameMode::ALL` immediately after this.
+
+        let compositor = write_guard.get_mut(&crtc).unwrap();
+        let mut compositor = compositor.lock().unwrap();
+        render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+
+        Ok(DrmOutput {
+            crtc,
+            compositor: self.compositor.clone(),
+        })
     }
 
     pub fn with_compositors<R>(
@@ -175,25 +342,34 @@ where
         f(&*write_guard)
     }
 
-    pub fn use_mode<R, E>(&mut self, crtc: crtc::Handle) -> DrmModeSwitcher<A, F, U, G, R, E>
+    pub fn use_mode<R, E>(
+        &mut self,
+        crtc: &crtc::Handle,
+        mode: Mode,
+        renderer: &mut R,
+        render_elements: &DrmOutputRenderElements<R, E>,
+    ) -> Result<
+        (),
+        DrmOutputManagerError<
+            <A as Allocator>::Error,
+            <<A as Allocator>::Buffer as AsDmabuf>::Error,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
+            R::Error,
+        >,
+    >
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
         <R as Renderer>::Error: Send + Sync + 'static,
     {
-        DrmModeSwitcher {
-            compositor: self.compositor.clone(),
-            crtc: crtc,
-            render_elements: HashMap::new(),
-            _renderer: PhantomData,
-        }
+        use_mode_internal(&self.compositor, crtc, mode, renderer, render_elements)
     }
 
     pub fn try_to_restore_modifiers<R, E>(
         &mut self,
         renderer: &mut R,
-        render_elements: DrmOutputRenderElements<R, E>,
+        render_elements: &DrmOutputRenderElements<R, E>,
     ) -> Result<
         (),
         DrmOutputManagerError<
@@ -264,213 +440,6 @@ where
     }
 }
 
-pub struct DrmOutputBuilder<'a, A, F, U, G, R, E>
-where
-    A: Allocator + std::clone::Clone + std::fmt::Debug,
-    <A as Allocator>::Buffer: AsDmabuf,
-    <A as Allocator>::Error: Send + Sync + 'static,
-    <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
-    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
-    G: AsFd + std::clone::Clone + 'static,
-    U: 'static,
-    E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
-{
-    manager: &'a mut DrmOutputManager<A, F, U, G>,
-    crtc: crtc::Handle,
-    render_elements: HashMap<crtc::Handle, (Vec<E>, Color32F)>,
-    _renderer: PhantomData<R>,
-}
-
-impl<'a, A, F, U, G, R, E> DrmOutputBuilder<'a, A, F, U, G, R, E>
-where
-    A: Allocator + std::clone::Clone + std::fmt::Debug,
-    <A as Allocator>::Buffer: AsDmabuf,
-    <A as Allocator>::Error: Send + Sync + 'static,
-    <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
-    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
-    G: AsFd + std::clone::Clone + 'static,
-    U: 'static,
-    E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
-{
-    pub fn add_render_contents(
-        &mut self,
-        crtc: &crtc::Handle,
-        clear_color: Color32F,
-        elements: impl IntoIterator<Item = E>,
-    ) {
-        self.render_elements
-            .insert(*crtc, (elements.into_iter().collect(), clear_color));
-    }
-
-    pub fn build(
-        self,
-        renderer: &mut R,
-        mode: control::Mode,
-        connectors: &[connector::Handle],
-        output_mode_source: impl Into<OutputModeSource> + std::fmt::Debug,
-        planes: Option<Planes>,
-    ) -> Result<
-        DrmOutput<A, F, U, G>,
-        DrmOutputManagerError<
-            <A as Allocator>::Error,
-            <<A as Allocator>::Buffer as AsDmabuf>::Error,
-            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-            R::Error,
-        >,
-    > {
-        let output_mode_source = output_mode_source.into();
-
-        let mut write_guard = self.manager.compositor.write().unwrap();
-        if write_guard.contains_key(&self.crtc) {
-            return Err(DrmOutputManagerError::DuplicateCrtc(self.crtc));
-        }
-
-        let surface = self
-            .manager
-            .device
-            .create_surface(self.crtc, mode, connectors)
-            .map_err(DrmOutputManagerError::Drm)?;
-
-        let compositor = DrmCompositor::<A, F, U, G>::new(
-            output_mode_source.clone(),
-            surface,
-            planes.clone(),
-            self.manager.allocator.clone(),
-            self.manager.exporter.clone(),
-            self.manager.color_formats.iter().copied(),
-            self.manager.renderer_formats.iter().copied(),
-            self.manager.device.cursor_size(),
-            self.manager.gbm.clone(),
-        );
-
-        match compositor {
-            Ok(compositor) => {
-                write_guard.insert(self.crtc, Mutex::new(compositor));
-            }
-            Err(err) => {
-                tracing::warn!(crtc=?self.crtc, ?err, "failed to initialize crtc");
-                // Okay, so this can fail for various reasons...
-                //
-                //  Enabling an additional CRTC might fail because the bandwidth
-                //  requirement is higher then supported with the current configuration.
-                //
-                // * Bandwidth limitation caused by overlay plane usage:
-                //   Each overlay plane requires some certain bandwidth and we only
-                //   test that during plane assignment implicitly through an atomic test.
-                //   When trying to enable an additional CRTC we might hit some limit and the
-                //   only way to resolve this might be to disable all overlay planes and
-                //   retry enabling the CRTC.
-                //
-                // * Bandwidth limitation caused by the primary plane format:
-                //   Different formats (might) require a higher memory bandwidth than others.
-                //   This also applies to the same fourcc with different modifiers. For example
-                //   the Intel CCS Formats use an additional plane to transport meta-data.
-                //   So if we fail to enable an additional CRTC we might be able to resolve
-                //   the issue by using a different format. Again the only way to know is by
-                //   trying out what works.
-                //
-                // So the easiest option is to evaluate a new format and re-create all DrmCompositor
-                // without disabling the CRTCs.
-
-                // TODO: Find out the *best* working combination of formats per active crtc
-                for (handle, compositor) in write_guard.iter_mut() {
-                    let mut compositor = compositor.lock().unwrap();
-
-                    let (elements, clear_color) = self
-                        .render_elements
-                        .get(handle)
-                        .map(|(ref elements, ref color)| (&**elements, color))
-                        .unwrap_or((&[], &Color32F::BLACK));
-                    compositor.reset_buffer_ages();
-                    compositor
-                        .render_frame(renderer, &elements, *clear_color, FrameMode::COMPOSITE)
-                        .map_err(DrmOutputManagerError::RenderFrame)?;
-                    compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
-
-                    let current_format = compositor.format();
-                    if let Err(err) = compositor.set_format(
-                        self.manager.allocator.clone(),
-                        current_format,
-                        [DrmModifier::Invalid],
-                    ) {
-                        tracing::warn!(?err, "failed to set new format");
-                    }
-
-                    compositor
-                        .render_frame(renderer, &elements, *clear_color, FrameMode::COMPOSITE)
-                        .map_err(DrmOutputManagerError::RenderFrame)?;
-                    compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
-                }
-
-                // :) Use the selected format instead of replicating DrmCompositor format selection...
-                let mut init_err = None;
-                for format in self.manager.color_formats.iter() {
-                    let surface = self
-                        .manager
-                        .device
-                        .create_surface(self.crtc, mode, connectors)
-                        .map_err(DrmOutputManagerError::Drm)?;
-
-                    let compositor = DrmCompositor::<A, F, U, G>::with_format(
-                        output_mode_source.clone(),
-                        surface,
-                        planes.clone(),
-                        self.manager.allocator.clone(),
-                        self.manager.exporter.clone(),
-                        *format,
-                        [DrmModifier::Invalid],
-                        self.manager.device.cursor_size(),
-                        self.manager.gbm.clone(),
-                    );
-
-                    match compositor {
-                        Ok(compositor) => {
-                            write_guard.insert(self.crtc, Mutex::new(compositor));
-                            break;
-                        }
-                        Err(err) => init_err = Some(err),
-                    }
-                }
-
-                if let Some(err) = init_err {
-                    return Err(DrmOutputManagerError::Frame(err));
-                }
-            }
-        };
-
-        let compositor = write_guard.get_mut(&self.crtc).unwrap();
-        let mut compositor = compositor.lock().unwrap();
-        let (elements, clear_color) = self
-            .render_elements
-            .get(&self.crtc)
-            .map(|(ref elements, ref color)| (&**elements, color))
-            .unwrap_or((&[], &Color32F::BLACK));
-        compositor
-            .render_frame(renderer, elements, *clear_color, FrameMode::COMPOSITE)
-            .map_err(DrmOutputManagerError::RenderFrame)?;
-        compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
-
-        Ok(DrmOutput {
-            crtc: self.crtc,
-            compositor: self.manager.compositor.clone(),
-        })
-    }
-}
-
 pub struct DrmOutput<A, F, U, G>
 where
     A: Allocator,
@@ -504,7 +473,7 @@ where
 
 impl<A, F, U, G> DrmOutput<A, F, U, G>
 where
-    A: Allocator + std::clone::Clone,
+    A: Allocator + std::clone::Clone + fmt::Debug,
     <A as Allocator>::Buffer: AsDmabuf,
     <A as Allocator>::Error: Send + Sync + 'static,
     <<A as Allocator>::Buffer as AsDmabuf>::Error: std::marker::Send + std::marker::Sync + 'static,
@@ -513,6 +482,7 @@ where
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
         std::marker::Send + std::marker::Sync + 'static,
     G: AsFd + std::clone::Clone + 'static,
+    U: 'static,
 {
     /// Set the [`DebugFlags`] to use
     ///
@@ -561,74 +531,11 @@ where
         self.with_compositor(|compositor| compositor.commit_frame())
     }
 
-    pub fn use_mode<R, E>(&mut self) -> DrmModeSwitcher<A, F, U, G, R, E>
-    where
-        E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
-    {
-        DrmModeSwitcher {
-            compositor: self.compositor.clone(),
-            crtc: self.crtc,
-            render_elements: HashMap::new(),
-            _renderer: PhantomData,
-        }
-    }
-}
-
-pub struct DrmModeSwitcher<A, F, U, G, R, E>
-where
-    A: Allocator + std::clone::Clone,
-    <A as Allocator>::Buffer: AsDmabuf,
-    <A as Allocator>::Error: Send + Sync + 'static,
-    <<A as Allocator>::Buffer as AsDmabuf>::Error: std::marker::Send + std::marker::Sync + 'static,
-    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
-    G: AsFd + std::clone::Clone + 'static,
-    E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
-{
-    compositor: CompositorList<A, F, U, G>,
-    crtc: crtc::Handle,
-    render_elements: HashMap<crtc::Handle, (Vec<E>, Color32F)>,
-    _renderer: PhantomData<R>,
-}
-
-impl<A, F, U, G, R, E> DrmModeSwitcher<A, F, U, G, R, E>
-where
-    A: Allocator + std::clone::Clone,
-    <A as Allocator>::Buffer: AsDmabuf,
-    <A as Allocator>::Error: Send + Sync + 'static,
-    <<A as Allocator>::Buffer as AsDmabuf>::Error: std::marker::Send + std::marker::Sync + 'static,
-    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
-    G: AsFd + std::clone::Clone + 'static,
-    E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
-{
-    pub fn add_render_contents(
+    pub fn use_mode<R, E>(
         &mut self,
-        crtc: &crtc::Handle,
-        clear_color: Color32F,
-        elements: impl IntoIterator<Item = E>,
-    ) {
-        self.render_elements
-            .insert(*crtc, (elements.into_iter().collect(), clear_color));
-    }
-
-    pub fn commit(
-        self,
-        renderer: &mut R,
         mode: Mode,
+        renderer: &mut R,
+        render_elements: &DrmOutputRenderElements<R, E>,
     ) -> Result<
         (),
         DrmOutputManagerError<
@@ -637,37 +544,14 @@ where
             <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
             R::Error,
         >,
-    > {
-        let mut res = {
-            let read_guard = self.compositor.read().unwrap();
-            let mut compositor_guard = read_guard.get(&self.crtc).unwrap().lock().unwrap();
-            compositor_guard.use_mode(mode)
-        };
-
-        if res.is_err() {
-            let mut write_guard = self.compositor.write().unwrap();
-
-            for (handle, compositor) in write_guard.iter_mut() {
-                let mut compositor = compositor.lock().unwrap();
-
-                let (elements, clear_color) = self
-                    .render_elements
-                    .get(handle)
-                    .map(|(ref elements, ref color)| (&**elements, color))
-                    .unwrap_or((&[], &Color32F::BLACK));
-                compositor.reset_buffer_ages();
-                compositor
-                    .render_frame(renderer, elements, *clear_color, FrameMode::COMPOSITE)
-                    .map_err(DrmOutputManagerError::RenderFrame)?;
-                compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
-            }
-
-            let compositor = write_guard.get_mut(&self.crtc).unwrap();
-            let mut compositor = compositor.lock().unwrap();
-            res = compositor.use_mode(mode);
-        }
-
-        res.map_err(DrmOutputManagerError::Frame)
+    >
+    where
+        E: RenderElement<R>,
+        R: Renderer + Bind<Dmabuf>,
+        <R as Renderer>::TextureId: Texture + 'static,
+        <R as Renderer>::Error: Send + Sync + 'static,
+    {
+        use_mode_internal(&self.compositor, &self.crtc, mode, renderer, render_elements)
     }
 }
 
@@ -705,6 +589,60 @@ where
     }
 }
 
+fn use_mode_internal<A, F, U, G, R, E>(
+    compositor: &CompositorList<A, F, U, G>,
+    crtc: &crtc::Handle,
+    mode: Mode,
+    renderer: &mut R,
+    render_elements: &DrmOutputRenderElements<R, E>,
+) -> Result<
+    (),
+    DrmOutputManagerError<
+        <A as Allocator>::Error,
+        <<A as Allocator>::Buffer as AsDmabuf>::Error,
+        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
+        R::Error,
+    >,
+>
+where
+    A: Allocator + std::clone::Clone + fmt::Debug,
+    <A as Allocator>::Buffer: AsDmabuf,
+    <A as Allocator>::Error: Send + Sync + 'static,
+    <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
+        std::marker::Send + std::marker::Sync + 'static,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
+        std::marker::Send + std::marker::Sync + 'static,
+    G: AsFd + std::clone::Clone + 'static,
+    U: 'static,
+    E: RenderElement<R>,
+    R: Renderer + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+{
+    let mut write_guard = compositor.write().unwrap();
+
+    let mut res = {
+        let mut compositor_guard = write_guard.get(crtc).unwrap().lock().unwrap();
+        compositor_guard.use_mode(mode)
+    };
+
+    if res.is_err() {
+        for compositor in write_guard.values_mut() {
+            let mut compositor = compositor.lock().unwrap();
+            render_elements.submit_composited_frame(&mut compositor, renderer)?;
+        }
+
+        let compositor = write_guard.get_mut(crtc).unwrap();
+        let mut compositor = compositor.lock().unwrap();
+        res = compositor.use_mode(mode);
+    }
+
+    res.map_err(DrmOutputManagerError::Frame)
+}
+
+#[derive(Debug)]
 pub struct DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
@@ -714,6 +652,21 @@ where
 {
     render_elements: HashMap<crtc::Handle, (Vec<E>, Color32F)>,
     _renderer: PhantomData<R>,
+}
+
+impl<R, E> Default for DrmOutputRenderElements<R, E>
+where
+    E: RenderElement<R>,
+    R: Renderer + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+{
+    fn default() -> Self {
+        DrmOutputRenderElements {
+            render_elements: HashMap::new(),
+            _renderer: PhantomData,
+        }
+    }
 }
 
 impl<R, E> DrmOutputRenderElements<R, E>
