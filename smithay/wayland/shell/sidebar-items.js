@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PingError"],"fn":["is_toplevel_equivalent"],"mod":["kde","wlr_layer","xdg"]};

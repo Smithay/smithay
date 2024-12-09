@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_CONFINE_POINTER_OPCODE","REQ_CONFINE_POINTER_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_LOCK_POINTER_OPCODE","REQ_LOCK_POINTER_SINCE"],"enum":["Error","Event","Lifetime","Request"],"struct":["ZwpPointerConstraintsV1"]};

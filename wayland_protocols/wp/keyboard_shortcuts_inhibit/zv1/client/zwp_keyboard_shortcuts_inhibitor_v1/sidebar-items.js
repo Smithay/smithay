@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_ACTIVE_OPCODE","EVT_ACTIVE_SINCE","EVT_INACTIVE_OPCODE","EVT_INACTIVE_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE"],"enum":["Event","Request"],"struct":["ZwpKeyboardShortcutsInhibitorV1"]};
