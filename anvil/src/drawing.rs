@@ -6,7 +6,8 @@ use smithay::{
             memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
             surface::WaylandSurfaceRenderElement,
             AsRenderElements, Kind,
-        }, Color32F, ImportAll, ImportMem, Renderer, Texture
+        },
+        Color32F, ImportAll, ImportMem, Renderer, Texture,
     },
     input::pointer::CursorImageStatus,
     render_elements,
