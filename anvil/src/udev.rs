@@ -32,7 +32,7 @@ use smithay::{
         },
         drm::{
             compositor::{DrmCompositor, FrameMode},
-            output::{DrmOutput, DrmOutputManager},
+            output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
             CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
             DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
@@ -44,7 +44,7 @@ use smithay::{
             element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElementStates},
             gles::GlesRenderer,
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
-            Color32F, DebugFlags, ImportDma, ImportMemWl,
+            DebugFlags, ImportDma, ImportMemWl,
         },
         session::{
             libseat::{self, LibSeatSession},
@@ -913,13 +913,13 @@ impl AnvilState<UdevData> {
             let drm_output = match device
                 .drm_output_manager
                 .initialize_output::<_, OutputRenderElements<UdevRenderer<'_>, WindowRenderElement<UdevRenderer<'_>>>>(
-                    crtc
-                ).build(
-                    &mut renderer,
+                    crtc,
                     drm_mode,
                     &[connector.handle()],
                     &output,
                     Some(planes),
+                    &mut renderer,
+                    &DrmOutputRenderElements::default(),
                 ) {
                 Ok(drm_output) => drm_output,
                 Err(err) => {
@@ -999,14 +999,15 @@ impl AnvilState<UdevData> {
             .gpus
             .single_renderer(&device.render_node)
             .unwrap();
-        let _ = device.drm_output_manager.reset_format::<_, OutputRenderElements<
+        let _ = device.drm_output_manager.try_to_restore_modifiers::<_, OutputRenderElements<
             UdevRenderer<'_>,
             WindowRenderElement<UdevRenderer<'_>>,
-        >, _>(&mut renderer, |_| {
+        >>(
+            &mut renderer,
             // FIXME: For a flicker free operation we should return the actual elements for this output..
             // Instead we just use black to "simulate" a modeset :)
-            (&[], Color32F::BLACK)
-        });
+            &DrmOutputRenderElements::default(),
+        );
     }
 
     fn device_changed(&mut self, node: DrmNode) {
