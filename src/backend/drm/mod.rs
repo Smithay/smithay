@@ -78,6 +78,8 @@ pub mod dumb;
 mod error;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
+pub mod exporter;
+pub mod output;
 
 mod surface;
 
