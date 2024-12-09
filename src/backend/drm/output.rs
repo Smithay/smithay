@@ -190,10 +190,10 @@ where
         }
     }
 
-    pub fn reset_format<R, E, RE>(
+    pub fn try_to_restore_modifiers<R, E>(
         &mut self,
         renderer: &mut R,
-        render_elements: RE,
+        render_elements: DrmOutputRenderElements<R, E>,
     ) -> Result<
         (),
         DrmOutputManagerError<
@@ -208,9 +208,44 @@ where
         R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
         <R as Renderer>::Error: Send + Sync + 'static,
-        RE: for<'r> Fn(&'r crtc::Handle) -> (&'r [E], Color32F),
     {
-        // TODO: re-evaluate format and re-render if changed...
+        let mut write_guard = self.compositor.write().unwrap();
+
+        // check if implicit modifiers are in use
+        if write_guard
+            .values_mut()
+            .any(|c| c.lock().unwrap().modifiers() == &[DrmModifier::Invalid])
+        {
+            // if so, first lower the bandwidth by disabling planes on all compositors
+            for compositor in write_guard.values_mut() {
+                let mut compositor = compositor.lock().unwrap();
+                compositor.reset_buffer_ages();
+                render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+            }
+
+            for compositor in write_guard.values_mut() {
+                let mut compositor = compositor.lock().unwrap();
+                if compositor.modifiers() != &[DrmModifier::Invalid] {
+                    continue;
+                }
+
+                let current_format = compositor.format();
+                if let Err(err) = compositor.set_format(
+                    self.allocator.clone(),
+                    current_format,
+                    self.renderer_formats
+                        .iter()
+                        .filter(|f| f.code == current_format)
+                        .map(|f| f.modifier),
+                ) {
+                    tracing::warn!(?err, "failed to reset format");
+                    continue;
+                }
+
+                render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -667,5 +702,72 @@ where
     fn drop(&mut self) {
         let mut write_guard = self.compositor.write().unwrap();
         write_guard.remove(&self.crtc);
+    }
+}
+
+pub struct DrmOutputRenderElements<R, E>
+where
+    E: RenderElement<R>,
+    R: Renderer + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+{
+    render_elements: HashMap<crtc::Handle, (Vec<E>, Color32F)>,
+    _renderer: PhantomData<R>,
+}
+
+impl<R, E> DrmOutputRenderElements<R, E>
+where
+    E: RenderElement<R>,
+    R: Renderer + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+{
+    pub fn add_output(
+        &mut self,
+        crtc: &crtc::Handle,
+        clear_color: Color32F,
+        elements: impl IntoIterator<Item = E>,
+    ) {
+        self.render_elements
+            .insert(*crtc, (elements.into_iter().collect(), clear_color));
+    }
+
+    fn submit_composited_frame<A, F, U, G>(
+        &self,
+        compositor: &mut DrmCompositor<A, F, U, G>,
+        renderer: &mut R,
+    ) -> Result<
+        (),
+        DrmOutputManagerError<
+            <A as Allocator>::Error,
+            <<A as Allocator>::Buffer as AsDmabuf>::Error,
+            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
+            R::Error,
+        >,
+    >
+    where
+        A: Allocator + std::clone::Clone + std::fmt::Debug,
+        <A as Allocator>::Buffer: AsDmabuf,
+        <A as Allocator>::Error: Send + Sync + 'static,
+        <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
+            std::marker::Send + std::marker::Sync + 'static,
+        F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
+        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
+            std::marker::Send + std::marker::Sync + 'static,
+        G: AsFd + std::clone::Clone + 'static,
+        U: 'static,
+    {
+        let (elements, clear_color) = self
+            .render_elements
+            .get(&compositor.crtc())
+            .map(|(ref elements, ref color)| (&**elements, color))
+            .unwrap_or((&[], &Color32F::BLACK));
+        compositor
+            .render_frame(renderer, &elements, *clear_color, FrameMode::COMPOSITE)
+            .map_err(DrmOutputManagerError::RenderFrame)?;
+        compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
+        Ok(())
     }
 }
