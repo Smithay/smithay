@@ -258,4 +258,9 @@ where
     pub fn format(&self) -> Fourcc {
         self.fourcc
     }
+
+    /// Get allowed modifiers
+    pub fn modifiers(&self) -> &[Modifier] {
+        &self.modifiers
+    }
 }
