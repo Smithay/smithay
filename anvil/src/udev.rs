@@ -771,10 +771,8 @@ impl AnvilState<UdevData> {
                 render_node,
                 surfaces: HashMap::new(),
                 leasing_global: DrmLeaseState::new::<AnvilState<UdevData>>(&self.display_handle, &node)
-                    .map_err(|err| {
-                        // TODO replace with inspect_err, once stable
+                    .inspect_err(|err| {
                         warn!(?err, "Failed to initialize drm lease global for: {}", node);
-                        err
                     })
                     .ok(),
                 active_leases: Vec::new(),

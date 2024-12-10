@@ -14,7 +14,7 @@
 //!
 //! A window represents what is typically understood by the end-user as a single application window.
 //!
-//! Currently it abstracts over xdg-shell toplevels and Xwayland surfaces (TODO).
+//! Currently it abstracts over xdg-shell toplevels and Xwayland surfaces.
 //! It provides a bunch of methods to calculate and retrieve its size, manage itself, attach additional user_data
 //! as well as a [drawing function](`crate::backend::renderer::element::AsRenderElements::render_elements`) to ease rendering it's related surfaces.
 //!
