@@ -2,6 +2,9 @@ use super::*;
 use std::sync::Arc;
 
 /// A handle to a GLES texture
+///
+/// The texture can be used with the same [`GlesRenderer`] it was created with, or one using a
+/// shared [`EGLContext`].
 #[derive(Debug, Clone)]
 pub struct GlesTexture(pub(super) Arc<GlesTextureInternal>);
 

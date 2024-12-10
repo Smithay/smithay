@@ -29,6 +29,9 @@ pub(in super::super) struct GlesTexProgramVariant {
 }
 
 /// Gles texture shader
+///
+/// The program can be used with the same [`GlesRenderer`] it was created with, or one using a
+/// shared [`EGLContext`].
 #[derive(Debug, Clone)]
 pub struct GlesTexProgram(pub(in super::super) Arc<GlesTexProgramInner>);
 
@@ -82,6 +85,9 @@ pub(in super::super) struct GlesSolidProgram {
 }
 
 /// Gles pixel shader
+///
+/// The program can be used with the same [`GlesRenderer`] it was created with, or one using a
+/// shared [`EGLContext`].
 #[derive(Debug, Clone)]
 pub struct GlesPixelProgram(pub(in super::super) Arc<GlesPixelProgramInner>);
 
