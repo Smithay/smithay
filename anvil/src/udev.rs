@@ -430,7 +430,7 @@ pub fn run_udev() {
                         primary_gpu,
                         surface_data.render_node,
                         gpus,
-                        &compositor.surface(),
+                        compositor.surface(),
                     )
                 })
             });
@@ -1512,10 +1512,11 @@ fn render_surface<'a>(
     let (elements, clear_color) =
         output_elements(output, space, custom_elements, renderer, show_window_preview);
 
-    let frame_mode = surface
-        .disable_direct_scanout
-        .then_some(FrameMode::COMPOSITE)
-        .unwrap_or(FrameMode::ALL);
+    let frame_mode = if surface.disable_direct_scanout {
+        FrameMode::COMPOSITE
+    } else {
+        FrameMode::ALL
+    };
     let (rendered, states) = surface
         .drm_output
         .render_frame(renderer, &elements, clear_color, frame_mode)
