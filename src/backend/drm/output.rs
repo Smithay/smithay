@@ -1,3 +1,5 @@
+//! Device-wide synchronization helpers
+
 use std::{
     collections::HashMap,
     fmt,
@@ -32,6 +34,15 @@ use super::{
 
 type CompositorList<A, F, U, G> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>>;
 
+/// Provides synchronization between a [`DrmDevice`] and derived [`DrmOutput`]s.
+///
+/// When working with a single [`DrmDevice`] with multiple outputs and using the [`DrmCompositor`]
+/// for hardware scanout one can quickly run into a set of bandwidth issues, where plane usage on
+/// on [`DrmCompositor`] can cause commits on another to fail. Especially in multi-threaded contexts
+/// these scenarios are difficult to handle as your need information over the state of all outputs at once.
+///
+/// The `DrmOutputManager` provides a way to handle operation commonly affected by this by locking the
+/// whole device, while still providing [`DrmOutput`]-handles to drive individual surfaces.
 pub struct DrmOutputManager<A, F, U, G>
 where
     A: Allocator,
@@ -77,10 +88,12 @@ where
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
     G: AsFd + 'static,
 {
+    /// Access the underlying managed device
     pub fn device(&self) -> &DrmDevice {
         &self.device
     }
 
+    /// Mutably access the underlying managed device
     pub fn device_mut(&mut self) -> &mut DrmDevice {
         &mut self.device
     }
@@ -93,11 +106,13 @@ where
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     G: AsFd + 'static,
 {
+    /// Pause the underlying device. See [`DrmDevice::pause`].
     pub fn pause(&mut self) {
         self.device.pause();
     }
 }
 
+/// Errors returned by `DrmOutputManager`'s methods
 #[derive(thiserror::Error, Debug)]
 pub enum DrmOutputManagerError<A, B, F, R>
 where
@@ -106,12 +121,16 @@ where
     F: std::error::Error + Send + Sync + 'static,
     R: std::error::Error + Send + Sync + 'static,
 {
+    /// The specified CRTC is already in use
     #[error("The specified CRTC {0:?} is already in use.")]
     DuplicateCrtc(crtc::Handle),
+    /// The underlying drm device returned an error
     #[error(transparent)]
     Drm(#[from] DrmError),
+    /// The underlying [`DrmCompositor`] returned an error
     #[error(transparent)]
     Frame(FrameError<A, B, F>),
+    /// The underlying [`DrmCompositor`] returned an error upon rendering a frame
     #[error(transparent)]
     RenderFrame(RenderFrameError<A, B, F, R>),
 }
@@ -130,6 +149,19 @@ where
     G: AsFd + std::clone::Clone + 'static,
     U: 'static,
 {
+    /// Create a new [`DrmOutputManager`] from a [`DrmDevice`].
+    ///
+    /// - `device` the underlying [`DrmDevice`]
+    /// - `allocator` used by created [`DrmOutput`]s for primary plane swapchains.
+    /// - `exporter` used by created [`DrmOutput`]s to create drm framebuffers
+    ///              for the swapchain buffers (and if possible for element buffers)
+    ///              for scan-out.
+    /// - `gbm` device used by created [`DrmOutput`]s for creating buffers for the
+    ///              cursor plane, `None` will disable the cursor plane.
+    /// - `color_formats` as tested in order when creating a new [`DrmOutput`]
+    /// - `renderer_formats` as reported by the used renderer, used to build the
+    ///              intersection between the possible scan-out formats of the
+    ///              primary plane of created [`DrmOutput`]s and the renderer
     pub fn new(
         device: DrmDevice,
         allocator: A,
@@ -149,6 +181,24 @@ where
         }
     }
 
+    /// Create a new [`DrmOutput`] for the provided crtc of the underlying device.
+    ///
+    /// The [`OutputModeSource`] can be created from an [`Output`](crate::output::Output), which will automatically track
+    /// the output's mode changes. An [`OutputModeSource::Static`] variant should only be used when
+    /// manually updating modes using [`DrmCompositor::set_output_mode_source`].
+    ///
+    /// This might cause commits on other surfaces to meet the bandwidth
+    /// requirements of the output by temporarily disabling additional planes,
+    /// forcing composition or falling back to implicit modifiers.
+    ///
+    /// - `crtc` - the crtc the underlying surface should drive
+    /// - `mode` - the mode the underlying surface should be initialized with
+    /// - `connectors` - the set of connectors the underlying surface should be initialized with
+    /// - `output_mode_source`  used to to determine the size, scale and transform
+    /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
+    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
+    /// - `renderer` used for compositing, when commits are necessarily to realize bandwidth constraints
+    /// - `render_elements` used for rendering, when commits are necessarily to realize bandwidth constraints
     pub fn initialize_output<'a, R, E>(
         &'a mut self,
         crtc: crtc::Handle,
@@ -253,8 +303,11 @@ where
 
                 for compositor in write_guard.values_mut() {
                     let mut compositor = compositor.lock().unwrap();
-                    compositor.reset_buffer_ages();
-                    render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                    if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+                        if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
+                            return Err(err);
+                        }
+                    }
                 }
 
                 let compositor = create_compositor(false);
@@ -334,6 +387,7 @@ where
         })
     }
 
+    /// Grants exclusive access to all underlying [`DrmCompositor`]s.
     pub fn with_compositors<R>(
         &mut self,
         f: impl FnOnce(&HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>) -> R,
@@ -342,6 +396,14 @@ where
         f(&*write_guard)
     }
 
+    /// Tries to apply a new [`Mode`] for the provided `crtc`.
+    ///
+    /// Fails if the mode is not compatible with the underlying
+    /// [`crtc`] or any of the pending [`connector`]s.
+    ///
+    /// This might cause commits on other surfaces to meet the bandwidth
+    /// requirements of the new mode by temporarily disabling additional planes
+    /// and forcing composition.
     pub fn use_mode<R, E>(
         &mut self,
         crtc: &crtc::Handle,
@@ -366,6 +428,13 @@ where
         use_mode_internal(&self.compositor, crtc, mode, renderer, render_elements)
     }
 
+    /// Tries to restore explicit modifiers on all surfaces.
+    ///
+    /// Adding new outputs (via [`DrmOutputManager::initialize_output`]) might cause
+    /// surfaces to fall back to implicit modifiers to satisfy bandwidth requirements
+    /// of the new output. These should generally be avoided, so it is recommended
+    /// to call this method after destroying an individual output to try and re-allocate
+    /// implicit buffers used for the remaining outputs.
     pub fn try_to_restore_modifiers<R, E>(
         &mut self,
         renderer: &mut R,
@@ -395,8 +464,11 @@ where
             // if so, first lower the bandwidth by disabling planes on all compositors
             for compositor in write_guard.values_mut() {
                 let mut compositor = compositor.lock().unwrap();
-                compositor.reset_buffer_ages();
-                render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+                    if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
+                        return Err(err);
+                    }
+                }
             }
 
             for compositor in write_guard.values_mut() {
@@ -425,6 +497,12 @@ where
         Ok(())
     }
 
+    /// Activates a previously paused device.
+    ///
+    /// Specifying `true` for `disable_connectors` will call [`DrmDevice::reset_state`] if
+    /// the device was not active before. Otherwise you need to make sure there are no
+    /// conflicting requirements when enabling or creating surfaces or you are prepared
+    /// to handle errors caused by those.
     pub fn activate(&mut self, disable_connectors: bool) -> Result<(), DrmError> {
         self.device.activate(disable_connectors)?;
 
@@ -440,6 +518,7 @@ where
     }
 }
 
+/// A handle to an underlying [`DrmCompositor`] handled by an [`DrmOutputManager`].
 pub struct DrmOutput<A, F, U, G>
 where
     A: Allocator,
@@ -497,14 +576,24 @@ where
         self.with_compositor(|compositor| compositor.reset_buffers());
     }
 
+    /// Marks the current frame as submitted.
+    ///
+    /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`]
+    /// was received after calling [`DrmOutput::queue_frame`] on this surface.
+    /// Otherwise the underlying swapchain will run out of buffers eventually.
     pub fn frame_submitted(&self) -> FrameResult<Option<U>, A, F> {
         self.with_compositor(|compositor| compositor.frame_submitted())
     }
 
+    /// Get the format of the underlying swapchain
     pub fn format(&self) -> DrmFourcc {
         self.with_compositor(|compositor| compositor.format())
     }
 
+    /// Render the next frame
+    ///
+    /// - `elements` for this frame in front-to-back order
+    /// - `frame_mode` specifies techniques allowed to realize the frame
     pub fn render_frame<'a, R, E>(
         &mut self,
         renderer: &mut R,
@@ -523,14 +612,52 @@ where
         })
     }
 
+    /// Queues the current frame for scan-out.
+    ///
+    /// If `render_frame` has not been called prior to this function or returned no damage
+    /// this function will return [`FrameError::EmptyFrame`]. Instead of calling `queue_frame` it
+    /// is the callers responsibility to re-schedule the frame. A simple strategy for frame
+    /// re-scheduling is to queue a one-shot timer that will trigger after approximately one
+    /// retrace duration.
+    ///
+    /// *Note*: It is your responsibility to synchronize rendering if the [`RenderFrameResult`]
+    /// returned by the previous [`render_frame`](DrmOutput::render_frame) call returns `true` on [`RenderFrameResult::needs_sync`].
+    ///
+    /// *Note*: This function needs to be followed up with [`DrmOutput::frame_submitted`]
+    /// when a vblank event is received, that denotes successful scan-out of the frame.
+    /// Otherwise the underlying swapchain will eventually run out of buffers.
+    ///
+    /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]    
     pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
         self.with_compositor(|compositor| compositor.queue_frame(user_data))
     }
+
+    /// Commits the current frame for scan-out.
+    ///
+    /// If `render_frame` has not been called prior to this function or returned no damage
+    /// this function will return [`FrameError::EmptyFrame`]. Instead of calling `commit_frame` it
+    /// is the callers responsibility to re-schedule the frame. A simple strategy for frame
+    /// re-scheduling is to queue a one-shot timer that will trigger after approximately one
+    /// retrace duration.
+    ///
+    /// *Note*: It is your responsibility to synchronize rendering if the [`RenderFrameResult`]
+    /// returned by the previous [`render_frame`](DrmOutput::render_frame) call returns `true` on [`RenderFrameResult::needs_sync`].
+    ///
+    /// *Note*: This function should not be followed up with [`DrmOutput::frame_submitted`]
+    /// and will not generate a vblank event on the underlying device.
 
     pub fn commit_frame(&mut self) -> FrameResult<(), A, F> {
         self.with_compositor(|compositor| compositor.commit_frame())
     }
 
+    /// Tries to apply a new [`Mode`] for this `DrmOutput`.
+    ///
+    /// Fails if the mode is not compatible with the underlying
+    /// [`crtc`] or any of the pending [`connector`]s.
+    ///
+    /// This might cause commits on other surfaces to meet the bandwidth
+    /// requirements of the new mode by temporarily disabling additional planes
+    /// and forcing composition.
     pub fn use_mode<R, E>(
         &mut self,
         mode: Mode,
@@ -562,10 +689,12 @@ where
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     G: AsFd + 'static,
 {
+    /// Returns the underlying [`crtc`] of this surface
     pub fn crtc(&self) -> crtc::Handle {
         self.crtc
     }
 
+    /// Provides exclusive access to the underlying [`DrmCompositor`]
     pub fn with_compositor<T, R>(&self, f: T) -> R
     where
         T: FnOnce(&mut DrmCompositor<A, F, U, G>) -> R,
@@ -631,17 +760,36 @@ where
     if res.is_err() {
         for compositor in write_guard.values_mut() {
             let mut compositor = compositor.lock().unwrap();
-            render_elements.submit_composited_frame(&mut compositor, renderer)?;
+            if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+                if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
+                    return Err(err);
+                }
+            }
         }
 
         let compositor = write_guard.get_mut(crtc).unwrap();
         let mut compositor = compositor.lock().unwrap();
         res = compositor.use_mode(mode);
+
+        if res.is_ok() {
+            if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+                if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
+                    return Err(err);
+                }
+            }
+        }
     }
 
     res.map_err(DrmOutputManagerError::Frame)
 }
 
+/// Set of render elements for a set of outputs managed by an [`DrmOutputManager`].
+///
+/// A few methods of the [`DrmOutputManager`] and [`DrmOutput`] might need to do
+/// commits to multiple surfaces to satisfy bandwidth constraints. To not render
+/// a black screen this struct can be populated with screen contents to be used
+/// when such an operation is required. Outputs not provided via
+/// [`DrmOutputRenderElements::add_output`] will fallback to black.
 #[derive(Debug)]
 pub struct DrmOutputRenderElements<R, E>
 where
@@ -676,6 +824,10 @@ where
     <R as Renderer>::TextureId: Texture + 'static,
     <R as Renderer>::Error: Send + Sync + 'static,
 {
+    /// Adds elements to be used when rendering for a given `crtc`.
+    ///
+    /// Outputs not provided via this will fallback to black when
+    /// this struct is passed to any consuming function.
     pub fn add_output(
         &mut self,
         crtc: &crtc::Handle,
