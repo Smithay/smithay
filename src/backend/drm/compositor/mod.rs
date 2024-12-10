@@ -1288,6 +1288,7 @@ where
     /// - `modifiers` is the set of modifiers allowed, when allocating buffers with the specified color format
     /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
     /// - `gbm` device used for creating buffers for the cursor plane, `None` will disable the cursor plane
+    #[allow(clippy::too_many_arguments)]
     pub fn with_format(
         output_mode_source: impl Into<OutputModeSource> + Debug,
         surface: DrmSurface,
@@ -1514,10 +1515,9 @@ where
             Ok(None) => return Err((swapchain.allocator, FrameError::NoFramebuffer)),
             Err(err) => return Err((swapchain.allocator, FrameError::FramebufferExport(err))),
         };
-        buffer.userdata().insert_if_missing(|| {
-            let init = CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer));
-            init
-        });
+        buffer
+            .userdata()
+            .insert_if_missing(|| CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
 
         let mode = drm.pending_mode();
         let handle = buffer
@@ -1559,7 +1559,7 @@ where
             }),
         };
 
-        match current_frame_state.test_state(&drm, supports_fencing, drm.plane(), plane_state, true) {
+        match current_frame_state.test_state(drm, supports_fencing, drm.plane(), plane_state, true) {
             Ok(_) => Ok((swapchain, use_opaque)),
             Err(err) => {
                 warn!(
@@ -1652,7 +1652,7 @@ where
         let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
 
         let (swapchain, use_opaque) = Self::test_format(
-            &*drm,
+            &drm,
             supports_fencing,
             planes,
             allocator,
