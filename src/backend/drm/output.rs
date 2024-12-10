@@ -135,6 +135,17 @@ where
     RenderFrame(RenderFrameError<A, B, F, R>),
 }
 
+/// Result returned by `DrmOutputManager`'s methods
+pub type DrmOutputManagerResult<U, A, F, R> = Result<
+    U,
+    DrmOutputManagerError<
+        <A as Allocator>::Error,
+        <<A as Allocator>::Buffer as AsDmabuf>::Error,
+        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
+        <R as Renderer>::Error,
+    >,
+>;
+
 impl<A, F, U, G> DrmOutputManager<A, F, U, G>
 where
     A: Allocator + std::clone::Clone + std::fmt::Debug,
@@ -172,7 +183,7 @@ where
     ) -> Self {
         Self {
             device,
-            allocator: allocator,
+            allocator,
             exporter,
             gbm,
             compositor: Default::default(),
@@ -199,8 +210,9 @@ where
     ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
     /// - `renderer` used for compositing, when commits are necessarily to realize bandwidth constraints
     /// - `render_elements` used for rendering, when commits are necessarily to realize bandwidth constraints
-    pub fn initialize_output<'a, R, E>(
-        &'a mut self,
+    #[allow(clippy::too_many_arguments)]
+    pub fn initialize_output<R, E>(
+        &mut self,
         crtc: crtc::Handle,
         mode: control::Mode,
         connectors: &[connector::Handle],
@@ -208,15 +220,7 @@ where
         planes: Option<Planes>,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> Result<
-        DrmOutput<A, F, U, G>,
-        DrmOutputManagerError<
-            <A as Allocator>::Error,
-            <<A as Allocator>::Buffer as AsDmabuf>::Error,
-            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-            R::Error,
-        >,
-    >
+    ) -> DrmOutputManagerResult<DrmOutput<A, F, U, G>, A, F, R>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
@@ -302,7 +306,7 @@ where
                 );
 
                 for compositor in write_guard.values_mut() {
-                    let mut compositor = compositor.lock().unwrap();
+                    let compositor = compositor.get_mut().unwrap();
                     if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
                         if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
                             return Err(err);
@@ -324,7 +328,7 @@ where
                         );
 
                         for compositor in write_guard.values_mut() {
-                            let mut compositor = compositor.lock().unwrap();
+                            let compositor = compositor.get_mut().unwrap();
 
                             let current_format = compositor.format();
                             if let Err(err) = compositor.set_format(
@@ -348,7 +352,7 @@ where
                             Err(err) => {
                                 // try to reset formats
                                 for compositor in write_guard.values_mut() {
-                                    let mut compositor = compositor.lock().unwrap();
+                                    let compositor = compositor.get_mut().unwrap();
 
                                     let current_format = compositor.format();
                                     if let Err(err) = compositor.set_format(
@@ -378,7 +382,7 @@ where
         // when downstream potentially uses `FrameMode::ALL` immediately after this.
 
         let compositor = write_guard.get_mut(&crtc).unwrap();
-        let mut compositor = compositor.lock().unwrap();
+        let compositor = compositor.get_mut().unwrap();
         render_elements.submit_composited_frame(&mut *compositor, renderer)?;
 
         Ok(DrmOutput {
@@ -410,15 +414,7 @@ where
         mode: Mode,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> Result<
-        (),
-        DrmOutputManagerError<
-            <A as Allocator>::Error,
-            <<A as Allocator>::Buffer as AsDmabuf>::Error,
-            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-            R::Error,
-        >,
-    >
+    ) -> DrmOutputManagerResult<(), A, F, R>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
@@ -439,15 +435,7 @@ where
         &mut self,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> Result<
-        (),
-        DrmOutputManagerError<
-            <A as Allocator>::Error,
-            <<A as Allocator>::Buffer as AsDmabuf>::Error,
-            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-            R::Error,
-        >,
-    >
+    ) -> DrmOutputManagerResult<(), A, F, R>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
@@ -459,11 +447,11 @@ where
         // check if implicit modifiers are in use
         if write_guard
             .values_mut()
-            .any(|c| c.lock().unwrap().modifiers() == &[DrmModifier::Invalid])
+            .any(|c| c.get_mut().unwrap().modifiers() == [DrmModifier::Invalid])
         {
             // if so, first lower the bandwidth by disabling planes on all compositors
             for compositor in write_guard.values_mut() {
-                let mut compositor = compositor.lock().unwrap();
+                let compositor = compositor.get_mut().unwrap();
                 if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
                     if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
                         return Err(err);
@@ -472,8 +460,8 @@ where
             }
 
             for compositor in write_guard.values_mut() {
-                let mut compositor = compositor.lock().unwrap();
-                if compositor.modifiers() != &[DrmModifier::Invalid] {
+                let compositor = compositor.get_mut().unwrap();
+                if compositor.modifiers() != [DrmModifier::Invalid] {
                     continue;
                 }
 
@@ -507,9 +495,9 @@ where
         self.device.activate(disable_connectors)?;
 
         // We request a write guard here to guarantee unique access
-        let write_guard = self.compositor.write().unwrap();
-        for compositor in write_guard.values() {
-            if let Err(err) = compositor.lock().unwrap().reset_state() {
+        let mut write_guard = self.compositor.write().unwrap();
+        for compositor in write_guard.values_mut() {
+            if let Err(err) = compositor.get_mut().unwrap().reset_state() {
                 tracing::warn!("Failed to reset drm surface state: {}", err);
             }
         }
@@ -645,7 +633,6 @@ where
     ///
     /// *Note*: This function should not be followed up with [`DrmOutput::frame_submitted`]
     /// and will not generate a vblank event on the underlying device.
-
     pub fn commit_frame(&mut self) -> FrameResult<(), A, F> {
         self.with_compositor(|compositor| compositor.commit_frame())
     }
@@ -663,15 +650,7 @@ where
         mode: Mode,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> Result<
-        (),
-        DrmOutputManagerError<
-            <A as Allocator>::Error,
-            <<A as Allocator>::Buffer as AsDmabuf>::Error,
-            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-            R::Error,
-        >,
-    >
+    ) -> DrmOutputManagerResult<(), A, F, R>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
@@ -724,15 +703,7 @@ fn use_mode_internal<A, F, U, G, R, E>(
     mode: Mode,
     renderer: &mut R,
     render_elements: &DrmOutputRenderElements<R, E>,
-) -> Result<
-    (),
-    DrmOutputManagerError<
-        <A as Allocator>::Error,
-        <<A as Allocator>::Buffer as AsDmabuf>::Error,
-        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-        R::Error,
-    >,
->
+) -> DrmOutputManagerResult<(), A, F, R>
 where
     A: Allocator + std::clone::Clone + fmt::Debug,
     <A as Allocator>::Buffer: AsDmabuf,
@@ -752,14 +723,11 @@ where
 {
     let mut write_guard = compositor.write().unwrap();
 
-    let mut res = {
-        let mut compositor_guard = write_guard.get(crtc).unwrap().lock().unwrap();
-        compositor_guard.use_mode(mode)
-    };
+    let mut res = write_guard.get(crtc).unwrap().lock().unwrap().use_mode(mode);
 
     if res.is_err() {
         for compositor in write_guard.values_mut() {
-            let mut compositor = compositor.lock().unwrap();
+            let compositor = compositor.get_mut().unwrap();
             if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
                 if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
                     return Err(err);
@@ -768,7 +736,7 @@ where
         }
 
         let compositor = write_guard.get_mut(crtc).unwrap();
-        let mut compositor = compositor.lock().unwrap();
+        let compositor = compositor.get_mut().unwrap();
         res = compositor.use_mode(mode);
 
         if res.is_ok() {
@@ -842,15 +810,7 @@ where
         &self,
         compositor: &mut DrmCompositor<A, F, U, G>,
         renderer: &mut R,
-    ) -> Result<
-        (),
-        DrmOutputManagerError<
-            <A as Allocator>::Error,
-            <<A as Allocator>::Buffer as AsDmabuf>::Error,
-            <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-            R::Error,
-        >,
-    >
+    ) -> DrmOutputManagerResult<(), A, F, R>
     where
         A: Allocator + std::clone::Clone + std::fmt::Debug,
         <A as Allocator>::Buffer: AsDmabuf,
@@ -870,7 +830,7 @@ where
             .map(|(ref elements, ref color)| (&**elements, color))
             .unwrap_or((&[], &Color32F::BLACK));
         compositor
-            .render_frame(renderer, &elements, *clear_color, FrameMode::COMPOSITE)
+            .render_frame(renderer, elements, *clear_color, FrameMode::COMPOSITE)
             .map_err(DrmOutputManagerError::RenderFrame)?;
         compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
         Ok(())
