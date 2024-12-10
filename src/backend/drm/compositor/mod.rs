@@ -81,7 +81,7 @@
 //! # let surface: DrmSurface = todo!();
 //! # let allocator: GbmAllocator<DrmDeviceFd> = todo!();
 //! # let exporter: GbmDevice<DrmDeviceFd> = todo!();
-//! # let color_formats = &[DrmFourcc::Argb8888];
+//! # let color_formats = [DrmFourcc::Argb8888];
 //! # let renderer_formats = HashSet::from([DrmFormat {
 //! #     code: DrmFourcc::Argb8888,
 //! #     modifier: DrmModifier::Linear,
