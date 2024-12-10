@@ -7,7 +7,7 @@ use std::{
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     ptr,
     sync::{
-        mpsc::{sync_channel, SyncSender},
+        mpsc::{channel, Sender},
         OnceLock, RwLock,
     },
     thread,
@@ -28,10 +28,8 @@ use tracing::{debug, instrument, trace};
 //
 // To work around this problem, we spawn a separate thread whose sole purpose is dropping stuff we
 // send it through a channel. Conveniently, Pool is already Send, so there's no problem doing this.
-//
-// We use SyncSender because the regular Sender only got Sync in 1.72 which is above our MSRV.
-static DROP_THIS: Lazy<SyncSender<InnerPool>> = Lazy::new(|| {
-    let (tx, rx) = sync_channel(16);
+static DROP_THIS: Lazy<Sender<InnerPool>> = Lazy::new(|| {
+    let (tx, rx) = channel();
     thread::Builder::new()
         .name("Shm dropping thread".to_owned())
         .spawn(move || {

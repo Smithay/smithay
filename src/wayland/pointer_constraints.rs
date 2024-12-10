@@ -192,9 +192,8 @@ impl PointerConstraint {
             }
             Self::Locked(locked) => {
                 locked.region.clone_from(&locked.pending_region);
-                locked.pending_cursor_position_hint.take().map(|hint| {
-                    locked.cursor_position_hint = Some(hint);
-                    hint
+                locked.pending_cursor_position_hint.take().inspect(|hint| {
+                    locked.cursor_position_hint = Some(*hint);
                 })
             }
         }

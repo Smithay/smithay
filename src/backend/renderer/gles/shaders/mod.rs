@@ -142,13 +142,13 @@ pub(super) unsafe fn texture_program(
         let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };
         let debug_program = unsafe { link_program(gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
 
-        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-        let tex = CStr::from_bytes_with_nul(b"tex\0").expect("NULL terminated");
-        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
-        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
+        let vert = c"vert";
+        let vert_position = c"vert_position";
+        let tex = c"tex";
+        let matrix = c"matrix";
+        let tex_matrix = c"tex_matrix";
+        let alpha = c"alpha";
+        let tint = c"tint";
 
         Ok(GlesTexProgramVariant {
             normal: GlesTexProgramInternal {
@@ -223,10 +223,10 @@ pub(super) unsafe fn texture_program(
 pub(super) unsafe fn solid_program(gl: &ffi::Gles2) -> Result<GlesSolidProgram, GlesError> {
     let program = link_program(gl, shaders::VERTEX_SHADER_SOLID, shaders::FRAGMENT_SHADER_SOLID)?;
 
-    let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-    let color = CStr::from_bytes_with_nul(b"color\0").expect("NULL terminated");
-    let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-    let position = CStr::from_bytes_with_nul(b"position\0").expect("NULL terminated");
+    let matrix = c"matrix";
+    let color = c"color";
+    let vert = c"vert";
+    let position = c"position";
 
     Ok(GlesSolidProgram {
         program,
