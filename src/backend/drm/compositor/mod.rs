@@ -1017,12 +1017,15 @@ bitflags::bitflags! {
     pub struct FrameMode: u32 {
         /// Allow to realize the frame by compositing elements on the primary plane
         const COMPOSITE = 1;
+        /// Allow to realize the frame by scanning out elements on the primary plane
         const PRIMARY_PLANE_SCANOUT = 2;
+        /// Allow to realize the frame by scanning out elements on overlay planes
         const OVERLAY_PLANE_SCANOUT = 4;
+        /// Allow to realize the frame by scanning out elements on cursor planes
         const CURSOR_PLANE_SCANOUT = 8;
-        /// Allow to realize the frame by assigning elements on planes
+        /// Allow to realize the frame by assigning elements on any plane
         const SCANOUT = Self::PRIMARY_PLANE_SCANOUT.bits() | Self::OVERLAY_PLANE_SCANOUT.bits() | Self::CURSOR_PLANE_SCANOUT.bits();
-
+        /// Allow all available operations to realize the frame
         const ALL = Self::COMPOSITE.bits() | Self::SCANOUT.bits();
     }
 }
@@ -1268,6 +1271,23 @@ where
         Err(error.unwrap())
     }
 
+    /// Initialize a new [`DrmCompositor`] with a pre-selected format.
+    ///
+    /// The [`OutputModeSource`] can be created from an [`Output`](crate::output::Output), which will automatically track
+    /// the output's mode changes. An [`OutputModeSource::Static`] variant should only be used when
+    /// manually updating modes using [`DrmCompositor::set_output_mode_source`].
+    ///
+    /// - `output_mode_source` is used to determine the current mode, scale and transform
+    /// - `surface` for the compositor to use
+    /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
+    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
+    /// - `allocator` used for the primary plane swapchain
+    /// - `framebuffer_exporter` is used to create drm framebuffers for the swapchain buffers (and if possible
+    ///                          for element buffers) for scan-out
+    /// - `code` is the fixed format to initialize the framebuffer with
+    /// - `modifiers` is the set of modifiers allowed, when allocating buffers with the specified color format
+    /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
+    /// - `gbm` device used for creating buffers for the cursor plane, `None` will disable the cursor plane
     pub fn with_format(
         output_mode_source: impl Into<OutputModeSource> + Debug,
         surface: DrmSurface,
@@ -1647,6 +1667,7 @@ where
     /// Render the next frame
     ///
     /// - `elements` for this frame in front-to-back order
+    /// - `frame_mode` specifies techniques allowed to realize the frame
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     #[profiling::function]
     pub fn render_frame<'a, R, E>(
@@ -2429,6 +2450,19 @@ where
         Ok(())
     }
 
+    /// Commits the current frame for scan-out.
+    ///
+    /// If `render_frame` has not been called prior to this function or returned no damage
+    /// this function will return [`FrameError::EmptyFrame`]. Instead of calling `commit_frame` it
+    /// is the callers responsibility to re-schedule the frame. A simple strategy for frame
+    /// re-scheduling is to queue a one-shot timer that will trigger after approximately one
+    /// retrace duration.
+    ///
+    /// *Note*: It is your responsibility to synchronize rendering if the [`RenderFrameResult`]
+    /// returned by the previous [`render_frame`](DrmCompositor::render_frame) call returns `true` on [`RenderFrameResult::needs_sync`].
+    ///
+    /// *Note*: This function should not be followed up with [`DrmCompositor::frame_submitted`]
+    /// and will not generate a vblank event on the underlying device.
     pub fn commit_frame(&mut self) -> FrameResult<(), A, F> {
         if !self.surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
@@ -2715,6 +2749,7 @@ where
         self.swapchain.modifiers()
     }
 
+    /// Reset the underlying swapchain and assign a new color format.
     pub fn set_format(
         &mut self,
         allocator: A,

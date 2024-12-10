@@ -1,4 +1,10 @@
-use std::{cell::RefCell, rc::Rc, sync::{Arc, Mutex}};
+//! Trait and data structures to describe types, that can be exported to a drm framebuffer
+
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
 use wayland_server::protocol::wl_buffer::WlBuffer;
 
