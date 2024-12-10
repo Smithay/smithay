@@ -2895,6 +2895,21 @@ where
             true,
         )?;
 
+        if let ScanoutBuffer::Swapchain(slot) = &frame_state
+            .plane_buffer(self.surface.plane())
+            .expect("We have a buffer for the primary plane")
+            .buffer
+        {
+            if slot.format() != element_config.properties.format {
+                trace!(
+                    "failed to assign element {:?} to primary {:?}, format doesn't match",
+                    element.id(),
+                    self.surface.plane()
+                );
+                return Err(None);
+            }
+        }
+
         let has_underlay = self
             .planes
             .overlay
