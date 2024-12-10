@@ -2,7 +2,11 @@
 #[cfg(feature = "wayland_frontend")]
 use std::cell::Cell;
 
-#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+#[cfg(all(
+    feature = "wayland_frontend",
+    feature = "use_system_lib",
+    feature = "backend_egl"
+))]
 use crate::backend::renderer::ImportEgl;
 #[cfg(feature = "wayland_frontend")]
 use crate::{
@@ -168,7 +172,11 @@ impl ImportDma for DummyRenderer {
     }
 }
 
-#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+#[cfg(all(
+    feature = "wayland_frontend",
+    feature = "use_system_lib",
+    feature = "backend_egl"
+))]
 impl ImportEgl for DummyRenderer {
     fn bind_wl_display(
         &mut self,
