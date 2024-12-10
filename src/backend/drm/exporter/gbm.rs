@@ -3,10 +3,12 @@
 use std::os::unix::io::AsFd;
 
 use super::{ExportBuffer, ExportFramebuffer};
+#[cfg(feature = "wayland_frontend")]
+use crate::backend::drm::gbm::framebuffer_from_wayland_buffer;
 use crate::backend::{
     allocator::gbm::GbmBuffer,
     drm::{
-        gbm::{framebuffer_from_bo, framebuffer_from_wayland_buffer, Error, GbmFramebuffer},
+        gbm::{framebuffer_from_bo, Error, GbmFramebuffer},
         DrmDeviceFd,
     },
 };

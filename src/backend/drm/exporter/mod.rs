@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_buffer::WlBuffer;
 
 use crate::backend::{allocator::Buffer, renderer::element::UnderlyingStorage};
@@ -21,6 +22,7 @@ pub mod gbm;
 #[derive(Debug)]
 pub enum ExportBuffer<'a, B: Buffer> {
     /// A wayland buffer
+    #[cfg(feature = "wayland_frontend")]
     Wayland(&'a WlBuffer),
     /// A [`Allocator`] buffer
     Allocator(&'a B),

@@ -141,7 +141,7 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 #[cfg(feature = "renderer_pixman")]
 use crate::backend::renderer::{
     pixman::{PixmanError, PixmanRenderBuffer, PixmanRenderer, PixmanTexture},
-    ImportAll, Unbind,
+    Frame as _, ImportAll, Unbind,
 };
 use crate::{
     backend::{
@@ -161,7 +161,7 @@ use crate::{
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag},
-            Bind, Color32F, DebugFlags, Frame as RendererFrame, Renderer, Texture,
+            Bind, Color32F, DebugFlags, Renderer, Texture,
         },
         SwapBuffersError,
     },
