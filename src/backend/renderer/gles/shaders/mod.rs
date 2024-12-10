@@ -210,7 +210,7 @@ pub(super) unsafe fn texture_program(
         })
     };
 
-    Ok(GlesTexProgram(Rc::new(GlesTexProgramInner {
+    Ok(GlesTexProgram(Arc::new(GlesTexProgramInner {
         variants: [
             create_variant(&[])?,
             create_variant(&[shaders::NO_ALPHA])?,
