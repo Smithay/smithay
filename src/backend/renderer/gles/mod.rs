@@ -1856,7 +1856,7 @@ impl GlesRenderer {
         let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
 
         unsafe {
-            Ok(GlesPixelProgram(Rc::new(GlesPixelProgramInner {
+            Ok(GlesPixelProgram(Arc::new(GlesPixelProgramInner {
                 normal: GlesPixelProgramInternal {
                     program,
                     uniform_matrix: self

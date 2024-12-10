@@ -30,7 +30,7 @@ pub(in super::super) struct GlesTexProgramVariant {
 
 /// Gles texture shader
 #[derive(Debug, Clone)]
-pub struct GlesTexProgram(pub(in super::super) Rc<GlesTexProgramInner>);
+pub struct GlesTexProgram(pub(in super::super) Arc<GlesTexProgramInner>);
 
 #[derive(Debug)]
 pub(in super::super) struct GlesTexProgramInner {
@@ -83,7 +83,7 @@ pub(in super::super) struct GlesSolidProgram {
 
 /// Gles pixel shader
 #[derive(Debug, Clone)]
-pub struct GlesPixelProgram(pub(in super::super) Rc<GlesPixelProgramInner>);
+pub struct GlesPixelProgram(pub(in super::super) Arc<GlesPixelProgramInner>);
 
 #[derive(Debug)]
 pub(in super::super) struct GlesPixelProgramInner {
