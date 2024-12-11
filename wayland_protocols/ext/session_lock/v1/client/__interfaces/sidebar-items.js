@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["EXT_SESSION_LOCK_MANAGER_V1_INTERFACE","EXT_SESSION_LOCK_SURFACE_V1_INTERFACE","EXT_SESSION_LOCK_V1_INTERFACE","ext_session_lock_manager_v1_interface","ext_session_lock_surface_v1_interface","ext_session_lock_v1_interface"]};

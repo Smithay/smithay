@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_GRAB_KEYBOARD_OPCODE","REQ_GRAB_KEYBOARD_SINCE"],"enum":["Event","Request"],"struct":["ZwpXwaylandKeyboardGrabManagerV1"]};
