@@ -1847,13 +1847,13 @@ impl GlesRenderer {
         let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
         let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &debug_shader)? };
 
-        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-        let size = CStr::from_bytes_with_nul(b"size\0").expect("NULL terminated");
-        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
-        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
+        let vert = c"vert";
+        let vert_position = c"vert_position";
+        let matrix = c"matrix";
+        let tex_matrix = c"tex_matrix";
+        let size = c"size";
+        let alpha = c"alpha";
+        let tint = c"tint";
 
         unsafe {
             Ok(GlesPixelProgram(Arc::new(GlesPixelProgramInner {
