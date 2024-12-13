@@ -3,7 +3,7 @@
 //! This protocol allows clients to set icons for their toplevel surfaces either via the XDG icon stock (using an icon name), or from pixel data.
 //!
 //! In order to advertise toplevel icon global call [XdgToplevelIconManager::new] and delegate
-//! events to it with [delegate_xdg_toplevel_icon].
+//! events to it with [`delegate_xdg_toplevel_icon`][crate::delegate_xdg_toplevel_icon].
 //! Currently attached icon is available in double-buffered [ToplevelIconCachedState]
 
 use std::{

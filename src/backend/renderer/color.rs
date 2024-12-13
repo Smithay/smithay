@@ -5,7 +5,7 @@ use std::ops::Mul;
 pub struct Color32F([f32; 4]);
 
 impl Color32F {
-    /// Initialize a new [`Color`]
+    /// Initialize a new [`Color32F`]
     #[inline]
     pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self([r, g, b, a])

@@ -430,7 +430,7 @@ macro_rules! space_elements_internal {
 }
 
 /// Aggregate multiple types implementing [`SpaceElement`] into a single enum type to be used
-/// with a [`Space`].
+/// with a [`Space`][super::Space].
 ///
 /// # Example
 ///

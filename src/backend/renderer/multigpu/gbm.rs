@@ -126,7 +126,7 @@ impl<R, A: AsFd + Clone + Send + 'static> GbmGlesBackend<R, A> {
     /// Sets the default flags to use for allocating buffers via the [`GbmAllocator`]
     /// provided by these backends devices.
     ///
-    /// Only affects nodes added via [`add_node`] *after* calling this method.
+    /// Only affects nodes added via [`add_node`][Self::add_node] *after* calling this method.
     pub fn set_allocator_flags(&mut self, flags: GbmBufferFlags) {
         self.allocator_flags = flags;
     }

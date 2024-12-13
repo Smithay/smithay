@@ -2,8 +2,8 @@
 //!
 //! This protocol enables clients to ring the system bell.
 //!
-//! In order to advertise system bell global call [XdgSystemBellState::new] and delegate
-//! events to it with [delegate_xdg_system_bell].
+//! In order to advertise system bell global call [`XdgSystemBellState::new`] and delegate
+//! events to it with [`delegate_xdg_system_bell`][crate::delegate_xdg_system_bell].
 //!
 //! ```
 //! use smithay::wayland::xdg_system_bell::{XdgSystemBellState, XdgSystemBellHandler};

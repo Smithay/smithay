@@ -337,7 +337,7 @@ impl X11Surface {
     ///
     /// XWayland will set this if it has bound the [xwayland
     /// shell](crate::wayland::xwayland_shell) protocol on the wayland side.
-    /// Otherwise, it will set [wl_surface_id] instead.
+    /// Otherwise, it will set [`wl_surface_id`][Self::wl_surface_id] instead.
     pub fn wl_surface_serial(&self) -> Option<u64> {
         self.state.lock().unwrap().wl_surface_serial
     }

@@ -63,7 +63,7 @@ impl Framebuffer for GbmFramebuffer {
 /// Attach a framebuffer for a [`WlBuffer`]
 ///
 /// This tries to import the buffer to gbm and attach a [`framebuffer::Handle`] for
-/// the imported [`BufferObject`].
+/// the imported [`BufferObject`][gbm::BufferObject].
 ///
 /// Returns `Ok(None)` for unknown buffer types and buffer types that do not
 /// support attaching a framebuffer (e.g. shm-buffers)
@@ -136,7 +136,7 @@ pub enum Error {
 /// Attach a framebuffer for a [`Dmabuf`]
 ///
 /// This tries to import the [`Dmabuf`] using gbm and attach
-/// a [`framebuffer::Handle`] for the imported [`BufferObject`]
+/// a [`framebuffer::Handle`] for the imported [`BufferObject`][gbm::BufferObject]
 #[profiling::function]
 pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
     drm: &DrmDeviceFd,
@@ -181,7 +181,7 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
     })
 }
 
-/// Attach a [`framebuffer::Handle`] to an [`BufferObject`]
+/// Attach a [`framebuffer::Handle`] to an [`BufferObject`][gbm::BufferObject]
 #[profiling::function]
 pub fn framebuffer_from_bo(
     drm: &DrmDeviceFd,

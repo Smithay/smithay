@@ -5,7 +5,7 @@
 //! [`GraphicsApi`] implementation will allow you to create [`MultiRenderer`]s.
 //!
 //! smithay provides the following graphics apis:
-//! - [`egl::EglGlesBackend`]
+//! - [`gbm::GbmGlesBackend`]
 //!
 //! A [`MultiRenderer`] gets created using two [`DrmNode`]s to identify gpus.
 //! One gpu will be referred to as the render-gpu, the other as the target-gpu.
