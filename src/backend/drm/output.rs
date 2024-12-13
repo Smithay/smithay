@@ -386,8 +386,10 @@ where
         render_elements.submit_composited_frame(&mut *compositor, renderer)?;
 
         Ok(DrmOutput {
-            crtc,
             compositor: self.compositor.clone(),
+            crtc,
+            allocator: self.allocator.clone(),
+            renderer_formats: self.renderer_formats.clone(),
         })
     }
 
@@ -421,7 +423,15 @@ where
         <R as Renderer>::TextureId: Texture + 'static,
         <R as Renderer>::Error: Send + Sync + 'static,
     {
-        use_mode_internal(&self.compositor, crtc, mode, renderer, render_elements)
+        use_mode_internal(
+            &self.compositor,
+            crtc,
+            mode,
+            &self.allocator,
+            &self.renderer_formats,
+            renderer,
+            render_elements,
+        )
     }
 
     /// Tries to restore explicit modifiers on all surfaces.
@@ -514,8 +524,10 @@ where
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     G: AsFd + 'static,
 {
-    crtc: crtc::Handle,
     compositor: CompositorList<A, F, U, G>,
+    crtc: crtc::Handle,
+    allocator: A,
+    renderer_formats: Vec<DrmFormat>,
 }
 
 impl<A, F, U, G> fmt::Debug for DrmOutput<A, F, U, G>
@@ -657,7 +669,15 @@ where
         <R as Renderer>::TextureId: Texture + 'static,
         <R as Renderer>::Error: Send + Sync + 'static,
     {
-        use_mode_internal(&self.compositor, &self.crtc, mode, renderer, render_elements)
+        use_mode_internal(
+            &self.compositor,
+            &self.crtc,
+            mode,
+            &self.allocator,
+            &self.renderer_formats,
+            renderer,
+            render_elements,
+        )
     }
 }
 
@@ -701,6 +721,8 @@ fn use_mode_internal<A, F, U, G, R, E>(
     compositor: &CompositorList<A, F, U, G>,
     crtc: &crtc::Handle,
     mode: Mode,
+    allocator: &A,
+    renderer_formats: &[DrmFormat],
     renderer: &mut R,
     render_elements: &DrmOutputRenderElements<R, E>,
 ) -> DrmOutputManagerResult<(), A, F, R>
@@ -723,9 +745,11 @@ where
 {
     let mut write_guard = compositor.write().unwrap();
 
-    let mut res = write_guard.get(crtc).unwrap().lock().unwrap().use_mode(mode);
+    let res = write_guard.get(crtc).unwrap().lock().unwrap().use_mode(mode);
 
-    if res.is_err() {
+    if let Err(err @ FrameError::DrmError(DrmError::TestFailed(_))) = res.as_ref() {
+        tracing::warn!(?crtc, ?err, "failed to set mode, trying to lower bandwidth usage");
+
         for compositor in write_guard.values_mut() {
             let compositor = compositor.get_mut().unwrap();
             if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
@@ -735,20 +759,66 @@ where
             }
         }
 
-        let compositor = write_guard.get_mut(crtc).unwrap();
-        let compositor = compositor.get_mut().unwrap();
-        res = compositor.use_mode(mode);
-
-        if res.is_ok() {
-            if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
-                if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
-                    return Err(err);
+        let compositor = write_guard.get_mut(crtc).unwrap().get_mut().unwrap();
+        match compositor.use_mode(mode) {
+            Ok(_) => {
+                if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+                    if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
+                        return Err(err);
+                    }
                 }
             }
-        }
+            Err(err @ FrameError::DrmError(DrmError::TestFailed(_))) => {
+                tracing::warn!(?crtc, ?err, "failed to set mode, trying implicit modifiers");
+
+                for compositor in write_guard.values_mut() {
+                    let compositor = compositor.get_mut().unwrap();
+
+                    let current_format = compositor.format();
+                    if let Err(err) =
+                        compositor.set_format(allocator.clone(), current_format, [DrmModifier::Invalid])
+                    {
+                        tracing::warn!(?err, "failed to set new format");
+                        continue;
+                    }
+
+                    render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                }
+
+                let compositor = write_guard.get_mut(crtc).unwrap().get_mut().unwrap();
+                match compositor.use_mode(mode) {
+                    Ok(_) => render_elements.submit_composited_frame(&mut *compositor, renderer)?,
+                    Err(err) => {
+                        // try to reset format
+
+                        for compositor in write_guard.values_mut() {
+                            let compositor = compositor.get_mut().unwrap();
+
+                            let current_format = compositor.format();
+                            if let Err(err) = compositor.set_format(
+                                allocator.clone(),
+                                current_format,
+                                renderer_formats
+                                    .iter()
+                                    .filter(|f| f.code == current_format)
+                                    .map(|f| f.modifier),
+                            ) {
+                                tracing::warn!(?err, "failed to reset format");
+                                continue;
+                            }
+
+                            render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                        }
+
+                        return Err(DrmOutputManagerError::Frame(err));
+                    }
+                }
+            }
+            Err(err) => return Err(DrmOutputManagerError::Frame(err)),
+        };
     }
 
-    res.map_err(DrmOutputManagerError::Frame)
+    Ok(())
 }
 
 /// Set of render elements for a set of outputs managed by an [`DrmOutputManager`].
