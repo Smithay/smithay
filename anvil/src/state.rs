@@ -819,6 +819,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 }
             });
         }
+        // Drop the lock to the layer map before calling blocker_cleared, which might end up
+        // calling the commit handler which in turn again could access the layer map.
+        std::mem::drop(map);
 
         if let CursorImageStatus::Surface(ref surface) = self.cursor_status {
             with_surfaces_surface_tree(surface, |surface, states| {
@@ -978,6 +981,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 });
             }
         }
+        // Drop the lock to the layer map before calling blocker_cleared, which might end up
+        // calling the commit handler which in turn again could access the layer map.
+        std::mem::drop(map);
 
         if let CursorImageStatus::Surface(ref surface) = self.cursor_status {
             with_surfaces_surface_tree(surface, |surface, states| {
