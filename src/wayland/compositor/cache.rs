@@ -132,21 +132,23 @@ impl<T: Cacheable + 'static> Cache for Mutex<CachedState<T>> {
 /// A typemap-like container for double-buffered values
 ///
 /// All values inserted into this container must implement the [`Cacheable`] trait,
-/// which defines their buffering semantics. They furthermore must be `Send` as the surface state
-/// can be accessed from multiple threads (but `Sync` is not required, the surface internally synchronizes
+/// which defines their buffering semantics. They furthermore must be [`Send`] as the surface state
+/// can be accessed from multiple threads (but [`Sync`] is not required, the surface internally synchronizes
 /// access to its state).
 ///
+/// [`MultiCache::get`] provides access to the [`CachedState`] associated with a particular type.
+///
 /// Consumers of surface state (like compositor applications using Smithay) will mostly be concerned
-/// with the [`MultiCache::current`] method, which gives access to the current state of the surface for
+/// with the [`CachedState::current`] method, which gives access to the current state of the surface for
 /// a particular type.
 ///
-/// Writers of protocol extensions logic will mostly be concerned with the [`MultiCache::pending`] method,
+/// Writers of protocol extensions logic will mostly be concerned with the [`CachedState::pending`] method,
 /// which provides access to the pending state of the surface, in which new state from clients will be
 /// stored.
 ///
 /// This contained has [`Mutex`]-like semantics: values of multiple stored types can be accessed at the
 /// same time, but accessing the same value multiple times will cause a deadlock.
-/// The stored values are initialized lazily the first time `get()` is invoked with this type as argument.
+/// The stored values are initialized lazily the first time [`get`][Self::get] is invoked with this type as argument.
 pub struct MultiCache {
     caches: appendlist::AppendList<Box<dyn Cache + Send>>,
 }
@@ -179,7 +181,7 @@ impl MultiCache {
             .unwrap()
     }
 
-    /// Access the state associated with type `T`
+    /// Access the [`CachedState`] associated with type `T`
     pub fn get<T: Cacheable + Send + 'static>(&self) -> MutexGuard<'_, CachedState<T>> {
         self.find_or_insert::<T>().lock().unwrap()
     }
