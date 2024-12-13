@@ -108,7 +108,7 @@ pub struct CommitTimingManagerState {
 impl CommitTimingManagerState {
     /// Create a new [`WpCommitTimingManagerV1`] global
     //
-    /// The id provided by [`FifoManagerState::global`] may be used to
+    /// The id provided by [`CommitTimingManagerState::global`] may be used to
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
@@ -121,7 +121,7 @@ impl CommitTimingManagerState {
 
     /// Create a new unmanaged [`WpCommitTimingManagerV1`] global
     //
-    /// The id provided by [`FifoManagerState::global`] may be used to
+    /// The id provided by [`CommitTimingManagerState::global`] may be used to
     /// remove or disable this global in the future.
     pub fn unmanaged<D>(display: &DisplayHandle) -> Self
     where
@@ -143,12 +143,12 @@ impl CommitTimingManagerState {
         Self { global, is_managed }
     }
 
-    /// Returns the id of the [`WpFifoManagerV1`] global.
+    /// Returns the id of the [`WpCommitTimingManagerV1`] global.
     pub fn global(&self) -> GlobalId {
         self.global.clone()
     }
 
-    /// Returns if this [`FifoManagerState`] operates in managed mode.
+    /// Returns if this [`CommitTimingManagerState`] operates in managed mode.
     pub fn is_managed(&self) -> bool {
         self.is_managed
     }

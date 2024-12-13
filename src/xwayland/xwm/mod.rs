@@ -9,13 +9,13 @@
 //! To use this functionality you must first spawn an
 //! [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
 //!
-//! # Associating an [X11Surface] with a [WlSurface]
+//! # Associating an [`X11Surface`] with a [`WlSurface`][wayland_server::protocol::wl_surface::WlSurface]
 //!
 //! When an X11 window is created, XWayland will associate it with a
 //! `wl_surface` that it creates via the wayland connection. This happens in two
 //! steps:
 //!
-//!  - Via the [xwayland shell](crate::wayland::xwayland::shell) protocol, a
+//!  - Via the [xwayland shell](crate::wayland::xwayland_shell) protocol, a
 //!    serial number is set on the surface, and it is given the
 //!    "xwayland_shell" role.
 //!  - Via the X11 connection, a matching `WL_SURFACE_SERIAL` atom is set on the

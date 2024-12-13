@@ -69,7 +69,7 @@ impl Time<Monotonic> {
     /// Returns the time in milliseconds
     ///
     /// This should match timestamps from libinput:
-    /// https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html
+    /// <https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html>
     pub fn as_millis(&self) -> u32 {
         // Assume monotonic clock (but not realitime) fits as milliseconds in 32-bit
         debug_assert!(self.tp.tv_sec >= 0);
@@ -80,7 +80,7 @@ impl Time<Monotonic> {
     /// Returns the time in microseconds
     ///
     /// This should match timestamps from libinput:
-    /// https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html
+    /// <https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html>
     pub fn as_micros(&self) -> u64 {
         // Assume monotonic clock (but not realitime) fits as microseconds in 64-bit
         debug_assert!(self.tp.tv_sec >= 0);

@@ -1,6 +1,6 @@
 //! Types related to XSETTINGS handling
 //!
-//! See https://specifications.freedesktop.org/xsettings-spec/0.5/
+//! See <https://specifications.freedesktop.org/xsettings-spec/0.5/>
 
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 

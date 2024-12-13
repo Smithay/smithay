@@ -162,7 +162,7 @@ impl ForeignToplevelHandle {
         resource.data::<Self>().cloned()
     }
 
-    /// Retrieve [`ExtForeignToplevelHandleV1`](wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1)
+    /// Retrieve [`ExtForeignToplevelHandleV1`]
     /// instances for this handle.
     pub fn resources(&self) -> Vec<ExtForeignToplevelHandleV1> {
         let inner = self.inner.0.lock().unwrap();
@@ -173,8 +173,8 @@ impl ForeignToplevelHandle {
             .collect()
     }
 
-    /// Retrieve [`ExtForeignToplevelHandleV1`](wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1)
-    /// instances for this handle of a given [`Client`](wayland_server::Client).
+    /// Retrieve [`ExtForeignToplevelHandleV1`]
+    /// instances for this handle of a given [`Client`].
     pub fn resources_for_client(&self, client: &Client) -> Vec<ExtForeignToplevelHandleV1> {
         self.resources()
             .into_iter()
@@ -189,7 +189,7 @@ impl ForeignToplevelHandle {
 
     /// The title of the toplevel has changed.
     ///
-    /// [Self::done] has to be called to finalize the update
+    /// [Self::send_done] has to be called to finalize the update
     pub fn send_title(&self, title: &str) {
         let mut inner = self.inner.0.lock().unwrap();
         if inner.title == title {
@@ -207,7 +207,7 @@ impl ForeignToplevelHandle {
 
     /// The app_id of the toplevel has changed.
     ///
-    /// [Self::done] has to be called to finalize the update
+    /// [Self::send_done] has to be called to finalize the update
     pub fn send_app_id(&self, app_id: &str) {
         let mut inner = self.inner.0.lock().unwrap();
         if inner.app_id == app_id {
