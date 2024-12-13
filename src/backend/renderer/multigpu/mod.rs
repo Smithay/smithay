@@ -232,19 +232,19 @@ impl<A: GraphicsApi> GpuManager<A> {
     }
 
     /// Get all devices enumerated by the API.
-    pub fn devices(&mut self) -> Result<&[A::Device], A::Error> {
+    pub fn devices(&mut self) -> Result<impl Iterator<Item = &A::Device>, A::Error> {
         if self.api.needs_enumeration() {
             self.api.enumerate(&mut self.devices)?;
         }
-        Ok(&self.devices)
+        Ok(self.devices.iter())
     }
 
     /// Get all devices enumerated by the API.
-    pub fn devices_mut(&mut self) -> Result<&mut [A::Device], A::Error> {
+    pub fn devices_mut(&mut self) -> Result<impl Iterator<Item = &mut A::Device>, A::Error> {
         if self.api.needs_enumeration() {
             self.api.enumerate(&mut self.devices)?;
         }
-        Ok(&mut self.devices)
+        Ok(self.devices.iter_mut())
     }
 
     /// Create a [`MultiRenderer`] from a single device.
