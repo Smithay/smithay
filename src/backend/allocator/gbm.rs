@@ -282,16 +282,14 @@ impl AsDmabuf for GbmBuffer {
     #[cfg(not(feature = "backend_gbm_has_fd_for_plane"))]
     #[profiling::function]
     fn export(&self) -> Result<Dmabuf, GbmConvertError> {
-        let planes = self.plane_count()? as i32;
+        let planes = self.plane_count() as i32;
 
         let mut iter = (0i32..planes).map(|i| self.handle_for_plane(i));
         let first = iter.next().expect("Encountered a buffer with zero planes");
         // check that all handles are the same
         let handle = iter.try_fold(first, |first, next| {
-            if let (Ok(next), Ok(first)) = (next, first) {
-                if unsafe { next.u64_ == first.u64_ } {
-                    return Some(Ok(first));
-                }
+            if unsafe { next.u64_ == first.u64_ } {
+                return Some(first);
             }
             None
         });
@@ -311,13 +309,13 @@ impl AsDmabuf for GbmBuffer {
                 // SAFETY: `gbm_bo_get_fd` returns a new fd owned by the caller.
                 fd,
                 idx as u32,
-                self.offset(idx)?,
-                self.stride_for_plane(idx)?,
+                self.offset(idx),
+                self.stride_for_plane(idx),
             );
         }
 
         #[cfg(feature = "backend_drm")]
-        if let Some(node) = self.device_fd().ok().and_then(|fd| DrmNode::from_file(fd).ok()) {
+        if let Ok(node) = DrmNode::from_file(self.device_fd()) {
             builder.set_node(node);
         }
 
