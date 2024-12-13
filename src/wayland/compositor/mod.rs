@@ -115,7 +115,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::{any::Any, sync::Mutex};
 
-pub use self::cache::{Cacheable, MultiCache};
+pub use self::cache::{Cacheable, CachedState, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::transaction::TransactionQueue;
 pub use self::transaction::{Barrier, Blocker, BlockerState};
