@@ -377,21 +377,17 @@ impl CommitTimerBarrierState {
     /// Returns `true` if a barrier has been signaled, false otherwise
     pub fn signal_until(&mut self, deadline: impl Into<Timestamp>) -> bool {
         let deadline = deadline.into();
-        tracing::info!(?deadline, "signal_until");
 
         let num_barriers = self.barriers.len();
         loop {
             let Some(barrier) = self.barriers.peek() else {
-                tracing::info!(?deadline, "no barriers");
                 break;
             };
 
             if barrier.timestamp > deadline {
-                tracing::info!(?barrier, ?deadline, "barrier after until");
                 break;
             }
 
-            tracing::info!(?barrier, "signaling barrier");
             barrier.barrier.signal();
             let _ = self.barriers.pop();
         }
