@@ -18,6 +18,7 @@
 use crate::{utils::Serial, wayland::compositor};
 use thiserror::Error;
 use wayland_server::protocol::wl_surface::WlSurface;
+use xdg::XdgToplevelSurfaceData;
 
 pub mod kde;
 pub mod wlr_layer;
@@ -43,5 +44,38 @@ pub fn is_toplevel_equivalent(surface: &WlSurface) -> bool {
     // xdg_toplevel is toplevel like, so verify if the role matches.
     let role = compositor::get_role(surface);
 
+    // When changing this, don't forget to change the check in is_valid_parent() below.
     matches!(role, Some(xdg::XDG_TOPLEVEL_ROLE))
+}
+
+/// Returns true if the `parent` is valid to set for `child`.
+///
+/// This will check that `parent` is toplevel equivalent, then make sure that it doesn't introduce
+/// a parent loop.
+pub fn is_valid_parent(child: &WlSurface, parent: &WlSurface) -> bool {
+    if !is_toplevel_equivalent(parent) {
+        return false;
+    }
+
+    // Check that we're not making a parent loop.
+    let mut next_parent = Some(parent.clone());
+    while let Some(parent) = next_parent.clone() {
+        // Did we find a cycle?
+        if *child == parent {
+            return false;
+        }
+
+        compositor::with_states(&parent, |states| {
+            if let Some(data) = states.data_map.get::<XdgToplevelSurfaceData>() {
+                // Get xdg-toplevel parent.
+                let role = data.lock().unwrap();
+                next_parent = role.parent.clone();
+            } else {
+                // Reached a surface we don't know how to get a parent of.
+                next_parent = None;
+            }
+        });
+    }
+
+    true
 }
