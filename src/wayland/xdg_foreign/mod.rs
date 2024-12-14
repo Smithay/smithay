@@ -86,7 +86,7 @@ pub struct XdgImportedUserData {
 #[derive(Debug)]
 struct ExportedState {
     exported_surface: WlSurface,
-    requested_parent: Option<(WlSurface, ZxdgImportedV2)>,
+    requested_child: Option<(WlSurface, ZxdgImportedV2)>,
     imported_by: HashSet<ZxdgImportedV2>,
 }
 

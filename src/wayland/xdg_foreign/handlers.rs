@@ -64,7 +64,7 @@ where
                     handle,
                     ExportedState {
                         exported_surface: surface,
-                        requested_parent: None,
+                        requested_child: None,
                         imported_by: HashSet::new(),
                     },
                 );
@@ -170,20 +170,22 @@ impl<D: XdgForeignHandler> Dispatch<ZxdgImportedV2, XdgImportedUserData, D> for 
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
-            zxdg_imported_v2::Request::SetParentOf { surface } => {
+            zxdg_imported_v2::Request::SetParentOf { surface: child } => {
                 if let Some((_, state)) = state
                     .xdg_foreign_state()
                     .exported
                     .iter_mut()
                     .find(|(key, _)| key.as_str() == data.handle.as_str())
                 {
-                    compositor::with_states(&state.exported_surface, |states| {
+                    let parent = &state.exported_surface;
+
+                    compositor::with_states(&child, |states| {
                         if let Some(data) = states.data_map.get::<XdgToplevelSurfaceData>() {
-                            data.lock().unwrap().parent = Some(surface.clone());
+                            data.lock().unwrap().parent = Some(parent.clone());
                         }
                     });
 
-                    state.requested_parent = Some((surface, resource.clone()));
+                    state.requested_child = Some((child, resource.clone()));
                 }
             }
             zxdg_imported_v2::Request::Destroy => {}
@@ -209,7 +211,7 @@ fn invalidate_all_relationships(state: &mut ExportedState) {
 }
 
 fn invalidate_relationship_for(state: &mut ExportedState, invalidate_for: Option<&ZxdgImportedV2>) {
-    let Some((requested_parent, requested_by)) = state.requested_parent.as_ref() else {
+    let Some((requested_child, requested_by)) = state.requested_child.as_ref() else {
         return;
     };
 
@@ -219,16 +221,16 @@ fn invalidate_relationship_for(state: &mut ExportedState, invalidate_for: Option
         }
     }
 
-    compositor::with_states(&state.exported_surface, |states| {
+    compositor::with_states(requested_child, |states| {
         let Some(data) = states.data_map.get::<XdgToplevelSurfaceData>() else {
             return;
         };
 
         let data = &mut *data.lock().unwrap();
-        if data.parent.as_ref() == Some(requested_parent) {
+        if data.parent.as_ref() == Some(&state.exported_surface) {
             data.parent = None;
         }
     });
 
-    state.requested_parent = None;
+    state.requested_child = None;
 }
