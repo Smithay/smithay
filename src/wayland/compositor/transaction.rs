@@ -44,9 +44,9 @@ use std::{
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource, Weak};
 
-use crate::{utils::IsAlive, utils::Serial};
+use crate::utils::Serial;
 
 use super::{tree::PrivateSurfaceData, CompositorHandler};
 
@@ -110,7 +110,7 @@ impl Blocker for Barrier {
 
 #[derive(Default)]
 struct TransactionState {
-    surfaces: Vec<(WlSurface, Serial)>,
+    surfaces: Vec<(Weak<WlSurface>, Serial)>,
     blockers: Vec<Box<dyn Blocker + Send>>,
 }
 
@@ -123,7 +123,7 @@ impl TransactionState {
             }
         } else {
             // the surface is not in the list, insert it
-            self.surfaces.push((surface, id));
+            self.surfaces.push((surface.downgrade(), id));
         }
     }
 }
@@ -196,7 +196,9 @@ impl PendingTransaction {
         // fuse our surfaces into our new transaction state
         self.with_inner_state(|state| {
             for (surface, id) in my_state.surfaces {
-                state.insert(surface, id);
+                if let Ok(surface) = surface.upgrade() {
+                    state.insert(surface, id);
+                }
             }
             state.blockers.extend(my_state.blockers);
         });
@@ -221,7 +223,7 @@ impl PendingTransaction {
 
 #[derive(Debug)]
 pub(crate) struct Transaction {
-    surfaces: Vec<(WlSurface, Serial)>,
+    surfaces: Vec<(Weak<WlSurface>, Serial)>,
     blockers: Vec<Box<dyn Blocker + Send>>,
 }
 
@@ -240,6 +242,12 @@ impl Transaction {
     /// - otherwise, if at least one blocker is pending, the transaction is pending
     /// - otherwise, all blockers are released, and the transaction is also released
     pub(crate) fn state(&self) -> BlockerState {
+        // In case all of our surfaces have been destroyed we can cancel this transaction
+        // as we won't apply its state anyway
+        if !self.surfaces.iter().any(|surface| surface.0.is_alive()) {
+            return BlockerState::Cancelled;
+        }
+
         use BlockerState::*;
         self.blockers
             .iter()
@@ -252,6 +260,10 @@ impl Transaction {
 
     pub(crate) fn apply<C: CompositorHandler + 'static>(self, dh: &DisplayHandle, state: &mut C) {
         for (surface, id) in self.surfaces {
+            let Ok(surface) = surface.upgrade() else {
+                continue;
+            };
+
             PrivateSurfaceData::with_states(&surface, |states| {
                 states.cached_state.apply_state(id, dh);
             });
@@ -307,7 +319,7 @@ impl TransactionQueue {
             if !skip {
                 for (s, _) in &self.transactions[i].surfaces {
                     // TODO: is this alive check still needed?
-                    if !s.alive() {
+                    if !s.is_alive() {
                         continue;
                     }
                     if self.seen_surfaces.contains(&s.id().protocol_id()) {
@@ -322,7 +334,7 @@ impl TransactionQueue {
                 // seen list
                 for (s, _) in &self.transactions[i].surfaces {
                     // TODO: is this alive check still needed?
-                    if !s.alive() {
+                    if !s.is_alive() {
                         continue;
                     }
                     self.seen_surfaces.insert(s.id().protocol_id());
