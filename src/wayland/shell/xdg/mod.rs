@@ -1713,15 +1713,6 @@ impl ToplevelSurface {
     pub fn parent(&self) -> Option<wl_surface::WlSurface> {
         handlers::get_parent(&self.shell_surface)
     }
-
-    /// Sets the parent of this toplevel surface and returns whether the parent was successfully set.
-    ///
-    /// The parent must be another toplevel equivalent surface.
-    ///
-    /// If the parent is `None`, the parent-child relationship is removed.
-    pub fn set_parent(&self, parent: Option<&wl_surface::WlSurface>) -> bool {
-        handlers::set_parent(&self.shell_surface, parent.cloned())
-    }
 }
 
 /// Represents the possible errors that
