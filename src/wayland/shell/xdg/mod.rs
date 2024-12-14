@@ -1174,6 +1174,9 @@ pub trait XdgShellHandler {
 
     /// The toplevel surface set a different title.
     fn title_changed(&mut self, surface: ToplevelSurface) {}
+
+    /// The parent of a toplevel surface has changed.
+    fn parent_changed(&mut self, surface: ToplevelSurface) {}
 }
 
 /// Shell global state

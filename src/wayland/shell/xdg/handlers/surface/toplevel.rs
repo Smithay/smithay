@@ -49,9 +49,17 @@ where
                         .clone()
                 });
 
+                let old_parent = get_parent(toplevel);
+                let changed = old_parent != parent_surface;
+
                 // Parent is not double buffered, we can set it directly
                 if !set_parent(toplevel, parent_surface) {
                     toplevel.post_error(xdg_toplevel::Error::InvalidParent, "invalid parent toplevel");
+                }
+
+                if changed {
+                    let handle = make_toplevel_handle(toplevel);
+                    XdgShellHandler::parent_changed(state, handle);
                 }
             }
             xdg_toplevel::Request::SetTitle { title } => {

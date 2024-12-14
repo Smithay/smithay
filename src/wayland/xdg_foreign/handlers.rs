@@ -12,7 +12,10 @@ use wayland_server::{
 
 use crate::wayland::{
     compositor,
-    shell::{is_valid_parent, xdg::XdgToplevelSurfaceData},
+    shell::{
+        is_valid_parent,
+        xdg::{XdgShellHandler, XdgToplevelSurfaceData},
+    },
 };
 
 use super::{
@@ -80,7 +83,10 @@ where
     }
 }
 
-impl<D: XdgForeignHandler> Dispatch<ZxdgExportedV2, XdgExportedUserData, D> for XdgForeignState {
+impl<D> Dispatch<ZxdgExportedV2, XdgExportedUserData, D> for XdgForeignState
+where
+    D: XdgForeignHandler + XdgShellHandler,
+{
     fn request(
         _state: &mut D,
         _client: &Client,
@@ -95,9 +101,8 @@ impl<D: XdgForeignHandler> Dispatch<ZxdgExportedV2, XdgExportedUserData, D> for 
     fn destroyed(state: &mut D, _client: ClientId, _resource: &ZxdgExportedV2, data: &XdgExportedUserData) {
         // Revoke the previously exported surface.
         // This invalidates any relationship the importer may have set up using the xdg_imported created given the handle sent via xdg_exported.handle.
-        if let Some(mut state) = state.xdg_foreign_state().exported.remove(&data.handle) {
-            invalidate_all_relationships(&mut state);
-        }
+        invalidate_all_relationships(state, &data.handle);
+        state.xdg_foreign_state().exported.remove(&data.handle);
     }
 }
 
@@ -164,7 +169,10 @@ where
     }
 }
 
-impl<D: XdgForeignHandler> Dispatch<ZxdgImportedV2, XdgImportedUserData, D> for XdgForeignState {
+impl<D> Dispatch<ZxdgImportedV2, XdgImportedUserData, D> for XdgForeignState
+where
+    D: XdgForeignHandler + XdgShellHandler,
+{
     fn request(
         state: &mut D,
         _client: &Client,
@@ -176,19 +184,22 @@ impl<D: XdgForeignHandler> Dispatch<ZxdgImportedV2, XdgImportedUserData, D> for 
     ) {
         match request {
             zxdg_imported_v2::Request::SetParentOf { surface: child } => {
-                if let Some((_, state)) = state
+                if let Some((_, exported_state)) = state
                     .xdg_foreign_state()
                     .exported
                     .iter_mut()
                     .find(|(key, _)| key.as_str() == data.handle.as_str())
                 {
-                    let parent = &state.exported_surface;
+                    let parent = &exported_state.exported_surface;
 
                     let mut invalid = false;
+                    let mut changed = false;
                     compositor::with_states(&child, |states| {
                         if let Some(data) = states.data_map.get::<XdgToplevelSurfaceData>() {
                             if is_valid_parent(&child, parent) {
-                                data.lock().unwrap().parent = Some(parent.clone());
+                                let mut role = data.lock().unwrap();
+                                changed = role.parent.as_ref() != Some(parent);
+                                role.parent = Some(parent.clone());
                             } else {
                                 invalid = true;
                             }
@@ -203,7 +214,19 @@ impl<D: XdgForeignHandler> Dispatch<ZxdgImportedV2, XdgImportedUserData, D> for 
                         return;
                     }
 
-                    state.requested_child = Some((child, resource.clone()));
+                    exported_state.requested_child = Some((child.clone(), resource.clone()));
+
+                    if changed {
+                        if let Some(toplevel) = state
+                            .xdg_shell_state()
+                            .toplevel_surfaces()
+                            .iter()
+                            .find(|toplevel| *toplevel.wl_surface() == child)
+                            .cloned()
+                        {
+                            XdgShellHandler::parent_changed(state, toplevel);
+                        }
+                    }
                 }
             }
             zxdg_imported_v2::Request::Destroy => {}
@@ -212,24 +235,43 @@ impl<D: XdgForeignHandler> Dispatch<ZxdgImportedV2, XdgImportedUserData, D> for 
     }
 
     fn destroyed(state: &mut D, _client: ClientId, resource: &ZxdgImportedV2, data: &XdgImportedUserData) {
-        if let Some((_, state)) = state
+        if let Some((_, exported_state)) = state
             .xdg_foreign_state()
             .exported
             .iter_mut()
             .find(|(key, _)| key.as_str() == data.handle.as_str())
         {
-            state.imported_by.remove(resource);
-            invalidate_relationship_for(state, Some(resource));
+            exported_state.imported_by.remove(resource);
         }
+
+        invalidate_relationship_for(state, &data.handle, Some(resource));
     }
 }
 
-fn invalidate_all_relationships(state: &mut ExportedState) {
-    invalidate_relationship_for(state, None);
+fn invalidate_all_relationships<D>(state: &mut D, handle: &XdgForeignHandle)
+where
+    D: XdgForeignHandler + XdgShellHandler,
+{
+    invalidate_relationship_for(state, handle, None);
 }
 
-fn invalidate_relationship_for(state: &mut ExportedState, invalidate_for: Option<&ZxdgImportedV2>) {
-    let Some((requested_child, requested_by)) = state.requested_child.as_ref() else {
+fn invalidate_relationship_for<D>(
+    state: &mut D,
+    handle: &XdgForeignHandle,
+    invalidate_for: Option<&ZxdgImportedV2>,
+) where
+    D: XdgForeignHandler + XdgShellHandler,
+{
+    let Some((_, exported_state)) = state
+        .xdg_foreign_state()
+        .exported
+        .iter_mut()
+        .find(|(key, _)| key.as_str() == handle.as_str())
+    else {
+        return;
+    };
+
+    let Some((requested_child, requested_by)) = exported_state.requested_child.as_ref() else {
         return;
     };
 
@@ -239,16 +281,31 @@ fn invalidate_relationship_for(state: &mut ExportedState, invalidate_for: Option
         }
     }
 
+    let mut changed = false;
     compositor::with_states(requested_child, |states| {
         let Some(data) = states.data_map.get::<XdgToplevelSurfaceData>() else {
             return;
         };
 
         let data = &mut *data.lock().unwrap();
-        if data.parent.as_ref() == Some(&state.exported_surface) {
+        if data.parent.as_ref() == Some(&exported_state.exported_surface) {
             data.parent = None;
+            changed = true;
         }
     });
 
-    state.requested_child = None;
+    let requested_child = requested_child.clone();
+    exported_state.requested_child = None;
+
+    if changed {
+        if let Some(toplevel) = state
+            .xdg_shell_state()
+            .toplevel_surfaces()
+            .iter()
+            .find(|toplevel| *toplevel.wl_surface() == requested_child)
+            .cloned()
+        {
+            XdgShellHandler::parent_changed(state, toplevel);
+        }
+    }
 }

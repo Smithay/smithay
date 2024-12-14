@@ -131,7 +131,8 @@ impl XdgForeignState {
 
 /// Macro to delegate implementation of the xdg foreign to [`XdgForeignState`].
 ///
-/// You must also implement [`XdgForeignHandler`] to use this.
+/// You must also implement [`XdgForeignHandler`] and
+/// [`XdgShellHandler`](crate::wayland::shell::xdg::XdgShellHandler) to use this.
 #[macro_export]
 macro_rules! delegate_xdg_foreign {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
