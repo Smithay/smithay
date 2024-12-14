@@ -6,9 +6,14 @@ use wayland_protocols::xdg::foreign::zv2::server::{
     zxdg_imported_v2::{self, ZxdgImportedV2},
     zxdg_importer_v2::{self, ZxdgImporterV2},
 };
-use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
+use wayland_server::{
+    backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+};
 
-use crate::wayland::{compositor, shell::xdg::XdgToplevelSurfaceData};
+use crate::wayland::{
+    compositor,
+    shell::{is_valid_parent, xdg::XdgToplevelSurfaceData},
+};
 
 use super::{
     ExportedState, XdgExportedUserData, XdgForeignHandle, XdgForeignHandler, XdgForeignState,
@@ -179,11 +184,24 @@ impl<D: XdgForeignHandler> Dispatch<ZxdgImportedV2, XdgImportedUserData, D> for 
                 {
                     let parent = &state.exported_surface;
 
+                    let mut invalid = false;
                     compositor::with_states(&child, |states| {
                         if let Some(data) = states.data_map.get::<XdgToplevelSurfaceData>() {
-                            data.lock().unwrap().parent = Some(parent.clone());
+                            if is_valid_parent(&child, parent) {
+                                data.lock().unwrap().parent = Some(parent.clone());
+                            } else {
+                                invalid = true;
+                            }
                         }
                     });
+
+                    if invalid {
+                        resource.post_error(
+                            zxdg_imported_v2::Error::InvalidSurface,
+                            "invalid parent relationship",
+                        );
+                        return;
+                    }
 
                     state.requested_child = Some((child, resource.clone()));
                 }

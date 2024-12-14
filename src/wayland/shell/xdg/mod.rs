@@ -123,7 +123,6 @@ use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
 use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
-use crate::wayland::shell::is_toplevel_equivalent;
 use std::cmp::min;
 use std::{collections::HashSet, fmt::Debug, sync::Mutex};
 
@@ -1721,16 +1720,7 @@ impl ToplevelSurface {
     ///
     /// If the parent is `None`, the parent-child relationship is removed.
     pub fn set_parent(&self, parent: Option<&wl_surface::WlSurface>) -> bool {
-        if let Some(parent) = parent {
-            if !is_toplevel_equivalent(parent) {
-                return false;
-            }
-        }
-
-        // Unset the parent
-        handlers::set_parent(&self.shell_surface, None);
-
-        true
+        handlers::set_parent(&self.shell_surface, parent.cloned())
     }
 }
 

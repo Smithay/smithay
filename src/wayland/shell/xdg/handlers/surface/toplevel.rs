@@ -2,7 +2,10 @@ use std::sync::atomic::Ordering;
 
 use crate::{
     utils::Serial,
-    wayland::{compositor, shell::xdg::XdgToplevelSurfaceData},
+    wayland::{
+        compositor,
+        shell::{is_valid_parent, xdg::XdgToplevelSurfaceData},
+    },
 };
 
 use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
@@ -47,7 +50,9 @@ where
                 });
 
                 // Parent is not double buffered, we can set it directly
-                set_parent(toplevel, parent_surface);
+                if !set_parent(toplevel, parent_surface) {
+                    toplevel.post_error(xdg_toplevel::Error::InvalidParent, "invalid parent toplevel");
+                }
             }
             xdg_toplevel::Request::SetTitle { title } => {
                 // Title is not double buffered, we can set it directly
@@ -204,17 +209,26 @@ pub fn get_parent(toplevel: &xdg_toplevel::XdgToplevel) -> Option<wl_surface::Wl
     with_surface_toplevel_role_data(toplevel, |data| data.parent.clone())
 }
 
-/// Sets the parent of the specified toplevel surface.
+/// Sets the parent of the specified toplevel surface and returns whether the parent was successfully set.
 ///
 /// The parent must be a toplevel surface.
 ///
 /// The parent of a surface is not double buffered and therefore may be set directly.
 ///
 /// If the parent is `None`, the parent-child relationship is removed.
-pub fn set_parent(toplevel: &xdg_toplevel::XdgToplevel, parent: Option<wl_surface::WlSurface>) {
+pub fn set_parent(toplevel: &xdg_toplevel::XdgToplevel, parent: Option<wl_surface::WlSurface>) -> bool {
+    if let Some(parent) = &parent {
+        let data = toplevel.data::<XdgShellSurfaceUserData>().unwrap();
+        if !is_valid_parent(&data.wl_surface, parent) {
+            return false;
+        }
+    }
+
     with_surface_toplevel_role_data(toplevel, |data| {
         data.parent = parent;
     });
+
+    true
 }
 
 fn with_toplevel_pending_state<F, T>(data: &XdgShellSurfaceUserData, f: F) -> T
