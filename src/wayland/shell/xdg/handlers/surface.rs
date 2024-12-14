@@ -31,7 +31,7 @@ use super::{
 
 mod toplevel;
 use toplevel::make_toplevel_handle;
-pub use toplevel::{get_parent, send_toplevel_configure, set_parent};
+pub use toplevel::{get_parent, send_toplevel_configure};
 
 mod popup;
 pub use popup::{make_popup_handle, send_popup_configure};
