@@ -840,6 +840,31 @@ where
     _renderer: PhantomData<R>,
 }
 
+impl<R, E> DrmOutputRenderElements<R, E>
+where
+    E: RenderElement<R>,
+    R: Renderer + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+{
+    /// Construct a new empty set of render elements
+    pub fn new() -> Self {
+        DrmOutputRenderElements {
+            render_elements: HashMap::new(),
+            _renderer: PhantomData,
+        }
+    }
+
+    /// Construct a new empty set of render elements with pre-allocated capacity
+    /// for a number of crtcs.
+    pub fn with_capacity(cap: usize) -> Self {
+        DrmOutputRenderElements {
+            render_elements: HashMap::with_capacity(cap),
+            _renderer: PhantomData,
+        }
+    }
+}
+
 impl<R, E> Default for DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
@@ -848,10 +873,7 @@ where
     <R as Renderer>::Error: Send + Sync + 'static,
 {
     fn default() -> Self {
-        DrmOutputRenderElements {
-            render_elements: HashMap::new(),
-            _renderer: PhantomData,
-        }
+        Self::new()
     }
 }
 
