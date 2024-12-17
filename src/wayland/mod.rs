@@ -88,3 +88,45 @@ pub mod xdg_toplevel_icon;
 pub mod xwayland_keyboard_grab;
 #[cfg(feature = "xwayland")]
 pub mod xwayland_shell;
+
+mod gen {
+    macro_rules! wayland_protocol(
+    ($path:expr, [$($imports:path),*]) => {
+        pub use self::generated::server;
+
+        mod generated {
+            #![allow(dead_code,non_camel_case_types,unused_unsafe,unused_variables)]
+            #![allow(non_upper_case_globals,non_snake_case,unused_imports)]
+            #![allow(missing_docs, clippy::all)]
+
+            pub mod server {
+                //! Server-side API of this protocol
+                use wayland_server;
+                use wayland_server::protocol::*;
+                $(use $imports::{server::*};)*
+
+                pub mod __interfaces {
+                    use wayland_server::protocol::__interfaces::*;
+                    $(use $imports::{server::__interfaces::*};)*
+                    wayland_scanner::generate_interfaces!($path);
+                }
+                use self::__interfaces::*;
+
+                wayland_scanner::generate_server_code!($path);
+            }
+        }
+    }
+    );
+
+    pub mod ext_data_control {
+        //! Control data devices, particularly the clipboard.
+        //!
+        //! An interface to control data devices, particularly to manage the current selection and
+        //! take the role of a clipboard manager.
+
+        #[allow(missing_docs)]
+        pub mod v1 {
+            wayland_protocol!("./ext_data_control.xml", []);
+        }
+    }
+}
