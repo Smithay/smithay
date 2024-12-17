@@ -25,7 +25,7 @@ use crate::{
 
 use super::{
     compositor::{
-        DrmCompositor, FrameError, FrameMode, FrameResult, RenderFrameError, RenderFrameErrorType,
+        DrmCompositor, FrameError, FrameFlags, FrameResult, RenderFrameError, RenderFrameErrorType,
         RenderFrameResult,
     },
     exporter::ExportFramebuffer,
@@ -379,7 +379,7 @@ where
         };
 
         // We need to render the new output once to lock in the primary plane as used with the new format, so we don't hit the bandwidth issue,
-        // when downstream potentially uses `FrameMode::ALL` immediately after this.
+        // when downstream potentially uses `FrameFlags::DEFAULT` immediately after this.
 
         let compositor = write_guard.get_mut(&crtc).unwrap();
         let compositor = compositor.get_mut().unwrap();
@@ -599,7 +599,7 @@ where
         renderer: &mut R,
         elements: &'a [E],
         clear_color: impl Into<Color32F>,
-        frame_mode: FrameMode,
+        frame_mode: FrameFlags,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
@@ -922,7 +922,7 @@ where
             .map(|(ref elements, ref color)| (&**elements, color))
             .unwrap_or((&[], &Color32F::BLACK));
         compositor
-            .render_frame(renderer, elements, *clear_color, FrameMode::COMPOSITE)
+            .render_frame(renderer, elements, *clear_color, FrameFlags::empty())
             .map_err(DrmOutputManagerError::RenderFrame)?;
         compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
         Ok(())

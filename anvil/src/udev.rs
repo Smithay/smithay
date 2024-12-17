@@ -31,7 +31,7 @@ use smithay::{
             Fourcc,
         },
         drm::{
-            compositor::{DrmCompositor, FrameMode},
+            compositor::{DrmCompositor, FrameFlags},
             output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
             CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
             DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
@@ -1512,9 +1512,9 @@ fn render_surface<'a>(
         output_elements(output, space, custom_elements, renderer, show_window_preview);
 
     let frame_mode = if surface.disable_direct_scanout {
-        FrameMode::COMPOSITE
+        FrameFlags::empty()
     } else {
-        FrameMode::ALL
+        FrameFlags::DEFAULT
     };
     let (rendered, states) = surface
         .drm_output
