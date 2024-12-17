@@ -58,7 +58,7 @@
 //! # use std::{collections::HashSet, mem::MaybeUninit};
 //! #
 //! use smithay::{
-//!     backend::drm::{compositor::{DrmCompositor, FrameMode}, DrmSurface},
+//!     backend::drm::{compositor::{DrmCompositor, FrameFlags}, DrmSurface},
 //!     output::{Output, PhysicalProperties, Subpixel},
 //!     utils::Size,
 //! };
@@ -104,7 +104,7 @@
 //!
 //! # let elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _>(&mut renderer, &elements, CLEAR_COLOR, FrameMode::ALL)
+//!     .render_frame::<_, _>(&mut renderer, &elements, CLEAR_COLOR, FrameFlags::DEFAULT)
 //!     .expect("failed to render frame");
 //!
 //! if !render_frame_result.is_empty {
@@ -1014,19 +1014,23 @@ where
 bitflags::bitflags! {
     /// Possible flags for a DMA buffer
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct FrameMode: u32 {
-        /// Allow to realize the frame by compositing elements on the primary plane
-        const COMPOSITE = 1;
+    pub struct FrameFlags: u32 {
         /// Allow to realize the frame by scanning out elements on the primary plane
-        const PRIMARY_PLANE_SCANOUT = 2;
+        /// with the same pixel format as the main swapchain
+        const ALLOW_PRIMARY_PLANE_SCANOUT = 1;
+        /// Allow to realize the frame by scanning out elements on the primary plane
+        /// regardless of their format
+        const ALLOW_PRIMARY_PLANE_SCANOUT_ANY = 2;
         /// Allow to realize the frame by scanning out elements on overlay planes
-        const OVERLAY_PLANE_SCANOUT = 4;
+        const ALLOW_OVERLAY_PLANE_SCANOUT = 4;
         /// Allow to realize the frame by scanning out elements on cursor planes
-        const CURSOR_PLANE_SCANOUT = 8;
+        const ALLOW_CURSOR_PLANE_SCANOUT = 8;
+        /// Return `EmptyFrame`, if only the cursor plane would have been updated
+        const SKIP_CURSOR_ONLY_UPDATES = 16;
         /// Allow to realize the frame by assigning elements on any plane
-        const SCANOUT = Self::PRIMARY_PLANE_SCANOUT.bits() | Self::OVERLAY_PLANE_SCANOUT.bits() | Self::CURSOR_PLANE_SCANOUT.bits();
-        /// Allow all available operations to realize the frame
-        const ALL = Self::COMPOSITE.bits() | Self::SCANOUT.bits();
+        const ALLOW_SCANOUT = Self::ALLOW_PRIMARY_PLANE_SCANOUT.bits() | Self::ALLOW_OVERLAY_PLANE_SCANOUT.bits() | Self::ALLOW_CURSOR_PLANE_SCANOUT.bits();
+        /// Safe default set of flags
+        const DEFAULT = Self::ALLOW_SCANOUT.bits();
     }
 }
 
@@ -1667,7 +1671,7 @@ where
     /// Render the next frame
     ///
     /// - `elements` for this frame in front-to-back order
-    /// - `frame_mode` specifies techniques allowed to realize the frame
+    /// - `frame_flags` specifies techniques allowed to realize the frame
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     #[profiling::function]
     pub fn render_frame<'a, R, E>(
@@ -1675,7 +1679,7 @@ where
         renderer: &mut R,
         elements: &'a [E],
         clear_color: impl Into<Color32F>,
-        frame_mode: FrameMode,
+        frame_flags: FrameFlags,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
@@ -2013,7 +2017,7 @@ where
                 output_transform,
                 output_geometry,
                 try_assign_primary_plane,
-                frame_mode,
+                frame_flags,
             ) {
                 Ok(direct_scan_out_plane) => {
                     match direct_scan_out_plane.type_ {
@@ -2355,7 +2359,7 @@ where
         };
 
         // if the update only contains a cursor position update, skip it for vrr
-        if self.vrr_enabled()
+        if frame_flags.contains(FrameFlags::SKIP_CURSOR_ONLY_UPDATES)
             && allow_partial_update
             && next_frame_state.planes.iter().all(|(plane, state)| {
                 state.skip
@@ -2801,14 +2805,14 @@ where
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         try_assign_primary_plane: bool,
-        frame_mode: FrameMode,
+        frame_flags: FrameFlags,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer + Bind<Dmabuf>,
         E: RenderElement<R>,
     {
         // Check if we have a free plane, otherwise we can exit early
-        if !frame_mode.intersects(FrameMode::SCANOUT) {
+        if !frame_flags.intersects(FrameFlags::ALLOW_SCANOUT) {
             trace!(
                 "skipping direct scan-out for element {:?}, no free planes",
                 element.id()
@@ -2829,7 +2833,7 @@ where
                 frame_state,
                 output_transform,
                 output_geometry,
-                frame_mode,
+                frame_flags,
             ) {
                 Ok(plane) => {
                     trace!(
@@ -2852,7 +2856,7 @@ where
             frame_state,
             output_transform,
             output_geometry,
-            frame_mode,
+            frame_flags,
         ) {
             trace!("assigned element {:?} to cursor {:?}", element.id(), plane.handle);
             return Ok(plane);
@@ -2870,7 +2874,7 @@ where
             frame_state,
             output_transform,
             output_geometry,
-            frame_mode,
+            frame_flags,
         ) {
             Ok(plane) => {
                 trace!(
@@ -2900,13 +2904,15 @@ where
         frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-        frame_mode: FrameMode,
+        frame_flags: FrameFlags,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
-        if !frame_mode.contains(FrameMode::PRIMARY_PLANE_SCANOUT) {
+        if !frame_flags
+            .intersects(FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT | FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT_ANY)
+        {
             return Err(None);
         }
 
@@ -2935,7 +2941,9 @@ where
             .expect("We have a buffer for the primary plane")
             .buffer
         {
-            if slot.format() != element_config.properties.format {
+            if !frame_flags.contains(FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT_ANY)
+                && slot.format() != element_config.properties.format
+            {
                 trace!(
                     "failed to assign element {:?} to primary {:?}, format doesn't match",
                     element.id(),
@@ -2995,13 +3003,13 @@ where
         frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-        frame_mode: FrameMode,
+        frame_flags: FrameFlags,
     ) -> Option<PlaneAssignment>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
-        if !frame_mode.contains(FrameMode::CURSOR_PLANE_SCANOUT) {
+        if !frame_flags.contains(FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT) {
             return None;
         }
 
@@ -3691,13 +3699,13 @@ where
         frame_state: &mut CompositorFrameState<A, F>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-        frame_mode: FrameMode,
+        frame_flags: FrameFlags,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
-        if !frame_mode.contains(FrameMode::OVERLAY_PLANE_SCANOUT) {
+        if !frame_flags.contains(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT) {
             return Err(None);
         }
 
