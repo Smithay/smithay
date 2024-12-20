@@ -1,5 +1,7 @@
+use ffi::Gles2;
+
 use super::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// A handle to a GLES texture
 ///
@@ -27,6 +29,7 @@ impl GlesTexture {
     ) -> GlesTexture {
         GlesTexture(Arc::new(GlesTextureInternal {
             texture: tex,
+            upload_sync: Mutex::new(None),
             format: internal_format,
             has_alpha: !opaque,
             is_external: false,
@@ -53,6 +56,7 @@ impl GlesTexture {
 #[derive(Debug)]
 pub(super) struct GlesTextureInternal {
     pub(super) texture: ffi::types::GLuint,
+    pub(super) upload_sync: Mutex<Option<ffi::types::GLsync>>,
     pub(super) format: Option<ffi::types::GLenum>,
     pub(super) has_alpha: bool,
     pub(super) is_external: bool,
@@ -64,11 +68,30 @@ pub(super) struct GlesTextureInternal {
 unsafe impl Send for GlesTextureInternal {}
 unsafe impl Sync for GlesTextureInternal {}
 
+pub(super) unsafe fn wait_for_upload(sync: &mut Option<ffi::types::GLsync>, gl: &Gles2) {
+    if let Some(sync_obj) = *sync {
+        match gl.ClientWaitSync(sync_obj, 0, 0) {
+            ffi::ALREADY_SIGNALED | ffi::CONDITION_SATISFIED => {
+                let _ = sync.take();
+                gl.DeleteSync(sync_obj);
+            }
+            _ => {
+                gl.WaitSync(sync_obj, 0, ffi::TIMEOUT_IGNORED);
+            }
+        };
+    }
+}
+
 impl Drop for GlesTextureInternal {
     fn drop(&mut self) {
         let _ = self
             .destruction_callback_sender
             .send(CleanupResource::Texture(self.texture));
+        if let Some(sync) = self.upload_sync.lock().unwrap().take() {
+            let _ = self
+                .destruction_callback_sender
+                .send(CleanupResource::Sync(sync as *const _));
+        }
         if let Some(images) = self.egl_images.take() {
             for image in images {
                 let _ = self
