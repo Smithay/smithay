@@ -418,6 +418,14 @@ impl EGLContext {
         unsafe { ffi::egl::GetCurrentContext() == self.context as *const _ }
     }
 
+    /// Returns true if the OpenGL context is (possibly) shared with another.
+    ///
+    /// Externally managed contexts created with `EGLContext::from_raw`
+    /// are always considered shared by this function.
+    pub fn is_shared(&self) -> bool {
+        self.externally_managed || Arc::strong_count(&self.user_data) > 1
+    }
+
     /// Returns the egl config for this context
     pub fn config_id(&self) -> ffi::egl::types::EGLConfig {
         self.config_id
