@@ -204,6 +204,9 @@ macro_rules! xdg_role {
                 pub last_acked: Option<$state>,
                 /// Holds the current state after a successful commit.
                 pub current: $state,
+                /// Holds the last acked configure serial at the time of the last successful
+                /// commit. This serial corresponds to the current state.
+                pub current_serial: Option<Serial>,
                 /// Does the surface have a buffer (updated on every commit)
                 has_buffer: bool,
 
@@ -294,6 +297,7 @@ macro_rules! xdg_role {
                     server_pending: None,
                     last_acked: None,
                     current: Default::default(),
+                    current_serial: None,
                     has_buffer: false,
 
                     $(
@@ -1603,6 +1607,7 @@ impl ToplevelSurface {
 
             if let Some(state) = guard.last_acked.clone() {
                 guard.current = state;
+                guard.current_serial = guard.configure_serial;
             }
         });
     }
@@ -1994,6 +1999,7 @@ impl PopupSurface {
             if attributes.initial_configure_sent {
                 if let Some(state) = attributes.last_acked {
                     attributes.current = state;
+                    attributes.current_serial = attributes.configure_serial;
                 }
             }
         });
