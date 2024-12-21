@@ -1993,9 +1993,7 @@ impl PopupSurface {
 
             if attributes.initial_configure_sent {
                 if let Some(state) = attributes.last_acked {
-                    if state != attributes.current {
-                        attributes.current = state;
-                    }
+                    attributes.current = state;
                 }
             }
         });
