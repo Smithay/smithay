@@ -204,6 +204,9 @@ macro_rules! xdg_role {
                 pub last_acked: Option<$state>,
                 /// Holds the current state after a successful commit.
                 pub current: $state,
+                /// Holds the last acked configure serial at the time of the last successful
+                /// commit. This serial corresponds to the current state.
+                pub current_serial: Option<Serial>,
                 /// Does the surface have a buffer (updated on every commit)
                 has_buffer: bool,
 
@@ -282,6 +285,14 @@ macro_rules! xdg_role {
             pub fn has_pending_changes(&self) -> bool {
                 self.server_pending.as_ref().map(|s| s != self.current_server_state()).unwrap_or(false)
             }
+
+            /// Returns a list of configures sent to, but not yet acknowledged by the client.
+            ///
+            /// The list is ordered by age, so the last configure in the list is the last one sent
+            /// to the client.
+            pub fn pending_configures(&self) -> &[$configure_name] {
+                &self.pending_configures
+            }
         }
 
         impl Default for $attributes_name {
@@ -294,6 +305,7 @@ macro_rules! xdg_role {
                     server_pending: None,
                     last_acked: None,
                     current: Default::default(),
+                    current_serial: None,
                     has_buffer: false,
 
                     $(
@@ -1603,6 +1615,7 @@ impl ToplevelSurface {
 
             if let Some(state) = guard.last_acked.clone() {
                 guard.current = state;
+                guard.current_serial = guard.configure_serial;
             }
         });
     }
@@ -1993,9 +2006,8 @@ impl PopupSurface {
 
             if attributes.initial_configure_sent {
                 if let Some(state) = attributes.last_acked {
-                    if state != attributes.current {
-                        attributes.current = state;
-                    }
+                    attributes.current = state;
+                    attributes.current_serial = attributes.configure_serial;
                 }
             }
         });
