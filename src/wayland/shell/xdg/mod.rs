@@ -285,6 +285,14 @@ macro_rules! xdg_role {
             pub fn has_pending_changes(&self) -> bool {
                 self.server_pending.as_ref().map(|s| s != self.current_server_state()).unwrap_or(false)
             }
+
+            /// Returns a list of configures sent to, but not yet acknowledged by the client.
+            ///
+            /// The list is ordered by age, so the last configure in the list is the last one sent
+            /// to the client.
+            pub fn pending_configures(&self) -> &[$configure_name] {
+                &self.pending_configures
+            }
         }
 
         impl Default for $attributes_name {
