@@ -76,8 +76,11 @@ pub(crate) mod device;
 #[cfg(feature = "backend_drm")]
 pub mod dumb;
 mod error;
+pub mod exporter;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
+#[cfg(all(feature = "wayland_frontend", feature = "backend_gbm"))]
+pub mod output;
 
 mod surface;
 
