@@ -103,25 +103,24 @@ impl From<wayland_server::protocol::wl_output::Transform> for Transform {
 }
 
 /// Abstraction for Renderers, that can render into different targets
-pub trait Bind<Target>: Unbind {
-    /// Bind a given rendering target, which will contain the rendering results until `unbind` is called.
+pub trait Bind<Target>: Renderer {
+    /// Initialize a framebuffer with a given rendering target.
     ///
-    /// Binding to target, while another one is already bound, is rendering defined.
-    /// Some renderers might happily replace the current target, while other might drop the call
-    /// or throw an error.
-    fn bind(&mut self, target: Target) -> Result<(), <Self as Renderer>::Error>;
+    /// The `output_size` specifies the dimensions of the display **before** the `dst_transform` is
+    /// applied.
+    ///
+    /// This function *may* error, if:
+    /// - The given dimensions are unsupported (too large) for this renderer
+    /// - The given Transformation is not supported by the renderer (`Transform::Normal` is always supported).
+    fn bind<'a>(
+        &mut self,
+        target: &'a Target,
+    ) -> Result<<Self as Renderer>::Framebuffer<'a>, <Self as Renderer>::Error>;
+
     /// Supported pixel formats for given targets, if applicable.
     fn supported_formats(&self) -> Option<FormatSet> {
         None
     }
-}
-
-/// Functionality to unbind the current rendering target
-pub trait Unbind: Renderer {
-    /// Unbind the current rendering target.
-    ///
-    /// May fall back to a default target, if defined by the implementation.
-    fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error>;
 }
 
 /// A two dimensional texture
@@ -269,6 +268,8 @@ pub trait Renderer: fmt::Debug {
     type Error: Error;
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
+    /// Framebuffer to draw into
+    type Framebuffer<'buffer>: 'buffer;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame<'frame>: Frame<Error = Self::Error, TextureId = Self::TextureId> + 'frame
     where
@@ -288,7 +289,7 @@ pub trait Renderer: fmt::Debug {
     /// Returns the current enabled [`DebugFlags`]
     fn debug_flags(&self) -> DebugFlags;
 
-    /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
+    /// Initialize a rendering context on the provided framebuffer with given dimensions and transformation.
     ///
     /// The `output_size` specifies the dimensions of the display **before** the `dst_transform` is
     /// applied.
@@ -296,13 +297,12 @@ pub trait Renderer: fmt::Debug {
     /// This function *may* error, if:
     /// - The given dimensions are unsupported (too large) for this renderer
     /// - The given Transformation is not supported by the renderer (`Transform::Normal` is always supported).
-    /// - This renderer implements `Bind`, no target was bound *and* has no default target.
-    /// - (Renderers not implementing `Bind` always have a default target.)
-    fn render(
-        &mut self,
+    fn render<'frame, 'buffer: 'frame>(
+        &'frame mut self,
+        framebuffer: &'frame Self::Framebuffer<'buffer>,
         output_size: Size<i32, Physical>,
         dst_transform: Transform,
-    ) -> Result<Self::Frame<'_>, Self::Error>;
+    ) -> Result<Self::Frame<'frame>, Self::Error>;
 
     /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error>;
@@ -610,7 +610,7 @@ pub trait ExportMem: Renderer {
     /// Texture type representing a downloaded pixel buffer.
     type TextureMapping: TextureMapping;
 
-    /// Copies the contents of the currently bound framebuffer.
+    /// Copies the contents of the provided target.
     ///
     /// This operation is not destructive, the contents of the framebuffer keep being valid.
     ///
@@ -621,6 +621,7 @@ pub trait ExportMem: Renderer {
     /// - It is not possible to convert the framebuffer into the provided format.
     fn copy_framebuffer(
         &mut self,
+        target: &<Self as Renderer>::Framebuffer<'_>,
         region: Rectangle<i32, BufferCoord>,
         format: Fourcc,
     ) -> Result<Self::TextureMapping, <Self as Renderer>::Error>;
@@ -666,53 +667,27 @@ pub trait ExportMem: Renderer {
 }
 
 /// Trait for renderers supporting blitting contents from one framebuffer to another.
-pub trait Blit<Target>
+pub trait Blit
 where
-    Self: Renderer + Bind<Target>,
+    Self: Renderer,
 {
-    /// Copies the contents of `src` in the current bound framebuffer to `dst` in Target,
+    /// Copies the contents of `src` from one provided target to `dst` in the other provided target,
     /// applying `filter` if necessary.
     ///
     /// This operation is non destructive, the contents of the source framebuffer
     /// are kept intact as is any region not in `dst` for the target framebuffer.
     ///
-    /// This operation needs a bound or default rendering target.
-    /// The currently bound target is guaranteed to still be active after this operation.
-    ///
     /// This function *may* fail, if (but not limited to):
-    /// - The source framebuffer is not readable / unset
+    /// - The source framebuffer is not readable
     /// - The destination framebuffer is not writable
     /// - `src` is out of bounds for the source framebuffer
     /// - `dst` is out of bounds for the destination framebuffer
     /// - `src` and `dst` sizes are different and interpolation id not supported by this renderer.
     /// - source and target framebuffer are the same, and `src` and `dst` overlap
-    fn blit_to(
+    fn blit(
         &mut self,
-        to: Target,
-        src: Rectangle<i32, Physical>,
-        dst: Rectangle<i32, Physical>,
-        filter: TextureFilter,
-    ) -> Result<(), <Self as Renderer>::Error>;
-
-    /// Copies the contents of `src` in Target to `dst` of the current bound framebuffer,
-    /// applying `filter` if necessary.
-    ///
-    /// This operation is non destructive, the contents of the source framebuffer
-    /// are kept intact as is any region not in `dst` for the target framebuffer.
-    ///
-    /// This operation needs a bound or default rendering target.
-    /// The currently bound target is guaranteed to still be active after this operation.
-    ///
-    /// This function *may* fail, if (but not limited to):
-    /// - The source framebuffer is not readable
-    /// - The destination framebuffer is not writable / unset
-    /// - `src` is out of bounds for the source framebuffer
-    /// - `dst` is out of bounds for the destination framebuffer
-    /// - `src` and `dst` sizes are different and interpolation id not supported by this renderer.
-    /// - source and target framebuffer are the same, and `src` and `dst` overlap
-    fn blit_from(
-        &mut self,
-        from: Target,
+        from: &<Self as Renderer>::Framebuffer<'_>,
+        to: &<Self as Renderer>::Framebuffer<'_>,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,

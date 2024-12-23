@@ -143,7 +143,7 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 #[cfg(feature = "renderer_pixman")]
 use crate::backend::renderer::{
     pixman::{PixmanError, PixmanRenderBuffer, PixmanRenderer, PixmanTexture},
-    ImportAll, Unbind,
+    ImportAll,
 };
 use crate::{
     backend::{
@@ -1237,7 +1237,7 @@ where
         filter: impl IntoIterator<Item = Id>,
     ) -> Result<SyncPoint, BlitFrameResultError<<R as Renderer>::Error, <B as AsDmabuf>::Error>>
     where
-        R: Renderer + Blit<Dmabuf>,
+        R: Renderer + Blit + Bind<Dmabuf>,
         <R as Renderer>::TextureId: 'static,
         E: Element + RenderElement<R>,
     {

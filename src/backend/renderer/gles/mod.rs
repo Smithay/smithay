@@ -12,7 +12,7 @@ use std::{
     sync::{
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{channel, Receiver, Sender},
-        Arc, Mutex, RwLock,
+        Arc, Mutex, RwLock, RwLockWriteGuard,
     },
 };
 use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
@@ -35,7 +35,7 @@ use self::version::GlVersion;
 
 use super::{
     sync::SyncPoint, Bind, Blit, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen,
-    Renderer, Texture, TextureFilter, TextureMapping, Unbind,
+    Renderer, Texture, TextureFilter, TextureMapping,
 };
 use crate::backend::{
     allocator::{
@@ -139,28 +139,30 @@ impl Drop for GlesRenderbufferInternal {
 }
 
 #[derive(Debug)]
-enum GlesTarget {
+pub enum GlesTarget<'a> {
     Image {
         // TODO: Ideally we would be able to share the texture between renderers with shared EGLContexts though.
         // But we definitly don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
         buf: GlesBuffer,
         dmabuf: Dmabuf,
+        _lifetime: std::marker::PhantomData<&'a ()>,
     },
     Surface {
-        surface: Rc<EGLSurface>,
+        surface: &'a EGLSurface,
     },
     Texture {
         texture: GlesTexture,
+        sync_lock: RwLockWriteGuard<'a, TextureSync>,
         fbo: ffi::types::GLuint,
         destruction_callback_sender: Sender<CleanupResource>,
     },
     Renderbuffer {
-        buf: GlesRenderbuffer,
+        buf: &'a GlesRenderbuffer,
         fbo: ffi::types::GLuint,
     },
 }
 
-impl GlesTarget {
+impl GlesTarget<'_> {
     fn format(&self) -> Option<(ffi::types::GLenum, bool)> {
         match self {
             GlesTarget::Image { dmabuf, .. } => {
@@ -206,7 +208,7 @@ impl GlesTarget {
     }
 }
 
-impl Drop for GlesTarget {
+impl Drop for GlesTarget<'_> {
     fn drop(&mut self) {
         match self {
             GlesTarget::Texture {
@@ -249,7 +251,6 @@ pub enum Capability {
 /// A renderer utilizing OpenGL ES
 pub struct GlesRenderer {
     // state
-    target: Option<GlesTarget>,
     min_filter: TextureFilter,
     max_filter: TextureFilter,
     debug_flags: DebugFlags,
@@ -291,12 +292,14 @@ pub struct GlesRenderer {
 
 /// Handle to the currently rendered frame during [`GlesRenderer::render`](Renderer::render).
 ///
-/// Leaking this frame will prevent it from synchronizing the rendered framebuffer,
-/// which might cause glitches. Additionally parts of the GL state might not be reset correctly,
-/// causing unexpected results for later render commands.
-/// The internal GL context and framebuffer will remain valid, no re-creation will be necessary.
+/// Leaking this frame will cause a variety of problems:
+/// - It might prevent the frame from synchronizing the rendered framebuffer causing glitches.
+/// - Depending on the bound target this can deadlock, if the same target is used later in any way.
+/// - Additionally parts of the GL state might not be reset correctly, causing unexpected results for later render commands.
+/// - The internal GL context and framebuffer will remain valid, no re-creation will be necessary.
 pub struct GlesFrame<'frame> {
     renderer: &'frame mut GlesRenderer,
+    target: &'frame GlesTarget<'frame>,
     current_projection: Matrix3<f32>,
     transform: Transform,
     size: Size<i32, Physical>,
@@ -310,6 +313,7 @@ impl fmt::Debug for GlesFrame<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlesFrame")
             .field("renderer", &self.renderer)
+            .field("target", &self.target)
             .field("current_projection", &self.current_projection)
             .field("transform", &self.transform)
             .field("tex_program_override", &self.tex_program_override)
@@ -323,7 +327,6 @@ impl fmt::Debug for GlesRenderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlesRenderer")
             .field("buffers", &self.buffers)
-            .field("target", &self.target)
             .field("extensions", &self.extensions)
             .field("capabilities", &self.capabilities)
             .field("tex_program", &self.tex_program)
@@ -453,12 +456,10 @@ impl GlesRenderer {
     ///   `EGLContext` shared with the given one (see `EGLContext::new_shared`) and can be used on
     ///   any of these renderers.
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
-    /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling.
-    /// - The renderer might use two-pass rendering internally to facilitate color space transformations.
-    ///   As such it reserves any stencil buffer for internal use and makes no guarantee about previous framebuffer
-    ///   contents being accessible during the lifetime of a `GlesFrame`.
+    /// - If OpenGL ES 3.0 is not available and the underlying [`EGLContext`] is shared, memory textures
+    ///   will insert `glFinish`-calls into the pipeline. Consider not sharing contexts, if OpenGL ES 3 isn't available.
     pub unsafe fn with_capabilities(
         context: EGLContext,
         capabilities: impl IntoIterator<Item = Capability>,
@@ -600,7 +601,6 @@ impl GlesRenderer {
             min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
 
-            target: None,
             buffers: Vec::new(),
             dmabuf_cache: std::collections::HashMap::new(),
             vertices: Vec::with_capacity(6 * 16),
@@ -620,12 +620,13 @@ impl GlesRenderer {
     }
 
     #[profiling::function]
-    pub(crate) fn make_current(&mut self) -> Result<(), MakeCurrentError> {
-        if let Some(target) = self.target.as_ref() {
-            target.make_current(&self.gl, &self.egl)?;
-        } else {
-            unsafe { self.egl.make_current()? };
+    fn unbind(&mut self) -> Result<(), GlesError> {
+        unsafe {
+            self.egl.make_current()?;
         }
+        unsafe { self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0) };
+        self.cleanup();
+        self.egl.unbind()?;
         Ok(())
     }
 
@@ -685,13 +686,6 @@ impl GlesRenderer {
     }
 }
 
-/// Warning: If your context only supports OpenGL ES 2.0 and
-/// you are sharing EGLContexts, using [`import_shm_buffer`]
-/// will insert a `glFinish()` call for every buffer import
-/// to synchronize texture access.
-///
-/// As a compositor developer consider not sharing
-/// contexts, if OpenGL ES 3.0 is unavailable.
 #[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
@@ -717,8 +711,6 @@ impl ImportMemWl for GlesRenderer {
         });
 
         with_buffer_contents(buffer, |ptr, len, data| {
-            self.make_current()?;
-
             let offset = data.offset;
             let width = data.width;
             let height = data.height;
@@ -785,6 +777,7 @@ impl ImportMemWl for GlesRenderer {
 
             let mut sync_lock = texture.0.sync.write().unwrap();
             unsafe {
+                self.egl.make_current()?;
                 sync_lock.wait_for_all(&self.gl);
                 self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
                 self.gl
@@ -872,8 +865,6 @@ impl ImportMem for GlesRenderer {
         size: Size<i32, BufferCoord>,
         flipped: bool,
     ) -> Result<GlesTexture, GlesError> {
-        self.make_current()?;
-
         if data.len()
             < (size.w * size.h) as usize
                 * (get_bpp(format).ok_or(GlesError::UnsupportedPixelFormat(format))? / 8)
@@ -905,6 +896,7 @@ impl ImportMem for GlesRenderer {
         let texture = GlesTexture(Arc::new({
             let mut tex = 0;
             unsafe {
+                self.egl.make_current()?;
                 self.gl.GenTextures(1, &mut tex);
                 self.gl.BindTexture(ffi::TEXTURE_2D, tex);
                 self.gl
@@ -959,8 +951,6 @@ impl ImportMem for GlesRenderer {
         data: &[u8],
         region: Rectangle<i32, BufferCoord>,
     ) -> Result<(), <Self as Renderer>::Error> {
-        self.make_current()?;
-
         if texture.0.format.is_none() {
             return Err(GlesError::UnknownPixelFormat);
         }
@@ -979,6 +969,7 @@ impl ImportMem for GlesRenderer {
 
         let mut sync_lock = texture.0.sync.write().unwrap();
         unsafe {
+            self.egl.make_current()?;
             sync_lock.wait_for_all(&self.gl);
             self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
             self.gl
@@ -1068,8 +1059,6 @@ impl ImportEgl for GlesRenderer {
         // clean up check if the buffer is still alive. For wl_drm the
         // is_alive check will always return true and the cache entry
         // will never be cleaned up.
-        self.make_current()?;
-
         let egl = self
             .egl_reader
             .as_ref()
@@ -1112,7 +1101,6 @@ impl ImportDma for GlesRenderer {
             return Err(GlesError::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
-        self.make_current()?;
         self.existing_dmabuf_texture(buffer)?.map(Ok).unwrap_or_else(|| {
             let is_external = !self.egl.dmabuf_render_formats().contains(&buffer.format());
             let image = self
@@ -1179,6 +1167,9 @@ impl GlesRenderer {
         is_external: bool,
         tex: Option<u32>,
     ) -> Result<u32, GlesError> {
+        unsafe {
+            self.egl.make_current()?;
+        }
         let tex = tex.unwrap_or_else(|| unsafe {
             let mut tex = 0;
             self.gl.GenTextures(1, &mut tex);
@@ -1202,21 +1193,17 @@ impl GlesRenderer {
 impl ExportMem for GlesRenderer {
     type TextureMapping = GlesMapping;
 
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, target))]
     #[profiling::function]
     fn copy_framebuffer(
         &mut self,
+        target: &GlesTarget<'_>,
         region: Rectangle<i32, BufferCoord>,
         fourcc: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        self.make_current()?;
+        target.make_current(&self.gl, &self.egl)?;
 
-        let (_, has_alpha) = self
-            .target
-            .as_ref()
-            .ok_or(GlesError::UnknownPixelFormat)?
-            .format()
-            .ok_or(GlesError::UnknownPixelFormat)?;
+        let (_, has_alpha) = target.format().ok_or(GlesError::UnknownPixelFormat)?;
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
 
         let mut pbo = 0;
@@ -1228,13 +1215,12 @@ impl ExportMem for GlesRenderer {
             let size = (region.size.w * region.size.h * bpp as i32) as isize;
             self.gl
                 .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
-            self.gl.ReadBuffer(
-                if matches!(self.target.as_ref(), None | Some(GlesTarget::Surface { .. })) {
+            self.gl
+                .ReadBuffer(if matches!(target, GlesTarget::Surface { .. }) {
                     ffi::BACK
                 } else {
                     ffi::COLOR_ATTACHMENT0
-                },
-            );
+                });
             self.gl.ReadPixels(
                 region.loc.x,
                 region.loc.y,
@@ -1265,17 +1251,8 @@ impl ExportMem for GlesRenderer {
     }
 
     fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, GlesError> {
-        let old_target = self.target.take();
-
         // if we can't bind the texture, we can't read it
-        let res = self.bind(texture.clone()).is_ok();
-
-        // restore
-        self.unbind()?;
-        self.target = old_target;
-        self.make_current()?;
-
-        Ok(res)
+        Ok(self.bind(texture).is_ok())
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
@@ -1287,8 +1264,8 @@ impl ExportMem for GlesRenderer {
         fourcc: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
         let mut pbo = 0;
-        let old_target = self.target.take();
-        self.bind(texture.clone())?;
+        let target = self.bind(texture)?;
+        target.make_current(&self.gl, &self.egl)?;
 
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
         let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
@@ -1318,11 +1295,6 @@ impl ExportMem for GlesRenderer {
             self.gl.GetError()
         };
 
-        // restore old framebuffer
-        self.unbind()?;
-        self.target = old_target;
-        self.make_current()?;
-
         match err {
             ffi::NO_ERROR => Ok(GlesMapping {
                 pbo,
@@ -1344,7 +1316,10 @@ impl ExportMem for GlesRenderer {
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
     ) -> Result<&'a [u8], Self::Error> {
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
+
         let size = texture_mapping.size();
         let len = size.w * size.h * 4;
 
@@ -1372,42 +1347,25 @@ impl ExportMem for GlesRenderer {
     }
 }
 
-impl Bind<Rc<EGLSurface>> for GlesRenderer {
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    #[profiling::function]
-    fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), GlesError> {
-        unsafe {
-            self.egl.make_current()?;
-        }
-
-        self.target = Some(GlesTarget::Surface {
-            surface: surface.clone(),
-        });
-        let res = self.make_current();
-        if res.is_err() {
-            let _ = self.unbind();
-        }
-        res?;
-
-        Ok(())
+impl Bind<EGLSurface> for GlesRenderer {
+    fn bind<'a>(&mut self, surface: &'a EGLSurface) -> Result<GlesTarget<'a>, GlesError> {
+        Ok(GlesTarget::Surface { surface })
     }
 }
 
 impl Bind<Dmabuf> for GlesRenderer {
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    #[profiling::function]
-    fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), GlesError> {
+    fn bind<'a>(&mut self, dmabuf: &'a Dmabuf) -> Result<GlesTarget<'a>, GlesError> {
         unsafe {
             self.egl.make_current()?;
         }
 
-        let bind = || {
+        let mut bind = || {
             let (buf, dmabuf) = self
                 .buffers
                 .iter_mut()
                 .find(|buffer| {
                     if let Some(dma) = buffer.dmabuf.upgrade() {
-                        dma == dmabuf
+                        dma == *dmabuf
                     } else {
                         false
                     }
@@ -1418,7 +1376,7 @@ impl Bind<Dmabuf> for GlesRenderer {
                     let image = self
                         .egl
                         .display()
-                        .create_image_from_dmabuf(&dmabuf)
+                        .create_image_from_dmabuf(dmabuf)
                         .map_err(GlesError::BindBufferEGLError)?;
 
                     unsafe {
@@ -1442,7 +1400,9 @@ impl Bind<Dmabuf> for GlesRenderer {
                         self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
                         if status != ffi::FRAMEBUFFER_COMPLETE {
-                            //TODO wrap image and drop here
+                            self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                            self.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
+                            ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
                             return Err(GlesError::FramebufferBindingError);
                         }
                         let buf = GlesBuffer {
@@ -1454,40 +1414,36 @@ impl Bind<Dmabuf> for GlesRenderer {
 
                         self.buffers.push(buf.clone());
 
-                        Ok((buf, dmabuf))
+                        Ok((buf, dmabuf.clone()))
                     }
                 })?;
 
-            self.target = Some(GlesTarget::Image { buf, dmabuf });
-            std::result::Result::<(), GlesError>::Ok(())
+            Ok(GlesTarget::Image {
+                buf,
+                dmabuf,
+                _lifetime: std::marker::PhantomData,
+            })
         };
-        let res = bind();
-        if res.is_err() {
-            let _ = self.unbind();
-        }
-        res?;
-        self.make_current()?;
-        Ok(())
-    }
 
-    fn supported_formats(&self) -> Option<FormatSet> {
-        Some(self.egl.display().dmabuf_render_formats().clone())
+        bind().inspect_err(|_| {
+            if let Err(err) = self.unbind() {
+                self.span.in_scope(|| warn!(?err, "Failed to unbind on err"));
+            }
+        })
     }
 }
 
 impl Bind<GlesTexture> for GlesRenderer {
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    #[profiling::function]
-    fn bind(&mut self, texture: GlesTexture) -> Result<(), GlesError> {
+    fn bind<'a>(&mut self, texture: &'a GlesTexture) -> Result<GlesTarget<'a>, GlesError> {
         unsafe {
             self.egl.make_current()?;
         }
 
         let bind = || {
+            let mut sync_lock = texture.0.sync.write().unwrap();
             let mut fbo = 0;
             unsafe {
-                // TODO: we should keep the lock, while the Target is active
-                texture.0.sync.read().unwrap().wait_for_upload(&self.gl);
+                sync_lock.wait_for_all(&self.gl);
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
                 self.gl.FramebufferTexture2D(
@@ -1506,21 +1462,61 @@ impl Bind<GlesTexture> for GlesRenderer {
                 }
             }
 
-            self.target = Some(GlesTarget::Texture {
-                texture,
+            Ok(GlesTarget::Texture {
+                texture: texture.clone(),
+                sync_lock,
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
                 fbo,
-            });
-            Ok(())
+            })
         };
-        let res = bind();
-        if res.is_err() {
-            let _ = self.unbind();
-        }
-        res?;
-        self.make_current()?;
 
-        Ok(())
+        bind().inspect_err(|_| {
+            if let Err(err) = self.unbind() {
+                self.span.in_scope(|| warn!(?err, "Failed to unbind on err"));
+            }
+        })
+    }
+}
+
+impl Bind<GlesRenderbuffer> for GlesRenderer {
+    fn bind<'a>(&mut self, renderbuffer: &'a GlesRenderbuffer) -> Result<GlesTarget<'a>, GlesError> {
+        unsafe {
+            self.egl.make_current()?;
+        }
+
+        let bind = || {
+            let mut fbo = 0;
+            unsafe {
+                self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                self.gl.BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
+                self.gl.FramebufferRenderbuffer(
+                    ffi::FRAMEBUFFER,
+                    ffi::COLOR_ATTACHMENT0,
+                    ffi::RENDERBUFFER,
+                    renderbuffer.0.rbo,
+                );
+                let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+
+                if status != ffi::FRAMEBUFFER_COMPLETE {
+                    self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    return Err(GlesError::FramebufferBindingError);
+                }
+            }
+
+            Ok(GlesTarget::Renderbuffer {
+                buf: renderbuffer,
+                fbo,
+            })
+        };
+
+        bind().inspect_err(|_| {
+            if let Err(err) = self.unbind() {
+                self.span.in_scope(|| warn!(?err, "Failed to unbind on err"));
+            }
+        })
     }
 }
 
@@ -1532,8 +1528,6 @@ impl Offscreen<GlesTexture> for GlesRenderer {
         format: Fourcc,
         size: Size<i32, BufferCoord>,
     ) -> Result<GlesTexture, GlesError> {
-        self.make_current()?;
-
         let has_alpha = has_alpha(format);
         let (internal, format, layout) =
             fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
@@ -1544,6 +1538,7 @@ impl Offscreen<GlesTexture> for GlesRenderer {
         }
 
         let tex = unsafe {
+            self.egl.make_current()?;
             let mut tex = 0;
             self.gl.GenTextures(1, &mut tex);
             self.gl.BindTexture(ffi::TEXTURE_2D, tex);
@@ -1565,44 +1560,6 @@ impl Offscreen<GlesTexture> for GlesRenderer {
     }
 }
 
-impl Bind<GlesRenderbuffer> for GlesRenderer {
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    #[profiling::function]
-    fn bind(&mut self, renderbuffer: GlesRenderbuffer) -> Result<(), GlesError> {
-        self.unbind()?;
-        self.make_current()?;
-
-        let mut fbo = 0;
-        unsafe {
-            self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
-            self.gl.FramebufferRenderbuffer(
-                ffi::FRAMEBUFFER,
-                ffi::COLOR_ATTACHMENT0,
-                ffi::RENDERBUFFER,
-                renderbuffer.0.rbo,
-            );
-            let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
-
-            if status != ffi::FRAMEBUFFER_COMPLETE {
-                self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                return Err(GlesError::FramebufferBindingError);
-            }
-        }
-
-        self.target = Some(GlesTarget::Renderbuffer {
-            buf: renderbuffer,
-            fbo,
-        });
-        self.make_current()?;
-
-        Ok(())
-    }
-}
-
 impl Offscreen<GlesRenderbuffer> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
@@ -1614,8 +1571,6 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
         if !self.capabilities.contains(&Capability::Renderbuffer) {
             return Err(GlesError::UnsupportedPixelFormat(format));
         }
-        self.make_current()?;
-
         let has_alpha = has_alpha(format);
         let (internal, _, _) =
             fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
@@ -1625,6 +1580,8 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
         }
 
         unsafe {
+            self.egl.make_current()?;
+
             let mut rbo = 0;
             self.gl.GenRenderbuffers(1, &mut rbo);
             self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
@@ -1643,62 +1600,13 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
     }
 }
 
-impl<Target> Blit<Target> for GlesRenderer
-where
-    Self: Bind<Target>,
-{
-    #[instrument(level = "trace", parent = &self.span, skip(self, to))]
-    #[profiling::function]
-    fn blit_to(
-        &mut self,
-        to: Target,
-        src: Rectangle<i32, Physical>,
-        dst: Rectangle<i32, Physical>,
-        filter: TextureFilter,
-    ) -> Result<(), GlesError> {
-        let src_target = self.target.take().ok_or(GlesError::BlitError)?;
-        self.bind(to)?;
-        let dst_target = self.target.take().unwrap();
-        self.unbind()?;
-
-        let result = self.blit(&src_target, &dst_target, src, dst, filter);
-
-        self.target = Some(src_target);
-        self.make_current()?;
-
-        result
-    }
-
-    #[instrument(level = "trace", parent = &self.span, skip(self, from))]
-    #[profiling::function]
-    fn blit_from(
-        &mut self,
-        from: Target,
-        src: Rectangle<i32, Physical>,
-        dst: Rectangle<i32, Physical>,
-        filter: TextureFilter,
-    ) -> Result<(), GlesError> {
-        let dst_target = self.target.take().ok_or(GlesError::BlitError)?;
-        self.bind(from)?;
-        let src_target = self.target.take().unwrap();
-        self.unbind()?;
-
-        let result = self.blit(&src_target, &dst_target, src, dst, filter);
-
-        self.unbind()?;
-        self.target = Some(dst_target);
-        self.make_current()?;
-
-        result
-    }
-}
-
-impl GlesRenderer {
+impl Blit for GlesRenderer {
+    #[instrument(level = "trace", parent = &self.span, skip(self, src_target, dst_target))]
     #[profiling::function]
     fn blit(
         &mut self,
-        src_target: &GlesTarget,
-        dst_target: &GlesTarget,
+        src_target: &GlesTarget<'_>,
+        dst_target: &GlesTarget<'_>,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
@@ -1782,20 +1690,6 @@ impl GlesRenderer {
     }
 }
 
-impl Unbind for GlesRenderer {
-    #[profiling::function]
-    fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
-        unsafe {
-            self.egl.make_current()?;
-        }
-        unsafe { self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0) };
-        self.target = None;
-        self.cleanup();
-        self.egl.unbind()?;
-        Ok(())
-    }
-}
-
 impl Drop for GlesRenderer {
     fn drop(&mut self) {
         let _guard = self.span.enter();
@@ -1847,7 +1741,9 @@ impl GlesRenderer {
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
         Ok(func(&self.gl))
     }
 
@@ -1877,7 +1773,9 @@ impl GlesRenderer {
         src: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesPixelProgram, GlesError> {
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
 
         let shader = format!("#version 100\n{}", src.as_ref());
         let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &shader)? };
@@ -2004,7 +1902,9 @@ impl GlesRenderer {
         shader: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesTexProgram, GlesError> {
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
 
         unsafe {
             texture_program(
@@ -2038,6 +1938,7 @@ impl GlesFrame<'_> {
 impl Renderer for GlesRenderer {
     type Error = GlesError;
     type TextureId = GlesTexture;
+    type Framebuffer<'buffer> = GlesTarget<'buffer>;
     type Frame<'frame> = GlesFrame<'frame>;
 
     fn id(&self) -> usize {
@@ -2053,13 +1954,22 @@ impl Renderer for GlesRenderer {
         Ok(())
     }
 
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.debug_flags = flags;
+    }
+
+    fn debug_flags(&self) -> DebugFlags {
+        self.debug_flags
+    }
+
     #[profiling::function]
-    fn render(
-        &mut self,
+    fn render<'frame, 'buffer: 'frame>(
+        &'frame mut self,
+        target: &'frame GlesTarget<'buffer>,
         mut output_size: Size<i32, Physical>,
         transform: Transform,
-    ) -> Result<GlesFrame<'_>, Self::Error> {
-        self.make_current()?;
+    ) -> Result<GlesFrame<'frame>, GlesError> {
+        target.make_current(&self.gl, &self.egl)?;
 
         unsafe {
             self.gl.Viewport(0, 0, output_size.w, output_size.h);
@@ -2101,6 +2011,7 @@ impl Renderer for GlesRenderer {
 
         Ok(GlesFrame {
             renderer: self,
+            target,
             // output transformation passed in by the user
             current_projection,
             transform,
@@ -2112,17 +2023,11 @@ impl Renderer for GlesRenderer {
         })
     }
 
-    fn set_debug_flags(&mut self, flags: DebugFlags) {
-        self.debug_flags = flags;
-    }
-
-    fn debug_flags(&self) -> DebugFlags {
-        self.debug_flags
-    }
-
     #[profiling::function]
     fn wait(&mut self, sync: &super::sync::SyncPoint) -> Result<(), Self::Error> {
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
 
         let display = self.egl_context().display();
 
@@ -2155,7 +2060,9 @@ impl Renderer for GlesRenderer {
 
     #[profiling::function]
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
         self.cleanup();
         Ok(())
     }
