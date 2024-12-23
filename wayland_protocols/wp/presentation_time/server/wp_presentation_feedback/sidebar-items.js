@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_DISCARDED_OPCODE","EVT_DISCARDED_SINCE","EVT_PRESENTED_OPCODE","EVT_PRESENTED_SINCE","EVT_SYNC_OUTPUT_OPCODE","EVT_SYNC_OUTPUT_SINCE"],"enum":["Event","Request"],"struct":["Kind","WpPresentationFeedback"]};
