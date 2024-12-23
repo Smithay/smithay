@@ -12,13 +12,10 @@ use std::{
     sync::{
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{channel, Receiver, Sender},
-        Arc,
+        Arc, Mutex, RwLock,
     },
 };
 use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
-
-#[cfg(feature = "wayland_frontend")]
-use std::sync::Mutex;
 
 pub mod element;
 mod error;
@@ -88,6 +85,7 @@ enum CleanupResource {
     EGLImage(EGLImage),
     Mapping(ffi::types::GLuint, *const std::ffi::c_void),
     Program(ffi::types::GLuint),
+    Sync(ffi::types::GLsync),
 }
 unsafe impl Send for CleanupResource {}
 
@@ -240,8 +238,10 @@ pub enum Capability {
     _10Bit,
     /// GlesRenderer supports creating of Renderbuffers with usable formats
     Renderbuffer,
-    /// GlesRenderer supports fencing,
+    /// GlesRenderer supports fencing
     Fencing,
+    /// GlesRenderer supports fencing and exporting it to EGL
+    ExportFence,
     /// GlesRenderer supports GL debug
     Debug,
 }
@@ -409,11 +409,13 @@ impl GlesRenderer {
             debug!("Blitting is supported");
             capabilities.push(Capability::_10Bit);
             debug!("10-bit formats are supported");
+            capabilities.push(Capability::Fencing);
+            debug!("Fencing is supported");
         }
 
         if exts.iter().any(|ext| ext == "GL_OES_EGL_sync") {
-            debug!("Fencing is supported");
-            capabilities.push(Capability::Fencing);
+            debug!("EGL Fencing is supported");
+            capabilities.push(Capability::ExportFence);
         }
 
         if exts.iter().any(|ext| ext == "GL_KHR_debug") {
@@ -480,9 +482,11 @@ impl GlesRenderer {
                 Capability::Instancing => {
                     GlesError::GLExtensionNotSupported(&["GL_EXT_instanced_arrays", "GL_EXT_draw_instanced"])
                 }
-                Capability::Blit | Capability::_10Bit => GlesError::GLVersionNotSupported(version::GLES_3_0),
+                Capability::Blit | Capability::_10Bit | Capability::Fencing => {
+                    GlesError::GLVersionNotSupported(version::GLES_3_0)
+                }
                 Capability::Renderbuffer => GlesError::GLExtensionNotSupported(&["GL_OES_rgb8_rgba8"]),
-                Capability::Fencing => GlesError::GLExtensionNotSupported(&["GL_OES_EGL_sync"]),
+                Capability::ExportFence => GlesError::GLExtensionNotSupported(&["GL_OES_EGL_sync"]),
                 Capability::Debug => GlesError::GLExtensionNotSupported(&["GL_KHR_debug"]),
             };
             return Err(err);
@@ -668,6 +672,9 @@ impl GlesRenderer {
                 CleanupResource::Program(program) => unsafe {
                     self.gl.DeleteProgram(program);
                 },
+                CleanupResource::Sync(sync) => unsafe {
+                    self.gl.DeleteSync(sync);
+                },
             }
         }
     }
@@ -678,6 +685,13 @@ impl GlesRenderer {
     }
 }
 
+/// Warning: If your context only supports OpenGL ES 2.0 and
+/// you are sharing EGLContexts, using [`import_shm_buffer`]
+/// will insert a `glFinish()` call for every buffer import
+/// to synchronize texture access.
+///
+/// As a compositor developer consider not sharing
+/// contexts, if OpenGL ES 3.0 is unavailable.
 #[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
@@ -693,6 +707,14 @@ impl ImportMemWl for GlesRenderer {
         // why not store a `GlesTexture`? because the user might do so.
         // this is guaranteed a non-public internal type, so we are good.
         type CacheMap = HashMap<usize, Arc<GlesTextureInternal>>;
+
+        let mut surface_lock = surface.as_ref().map(|surface_data| {
+            surface_data
+                .data_map
+                .get_or_insert_threadsafe(|| Arc::new(Mutex::new(CacheMap::new())))
+                .lock()
+                .unwrap()
+        });
 
         with_buffer_contents(buffer, |ptr, len, data| {
             self.make_current()?;
@@ -734,20 +756,9 @@ impl ImportMemWl for GlesRenderer {
 
             let id = self.id();
             let texture = GlesTexture(
-                surface
-                    .and_then(|surface| {
-                        surface
-                            .data_map
-                            .insert_if_missing_threadsafe(|| Arc::new(Mutex::new(CacheMap::new())));
-                        surface
-                            .data_map
-                            .get::<Arc<Mutex<CacheMap>>>()
-                            .unwrap()
-                            .lock()
-                            .unwrap()
-                            .get(&id)
-                            .cloned()
-                    })
+                surface_lock
+                    .as_ref()
+                    .and_then(|cache| cache.get(&id).cloned())
                     .filter(|texture| texture.size == (width, height).into())
                     .unwrap_or_else(|| {
                         let mut tex = 0;
@@ -756,6 +767,7 @@ impl ImportMemWl for GlesRenderer {
                         upload_full = true;
                         let new = Arc::new(GlesTextureInternal {
                             texture: tex,
+                            sync: RwLock::default(),
                             format: Some(internal_format),
                             has_alpha,
                             is_external: false,
@@ -764,21 +776,16 @@ impl ImportMemWl for GlesRenderer {
                             egl_images: None,
                             destruction_callback_sender: self.destruction_callback_sender.clone(),
                         });
-                        if let Some(surface) = surface {
-                            let copy = new.clone();
-                            surface
-                                .data_map
-                                .get::<Arc<Mutex<CacheMap>>>()
-                                .unwrap()
-                                .lock()
-                                .unwrap()
-                                .insert(id, copy);
+                        if let Some(cache) = surface_lock.as_mut() {
+                            cache.insert(id, new.clone());
                         }
                         new
                     }),
             );
 
+            let mut sync_lock = texture.0.sync.write().unwrap();
             unsafe {
+                sync_lock.wait_for_all(&self.gl);
                 self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
                 self.gl
                     .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
@@ -823,7 +830,14 @@ impl ImportMemWl for GlesRenderer {
 
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
                 self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+
+                if self.capabilities.contains(&Capability::Fencing) {
+                    sync_lock.update_write(&self.gl);
+                } else if self.egl.is_shared() {
+                    self.gl.Finish();
+                }
             }
+            std::mem::drop(sync_lock);
 
             Ok(texture)
         })
@@ -910,9 +924,20 @@ impl ImportMem for GlesRenderer {
                 );
                 self.gl.BindTexture(ffi::TEXTURE_2D, 0);
             }
+
+            let mut sync = RwLock::<TextureSync>::default();
+            if self.capabilities.contains(&Capability::Fencing) {
+                sync.get_mut().unwrap().update_write(&self.gl);
+            } else if self.egl.is_shared() {
+                unsafe {
+                    self.gl.Finish();
+                }
+            };
+
             // new texture, upload in full
             GlesTextureInternal {
                 texture: tex,
+                sync,
                 format: Some(internal),
                 has_alpha,
                 is_external: false,
@@ -952,7 +977,9 @@ impl ImportMem for GlesRenderer {
             return Err(GlesError::UnexpectedSize);
         }
 
+        let mut sync_lock = texture.0.sync.write().unwrap();
         unsafe {
+            sync_lock.wait_for_all(&self.gl);
             self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
             self.gl
                 .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
@@ -976,6 +1003,12 @@ impl ImportMem for GlesRenderer {
             self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
             self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
             self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+
+            if self.capabilities.contains(&Capability::Fencing) {
+                sync_lock.update_write(&self.gl);
+            } else if self.egl.is_shared() {
+                self.gl.Finish();
+            }
         }
 
         Ok(())
@@ -1048,6 +1081,7 @@ impl ImportEgl for GlesRenderer {
 
         let texture = GlesTexture(Arc::new(GlesTextureInternal {
             texture: tex,
+            sync: RwLock::default(),
             format: match egl.format {
                 EGLFormat::RGB | EGLFormat::RGBA => Some(ffi::RGBA8),
                 EGLFormat::External => None,
@@ -1094,6 +1128,7 @@ impl ImportDma for GlesRenderer {
             let has_alpha = has_alpha(buffer.format().code);
             let texture = GlesTexture(Arc::new(GlesTextureInternal {
                 texture: tex,
+                sync: RwLock::default(),
                 format: Some(format),
                 has_alpha,
                 is_external,
@@ -1451,6 +1486,8 @@ impl Bind<GlesTexture> for GlesRenderer {
         let bind = || {
             let mut fbo = 0;
             unsafe {
+                // TODO: we should keep the lock, while the Target is active
+                texture.0.sync.read().unwrap().wait_for_upload(&self.gl);
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
                 self.gl.FramebufferTexture2D(
@@ -2297,7 +2334,7 @@ impl GlesFrame<'_> {
         self.renderer.cleanup();
 
         // if we support egl fences we should use it
-        if self.renderer.capabilities.contains(&Capability::Fencing) {
+        if self.renderer.capabilities.contains(&Capability::ExportFence) {
             if let Ok(fence) = EGLFence::create(self.renderer.egl.display()) {
                 unsafe {
                     self.renderer.gl.Flush();
@@ -2675,7 +2712,9 @@ impl GlesFrame<'_> {
 
         // render
         let gl = &self.renderer.gl;
+        let sync_lock = tex.0.sync.read().unwrap();
         unsafe {
+            sync_lock.wait_for_upload(gl);
             gl.ActiveTexture(ffi::TEXTURE0);
             gl.BindTexture(target, tex.0.texture);
             gl.TexParameteri(
@@ -2755,6 +2794,12 @@ impl GlesFrame<'_> {
             gl.BindTexture(target, 0);
             gl.DisableVertexAttribArray(program.attrib_vert as u32);
             gl.DisableVertexAttribArray(program.attrib_vert_position as u32);
+
+            if self.renderer.capabilities.contains(&Capability::Fencing) {
+                sync_lock.update_read(gl);
+            } else if self.renderer.egl.is_shared() {
+                gl.Finish();
+            };
         }
 
         Ok(())

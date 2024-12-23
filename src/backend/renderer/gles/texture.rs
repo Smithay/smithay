@@ -1,3 +1,5 @@
+use ffi::Gles2;
+
 use super::*;
 use std::sync::Arc;
 
@@ -27,6 +29,7 @@ impl GlesTexture {
     ) -> GlesTexture {
         GlesTexture(Arc::new(GlesTextureInternal {
             texture: tex,
+            sync: RwLock::default(),
             format: internal_format,
             has_alpha: !opaque,
             is_external: false,
@@ -50,9 +53,68 @@ impl GlesTexture {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct TextureSync {
+    read_sync: Mutex<Option<ffi::types::GLsync>>,
+    write_sync: Mutex<Option<ffi::types::GLsync>>,
+}
+
+unsafe fn wait_for_syncpoint(sync: &mut Option<ffi::types::GLsync>, gl: &Gles2) {
+    if let Some(sync_obj) = *sync {
+        match gl.ClientWaitSync(sync_obj, 0, 0) {
+            ffi::ALREADY_SIGNALED | ffi::CONDITION_SATISFIED => {
+                let _ = sync.take();
+                gl.DeleteSync(sync_obj);
+            }
+            _ => {
+                gl.WaitSync(sync_obj, 0, ffi::TIMEOUT_IGNORED);
+            }
+        };
+    }
+}
+
+impl TextureSync {
+    pub(super) fn wait_for_upload(&self, gl: &Gles2) {
+        unsafe {
+            wait_for_syncpoint(&mut self.write_sync.lock().unwrap(), gl);
+        }
+    }
+
+    pub(super) fn update_read(&self, gl: &Gles2) {
+        let mut read_sync = self.read_sync.lock().unwrap();
+        if let Some(old) = read_sync.take() {
+            unsafe {
+                gl.WaitSync(old, 0, ffi::TIMEOUT_IGNORED);
+                gl.DeleteSync(old);
+            };
+        }
+        *read_sync = Some(unsafe { gl.FenceSync(ffi::SYNC_GPU_COMMANDS_COMPLETE, 0) });
+    }
+
+    pub(super) fn wait_for_all(&mut self, gl: &Gles2) {
+        unsafe {
+            wait_for_syncpoint(&mut self.read_sync.get_mut().unwrap(), gl);
+            wait_for_syncpoint(&mut self.write_sync.get_mut().unwrap(), gl);
+        }
+    }
+
+    pub(super) fn update_write(&mut self, gl: &Gles2) {
+        let write_sync = self.write_sync.get_mut().unwrap();
+        if let Some(old) = write_sync.take() {
+            unsafe {
+                gl.WaitSync(old, 0, ffi::TIMEOUT_IGNORED);
+                gl.DeleteSync(old);
+            };
+        }
+
+        *write_sync = Some(unsafe { gl.FenceSync(ffi::SYNC_GPU_COMMANDS_COMPLETE, 0) });
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct GlesTextureInternal {
     pub(super) texture: ffi::types::GLuint,
+    pub(super) sync: RwLock<TextureSync>,
     pub(super) format: Option<ffi::types::GLenum>,
     pub(super) has_alpha: bool,
     pub(super) is_external: bool,
@@ -69,6 +131,17 @@ impl Drop for GlesTextureInternal {
         let _ = self
             .destruction_callback_sender
             .send(CleanupResource::Texture(self.texture));
+        let mut sync = self.sync.write().unwrap();
+        if let Some(sync) = sync.read_sync.get_mut().unwrap().take() {
+            let _ = self
+                .destruction_callback_sender
+                .send(CleanupResource::Sync(sync as *const _));
+        }
+        if let Some(sync) = sync.write_sync.get_mut().unwrap().take() {
+            let _ = self
+                .destruction_callback_sender
+                .send(CleanupResource::Sync(sync as *const _));
+        }
         if let Some(images) = self.egl_images.take() {
             for image in images {
                 let _ = self
