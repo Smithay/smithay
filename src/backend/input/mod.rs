@@ -137,10 +137,10 @@ pub enum MouseButton {
     Middle,
     /// Right mouse button
     Right,
-    /// Forward mouse button.
-    Forward,
     /// Back mouse button.
     Back,
+    /// Forward mouse button.
+    Forward,
 }
 
 /// State of a button on a pointer device, like mouse or tablet tool. Either pressed or released
@@ -159,12 +159,21 @@ pub trait PointerButtonEvent<B: InputBackend>: Event<B> {
     /// This may return [`None`] if the button pressed in the event is not a standard mouse button. You may
     /// obtain the button code using [`PointerButtonEvent::button_code`].
     fn button(&self) -> Option<MouseButton> {
+        // These values are coming from <linux/input-event-codes.h>.
+        const BTN_LEFT: u32 = 0x110;
+        const BTN_RIGHT: u32 = 0x111;
+        const BTN_MIDDLE: u32 = 0x112;
+        const BTN_SIDE: u32 = 0x113;
+        const BTN_EXTRA: u32 = 0x114;
+        const BTN_FORWARD: u32 = 0x115;
+        const BTN_BACK: u32 = 0x116;
+
         match self.button_code() {
-            0x110 => Some(MouseButton::Left),
-            0x111 => Some(MouseButton::Right),
-            0x112 => Some(MouseButton::Middle),
-            0x115 => Some(MouseButton::Forward),
-            0x116 => Some(MouseButton::Back),
+            BTN_LEFT => Some(MouseButton::Left),
+            BTN_RIGHT => Some(MouseButton::Right),
+            BTN_MIDDLE => Some(MouseButton::Middle),
+            BTN_BACK | BTN_SIDE => Some(MouseButton::Back),
+            BTN_FORWARD | BTN_EXTRA => Some(MouseButton::Forward),
             _ => None,
         }
     }
