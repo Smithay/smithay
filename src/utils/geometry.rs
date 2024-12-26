@@ -1122,6 +1122,30 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         }
     }
 
+    /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its dimensions
+    #[inline]
+    pub fn new(loc: Point<N, Kind>, size: Size<N, Kind>) -> Self {
+        Rectangle { loc, size }
+    }
+
+    /// Create a new [`Rectangle`] from its dimensions, with location zero
+    #[inline]
+    pub fn from_size(size: Size<N, Kind>) -> Self {
+        Rectangle {
+            loc: (N::ZERO, N::ZERO).into(),
+            size,
+        }
+    }
+
+    /// Create a new [`Rectangle`] with location and size zero
+    #[inline]
+    pub fn zero() -> Self {
+        Rectangle {
+            loc: (N::ZERO, N::ZERO).into(),
+            size: (N::ZERO, N::ZERO).into(),
+        }
+    }
+
     /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its bottom-right corner
     #[inline]
     pub fn from_extemities(
