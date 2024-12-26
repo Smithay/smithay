@@ -204,7 +204,7 @@ impl RendererSurfaceState {
                         &surface_size,
                     ),
                 }
-                .intersection(Rectangle::from_loc_and_size((0, 0), buffer_dimensions))
+                .intersection(Rectangle::from_size(buffer_dimensions))
             });
             self.damage.add(buffer_damage);
         }
@@ -213,8 +213,7 @@ impl RendererSurfaceState {
         if new_buffer || surface_view_changed {
             self.opaque_regions.clear();
             if !self.buffer_has_alpha.unwrap_or(true) {
-                self.opaque_regions
-                    .push(Rectangle::from_loc_and_size((0, 0), surface_view.dst))
+                self.opaque_regions.push(Rectangle::from_size(surface_view.dst))
             } else if let Some(region_attributes) = &attrs.opaque_region {
                 let opaque_regions = region_attributes
                     .rects
@@ -222,9 +221,7 @@ impl RendererSurfaceState {
                     .map(|(kind, rect)| {
                         let dest_size = surface_view.dst;
 
-                        let rect_constrained_loc = rect
-                            .loc
-                            .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                        let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
                         let rect_clamped_size = rect
                             .size
                             .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
@@ -277,7 +274,7 @@ impl RendererSurfaceState {
         self.damage.damage_since(commit).unwrap_or_else(|| {
             self.buffer_dimensions
                 .as_ref()
-                .map(|size| DamageSet::from_slice(&[Rectangle::from_loc_and_size((0, 0), *size)]))
+                .map(|size| DamageSet::from_slice(&[Rectangle::from_size(*size)]))
                 .unwrap_or_default()
         })
     }
@@ -421,7 +418,7 @@ impl SurfaceView {
 
         let src = viewport
             .src
-            .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
+            .unwrap_or_else(|| Rectangle::from_size(surface_size.to_f64()));
         let dst = viewport
             .size()
             .unwrap_or(surface_size.to_client(1).to_logical(client_scale as i32));

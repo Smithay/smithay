@@ -171,7 +171,7 @@ where
         } else {
             3
         };
-        Rectangle::from_loc_and_size((0, 0), (24 * digits, 35)).to_f64()
+        Rectangle::from_size((24 * digits, 35).into()).to_f64()
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
@@ -182,7 +182,7 @@ where
         } else {
             3
         };
-        Rectangle::from_loc_and_size((0, 0), (24 * digits, 35)).to_physical_precise_round(scale)
+        Rectangle::from_size((24 * digits, 35).into()).to_physical_precise_round(scale)
     }
 
     fn current_commit(&self) -> CommitCounter {
@@ -226,7 +226,7 @@ where
                 })
                 .collect::<Vec<_>>();
             let texture_src: Rectangle<i32, Buffer> = match digit {
-                9 => Rectangle::from_loc_and_size((0, 0), (22, 35)),
+                9 => Rectangle::from_size((22, 35).into()),
                 6 => Rectangle::from_loc_and_size((22, 0), (22, 35)),
                 3 => Rectangle::from_loc_and_size((44, 0), (22, 35)),
                 1 => Rectangle::from_loc_and_size((66, 0), (22, 35)),

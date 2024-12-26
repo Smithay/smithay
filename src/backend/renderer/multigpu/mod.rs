@@ -615,9 +615,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                     let mappings = {
                         let damage = damage
                             .iter()
-                            .flat_map(|rect| {
-                                rect.intersection(Rectangle::from_loc_and_size((0, 0), src_texture.size()))
-                            })
+                            .flat_map(|rect| rect.intersection(Rectangle::from_size(src_texture.size())))
                             .fold(Vec::<Rectangle<i32, BufferCoords>>::new(), |damage, mut rect| {
                                 // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
                                 let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = damage
@@ -1075,7 +1073,7 @@ where
                     target
                         .device
                         .renderer_mut()
-                        .import_dmabuf(dmabuf, Some(&[Rectangle::from_loc_and_size((0, 0), buffer_size)]))
+                        .import_dmabuf(dmabuf, Some(&[Rectangle::from_size(buffer_size)]))
                         .map_err(Error::Target)
                 })
                 .transpose()?
@@ -1191,10 +1189,7 @@ where
     target
         .device
         .renderer_mut()
-        .import_dmabuf(
-            &dmabuf,
-            Some(&[Rectangle::from_loc_and_size((0, 0), buffer_size)]),
-        )
+        .import_dmabuf(&dmabuf, Some(&[Rectangle::from_size(buffer_size)]))
         .map_err(Error::Target)?;
 
     Ok(dmabuf)
@@ -1251,10 +1246,10 @@ where
                     frame
                         .render_texture_from_to(
                             texture,
-                            Rectangle::from_loc_and_size((0, 0), buffer_size).to_f64(),
-                            Rectangle::from_loc_and_size((0, 0), self.size),
+                            Rectangle::from_size(buffer_size).to_f64(),
+                            Rectangle::from_size(self.size),
                             &damage,
-                            &[Rectangle::from_loc_and_size((0, 0), self.size)],
+                            &[Rectangle::from_size(self.size)],
                             Transform::Normal,
                             1.0,
                         )
@@ -1282,9 +1277,7 @@ where
 
                 // cpu copy
                 damage.dedup();
-                damage.retain(|rect| {
-                    rect.overlaps_or_touches(Rectangle::from_loc_and_size((0, 0), buffer_size))
-                });
+                damage.retain(|rect| rect.overlaps_or_touches(Rectangle::from_size(buffer_size)));
                 damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
 
                 let mut copy_rects = // merge overlapping rectangles
@@ -1301,7 +1294,7 @@ where
                         new_damage
                     });
                 if copy_rects.len() > MAX_CPU_COPIES {
-                    copy_rects = Vec::from([Rectangle::from_loc_and_size((0, 0), buffer_size)]);
+                    copy_rects = Vec::from([Rectangle::from_size(buffer_size)]);
                 }
 
                 let mut mappings = Vec::new();
@@ -1348,7 +1341,7 @@ where
                             .to_physical(1);
                         let src = Rectangle::from_loc_and_size(damage_rect.loc - rect.loc, damage_rect.size)
                             .to_f64();
-                        let damage = &[Rectangle::from_loc_and_size((0, 0), dst.size)];
+                        let damage = &[Rectangle::from_size(dst.size)];
                         frame
                             .clear(Color32F::TRANSPARENT, &[dst])
                             .map_err(Error::Target)?;
@@ -1358,7 +1351,7 @@ where
                                 src,
                                 dst,
                                 damage,
-                                &[Rectangle::from_loc_and_size((0, 0), self.size)],
+                                &[Rectangle::from_size(self.size)],
                                 Transform::Normal,
                                 1.0,
                             )
@@ -2077,7 +2070,7 @@ where
         .render(shadow_size, Transform::Normal)
         .map_err(Error::Render)?;
 
-    let damage_slice = [Rectangle::from_loc_and_size((0, 0), shadow_size)];
+    let damage_slice = [Rectangle::from_size(shadow_size)];
     let damage = unsafe {
         std::mem::transmute::<Option<&[Rectangle<i32, BufferCoords>]>, Option<&[Rectangle<i32, Physical>]>>(
             damage,
@@ -2092,8 +2085,8 @@ where
     frame
         .render_texture_from_to(
             src_texture,
-            Rectangle::from_loc_and_size((0, 0), src_texture.size()).to_f64(),
-            Rectangle::from_loc_and_size((0, 0), shadow_size),
+            Rectangle::from_size(src_texture.size()).to_f64(),
+            Rectangle::from_size(shadow_size),
             damage,
             &[],
             Transform::Normal,
@@ -2137,8 +2130,7 @@ where
         // TODO: Re-evaluate this, once we support vulkan
         .unwrap_or(Fourcc::Abgr8888);
 
-    let texture_rect =
-        Rectangle::from_loc_and_size((0, 0), (src_texture.width() as i32, src_texture.height() as i32));
+    let texture_rect = Rectangle::from_size((src_texture.width() as i32, src_texture.height() as i32).into());
     let damage = damage.map(|damage| {
         damage
             .iter()

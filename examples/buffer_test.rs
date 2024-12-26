@@ -287,7 +287,7 @@ where
     frame
         .clear(
             Color32F::new(1.0, 0.0, 0.0, 1.0),
-            &[Rectangle::from_loc_and_size((0, 0), (w / 2, h / 2))],
+            &[Rectangle::from_size((w / 2, h / 2).into())],
         )
         .expect("Render error");
     frame
@@ -335,7 +335,7 @@ where
             1,
             1.,
             Transform::Normal,
-            &[Rectangle::from_loc_and_size((0, 0), (w, h))],
+            &[Rectangle::from_size((w, h).into())],
             &[],
             1.0,
         )
@@ -348,7 +348,7 @@ where
 
     if let Some(path) = dump {
         let mapping = renderer
-            .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), (w, h)), Fourcc::Abgr8888)
+            .copy_framebuffer(Rectangle::from_size((w, h).into()), Fourcc::Abgr8888)
             .expect("Failed to map framebuffer");
         let copy = renderer.map_texture(&mapping).expect("Failed to read mapping");
         image::save_buffer(path, copy, w as u32, h as u32, image::ColorType::Rgba8)

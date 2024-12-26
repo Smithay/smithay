@@ -352,15 +352,13 @@
 //!     // Your draw code here...
 //!
 //!     // Return the damage areas
-//!     Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
-//!         Point::default(),
+//!     Result::<_, ()>::Ok(vec![Rectangle::from_size(
 //!         Size::from((WIDTH, HEIGHT)),
 //!     )])
 //! });
 //!
 //! // Optionally update the opaque regions
-//! render_context.update_opaque_regions(Some(vec![Rectangle::from_loc_and_size(
-//!     Point::default(),
+//! render_context.update_opaque_regions(Some(vec![Rectangle::from_size(
 //!     Size::from((WIDTH, HEIGHT)),
 //! )]));
 //!
@@ -380,7 +378,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!             Result::<_, ()>::Ok(vec![Rectangle::from_size((WIDTH, HEIGHT).into())])
 //!         });
 //!
 //!         last_update = now;
@@ -640,12 +638,9 @@ pub struct TextureRenderElement<T> {
 
 impl<T: Texture> TextureRenderElement<T> {
     fn damage_since(&self, commit: Option<CommitCounter>) -> DamageSet<i32, Buffer> {
-        self.snapshot.damage_since(commit).unwrap_or_else(|| {
-            DamageSet::from_slice(&[Rectangle::from_loc_and_size(
-                Point::default(),
-                self.texture.size(),
-            )])
-        })
+        self.snapshot
+            .damage_since(commit)
+            .unwrap_or_else(|| DamageSet::from_slice(&[Rectangle::from_size(self.texture.size())]))
     }
 }
 
@@ -790,7 +785,7 @@ impl<T: Texture> TextureRenderElement<T> {
 
     fn src(&self) -> Rectangle<f64, Logical> {
         self.src
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.logical_size().to_f64()))
+            .unwrap_or_else(|| Rectangle::from_size(self.logical_size().to_f64()))
     }
 
     fn scale(&self) -> Scale<f64> {

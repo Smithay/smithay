@@ -14,7 +14,7 @@ use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
 use crate::backend::drm::{plane_has_property, DrmError, DrmSurface};
 use crate::backend::renderer::sync::SyncPoint;
 use crate::backend::SwapBuffersError;
-use crate::utils::{DevPath, Physical, Point, Rectangle, Transform};
+use crate::utils::{DevPath, Physical, Rectangle, Transform};
 
 use tracing::{debug, error, info_span, instrument, trace, warn};
 
@@ -219,15 +219,8 @@ where
         let plane_state = PlaneState {
             handle: drm.plane(),
             config: Some(PlaneConfig {
-                src: Rectangle::from_loc_and_size(
-                    Point::default(),
-                    (mode.size().0 as i32, mode.size().1 as i32),
-                )
-                .to_f64(),
-                dst: Rectangle::from_loc_and_size(
-                    Point::default(),
-                    (mode.size().0 as i32, mode.size().1 as i32),
-                ),
+                src: Rectangle::from_size((mode.size().0 as i32, mode.size().1 as i32).into()).to_f64(),
+                dst: Rectangle::from_size((mode.size().0 as i32, mode.size().1 as i32).into()),
                 alpha: 1.0,
                 transform: Transform::Normal,
                 damage_clips: None,
@@ -352,11 +345,8 @@ where
         } = self.queued_fb.take().unwrap();
         let handle = slot.userdata().get::<GbmFramebuffer>().unwrap();
         let mode = self.drm.pending_mode();
-        let src =
-            Rectangle::from_loc_and_size(Point::default(), (mode.size().0 as i32, mode.size().1 as i32))
-                .to_f64();
-        let dst =
-            Rectangle::from_loc_and_size(Point::default(), (mode.size().0 as i32, mode.size().1 as i32));
+        let src = Rectangle::from_size((mode.size().0 as i32, mode.size().1 as i32).into()).to_f64();
+        let dst = Rectangle::from_size((mode.size().0 as i32, mode.size().1 as i32).into());
 
         let damage_clips = damage.and_then(|damage| {
             PlaneDamageClips::from_damage(self.drm.device_fd(), src, dst, damage)

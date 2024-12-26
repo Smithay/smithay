@@ -117,7 +117,7 @@ impl Window {
         Window(Arc::new(WindowInner {
             id,
             surface: WindowSurface::Wayland(toplevel),
-            bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            bbox: Mutex::new(Rectangle::zero()),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
             user_data: UserDataMap::new(),
         }))
@@ -131,7 +131,7 @@ impl Window {
         Window(Arc::new(WindowInner {
             id,
             surface: WindowSurface::X11(surface),
-            bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            bbox: Mutex::new(Rectangle::zero()),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
             user_data: UserDataMap::new(),
         }))

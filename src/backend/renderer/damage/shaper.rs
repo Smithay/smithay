@@ -350,7 +350,7 @@ mod tests {
         assert!(shaper.tiles_cache.is_empty());
 
         // Having big chunk of damage shouldn't trigger tiling.
-        let bbox = Rectangle::<i32, Physical>::from_loc_and_size((0, 0), (3840, 2160));
+        let bbox = Rectangle::<i32, Physical>::from_size((3840, 2160).into());
         damage.push(bbox);
         shaper.shape_damage(&mut damage);
         assert_eq!(damage[0], bbox);
@@ -364,7 +364,7 @@ mod tests {
         shaper.shape_damage(&mut damage);
         assert!(damage.is_empty());
 
-        let rect = Rectangle::<i32, Physical>::from_loc_and_size((0, 0), (5, 5));
+        let rect = Rectangle::<i32, Physical>::from_size((5, 5).into());
         damage.push(rect);
         shaper.shape_damage(&mut damage);
         assert!(damage.len() == 1);
@@ -397,7 +397,7 @@ mod tests {
 
         let w1 = 216;
         let h1 = 144;
-        let overlap1 = Rectangle::<i32, Physical>::from_loc_and_size((0, 0), (w1, h1));
+        let overlap1 = Rectangle::<i32, Physical>::from_size((w1, h1).into());
         let overlap2 = Rectangle::<i32, Physical>::from_loc_and_size((w1, h1), (w - w1, h - h1));
         damage.push(overlap1);
         damage.push(overlap2);

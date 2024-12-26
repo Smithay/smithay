@@ -83,14 +83,11 @@ impl<B: Buffer> Element for SwapchainElement<'_, '_, B> {
     }
 
     fn src(&self) -> Rectangle<f64, BufferCoords> {
-        Rectangle::from_loc_and_size((0, 0), self.slot.size()).to_f64()
+        Rectangle::from_size(self.slot.size()).to_f64()
     }
 
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(
-            (0, 0),
-            self.slot.size().to_logical(1, self.transform).to_physical(1),
-        )
+        Rectangle::from_size(self.slot.size().to_logical(1, self.transform).to_physical(1))
     }
 
     fn transform(&self) -> Transform {
@@ -319,10 +316,7 @@ where
                     _ => unreachable!(),
                 };
                 let size = dmabuf.size();
-                let geometry = Rectangle::from_loc_and_size(
-                    (0, 0),
-                    size.to_logical(1, Transform::Normal).to_physical(1),
-                );
+                let geometry = Rectangle::from_size(size.to_logical(1, Transform::Normal).to_physical(1));
                 opaque_regions.push(geometry);
                 Some((sync.clone(), dmabuf, geometry))
             }

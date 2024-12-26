@@ -172,7 +172,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!             Result::<_, ()>::Ok(vec![Rectangle::from_size((WIDTH, HEIGHT).into())])
 //!         });
 //!
 //!         last_update = now;
@@ -474,7 +474,7 @@ impl OutputDamageTracker {
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
         // damage with the wrong size
-        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
+        let output_geo = Rectangle::from_size(output_transform.transform_size(output_size));
 
         let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
         let states = self.damage_output_internal(
@@ -807,7 +807,7 @@ impl OutputDamageTracker {
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
         // damage with the wrong size
-        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
+        let output_geo = Rectangle::from_size(output_transform.transform_size(output_size));
 
         // This will hold all the damage we need for this rendering step
         let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
