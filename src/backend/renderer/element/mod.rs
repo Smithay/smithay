@@ -360,7 +360,7 @@ pub trait Element {
     /// Get the damage since the provided commit relative to the element
     fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         if commit != Some(self.current_commit()) {
-            DamageSet::from_slice(&[Rectangle::from_loc_and_size((0, 0), self.geometry(scale).size)])
+            DamageSet::from_slice(&[Rectangle::from_size(self.geometry(scale).size)])
         } else {
             DamageSet::default()
         }

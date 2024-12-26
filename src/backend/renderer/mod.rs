@@ -206,7 +206,7 @@ pub trait Frame {
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
             texture,
-            Rectangle::from_loc_and_size(Point::<i32, BufferCoord>::from((0, 0)), texture.size()).to_f64(),
+            Rectangle::from_size(texture.size()).to_f64(),
             Rectangle::from_loc_and_size(
                 pos,
                 texture

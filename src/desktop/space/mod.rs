@@ -335,9 +335,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .iter()
             .cloned()
             .map(|o| {
-                let geo = self
-                    .output_geometry(&o)
-                    .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (0, 0)));
+                let geo = self.output_geometry(&o).unwrap_or_else(Rectangle::zero);
                 (o, geo)
             })
             .collect::<Vec<_>>();

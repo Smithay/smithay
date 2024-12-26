@@ -468,9 +468,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
         let dst_size = self.size(scale);
         self.damage
             .damage_since(commit)
-            .unwrap_or_else(|| {
-                DamageSet::from_slice(&[Rectangle::from_loc_and_size((0, 0), self.buffer_dimensions)])
-            })
+            .unwrap_or_else(|| DamageSet::from_slice(&[Rectangle::from_size(self.buffer_dimensions)]))
             .iter()
             .filter_map(|rect| {
                 rect.to_f64()

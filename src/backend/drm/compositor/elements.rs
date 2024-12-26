@@ -5,7 +5,7 @@ use crate::{
         Color32F, Frame, Renderer,
     },
     render_elements,
-    utils::{Buffer, Physical, Point, Rectangle, Scale, Transform},
+    utils::{Buffer, Physical, Rectangle, Scale, Transform},
 };
 
 render_elements! {
@@ -81,7 +81,7 @@ impl Element for HolepunchRenderElement {
     }
 
     fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-        OpaqueRegions::from_slice(&[Rectangle::from_loc_and_size(Point::default(), self.geometry.size)])
+        OpaqueRegions::from_slice(&[Rectangle::from_size(self.geometry.size)])
     }
 }
 

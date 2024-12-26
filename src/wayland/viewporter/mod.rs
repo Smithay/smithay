@@ -365,7 +365,7 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
         let mut guard = states.cached_state.get::<ViewportCachedState>();
         let state = guard.current();
 
-        let buffer_rect = Rectangle::from_loc_and_size((0.0, 0.0), buffer_size.to_f64());
+        let buffer_rect = Rectangle::from_size(buffer_size.to_f64());
         let src = state.src.unwrap_or(buffer_rect);
         let valid = buffer_rect.contains_rect(src);
         if !valid {

@@ -335,7 +335,7 @@ impl Frame for PixmanFrame<'_> {
     #[profiling::function]
     fn clear(&mut self, color: Color32F, at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         self.draw_solid_color(
-            Rectangle::from_loc_and_size((0, 0), self.size),
+            Rectangle::from_size(self.size),
             at,
             color,
             Operation::Src,

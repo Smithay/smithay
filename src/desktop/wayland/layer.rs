@@ -51,8 +51,7 @@ pub fn layer_map_for_output(o: &Output) -> MutexGuard<'_, LayerMap> {
         Mutex::new(LayerMap {
             layers: IndexSet::new(),
             output: o.downgrade(),
-            zone: Rectangle::from_loc_and_size(
-                (0, 0),
+            zone: Rectangle::from_size(
                 o.current_mode()
                     .map(|mode| {
                         let logical_size = mode
@@ -252,8 +251,7 @@ impl LayerMap {
             let span = debug_span!("layer_map", output = output.name());
             let _guard = span.enter();
 
-            let output_rect = Rectangle::from_loc_and_size(
-                (0, 0),
+            let output_rect = Rectangle::from_size(
                 output
                     .current_mode()
                     .map(|mode| {

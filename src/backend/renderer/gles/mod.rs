@@ -40,6 +40,10 @@ use super::{
     sync::SyncPoint, Bind, Blit, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen,
     Renderer, Texture, TextureFilter, TextureMapping, Unbind,
 };
+use crate::backend::egl::{
+    ffi::egl::{self as ffi_egl, types::EGLImage},
+    EGLContext, EGLSurface, MakeCurrentError,
+};
 use crate::backend::{
     allocator::{
         dmabuf::{Dmabuf, WeakDmabuf},
@@ -49,13 +53,6 @@ use crate::backend::{
     egl::fence::EGLFence,
 };
 use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
-use crate::{
-    backend::egl::{
-        ffi::egl::{self as ffi_egl, types::EGLImage},
-        EGLContext, EGLSurface, MakeCurrentError,
-    },
-    utils::Point,
-};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -2198,7 +2195,7 @@ impl Frame for GlesFrame<'_> {
             self.renderer.gl.Disable(ffi::BLEND);
         }
 
-        let res = self.draw_solid(Rectangle::from_loc_and_size((0, 0), self.size), at, color);
+        let res = self.draw_solid(Rectangle::from_size(self.size), at, color);
 
         unsafe {
             self.renderer.gl.Enable(ffi::BLEND);
@@ -2354,9 +2351,7 @@ impl GlesFrame<'_> {
             self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
-                let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
                 let rect_clamped_size = rect
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
@@ -2373,9 +2368,7 @@ impl GlesFrame<'_> {
             self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
-                let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
                 let rect_clamped_size = rect
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
@@ -2494,9 +2487,7 @@ impl GlesFrame<'_> {
             let instances = damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
-                let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
                 let rect_clamped_size = rect
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
@@ -2770,7 +2761,7 @@ impl GlesFrame<'_> {
         alpha: f32,
         additional_uniforms: &[Uniform<'_>],
     ) -> Result<(), GlesError> {
-        let fallback_damage = &[Rectangle::from_loc_and_size(Point::default(), dest.size)];
+        let fallback_damage = &[Rectangle::from_size(dest.size)];
         let damage = damage.unwrap_or(fallback_damage);
 
         // prepare the vertices
@@ -2779,9 +2770,7 @@ impl GlesFrame<'_> {
             self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
-                let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
                 let rect_clamped_size = rect
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
@@ -2798,9 +2787,7 @@ impl GlesFrame<'_> {
             self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
-                let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
                 let rect_clamped_size = rect
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
@@ -3004,7 +2991,7 @@ mod tests {
 
     #[test]
     fn texture_normal_double_size() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (1000f64, 500f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((1000f64, 500f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((1000, 500));
         let transform = Transform::Normal;
@@ -3056,7 +3043,7 @@ mod tests {
 
     #[test]
     fn texture_normal() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::Normal;
@@ -3076,7 +3063,7 @@ mod tests {
 
     #[test]
     fn texture_flipped() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::Flipped;
@@ -3096,7 +3083,7 @@ mod tests {
 
     #[test]
     fn texture_90() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::_90;
@@ -3116,7 +3103,7 @@ mod tests {
 
     #[test]
     fn texture_180() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::_180;
@@ -3136,7 +3123,7 @@ mod tests {
 
     #[test]
     fn texture_270() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::_270;
@@ -3156,7 +3143,7 @@ mod tests {
 
     #[test]
     fn texture_flipped_90() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::Flipped90;
@@ -3176,7 +3163,7 @@ mod tests {
 
     #[test]
     fn texture_flipped_180() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::Flipped180;
@@ -3196,7 +3183,7 @@ mod tests {
 
     #[test]
     fn texture_flipped_270() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
         let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::Flipped270;

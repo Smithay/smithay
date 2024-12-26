@@ -14,7 +14,7 @@ use std::sync::{
 };
 
 use crate::backend::drm::error::AccessError;
-use crate::utils::{Coordinate, Point, Rectangle, Transform};
+use crate::utils::{Coordinate, Rectangle, Transform};
 use crate::{
     backend::{
         allocator::format::{get_bpp, get_depth},
@@ -340,10 +340,9 @@ impl AtomicDrmSurface {
                 [&PlaneState {
                     handle: self.plane,
                     config: Some(PlaneConfig {
-                        src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
-                        dst: Rectangle::from_loc_and_size(
-                            Point::default(),
-                            (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                        src: Rectangle::from_size(pending.mode.size().into()).to_f64(),
+                        dst: Rectangle::from_size(
+                            (pending.mode.size().0 as i32, pending.mode.size().1 as i32).into(),
                         ),
                         transform: Transform::Normal,
                         alpha: 1.0,
@@ -393,10 +392,9 @@ impl AtomicDrmSurface {
             [&PlaneState {
                 handle: self.plane,
                 config: Some(PlaneConfig {
-                    src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(
-                        Point::default(),
-                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                    src: Rectangle::from_size(pending.mode.size().into()).to_f64(),
+                    dst: Rectangle::from_size(
+                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32).into(),
                     ),
                     transform: Transform::Normal,
                     alpha: 1.0,
@@ -448,10 +446,9 @@ impl AtomicDrmSurface {
             [&PlaneState {
                 handle: self.plane,
                 config: Some(PlaneConfig {
-                    src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(
-                        Point::default(),
-                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                    src: Rectangle::from_size(pending.mode.size().into()).to_f64(),
+                    dst: Rectangle::from_size(
+                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32).into(),
                     ),
                     transform: Transform::Normal,
                     alpha: 1.0,
@@ -501,11 +498,8 @@ impl AtomicDrmSurface {
             [&PlaneState {
                 handle: self.plane,
                 config: Some(PlaneConfig {
-                    src: Rectangle::from_loc_and_size(Point::default(), mode.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(
-                        Point::default(),
-                        (mode.size().0 as i32, mode.size().1 as i32),
-                    ),
+                    src: Rectangle::from_size(mode.size().into()).to_f64(),
+                    dst: Rectangle::from_size((mode.size().0 as i32, mode.size().1 as i32).into()),
                     transform: Transform::Normal,
                     alpha: 1.0,
                     damage_clips: None,
@@ -624,10 +618,9 @@ impl AtomicDrmSurface {
         let plane_config = PlaneState {
             handle: self.plane,
             config: Some(PlaneConfig {
-                src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
-                dst: Rectangle::from_loc_and_size(
-                    Point::default(),
-                    (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                src: Rectangle::from_size(pending.mode.size().into()).to_f64(),
+                dst: Rectangle::from_size(
+                    (pending.mode.size().0 as i32, pending.mode.size().1 as i32).into(),
                 ),
                 transform: Transform::Normal,
                 alpha: 1.0,
@@ -1351,14 +1344,14 @@ mod test {
 
     #[test]
     fn test_fixed_point() {
-        let geometry: Rectangle<f64, Physical> = Rectangle::from_loc_and_size((0.0, 0.0), (1920.0, 1080.0));
+        let geometry: Rectangle<f64, Physical> = Rectangle::from_size((1920.0, 1080.0).into());
         let fixed = to_fixed(geometry.size.w) as u64;
         assert_eq!(125829120, fixed);
     }
 
     #[test]
     fn test_fractional_fixed_point() {
-        let geometry: Rectangle<f64, Physical> = Rectangle::from_loc_and_size((0.0, 0.0), (1920.1, 1080.0));
+        let geometry: Rectangle<f64, Physical> = Rectangle::from_size((1920.1, 1080.0).into());
         let fixed = to_fixed(geometry.size.w) as u64;
         assert_eq!(125835674, fixed);
     }

@@ -768,7 +768,7 @@ mod tests {
     #[test]
     fn region_attributes_add() {
         let region = RegionAttributes {
-            rects: vec![(RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10)))],
+            rects: vec![(RectangleKind::Add, Rectangle::from_size((10, 10).into()))],
         };
 
         assert!(region.contains((0, 0)));
@@ -778,11 +778,8 @@ mod tests {
     fn region_attributes_add_subtract() {
         let region = RegionAttributes {
             rects: vec![
-                (RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10))),
-                (
-                    RectangleKind::Subtract,
-                    Rectangle::from_loc_and_size((0, 0), (5, 5)),
-                ),
+                (RectangleKind::Add, Rectangle::from_size((10, 10).into())),
+                (RectangleKind::Subtract, Rectangle::from_size((5, 5).into())),
             ],
         };
 
@@ -794,11 +791,8 @@ mod tests {
     fn region_attributes_add_subtract_add() {
         let region = RegionAttributes {
             rects: vec![
-                (RectangleKind::Add, Rectangle::from_loc_and_size((0, 0), (10, 10))),
-                (
-                    RectangleKind::Subtract,
-                    Rectangle::from_loc_and_size((0, 0), (5, 5)),
-                ),
+                (RectangleKind::Add, Rectangle::from_size((10, 10).into())),
+                (RectangleKind::Subtract, Rectangle::from_size((5, 5).into())),
                 (RectangleKind::Add, Rectangle::from_loc_and_size((2, 2), (2, 2))),
             ],
         };

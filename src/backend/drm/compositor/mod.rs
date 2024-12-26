@@ -1547,8 +1547,8 @@ where
             element_state: None,
             config: Some(PlaneConfig {
                 properties: PlaneProperties {
-                    src: Rectangle::from_loc_and_size(Point::default(), dmabuf.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(Point::default(), mode_size),
+                    src: Rectangle::from_size(dmabuf.size()).to_f64(),
+                    dst: Rectangle::from_size(mode_size),
                     transform: Transform::Normal,
                     alpha: 1.0,
                     format: buffer.format(),
@@ -1717,7 +1717,7 @@ where
         // The renderer (and also the logic for direct scan-out) will take care of the
         // actual transform during rendering
         let output_geometry: Rectangle<_, Physical> =
-            Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(current_size));
+            Rectangle::from_size(output_transform.transform_size(current_size));
 
         // We always acquire a buffer from the swapchain even
         // if we could end up doing direct scan-out on the primary plane.
@@ -1813,8 +1813,8 @@ where
             element_state: None,
             config: Some(PlaneConfig {
                 properties: PlaneProperties {
-                    src: Rectangle::from_loc_and_size(Point::default(), dmabuf.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(Point::default(), current_size),
+                    src: Rectangle::from_size(dmabuf.size()).to_f64(),
+                    dst: Rectangle::from_size(current_size),
                     // NOTE: We do not apply the transform to the primary plane as this is handled by the dtr/renderer
                     transform: Transform::Normal,
                     alpha: 1.0,
@@ -3318,12 +3318,9 @@ where
                         pixman_renderer.bind(PixmanRenderBuffer::from(cursor_dst))?;
 
                         let mut frame = pixman_renderer.render(cursor_plane_size, output_transform)?;
-                        frame.clear(
-                            Color32F::TRANSPARENT,
-                            &[Rectangle::from_loc_and_size((0, 0), cursor_plane_size)],
-                        )?;
+                        frame.clear(Color32F::TRANSPARENT, &[Rectangle::from_size(cursor_plane_size)])?;
                         let src = element.src();
-                        let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
+                        let dst = Rectangle::from_size(element_geometry.size);
                         frame.render_texture_from_to(
                             &cursor_texture,
                             src,
@@ -3347,7 +3344,7 @@ where
             }
         };
 
-        let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
+        let src = Rectangle::from_size(cursor_buffer_size).to_f64();
         let dst = Rectangle::from_loc_and_size(cursor_plane_location, cursor_plane_size);
 
         let config = PlaneConfig {

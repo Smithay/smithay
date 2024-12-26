@@ -163,12 +163,11 @@
 //!     });
 //!
 //!     // Return the whole buffer as damage
-//!     Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!     Result::<_, ()>::Ok(vec![Rectangle::from_size((WIDTH, HEIGHT).into())])
 //! });
 //!
 //! // Optionally update the opaque regions
-//! render_context.update_opaque_regions(Some(vec![Rectangle::from_loc_and_size(
-//!     Point::default(),
+//! render_context.update_opaque_regions(Some(vec![Rectangle::from_size(
 //!     Size::from((WIDTH, HEIGHT)),
 //! )]));
 //!
@@ -190,7 +189,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!             Result::<_, ()>::Ok(vec![Rectangle::from_size((WIDTH, HEIGHT).into())])
 //!         });
 //!
 //!         last_update = now;
@@ -423,7 +422,7 @@ impl MemoryRenderBufferInner {
             .damage_bag
             .damage_since(last_commit)
             .map(|d| d.into_iter().reduce(|a, b| a.merge(b)).unwrap_or_default())
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.mem.size()));
+            .unwrap_or_else(|| Rectangle::from_size(self.mem.size()));
 
         let tex = match self.textures.entry(texture_id) {
             Entry::Occupied(entry) => {
@@ -605,7 +604,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
             .or_else(|| src.map(|src| Size::from((src.size.w as i32, src.size.h as i32))))
             .unwrap_or_else(|| inner.mem.size().to_logical(inner.scale, inner.transform));
 
-        let src = src.unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), size.to_f64()));
+        let src = src.unwrap_or_else(|| Rectangle::from_size(size.to_f64()));
 
         Ok(MemoryRenderBufferRenderElement {
             id: buffer.id.clone(),
@@ -693,9 +692,7 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
                     })
                     .collect::<DamageSet<_, _>>()
             })
-            .unwrap_or_else(|| {
-                DamageSet::from_slice(&[Rectangle::from_loc_and_size(Point::default(), physical_size)])
-            })
+            .unwrap_or_else(|| DamageSet::from_slice(&[Rectangle::from_size(physical_size)]))
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {

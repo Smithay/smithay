@@ -265,12 +265,12 @@ impl SolidColorRenderElement {
         kind: Kind,
     ) -> Self {
         let color = color.into();
-        let src = Rectangle::from_loc_and_size((0, 0), geometry.size)
+        let src = Rectangle::from_size(geometry.size)
             .to_f64()
             .to_logical(1f64)
             .to_buffer(1f64, Transform::Normal, &geometry.size.to_f64().to_logical(1f64));
         let opaque_regions = if color.is_opaque() {
-            vec![Rectangle::from_loc_and_size((0, 0), geometry.size)]
+            vec![Rectangle::from_size(geometry.size)]
         } else {
             vec![]
         };

@@ -1814,7 +1814,7 @@ mod tests {
 
     #[test]
     fn rectangle_subtract_full() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
         let inner = Rectangle::<i32, Logical>::from_loc_and_size((-10, -10), (1000, 1000));
 
         let rects = outer.subtract_rect(inner);
@@ -1823,7 +1823,7 @@ mod tests {
 
     #[test]
     fn rectangle_subtract_center_hole() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
         let inner = Rectangle::<i32, Logical>::from_loc_and_size((10, 10), (80, 80));
 
         let rects = outer.subtract_rect(inner);
@@ -1831,7 +1831,7 @@ mod tests {
             rects,
             vec![
                 // Top rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 10)),
+                Rectangle::<i32, Logical>::from_size((100, 10).into()),
                 // Left rect
                 Rectangle::<i32, Logical>::from_loc_and_size((0, 10), (10, 80)),
                 // Right rect
@@ -1844,7 +1844,7 @@ mod tests {
 
     #[test]
     fn rectangle_subtract_full_top() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
         let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, -20), (100, 100));
 
         let rects = outer.subtract_rect(inner);
@@ -1859,7 +1859,7 @@ mod tests {
 
     #[test]
     fn rectangle_subtract_full_bottom() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
         let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, 20), (100, 100));
 
         let rects = outer.subtract_rect(inner);
@@ -1867,14 +1867,14 @@ mod tests {
             rects,
             vec![
                 // Top rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 20)),
+                Rectangle::<i32, Logical>::from_size((100, 20).into()),
             ]
         )
     }
 
     #[test]
     fn rectangle_subtract_full_left() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
         let inner = Rectangle::<i32, Logical>::from_loc_and_size((-20, 0), (100, 100));
 
         let rects = outer.subtract_rect(inner);
@@ -1889,7 +1889,7 @@ mod tests {
 
     #[test]
     fn rectangle_subtract_full_right() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
         let inner = Rectangle::<i32, Logical>::from_loc_and_size((20, 0), (100, 100));
 
         let rects = outer.subtract_rect(inner);
@@ -1897,7 +1897,7 @@ mod tests {
             rects,
             vec![
                 // Left rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (20, 100)),
+                Rectangle::<i32, Logical>::from_size((20, 100).into()),
             ]
         )
     }
@@ -1905,42 +1905,42 @@ mod tests {
     #[test]
     fn rectangle_overlaps_or_touches_top() {
         let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(main.overlaps_or_touches(top));
     }
 
     #[test]
     fn rectangle_overlaps_or_touches_left() {
         let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(main.overlaps_or_touches(left));
     }
 
     #[test]
     fn rectangle_overlaps_or_touches_right() {
         let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(main.overlaps_or_touches(right));
     }
 
     #[test]
     fn rectangle_no_overlap_top() {
         let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(!main.overlaps(top));
     }
 
     #[test]
     fn rectangle_no_overlap_left() {
         let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(!main.overlaps(left));
     }
 
     #[test]
     fn rectangle_no_overlap_right() {
         let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(!main.overlaps(right));
     }
 

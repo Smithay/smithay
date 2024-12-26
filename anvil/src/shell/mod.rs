@@ -413,7 +413,7 @@ fn place_new_window(
             let zone = map.non_exclusive_zone();
             Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
         })
-        .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
+        .unwrap_or_else(|| Rectangle::from_size((800, 800).into()));
 
     // set the initial toplevel bounds
     #[allow(irrefutable_let_patterns)]

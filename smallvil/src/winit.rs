@@ -66,7 +66,7 @@ pub fn init_winit(
             WinitEvent::Input(event) => state.process_input_event(event),
             WinitEvent::Redraw => {
                 let size = backend.window_size();
-                let damage = Rectangle::from_loc_and_size((0, 0), size);
+                let damage = Rectangle::from_size(size);
 
                 backend.bind().unwrap();
                 smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
