@@ -74,6 +74,9 @@ pub struct IdleNotificationUserData {
     is_idle: AtomicBool,
     timeout: Duration,
     timer_token: Mutex<Option<RegistrationToken>>,
+
+    /// If listener was created with `get_input_idle_notification`
+    ignore_inhibitor: bool,
 }
 
 impl IdleNotificationUserData {
@@ -113,7 +116,7 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
         D: IdleNotifierHandler,
         D: 'static,
     {
-        let global = display.create_global::<D, ExtIdleNotifierV1, _>(1, ());
+        let global = display.create_global::<D, ExtIdleNotifierV1, _>(2, ());
         Self {
             global,
             notifications: HashMap::new(),
@@ -131,9 +134,13 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
         self.is_inhibited = is_inhibited;
 
         for notification in self.notifications() {
-            if is_inhibited {
-                let data = notification.data::<IdleNotificationUserData>().unwrap();
+            let data = notification.data::<IdleNotificationUserData>().unwrap();
 
+            if data.ignore_inhibitor {
+                continue;
+            }
+
+            if is_inhibited {
                 if data.is_idle() {
                     notification.resumed();
                     data.set_idle(false);
@@ -189,7 +196,7 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
             self.loop_handle.remove(token);
         }
 
-        if self.is_inhibited {
+        if !data.ignore_inhibitor && self.is_inhibited {
             return;
         }
 
@@ -200,7 +207,10 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
                 move |_, _, state| {
                     let data = idle_notification.data::<IdleNotificationUserData>().unwrap();
 
-                    if !state.idle_notifier_state().is_inhibited && !data.is_idle() {
+                    let is_inhibited = !data.ignore_inhibitor && state.idle_notifier_state().is_inhibited;
+                    let is_idle_already = data.is_idle();
+
+                    if !is_inhibited && !is_idle_already {
                         idle_notification.idled();
                         data.set_idle(true);
                     }
@@ -275,6 +285,32 @@ where
                         is_idle: AtomicBool::new(false),
                         timeout,
                         timer_token: Mutex::new(None),
+                        ignore_inhibitor: false,
+                    },
+                );
+
+                idle_notifier_state.reinsert_timer(&idle_notification);
+
+                state
+                    .idle_notifier_state()
+                    .notifications
+                    .entry(seat)
+                    .or_default()
+                    .push(idle_notification);
+            }
+            ext_idle_notifier_v1::Request::GetInputIdleNotification { id, timeout, seat } => {
+                let timeout = Duration::from_millis(timeout as u64);
+
+                let idle_notifier_state = state.idle_notifier_state();
+
+                let idle_notification = data_init.init(
+                    id,
+                    IdleNotificationUserData {
+                        seat: seat.clone(),
+                        is_idle: AtomicBool::new(false),
+                        timeout,
+                        timer_token: Mutex::new(None),
+                        ignore_inhibitor: true,
                     },
                 );
 
