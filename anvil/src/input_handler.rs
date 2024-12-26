@@ -282,8 +282,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
                 let layers = layer_map_for_output(output);
                 if let Some(layer) = layers
-                    .layer_under(WlrLayer::Overlay, location)
-                    .or_else(|| layers.layer_under(WlrLayer::Top, location))
+                    .layer_under(WlrLayer::Overlay, location - output_geo.loc.to_f64())
+                    .or_else(|| layers.layer_under(WlrLayer::Top, location - output_geo.loc.to_f64()))
                 {
                     if layer.can_receive_keyboard_focus() {
                         if let Some((_, _)) = layer.surface_under(
@@ -313,8 +313,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 let output_geo = self.space.output_geometry(output).unwrap();
                 let layers = layer_map_for_output(output);
                 if let Some(layer) = layers
-                    .layer_under(WlrLayer::Bottom, location)
-                    .or_else(|| layers.layer_under(WlrLayer::Background, location))
+                    .layer_under(WlrLayer::Bottom, location - output_geo.loc.to_f64())
+                    .or_else(|| layers.layer_under(WlrLayer::Background, location - output_geo.loc.to_f64()))
                 {
                     if layer.can_receive_keyboard_focus() {
                         if let Some((_, _)) = layer.surface_under(
@@ -351,8 +351,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         {
             under = Some((surface, loc + output_geo.loc));
         } else if let Some(focus) = layers
-            .layer_under(WlrLayer::Overlay, pos)
-            .or_else(|| layers.layer_under(WlrLayer::Top, pos))
+            .layer_under(WlrLayer::Overlay, pos - output_geo.loc.to_f64())
+            .or_else(|| layers.layer_under(WlrLayer::Top, pos - output_geo.loc.to_f64()))
             .and_then(|layer| {
                 let layer_loc = layers.layer_geometry(layer).unwrap().loc;
                 layer
@@ -376,8 +376,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         }) {
             under = Some(focus);
         } else if let Some(focus) = layers
-            .layer_under(WlrLayer::Bottom, pos)
-            .or_else(|| layers.layer_under(WlrLayer::Background, pos))
+            .layer_under(WlrLayer::Bottom, pos - output_geo.loc.to_f64())
+            .or_else(|| layers.layer_under(WlrLayer::Background, pos - output_geo.loc.to_f64()))
             .and_then(|layer| {
                 let layer_loc = layers.layer_geometry(layer).unwrap().loc;
                 layer
