@@ -211,7 +211,7 @@ where
         for digit in value_str.chars().map(|d| d.to_digit(10).unwrap()) {
             let digit_location = dst.loc.to_f64() + offset;
             let digit_size = Size::<i32, Logical>::from((22, 35)).to_f64().to_physical(scale);
-            let dst = Rectangle::from_loc_and_size(
+            let dst = Rectangle::new(
                 digit_location.to_i32_round(),
                 ((digit_size.to_point() + digit_location).to_i32_round() - digit_location.to_i32_round())
                     .to_size(),
@@ -227,15 +227,15 @@ where
                 .collect::<Vec<_>>();
             let texture_src: Rectangle<i32, Buffer> = match digit {
                 9 => Rectangle::from_size((22, 35).into()),
-                6 => Rectangle::from_loc_and_size((22, 0), (22, 35)),
-                3 => Rectangle::from_loc_and_size((44, 0), (22, 35)),
-                1 => Rectangle::from_loc_and_size((66, 0), (22, 35)),
-                8 => Rectangle::from_loc_and_size((0, 35), (22, 35)),
-                0 => Rectangle::from_loc_and_size((22, 35), (22, 35)),
-                2 => Rectangle::from_loc_and_size((44, 35), (22, 35)),
-                7 => Rectangle::from_loc_and_size((0, 70), (22, 35)),
-                4 => Rectangle::from_loc_and_size((22, 70), (22, 35)),
-                5 => Rectangle::from_loc_and_size((44, 70), (22, 35)),
+                6 => Rectangle::new((22, 0).into(), (22, 35).into()),
+                3 => Rectangle::new((44, 0).into(), (22, 35).into()),
+                1 => Rectangle::new((66, 0).into(), (22, 35).into()),
+                8 => Rectangle::new((0, 35).into(), (22, 35).into()),
+                0 => Rectangle::new((22, 35).into(), (22, 35).into()),
+                2 => Rectangle::new((44, 35).into(), (22, 35).into()),
+                7 => Rectangle::new((0, 70).into(), (22, 35).into()),
+                4 => Rectangle::new((22, 70).into(), (22, 35).into()),
+                5 => Rectangle::new((44, 70).into(), (22, 35).into()),
                 _ => unreachable!(),
             };
 

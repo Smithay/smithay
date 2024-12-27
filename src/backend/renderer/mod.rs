@@ -207,7 +207,7 @@ pub trait Frame {
         self.render_texture_from_to(
             texture,
             Rectangle::from_size(texture.size()).to_f64(),
-            Rectangle::from_loc_and_size(
+            Rectangle::new(
                 pos,
                 texture
                     .size()

@@ -63,7 +63,7 @@ where
     P: Into<Point<i32, Logical>>,
 {
     let location = location.into();
-    let mut bounding_box = Rectangle::from_loc_and_size(location, (0, 0));
+    let mut bounding_box = Rectangle::new(location, (0, 0).into());
     with_surface_tree_downward(
         surface,
         location,
@@ -74,7 +74,7 @@ where
             if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 loc += surface_view.offset;
                 // Update the bounding box.
-                bounding_box = bounding_box.merge(Rectangle::from_loc_and_size(loc, surface_view.dst));
+                bounding_box = bounding_box.merge(Rectangle::new(loc, surface_view.dst));
 
                 TraversalAction::DoChildren(loc)
             } else {

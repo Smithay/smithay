@@ -251,7 +251,7 @@ where
                     let src = if is_unset {
                         None
                     } else {
-                        let src = Rectangle::from_loc_and_size((x, y), (width, height));
+                        let src = Rectangle::new((x, y).into(), (width, height).into());
                         trace!(surface = ?surface, src = ?src, "setting surface viewport src");
                         Some(src)
                     };

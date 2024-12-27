@@ -293,19 +293,19 @@ where
     frame
         .clear(
             Color32F::new(0.0, 1.0, 0.0, 1.0),
-            &[Rectangle::from_loc_and_size((w / 2, 0), (w / 2, h / 2))],
+            &[Rectangle::new((w / 2, 0).into(), (w / 2, h / 2).into())],
         )
         .expect("Render error");
     frame
         .clear(
             Color32F::new(0.0, 0.0, 1.0, 1.0),
-            &[Rectangle::from_loc_and_size((0, h / 2), (w / 2, h / 2))],
+            &[Rectangle::new((0, h / 2).into(), (w / 2, h / 2).into())],
         )
         .expect("Render error");
     frame
         .clear(
             Color32F::new(1.0, 1.0, 0.0, 1.0),
-            &[Rectangle::from_loc_and_size((w / 2, h / 2), (w / 2, h / 2))],
+            &[Rectangle::new((w / 2, h / 2).into(), (w / 2, h / 2).into())],
         )
         .expect("Render error");
     frame

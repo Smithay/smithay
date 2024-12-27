@@ -1339,8 +1339,7 @@ where
                         let dst = damage_rect
                             .to_logical(1, Transform::Normal, &buffer_size)
                             .to_physical(1);
-                        let src = Rectangle::from_loc_and_size(damage_rect.loc - rect.loc, damage_rect.size)
-                            .to_f64();
+                        let src = Rectangle::new(damage_rect.loc - rect.loc, damage_rect.size).to_f64();
                         let damage = &[Rectangle::from_size(dst.size)];
                         frame
                             .clear(Color32F::TRANSPARENT, &[dst])

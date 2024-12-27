@@ -219,7 +219,7 @@ where
                         .pending()
                         .damage
                         .push(Damage::Surface(
-                            Rectangle::<i32, Client>::from_loc_and_size((x, y), (width, height))
+                            Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
                                 .to_logical(client_scale),
                         ));
                 });
@@ -307,9 +307,9 @@ where
                         .get::<SurfaceAttributes>()
                         .pending()
                         .damage
-                        .push(Damage::Buffer(Rectangle::from_loc_and_size(
-                            (x, y),
-                            (width, height),
+                        .push(Damage::Buffer(Rectangle::new(
+                            (x, y).into(),
+                            (width, height).into(),
                         )))
                 });
             }
@@ -388,11 +388,11 @@ where
         match request {
             wl_region::Request::Add { x, y, width, height } => guard.rects.push((
                 RectangleKind::Add,
-                Rectangle::<i32, Client>::from_loc_and_size((x, y), (width, height)).to_logical(client_scale),
+                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into()).to_logical(client_scale),
             )),
             wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
                 RectangleKind::Subtract,
-                Rectangle::<i32, Client>::from_loc_and_size((x, y), (width, height)).to_logical(client_scale),
+                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into()).to_logical(client_scale),
             )),
             wl_region::Request::Destroy => {
                 // all is handled by our destructor

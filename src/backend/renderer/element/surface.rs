@@ -449,7 +449,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.size(scale))
+        Rectangle::new(self.location.to_i32_round(), self.size(scale))
     }
 
     fn src(&self) -> Rectangle<f64, BufferCoords> {
@@ -511,7 +511,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
                 let size = ((r.size.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
                     - self.location.to_i32_round())
                 .to_size();
-                Rectangle::from_loc_and_size(loc, size)
+                Rectangle::new(loc, size)
             })
             .collect::<OpaqueRegions<_, _>>()
     }

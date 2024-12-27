@@ -660,7 +660,7 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
+        Rectangle::new(self.location.to_i32_round(), self.physical_size(scale))
     }
 
     fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {

@@ -293,7 +293,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         let transform: Transform = o.current_transform();
         let location = output_location(self.id, o);
         o.current_mode().map(|mode| {
-            Rectangle::from_loc_and_size(
+            Rectangle::new(
                 location,
                 transform
                     .transform_size(mode.size)

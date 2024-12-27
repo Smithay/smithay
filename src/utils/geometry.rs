@@ -1114,6 +1114,7 @@ impl<Kind> Rectangle<f64, Kind> {
 
 impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its dimensions
+    #[deprecated(note = "use new or from_size")]
     #[inline]
     pub fn from_loc_and_size(loc: impl Into<Point<N, Kind>>, size: impl Into<Size<N, Kind>>) -> Self {
         Rectangle {
@@ -1312,32 +1313,35 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
                     continue;
                 }
 
-                let top_rect = Rectangle::from_loc_and_size(
+                let top_rect = Rectangle::new(
                     item.loc,
-                    (item.size.w, intersection.loc.y.saturating_sub(item.loc.y)),
+                    (item.size.w, intersection.loc.y.saturating_sub(item.loc.y)).into(),
                 );
-                let left_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
-                    (item.loc.x, intersection.loc.y),
-                    (intersection.loc.x.saturating_sub(item.loc.x), intersection.size.h),
+                let left_rect: Rectangle<N, Kind> = Rectangle::new(
+                    (item.loc.x, intersection.loc.y).into(),
+                    (intersection.loc.x.saturating_sub(item.loc.x), intersection.size.h).into(),
                 );
-                let right_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+                let right_rect: Rectangle<N, Kind> = Rectangle::new(
                     (
                         intersection.loc.x.saturating_add(intersection.size.w),
                         intersection.loc.y,
-                    ),
+                    )
+                        .into(),
                     (
                         (item.loc.x.saturating_add(item.size.w))
                             .saturating_sub(intersection.loc.x.saturating_add(intersection.size.w)),
                         intersection.size.h,
-                    ),
+                    )
+                        .into(),
                 );
-                let bottom_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
-                    (item.loc.x, intersection.loc.y.saturating_add(intersection.size.h)),
+                let bottom_rect: Rectangle<N, Kind> = Rectangle::new(
+                    (item.loc.x, intersection.loc.y.saturating_add(intersection.size.h)).into(),
                     (
                         item.size.w,
                         (item.loc.y.saturating_add(item.size.h))
                             .saturating_sub(intersection.loc.y.saturating_add(intersection.size.h)),
-                    ),
+                    )
+                        .into(),
                 );
 
                 if !top_rect.is_empty() {
@@ -1634,7 +1638,7 @@ impl Transform {
             Transform::Flipped270 => (rect.loc.y, rect.loc.x).into(),
         };
 
-        Rectangle::from_loc_and_size(loc, size)
+        Rectangle::new(loc, size)
     }
 
     /// Returns true if the transformation would flip contents
@@ -1701,7 +1705,7 @@ mod tests {
 
     #[test]
     fn transform_rect_ident() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 90));
         let transform = Transform::Normal;
 
@@ -1710,112 +1714,112 @@ mod tests {
 
     #[test]
     fn transform_rect_90() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 90));
         let transform = Transform::_90;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((30, 10), (40, 30)),
+            Rectangle::new((30, 10).into(), (40, 30).into()),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_180() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 90));
         let transform = Transform::_180;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((30, 30), (30, 40)),
+            Rectangle::new((30, 30).into(), (30, 40).into()),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_270() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 90));
         let transform = Transform::_270;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((20, 30), (40, 30)),
+            Rectangle::new((20, 30).into(), (40, 30).into()),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 90));
         let transform = Transform::Flipped;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((30, 20), (30, 40)),
+            Rectangle::new((30, 20).into(), (30, 40).into()),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f90() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 80));
         let transform = Transform::Flipped90;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((20, 30), (40, 30)),
+            Rectangle::new((20, 30).into(), (40, 30).into()),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f180() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 90));
         let transform = Transform::Flipped180;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((10, 30), (30, 40)),
+            Rectangle::new((10, 30).into(), (30, 40).into()),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f270() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         let size = Size::from((70, 90));
         let transform = Transform::Flipped270;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((20, 10), (40, 30)),
+            Rectangle::new((20, 10).into(), (40, 30).into()),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn rectangle_contains_rect_itself() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
         assert!(rect.contains_rect(rect));
     }
 
     #[test]
     fn rectangle_contains_rect_outside() {
-        let first = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
-        let second = Rectangle::<i32, Logical>::from_loc_and_size((41, 61), (30, 40));
+        let first = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
+        let second = Rectangle::<i32, Logical>::new((41, 61).into(), (30, 40).into());
         assert!(!first.contains_rect(second));
     }
 
     #[test]
     fn rectangle_contains_rect_extends() {
-        let first = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
-        let second = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 45));
+        let first = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 40).into());
+        let second = Rectangle::<i32, Logical>::new((10, 20).into(), (30, 45).into());
         assert!(!first.contains_rect(second));
     }
 
     #[test]
     fn rectangle_subtract_full() {
         let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((-10, -10), (1000, 1000));
+        let inner = Rectangle::<i32, Logical>::new((-10, -10).into(), (1000, 1000).into());
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(rects, vec![])
@@ -1824,7 +1828,7 @@ mod tests {
     #[test]
     fn rectangle_subtract_center_hole() {
         let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((10, 10), (80, 80));
+        let inner = Rectangle::<i32, Logical>::new((10, 10).into(), (80, 80).into());
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
@@ -1833,11 +1837,11 @@ mod tests {
                 // Top rect
                 Rectangle::<i32, Logical>::from_size((100, 10).into()),
                 // Left rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 10), (10, 80)),
+                Rectangle::<i32, Logical>::new((0, 10).into(), (10, 80).into()),
                 // Right rect
-                Rectangle::<i32, Logical>::from_loc_and_size((90, 10), (10, 80)),
+                Rectangle::<i32, Logical>::new((90, 10).into(), (10, 80).into()),
                 // Bottom rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 90), (100, 10)),
+                Rectangle::<i32, Logical>::new((0, 90).into(), (100, 10).into()),
             ]
         )
     }
@@ -1845,14 +1849,14 @@ mod tests {
     #[test]
     fn rectangle_subtract_full_top() {
         let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, -20), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((0, -20).into(), (100, 100).into());
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
             rects,
             vec![
                 // Bottom rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 80), (100, 20)),
+                Rectangle::<i32, Logical>::new((0, 80).into(), (100, 20).into()),
             ]
         )
     }
@@ -1860,7 +1864,7 @@ mod tests {
     #[test]
     fn rectangle_subtract_full_bottom() {
         let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, 20), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((0, 20).into(), (100, 100).into());
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
@@ -1875,14 +1879,14 @@ mod tests {
     #[test]
     fn rectangle_subtract_full_left() {
         let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((-20, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((-20, 0).into(), (100, 100).into());
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
             rects,
             vec![
                 // Right rect
-                Rectangle::<i32, Logical>::from_loc_and_size((80, 0), (20, 100)),
+                Rectangle::<i32, Logical>::new((80, 0).into(), (20, 100).into()),
             ]
         )
     }
@@ -1890,7 +1894,7 @@ mod tests {
     #[test]
     fn rectangle_subtract_full_right() {
         let outer = Rectangle::<i32, Logical>::from_size((100, 100).into());
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((20, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((20, 0).into(), (100, 100).into());
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
@@ -1904,42 +1908,42 @@ mod tests {
 
     #[test]
     fn rectangle_overlaps_or_touches_top() {
-        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
+        let top = Rectangle::<i32, Logical>::new((0, -24).into(), (800, 24).into());
         let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(main.overlaps_or_touches(top));
     }
 
     #[test]
     fn rectangle_overlaps_or_touches_left() {
-        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
+        let left = Rectangle::<i32, Logical>::new((-4, -24).into(), (4, 624).into());
         let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(main.overlaps_or_touches(left));
     }
 
     #[test]
     fn rectangle_overlaps_or_touches_right() {
-        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
+        let right = Rectangle::<i32, Logical>::new((800, -24).into(), (4, 624).into());
         let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(main.overlaps_or_touches(right));
     }
 
     #[test]
     fn rectangle_no_overlap_top() {
-        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
+        let top = Rectangle::<i32, Logical>::new((0, -24).into(), (800, 24).into());
         let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(!main.overlaps(top));
     }
 
     #[test]
     fn rectangle_no_overlap_left() {
-        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
+        let left = Rectangle::<i32, Logical>::new((-4, -24).into(), (4, 624).into());
         let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(!main.overlaps(left));
     }
 
     #[test]
     fn rectangle_no_overlap_right() {
-        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
+        let right = Rectangle::<i32, Logical>::new((800, -24).into(), (4, 624).into());
         let main = Rectangle::<i32, Logical>::from_size((800, 600).into());
         assert!(!main.overlaps(right));
     }

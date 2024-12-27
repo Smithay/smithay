@@ -339,8 +339,8 @@ where
                 let damage = damage
                     .iter()
                     .map(|rect| {
-                        Rectangle::from_loc_and_size(
-                            (rect.loc.x, bind_size.h - rect.loc.y - rect.size.h),
+                        Rectangle::new(
+                            (rect.loc.x, bind_size.h - rect.loc.y - rect.size.h).into(),
                             rect.size,
                         )
                     })
