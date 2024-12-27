@@ -619,10 +619,7 @@ impl PositionerState {
         //  example if the anchor of the anchor rectangle is at (x, y), the surface
         //  has the gravity bottom|right, and the offset is (ox, oy), the calculated
         //  surface position will be (x + ox, y + oy)
-        let mut geometry = Rectangle {
-            loc: self.offset,
-            size: self.rect_size,
-        };
+        let mut geometry = Rectangle::new(self.offset, self.rect_size);
 
         // Defines the anchor point for the anchor rectangle. The specified anchor
         // is used derive an anchor point that the child surface will be

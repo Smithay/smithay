@@ -30,11 +30,7 @@ impl RendererSurfaceState {
             Some(size) => size,
         };
 
-        let rect = Rectangle {
-            loc: (0, 0).into(),
-            size,
-        }
-        .to_f64();
+        let rect = Rectangle::from_size(size).to_f64();
 
         // The input region is always within the surface itself, so if the surface itself doesn't contain the
         // point we can return false.
