@@ -367,10 +367,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                             .and_then(|data| data.restore())
                         {
                             window
-                                .configure(Rectangle::from_loc_and_size(
-                                    initial_window_location,
-                                    old_geo.size,
-                                ))
+                                .configure(Rectangle::new(initial_window_location, old_geo.size))
                                 .unwrap();
                         }
                     }
@@ -413,10 +410,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 .and_then(|data| data.restore())
             {
                 window
-                    .configure(Rectangle::from_loc_and_size(
-                        initial_window_location,
-                        old_geo.size,
-                    ))
+                    .configure(Rectangle::new(initial_window_location, old_geo.size))
                     .unwrap();
             }
         }

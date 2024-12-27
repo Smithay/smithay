@@ -101,7 +101,7 @@ impl PopupSurface {
     ///
     /// [`location`]: Self::location
     pub fn set_text_input_rectangle(&mut self, x: i32, y: i32, width: i32, height: i32) {
-        *self.rectangle.lock().unwrap() = Rectangle::from_loc_and_size((x, y), (width, height));
+        *self.rectangle.lock().unwrap() = Rectangle::new((x, y).into(), (width, height).into());
         *self.location.lock().unwrap() = (x, y).into();
         self.surface_role.text_input_rectangle(x, y, width, height);
     }

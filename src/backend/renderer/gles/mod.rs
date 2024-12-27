@@ -2356,7 +2356,7 @@ impl GlesFrame<'_> {
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 [
                     (dest.loc.x + rect.loc.x) as f32,
                     (dest.loc.y + rect.loc.y) as f32,
@@ -2373,7 +2373,7 @@ impl GlesFrame<'_> {
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 // Add the 4 f32s per damage rectangle for each of the 6 vertices.
                 (0..6).flat_map(move |_| {
                     [
@@ -2492,7 +2492,7 @@ impl GlesFrame<'_> {
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 [
                     rect.loc.x as f32,
                     rect.loc.y as f32,
@@ -2775,7 +2775,7 @@ impl GlesFrame<'_> {
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 [
                     rect.loc.x as f32,
                     rect.loc.y as f32,
@@ -2792,7 +2792,7 @@ impl GlesFrame<'_> {
                     .size
                     .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 // Add the 4 f32s per damage rectangle for each of the 6 vertices.
                 (0..6).flat_map(move |_| {
                     [
@@ -2992,7 +2992,7 @@ mod tests {
     #[test]
     fn texture_normal_double_size() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((1000f64, 500f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((1000, 500));
         let transform = Transform::Normal;
 
@@ -3011,8 +3011,8 @@ mod tests {
 
     #[test]
     fn texture_scaler_crop() {
-        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((42.5f64, 50.5f64), (110f64, 154f64));
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((813, 214), (55, 77));
+        let src: Rectangle<f64, Buffer> = Rectangle::new((42.5f64, 50.5f64).into(), (110f64, 154f64).into());
+        let dest: Rectangle<i32, Physical> = Rectangle::new((813, 214).into(), (55, 77).into());
         let texture_size: Size<i32, Buffer> = Size::from((842, 674));
         let transform = Transform::Normal;
 
@@ -3044,7 +3044,7 @@ mod tests {
     #[test]
     fn texture_normal() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::Normal;
 
@@ -3064,7 +3064,7 @@ mod tests {
     #[test]
     fn texture_flipped() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::Flipped;
 
@@ -3084,7 +3084,7 @@ mod tests {
     #[test]
     fn texture_90() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::_90;
 
@@ -3104,7 +3104,7 @@ mod tests {
     #[test]
     fn texture_180() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::_180;
 
@@ -3124,7 +3124,7 @@ mod tests {
     #[test]
     fn texture_270() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::_270;
 
@@ -3144,7 +3144,7 @@ mod tests {
     #[test]
     fn texture_flipped_90() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::Flipped90;
 
@@ -3164,7 +3164,7 @@ mod tests {
     #[test]
     fn texture_flipped_180() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((500f64, 250f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((500, 250));
         let transform = Transform::Flipped180;
 
@@ -3184,7 +3184,7 @@ mod tests {
     #[test]
     fn texture_flipped_270() {
         let src: Rectangle<f64, Buffer> = Rectangle::from_size((250f64, 500f64).into());
-        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let dest: Rectangle<i32, Physical> = Rectangle::new((442, 144).into(), (500, 250).into());
         let texture_size: Size<i32, Buffer> = Size::from((250, 500));
         let transform = Transform::Flipped270;
 

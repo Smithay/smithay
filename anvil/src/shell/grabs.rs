@@ -420,7 +420,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
             #[cfg(feature = "xwayland")]
             WindowSurface::X11(x11) => {
                 let location = data.space.element_location(&self.window).unwrap();
-                x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
+                x11.configure(Rectangle::new(location, self.last_window_size))
                     .unwrap();
             }
         }
@@ -505,7 +505,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
 
                         data.space.map_element(self.window.clone(), location, true);
                     }
-                    x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
+                    x11.configure(Rectangle::new(location, self.last_window_size))
                         .unwrap();
 
                     let Some(surface) = self.window.wl_surface() else {
@@ -718,7 +718,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
 
                     data.space.map_element(self.window.clone(), location, true);
                 }
-                x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
+                x11.configure(Rectangle::new(location, self.last_window_size))
                     .unwrap();
 
                 let Some(surface) = self.window.wl_surface() else {
@@ -817,7 +817,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
             #[cfg(feature = "xwayland")]
             WindowSurface::X11(x11) => {
                 let location = data.space.element_location(&self.window).unwrap();
-                x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
+                x11.configure(Rectangle::new(location, self.last_window_size))
                     .unwrap();
             }
         }

@@ -62,7 +62,7 @@ pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logi
 
             if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 location += surface_view.offset;
-                let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
+                let surface_rectangle = Rectangle::new(location, surface_view.dst);
                 if output_overlap.overlaps(surface_rectangle) {
                     // We found a matching output, check if we already sent enter
                     output.enter(wl_surface);

@@ -3345,7 +3345,7 @@ where
         };
 
         let src = Rectangle::from_size(cursor_buffer_size).to_f64();
-        let dst = Rectangle::from_loc_and_size(cursor_plane_location, cursor_plane_size);
+        let dst = Rectangle::new(cursor_plane_location, cursor_plane_size);
 
         let config = PlaneConfig {
             properties: PlaneProperties {

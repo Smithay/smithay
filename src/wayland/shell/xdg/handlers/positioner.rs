@@ -52,7 +52,7 @@ where
                         "Invalid size for positioner's anchor rectangle.",
                     );
                 } else {
-                    state.anchor_rect = Rectangle::from_loc_and_size((x, y), (width, height));
+                    state.anchor_rect = Rectangle::new((x, y).into(), (width, height).into());
                 }
             }
             xdg_positioner::Request::SetAnchor { anchor } => {

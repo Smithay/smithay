@@ -226,7 +226,7 @@ impl RendererSurfaceState {
                             .size
                             .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                        let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                        let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
 
                         (kind, rect)
                     })

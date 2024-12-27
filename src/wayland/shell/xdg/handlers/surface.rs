@@ -255,7 +255,7 @@ where
 
                 compositor::with_states(surface, |states| {
                     states.cached_state.get::<SurfaceCachedState>().pending().geometry =
-                        Some(Rectangle::from_loc_and_size((x, y), (width, height)));
+                        Some(Rectangle::new((x, y).into(), (width, height).into()));
                 });
             }
             xdg_surface::Request::AckConfigure { serial } => {

@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut rand = rand::thread_rng();
     let x = rand.gen_range(0..max_x);
     let y = rand.gen_range(0..max_y);
-    let test_element = Rectangle::from_loc_and_size((x, y), element_size);
+    let test_element = Rectangle::new((x, y).into(), element_size);
 
     let x_min = (test_element.loc.x - element_size.w) + 1;
     let x_max = (test_element.loc.x + element_size.w) - 1;
@@ -35,7 +35,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         .map(|_| {
             let x = rand.gen_range(x_min..=x_max);
             let y = rand.gen_range(y_min..=y_max);
-            Rectangle::from_loc_and_size((x, y), element_size)
+            Rectangle::new((x, y).into(), element_size)
         })
         .collect::<Vec<_>>();
 

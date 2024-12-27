@@ -109,7 +109,7 @@ impl InputMethodHandle {
         height: i32,
     ) {
         let mut inner = self.inner.lock().unwrap();
-        inner.popup_handle.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
+        inner.popup_handle.rectangle = Rectangle::new((x, y).into(), (width, height).into());
 
         let mut popup_surface = match inner.popup_handle.surface.clone() {
             Some(popup_surface) => popup_surface,

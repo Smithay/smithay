@@ -1352,9 +1352,9 @@ where
             }
 
             let geo = conn.get_geometry(n.window)?.reply()?;
-            let geometry = Rectangle::<i32, Client>::from_loc_and_size(
-                (geo.x as i32, geo.y as i32),
-                (geo.width as i32, geo.height as i32),
+            let geometry = Rectangle::<i32, Client>::new(
+                (geo.x as i32, geo.y as i32).into(),
+                (geo.width as i32, geo.height as i32).into(),
             )
             .to_logical(xwm.client_scale.load(Ordering::Acquire) as i32);
 
@@ -1526,9 +1526,9 @@ where
             trace!(window = ?n, "configured X11 Window");
 
             let client_scale = xwm.client_scale.load(Ordering::Acquire);
-            let geometry = Rectangle::<i32, Client>::from_loc_and_size(
-                (n.x as i32, n.y as i32),
-                (n.width as i32, n.height as i32),
+            let geometry = Rectangle::<i32, Client>::new(
+                (n.x as i32, n.y as i32).into(),
+                (n.width as i32, n.height as i32).into(),
             )
             .to_logical(client_scale as i32);
 

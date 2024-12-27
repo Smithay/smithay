@@ -793,7 +793,7 @@ mod tests {
             rects: vec![
                 (RectangleKind::Add, Rectangle::from_size((10, 10).into())),
                 (RectangleKind::Subtract, Rectangle::from_size((5, 5).into())),
-                (RectangleKind::Add, Rectangle::from_loc_and_size((2, 2), (2, 2))),
+                (RectangleKind::Add, Rectangle::new((2, 2).into(), (2, 2).into())),
             ],
         };
 

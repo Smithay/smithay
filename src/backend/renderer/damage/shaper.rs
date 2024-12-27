@@ -78,7 +78,7 @@ impl<const MIN_TILE_SIDE: i32> DamageShaper<MIN_TILE_SIDE> {
         let bbox_w = x_max - x_min;
         let bbox_h = y_max - y_min;
 
-        let damage_bbox = Rectangle::<i32, Physical>::from_loc_and_size((x_min, y_min), (bbox_w, bbox_h));
+        let damage_bbox = Rectangle::<i32, Physical>::new((x_min, y_min).into(), (bbox_w, bbox_h).into());
 
         // Damage the current bounding box when there's a damage rect covering near all the area.
         if max_damage_area as f32 / (damage_bbox.size.w * damage_bbox.size.h) as f32
@@ -200,7 +200,7 @@ impl<const MIN_TILE_SIDE: i32> DamageShaper<MIN_TILE_SIDE> {
             for y in (bbox.loc.y..bbox.loc.y + bbox.size.h).step_by(tile_size.h as usize) {
                 // NOTE the in_damage is constrained to the `bbox`, so it can't go outside
                 // the tile, even though some tiles could go outside the `bbox`.
-                let bbox = Rectangle::<i32, Physical>::from_loc_and_size((x, y), tile_size);
+                let bbox = Rectangle::<i32, Physical>::new((x, y).into(), tile_size);
                 let mut tile = Tile {
                     bbox,
                     damage: None,
@@ -327,12 +327,12 @@ mod tests {
     #[test]
     fn tile_shaping() {
         let mut damage = vec![
-            Rectangle::<i32, Physical>::from_loc_and_size((98, 406), (36, 48)),
-            Rectangle::<i32, Physical>::from_loc_and_size((158, 502), (828, 168)),
-            Rectangle::<i32, Physical>::from_loc_and_size((122, 694), (744, 528)),
-            Rectangle::<i32, Physical>::from_loc_and_size((194, 1318), (420, 72)),
-            Rectangle::<i32, Physical>::from_loc_and_size((146, 1414), (312, 48)),
-            Rectangle::<i32, Physical>::from_loc_and_size((32, 406), (108, 1152)),
+            Rectangle::<i32, Physical>::new((98, 406).into(), (36, 48).into()),
+            Rectangle::<i32, Physical>::new((158, 502).into(), (828, 168).into()),
+            Rectangle::<i32, Physical>::new((122, 694).into(), (744, 528).into()),
+            Rectangle::<i32, Physical>::new((194, 1318).into(), (420, 72).into()),
+            Rectangle::<i32, Physical>::new((146, 1414).into(), (312, 48).into()),
+            Rectangle::<i32, Physical>::new((32, 406).into(), (108, 1152).into()),
         ];
 
         let mut shaper = shaper();
@@ -383,7 +383,7 @@ mod tests {
 
         for x in 0..w {
             for y in 0..h {
-                let rect = Rectangle::<i32, Physical>::from_loc_and_size((x, y), (1, 1));
+                let rect = Rectangle::<i32, Physical>::new((x, y).into(), (1, 1).into());
                 damage.push(rect);
             }
         }
@@ -398,7 +398,7 @@ mod tests {
         let w1 = 216;
         let h1 = 144;
         let overlap1 = Rectangle::<i32, Physical>::from_size((w1, h1).into());
-        let overlap2 = Rectangle::<i32, Physical>::from_loc_and_size((w1, h1), (w - w1, h - h1));
+        let overlap2 = Rectangle::<i32, Physical>::new((w1, h1).into(), (w - w1, h - h1).into());
         damage.push(overlap1);
         damage.push(overlap2);
 

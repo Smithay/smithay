@@ -411,7 +411,7 @@ fn place_new_window(
             let geo = space.output_geometry(&o)?;
             let map = layer_map_for_output(&o);
             let zone = map.non_exclusive_zone();
-            Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
+            Some(Rectangle::new(geo.loc + zone.loc, zone.size))
         })
         .unwrap_or_else(|| Rectangle::from_size((800, 800).into()));
 
@@ -455,7 +455,7 @@ pub fn fixup_positions(space: &mut Space<WindowElement>, pointer_location: Point
             let geo = space.output_geometry(o)?;
             let map = layer_map_for_output(o);
             let zone = map.non_exclusive_zone();
-            Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
+            Some(Rectangle::new(geo.loc + zone.loc, zone.size))
         })
         .collect::<Vec<_>>();
     for window in space.elements() {

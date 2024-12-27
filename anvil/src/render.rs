@@ -122,7 +122,7 @@ where
                 preview_padding + (preview_padding + preview_size.w) * column as i32,
                 preview_padding + (preview_padding + preview_size.h) * row as i32,
             ));
-            let constrain = Rectangle::from_loc_and_size(preview_location, preview_size);
+            let constrain = Rectangle::new(preview_location, preview_size);
             constrain_space_element(
                 renderer,
                 window,
