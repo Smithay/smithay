@@ -372,7 +372,10 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
             if let Ok(viewport) = viewport.0.upgrade() {
                 viewport.post_error(
                     wp_viewport::Error::OutOfBuffer as u32,
-                    "source rectangle extends outside of the content area".to_string(),
+                    format!(
+                        "source rectangle x={},y={},w={},h={} extends outside of the content area x={},y={},w={},h={}", 
+                        src.loc.x, src.loc.y, src.size.w, src.size.h,
+                        buffer_rect.loc.x, buffer_rect.loc.y, buffer_rect.size.w, buffer_rect.size.h),
                 );
             }
         }
