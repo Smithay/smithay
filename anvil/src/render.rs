@@ -27,7 +27,8 @@ use crate::{
 
 smithay::backend::renderer::element::render_elements! {
     pub CustomRenderElements<R> where
-        R: ImportAll + ImportMem;
+        R: ImportAll + ImportMem,
+        <R as Renderer>::TextureId: Send;
     Pointer=PointerRenderElement<R>,
     Surface=WaylandSurfaceRenderElement<R>,
     #[cfg(feature = "debug")]
@@ -51,7 +52,8 @@ impl<R: Renderer> std::fmt::Debug for CustomRenderElements<R> {
 }
 
 smithay::backend::renderer::element::render_elements! {
-    pub OutputRenderElements<R, E> where R: ImportAll + ImportMem;
+    pub OutputRenderElements<R, E> where R: ImportAll + ImportMem,
+        <R as Renderer>::TextureId: Send;
     Space=SpaceRenderElements<R, E>,
     Window=Wrap<E>,
     Custom=CustomRenderElements<R>,
@@ -201,7 +203,7 @@ pub fn render_output<'a, 'd, R>(
 ) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R>>
 where
     R: Renderer + ImportAll + ImportMem,
-    R::TextureId: Clone + 'static,
+    R::TextureId: Clone + Send + 'static,
 {
     let (elements, clear_color) =
         output_elements(output, space, custom_elements, renderer, show_window_preview);
