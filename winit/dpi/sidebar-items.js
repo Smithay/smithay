@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PixelUnit","Position","Size"],"fn":["validate_scale_factor"],"struct":["LogicalPosition","LogicalSize","LogicalUnit","PhysicalPosition","PhysicalSize","PhysicalUnit"],"trait":["Pixel"]};
