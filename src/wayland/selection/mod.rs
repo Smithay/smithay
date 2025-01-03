@@ -16,6 +16,7 @@ use std::os::unix::io::OwnedFd;
 use crate::input::{Seat, SeatHandler};
 
 pub mod data_device;
+pub mod ext_data_control;
 pub mod primary_selection;
 pub mod wlr_data_control;
 
