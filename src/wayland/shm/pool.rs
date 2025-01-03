@@ -8,12 +8,11 @@ use std::{
     ptr,
     sync::{
         mpsc::{channel, Sender},
-        OnceLock, RwLock,
+        LazyLock, OnceLock, RwLock,
     },
     thread,
 };
 
-use once_cell::sync::Lazy;
 use rustix::mm;
 use tracing::{debug, instrument, trace};
 
@@ -28,7 +27,7 @@ use tracing::{debug, instrument, trace};
 //
 // To work around this problem, we spawn a separate thread whose sole purpose is dropping stuff we
 // send it through a channel. Conveniently, Pool is already Send, so there's no problem doing this.
-static DROP_THIS: Lazy<Sender<InnerPool>> = Lazy::new(|| {
+static DROP_THIS: LazyLock<Sender<InnerPool>> = LazyLock::new(|| {
     let (tx, rx) = channel();
     thread::Builder::new()
         .name("Shm dropping thread".to_owned())
