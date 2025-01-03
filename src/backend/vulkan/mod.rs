@@ -68,7 +68,7 @@
 use std::{
     env::{self, VarError},
     ffi::{CStr, CString},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use ash::{
@@ -78,7 +78,6 @@ use ash::{
     Entry,
 };
 use libc::c_void;
-use once_cell::sync::Lazy;
 use scopeguard::ScopeGuard;
 use tracing::{error, info, info_span, instrument, trace, warn};
 
@@ -94,8 +93,8 @@ mod phd;
 
 pub mod version;
 
-static LIBRARY: Lazy<Result<Entry, LoadError>> =
-    Lazy::new(|| unsafe { Entry::load().map_err(|_| LoadError) });
+static LIBRARY: LazyLock<Result<Entry, LoadError>> =
+    LazyLock::new(|| unsafe { Entry::load().map_err(|_| LoadError) });
 
 /// Error loading the Vulkan library
 #[derive(Debug, thiserror::Error)]

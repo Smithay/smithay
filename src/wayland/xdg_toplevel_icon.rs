@@ -8,7 +8,7 @@
 
 use std::{
     collections::HashSet,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use wayland_protocols::xdg::{
@@ -18,6 +18,7 @@ use wayland_protocols::xdg::{
         xdg_toplevel_icon_v1::{self, XdgToplevelIconV1},
     },
 };
+
 use wayland_server::{
     backend::{ClientId, GlobalId},
     protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
@@ -112,7 +113,7 @@ struct IconData {
 #[derive(Debug, Default)]
 pub struct XdgToplevelIconUserData {
     builder: Mutex<IconData>,
-    constructed: once_cell::sync::OnceCell<IconData>,
+    constructed: OnceLock<IconData>,
     buffer_destruction_hooks: Mutex<Vec<(WlBuffer, HookId)>>,
 }
 

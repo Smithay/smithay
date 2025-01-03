@@ -1,11 +1,11 @@
 //! Implementation of the rendering traits using pixman
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc, LazyLock, Mutex,
 };
 
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
-use once_cell::sync::Lazy;
 use pixman::{Filter, FormatCode, Image, Operation, Repeat};
 use tracing::warn;
 
@@ -1145,7 +1145,7 @@ impl ImportDma for PixmanRenderer {
     }
 
     fn dmabuf_formats(&self) -> FormatSet {
-        static DMABUF_FORMATS: Lazy<FormatSet> = Lazy::new(|| {
+        static DMABUF_FORMATS: LazyLock<FormatSet> = LazyLock::new(|| {
             SUPPORTED_FORMATS
                 .iter()
                 .map(|code| DrmFormat {
@@ -1202,7 +1202,7 @@ impl Bind<Dmabuf> for PixmanRenderer {
     }
 
     fn supported_formats(&self) -> Option<FormatSet> {
-        static DMABUF_FORMATS: Lazy<FormatSet> = Lazy::new(|| {
+        static DMABUF_FORMATS: LazyLock<FormatSet> = LazyLock::new(|| {
             SUPPORTED_FORMATS
                 .iter()
                 .map(|code| DrmFormat {
@@ -1239,7 +1239,7 @@ impl Bind<PixmanRenderBuffer> for PixmanRenderer {
     }
 
     fn supported_formats(&self) -> Option<FormatSet> {
-        static RENDER_BUFFER_FORMATS: Lazy<FormatSet> = Lazy::new(|| {
+        static RENDER_BUFFER_FORMATS: LazyLock<FormatSet> = LazyLock::new(|| {
             SUPPORTED_FORMATS
                 .iter()
                 .map(|code| DrmFormat {
