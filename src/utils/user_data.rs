@@ -1,9 +1,8 @@
 //! Various utilities used for user data implementations
 
-use once_cell::sync::OnceCell;
-
 use std::any::Any;
 use std::mem::ManuallyDrop;
+use std::sync::OnceLock;
 use std::thread::{self, ThreadId};
 
 use self::list::AppendList;
@@ -22,7 +21,7 @@ fn current_thread_id() -> ThreadId {
 /// handling access from a wrong thread
 #[derive(Debug)]
 pub struct UserData {
-    inner: OnceCell<UserDataInner>,
+    inner: OnceLock<UserDataInner>,
 }
 
 #[derive(Debug)]
@@ -32,7 +31,7 @@ enum UserDataInner {
 }
 
 // UserData itself is always threadsafe, as it only gives access to its
-// content if it is send+sync or we are on the right thread
+// content if it is Send + Sync, or we are on the right thread
 unsafe impl Send for UserData {}
 unsafe impl Sync for UserData {}
 
@@ -46,7 +45,7 @@ impl UserData {
     /// Create a new UserData instance
     pub const fn new() -> UserData {
         UserData {
-            inner: OnceCell::new(),
+            inner: OnceLock::new(),
         }
     }
 
@@ -75,7 +74,7 @@ impl UserData {
     ///
     /// - The requested type `T` does not match the type used for construction
     /// - This `UserData` has been created using the non-threadsafe variant and access
-    ///   is attempted from an other thread than the one it was created on
+    ///   is attempted from another thread than the one it was created on
     pub fn get<T: 'static>(&self) -> Option<&T> {
         match self.inner.get() {
             Some(UserDataInner::ThreadSafe(val)) => <dyn Any>::downcast_ref::<T>(&**val),
@@ -167,7 +166,7 @@ impl UserDataMap {
     /// threadsafe, but they will not be visible from other threads (even if they are
     /// actually threadsafe).
     ///
-    /// If the value does not already exists, the closure is called to create it and
+    /// If the value does not already exist, the closure is called to create it and
     /// this function returns `true`. If the value already exists, the closure is not
     /// called, and this function returns `false`.
     pub fn insert_if_missing<T: 'static, F: FnOnce() -> T>(&self, init: F) -> bool {
@@ -185,7 +184,7 @@ impl UserDataMap {
     /// This is the threadsafe variant, the type you insert must be threadsafe and will
     /// be visible from all threads.
     ///
-    /// If the value does not already exists, the closure is called to create it and
+    /// If the value does not already exist, the closure is called to create it and
     /// this function returns `true`. If the value already exists, the closure is not
     /// called, and this function returns `false`.
     pub fn insert_if_missing_threadsafe<T: Send + Sync + 'static, F: FnOnce() -> T>(&self, init: F) -> bool {

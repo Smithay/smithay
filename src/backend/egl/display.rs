@@ -1,19 +1,17 @@
 //! Type safe native types for safe egl initialisation
 
-use std::ffi::{c_int, CStr};
-use std::hash::{Hash, Hasher};
-use std::mem::MaybeUninit;
-use std::ops::Deref;
-use std::sync::Arc;
-use std::sync::{Mutex, Weak};
 use std::{
     collections::HashSet,
+    ffi::{c_int, CStr},
+    hash::{Hash, Hasher},
+    mem::MaybeUninit,
+    ops::Deref,
     os::unix::io::{AsRawFd, FromRawFd, OwnedFd},
+    sync::{Arc, LazyLock, Mutex, Weak},
 };
 
 use indexmap::IndexSet;
 use libc::c_void;
-use once_cell::sync::Lazy;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
@@ -42,7 +40,8 @@ use tracing::{debug, error, info, info_span, instrument, trace, warn};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 pub(crate) static BUFFER_READER: Mutex<Option<WeakBufferReader>> = Mutex::new(None);
-static DISPLAYS: Lazy<Mutex<HashSet<WeakEGLDisplayHandle>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static DISPLAYS: LazyLock<Mutex<HashSet<WeakEGLDisplayHandle>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 /// Wrapper around [`ffi::EGLDisplay`](ffi::egl::types::EGLDisplay) to ensure display is only destroyed
 /// once all resources bound to it have been dropped.
