@@ -10,7 +10,7 @@ use crate::{
     drawing::*,
     render::*,
     shell::WindowElement,
-    state::{take_presentation_feedback, AnvilState, Backend},
+    state::{take_presentation_feedback, update_primary_scanout_output, AnvilState, Backend},
 };
 use crate::{
     shell::WindowRenderElement,
@@ -1540,6 +1540,8 @@ fn render_surface<'a>(
             ) => SwapBuffersError::from(err),
             _ => unreachable!(),
         })?;
+
+    update_primary_scanout_output(space, output, dnd_icon, cursor_status, &states);
 
     if rendered {
         let output_presentation_feedback = take_presentation_feedback(output, space, &states);
