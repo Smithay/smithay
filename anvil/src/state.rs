@@ -781,20 +781,14 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let mut clients: HashMap<ClientId, Client> = HashMap::new();
         self.space.elements().for_each(|window| {
             window.with_surfaces(|surface, states| {
-                let clear_commit_timer = surface_primary_scanout_output(surface, states)
-                    .map(|primary_output| &primary_output == output)
-                    .unwrap_or(true);
-
-                if clear_commit_timer {
-                    if let Some(mut commit_timer_state) = states
-                        .data_map
-                        .get::<CommitTimerBarrierStateUserData>()
-                        .map(|commit_timer| commit_timer.lock().unwrap())
-                    {
-                        commit_timer_state.signal_until(frame_target);
-                        let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
-                    }
+                if let Some(mut commit_timer_state) = states
+                    .data_map
+                    .get::<CommitTimerBarrierStateUserData>()
+                    .map(|commit_timer| commit_timer.lock().unwrap())
+                {
+                    commit_timer_state.signal_until(frame_target);
+                    let client = surface.client().unwrap();
+                    clients.insert(client.id(), client);
                 }
             });
         });
@@ -802,20 +796,14 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let map = smithay::desktop::layer_map_for_output(output);
         for layer_surface in map.layers() {
             layer_surface.with_surfaces(|surface, states| {
-                let clear_commit_timer = surface_primary_scanout_output(surface, states)
-                    .map(|primary_output| &primary_output == output)
-                    .unwrap_or(true);
-
-                if clear_commit_timer {
-                    if let Some(mut commit_timer_state) = states
-                        .data_map
-                        .get::<CommitTimerBarrierStateUserData>()
-                        .map(|commit_timer| commit_timer.lock().unwrap())
-                    {
-                        commit_timer_state.signal_until(frame_target);
-                        let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
-                    }
+                if let Some(mut commit_timer_state) = states
+                    .data_map
+                    .get::<CommitTimerBarrierStateUserData>()
+                    .map(|commit_timer| commit_timer.lock().unwrap())
+                {
+                    commit_timer_state.signal_until(frame_target);
+                    let client = surface.client().unwrap();
+                    clients.insert(client.id(), client);
                 }
             });
         }
@@ -825,40 +813,28 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         if let CursorImageStatus::Surface(ref surface) = self.cursor_status {
             with_surfaces_surface_tree(surface, |surface, states| {
-                let clear_commit_timer = surface_primary_scanout_output(surface, states)
-                    .map(|primary_output| &primary_output == output)
-                    .unwrap_or(true);
-
-                if clear_commit_timer {
-                    if let Some(mut commit_timer_state) = states
-                        .data_map
-                        .get::<CommitTimerBarrierStateUserData>()
-                        .map(|commit_timer| commit_timer.lock().unwrap())
-                    {
-                        commit_timer_state.signal_until(frame_target);
-                        let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
-                    }
+                if let Some(mut commit_timer_state) = states
+                    .data_map
+                    .get::<CommitTimerBarrierStateUserData>()
+                    .map(|commit_timer| commit_timer.lock().unwrap())
+                {
+                    commit_timer_state.signal_until(frame_target);
+                    let client = surface.client().unwrap();
+                    clients.insert(client.id(), client);
                 }
             });
         }
 
         if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
             with_surfaces_surface_tree(surface, |surface, states| {
-                let clear_commit_timer = surface_primary_scanout_output(surface, states)
-                    .map(|primary_output| &primary_output == output)
-                    .unwrap_or(true);
-
-                if clear_commit_timer {
-                    if let Some(mut commit_timer_state) = states
-                        .data_map
-                        .get::<CommitTimerBarrierStateUserData>()
-                        .map(|commit_timer| commit_timer.lock().unwrap())
-                    {
-                        commit_timer_state.signal_until(frame_target);
-                        let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
-                    }
+                if let Some(mut commit_timer_state) = states
+                    .data_map
+                    .get::<CommitTimerBarrierStateUserData>()
+                    .map(|commit_timer| commit_timer.lock().unwrap())
+                {
+                    commit_timer_state.signal_until(frame_target);
+                    let client = surface.client().unwrap();
+                    clients.insert(client.id(), client);
                 }
             });
         }
