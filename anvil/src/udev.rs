@@ -955,6 +955,11 @@ impl AnvilState<UdevData> {
             };
 
             device.surfaces.insert(crtc, surface);
+
+            // kick-off rendering
+            self.handle.insert_idle(move |state| {
+                state.render_surface(node, crtc, state.clock.now());
+            });
         }
     }
 
