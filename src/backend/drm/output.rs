@@ -25,8 +25,8 @@ use crate::{
 
 use super::{
     compositor::{
-        DrmCompositor, FrameError, FrameFlags, FrameResult, RenderFrameError, RenderFrameErrorType,
-        RenderFrameResult,
+        DrmCompositor, FrameError, FrameFlags, FrameResult, PrimaryPlaneElement, RenderFrameError,
+        RenderFrameErrorType, RenderFrameResult,
     },
     exporter::ExportFramebuffer,
     DrmDevice, DrmError, Planes,
@@ -921,9 +921,14 @@ where
             .get(&compositor.crtc())
             .map(|(ref elements, ref color)| (&**elements, color))
             .unwrap_or((&[], &Color32F::BLACK));
-        compositor
+        let frame_result = compositor
             .render_frame(renderer, elements, *clear_color, FrameFlags::empty())
             .map_err(DrmOutputManagerError::RenderFrame)?;
+        if frame_result.needs_sync() {
+            if let PrimaryPlaneElement::Swapchain(primary_swapchain_element) = frame_result.primary_element {
+                let _ = primary_swapchain_element.sync.wait();
+            }
+        }
         compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
         Ok(())
     }
