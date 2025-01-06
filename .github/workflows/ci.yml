@@ -8,7 +8,7 @@ on:
 
 jobs:
   format:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -27,7 +27,7 @@ jobs:
         run: cargo fmt --all -- --check
   
   clippy-check:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -63,7 +63,7 @@ jobs:
       - name: Clean cargo cache of old items
         run: cargo cache clean-unref
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libdisplay-info-dev
       - name: Clippy Smithay
         run: cargo clippy --features "test_all_features" -- -D warnings
       - name: Clippy Anvil
@@ -75,7 +75,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - smithay-check-features
 
@@ -105,7 +105,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - smithay-check-features
 
@@ -138,7 +138,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout sources
@@ -178,7 +178,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout sources
@@ -215,7 +215,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout sources
@@ -252,7 +252,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout sources
@@ -278,7 +278,7 @@ jobs:
         uses: taiki-e/install-action@cargo-hack
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libdisplay-info-dev
       
       - name: Test features
         env:
@@ -312,7 +312,7 @@ jobs:
       RUSTFLAGS: "-D warnings"
       GRCOV_VERSION: "0.8.10"
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout sources
@@ -349,7 +349,7 @@ jobs:
         run: cargo install grcov --version ${{ env.GRCOV_VERSION }}
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev
+        run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev libdisplay-info-dev
 
       - name: WLCS build cache
         uses: actions/cache@v3
@@ -381,7 +381,7 @@ jobs:
 
   doc:
     name: Documentation on Github Pages
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - smithay-check-features
 
