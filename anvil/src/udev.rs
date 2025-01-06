@@ -1147,20 +1147,17 @@ impl AnvilState<UdevData> {
             .frame_submitted()
             .map_err(Into::<SwapBuffersError>::into);
 
+        let Some(frame_duration) = output
+            .current_mode()
+            .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
+        else {
+            return;
+        };
+
         let schedule_render = match submit_result {
             Ok(user_data) => {
                 if let Some(mut feedback) = user_data.flatten() {
-                    feedback.presented(
-                        clock,
-                        output
-                            .current_mode()
-                            .map(|mode| {
-                                Refresh::fixed(Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
-                            })
-                            .unwrap_or(Refresh::Unknown),
-                        seq as u64,
-                        flags,
-                    );
+                    feedback.presented(clock, Refresh::fixed(frame_duration), seq as u64, flags);
                 }
 
                 true
@@ -1189,12 +1186,7 @@ impl AnvilState<UdevData> {
         };
 
         if schedule_render {
-            let output_refresh = match output.current_mode() {
-                Some(mode) => mode.refresh,
-                None => return,
-            };
-
-            let next_frame_target = clock + Duration::from_millis(1_000_000 / output_refresh as u64);
+            let next_frame_target = clock + frame_duration;
 
             // What are we trying to solve by introducing a delay here:
             //
@@ -1224,8 +1216,7 @@ impl AnvilState<UdevData> {
             //
             // A more complete solution could work on a sliding window analyzing past repaints
             // and do some prediction for the next repaint.
-            let repaint_delay =
-                Duration::from_millis(((1_000_000f32 / output_refresh as f32) * 0.6f32) as u64);
+            let repaint_delay = Duration::from_secs_f64(frame_duration.as_secs_f64() * 0.6f64);
 
             let timer = if self.backend_data.primary_gpu != surface.render_node {
                 // However, if we need to do a copy, that might not be enough.
