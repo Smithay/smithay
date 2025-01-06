@@ -860,13 +860,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         self.space.elements().for_each(|window| {
             window.with_surfaces(|surface, states| {
-                let primary_scanout_output = update_surface_primary_scanout_output(
-                    surface,
-                    output,
-                    states,
-                    render_element_states,
-                    default_primary_scanout_output_compare,
-                );
+                let primary_scanout_output = surface_primary_scanout_output(surface, states);
 
                 if let Some(output) = primary_scanout_output.as_ref() {
                     with_fractional_scale(states, |fraction_scale| {
@@ -911,13 +905,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let map = smithay::desktop::layer_map_for_output(output);
         for layer_surface in map.layers() {
             layer_surface.with_surfaces(|surface, states| {
-                let primary_scanout_output = update_surface_primary_scanout_output(
-                    surface,
-                    output,
-                    states,
-                    render_element_states,
-                    default_primary_scanout_output_compare,
-                );
+                let primary_scanout_output = surface_primary_scanout_output(surface, states);
 
                 if let Some(output) = primary_scanout_output.as_ref() {
                     with_fractional_scale(states, |fraction_scale| {
@@ -963,13 +951,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         if let CursorImageStatus::Surface(ref surface) = self.cursor_status {
             with_surfaces_surface_tree(surface, |surface, states| {
-                let primary_scanout_output = update_surface_primary_scanout_output(
-                    surface,
-                    output,
-                    states,
-                    render_element_states,
-                    default_primary_scanout_output_compare,
-                );
+                let primary_scanout_output = surface_primary_scanout_output(surface, states);
 
                 if let Some(output) = primary_scanout_output.as_ref() {
                     with_fractional_scale(states, |fraction_scale| {
@@ -1000,13 +982,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         if let Some(surface) = self.dnd_icon.as_ref().map(|icon| &icon.surface) {
             with_surfaces_surface_tree(surface, |surface, states| {
-                let primary_scanout_output = update_surface_primary_scanout_output(
-                    surface,
-                    output,
-                    states,
-                    render_element_states,
-                    default_primary_scanout_output_compare,
-                );
+                let primary_scanout_output = surface_primary_scanout_output(surface, states);
 
                 if let Some(output) = primary_scanout_output.as_ref() {
                     with_fractional_scale(states, |fraction_scale| {
@@ -1041,6 +1017,63 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         }
     }
 }
+
+pub fn update_primary_scanout_output(
+    space: &Space<WindowElement>,
+    output: &Output,
+    dnd_icon: &Option<DndIcon>,
+    cursor_status: &CursorImageStatus,
+    render_element_states: &RenderElementStates,
+) {
+    space.elements().for_each(|window| {
+        window.with_surfaces(|surface, states| {
+            update_surface_primary_scanout_output(
+                surface,
+                output,
+                states,
+                render_element_states,
+                default_primary_scanout_output_compare,
+            );
+        });
+    });
+    let map = smithay::desktop::layer_map_for_output(output);
+    for layer_surface in map.layers() {
+        layer_surface.with_surfaces(|surface, states| {
+            update_surface_primary_scanout_output(
+                surface,
+                output,
+                states,
+                render_element_states,
+                default_primary_scanout_output_compare,
+            );
+        });
+    }
+
+    if let CursorImageStatus::Surface(ref surface) = cursor_status {
+        with_surfaces_surface_tree(surface, |surface, states| {
+            update_surface_primary_scanout_output(
+                surface,
+                output,
+                states,
+                render_element_states,
+                default_primary_scanout_output_compare,
+            );
+        });
+    }
+
+    if let Some(surface) = dnd_icon.as_ref().map(|icon| &icon.surface) {
+        with_surfaces_surface_tree(surface, |surface, states| {
+            update_surface_primary_scanout_output(
+                surface,
+                output,
+                states,
+                render_element_states,
+                default_primary_scanout_output_compare,
+            );
+        });
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SurfaceDmabufFeedback {
     pub render_feedback: DmabufFeedback,
