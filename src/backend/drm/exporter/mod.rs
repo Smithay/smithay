@@ -24,7 +24,7 @@ pub enum ExportBuffer<'a, B: Buffer> {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
     Wayland(&'a WlBuffer),
-    /// A [`Allocator`] buffer
+    /// A [`Allocator`][crate::backend::allocator::Allocator] buffer
     Allocator(&'a B),
 }
 
