@@ -569,6 +569,32 @@ impl PositionerState {
         }
     }
 
+    /// Get the anchor point for a popup as defined by this positioner.
+    ///
+    /// Defined by `xdg_positioner.set_anchor_rect` and
+    /// `xdg_positioner.set_anchor`.
+    pub fn get_anchor_point(&self) -> Point<i32, Logical> {
+        let mut point = self.anchor_rect.loc;
+
+        point.y += if self.anchor_has_edge(xdg_positioner::Anchor::Top) {
+            0
+        } else if self.anchor_has_edge(xdg_positioner::Anchor::Bottom) {
+            self.anchor_rect.size.h
+        } else {
+            self.anchor_rect.size.h / 2
+        };
+
+        point.x += if self.anchor_has_edge(xdg_positioner::Anchor::Left) {
+            0
+        } else if self.anchor_has_edge(xdg_positioner::Anchor::Right) {
+            self.anchor_rect.size.w
+        } else {
+            self.anchor_rect.size.w / 2
+        };
+
+        point
+    }
+
     pub(crate) fn gravity_has_edge(&self, edge: xdg_positioner::Gravity) -> bool {
         match edge {
             xdg_positioner::Gravity::Top => {
@@ -627,21 +653,7 @@ impl PositionerState {
         // 'bottom_right'), the anchor point will be at the specified corner;
         // otherwise, the derived anchor point will be centered on the specified
         // edge, or in the center of the anchor rectangle if no edge is specified.
-        if self.anchor_has_edge(xdg_positioner::Anchor::Top) {
-            geometry.loc.y += self.anchor_rect.loc.y;
-        } else if self.anchor_has_edge(xdg_positioner::Anchor::Bottom) {
-            geometry.loc.y += self.anchor_rect.loc.y + self.anchor_rect.size.h;
-        } else {
-            geometry.loc.y += self.anchor_rect.loc.y + self.anchor_rect.size.h / 2;
-        }
-
-        if self.anchor_has_edge(xdg_positioner::Anchor::Left) {
-            geometry.loc.x += self.anchor_rect.loc.x;
-        } else if self.anchor_has_edge(xdg_positioner::Anchor::Right) {
-            geometry.loc.x += self.anchor_rect.loc.x + self.anchor_rect.size.w;
-        } else {
-            geometry.loc.x += self.anchor_rect.loc.x + self.anchor_rect.size.w / 2;
-        }
+        geometry.loc += self.get_anchor_point();
 
         // Defines in what direction a surface should be positioned, relative to
         // the anchor point of the parent surface. If a corner gravity is
