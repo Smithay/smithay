@@ -410,7 +410,7 @@ jobs:
       
       - name: Build Documentation
         env: 
-          RUSTDOCFLAGS: --cfg=docsrs
+          RUSTDOCFLAGS: --cfg=docsrs -D warnings
         run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop:0.14 -p drm -p gbm -p input -p udev -p wayland-server -p wayland-backend -p wayland-protocols -p winit -p x11rb -p tracing
         
       - name: Setup index
