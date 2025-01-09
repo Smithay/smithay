@@ -207,7 +207,7 @@ where
     /// - `connectors` - the set of connectors the underlying surface should be initialized with
     /// - `output_mode_source`  used to to determine the size, scale and transform
     /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
-    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
+    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`][super::DrmSurface::planes]
     /// - `renderer` used for compositing, when commits are necessarily to realize bandwidth constraints
     /// - `render_elements` used for rendering, when commits are necessarily to realize bandwidth constraints
     #[allow(clippy::too_many_arguments)]

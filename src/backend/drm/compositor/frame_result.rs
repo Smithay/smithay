@@ -21,7 +21,7 @@ use crate::{
 
 use super::{DrmScanoutBuffer, ScanoutBuffer};
 
-/// Result for [`DrmCompositor::render_frame`]
+/// Result for [`DrmCompositor::render_frame`][super::DrmCompositor::render_frame]
 ///
 /// **Note**: This struct may contain a reference to the composited buffer
 /// of the primary display plane. Dropping it will remove said reference and
