@@ -353,12 +353,15 @@ impl AtomicDrmSurface {
                     fence: None,
                 }),
             };
+
+            let mut connectors = pending.connectors.clone();
+            connectors.insert(conn);
             let req = AtomicRequest::build_request(
                 &prop_mapping,
                 self.crtc,
                 Some(pending.blob),
                 pending.vrr,
-                [&conn],
+                &connectors,
                 [],
                 [&plane_state],
             )?;
@@ -409,12 +412,15 @@ impl AtomicDrmSurface {
                 fence: None,
             }),
         };
+
+        let mut connectors = pending.connectors.clone();
+        connectors.remove(&conn);
         let req = AtomicRequest::build_request(
             &prop_mapping,
             self.crtc,
             Some(pending.blob),
             pending.vrr,
-            [].iter(),
+            &connectors,
             [&conn],
             [&plane_state],
         )?;
@@ -447,8 +453,7 @@ impl AtomicDrmSurface {
 
         self.ensure_props_known(connectors)?;
         let conns = connectors.iter().cloned().collect::<HashSet<_>>();
-        let mut added = conns.difference(&current.connectors);
-        let mut removed = current.connectors.difference(&conns);
+        let removed = current.connectors.difference(&conns);
 
         let test_buffer = self.create_test_buffer(pending.mode.size(), self.plane)?;
 
@@ -472,7 +477,7 @@ impl AtomicDrmSurface {
             self.crtc,
             Some(pending.blob),
             pending.vrr,
-            added,
+            &conns,
             removed,
             [&plane_state],
         )?;
@@ -701,7 +706,6 @@ impl AtomicDrmSurface {
         let current_conns = current.connectors.clone();
         let pending_conns = pending.connectors.clone();
         let removed = current_conns.difference(&pending_conns);
-        let added = pending_conns.difference(&current_conns);
         let prop_mapping = self.prop_mapping.read().unwrap();
 
         let req = AtomicRequest::build_request(
@@ -709,7 +713,7 @@ impl AtomicDrmSurface {
             self.crtc,
             Some(pending.blob),
             pending.vrr,
-            added,
+            &pending_conns,
             removed,
             &*planes,
         )?;
@@ -1609,7 +1613,7 @@ impl<'a> AtomicRequest<'a> {
         crtc: crtc::Handle,
         blob: Option<property::Value<'static>>,
         vrr: bool,
-        new_connectors: impl IntoIterator<Item = &'a connector::Handle>,
+        connectors: impl IntoIterator<Item = &'a connector::Handle>,
         removed_connectors: impl IntoIterator<Item = &'a connector::Handle>,
         planes: impl IntoIterator<Item = &'a PlaneState<'a>>,
     ) -> Result<AtomicRequest<'a>, Error> {
@@ -1619,7 +1623,7 @@ impl<'a> AtomicRequest<'a> {
         // for different drm objects (crtc, plane, connector, ...).
 
         // for every connector that is new, we need to set our crtc_id
-        for conn in new_connectors {
+        for conn in connectors {
             req.set_connector(*conn, crtc);
         }
 
