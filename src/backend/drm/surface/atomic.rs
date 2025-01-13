@@ -358,8 +358,8 @@ impl AtomicDrmSurface {
                 self.crtc,
                 Some(pending.blob),
                 pending.vrr,
-                &mut [conn].iter(),
-                &mut [].iter(),
+                [&conn],
+                [],
                 [&plane_state],
             )?;
             self.fd
@@ -414,8 +414,8 @@ impl AtomicDrmSurface {
             self.crtc,
             Some(pending.blob),
             pending.vrr,
-            &mut [].iter(),
-            &mut [conn].iter(),
+            [].iter(),
+            [&conn],
             [&plane_state],
         )?;
         self.fd
@@ -472,8 +472,8 @@ impl AtomicDrmSurface {
             self.crtc,
             Some(pending.blob),
             pending.vrr,
-            &mut added,
-            &mut removed,
+            added,
+            removed,
             [&plane_state],
         )?;
 
@@ -526,8 +526,8 @@ impl AtomicDrmSurface {
             self.crtc,
             Some(new_blob),
             pending.vrr,
-            &mut pending.connectors.iter(),
-            &mut [].iter(),
+            pending.connectors.iter(),
+            [],
             [&plane_state],
         )?;
         if let Err(err) = self
@@ -700,8 +700,8 @@ impl AtomicDrmSurface {
 
         let current_conns = current.connectors.clone();
         let pending_conns = pending.connectors.clone();
-        let mut removed = current_conns.difference(&pending_conns);
-        let mut added = pending_conns.difference(&current_conns);
+        let removed = current_conns.difference(&pending_conns);
+        let added = pending_conns.difference(&current_conns);
         let prop_mapping = self.prop_mapping.read().unwrap();
 
         let req = AtomicRequest::build_request(
@@ -709,8 +709,8 @@ impl AtomicDrmSurface {
             self.crtc,
             Some(pending.blob),
             pending.vrr,
-            &mut added,
-            &mut removed,
+            added,
+            removed,
             &*planes,
         )?;
 
@@ -749,7 +749,7 @@ impl AtomicDrmSurface {
         // we need the differences to know, which connectors need to change properties
         let current_conns = current.connectors.clone();
         let pending_conns = pending.connectors.clone();
-        let mut removed = current_conns.difference(&pending_conns);
+        let removed = current_conns.difference(&pending_conns);
 
         for conn in removed.clone() {
             if let Ok(info) = self.fd.get_connector(*conn, false) {
@@ -781,8 +781,8 @@ impl AtomicDrmSurface {
                 self.crtc,
                 Some(pending.blob),
                 pending.vrr,
-                &mut pending_conns.iter(),
-                &mut removed,
+                &pending_conns,
+                removed,
                 &*planes,
             )?;
 
@@ -868,8 +868,8 @@ impl AtomicDrmSurface {
             self.crtc,
             None,
             self.state.read().unwrap().vrr,
-            &mut [].iter(),
-            &mut [].iter(),
+            [],
+            [],
             &*planes,
         )?;
 
@@ -1609,8 +1609,8 @@ impl<'a> AtomicRequest<'a> {
         crtc: crtc::Handle,
         blob: Option<property::Value<'static>>,
         vrr: bool,
-        new_connectors: &mut dyn Iterator<Item = &connector::Handle>,
-        removed_connectors: &mut dyn Iterator<Item = &connector::Handle>,
+        new_connectors: impl IntoIterator<Item = &'a connector::Handle>,
+        removed_connectors: impl IntoIterator<Item = &'a connector::Handle>,
         planes: impl IntoIterator<Item = &'a PlaneState<'a>>,
     ) -> Result<AtomicRequest<'a>, Error> {
         let mut req = AtomicRequest::new(mapping);
