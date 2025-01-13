@@ -750,7 +750,6 @@ impl AtomicDrmSurface {
         let current_conns = current.connectors.clone();
         let pending_conns = pending.connectors.clone();
         let mut removed = current_conns.difference(&pending_conns);
-        let mut added = pending_conns.difference(&current_conns);
 
         for conn in removed.clone() {
             if let Ok(info) = self.fd.get_connector(*conn, false) {
@@ -760,7 +759,7 @@ impl AtomicDrmSurface {
             }
         }
 
-        for conn in added.clone() {
+        for conn in &pending_conns {
             if let Ok(info) = self.fd.get_connector(*conn, false) {
                 info!("Adding connector: {:?}", info.interface());
             } else {
@@ -782,7 +781,7 @@ impl AtomicDrmSurface {
                 self.crtc,
                 Some(pending.blob),
                 pending.vrr,
-                &mut added,
+                &mut pending_conns.iter(),
                 &mut removed,
                 &*planes,
             )?;
