@@ -87,7 +87,7 @@ impl SpaceElement for Window {
 impl<R> AsRenderElements<R> for Window
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Clone + 'static,
+    R::TextureId: Clone + 'static,
 {
     type RenderElement = WaylandSurfaceRenderElement<R>;
 

@@ -24,169 +24,11 @@
 //! #     backend::allocator::{Fourcc, dmabuf::Dmabuf},
 //! #     backend::renderer::{
 //! #         Color32F, DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
-//! #         TextureFilter, sync::SyncPoint,
+//! #         TextureFilter, sync::SyncPoint, test::{DummyRenderer, DummyFramebuffer},
 //! #     },
 //! #     utils::{Buffer, Physical},
 //! #     wayland::compositor::SurfaceData,
 //! # };
-//! #
-//! # #[derive(Clone, Debug)]
-//! # struct FakeTexture;
-//! #
-//! # impl Texture for FakeTexture {
-//! #     fn width(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn height(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn format(&self) -> Option<Fourcc> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! #
-//! # struct FakeFrame;
-//! #
-//! # impl Frame for FakeFrame {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #
-//! #     fn id(&self) -> usize { unimplemented!() }
-//! #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn draw_solid(
-//! #         &mut self,
-//! #         _dst: Rectangle<i32, Physical>,
-//! #         _damage: &[Rectangle<i32, Physical>],
-//! #         _color: Color32F,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render_texture_from_to(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: Rectangle<f64, Buffer>,
-//! #         _: Rectangle<i32, Physical>,
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: Transform,
-//! #         _: f32,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn transformation(&self) -> Transform {
-//! #         unimplemented!()
-//! #     }
-//! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # #[derive(Debug)]
-//! # struct FakeRenderer;
-//! #
-//! # impl Renderer for FakeRenderer {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #     type Frame<'a> = FakeFrame;
-//! #
-//! #     fn id(&self) -> usize {
-//! #         unimplemented!()
-//! #     }
-//! #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
-//! #         unimplemented!()
-//! #     }
-//! #     fn debug_flags(&self) -> DebugFlags {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
-//! #     {
-//! #         unimplemented!()
-//! #     }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # impl ImportMem for FakeRenderer {
-//! #     fn import_memory(
-//! #         &mut self,
-//! #         _: &[u8],
-//! #         _: Fourcc,
-//! #         _: Size<i32, Buffer>,
-//! #         _: bool,
-//! #     ) -> Result<Self::TextureId, Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn update_memory(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: &[u8],
-//! #         _: Rectangle<i32, Buffer>,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! #
-//! # impl ImportMemWl for FakeRenderer {
-//! #     fn import_shm_buffer(
-//! #         &mut self,
-//! #         _buffer: &wayland_server::protocol::wl_buffer::WlBuffer,
-//! #         _surface: Option<&SurfaceData>,
-//! #         _damage: &[Rectangle<i32, Buffer>],
-//! #     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! # #[cfg(all(
-//! #     feature = "wayland_frontend",
-//! #     feature = "backend_egl",
-//! #     feature = "use_system_lib"
-//! # ))]
-//! # impl ImportEgl for FakeRenderer {
-//! #     fn bind_wl_display(
-//! #         &mut self,
-//! #         _display: &wayland_server::DisplayHandle,
-//! #     ) -> Result<(), egl::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #
-//! #     fn unbind_wl_display(&mut self) {
-//! #         unimplemented!()
-//! #     }
-//! #
-//! #     fn egl_reader(&self) -> Option<&EGLBufferReader> {
-//! #         unimplemented!()
-//! #     }
-//! #
-//! #     fn import_egl_buffer(
-//! #         &mut self,
-//! #         _buffer: &wayland_server::protocol::wl_buffer::WlBuffer,
-//! #         _surface: Option<&SurfaceData>,
-//! #         _damage: &[Rectangle<i32, Buffer>],
-//! #     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! #
-//! # impl ImportDma for FakeRenderer {
-//! #     fn import_dmabuf(
-//! #         &mut self,
-//! #         _dmabuf: &Dmabuf,
-//! #         _damage: Option<&[Rectangle<i32, Buffer>]>,
-//! #     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! #
-//! # impl ImportDmaWl for FakeRenderer {}
 //! use smithay::{
 //!     backend::renderer::{
 //!         damage::OutputDamageTracker,
@@ -204,17 +46,18 @@
 //!
 //! // Initialize a static damage tracked renderer
 //! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
-//! # let mut renderer = FakeRenderer;
+//! # let mut renderer = DummyRenderer;
+//! # let mut framebuffer = DummyFramebuffer;
 //!
 //! loop {
 //!     // Create the render elements from the surface
 //!     let location = Point::from((100, 100));
-//!     let render_elements: Vec<WaylandSurfaceRenderElement<FakeRenderer>> =
+//!     let render_elements: Vec<WaylandSurfaceRenderElement<DummyRenderer>> =
 //!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0, 1.0, Kind::Unspecified);
 //!
 //!     // Render the element(s)
 //!     damage_tracker
-//!         .render_output(&mut renderer, 0, &*render_elements, [0.8, 0.8, 0.9, 1.0])
+//!         .render_output(&mut renderer, &mut framebuffer, 0, &*render_elements, [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
@@ -254,7 +97,7 @@ pub fn render_elements_from_surface_tree<R, E>(
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Clone + 'static,
+    R::TextureId: Clone + 'static,
     E: From<WaylandSurfaceRenderElement<R>>,
 {
     let location = location.into().to_f64();
@@ -314,7 +157,7 @@ where
 #[derive(Debug)]
 pub enum WaylandSurfaceTexture<R: Renderer> {
     /// A renderer texture
-    Texture(<R as Renderer>::TextureId),
+    Texture(R::TextureId),
     /// A solid color
     SolidColor(Color32F),
 }
@@ -355,9 +198,9 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         location: Point<f64, Physical>,
         alpha: f32,
         kind: Kind,
-    ) -> Result<Option<Self>, <R as Renderer>::Error>
+    ) -> Result<Option<Self>, R::Error>
     where
-        <R as Renderer>::TextureId: Clone + 'static,
+        R::TextureId: Clone + 'static,
     {
         let id = Id::from_wayland_resource(surface);
         crate::backend::renderer::utils::import_surface(renderer, states)?;
@@ -387,7 +230,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         data: &RendererSurfaceState,
     ) -> Option<Self>
     where
-        <R as Renderer>::TextureId: Clone + 'static,
+        R::TextureId: Clone + 'static,
     {
         let buffer = data.buffer()?.clone();
 
@@ -528,7 +371,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
 impl<R> RenderElement<R> for WaylandSurfaceRenderElement<R>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Texture + 'static,
+    R::TextureId: Texture + 'static,
 {
     #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
@@ -537,9 +380,9 @@ where
 
     #[instrument(level = "trace", skip(frame))]
     #[profiling::function]
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

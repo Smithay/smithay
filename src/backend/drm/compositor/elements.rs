@@ -39,12 +39,12 @@ where
 {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         frame.clear(
             Color32F::TRANSPARENT,
             &damage
@@ -172,12 +172,12 @@ where
 {
     fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'_>,
+        _frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         // We do not actually draw anything here
         Ok(())
     }

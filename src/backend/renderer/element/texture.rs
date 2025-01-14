@@ -41,114 +41,9 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
+//! #     backend::renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint, test::{DummyRenderer, DummyFramebuffer}},
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
-//! #
-//! # #[derive(Clone, Debug)]
-//! # struct FakeTexture;
-//! #
-//! # impl Texture for FakeTexture {
-//! #     fn width(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn height(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn format(&self) -> Option<Fourcc> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! #
-//! # struct FakeFrame;
-//! #
-//! # impl Frame for FakeFrame {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #
-//! #     fn id(&self) -> usize { unimplemented!() }
-//! #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn draw_solid(
-//! #         &mut self,
-//! #         _dst: Rectangle<i32, Physical>,
-//! #         _damage: &[Rectangle<i32, Physical>],
-//! #         _color: Color32F,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render_texture_from_to(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: Rectangle<f64, Buffer>,
-//! #         _: Rectangle<i32, Physical>,
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: Transform,
-//! #         _: f32,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn transformation(&self) -> Transform {
-//! #         unimplemented!()
-//! #     }
-//! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # #[derive(Debug)]
-//! # struct FakeRenderer;
-//! #
-//! # impl Renderer for FakeRenderer {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #     type Frame<'a> = FakeFrame;
-//! #
-//! #     fn id(&self) -> usize {
-//! #         unimplemented!()
-//! #     }
-//! #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
-//! #         unimplemented!()
-//! #     }
-//! #     fn debug_flags(&self) -> DebugFlags {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
-//! #     {
-//! #         unimplemented!()
-//! #     }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # impl ImportMem for FakeRenderer {
-//! #     fn import_memory(
-//! #         &mut self,
-//! #         _: &[u8],
-//! #         _: Fourcc,
-//! #         _: Size<i32, Buffer>,
-//! #         _: bool,
-//! #     ) -> Result<Self::TextureId, Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn update_memory(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: &[u8],
-//! #         _: Rectangle<i32, Buffer>,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
-//! #         unimplemented!()
-//! #     }
-//! # }
 //! use smithay::{
 //!     backend::{
 //!         allocator::Fourcc,
@@ -167,7 +62,8 @@
 //! const HEIGHT: i32 = 10;
 //!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
-//! # let mut renderer = FakeRenderer;
+//! # let mut renderer = DummyRenderer;
+//! # let mut framebuffer = DummyFramebuffer;
 //!
 //! // Create the texture buffer from a chunk of memory
 //! let texture_buffer = TextureBuffer::from_memory(
@@ -192,7 +88,7 @@
 //!
 //!     // Render the element(s)
 //!     damage_tracker
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
+//!         .render_output(&mut renderer, &mut framebuffer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
@@ -201,114 +97,9 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
+//! #     backend::renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint, test::{DummyRenderer, DummyFramebuffer}},
 //! #     utils::{Buffer, Physical},
 //! # };
-//! #
-//! # #[derive(Clone, Debug)]
-//! # struct FakeTexture;
-//! #
-//! # impl Texture for FakeTexture {
-//! #     fn width(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn height(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn format(&self) -> Option<Fourcc> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! #
-//! # struct FakeFrame;
-//! #
-//! # impl Frame for FakeFrame {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #
-//! #     fn id(&self) -> usize { unimplemented!() }
-//! #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn draw_solid(
-//! #         &mut self,
-//! #         _dst: Rectangle<i32, Physical>,
-//! #         _damage: &[Rectangle<i32, Physical>],
-//! #         _color: Color32F,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render_texture_from_to(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: Rectangle<f64, Buffer>,
-//! #         _: Rectangle<i32, Physical>,
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: Transform,
-//! #         _: f32,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn transformation(&self) -> Transform {
-//! #         unimplemented!()
-//! #     }
-//! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # #[derive(Debug)]
-//! # struct FakeRenderer;
-//! #
-//! # impl Renderer for FakeRenderer {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #     type Frame<'a> = FakeFrame;
-//! #
-//! #     fn id(&self) -> usize {
-//! #         unimplemented!()
-//! #     }
-//! #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
-//! #         unimplemented!()
-//! #     }
-//! #     fn debug_flags(&self) -> DebugFlags {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
-//! #     {
-//! #         unimplemented!()
-//! #     }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # impl ImportMem for FakeRenderer {
-//! #     fn import_memory(
-//! #         &mut self,
-//! #         _: &[u8],
-//! #         _: Fourcc,
-//! #         _: Size<i32, Buffer>,
-//! #         _: bool,
-//! #     ) -> Result<Self::TextureId, Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn update_memory(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: &[u8],
-//! #         _: Rectangle<i32, Buffer>,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
-//! #         unimplemented!()
-//! #     }
-//! # }
 //! use std::time::{Duration, Instant};
 //!
 //! use smithay::{
@@ -329,7 +120,8 @@
 //! const HEIGHT: i32 = 10;
 //!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
-//! # let mut renderer = FakeRenderer;
+//! # let mut renderer = DummyRenderer;
+//! # let mut framebuffer = DummyFramebuffer;
 //!
 //! // Create the texture buffer from a chunk of memory
 //! let mut texture_render_buffer = TextureRenderBuffer::from_memory(
@@ -397,7 +189,7 @@
 //!
 //!     // Render the element(s)
 //!     damage_tracker
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
+//!         .render_output(&mut renderer, &mut framebuffer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
@@ -460,7 +252,7 @@ impl<T> TextureBuffer<T> {
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
-    ) -> Result<Self, <R as Renderer>::Error> {
+    ) -> Result<Self, R::Error> {
         let texture = renderer.import_memory(data, format, size.into(), flipped)?;
         Ok(TextureBuffer::from_texture(
             renderer,
@@ -523,7 +315,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
-    ) -> Result<Self, <R as Renderer>::Error> {
+    ) -> Result<Self, R::Error> {
         let texture = renderer.import_memory(data, format, size.into(), flipped)?;
         Ok(TextureRenderBuffer::from_texture(
             renderer,
@@ -558,7 +350,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
         data: &[u8],
         region: Rectangle<i32, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         assert_eq!(self.renderer_id, renderer.id());
         renderer.update_memory(&self.texture, data, region)?;
         self.damage_tracker.lock().unwrap().add([region]);
@@ -894,14 +686,14 @@ where
 {
     #[instrument(level = "trace", skip(self, frame))]
     #[profiling::function]
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         if frame.id() != self.renderer_id {
             warn!("trying to render texture from different renderer");
             return Ok(());

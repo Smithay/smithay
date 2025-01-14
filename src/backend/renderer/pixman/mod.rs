@@ -34,7 +34,7 @@ use wayland_server::protocol::wl_buffer;
 use super::ImportEgl;
 use super::{
     sync::SyncPoint, Bind, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
-    Texture, TextureFilter, TextureMapping, Unbind,
+    RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 
 mod error;
@@ -62,21 +62,13 @@ const SUPPORTED_FORMATS: &[DrmFourcc] = &[
     DrmFourcc::Abgr2101010,
 ];
 
+/// A framebuffer of an [`PixmanRenderer`].
 #[derive(Debug)]
-enum PixmanTarget {
-    Image { dmabuf: Dmabuf, image: PixmanImage },
-    RenderBuffer(PixmanRenderBuffer),
-}
-
-/// Offscreen render buffer
+pub struct PixmanTarget<'a>(PixmanTargetInternal<'a>);
 #[derive(Debug)]
-pub struct PixmanRenderBuffer(pixman::Image<'static, 'static>);
-
-impl From<pixman::Image<'static, 'static>> for PixmanRenderBuffer {
-    #[inline]
-    fn from(value: pixman::Image<'static, 'static>) -> Self {
-        Self(value)
-    }
+enum PixmanTargetInternal<'a> {
+    Dmabuf { dmabuf: &'a Dmabuf, image: PixmanImage },
+    Image(&'a mut pixman::Image<'static, 'static>),
 }
 
 #[derive(Debug)]
@@ -239,8 +231,9 @@ impl Texture for PixmanTexture {
 
 /// Handle to the currently rendered frame during [`PixmanRenderer::render`](Renderer::render).
 #[derive(Debug)]
-pub struct PixmanFrame<'frame> {
+pub struct PixmanFrame<'frame, 'buffer> {
     renderer: &'frame mut PixmanRenderer,
+    target: &'frame mut PixmanTarget<'buffer>,
 
     transform: Transform,
     output_size: Size<i32, Physical>,
@@ -249,7 +242,7 @@ pub struct PixmanFrame<'frame> {
     finished: AtomicBool,
 }
 
-impl PixmanFrame<'_> {
+impl PixmanFrame<'_, '_> {
     fn draw_solid_color(
         &mut self,
         dst: Rectangle<i32, Physical>,
@@ -259,12 +252,12 @@ impl PixmanFrame<'_> {
         debug: DebugFlags,
     ) -> Result<(), PixmanError> {
         let mut binding;
-        let target_image = match self.renderer.target.as_mut().ok_or(PixmanError::NoTargetBound)? {
-            PixmanTarget::Image { image, .. } => {
+        let target_image = match &mut self.target.0 {
+            PixmanTargetInternal::Dmabuf { image, .. } => {
                 binding = image.0.image.lock().unwrap();
                 &mut *binding
             }
-            PixmanTarget::RenderBuffer(b) => &mut b.0,
+            PixmanTargetInternal::Image(b) => b,
         };
 
         let solid = pixman::Solid::new(color.components()).map_err(|_| PixmanError::Unsupported)?;
@@ -323,7 +316,7 @@ impl PixmanFrame<'_> {
     }
 }
 
-impl Frame for PixmanFrame<'_> {
+impl Frame for PixmanFrame<'_, '_> {
     type Error = PixmanError;
 
     type TextureId = PixmanTexture;
@@ -370,12 +363,12 @@ impl Frame for PixmanFrame<'_> {
         alpha: f32,
     ) -> Result<(), Self::Error> {
         let mut binding;
-        let target_image = match self.renderer.target.as_mut().ok_or(PixmanError::NoTargetBound)? {
-            PixmanTarget::Image { image, .. } => {
+        let target_image = match &mut self.target.0 {
+            PixmanTargetInternal::Dmabuf { image, .. } => {
                 binding = image.0.image.lock().unwrap();
                 &mut *binding
             }
-            PixmanTarget::RenderBuffer(b) => &mut b.0,
+            PixmanTargetInternal::Image(b) => b,
         };
         let src_image_accessor = texture.accessor()?;
 
@@ -626,16 +619,14 @@ impl Frame for PixmanFrame<'_> {
     }
 }
 
-impl PixmanFrame<'_> {
+impl PixmanFrame<'_, '_> {
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<SyncPoint, PixmanError> {
         if self.finished.swap(true, Ordering::SeqCst) {
             return Ok(SyncPoint::signaled());
         }
 
-        if let PixmanTarget::Image { dmabuf, .. } =
-            self.renderer.target.as_ref().ok_or(PixmanError::NoTargetBound)?
-        {
+        if let PixmanTargetInternal::Dmabuf { dmabuf, .. } = &self.target.0 {
             dmabuf
                 .sync_plane(
                     0,
@@ -648,7 +639,7 @@ impl PixmanFrame<'_> {
     }
 }
 
-impl Drop for PixmanFrame<'_> {
+impl Drop for PixmanFrame<'_, '_> {
     fn drop(&mut self) {
         match self.finish_internal() {
             Ok(sync) => {
@@ -664,7 +655,6 @@ impl Drop for PixmanFrame<'_> {
 /// A renderer utilizing pixman
 #[derive(Debug)]
 pub struct PixmanRenderer {
-    target: Option<PixmanTarget>,
     downscale_filter: TextureFilter,
     upscale_filter: TextureFilter,
     debug_flags: DebugFlags,
@@ -680,7 +670,6 @@ impl PixmanRenderer {
     pub fn new() -> Result<Self, PixmanError> {
         let tint = pixman::Solid::new([0.0, 0.2, 0.0, 0.2]).map_err(|_| PixmanError::Unsupported)?;
         Ok(Self {
-            target: None,
             downscale_filter: TextureFilter::Linear,
             upscale_filter: TextureFilter::Linear,
             debug_flags: DebugFlags::empty(),
@@ -783,13 +772,17 @@ impl PixmanRenderer {
     }
 }
 
-impl Renderer for PixmanRenderer {
+impl RendererSuper for PixmanRenderer {
     type Error = PixmanError;
-
     type TextureId = PixmanTexture;
+    type Framebuffer<'buffer> = PixmanTarget<'buffer>;
+    type Frame<'frame, 'buffer>
+        = PixmanFrame<'frame, 'buffer>
+    where
+        'buffer: 'frame;
+}
 
-    type Frame<'frame> = PixmanFrame<'frame>;
-
+impl Renderer for PixmanRenderer {
     fn id(&self) -> usize {
         0
     }
@@ -813,14 +806,18 @@ impl Renderer for PixmanRenderer {
     }
 
     #[profiling::function]
-    fn render(
-        &mut self,
+    fn render<'frame, 'buffer>(
+        &'frame mut self,
+        target: &'frame mut PixmanTarget<'buffer>,
         output_size: Size<i32, Physical>,
         dst_transform: Transform,
-    ) -> Result<PixmanFrame<'_>, Self::Error> {
+    ) -> Result<PixmanFrame<'frame, 'buffer>, Self::Error>
+    where
+        'buffer: 'frame,
+    {
         self.cleanup();
 
-        if let PixmanTarget::Image { dmabuf, .. } = self.target.as_ref().ok_or(PixmanError::NoTargetBound)? {
+        if let PixmanTargetInternal::Dmabuf { dmabuf, .. } = &target.0 {
             dmabuf
                 .sync_plane(
                     0,
@@ -830,6 +827,7 @@ impl Renderer for PixmanRenderer {
         }
         Ok(PixmanFrame {
             renderer: self,
+            target,
 
             transform: dst_transform,
             output_size,
@@ -856,7 +854,7 @@ impl ImportMem for PixmanRenderer {
         format: drm_fourcc::DrmFourcc,
         size: Size<i32, BufferCoords>,
         flipped: bool,
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         let format =
             pixman::FormatCode::try_from(format).map_err(|_| PixmanError::UnsupportedPixelFormat(format))?;
         let image = pixman::Image::new(format, size.w as usize, size.h as usize, false)
@@ -883,10 +881,10 @@ impl ImportMem for PixmanRenderer {
     #[profiling::function]
     fn update_memory(
         &mut self,
-        texture: &<Self as Renderer>::TextureId,
+        texture: &Self::TextureId,
         data: &[u8],
         region: Rectangle<i32, BufferCoords>,
-    ) -> Result<(), <Self as Renderer>::Error> {
+    ) -> Result<(), Self::Error> {
         #[cfg(feature = "wayland_frontend")]
         if texture.0 .0.buffer.is_some() {
             return Err(PixmanError::ImportFailed);
@@ -969,39 +967,38 @@ impl ExportMem for PixmanRenderer {
     #[profiling::function]
     fn copy_framebuffer(
         &mut self,
+        target: &PixmanTarget<'_>,
         region: Rectangle<i32, BufferCoords>,
         format: DrmFourcc,
-    ) -> Result<Self::TextureMapping, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureMapping, Self::Error> {
         let format_code =
             pixman::FormatCode::try_from(format).map_err(|_| PixmanError::UnsupportedPixelFormat(format))?;
         let mut copy_image =
             pixman::Image::new(format_code, region.size.w as usize, region.size.h as usize, false)
                 .map_err(|_| PixmanError::Unsupported)?;
 
-        if let Some(target) = self.target.as_ref() {
-            let binding;
-            let target_image = match target {
-                PixmanTarget::Image { dmabuf, image } => {
-                    dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::READ)?;
-                    binding = image.0.image.lock().unwrap();
-                    &*binding
-                }
-                PixmanTarget::RenderBuffer(b) => &b.0,
-            };
+        let binding;
+        let target_image = match &target.0 {
+            PixmanTargetInternal::Dmabuf { dmabuf, image } => {
+                dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::READ)?;
+                binding = image.0.image.lock().unwrap();
+                &*binding
+            }
+            PixmanTargetInternal::Image(b) => *b,
+        };
 
-            copy_image.composite32(
-                Operation::Src,
-                target_image,
-                None,
-                region.loc.into(),
-                (0, 0),
-                (0, 0),
-                region.size.into(),
-            );
-            if let PixmanTarget::Image { dmabuf, .. } = target {
-                dmabuf.sync_plane(0, DmabufSyncFlags::END | DmabufSyncFlags::READ)?;
-            };
-        }
+        copy_image.composite32(
+            Operation::Src,
+            target_image,
+            None,
+            region.loc.into(),
+            (0, 0),
+            (0, 0),
+            region.size.into(),
+        );
+        if let PixmanTargetInternal::Dmabuf { dmabuf, .. } = &target.0 {
+            dmabuf.sync_plane(0, DmabufSyncFlags::END | DmabufSyncFlags::READ)?;
+        };
 
         Ok(PixmanMapping(copy_image))
     }
@@ -1041,7 +1038,7 @@ impl ExportMem for PixmanRenderer {
     fn map_texture<'a>(
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
-    ) -> Result<&'a [u8], <Self as Renderer>::Error> {
+    ) -> Result<&'a [u8], Self::Error> {
         Ok(unsafe {
             std::slice::from_raw_parts(
                 texture_mapping.0.data() as *const u8,
@@ -1075,7 +1072,7 @@ impl ImportEgl for PixmanRenderer {
         _buffer: &wl_buffer::WlBuffer,
         _surface: Option<&SurfaceData>,
         _damage: &[Rectangle<i32, BufferCoords>],
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         Err(PixmanError::Unsupported)
     }
 }
@@ -1134,7 +1131,7 @@ impl ImportDma for PixmanRenderer {
         &mut self,
         dmabuf: &Dmabuf,
         _damage: Option<&[Rectangle<i32, BufferCoords>]>,
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         if let Some(image) = self.existing_dmabuf(dmabuf) {
             return Ok(PixmanTexture(image));
         };
@@ -1162,17 +1159,9 @@ impl ImportDma for PixmanRenderer {
 #[cfg(feature = "wayland_frontend")]
 impl ImportDmaWl for PixmanRenderer {}
 
-impl Unbind for PixmanRenderer {
-    #[profiling::function]
-    fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
-        self.target = None;
-        Ok(())
-    }
-}
-
 impl Bind<Dmabuf> for PixmanRenderer {
     #[profiling::function]
-    fn bind(&mut self, target: Dmabuf) -> Result<(), <Self as Renderer>::Error> {
+    fn bind<'a>(&mut self, target: &'a mut Dmabuf) -> Result<PixmanTarget<'a>, Self::Error> {
         let existing_image = self
             .buffers
             .iter()
@@ -1181,7 +1170,7 @@ impl Bind<Dmabuf> for PixmanRenderer {
                     .0
                     .dmabuf
                     .as_ref()
-                    .and_then(|map| map.dmabuf.upgrade().map(|buf| buf == target))
+                    .and_then(|map| map.dmabuf.upgrade().map(|buf| buf == *target))
                     .unwrap_or(false)
             })
             .cloned();
@@ -1189,16 +1178,15 @@ impl Bind<Dmabuf> for PixmanRenderer {
         let image = if let Some(image) = existing_image {
             image
         } else {
-            let image = self.import_dmabuf(&target, DmabufMappingMode::READ | DmabufMappingMode::WRITE)?;
+            let image = self.import_dmabuf(target, DmabufMappingMode::READ | DmabufMappingMode::WRITE)?;
             self.buffers.push(image.clone());
             image
         };
 
-        self.target = Some(PixmanTarget::Image {
+        Ok(PixmanTarget(PixmanTargetInternal::Dmabuf {
             dmabuf: target,
             image,
-        });
-        Ok(())
+        }))
     }
 
     fn supported_formats(&self) -> Option<FormatSet> {
@@ -1216,26 +1204,25 @@ impl Bind<Dmabuf> for PixmanRenderer {
     }
 }
 
-impl Offscreen<PixmanRenderBuffer> for PixmanRenderer {
+impl Offscreen<Image<'static, 'static>> for PixmanRenderer {
     #[profiling::function]
     fn create_buffer(
         &mut self,
         format: DrmFourcc,
         size: Size<i32, BufferCoords>,
-    ) -> Result<PixmanRenderBuffer, <Self as Renderer>::Error> {
+    ) -> Result<Image<'static, 'static>, Self::Error> {
         let format_code =
             FormatCode::try_from(format).map_err(|_| PixmanError::UnsupportedPixelFormat(format))?;
         let image = pixman::Image::new(format_code, size.w as usize, size.h as usize, true)
             .map_err(|_| PixmanError::Unsupported)?;
-        Ok(PixmanRenderBuffer::from(image))
+        Ok(image)
     }
 }
 
-impl Bind<PixmanRenderBuffer> for PixmanRenderer {
+impl Bind<Image<'static, 'static>> for PixmanRenderer {
     #[profiling::function]
-    fn bind(&mut self, target: PixmanRenderBuffer) -> Result<(), <Self as Renderer>::Error> {
-        self.target = Some(PixmanTarget::RenderBuffer(target));
-        Ok(())
+    fn bind<'a>(&mut self, target: &'a mut Image<'static, 'static>) -> Result<PixmanTarget<'a>, Self::Error> {
+        Ok(PixmanTarget(PixmanTargetInternal::Image(target)))
     }
 
     fn supported_formats(&self) -> Option<FormatSet> {

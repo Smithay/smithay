@@ -1354,7 +1354,7 @@ impl AnvilState<UdevData> {
                 !has_rendered
             }
             Err(err) => {
-                warn!("Error during rendering: {:?}", err);
+                warn!("Error during rendering: {:#?}", err);
                 match err {
                     SwapBuffersError::AlreadySwapped => false,
                     SwapBuffersError::TemporaryFailure(err) => match err.downcast_ref::<DrmError>() {

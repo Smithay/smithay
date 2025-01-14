@@ -291,31 +291,29 @@ pub fn run_winit() {
 
             #[cfg(feature = "debug")]
             let mut renderdoc = state.renderdoc.as_mut();
-            let render_res = backend.bind().and_then(|_| {
+
+            let age = if *full_redraw > 0 {
+                0
+            } else {
+                backend.buffer_age().unwrap_or(0)
+            };
+            #[cfg(feature = "debug")]
+            let window_handle = backend
+                .window()
+                .window_handle()
+                .map(|handle| {
+                    if let RawWindowHandle::Wayland(handle) = handle.as_raw() {
+                        handle.surface.as_ptr()
+                    } else {
+                        std::ptr::null_mut()
+                    }
+                })
+                .unwrap_or_else(|_| std::ptr::null_mut());
+            let render_res = backend.bind().and_then(|(renderer, mut fb)| {
                 #[cfg(feature = "debug")]
                 if let Some(renderdoc) = renderdoc.as_mut() {
-                    renderdoc.start_frame_capture(
-                        backend.renderer().egl_context().get_context_handle(),
-                        backend
-                            .window()
-                            .window_handle()
-                            .map(|handle| {
-                                if let RawWindowHandle::Wayland(handle) = handle.as_raw() {
-                                    handle.surface.as_ptr()
-                                } else {
-                                    std::ptr::null_mut()
-                                }
-                            })
-                            .unwrap_or_else(|_| std::ptr::null_mut()),
-                    );
+                    renderdoc.start_frame_capture(renderer.egl_context().get_context_handle(), window_handle);
                 }
-                let age = if *full_redraw > 0 {
-                    0
-                } else {
-                    backend.buffer_age().unwrap_or(0)
-                };
-
-                let renderer = backend.renderer();
 
                 let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
 
@@ -349,11 +347,12 @@ pub fn run_winit() {
                 #[cfg(feature = "debug")]
                 elements.push(CustomRenderElements::Fps(fps_element.clone()));
 
-                render_output(
+                let res = render_output(
                     &output,
                     space,
                     elements,
                     renderer,
+                    &mut fb,
                     damage_tracker,
                     age,
                     show_window_preview,
@@ -361,7 +360,9 @@ pub fn run_winit() {
                 .map_err(|err| match err {
                     OutputDamageTrackerError::Rendering(err) => err.into(),
                     _ => unreachable!(),
-                })
+                });
+
+                res
             });
 
             match render_res {
