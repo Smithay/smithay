@@ -93,8 +93,8 @@ impl TextureSync {
 
     pub(super) fn wait_for_all(&mut self, gl: &Gles2) {
         unsafe {
-            wait_for_syncpoint(&mut self.read_sync.get_mut().unwrap(), gl);
-            wait_for_syncpoint(&mut self.write_sync.get_mut().unwrap(), gl);
+            wait_for_syncpoint(self.read_sync.get_mut().unwrap(), gl);
+            wait_for_syncpoint(self.write_sync.get_mut().unwrap(), gl);
         }
     }
 

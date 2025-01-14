@@ -10,7 +10,7 @@
 //! you want on the initialization of the backend. These functions will provide you
 //! with two objects:
 //!
-//! - a [`WinitGraphicsBackend`], which can give you an implementation of a [`Renderer`]
+//! - a [`WinitGraphicsBackend`], which can give you an implementation of a [`Renderer`](crate::backend::renderer::Renderer)
 //!   (or even [`GlesRenderer`]) through its `renderer` method in addition to further
 //!   functionality to access and manage the created winit-window.
 //! - a [`WinitEventLoop`], which dispatches some [`WinitEvent`] from the host graphics server.
@@ -19,7 +19,6 @@
 //! two traits for the winit backend.
 
 use std::io::Error as IoError;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -59,14 +58,12 @@ mod input;
 
 pub use self::input::*;
 
-use super::renderer::Renderer;
-
 /// Create a new [`WinitGraphicsBackend`], which implements the
-/// [`Renderer`] trait and a corresponding [`WinitEventLoop`].
+/// [`Renderer`](crate::backend::renderer::Renderer) trait and a corresponding [`WinitEventLoop`].
 pub fn init<R>() -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
-    R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
-    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
+    R: From<GlesRenderer> + Bind<EGLSurface>,
+    crate::backend::SwapBuffersError: From<R::Error>,
 {
     init_from_attributes(
         WinitWindow::default_attributes()
@@ -76,15 +73,15 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`]
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`](crate::backend::renderer::Renderer)
 /// trait, from a given [`WindowAttributes`] struct and a corresponding
 /// [`WinitEventLoop`].
 pub fn init_from_attributes<R>(
     attributes: WindowAttributes,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
-    R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
-    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
+    R: From<GlesRenderer> + Bind<EGLSurface>,
+    crate::backend::SwapBuffersError: From<R::Error>,
 {
     init_from_attributes_with_gl_attr(
         attributes,
@@ -97,7 +94,7 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`]
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`](crate::backend::renderer::Renderer)
 /// trait, from a given [`WindowAttributes`] struct, as well as given
 /// [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitEventLoop`].
@@ -106,8 +103,8 @@ pub fn init_from_attributes_with_gl_attr<R>(
     gl_attributes: GlAttributes,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
-    R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
-    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
+    R: From<GlesRenderer> + Bind<EGLSurface>,
+    crate::backend::SwapBuffersError: From<R::Error>,
 {
     let span = info_span!("backend_winit", window = tracing::field::Empty);
     let _guard = span.enter();
@@ -182,7 +179,6 @@ where
         (display, context, surface, is_x11)
     };
 
-    let egl = Rc::new(surface);
     let renderer = unsafe { GlesRenderer::new(context)?.into() };
     let damage_tracking = display.supports_damage();
 
@@ -196,7 +192,7 @@ where
             window: window.clone(),
             span: span.clone(),
             _display: display,
-            egl_surface: egl,
+            egl_surface: surface,
             damage_tracking,
             bind_size: None,
             renderer,
@@ -246,7 +242,7 @@ pub struct WinitGraphicsBackend<R> {
     renderer: R,
     // The display isn't used past this point but must be kept alive.
     _display: EGLDisplay,
-    egl_surface: Rc<EGLSurface>,
+    egl_surface: EGLSurface,
     window: Arc<WinitWindow>,
     damage_tracking: bool,
     bind_size: Option<Size<i32, Physical>>,
@@ -255,8 +251,8 @@ pub struct WinitGraphicsBackend<R> {
 
 impl<R> WinitGraphicsBackend<R>
 where
-    R: Bind<Rc<EGLSurface>>,
-    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
+    R: Bind<EGLSurface>,
+    crate::backend::SwapBuffersError: From<R::Error>,
 {
     /// Window size of the underlying window
     pub fn window_size(&self) -> Size<i32, Physical> {
@@ -282,7 +278,7 @@ where
     /// Bind the underlying window to the underlying renderer.
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
-    pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
+    pub fn bind(&mut self) -> Result<(&mut R, R::Framebuffer<'_>), crate::backend::SwapBuffersError> {
         // NOTE: we must resize before making the current context current, otherwise the back
         // buffer will be latched. Some nvidia drivers may not like it, but a lot of wayland
         // software does the order that way due to mesa latching back buffer on each
@@ -293,17 +289,17 @@ where
         }
         self.bind_size = Some(window_size);
 
-        self.renderer.bind(self.egl_surface.clone())?;
+        let fb = self.renderer.bind(&mut self.egl_surface)?;
 
-        Ok(())
+        Ok((&mut self.renderer, fb))
     }
 
     /// Retrieve the underlying `EGLSurface` for advanced operations
     ///
     /// **Note:** Don't carelessly use this to manually bind the renderer to the surface,
     /// `WinitGraphicsBackend::bind` transparently handles window resizes for you.
-    pub fn egl_surface(&self) -> Rc<EGLSurface> {
-        self.egl_surface.clone()
+    pub fn egl_surface(&self) -> &EGLSurface {
+        &self.egl_surface
     }
 
     /// Retrieve the buffer age of the current backbuffer of the window.

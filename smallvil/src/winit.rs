@@ -68,18 +68,26 @@ pub fn init_winit(
                 let size = backend.window_size();
                 let damage = Rectangle::from_size(size);
 
-                backend.bind().unwrap();
-                smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
-                    &output,
-                    backend.renderer(),
-                    1.0,
-                    0,
-                    [&state.space],
-                    &[],
-                    &mut damage_tracker,
-                    [0.1, 0.1, 0.1, 1.0],
-                )
-                .unwrap();
+                {
+                    let (renderer, mut framebuffer) = backend.bind().unwrap();
+                    smithay::desktop::space::render_output::<
+                        _,
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                        _,
+                        _,
+                    >(
+                        &output,
+                        renderer,
+                        &mut framebuffer,
+                        1.0,
+                        0,
+                        [&state.space],
+                        &[],
+                        &mut damage_tracker,
+                        [0.1, 0.1, 0.1, 1.0],
+                    )
+                    .unwrap();
+                }
                 backend.submit(Some(&[damage])).unwrap();
 
                 state.space.elements().for_each(|window| {

@@ -17,7 +17,7 @@ use crate::{
             element::UnderlyingStorage,
             gles::{element::*, *},
             sync, Bind, Blit, Color32F, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
-            TextureFilter, Unbind,
+            RendererSuper, TextureFilter,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -45,8 +45,8 @@ pub struct GlowRenderer {
 /// [`Frame`] implementation of a [`GlowRenderer`].
 ///
 /// Leaking the frame will cause the same problems as leaking a [`GlesFrame`].
-pub struct GlowFrame<'a> {
-    frame: Option<GlesFrame<'a>>,
+pub struct GlowFrame<'frame, 'buffer> {
+    frame: Option<GlesFrame<'frame, 'buffer>>,
     glow: Arc<Context>,
 }
 
@@ -129,12 +129,14 @@ impl GlowRenderer {
     where
         F: FnOnce(&Arc<Context>) -> R,
     {
-        self.gl.make_current()?;
+        unsafe {
+            self.gl.egl_context().make_current()?;
+        }
         Ok(func(&self.glow))
     }
 }
 
-impl GlowFrame<'_> {
+impl GlowFrame<'_, '_> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -156,9 +158,9 @@ impl GlowFrame<'_> {
 //  just as `TryFrom<GlesRenderer, Error=GlesError> for GlowRenderer`
 impl From<GlesRenderer> for GlowRenderer {
     #[inline]
-    fn from(mut renderer: GlesRenderer) -> GlowRenderer {
+    fn from(renderer: GlesRenderer) -> GlowRenderer {
         let glow = unsafe {
-            renderer.make_current().unwrap();
+            renderer.egl_context().make_current().unwrap();
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
         };
 
@@ -183,25 +185,32 @@ impl BorrowMut<GlesRenderer> for GlowRenderer {
     }
 }
 
-impl<'frame> Borrow<GlesFrame<'frame>> for GlowFrame<'frame> {
+impl<'frame, 'buffer> Borrow<GlesFrame<'frame, 'buffer>> for GlowFrame<'frame, 'buffer> {
     #[inline]
-    fn borrow(&self) -> &GlesFrame<'frame> {
+    fn borrow(&self) -> &GlesFrame<'frame, 'buffer> {
         self.frame.as_ref().unwrap()
     }
 }
 
-impl<'frame> BorrowMut<GlesFrame<'frame>> for GlowFrame<'frame> {
+impl<'frame, 'buffer> BorrowMut<GlesFrame<'frame, 'buffer>> for GlowFrame<'frame, 'buffer> {
     #[inline]
-    fn borrow_mut(&mut self) -> &mut GlesFrame<'frame> {
+    fn borrow_mut(&mut self) -> &mut GlesFrame<'frame, 'buffer> {
         self.frame.as_mut().unwrap()
     }
 }
 
-impl Renderer for GlowRenderer {
+impl RendererSuper for GlowRenderer {
     type Error = GlesError;
     type TextureId = GlesTexture;
-    type Frame<'frame> = GlowFrame<'frame>;
+    type Frame<'frame, 'buffer>
+        = GlowFrame<'frame, 'buffer>
+    where
+        'buffer: 'frame,
+        Self: 'frame;
+    type Framebuffer<'buffer> = GlesTarget<'buffer>;
+}
 
+impl Renderer for GlowRenderer {
     fn id(&self) -> usize {
         self.gl.id()
     }
@@ -221,13 +230,17 @@ impl Renderer for GlowRenderer {
     }
 
     #[profiling::function]
-    fn render(
-        &mut self,
+    fn render<'frame, 'buffer>(
+        &'frame mut self,
+        target: &'frame mut GlesTarget<'buffer>,
         output_size: Size<i32, Physical>,
         transform: Transform,
-    ) -> Result<GlowFrame<'_>, Self::Error> {
+    ) -> Result<GlowFrame<'frame, 'buffer>, Self::Error>
+    where
+        'buffer: 'frame,
+    {
         let glow = self.glow.clone();
-        let frame = self.gl.render(output_size, transform)?;
+        let frame = self.gl.render(target, output_size, transform)?;
         Ok(GlowFrame {
             frame: Some(frame),
             glow,
@@ -245,7 +258,7 @@ impl Renderer for GlowRenderer {
     }
 }
 
-impl Frame for GlowFrame<'_> {
+impl Frame for GlowFrame<'_, '_> {
     type TextureId = GlesTexture;
     type Error = GlesError;
 
@@ -330,7 +343,7 @@ impl Frame for GlowFrame<'_> {
     }
 }
 
-impl GlowFrame<'_> {
+impl GlowFrame<'_, '_> {
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<sync::SyncPoint, GlesError> {
         if let Some(frame) = self.frame.take() {
@@ -341,7 +354,7 @@ impl GlowFrame<'_> {
     }
 }
 
-impl Drop for GlowFrame<'_> {
+impl Drop for GlowFrame<'_, '_> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
             warn!("Ignored error finishing GlowFrame on drop: {}", err);
@@ -381,10 +394,10 @@ impl ImportMem for GlowRenderer {
     #[profiling::function]
     fn update_memory(
         &mut self,
-        texture: &<Self as Renderer>::TextureId,
+        texture: &Self::TextureId,
         data: &[u8],
         region: Rectangle<i32, BufferCoord>,
-    ) -> Result<(), <Self as Renderer>::Error> {
+    ) -> Result<(), Self::Error> {
         self.gl.update_memory(texture, data, region)
     }
 
@@ -451,10 +464,11 @@ impl ExportMem for GlowRenderer {
     #[profiling::function]
     fn copy_framebuffer(
         &mut self,
+        from: &GlesTarget<'_>,
         region: Rectangle<i32, BufferCoord>,
         format: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        self.gl.copy_framebuffer(region, format)
+        self.gl.copy_framebuffer(from, region, format)
     }
 
     #[profiling::function]
@@ -485,7 +499,7 @@ where
     GlesRenderer: Bind<T>,
 {
     #[profiling::function]
-    fn bind(&mut self, target: T) -> Result<(), GlesError> {
+    fn bind<'a>(&mut self, target: &'a mut T) -> Result<GlesTarget<'a>, GlesError> {
         self.gl.bind(target)
     }
     fn supported_formats(&self) -> Option<FormatSet> {
@@ -503,36 +517,17 @@ where
     }
 }
 
-impl<Target> Blit<Target> for GlowRenderer
-where
-    GlesRenderer: Blit<Target>,
-{
+impl Blit for GlowRenderer {
     #[profiling::function]
-    fn blit_to(
+    fn blit(
         &mut self,
-        to: Target,
+        from: &GlesTarget<'_>,
+        to: &mut GlesTarget<'_>,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
     ) -> Result<(), GlesError> {
-        self.gl.blit_to(to, src, dst, filter)
-    }
-
-    #[profiling::function]
-    fn blit_from(
-        &mut self,
-        from: Target,
-        src: Rectangle<i32, Physical>,
-        dst: Rectangle<i32, Physical>,
-        filter: TextureFilter,
-    ) -> Result<(), GlesError> {
-        self.gl.blit_from(from, src, dst, filter)
-    }
-}
-
-impl Unbind for GlowRenderer {
-    fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
-        self.gl.unbind()
+        self.gl.blit(from, to, src, dst, filter)
     }
 }
 
@@ -540,7 +535,7 @@ impl RenderElement<GlowRenderer> for PixelShaderElement {
     #[profiling::function]
     fn draw(
         &self,
-        frame: &mut GlowFrame<'_>,
+        frame: &mut GlowFrame<'_, '_>,
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -558,7 +553,7 @@ impl RenderElement<GlowRenderer> for TextureShaderElement {
     #[profiling::function]
     fn draw(
         &self,
-        frame: &mut GlowFrame<'_>,
+        frame: &mut GlowFrame<'_, '_>,
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

@@ -35,7 +35,7 @@ smithay::backend::renderer::element::render_elements! {
     // a feature-dependent lifetime, which introduces a lot more feature bounds
     // as the whole type changes and we can't have an unused lifetime (for when "debug" is disabled)
     // in the declaration.
-    Fps=FpsElement<<R as Renderer>::TextureId>,
+    Fps=FpsElement<R::TextureId>,
 }
 
 impl<R: Renderer> std::fmt::Debug for CustomRenderElements<R> {
@@ -195,6 +195,7 @@ pub fn render_output<'a, 'd, R>(
     space: &'a Space<WindowElement>,
     custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
     renderer: &'a mut R,
+    framebuffer: &'a mut R::Framebuffer<'_>,
     damage_tracker: &'d mut OutputDamageTracker,
     age: usize,
     show_window_preview: bool,
@@ -205,5 +206,5 @@ where
 {
     let (elements, clear_color) =
         output_elements(output, space, custom_elements, renderer, show_window_preview);
-    damage_tracker.render_output(renderer, age, &elements, clear_color)
+    damage_tracker.render_output(renderer, framebuffer, age, &elements, clear_color)
 }

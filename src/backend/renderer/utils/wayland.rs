@@ -319,9 +319,9 @@ impl RendererSurfaceState {
     pub fn texture<R>(&self, id: usize) -> Option<&R::TextureId>
     where
         R: Renderer,
-        <R as Renderer>::TextureId: 'static,
+        R::TextureId: 'static,
     {
-        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), id);
+        let texture_id = (TypeId::of::<R::TextureId>(), id);
         self.textures.get(&texture_id).and_then(|e| e.downcast_ref())
     }
 
@@ -486,13 +486,13 @@ where
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip_all)]
 #[profiling::function]
-pub fn import_surface<R>(renderer: &mut R, states: &SurfaceData) -> Result<(), <R as Renderer>::Error>
+pub fn import_surface<R>(renderer: &mut R, states: &SurfaceData) -> Result<(), R::Error>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    R::TextureId: 'static,
 {
     if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+        let texture_id = (TypeId::of::<R::TextureId>(), renderer.id());
         let mut data_ref = data.lock().unwrap();
         let data = &mut *data_ref;
 
@@ -537,15 +537,15 @@ where
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip_all)]
 #[profiling::function]
-pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
+pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), R::Error>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    R::TextureId: 'static,
 {
     let scale = 1.0;
     let location: Point<f64, Physical> = (0.0, 0.0).into();
 
-    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+    let texture_id = (TypeId::of::<R::TextureId>(), renderer.id());
     let mut result = Ok(());
     with_surface_tree_downward(
         surface,
@@ -592,15 +592,15 @@ where
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip(frame, scale, elements))]
 #[profiling::function]
-pub fn draw_render_elements<'a, R, S, E>(
-    frame: &mut <R as Renderer>::Frame<'a>,
+pub fn draw_render_elements<R, S, E>(
+    frame: &mut R::Frame<'_, '_>,
     scale: S,
     elements: &[E],
     damage: &[Rectangle<i32, Physical>],
-) -> Result<Option<Vec<Rectangle<i32, Physical>>>, <R as Renderer>::Error>
+) -> Result<Option<Vec<Rectangle<i32, Physical>>>, R::Error>
 where
     R: Renderer,
-    <R as Renderer>::TextureId: 'static,
+    R::TextureId: 'static,
     S: Into<Scale<f64>>,
     E: RenderElement<R>,
 {

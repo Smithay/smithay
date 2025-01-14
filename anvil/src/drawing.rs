@@ -191,14 +191,14 @@ where
 }
 
 #[cfg(feature = "debug")]
-impl<R> RenderElement<R> for FpsElement<<R as Renderer>::TextureId>
+impl<R> RenderElement<R> for FpsElement<R::TextureId>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    R::TextureId: 'static,
 {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

@@ -416,7 +416,7 @@ impl<R: Renderer> std::fmt::Debug for WindowRenderElement<R> {
 impl<R> AsRenderElements<R> for WindowElement
 where
     R: Renderer + ImportAll + ImportMem,
-    <R as Renderer>::TextureId: Clone + Texture + 'static,
+    R::TextureId: Clone + Texture + 'static,
 {
     type RenderElement = WindowRenderElement<R>;
 

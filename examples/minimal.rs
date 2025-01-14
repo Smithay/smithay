@@ -205,49 +205,51 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             PumpStatus::Exit(_) => return Ok(()),
         };
 
-        backend.bind().unwrap();
-
         let size = backend.window_size();
         let damage = Rectangle::from_size(size);
+        {
+            let (renderer, mut framebuffer) = backend.bind().unwrap();
+            let elements = state
+                .xdg_shell_state
+                .toplevel_surfaces()
+                .iter()
+                .flat_map(|surface| {
+                    render_elements_from_surface_tree(
+                        renderer,
+                        surface.wl_surface(),
+                        (0, 0),
+                        1.0,
+                        1.0,
+                        Kind::Unspecified,
+                    )
+                })
+                .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>();
 
-        let elements = state
-            .xdg_shell_state
-            .toplevel_surfaces()
-            .iter()
-            .flat_map(|surface| {
-                render_elements_from_surface_tree(
-                    backend.renderer(),
-                    surface.wl_surface(),
-                    (0, 0),
-                    1.0,
-                    1.0,
-                    Kind::Unspecified,
-                )
-            })
-            .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>();
-
-        let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
-        frame.clear(Color32F::new(0.1, 0.0, 0.0, 1.0), &[damage]).unwrap();
-        draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
-        // We rely on the nested compositor to do the sync for us
-        let _ = frame.finish().unwrap();
-
-        for surface in state.xdg_shell_state.toplevel_surfaces() {
-            send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-        }
-
-        if let Some(stream) = listener.accept()? {
-            println!("Got a client: {:?}", stream);
-
-            let client = display
-                .handle()
-                .insert_client(stream, Arc::new(ClientState::default()))
+            let mut frame = renderer
+                .render(&mut framebuffer, size, Transform::Flipped180)
                 .unwrap();
-            clients.push(client);
-        }
+            frame.clear(Color32F::new(0.1, 0.0, 0.0, 1.0), &[damage]).unwrap();
+            draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
+            // We rely on the nested compositor to do the sync for us
+            let _ = frame.finish().unwrap();
 
-        display.dispatch_clients(&mut state)?;
-        display.flush_clients()?;
+            for surface in state.xdg_shell_state.toplevel_surfaces() {
+                send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+            }
+
+            if let Some(stream) = listener.accept()? {
+                println!("Got a client: {:?}", stream);
+
+                let client = display
+                    .handle()
+                    .insert_client(stream, Arc::new(ClientState::default()))
+                    .unwrap();
+                clients.push(client);
+            }
+
+            display.dispatch_clients(&mut state)?;
+            display.flush_clients()?;
+        }
 
         // It is important that all events on the display have been dispatched and flushed to clients before
         // swapping buffers because this operation may block.
