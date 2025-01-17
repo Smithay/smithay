@@ -669,6 +669,8 @@ pub trait ExportMem: Renderer {
 }
 
 /// Trait for renderers supporting blitting contents from one framebuffer to another.
+// We would like to require the following. But we can't because of <https://github.com/rust-lang/rust/issues/100013>.
+// for<'frame, 'buffer> Self::Frame<'frame, 'buffer>: BlitFrame<Self::Framebuffer<'buffer>>,
 pub trait Blit
 where
     Self: Renderer,
@@ -684,12 +686,60 @@ where
     /// - The destination framebuffer is not writable
     /// - `src` is out of bounds for the source framebuffer
     /// - `dst` is out of bounds for the destination framebuffer
-    /// - `src` and `dst` sizes are different and interpolation id not supported by this renderer.
-    /// - source and target framebuffer are the same, and `src` and `dst` overlap
+    /// - `src` and `dst` sizes are different and interpolation is not supported by this renderer.
+    /// - source and target framebuffer are the same
     fn blit(
         &mut self,
         from: &Self::Framebuffer<'_>,
         to: &mut Self::Framebuffer<'_>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error>;
+}
+
+/// Trait for frames supporting blitting contents from/to the current framebuffer to/from another.
+pub trait BlitFrame<Framebuffer>
+where
+    Self: Frame,
+{
+    /// Copies the contents of the bound framebuffer to `dst` in the provided framebuffer,
+    /// applying `filter` if necessary.
+    ///
+    /// This operation is non destructive, the contents of the current framebuffer
+    /// are kept intact as is any region not in `dst` for the target framebuffer.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The bound framebuffer is not readable
+    /// - The destination framebuffer is not writable
+    /// - `src` is out of bounds for the bound framebuffer
+    /// - `dst` is out of bounds for the destination framebuffer
+    /// - `src` and `dst` sizes are different and interpolation is not supported by this renderer.
+    /// - bound and target framebuffer are the same
+    fn blit_to(
+        &mut self,
+        to: &mut Framebuffer,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error>;
+
+    /// Copies the contents of the provided framebuffer to `dst` in the bound framebuffer,
+    /// applying `filter` if necessary.
+    ///
+    /// This operation is non destructive, the contents of the source framebuffer
+    /// are kept intact as is any region not in `dst` for the bound framebuffer.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The source framebuffer is not readable
+    /// - The bound framebuffer is not writable
+    /// - `src` is out of bounds for the source framebuffer
+    /// - `dst` is out of bounds for the bound framebuffer
+    /// - `src` and `dst` sizes are different and interpolation is not supported by this renderer.
+    /// - source and bound framebuffer are the same
+    fn blit_from(
+        &mut self,
+        from: &Framebuffer,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,

@@ -16,8 +16,8 @@ use crate::{
         renderer::{
             element::UnderlyingStorage,
             gles::{element::*, *},
-            sync, Bind, Blit, Color32F, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
-            RendererSuper, TextureFilter,
+            sync, Bind, Blit, BlitFrame, Color32F, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen,
+            Renderer, RendererSuper, TextureFilter,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -514,6 +514,28 @@ where
     #[profiling::function]
     fn create_buffer(&mut self, format: Fourcc, size: Size<i32, BufferCoord>) -> Result<T, GlesError> {
         self.gl.create_buffer(format, size)
+    }
+}
+
+impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlowFrame<'_, 'buffer> {
+    fn blit_to(
+        &mut self,
+        to: &mut GlesTarget<'buffer>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().blit_to(to, src, dst, filter)
+    }
+
+    fn blit_from(
+        &mut self,
+        from: &GlesTarget<'buffer>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().blit_from(from, src, dst, filter)
     }
 }
 

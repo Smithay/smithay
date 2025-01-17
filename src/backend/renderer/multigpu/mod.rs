@@ -48,8 +48,8 @@ use std::{
 };
 
 use super::{
-    sync::SyncPoint, Bind, Blit, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen,
-    Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
+    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
@@ -1292,7 +1292,7 @@ where
     Ok(dmabuf)
 }
 
-impl<R: GraphicsApi, T: GraphicsApi> MultiFrame<'_, '_, '_, '_, R, T>
+impl<'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> MultiFrame<'_, '_, 'frame, 'buffer, R, T>
 where
     R: 'static,
     R::Error: 'static,
@@ -1302,6 +1302,40 @@ where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
+    fn flush_frame(&mut self) -> Result<(), Error<R, T>> {
+        if self.target.is_some() {
+            let _ = self.finish_internal()?;
+            // now the frame is gone, lets use our unholy ptr till the end of this call:
+            // SAFETY:
+            // - The renderer will never be invalid because the lifetime of the frame must be shorter than the renderer.
+            // - The pointer can't be aliased because of the following:
+            //   - Creating a frame requires an `&mut` reference to the renderer, making the mutable borrow safe.
+            //   - The mutable reference is used in a function which mutably borrows the frame, that either being `.finish()`
+            //      (which takes ownership of the frame) or dropping the frame.
+            let render = unsafe { &mut *self.render };
+
+            // We extend the lifetime to 'frame, because this is self-referencial.
+            // SAFETY:
+            //  - We drop the framebuffer before `target`, which contains the referenced dmabuf
+            //  - We drop the frame before the framebuffer as we store both in `MultiFrame`
+            //  - `Frame` can't store an invalid pointer into the framebuffer, as the framebuffer is moved
+            //    to the heap and won't be moved by the compiler thanks to `AliasableBox`.
+            let frame = unsafe {
+                std::mem::transmute::<
+                    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'_, '_>,
+                    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>,
+                >(
+                    render
+                        .renderer_mut()
+                        .render(self.framebuffer.as_mut().unwrap(), self.size, self.dst_transform)
+                        .map_err(Error::Render)?,
+                )
+            };
+            self.frame = Some(frame);
+        }
+        Ok(())
+    }
+
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<sync::SyncPoint, Error<R, T>> {
@@ -1325,7 +1359,7 @@ where
 
             let buffer_size = self.size.to_logical(1).to_buffer(1, Transform::Normal);
             if let Some(target) = self.target.as_mut() {
-                if let Some(texture) = target.texture.take() {
+                if let Some(texture) = target.texture.as_ref() {
                     // try gpu copy
                     let damage = damage
                         .iter()
@@ -1342,7 +1376,7 @@ where
                         .map_err(Error::Target)?;
                     frame
                         .render_texture_from_to(
-                            &texture,
+                            texture,
                             Rectangle::from_size(buffer_size).to_f64(),
                             Rectangle::from_size(self.size),
                             &damage,
@@ -2787,6 +2821,84 @@ where
                 .renderer_mut()
                 .map_texture(render_mapping)
                 .map_err(Error::Render),
+        }
+    }
+}
+
+impl<'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> BlitFrame<MultiFramebuffer<'buffer, R, T>>
+    for MultiFrame<'_, '_, 'frame, 'buffer, R, T>
+where
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        BlitFrame<<<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>>,
+    <T::Device as ApiDevice>::Renderer: Blit,
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+{
+    #[instrument(level = "trace", parent = &self.span, skip(self, to))]
+    #[profiling::function]
+    fn blit_to(
+        &mut self,
+        to: &mut MultiFramebuffer<'buffer, R, T>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        self.flush_frame()?;
+        if let Some(target) = self.target.as_mut() {
+            let MultiFramebufferInternal::Target(ref mut to_fb) = &mut to.0 else {
+                unreachable!()
+            };
+            target
+                .device
+                .renderer_mut()
+                .blit(target.framebuffer, to_fb, src, dst, filter)
+                .map_err(Error::Target)
+        } else {
+            let MultiFramebufferInternal::Render(ref mut to_fb) = &mut to.0 else {
+                unreachable!()
+            };
+            self.frame
+                .as_mut()
+                .unwrap()
+                .blit_to(to_fb, src, dst, filter)
+                .map_err(Error::Render)
+        }
+    }
+
+    #[instrument(level = "trace", parent = &self.span, skip(self, from))]
+    #[profiling::function]
+    fn blit_from(
+        &mut self,
+        from: &MultiFramebuffer<'buffer, R, T>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        self.flush_frame()?;
+        if let Some(target) = self.target.as_mut() {
+            let MultiFramebufferInternal::Target(ref from_fb) = &from.0 else {
+                unreachable!()
+            };
+            target
+                .device
+                .renderer_mut()
+                .blit(from_fb, target.framebuffer, src, dst, filter)
+                .map_err(Error::Target)
+        } else {
+            let MultiFramebufferInternal::Render(ref from_fb) = &from.0 else {
+                unreachable!()
+            };
+            self.frame
+                .as_mut()
+                .unwrap()
+                .blit_from(from_fb, src, dst, filter)
+                .map_err(Error::Render)
         }
     }
 }

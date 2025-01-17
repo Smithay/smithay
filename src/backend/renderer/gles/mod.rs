@@ -34,8 +34,8 @@ pub use uniform::*;
 use self::version::GlVersion;
 
 use super::{
-    sync::SyncPoint, Bind, Blit, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen,
-    Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
+    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
@@ -1605,6 +1605,36 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
             })))
         }
+    }
+}
+
+impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
+    fn blit_to(
+        &mut self,
+        to: &mut GlesTarget<'buffer>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        let res = self.renderer.blit(self.target, to, src, dst, filter);
+        self.target
+            .0
+            .make_current(&self.renderer.gl, &self.renderer.egl)?;
+        res
+    }
+
+    fn blit_from(
+        &mut self,
+        from: &GlesTarget<'buffer>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        let res = self.renderer.blit(from, self.target, src, dst, filter);
+        self.target
+            .0
+            .make_current(&self.renderer.gl, &self.renderer.egl)?;
+        res
     }
 }
 
