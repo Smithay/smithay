@@ -508,6 +508,7 @@ struct PlaneElementState {
     id: Id,
     commit: CommitCounter,
     z_index: usize,
+    cursor_size: Option<Size<i32, Physical>>,
 }
 
 #[derive(Debug)]
@@ -3133,7 +3134,9 @@ where
                 .unwrap_or(true)
             || previous_element_state
                 .map(|element_state| {
-                    element_state.id != *element.id() || element.current_commit() != element_state.commit
+                    element_state.id != *element.id()
+                        || element.current_commit() != element_state.commit
+                        || element_state.cursor_size != Some(element_size)
                 })
                 .unwrap_or(true)
             || previous_state
@@ -3394,6 +3397,7 @@ where
                 id: element.id().clone(),
                 commit: element.current_commit(),
                 z_index: element_zindex,
+                cursor_size: Some(element_size),
             }),
             config: Some(config),
         };
@@ -4003,6 +4007,7 @@ where
                 id: element_id.clone(),
                 commit: element.current_commit(),
                 z_index: element_config.z_index,
+                cursor_size: None,
             }),
             config: Some(config),
         };
