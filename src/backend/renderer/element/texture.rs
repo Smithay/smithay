@@ -385,9 +385,9 @@ impl<T> RenderContext<'_, T> {
     /// Draw to the buffer
     pub fn draw<F, E>(&mut self, f: F) -> Result<(), E>
     where
-        F: FnOnce(&T) -> Result<Vec<Rectangle<i32, Buffer>>, E>,
+        F: FnOnce(&mut T) -> Result<Vec<Rectangle<i32, Buffer>>, E>,
     {
-        let draw_damage = f(&self.buffer.texture)?;
+        let draw_damage = f(&mut self.buffer.texture)?;
         self.damage.extend(draw_damage);
         Ok(())
     }
