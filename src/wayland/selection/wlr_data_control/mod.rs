@@ -47,6 +47,8 @@
 //! Be aware that data control clients rely on other selection providers to be implemneted, like
 //! wl_data_device or zwp_primary_selection.
 
+use std::sync::Arc;
+
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
 use wayland_server::backend::GlobalId;
 use wayland_server::{Client, DisplayHandle, GlobalDispatch};
@@ -86,7 +88,9 @@ impl DataControlState {
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = DataControlManagerGlobalData {
-            primary: primary_selection.is_some(),
+            primary_selection_filter: primary_selection
+                .map(|x| Arc::clone(&x.filter))
+                .unwrap_or_else(|| Arc::new(Box::new(|_| false))),
             filter: Box::new(filter),
         };
         let manager_global = display.create_global::<D, ZwlrDataControlManagerV1, _>(2, data);
@@ -102,22 +106,24 @@ impl DataControlState {
 #[allow(missing_debug_implementations)]
 #[doc(hidden)]
 pub struct DataControlManagerGlobalData {
-    /// Whether to allow primary selection.
-    primary: bool,
+    /// Filter whether the clients can read/modify the primary selection.
+    primary_selection_filter: Arc<Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>>,
 
     /// Filter whether the clients can view global.
     filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
 }
 
+#[allow(missing_debug_implementations)]
 #[doc(hidden)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone)]
 pub struct DataControlManagerUserData {
-    /// Whether to allow primary selection.
-    primary: bool,
+    /// Filter whether the clients can read/modify the primary selection.
+    primary_selection_filter: Arc<Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>>,
 }
 
 mod handlers {
     use std::cell::RefCell;
+    use std::sync::Arc;
 
     use tracing::error;
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
@@ -158,7 +164,7 @@ mod handlers {
             data_init.init(
                 resource,
                 DataControlManagerUserData {
-                    primary: global_data.primary,
+                    primary_selection_filter: Arc::clone(&global_data.primary_selection_filter),
                 },
             );
         }
@@ -199,7 +205,7 @@ mod handlers {
                                 id,
                                 DataControlDeviceUserData {
                                     wl_seat,
-                                    primary: data.primary,
+                                    primary_selection_filter: Arc::clone(&data.primary_selection_filter),
                                 },
                             ));
 
@@ -214,7 +220,7 @@ mod handlers {
                             // NOTE: broadcast selection only to the newly created device.
                             let device = Some(&device);
                             seat_data.send_selection::<D>(dh, SelectionTarget::Clipboard, device, true);
-                            if data.primary {
+                            if (*data.primary_selection_filter)(client) {
                                 seat_data.send_selection::<D>(dh, SelectionTarget::Primary, device, true);
                             }
                         }

@@ -66,6 +66,7 @@
 use std::{
     cell::{Ref, RefCell},
     os::unix::io::OwnedFd,
+    sync::Arc,
 };
 
 use tracing::instrument;
@@ -94,9 +95,17 @@ pub trait PrimarySelectionHandler: Sized + SeatHandler + SelectionHandler {
 }
 
 /// State of the primary selection.
-#[derive(Debug)]
 pub struct PrimarySelectionState {
     manager_global: GlobalId,
+    pub(super) filter: Arc<Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for PrimarySelectionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PrimarySelectionState")
+            .field("manager_global", &self.manager_global)
+            .finish()
+    }
 }
 
 impl PrimarySelectionState {
@@ -119,11 +128,15 @@ impl PrimarySelectionState {
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = PrimaryDeviceManagerGlobalData {
-            filter: Box::new(filter),
+            filter: Arc::new(Box::new(filter)),
         };
+        let filter = Arc::clone(&data.filter);
         let manager_global = display.create_global::<D, PrimaryDeviceManager, _>(1, data);
 
-        Self { manager_global }
+        Self {
+            manager_global,
+            filter,
+        }
     }
 
     /// [`PrimaryDeviceManager`] GlobalId getter
@@ -135,7 +148,7 @@ impl PrimarySelectionState {
 #[allow(missing_debug_implementations)]
 #[doc(hidden)]
 pub struct PrimaryDeviceManagerGlobalData {
-    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+    filter: Arc<Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>>,
 }
 
 /// Set the primary selection focus to a certain client for a given seat
