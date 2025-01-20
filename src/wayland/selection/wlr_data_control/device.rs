@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::sync::Arc;
 
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::{
     self, ZwlrDataControlDeviceV1,
@@ -15,10 +16,10 @@ use crate::wayland::selection::{SelectionSource, SelectionTarget};
 
 use super::{DataControlHandler, DataControlState};
 
+#[allow(missing_debug_implementations)]
 #[doc(hidden)]
-#[derive(Debug)]
 pub struct DataControlDeviceUserData {
-    pub(crate) primary: bool,
+    pub(crate) primary_selection_filter: Arc<Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>>,
     pub(crate) wl_seat: WlSeat,
 }
 
@@ -30,7 +31,7 @@ where
 {
     fn request(
         handler: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &ZwlrDataControlDeviceV1,
         request: <ZwlrDataControlDeviceV1 as wayland_server::Resource>::Request,
         data: &DataControlDeviceUserData,
@@ -63,7 +64,7 @@ where
             }
             zwlr_data_control_device_v1::Request::SetPrimarySelection { source, .. } => {
                 // When the primary selection is disabled, we should simply ignore the requests.
-                if !data.primary {
+                if !(*data.primary_selection_filter)(client) {
                     return;
                 }
 
