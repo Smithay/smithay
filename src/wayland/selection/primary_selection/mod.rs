@@ -103,10 +103,25 @@ impl PrimarySelectionState {
     /// Register new [`PrimaryDeviceManager`] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<PrimaryDeviceManager, ()> + 'static,
+        D: GlobalDispatch<PrimaryDeviceManager, PrimaryDeviceManagerGlobalData> + 'static,
         D: PrimarySelectionHandler,
     {
-        let manager_global = display.create_global::<D, PrimaryDeviceManager, _>(1, ());
+        Self::new_with_filter::<D, _>(display, |_| true)
+    }
+
+    /// Register new [`PrimaryDeviceManager`] global with a filter.
+    ///
+    /// Filters can be used to limit visibility of a global to certain clients.
+    pub fn new_with_filter<D, F>(display: &DisplayHandle, filter: F) -> Self
+    where
+        D: GlobalDispatch<PrimaryDeviceManager, PrimaryDeviceManagerGlobalData> + 'static,
+        D: PrimarySelectionHandler,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
+    {
+        let data = PrimaryDeviceManagerGlobalData {
+            filter: Box::new(filter),
+        };
+        let manager_global = display.create_global::<D, PrimaryDeviceManager, _>(1, data);
 
         Self { manager_global }
     }
@@ -115,6 +130,12 @@ impl PrimarySelectionState {
     pub fn global(&self) -> GlobalId {
         self.manager_global.clone()
     }
+}
+
+#[allow(missing_debug_implementations)]
+#[doc(hidden)]
+pub struct PrimaryDeviceManagerGlobalData {
+    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
 }
 
 /// Set the primary selection focus to a certain client for a given seat
@@ -271,12 +292,14 @@ mod handlers {
         wayland::selection::{device::SelectionDevice, seat_data::SeatData},
     };
 
-    use super::{device::PrimaryDeviceUserData, source::PrimarySourceUserData};
+    use super::{
+        device::PrimaryDeviceUserData, source::PrimarySourceUserData, PrimaryDeviceManagerGlobalData,
+    };
     use super::{PrimarySelectionHandler, PrimarySelectionState};
 
-    impl<D> GlobalDispatch<PrimaryDeviceManager, (), D> for PrimarySelectionState
+    impl<D> GlobalDispatch<PrimaryDeviceManager, PrimaryDeviceManagerGlobalData, D> for PrimarySelectionState
     where
-        D: GlobalDispatch<PrimaryDeviceManager, ()>,
+        D: GlobalDispatch<PrimaryDeviceManager, PrimaryDeviceManagerGlobalData>,
         D: Dispatch<PrimaryDeviceManager, ()>,
         D: Dispatch<PrimarySource, PrimarySourceUserData>,
         D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
@@ -288,10 +311,14 @@ mod handlers {
             _handle: &DisplayHandle,
             _client: &wayland_server::Client,
             resource: wayland_server::New<PrimaryDeviceManager>,
-            _global_data: &(),
+            _global_data: &PrimaryDeviceManagerGlobalData,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
             data_init.init(resource, ());
+        }
+
+        fn can_view(client: wayland_server::Client, global_data: &PrimaryDeviceManagerGlobalData) -> bool {
+            (global_data.filter)(&client)
         }
     }
 
@@ -355,7 +382,7 @@ mod handlers {
 macro_rules! delegate_primary_selection {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: ()
+            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: $crate::wayland::selection::primary_selection::PrimaryDeviceManagerGlobalData
         ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
