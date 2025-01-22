@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use tracing::debug;
 use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{self, ZwpTextInputV3};
-use wayland_server::backend::ClientId;
+use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::input::SeatHandler;
@@ -21,6 +21,7 @@ struct Instance {
 pub(crate) struct TextInput {
     instances: Vec<Instance>,
     focus: Option<WlSurface>,
+    enabled_resource_id: Option<ObjectId>,
 }
 
 impl TextInput {
@@ -28,13 +29,16 @@ impl TextInput {
     where
         F: FnMut(&ZwpTextInputV3, &WlSurface, u32),
     {
-        if let Some(ref surface) = self.focus {
+        if let (Some(surface), Some(enabled_resource_id)) = (&self.focus, &self.enabled_resource_id) {
             if !surface.alive() {
                 return;
             }
+
             for ti in self.instances.iter_mut() {
-                if ti.instance.id().same_client_as(&surface.id()) {
+                let instance_id = ti.instance.id();
+                if instance_id.same_client_as(&surface.id()) && instance_id.eq(enabled_resource_id) {
                     f(&ti.instance, surface, ti.serial);
+                    break;
                 }
             }
         }
@@ -75,6 +79,13 @@ impl TextInputHandle {
     /// This doesn't send any 'enter' or 'leave' events.
     pub fn set_focus(&self, surface: Option<WlSurface>) {
         self.inner.lock().unwrap().focus = surface;
+    }
+
+    fn set_enabled_resource_id(&self, resource_id: Option<ObjectId>) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.enabled_resource_id.is_some() != resource_id.is_some() {
+            inner.enabled_resource_id = resource_id;
+        }
     }
 
     /// Send `leave` on the text-input instance for the currently focused
@@ -182,9 +193,11 @@ where
 
         match request {
             zwp_text_input_v3::Request::Enable => {
-                data.input_method_handle.activate_input_method(state, &focus)
+                data.handle.set_enabled_resource_id(Some(resource.id()));
+                data.input_method_handle.activate_input_method(state, &focus);
             }
             zwp_text_input_v3::Request::Disable => {
+                data.handle.set_enabled_resource_id(None);
                 data.input_method_handle.deactivate_input_method(state, false);
             }
             zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
