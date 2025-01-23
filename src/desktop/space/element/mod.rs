@@ -169,7 +169,7 @@ impl<
         E: AsRenderElements<R>,
     > AsRenderElements<R> for SpaceElements<'a, E>
 where
-    <R as Renderer>::TextureId: Clone + Texture + 'static,
+    R::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,

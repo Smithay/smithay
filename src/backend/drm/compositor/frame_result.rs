@@ -12,7 +12,7 @@ use crate::{
             element::{Element, Id, RenderElement, RenderElementStates},
             sync::SyncPoint,
             utils::{CommitCounter, DamageSet, DamageSnapshot, OpaqueRegions},
-            Blit, Color32F, Frame, Renderer,
+            Bind, Blit, Color32F, Frame, Renderer,
         },
     },
     output::OutputNoMode,
@@ -261,7 +261,7 @@ where
     <B as AsDmabuf>::Error: std::fmt::Debug,
     F: Framebuffer,
 {
-    /// Blit the frame result into a currently bound buffer
+    /// Blit the frame result
     #[allow(clippy::too_many_arguments)]
     pub fn blit_frame_result<R>(
         &self,
@@ -269,12 +269,13 @@ where
         transform: Transform,
         scale: impl Into<Scale<f64>>,
         renderer: &mut R,
+        framebuffer: &mut R::Framebuffer<'_>,
         damage: impl IntoIterator<Item = Rectangle<i32, Physical>>,
         filter: impl IntoIterator<Item = Id>,
-    ) -> Result<SyncPoint, BlitFrameResultError<<R as Renderer>::Error, <B as AsDmabuf>::Error>>
+    ) -> Result<SyncPoint, BlitFrameResultError<R::Error, <B as AsDmabuf>::Error>>
     where
-        R: Renderer + Blit<Dmabuf>,
-        <R as Renderer>::TextureId: 'static,
+        R: Renderer + Bind<Dmabuf> + Blit,
+        R::TextureId: 'static,
         E: Element + RenderElement<R>,
     {
         let size = size.into();
@@ -335,7 +336,7 @@ where
             tracing::trace!("clearing frame damage {:#?}", clear_damage);
 
             let mut frame = renderer
-                .render(size, transform)
+                .render(framebuffer, size, transform)
                 .map_err(BlitFrameResultError::Rendering)?;
 
             frame
@@ -346,7 +347,7 @@ where
         }
 
         // first do the potential blit
-        if let Some((sync, dmabuf, geometry)) = primary_dmabuf {
+        if let Some((sync, mut dmabuf, geometry)) = primary_dmabuf {
             let blit_damage = damage
                 .iter()
                 .filter_map(|d| d.intersection(geometry))
@@ -355,10 +356,14 @@ where
             tracing::trace!("blitting frame with damage: {:#?}", blit_damage);
 
             renderer.wait(&sync).map_err(BlitFrameResultError::Rendering)?;
+            let fb = renderer
+                .bind(&mut dmabuf)
+                .map_err(BlitFrameResultError::Rendering)?;
             for rect in blit_damage {
                 renderer
-                    .blit_from(
-                        dmabuf.clone(),
+                    .blit(
+                        &fb,
+                        framebuffer,
                         rect,
                         rect,
                         crate::backend::renderer::TextureFilter::Linear,
@@ -372,7 +377,7 @@ where
             tracing::trace!("drawing {} frame element(s)", elements_to_render.len());
 
             let mut frame = renderer
-                .render(size, transform)
+                .render(framebuffer, size, transform)
                 .map_err(BlitFrameResultError::Rendering)?;
 
             for element in elements_to_render.iter().rev() {

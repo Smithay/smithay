@@ -18,7 +18,8 @@ use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Fourcc},
         renderer::{
-            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportMem, Renderer, Texture, TextureFilter,
+            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportMem, Renderer, RendererSuper, Texture,
+            TextureFilter,
         },
         SwapBuffersError,
     },
@@ -27,22 +28,10 @@ use crate::{
 
 use super::Color32F;
 
-#[derive(Debug)]
-pub struct DummyRenderer {}
+#[derive(Debug, Default)]
+pub struct DummyRenderer;
 
-impl DummyRenderer {
-    pub fn new() -> DummyRenderer {
-        DummyRenderer {}
-    }
-}
-
-impl Default for DummyRenderer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Error returned by the TestRenderer
+/// Error returned by the DummyRenderer
 #[derive(thiserror::Error, Debug)]
 pub enum DummyError {
     /// Error accessing shm buffer
@@ -61,20 +50,31 @@ impl From<DummyError> for SwapBuffersError {
     }
 }
 
-impl Renderer for DummyRenderer {
+impl RendererSuper for DummyRenderer {
     type Error = DummyError;
     type TextureId = DummyTexture;
-    type Frame<'a> = DummyFrame;
+    type Frame<'frame, 'buffer>
+        = DummyFrame
+    where
+        'buffer: 'frame,
+        Self: 'frame;
+    type Framebuffer<'buffer> = DummyFramebuffer;
+}
 
+impl Renderer for DummyRenderer {
     fn id(&self) -> usize {
         0
     }
 
-    fn render(
-        &mut self,
+    fn render<'frame, 'buffer>(
+        &'frame mut self,
+        _target: &'frame mut DummyFramebuffer,
         _size: Size<i32, Physical>,
         _dst_transform: Transform,
-    ) -> Result<DummyFrame, Self::Error> {
+    ) -> Result<DummyFrame, Self::Error>
+    where
+        'buffer: 'frame,
+    {
         Ok(DummyFrame {})
     }
 
@@ -104,16 +104,16 @@ impl ImportMem for DummyRenderer {
         _format: Fourcc,
         _size: Size<i32, Buffer>,
         _flipped: bool,
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         unimplemented!()
     }
 
     fn update_memory(
         &mut self,
-        _texture: &<Self as Renderer>::TextureId,
+        _texture: &Self::TextureId,
         _data: &[u8],
         _region: Rectangle<i32, Buffer>,
-    ) -> Result<(), <Self as Renderer>::Error> {
+    ) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
@@ -129,7 +129,7 @@ impl ImportMemWl for DummyRenderer {
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
         _damage: &[Rectangle<i32, Buffer>],
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         use std::ptr;
         use wayland::shm::with_buffer_contents;
         let ret = with_buffer_contents(buffer, |ptr, len, data| {
@@ -167,7 +167,7 @@ impl ImportDma for DummyRenderer {
         &mut self,
         _dmabuf: &Dmabuf,
         _damage: Option<&[Rectangle<i32, Buffer>]>,
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         unimplemented!()
     }
 }
@@ -198,13 +198,16 @@ impl ImportEgl for DummyRenderer {
         _buffer: &wl_buffer::WlBuffer,
         _surface: Option<&wayland::compositor::SurfaceData>,
         _damage: &[Rectangle<i32, Buffer>],
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         unimplemented!()
     }
 }
 
 #[cfg(feature = "wayland_frontend")]
 impl ImportDmaWl for DummyRenderer {}
+
+#[derive(Debug)]
+pub struct DummyFramebuffer;
 
 #[derive(Debug)]
 pub struct DummyFrame {}

@@ -95,12 +95,12 @@ impl<E: Element> Element for RescaleRenderElement<E> {
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement<E> {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
         opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         self.element.draw(frame, src, dst, damage, opaque_regions)
     }
 
@@ -279,12 +279,12 @@ impl<E: Element> Element for CropRenderElement<E> {
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
         opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         self.element.draw(frame, src, dst, damage, opaque_regions)
     }
 
@@ -381,12 +381,12 @@ impl<E: Element> Element for RelocateRenderElement<E> {
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElement<E> {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
         opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         self.element.draw(frame, src, dst, damage, opaque_regions)
     }
 

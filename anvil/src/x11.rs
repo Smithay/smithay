@@ -314,12 +314,15 @@ pub fn run_x11() {
             #[cfg(feature = "debug")]
             fps_element.update_fps(fps);
 
-            let (buffer, age) = backend_data.surface.buffer().expect("gbm device was destroyed");
-            if let Err(err) = backend_data.renderer.bind(buffer) {
-                error!("Error while binding buffer: {}", err);
-                profiling::finish_frame!();
-                continue;
-            }
+            let (mut buffer, age) = backend_data.surface.buffer().expect("gbm device was destroyed");
+            let mut fb = match backend_data.renderer.bind(&mut buffer) {
+                Ok(fb) => fb,
+                Err(err) => {
+                    error!("Error while binding buffer: {}", err);
+                    profiling::finish_frame!();
+                    continue;
+                }
+            };
 
             #[cfg(feature = "debug")]
             if let Some(renderdoc) = state.renderdoc.as_mut() {
@@ -394,6 +397,7 @@ pub fn run_x11() {
                 &state.space,
                 elements,
                 &mut backend_data.renderer,
+                &mut fb,
                 &mut backend_data.damage_tracker,
                 age.into(),
                 state.show_window_preview,

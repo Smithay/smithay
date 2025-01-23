@@ -202,7 +202,7 @@ fn buffer_test(args: TestArgs) {
     };
 
     // 2. alloc buffer
-    let buffer = allocator
+    let mut buffer = allocator
         .create_buffer(args.width, args.height, args.fourcc, &[args.modifier])
         .expect("Failed to allocate buffer");
 
@@ -223,12 +223,7 @@ fn buffer_test(args: TestArgs) {
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
             let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
 
-            render_into(
-                &mut renderer,
-                buffer.clone(),
-                args.width as i32,
-                args.height as i32,
-            );
+            render_into(&mut renderer, &mut buffer, args.width as i32, args.height as i32);
         }
     }
 
@@ -274,15 +269,15 @@ fn buffer_test(args: TestArgs) {
     }
 }
 
-fn render_into<R, T>(renderer: &mut R, buffer: T, w: i32, h: i32)
+fn render_into<R, T>(renderer: &mut R, buffer: &mut T, w: i32, h: i32)
 where
     R: Renderer + Bind<T>,
 {
     // Bind it as a framebuffer
-    renderer.bind(buffer).expect("Failed to bind dmabuf");
+    let mut framebuffer = renderer.bind(buffer).expect("Failed to bind dmabuf");
 
     let mut frame = renderer
-        .render((w, h).into(), Transform::Normal)
+        .render(&mut framebuffer, (w, h).into(), Transform::Normal)
         .expect("Failed to create render frame");
     frame
         .clear(
@@ -322,11 +317,13 @@ where
     let texture = renderer
         .import_dmabuf(&buffer, None)
         .expect("Failed to import dmabuf");
-    let offscreen = Offscreen::<T>::create_buffer(renderer, Fourcc::Abgr8888, (w, h).into())
+    let mut offscreen = Offscreen::<T>::create_buffer(renderer, Fourcc::Abgr8888, (w, h).into())
         .expect("Failed to create offscreen buffer");
-    renderer.bind(offscreen).expect("Failed to bind offscreen buffer");
+    let mut framebuffer = renderer
+        .bind(&mut offscreen)
+        .expect("Failed to bind offscreen buffer");
     let mut frame = renderer
-        .render((w, h).into(), Transform::Normal)
+        .render(&mut framebuffer, (w, h).into(), Transform::Normal)
         .expect("Failed to create render frame");
     frame
         .render_texture_at(
@@ -348,7 +345,11 @@ where
 
     if let Some(path) = dump {
         let mapping = renderer
-            .copy_framebuffer(Rectangle::from_size((w, h).into()), Fourcc::Abgr8888)
+            .copy_framebuffer(
+                &framebuffer,
+                Rectangle::from_size((w, h).into()),
+                Fourcc::Abgr8888,
+            )
             .expect("Failed to map framebuffer");
         let copy = renderer.map_texture(&mapping).expect("Failed to read mapping");
         image::save_buffer(path, copy, w as u32, h as u32, image::ColorType::Rgba8)

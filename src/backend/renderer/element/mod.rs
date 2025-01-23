@@ -385,7 +385,7 @@ pub trait RenderElement<R: Renderer>: Element {
     /// Draw this element
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -474,7 +474,7 @@ where
 
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -580,7 +580,7 @@ macro_rules! render_elements_internal {
         $vis enum $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
         {
             $(
                 $(
@@ -597,7 +597,7 @@ macro_rules! render_elements_internal {
         $vis enum $name<$lt, $renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $(
                 $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
             )+
@@ -758,18 +758,18 @@ macro_rules! render_elements_internal {
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'_>,
+            frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             opaque_regions: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
+        ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
         where
         $(
             $(
                 $renderer: std::convert::AsMut<$other_renderer>,
-                <$renderer as $crate::backend::renderer::Renderer>::Frame: std::convert::AsMut<<$other_renderer as $crate::backend::renderer::Renderer>::Frame>,
-                <$other_renderer as $crate::backend::renderer::Renderer>::Error: Into<<$renderer as $crate::backend::renderer::Renderer>::Error>,
+                <$renderer as $crate::backend::renderer::RendererSuper>::Frame: std::convert::AsMut<<$other_renderer as $crate::backend::renderer::RendererSuper>::Frame>,
+                <$other_renderer as $crate::backend::renderer::RendererSuper>::Error: Into<<$renderer as $crate::backend::renderer::RendererSuper>::Error>,
             )*
         )*
         {
@@ -803,12 +803,12 @@ macro_rules! render_elements_internal {
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'_>,
+            frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             opaque_regions: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
+        ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
         {
             match self {
                 $(
@@ -842,7 +842,7 @@ macro_rules! render_elements_internal {
         impl<$renderer> $crate::backend::renderer::element::Element for $name<$renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@body $($tail)*);
@@ -850,7 +850,7 @@ macro_rules! render_elements_internal {
         impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
@@ -860,7 +860,7 @@ macro_rules! render_elements_internal {
         impl<$lt, $renderer> $crate::backend::renderer::element::Element for $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@body $($tail)*);
@@ -868,7 +868,7 @@ macro_rules! render_elements_internal {
         impl<$lt, $renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
@@ -878,7 +878,7 @@ macro_rules! render_elements_internal {
         impl<$renderer, $($custom),+> $crate::backend::renderer::element::Element for $name<$renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $(
                 $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
             )+
@@ -889,7 +889,7 @@ macro_rules! render_elements_internal {
         impl<$renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $(
                 $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
             )+
@@ -902,7 +902,7 @@ macro_rules! render_elements_internal {
         impl<$lt, $renderer, $($custom),+> $crate::backend::renderer::element::Element for $name<$lt, $renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $(
                 $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
             )+
@@ -913,7 +913,7 @@ macro_rules! render_elements_internal {
         impl<$lt, $renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
             $(
                 $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
             )+
@@ -930,7 +930,7 @@ macro_rules! render_elements_internal {
         impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::RendererSuper>::TextureId: 'static,
         {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
@@ -1146,12 +1146,12 @@ macro_rules! render_elements_internal {
 /// # impl<R: Renderer> RenderElement<R> for MyRenderElement1 {
 /// #     fn draw(
 /// #         &self,
-/// #         _frame: &mut <R as Renderer>::Frame<'_>,
+/// #         _frame: &mut R::Frame<'_, '_>,
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
 /// #         _opaque_regions: &[Rectangle<i32, Physical>],
-/// #     ) -> Result<(), <R as Renderer>::Error> {
+/// #     ) -> Result<(), R::Error> {
 /// #         unimplemented!()
 /// #     }
 /// # }
@@ -1175,14 +1175,14 @@ macro_rules! render_elements_internal {
 /// # }
 /// #
 /// # impl<R: Renderer> RenderElement<R> for MyRenderElement2 {
-/// #     fn draw<'a>(
+/// #     fn draw(
 /// #         &self,
-/// #         _frame: &mut <R as Renderer>::Frame<'a>,
+/// #         _frame: &mut R::Frame<'_, '_>,
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
 /// #         _opaque_regions: &[Rectangle<i32, Physical>],
-/// #     ) -> Result<(), <R as Renderer>::Error> {
+/// #     ) -> Result<(), R::Error> {
 /// #         unimplemented!()
 /// #     }
 /// # }
@@ -1251,97 +1251,15 @@ macro_rules! render_elements_internal {
 /// # use smithay::{
 /// #     backend::{
 /// #         allocator::Fourcc,
-/// #         renderer::{Color32F, DebugFlags, Frame, Renderer, Texture, TextureFilter, sync::SyncPoint},
+/// #         renderer::{Color32F, DebugFlags, Frame, Renderer, Texture, TextureFilter, sync::SyncPoint, gles::{GlesRenderer, GlesTexture}},
 /// #     },
 /// #     utils::{Buffer, Physical, Rectangle, Size, Transform},
 /// # };
-/// #
-/// # #[derive(Clone, Debug)]
-/// # struct MyRendererTextureId;
-/// #
-/// # impl Texture for MyRendererTextureId {
-/// #     fn width(&self) -> u32 {
-/// #         unimplemented!()
-/// #     }
-/// #     fn height(&self) -> u32 {
-/// #         unimplemented!()
-/// #     }
-/// #     fn format(&self) -> Option<Fourcc> {
-/// #         unimplemented!()
-/// #     }
-/// # }
-/// #
-/// # struct MyRendererFrame;
-/// #
-/// # impl Frame for MyRendererFrame {
-/// #     type Error = std::convert::Infallible;
-/// #     type TextureId = MyRendererTextureId;
-/// #
-/// #     fn id(&self) -> usize { unimplemented!() }
-/// #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
-/// #         unimplemented!()
-/// #     }
-/// #     fn draw_solid(
-/// #         &mut self,
-/// #         _dst: Rectangle<i32, Physical>,
-/// #         _damage: &[Rectangle<i32, Physical>],
-/// #         _color: Color32F,
-/// #     ) -> Result<(), Self::Error> {
-/// #         unimplemented!()
-/// #     }
-/// #     fn render_texture_from_to(
-/// #         &mut self,
-/// #         _: &Self::TextureId,
-/// #         _: Rectangle<f64, Buffer>,
-/// #         _: Rectangle<i32, Physical>,
-/// #         _: &[Rectangle<i32, Physical>],
-/// #         _: &[Rectangle<i32, Physical>],
-/// #         _: Transform,
-/// #         _: f32,
-/// #     ) -> Result<(), Self::Error> {
-/// #         unimplemented!()
-/// #     }
-/// #     fn transformation(&self) -> Transform {
-/// #         unimplemented!()
-/// #     }
-/// #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
-/// #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-/// # }
-/// #
-/// # #[derive(Debug)]
-/// # struct MyRenderer;
-/// #
-/// # impl Renderer for MyRenderer {
-/// #     type Error = std::convert::Infallible;
-/// #     type TextureId = MyRendererTextureId;
-/// #     type Frame<'a> = MyRendererFrame;
-/// #
-/// #     fn id(&self) -> usize {
-/// #         unimplemented!()
-/// #     }
-/// #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-/// #         unimplemented!()
-/// #     }
-/// #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-/// #         unimplemented!()
-/// #     }
-/// #     fn set_debug_flags(&mut self, flags: DebugFlags) {
-/// #         unimplemented!()
-/// #     }
-/// #     fn debug_flags(&self) -> DebugFlags {
-/// #         unimplemented!()
-/// #     }
-/// #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
-/// #     {
-/// #         unimplemented!()
-/// #     }
-/// #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-/// # }
 /// use smithay::backend::renderer::element::{render_elements, texture::TextureRenderElement};
 ///
 /// render_elements! {
-///     MyRenderElements<=MyRenderer>;
-///     Texture=TextureRenderElement<MyRendererTextureId>,
+///     MyRenderElements<=GlesRenderer>;
+///     Texture=TextureRenderElement<GlesTexture>,
 /// }
 /// ```
 #[macro_export]
@@ -1475,12 +1393,12 @@ where
 {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         self.0.draw(frame, src, dst, damage, opaque_regions)
     }
 

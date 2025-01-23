@@ -386,7 +386,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         alpha: f32,
     ) -> Vec<<E as AsRenderElements<R>>::RenderElement>
     where
-        <R as Renderer>::TextureId: Texture + 'static,
+        R::TextureId: Texture + 'static,
         E: AsRenderElements<R>,
         <E as AsRenderElements<R>>::RenderElement: 'a,
     {
@@ -426,7 +426,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         alpha: f32,
     ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
-        <R as Renderer>::TextureId: Clone + Texture + 'static,
+        R::TextureId: Clone + Texture + 'static,
         E: AsRenderElements<R>,
         <E as AsRenderElements<R>>::RenderElement: 'a,
         SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
@@ -588,7 +588,7 @@ pub fn space_render_elements<
     alpha: f32,
 ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
-    <R as Renderer>::TextureId: Clone + Texture + 'static,
+    R::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
@@ -675,6 +675,7 @@ pub fn render_output<
 >(
     output: &Output,
     renderer: &mut R,
+    framebuffer: &mut R::Framebuffer<'_>,
     alpha: f32,
     age: usize,
     spaces: S,
@@ -683,7 +684,7 @@ pub fn render_output<
     clear_color: impl Into<Color32F>,
 ) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R::Error>>
 where
-    <R as Renderer>::TextureId: Clone + Texture + 'static,
+    R::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
@@ -700,5 +701,5 @@ where
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::Custom));
     render_elements.extend(space_render_elements.into_iter().map(OutputRenderElements::Space));
 
-    damage_tracker.render_output(renderer, age, &render_elements, clear_color)
+    damage_tracker.render_output(renderer, framebuffer, age, &render_elements, clear_color)
 }

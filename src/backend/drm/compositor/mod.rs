@@ -140,8 +140,8 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
 #[cfg(feature = "renderer_pixman")]
 use crate::backend::renderer::{
-    pixman::{PixmanError, PixmanRenderBuffer, PixmanRenderer, PixmanTexture},
-    Frame as _, ImportAll, Unbind,
+    pixman::{PixmanError, PixmanRenderer, PixmanTexture},
+    Frame as _, ImportAll,
 };
 use crate::{
     backend::{
@@ -161,7 +161,7 @@ use crate::{
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag},
-            Bind, Color32F, DebugFlags, Renderer, Texture,
+            Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture,
         },
         SwapBuffersError,
     },
@@ -833,7 +833,7 @@ pub(crate) type RenderFrameErrorType<A, F, R> = RenderFrameError<
     <A as Allocator>::Error,
     <<A as Allocator>::Buffer as AsDmabuf>::Error,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-    <R as Renderer>::Error,
+    <R as RendererSuper>::Error,
 >;
 
 #[derive(Debug)]
@@ -1685,8 +1685,7 @@ where
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
+        R::TextureId: Texture + 'static,
     {
         let mut clear_color = clear_color.into();
 
@@ -2166,7 +2165,7 @@ where
                 primary_plane_elements.len(),
                 self.surface.plane(),
             );
-            let (dmabuf, age) = {
+            let (mut dmabuf, age) = {
                 let primary_plane_state = next_frame_state.plane_state(self.surface.plane()).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
                 let slot = match &config.buffer.buffer {
@@ -2231,9 +2230,12 @@ where
                 )
                 .collect::<Vec<_>>();
 
+            let mut framebuffer = renderer
+                .bind(&mut dmabuf)
+                .map_err(|err| RenderFrameError::RenderFrame(OutputDamageTrackerError::Rendering(err)))?;
             let render_res =
                 self.damage_tracker
-                    .render_output_with(renderer, dmabuf, age, &elements, clear_color);
+                    .render_output(renderer, &mut framebuffer, age, &elements, clear_color);
 
             // restore the renderer debug flags
             renderer.set_debug_flags(renderer_debug_flags);
@@ -3300,14 +3302,14 @@ where
             }?;
 
             let ret = cursor_buffer
-                .map_mut::<_, Result<_, <PixmanRenderer as Renderer>::Error>>(
+                .map_mut::<_, Result<_, PixmanError>>(
                     0,
                     0,
                     cursor_buffer_size.w as u32,
                     cursor_buffer_size.h as u32,
                     |mbo| {
                         let plane_pixman_format = pixman::FormatCode::try_from(DrmFourcc::Argb8888).unwrap();
-                        let cursor_dst = unsafe {
+                        let mut cursor_dst = unsafe {
                             pixman::Image::from_raw_mut(
                                 plane_pixman_format,
                                 mbo.width() as usize,
@@ -3318,9 +3320,9 @@ where
                             )
                         }
                         .map_err(|_| PixmanError::ImportFailed)?;
-                        pixman_renderer.bind(PixmanRenderBuffer::from(cursor_dst))?;
-
-                        let mut frame = pixman_renderer.render(cursor_plane_size, output_transform)?;
+                        let mut framebuffer = pixman_renderer.bind(&mut cursor_dst)?;
+                        let mut frame =
+                            pixman_renderer.render(&mut framebuffer, cursor_plane_size, output_transform)?;
                         frame.clear(Color32F::TRANSPARENT, &[Rectangle::from_size(cursor_plane_size)])?;
                         let src = element.src();
                         let dst = Rectangle::from_size(element_geometry.size);
@@ -3338,8 +3340,6 @@ where
                     },
                 )
                 .expect("Lost track of cursor device");
-
-            _ = pixman_renderer.unbind();
 
             if let Err(err) = ret {
                 debug!("{err}");
@@ -4348,7 +4348,7 @@ pub enum RenderFrameError<
     A: std::error::Error + Send + Sync + 'static,
     B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
-    R: std::error::Error + Send + Sync + 'static,
+    R: std::error::Error,
 > {
     /// Preparing the frame encountered an error
     #[error(transparent)]
@@ -4363,7 +4363,7 @@ where
     A: std::error::Error + Send + Sync + 'static,
     B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
-    R: std::error::Error + Send + Sync + 'static,
+    R: std::error::Error,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

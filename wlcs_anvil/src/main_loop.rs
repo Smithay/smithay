@@ -7,7 +7,11 @@ use std::{
 use smithay::{
     backend::{
         input::ButtonState,
-        renderer::{damage::OutputDamageTracker, element::AsRenderElements, test::DummyRenderer},
+        renderer::{
+            damage::OutputDamageTracker,
+            element::AsRenderElements,
+            test::{DummyFramebuffer, DummyRenderer},
+        },
     },
     input::pointer::{
         ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, RelativeMotionEvent,
@@ -62,7 +66,8 @@ pub fn run(channel: Channel<WlcsEvent>) {
         })
         .unwrap();
 
-    let mut renderer = DummyRenderer::new();
+    let mut renderer = DummyRenderer;
+    let mut framebuffer = DummyFramebuffer;
 
     let mode = Mode {
         size: (800, 600).into(),
@@ -150,6 +155,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 &state.space,
                 elements,
                 &mut renderer,
+                &mut framebuffer,
                 &mut damage_tracker,
                 0,
                 false,

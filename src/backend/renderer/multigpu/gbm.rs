@@ -16,7 +16,7 @@ use crate::backend::{
     renderer::{
         gles::{GlesError, GlesRenderer},
         multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
-        Renderer,
+        Renderer, RendererSuper,
     },
     SwapBuffersError,
 };
@@ -223,7 +223,7 @@ impl<T: GraphicsApi, R: From<GlesRenderer> + Renderer<Error = GlesError>, A: AsF
     std::convert::From<GlesError> for MultiError<GbmGlesBackend<R, A>, T>
 where
     T::Error: 'static,
-    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
     #[inline]
     fn from(err: GlesError) -> MultiError<GbmGlesBackend<R, A>, T> {
@@ -278,7 +278,7 @@ where
         + ImportEgl
         + ExportMem
         + 'static,
-    <R as Renderer>::TextureId: Clone + Send,
+    R::TextureId: Clone + Send,
 {
     fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
@@ -296,7 +296,7 @@ where
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+    ) -> Result<Self::TextureId, Self::Error> {
         if let Some(dmabuf) = Self::try_import_egl(self.render.renderer_mut(), buffer)
             .ok()
             .or_else(|| {
@@ -360,11 +360,14 @@ where
             )));
         }
 
-        renderer
-            .borrow_mut()
-            .make_current()
-            .map_err(GlesError::from)
-            .map_err(MultigpuError::Render)?;
+        unsafe {
+            renderer
+                .borrow_mut()
+                .egl_context()
+                .make_current()
+                .map_err(GlesError::from)
+                .map_err(MultigpuError::Render)?
+        };
 
         let egl = renderer
             .egl_reader()

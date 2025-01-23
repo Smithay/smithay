@@ -69,6 +69,7 @@ encoding_rs = { version = "0.8.33", optional = true }
 profiling = "1.0.13"
 smallvec = "1.11"
 pixman = { version = "0.2.1", features = ["drm-fourcc", "sync"], optional = true }
+aliasable = { version = "0.1.3", optional = true }
 
 
 [dev-dependencies]
@@ -99,7 +100,7 @@ backend_session_libseat = ["backend_session", "libseat"]
 desktop = []
 renderer_gl = ["gl_generator", "backend_egl"]
 renderer_glow = ["renderer_gl", "glow"]
-renderer_multi = ["backend_drm"]
+renderer_multi = ["backend_drm", "aliasable"]
 renderer_pixman = ["pixman"]
 renderer_test = []
 use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys", "gbm?/import-wayland"]

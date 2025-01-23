@@ -18,7 +18,7 @@ use crate::{
             gbm::GbmDevice,
             Allocator,
         },
-        renderer::{element::RenderElement, Bind, Color32F, DebugFlags, Renderer, Texture},
+        renderer::{element::RenderElement, Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture},
     },
     output::OutputModeSource,
 };
@@ -142,7 +142,7 @@ pub type DrmOutputManagerResult<U, A, F, R> = Result<
         <A as Allocator>::Error,
         <<A as Allocator>::Buffer as AsDmabuf>::Error,
         <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
-        <R as Renderer>::Error,
+        <R as RendererSuper>::Error,
     >,
 >;
 
@@ -224,8 +224,8 @@ where
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
+        R::TextureId: Texture + 'static,
+        R::Error: Send + Sync + 'static,
     {
         let output_mode_source = output_mode_source.into();
 
@@ -420,8 +420,8 @@ where
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
+        R::TextureId: Texture + 'static,
+        R::Error: Send + Sync + 'static,
     {
         use_mode_internal(
             &self.compositor,
@@ -449,8 +449,8 @@ where
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
+        R::TextureId: Texture + 'static,
+        R::Error: Send + Sync + 'static,
     {
         let mut write_guard = self.compositor.write().unwrap();
 
@@ -604,8 +604,8 @@ where
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
+        R::TextureId: Texture + 'static,
+        R::Error: Send + Sync + 'static,
     {
         self.with_compositor(|compositor| {
             compositor.render_frame(renderer, elements, clear_color, frame_mode)
@@ -666,8 +666,8 @@ where
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf>,
-        <R as Renderer>::TextureId: Texture + 'static,
-        <R as Renderer>::Error: Send + Sync + 'static,
+        R::TextureId: Texture + 'static,
+        R::Error: Send + Sync + 'static,
     {
         use_mode_internal(
             &self.compositor,
@@ -740,8 +740,8 @@ where
     U: 'static,
     E: RenderElement<R>,
     R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
+    R::TextureId: Texture + 'static,
+    R::Error: Send + Sync + 'static,
 {
     let mut write_guard = compositor.write().unwrap();
 
@@ -833,8 +833,8 @@ pub struct DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
     R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
+    R::TextureId: Texture + 'static,
+    R::Error: Send + Sync + 'static,
 {
     render_elements: HashMap<crtc::Handle, (Vec<E>, Color32F)>,
     _renderer: PhantomData<R>,
@@ -844,8 +844,8 @@ impl<R, E> DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
     R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
+    R::TextureId: Texture + 'static,
+    R::Error: Send + Sync + 'static,
 {
     /// Construct a new empty set of render elements
     pub fn new() -> Self {
@@ -869,8 +869,8 @@ impl<R, E> Default for DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
     R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
+    R::TextureId: Texture + 'static,
+    R::Error: Send + Sync + 'static,
 {
     fn default() -> Self {
         Self::new()
@@ -881,8 +881,8 @@ impl<R, E> DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
     R: Renderer + Bind<Dmabuf>,
-    <R as Renderer>::TextureId: Texture + 'static,
-    <R as Renderer>::Error: Send + Sync + 'static,
+    R::TextureId: Texture + 'static,
+    R::Error: Send + Sync + 'static,
 {
     /// Adds elements to be used when rendering for a given `crtc`.
     ///

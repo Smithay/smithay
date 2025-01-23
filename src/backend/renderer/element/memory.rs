@@ -6,7 +6,7 @@
 //! in the smithay rendering pipeline. As software-rendered elements eventually have to
 //! upload to the GPU for rendering damage tracking is a crucial part. The [`MemoryRenderBuffer`]
 //! allows for efficient damage tracking by providing a [`RenderContext`] which accumulates the
-//! software-rendering damage. It automatically uploads the damaged parts to a [`Renderer::TextureId`]
+//! software-rendering damage. It automatically uploads the damaged parts to a [`RendererSuper::TextureId`](crate::backend::renderer::RendererSuper::TextureId)
 //! during rendering.
 //!
 //! # Why **not** to use this implementation
@@ -23,114 +23,9 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
+//! #     backend::renderer::{Color32F, DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint, test::{DummyRenderer, DummyFramebuffer}},
 //! #     utils::{Buffer, Physical},
 //! # };
-//! #
-//! # #[derive(Clone, Debug)]
-//! # struct FakeTexture;
-//! #
-//! # impl Texture for FakeTexture {
-//! #     fn width(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn height(&self) -> u32 {
-//! #         unimplemented!()
-//! #     }
-//! #     fn format(&self) -> Option<Fourcc> {
-//! #         unimplemented!()
-//! #     }
-//! # }
-//! #
-//! # struct FakeFrame;
-//! #
-//! # impl Frame for FakeFrame {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #
-//! #     fn id(&self) -> usize { unimplemented!() }
-//! #     fn clear(&mut self, _: Color32F, _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn draw_solid(
-//! #         &mut self,
-//! #         _dst: Rectangle<i32, Physical>,
-//! #         _damage: &[Rectangle<i32, Physical>],
-//! #         _color: Color32F,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render_texture_from_to(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: Rectangle<f64, Buffer>,
-//! #         _: Rectangle<i32, Physical>,
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: &[Rectangle<i32, Physical>],
-//! #         _: Transform,
-//! #         _: f32,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn transformation(&self) -> Transform {
-//! #         unimplemented!()
-//! #     }
-//! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # #[derive(Debug)]
-//! # struct FakeRenderer;
-//! #
-//! # impl Renderer for FakeRenderer {
-//! #     type Error = std::convert::Infallible;
-//! #     type TextureId = FakeTexture;
-//! #     type Frame<'a> = FakeFrame;
-//! #
-//! #     fn id(&self) -> usize {
-//! #         unimplemented!()
-//! #     }
-//! #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
-//! #         unimplemented!()
-//! #     }
-//! #     fn debug_flags(&self) -> DebugFlags {
-//! #         unimplemented!()
-//! #     }
-//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
-//! #     {
-//! #         unimplemented!()
-//! #     }
-//! #     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> { unimplemented!() }
-//! # }
-//! #
-//! # impl ImportMem for FakeRenderer {
-//! #     fn import_memory(
-//! #         &mut self,
-//! #         _: &[u8],
-//! #         _: Fourcc,
-//! #         _: Size<i32, Buffer>,
-//! #         _: bool,
-//! #     ) -> Result<Self::TextureId, Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn update_memory(
-//! #         &mut self,
-//! #         _: &Self::TextureId,
-//! #         _: &[u8],
-//! #         _: Rectangle<i32, Buffer>,
-//! #     ) -> Result<(), Self::Error> {
-//! #         unimplemented!()
-//! #     }
-//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
-//! #         unimplemented!()
-//! #     }
-//! # }
 //! use std::time::{Duration, Instant};
 //!
 //! use smithay::{
@@ -176,7 +71,8 @@
 //!
 //! // Initialize a static damage tracker
 //! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
-//! # let mut renderer = FakeRenderer;
+//! # let mut renderer = DummyRenderer;
+//! # let mut framebuffer = DummyFramebuffer;
 //!
 //! let mut last_update = Instant::now();
 //!
@@ -202,7 +98,7 @@
 //!
 //!     // Render the element(s)
 //!     damage_tracker
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
+//!         .render_output(&mut renderer, &mut framebuffer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
@@ -407,15 +303,12 @@ impl MemoryRenderBufferInner {
 
     #[instrument(level = "trace", skip(renderer))]
     #[profiling::function]
-    fn import_texture<R>(
-        &mut self,
-        renderer: &mut R,
-    ) -> Result<<R as Renderer>::TextureId, <R as Renderer>::Error>
+    fn import_texture<R>(&mut self, renderer: &mut R) -> Result<R::TextureId, R::Error>
     where
         R: Renderer + ImportMem,
-        <R as Renderer>::TextureId: Send + Clone + 'static,
+        R::TextureId: Send + Clone + 'static,
     {
-        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+        let texture_id = (TypeId::of::<R::TextureId>(), renderer.id());
         let current_commit = self.damage_bag.current_commit();
         let last_commit = self.renderer_seen.get(&texture_id).copied();
         let buffer_damage = self
@@ -592,10 +485,10 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
         kind: Kind,
-    ) -> Result<Self, <R as Renderer>::Error>
+    ) -> Result<Self, R::Error>
     where
         R: ImportMem,
-        <R as Renderer>::TextureId: Send + Clone + 'static,
+        R::TextureId: Send + Clone + 'static,
     {
         let mut inner = buffer.inner.lock().unwrap();
         let texture = inner.import_texture(renderer)?;
@@ -737,18 +630,18 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
 impl<R> RenderElement<R> for MemoryRenderBufferRenderElement<R>
 where
     R: Renderer + ImportMem,
-    <R as Renderer>::TextureId: 'static,
+    R::TextureId: 'static,
 {
     #[instrument(level = "trace", skip(self, frame))]
     #[profiling::function]
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         frame.render_texture_from_to(
             &self.texture,
             src,

@@ -35,23 +35,23 @@ render_elements! {
 }
 
 render_elements! {
-    TextureIdTest<R> where R: ImportMem, <R as Renderer>::TextureId: Clone;
+    TextureIdTest<R> where R: ImportMem, R::TextureId: Clone;
     Memory=ImportMemRenderElement,
 }
 
 render_elements! {
-    TextureIdTest1<R> where R: ImportMem, <R as Renderer>::TextureId: 'static;
+    TextureIdTest1<R> where R: ImportMem, R::TextureId: 'static;
     Memory=ImportMemRenderElement,
 }
 
 render_elements! {
-    TextureIdTest2<'a, R, C> where R: ImportMem, <R as Renderer>::TextureId: 'a;
+    TextureIdTest2<'a, R, C> where R: ImportMem, R::TextureId: 'a;
     Memory=ImportMemRenderElement,
     Custom=&'a C,
 }
 
 render_elements! {
-    TextureIdTest3<'a, R, C> where R: ImportMem, <R as Renderer>::TextureId: Clone + 'a;
+    TextureIdTest3<'a, R, C> where R: ImportMem, R::TextureId: Clone + 'a;
     Memory=ImportMemRenderElement,
     Custom=&'a C,
 }
@@ -145,12 +145,12 @@ where
 {
     fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'_>,
+        _frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         todo!()
     }
 }
@@ -183,12 +183,12 @@ where
 {
     fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'_>,
+        _frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         todo!()
     }
 }
@@ -230,12 +230,12 @@ where
 {
     fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'_>,
+        _frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         todo!()
     }
 }
@@ -276,12 +276,12 @@ where
 {
     fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'_>,
+        _frame: &mut R::Frame<'_, '_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         todo!()
     }
 }
