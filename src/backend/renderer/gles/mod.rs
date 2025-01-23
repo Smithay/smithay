@@ -2753,10 +2753,13 @@ impl GlesFrame<'_> {
 
     /// Render a pixel shader into the current target at a given `dest`-region.
     #[profiling::function]
+    #[allow(clippy::too_many_arguments)]
     pub fn render_pixel_shader_to(
         &mut self,
         pixel_shader: &GlesPixelProgram,
+        src: Rectangle<f64, BufferCoord>,
         dest: Rectangle<i32, Physical>,
+        size: Size<i32, BufferCoord>,
         damage: Option<&[Rectangle<i32, Physical>]>,
         alpha: f32,
         additional_uniforms: &[Uniform<'_>],
@@ -2810,15 +2813,10 @@ impl GlesFrame<'_> {
         }
 
         let mut matrix = Matrix3::<f32>::identity();
-        let mut tex_matrix = Matrix3::<f32>::identity();
+        let tex_matrix = build_texture_mat(src, dest, size, Transform::Normal);
 
         // dest position and scale
         matrix = matrix * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
-        tex_matrix = tex_matrix
-            * Matrix3::from_nonuniform_scale(
-                (1.0f64 / dest.size.w as f64) as f32,
-                (1.0f64 / dest.size.h as f64) as f32,
-            );
 
         //apply output transformation
         matrix = self.current_projection * matrix;
@@ -2836,7 +2834,7 @@ impl GlesFrame<'_> {
 
             gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
             gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
-            gl.Uniform2f(program.uniform_size, dest.size.w as f32, dest.size.h as f32);
+            gl.Uniform2f(program.uniform_size, size.w as f32, size.h as f32);
             gl.Uniform1f(program.uniform_alpha, alpha);
             let tint = if self.renderer.debug_flags.contains(DebugFlags::TINT) {
                 1.0f32
