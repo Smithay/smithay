@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0
+
 ### Breaking Changes
 
 **`wayland-server` was updated to 0.30:**
