@@ -80,9 +80,7 @@ impl Element for PixelShaderElement {
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        self.area
-            .to_f64()
-            .to_buffer(1.0, Transform::Normal, &self.area.size.to_f64())
+        Rectangle::from_size(self.area.size.to_f64().to_buffer(1.0, Transform::Normal))
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
@@ -110,14 +108,16 @@ impl RenderElement<GlesRenderer> for PixelShaderElement {
     fn draw(
         &self,
         frame: &mut GlesFrame<'_>,
-        _src: Rectangle<f64, Buffer>,
+        src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         frame.render_pixel_shader_to(
             &self.shader,
+            src,
             dst,
+            self.area.size.to_buffer(1, Transform::Normal),
             Some(damage),
             self.alpha,
             &self.additional_uniforms,
