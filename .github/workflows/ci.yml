@@ -4,6 +4,7 @@ on:
   push:
     branches:
     - master
+    - v0.4.x
   pull_request:
 
 jobs:
@@ -417,7 +418,7 @@ jobs:
         run: cp ./doc_index.html ./target/doc/index.html
 
       - name: Deploy
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
