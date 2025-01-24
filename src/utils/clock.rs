@@ -71,10 +71,12 @@ impl Time<Monotonic> {
     /// This should match timestamps from libinput:
     /// <https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html>
     pub fn as_millis(&self) -> u32 {
-        // Assume monotonic clock (but not realitime) fits as milliseconds in 32-bit
         debug_assert!(self.tp.tv_sec >= 0);
         debug_assert!(self.tp.tv_nsec >= 0);
-        self.tp.tv_sec as u32 * 1000 + self.tp.tv_nsec as u32 / 1000000
+
+        // The monotonic clock does not fit as milliseconds in 32-bit after ~50 days of uptime. We
+        // do a modulo conversion which should match what happens in libinput.
+        (self.as_micros() / 1000) as u32
     }
 
     /// Returns the time in microseconds
