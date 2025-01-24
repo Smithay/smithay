@@ -54,7 +54,7 @@ where
         let keyboard = inner.grab.as_ref().unwrap();
         inner
             .text_input_handle
-            .focused_text_input_serial_or_default(serial.0, |serial| {
+            .active_text_input_serial_or_default(serial.0, |serial| {
                 keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
                 if let Some(serialized) = modifiers.map(|m| m.serialized) {
                     keyboard.modifiers(
