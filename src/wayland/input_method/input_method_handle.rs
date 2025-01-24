@@ -74,9 +74,9 @@ impl InputMethodHandle {
     }
 
     /// Callback function to access the input method object
-    pub(crate) fn with_instance<F>(&self, mut f: F)
+    pub(crate) fn with_instance<F>(&self, f: F)
     where
-        F: FnMut(&mut Instance),
+        F: FnOnce(&mut Instance),
     {
         let mut inner = self.inner.lock().unwrap();
         if let Some(instance) = inner.instance.as_mut() {
@@ -103,20 +103,17 @@ impl InputMethodHandle {
     pub(crate) fn set_text_input_rectangle<D: SeatHandler + 'static>(
         &self,
         state: &mut D,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
+        rect: Rectangle<i32, Logical>,
     ) {
         let mut inner = self.inner.lock().unwrap();
-        inner.popup_handle.rectangle = Rectangle::new((x, y).into(), (width, height).into());
+        inner.popup_handle.rectangle = rect;
 
         let mut popup_surface = match inner.popup_handle.surface.clone() {
             Some(popup_surface) => popup_surface,
             None => return,
         };
 
-        popup_surface.set_text_input_rectangle(x, y, width, height);
+        popup_surface.set_text_input_rectangle(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
 
         if let Some(instance) = &inner.instance {
             let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
@@ -149,14 +146,12 @@ impl InputMethodHandle {
 
     /// Deactivate the active input method.
     ///
-    /// The `done` is required in cases where the change in state is initiated not by text-input.
-    pub(crate) fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D, done: bool) {
+    /// The `done` is always send when deactivating IME.
+    pub(crate) fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D) {
         self.with_input_method(|im| {
             if let Some(instance) = im.instance.as_mut() {
                 instance.object.deactivate();
-                if done {
-                    instance.done();
-                }
+                instance.done();
                 if let Some(popup) = im.popup_handle.surface.as_mut() {
                     let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
                     if popup.get_parent().is_some() {

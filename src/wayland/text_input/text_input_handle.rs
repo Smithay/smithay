@@ -1,20 +1,18 @@
+use std::mem;
 use std::sync::{Arc, Mutex};
 
 use tracing::debug;
-use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{self, ZwpTextInputV3};
+use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{
+    self, ChangeCause, ContentHint, ContentPurpose, ZwpTextInputV3,
+};
 use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::input::SeatHandler;
+use crate::utils::{Logical, Rectangle};
 use crate::wayland::input_method::InputMethodHandle;
 
 use super::TextInputManagerState;
-
-#[derive(Debug)]
-struct Instance {
-    instance: ZwpTextInputV3,
-    serial: u32,
-}
 
 #[derive(Default, Debug)]
 pub(crate) struct TextInput {
@@ -77,15 +75,20 @@ impl TextInputHandle {
         inner.instances.push(Instance {
             instance: instance.clone(),
             serial: 0,
+            pending_state: Default::default(),
         });
     }
 
     fn increment_serial(&self, text_input: &ZwpTextInputV3) {
-        let mut inner = self.inner.lock().unwrap();
-        for ti in inner.instances.iter_mut() {
-            if &ti.instance == text_input {
-                ti.serial += 1;
-            }
+        if let Some(instance) = self
+            .inner
+            .lock()
+            .unwrap()
+            .instances
+            .iter_mut()
+            .find(|instance| instance.instance == *text_input)
+        {
+            instance.serial += 1
         }
     }
 
@@ -177,19 +180,6 @@ impl TextInputHandle {
             callback(default)
         }
     }
-
-    fn set_active_text_input_id(&self, id: Option<ObjectId>) {
-        self.inner.lock().unwrap().active_text_input_id = id;
-    }
-
-    fn is_active_text_input_or_new(&self, id: &ObjectId) -> bool {
-        self.inner
-            .lock()
-            .unwrap()
-            .active_text_input_id
-            .as_ref()
-            .map_or(true, |active_id| active_id == id)
-    }
 }
 
 /// User data of ZwpTextInputV3 object
@@ -233,48 +223,99 @@ where
             }
         };
 
-        // text-input-v3 states that only one text_input must be enabled at the time
-        // and receive the events.
-        if !data.handle.is_active_text_input_or_new(&resource.id()) {
-            debug!("discarding text_input request since we already have an active one");
-            return;
-        }
+        let mut guard = data.handle.inner.lock().unwrap();
+        let pending_state = match guard.instances.iter_mut().find_map(|instance| {
+            if instance.instance == *resource {
+                Some(&mut instance.pending_state)
+            } else {
+                None
+            }
+        }) {
+            Some(pending_state) => pending_state,
+            None => {
+                debug!("got request for untracked text-input");
+                return;
+            }
+        };
 
         match request {
             zwp_text_input_v3::Request::Enable => {
-                data.handle.set_active_text_input_id(Some(resource.id()));
-                data.input_method_handle.activate_input_method(state, &focus);
+                pending_state.enable = Some(true);
             }
             zwp_text_input_v3::Request::Disable => {
-                data.handle.set_active_text_input_id(None);
-                data.input_method_handle.deactivate_input_method(state, false);
+                pending_state.enable = Some(false);
             }
             zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
-                data.input_method_handle.with_instance(|input_method| {
-                    input_method
-                        .object
-                        .surrounding_text(text.clone(), cursor as u32, anchor as u32)
-                });
+                pending_state.surrounding_text = Some((text, cursor as u32, anchor as u32));
             }
             zwp_text_input_v3::Request::SetTextChangeCause { cause } => {
-                data.input_method_handle.with_instance(|input_method| {
-                    input_method
-                        .object
-                        .text_change_cause(cause.into_result().unwrap())
-                });
+                pending_state.text_change_cause = Some(cause.into_result().unwrap());
             }
             zwp_text_input_v3::Request::SetContentType { hint, purpose } => {
-                data.input_method_handle.with_instance(|input_method| {
-                    input_method
-                        .object
-                        .content_type(hint.into_result().unwrap(), purpose.into_result().unwrap());
-                });
+                pending_state.content_type =
+                    Some((hint.into_result().unwrap(), purpose.into_result().unwrap()));
             }
             zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
-                data.input_method_handle
-                    .set_text_input_rectangle::<D>(state, x, y, width, height);
+                pending_state.cursor_rectangle = Some(Rectangle::new((x, y).into(), (width, height).into()));
             }
             zwp_text_input_v3::Request::Commit => {
+                let mut new_state = mem::take(pending_state);
+                let _ = pending_state;
+                let active_text_input_id = &mut guard.active_text_input_id;
+
+                if active_text_input_id.is_some() && *active_text_input_id != Some(resource.id()) {
+                    debug!("discarding text_input request since we already have an active one");
+                    return;
+                }
+
+                match new_state.enable {
+                    Some(true) => {
+                        *active_text_input_id = Some(resource.id());
+                        // Drop the guard before calling to other subsystem.
+                        drop(guard);
+                        data.input_method_handle.activate_input_method(state, &focus);
+                    }
+                    Some(false) => {
+                        *active_text_input_id = None;
+                        // Drop the guard before calling to other subsystem.
+                        drop(guard);
+                        data.input_method_handle.deactivate_input_method(state);
+                        return;
+                    }
+                    None => {
+                        if *active_text_input_id != Some(resource.id()) {
+                            debug!("discarding text_input requests before enabling it");
+                            return;
+                        }
+
+                        // Drop the guard before calling to other subsystems later on.
+                        drop(guard);
+                    }
+                }
+
+                if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
+                    data.input_method_handle.with_instance(move |input_method| {
+                        input_method.object.surrounding_text(text, cursor, anchor)
+                    });
+                }
+
+                if let Some(cause) = new_state.text_change_cause.take() {
+                    data.input_method_handle.with_instance(move |input_method| {
+                        input_method.object.text_change_cause(cause);
+                    });
+                }
+
+                if let Some((hint, purpose)) = new_state.content_type.take() {
+                    data.input_method_handle.with_instance(move |input_method| {
+                        input_method.object.content_type(hint, purpose);
+                    });
+                }
+
+                if let Some(rect) = new_state.cursor_rectangle.take() {
+                    data.input_method_handle
+                        .set_text_input_rectangle::<D>(state, rect);
+                }
+
                 data.input_method_handle.with_instance(|input_method| {
                     input_method.done();
                 });
@@ -307,7 +348,23 @@ where
         };
 
         if deactivate_im {
-            data.input_method_handle.deactivate_input_method(state, true);
+            data.input_method_handle.deactivate_input_method(state);
         }
     }
+}
+
+#[derive(Debug)]
+struct Instance {
+    instance: ZwpTextInputV3,
+    serial: u32,
+    pending_state: TextInputState,
+}
+
+#[derive(Debug, Default)]
+struct TextInputState {
+    enable: Option<bool>,
+    surrounding_text: Option<(String, u32, u32)>,
+    content_type: Option<(ContentHint, ContentPurpose)>,
+    cursor_rectangle: Option<Rectangle<i32, Logical>>,
+    text_change_cause: Option<ChangeCause>,
 }
