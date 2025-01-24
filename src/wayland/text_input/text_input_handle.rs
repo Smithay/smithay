@@ -2,11 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use tracing::debug;
 use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{self, ZwpTextInputV3};
-use wayland_server::backend::ClientId;
+use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::input::SeatHandler;
-use crate::utils::IsAlive;
 use crate::wayland::input_method::InputMethodHandle;
 
 use super::TextInputManagerState;
@@ -21,22 +20,47 @@ struct Instance {
 pub(crate) struct TextInput {
     instances: Vec<Instance>,
     focus: Option<WlSurface>,
+    active_text_input_id: Option<ObjectId>,
 }
 
 impl TextInput {
-    fn with_focused_text_input<F>(&mut self, mut f: F)
+    fn with_focused_client_all_text_inputs<F>(&mut self, mut f: F)
     where
         F: FnMut(&ZwpTextInputV3, &WlSurface, u32),
     {
-        if let Some(ref surface) = self.focus {
-            if !surface.alive() {
-                return;
-            }
-            for ti in self.instances.iter_mut() {
-                if ti.instance.id().same_client_as(&surface.id()) {
-                    f(&ti.instance, surface, ti.serial);
+        if let Some(surface) = self.focus.as_ref().filter(|surface| surface.is_alive()) {
+            for text_input in self.instances.iter() {
+                let instance_id = text_input.instance.id();
+                if instance_id.same_client_as(&surface.id()) {
+                    f(&text_input.instance, surface, text_input.serial);
+                    break;
                 }
             }
+        };
+    }
+
+    fn with_active_text_input<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&ZwpTextInputV3, &WlSurface, u32),
+    {
+        let active_id = match &self.active_text_input_id {
+            Some(active_text_input_id) => active_text_input_id,
+            None => return,
+        };
+
+        let surface = match self.focus.as_ref().filter(|surface| surface.is_alive()) {
+            Some(surface) => surface,
+            None => return,
+        };
+
+        let surface_id = surface.id();
+        if let Some(text_input) = self
+            .instances
+            .iter()
+            .filter(|instance| instance.instance.id().same_client_as(&surface_id))
+            .find(|instance| &instance.instance.id() == active_id)
+        {
+            f(&text_input.instance, surface, text_input.serial);
         }
     }
 }
@@ -81,7 +105,10 @@ impl TextInputHandle {
     /// surface.
     pub fn leave(&self) {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_focused_text_input(|text_input, focus, _| {
+        // Leaving clears the active text input.
+        inner.active_text_input_id = None;
+        // NOTE: we implement it in a symmetrical way with `enter`.
+        inner.with_focused_client_all_text_inputs(|text_input, focus, _| {
             text_input.leave(focus);
         });
     }
@@ -90,7 +117,9 @@ impl TextInputHandle {
     /// surface.
     pub fn enter(&self) {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_focused_text_input(|text_input, focus, _| {
+        // NOTE: protocol states that if we have multiple text inputs enabled, `enter` must
+        // be send for each of them.
+        inner.with_focused_client_all_text_inputs(|text_input, focus, _| {
             text_input.enter(focus);
         });
     }
@@ -99,7 +128,7 @@ impl TextInputHandle {
     /// the state should be discarded and wrong serial sent.
     pub fn done(&self, discard_state: bool) {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_focused_text_input(|text_input, _, serial| {
+        inner.with_active_text_input(|text_input, _, serial| {
             if discard_state {
                 debug!("discarding text-input state due to serial");
                 // Discarding is done by sending non-matching serial.
@@ -116,26 +145,50 @@ impl TextInputHandle {
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_focused_text_input(|ti, surface, _| {
+        inner.with_focused_client_all_text_inputs(|ti, surface, _| {
             f(ti, surface);
         });
     }
 
-    /// Call the callback with the serial of the focused text_input or with the passed
+    /// Access the active text-input instance for the currently focused surface.
+    pub fn with_active_text_input<F>(&self, mut f: F)
+    where
+        F: FnMut(&ZwpTextInputV3, &WlSurface),
+    {
+        let mut inner = self.inner.lock().unwrap();
+        inner.with_active_text_input(|ti, surface, _| {
+            f(ti, surface);
+        });
+    }
+
+    /// Call the callback with the serial of the active text_input or with the passed
     /// `default` one when empty.
-    pub(crate) fn focused_text_input_serial_or_default<F>(&self, default: u32, mut callback: F)
+    pub(crate) fn active_text_input_serial_or_default<F>(&self, default: u32, mut callback: F)
     where
         F: FnMut(u32),
     {
         let mut inner = self.inner.lock().unwrap();
         let mut should_default = true;
-        inner.with_focused_text_input(|_, _, serial| {
+        inner.with_active_text_input(|_, _, serial| {
             should_default = false;
             callback(serial);
         });
         if should_default {
             callback(default)
         }
+    }
+
+    fn set_active_text_input_id(&self, id: Option<ObjectId>) {
+        self.inner.lock().unwrap().active_text_input_id = id;
+    }
+
+    fn is_active_text_input_or_new(&self, id: &ObjectId) -> bool {
+        self.inner
+            .lock()
+            .unwrap()
+            .active_text_input_id
+            .as_ref()
+            .map_or(true, |active_id| active_id == id)
     }
 }
 
@@ -180,11 +233,20 @@ where
             }
         };
 
+        // text-input-v3 states that only one text_input must be enabled at the time
+        // and receive the events.
+        if !data.handle.is_active_text_input_or_new(&resource.id()) {
+            debug!("discarding text_input request since we already have an active one");
+            return;
+        }
+
         match request {
             zwp_text_input_v3::Request::Enable => {
-                data.input_method_handle.activate_input_method(state, &focus)
+                data.handle.set_active_text_input_id(Some(resource.id()));
+                data.input_method_handle.activate_input_method(state, &focus);
             }
             zwp_text_input_v3::Request::Disable => {
+                data.handle.set_active_text_input_id(None);
                 data.input_method_handle.deactivate_input_method(state, false);
             }
             zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
