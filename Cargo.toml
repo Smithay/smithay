@@ -1,6 +1,6 @@
 [package]
 name = "smithay"
-version = "0.4.3"
+version = "0.4.4"
 authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victoria Brekenfeld)"]
 license = "MIT"
 description = "Smithay is a library for writing wayland compositors."
@@ -14,7 +14,6 @@ rust-version = "1.80.1"
 
 [package.metadata.docs.rs]
 features = ["test_all_features", "libseat/docs_rs"]
-rustc-args = ["--cfg", "docsrs"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
