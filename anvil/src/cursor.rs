@@ -62,6 +62,9 @@ fn nearest_images(size: u32, images: &[Image]) -> impl Iterator<Item = &Image> {
 
 fn frame(mut millis: u32, size: u32, images: &[Image]) -> Image {
     let total = nearest_images(size, images).fold(0, |acc, image| acc + image.delay);
+    if total == 0 {
+        return nearest_images(size, images).next().unwrap().clone();
+    }
     millis %= total;
 
     for img in nearest_images(size, images) {
