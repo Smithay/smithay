@@ -8,7 +8,6 @@ use wayland_server::Resource;
 
 use super::data_device::DataDeviceUserData;
 use super::ext_data_control::ExtDataControlDeviceUserData;
-use super::offer::DataControlOffer;
 use super::offer::SelectionOffer;
 use super::primary_selection::PrimaryDeviceUserData;
 use super::private::selection_dispatch;
@@ -23,73 +22,11 @@ pub(crate) enum DataDeviceKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DataControlDevice {
-    Wlr(ZwlrDataControlDeviceV1),
-    Ext(ExtDataControlDeviceV1),
-}
-
-impl DataControlDevice {
-    fn data_offer(&self, offer: &DataControlOffer) {
-        match (self, offer) {
-            (Self::Wlr(obj), DataControlOffer::Wlr(offer)) => obj.data_offer(offer),
-            (Self::Ext(obj), DataControlOffer::Ext(offer)) => obj.data_offer(offer),
-            _ => unreachable!(),
-        }
-    }
-
-    fn selection(&self, offer: Option<&DataControlOffer>) {
-        match (self, offer) {
-            (Self::Wlr(obj), Some(DataControlOffer::Wlr(offer))) => obj.selection(Some(offer)),
-            (Self::Ext(obj), Some(DataControlOffer::Ext(offer))) => obj.selection(Some(offer)),
-            (Self::Wlr(obj), None) => obj.selection(None),
-            (Self::Ext(obj), None) => obj.selection(None),
-            _ => unreachable!(),
-        }
-    }
-
-    fn primary_selection(&self, offer: Option<&DataControlOffer>) {
-        match (self, offer) {
-            (Self::Wlr(obj), Some(DataControlOffer::Wlr(offer))) => obj.primary_selection(Some(offer)),
-            (Self::Ext(obj), Some(DataControlOffer::Ext(offer))) => obj.primary_selection(Some(offer)),
-            (Self::Wlr(obj), None) => obj.primary_selection(None),
-            (Self::Ext(obj), None) => obj.primary_selection(None),
-            _ => unreachable!(),
-        }
-    }
-
-    fn wl_seat(&self) -> WlSeat {
-        match self {
-            Self::Wlr(device) => {
-                let data: &DataControlDeviceUserData = device.data().unwrap();
-                data.wl_seat.clone()
-            }
-            Self::Ext(device) => {
-                let data: &ExtDataControlDeviceUserData = device.data().unwrap();
-                data.wl_seat.clone()
-            }
-        }
-    }
-
-    fn id(&self) -> ObjectId {
-        match self {
-            Self::Wlr(obj) => obj.id(),
-            Self::Ext(obj) => obj.id(),
-        }
-    }
-
-    fn version(&self) -> u32 {
-        match self {
-            Self::Wlr(obj) => obj.version(),
-            Self::Ext(obj) => obj.version(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SelectionDevice {
     DataDevice(WlDataDevice),
     Primary(PrimaryDevice),
-    DataControl(DataControlDevice),
+    WlrDataControl(ZwlrDataControlDeviceV1),
+    ExtDataControl(ExtDataControlDeviceV1),
 }
 
 impl SelectionDevice {
@@ -109,8 +46,8 @@ impl SelectionDevice {
         match self {
             Self::DataDevice(_) => DataDeviceKind::Core,
             Self::Primary(_) => DataDeviceKind::Primary,
-            Self::DataControl(DataControlDevice::Wlr(_)) => DataDeviceKind::WlrDataControl,
-            Self::DataControl(DataControlDevice::Ext(_)) => DataDeviceKind::ExtDataControl,
+            Self::WlrDataControl(_) => DataDeviceKind::WlrDataControl,
+            Self::ExtDataControl(_) => DataDeviceKind::ExtDataControl,
         }
     }
 
@@ -125,7 +62,14 @@ impl SelectionDevice {
                 let data: &PrimaryDeviceUserData = device.data().unwrap();
                 data.wl_seat.clone()
             }
-            SelectionDevice::DataControl(device) => device.wl_seat(),
+            SelectionDevice::WlrDataControl(device) => {
+                let data: &DataControlDeviceUserData = device.data().unwrap();
+                data.wl_seat.clone()
+            }
+            SelectionDevice::ExtDataControl(device) => {
+                let data: &ExtDataControlDeviceUserData = device.data().unwrap();
+                data.wl_seat.clone()
+            }
         }
     }
 
@@ -135,9 +79,8 @@ impl SelectionDevice {
             (Self::DataDevice(device), SelectionOffer::DataDevice(offer)) => {
                 device.selection(Some(offer));
             }
-            (Self::DataControl(device), SelectionOffer::DataControl(offer)) => {
-                device.selection(Some(offer));
-            }
+            (Self::WlrDataControl(obj), SelectionOffer::WlrDataControl(offer)) => obj.selection(Some(offer)),
+            (Self::ExtDataControl(obj), SelectionOffer::ExtDataControl(offer)) => obj.selection(Some(offer)),
             _ => unreachable!("non-supported configuration for setting clipboard selection."),
         }
     }
@@ -145,7 +88,8 @@ impl SelectionDevice {
     pub fn unset_selection(&self) {
         match self {
             Self::DataDevice(device) => device.selection(None),
-            Self::DataControl(device) => device.selection(None),
+            Self::WlrDataControl(device) => device.selection(None),
+            Self::ExtDataControl(device) => device.selection(None),
             Self::Primary(_) => unreachable!("primary clipboard has no clipboard selection"),
         }
     }
@@ -155,8 +99,11 @@ impl SelectionDevice {
             (Self::Primary(device), SelectionOffer::Primary(offer)) => {
                 device.selection(Some(offer));
             }
-            (Self::DataControl(device), SelectionOffer::DataControl(offer)) => {
-                device.primary_selection(Some(offer));
+            (Self::WlrDataControl(obj), SelectionOffer::WlrDataControl(offer)) => {
+                obj.primary_selection(Some(offer))
+            }
+            (Self::ExtDataControl(obj), SelectionOffer::ExtDataControl(offer)) => {
+                obj.primary_selection(Some(offer))
             }
             _ => unreachable!("non-supported configuration for setting clipboard selection."),
         }
@@ -165,7 +112,8 @@ impl SelectionDevice {
     pub fn unset_primary_selection(&self) {
         match self {
             Self::Primary(device) => device.selection(None),
-            Self::DataControl(device) => device.primary_selection(None),
+            Self::WlrDataControl(device) => device.primary_selection(None),
+            Self::ExtDataControl(device) => device.primary_selection(None),
             Self::DataDevice(_) => unreachable!("data control has primary selection"),
         }
     }

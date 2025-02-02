@@ -8,10 +8,10 @@ use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::{Client, Dispatch, DisplayHandle};
 
 use crate::input::Seat;
-use crate::wayland::selection::device::{DataControlDevice, SelectionDevice};
+use crate::wayland::selection::device::SelectionDevice;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
-use crate::wayland::selection::source::{DataControlSource, SelectionSourceProvider};
+use crate::wayland::selection::source::SelectionSourceProvider;
 use crate::wayland::selection::{SelectionSource, SelectionTarget};
 
 use super::{DataControlHandler, DataControlState};
@@ -48,9 +48,7 @@ where
                 seat.user_data()
                     .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
 
-                let source = source
-                    .map(DataControlSource::Wlr)
-                    .map(SelectionSourceProvider::DataControl);
+                let source = source.map(SelectionSourceProvider::WlrDataControl);
 
                 handler.new_selection(
                     SelectionTarget::Clipboard,
@@ -73,9 +71,7 @@ where
                 seat.user_data()
                     .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
 
-                let source = source
-                    .map(DataControlSource::Wlr)
-                    .map(SelectionSourceProvider::DataControl);
+                let source = source.map(SelectionSourceProvider::WlrDataControl);
 
                 handler.new_selection(
                     SelectionTarget::Primary,
@@ -95,7 +91,7 @@ where
                 .unwrap()
                 .borrow_mut()
                 .retain_devices(|ndd| match ndd {
-                    SelectionDevice::DataControl(DataControlDevice::Wlr(ndd)) => ndd != resource,
+                    SelectionDevice::WlrDataControl(ndd) => ndd != resource,
                     _ => true,
                 }),
 

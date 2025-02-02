@@ -133,7 +133,6 @@ mod handlers {
     use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch};
 
     use crate::input::Seat;
-    use crate::wayland::selection::device::DataControlDevice;
     use crate::wayland::selection::device::SelectionDevice;
     use crate::wayland::selection::seat_data::SeatData;
     use crate::wayland::selection::SelectionTarget;
@@ -202,14 +201,13 @@ mod handlers {
                             seat.user_data()
                                 .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
 
-                            let device =
-                                SelectionDevice::DataControl(DataControlDevice::Wlr(data_init.init(
-                                    id,
-                                    DataControlDeviceUserData {
-                                        wl_seat,
-                                        primary_selection_filter: Arc::clone(&data.primary_selection_filter),
-                                    },
-                                )));
+                            let device = SelectionDevice::WlrDataControl(data_init.init(
+                                id,
+                                DataControlDeviceUserData {
+                                    wl_seat,
+                                    primary_selection_filter: Arc::clone(&data.primary_selection_filter),
+                                },
+                            ));
 
                             let mut seat_data = seat
                                 .user_data()

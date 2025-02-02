@@ -55,30 +55,13 @@ impl<U: Clone + Send + Sync + 'static> OfferReplySource<U> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DataControlOffer {
-    Wlr(ZwlrDataControlOfferV1),
-    Ext(ExtDataControlOfferV1),
-}
-
-impl DataControlOffer {
-    /// Advertise offered MIME type
-    ///
-    /// Sent immediately after creating the wlr_data_control_offer object. One event per offered MIME type.
-    fn offer(&self, mime_type: String) {
-        match self {
-            Self::Wlr(obj) => obj.offer(mime_type),
-            Self::Ext(obj) => obj.offer(mime_type),
-        }
-    }
-}
-
 /// Offer representing various selection offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SelectionOffer {
     DataDevice(WlDataOffer),
     Primary(PrimaryOffer),
-    DataControl(DataControlOffer),
+    WlrDataControl(ZwlrDataControlOfferV1),
+    ExtDataControl(ExtDataControlOfferV1),
 }
 
 impl SelectionOffer {
@@ -116,12 +99,12 @@ impl SelectionOffer {
         match device_kind {
             DataDeviceKind::Core => Self::DataDevice(WlDataOffer::from_id(dh, offer).unwrap()),
             DataDeviceKind::Primary => Self::Primary(PrimaryOffer::from_id(dh, offer).unwrap()),
-            DataDeviceKind::WlrDataControl => Self::DataControl(DataControlOffer::Wlr(
-                ZwlrDataControlOfferV1::from_id(dh, offer).unwrap(),
-            )),
-            DataDeviceKind::ExtDataControl => Self::DataControl(DataControlOffer::Ext(
-                ExtDataControlOfferV1::from_id(dh, offer).unwrap(),
-            )),
+            DataDeviceKind::WlrDataControl => {
+                Self::WlrDataControl(ZwlrDataControlOfferV1::from_id(dh, offer).unwrap())
+            }
+            DataDeviceKind::ExtDataControl => {
+                Self::ExtDataControl(ExtDataControlOfferV1::from_id(dh, offer).unwrap())
+            }
         }
     }
 
