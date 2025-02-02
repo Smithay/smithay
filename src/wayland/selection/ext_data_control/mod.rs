@@ -119,7 +119,6 @@ pub struct ExtDataControlManagerUserData {
 mod handlers {
     use std::cell::RefCell;
 
-    use crate::wayland::selection::device::DataControlDevice;
     use tracing::error;
     use wayland_protocols::ext::data_control::v1::server::{
         ext_data_control_device_v1::ExtDataControlDeviceV1,
@@ -197,14 +196,13 @@ mod handlers {
                             seat.user_data()
                                 .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
 
-                            let device =
-                                SelectionDevice::DataControl(DataControlDevice::Ext(data_init.init(
-                                    id,
-                                    ExtDataControlDeviceUserData {
-                                        wl_seat,
-                                        primary: data.primary,
-                                    },
-                                )));
+                            let device = SelectionDevice::ExtDataControl(data_init.init(
+                                id,
+                                ExtDataControlDeviceUserData {
+                                    wl_seat,
+                                    primary: data.primary,
+                                },
+                            ));
 
                             let mut seat_data = seat
                                 .user_data()

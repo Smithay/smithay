@@ -1,4 +1,3 @@
-use std::os::fd::BorrowedFd;
 use std::os::unix::io::{AsFd, OwnedFd};
 
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1::ExtDataControlSourceV1;
@@ -29,64 +28,6 @@ impl SelectionSource {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DataControlSource {
-    Wlr(ZwlrDataControlSourceV1),
-    Ext(ExtDataControlSourceV1),
-}
-
-impl DataControlSource {
-    fn send(&self, mime_type: String, fd: BorrowedFd<'_>) {
-        match self {
-            Self::Wlr(obj) => obj.send(mime_type, fd),
-            Self::Ext(obj) => obj.send(mime_type, fd),
-        }
-    }
-
-    fn cancelled(&self) {
-        match self {
-            Self::Wlr(obj) => obj.cancelled(),
-            Self::Ext(obj) => obj.cancelled(),
-        }
-    }
-
-    fn mime_types(&self) -> Vec<String> {
-        match self {
-            Self::Wlr(source) => {
-                let data: &DataControlSourceUserData = source.data().unwrap();
-                data.inner.lock().unwrap().mime_types.clone()
-            }
-            Self::Ext(source) => {
-                let data: &ExtDataControlSourceUserData = source.data().unwrap();
-                data.inner.lock().unwrap().mime_types.clone()
-            }
-        }
-    }
-
-    fn contains_mime_type(&self, mime_type: &String) -> bool {
-        match self {
-            Self::Wlr(source) => {
-                let data: &DataControlSourceUserData = source.data().unwrap();
-                data.inner.lock().unwrap().mime_types.contains(mime_type)
-            }
-            Self::Ext(source) => {
-                let data: &ExtDataControlSourceUserData = source.data().unwrap();
-                data.inner.lock().unwrap().mime_types.contains(mime_type)
-            }
-        }
-    }
-}
-
-impl IsAlive for DataControlSource {
-    #[inline]
-    fn alive(&self) -> bool {
-        match self {
-            Self::Wlr(obj) => obj.alive(),
-            Self::Ext(obj) => obj.alive(),
-        }
-    }
-}
-
 /// Provider of the selection data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionSourceProvider {
@@ -95,7 +36,9 @@ pub enum SelectionSourceProvider {
     /// The primary selection was used as a source.
     Primary(PrimarySource),
     /// The data control selection was used as source.
-    DataControl(DataControlSource),
+    WlrDataControl(ZwlrDataControlSourceV1),
+    /// The data control selection was used as source.
+    ExtDataControl(ExtDataControlSourceV1),
 }
 
 impl SelectionSourceProvider {
@@ -120,7 +63,14 @@ impl SelectionSourceProvider {
                 let data: &PrimarySourceUserData = source.data().unwrap();
                 data.inner.lock().unwrap().mime_types.contains(mime_type)
             }
-            Self::DataControl(source) => source.contains_mime_type(mime_type),
+            Self::WlrDataControl(source) => {
+                let data: &DataControlSourceUserData = source.data().unwrap();
+                data.inner.lock().unwrap().mime_types.contains(mime_type)
+            }
+            Self::ExtDataControl(source) => {
+                let data: &ExtDataControlSourceUserData = source.data().unwrap();
+                data.inner.lock().unwrap().mime_types.contains(mime_type)
+            }
         }
     }
 
@@ -135,7 +85,14 @@ impl SelectionSourceProvider {
                 let data: &PrimarySourceUserData = source.data().unwrap();
                 data.inner.lock().unwrap().mime_types.clone()
             }
-            Self::DataControl(source) => source.mime_types(),
+            Self::WlrDataControl(source) => {
+                let data: &DataControlSourceUserData = source.data().unwrap();
+                data.inner.lock().unwrap().mime_types.clone()
+            }
+            Self::ExtDataControl(source) => {
+                let data: &ExtDataControlSourceUserData = source.data().unwrap();
+                data.inner.lock().unwrap().mime_types.clone()
+            }
         }
     }
 }

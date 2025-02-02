@@ -68,7 +68,8 @@ pub(crate) mod private {
     /// match self {
     ///    Enum::DataDevice(foo) => foo.something(),
     ///    Enum::Primary(foo) => foo.something(),
-    ///    Enum::DataControl(foo) => foo.something(),
+    ///    Enum::WlrDataControl(foo) => foo.something(),
+    ///    Enum::ExtDataControl(foo) => foo.something(),
     /// }
     /// ```
     ///
@@ -78,7 +79,8 @@ pub(crate) mod private {
     /// match (self, other) {
     ///    (Enum::DataDevice(foo), EnumNext::DataDevice(zoo))  => foo.something(zoo),
     ///    (Enum::Primary(foo), EnumNext::Primary(zoo))  => foo.something(zoo),
-    ///    (Enum::DataControl(foo), EnumNext::DataControl(zoo))  => foo.something(zoo),
+    ///    (Enum::WlrDataControl(foo), EnumNext::WlrDataControl(zoo))  => foo.something(zoo),
+    ///    (Enum::ExtDataControl(foo), EnumNext::ExtDataControl(zoo))  => foo.something(zoo),
     ///    _ => unreachable!(),
     /// }
     /// ```
@@ -89,14 +91,16 @@ pub(crate) mod private {
             match $what {
                 $enum::DataDevice($($c1)*) => $x,
                 $enum::Primary($($c1)*) => $x,
-                $enum::DataControl($($c1)*) => $x,
+                $enum::WlrDataControl($($c1)*) => $x,
+                $enum::ExtDataControl($($c1)*) => $x,
             }
         };
         ($what:ident$(, $what_next:ident)+; $enum:ident ( $($c1:tt)*) $(, $enum_next:ident ( $($c2:tt)* ) )+ => $x:expr) => {
             match ($what$(, $what_next)*) {
                 ($enum::DataDevice($($c1)*)$(, $enum_next::DataDevice($($c2)*))*) => $x,
                 ($enum::Primary($($c1)*)$(, $enum_next::Primary($($c2)*))*) => $x,
-                ($enum::DataControl($($c1)*)$(, $enum_next::DataControl($($c2)*))*) => $x,
+                ($enum::WlrDataControl($($c1)*)$(, $enum_next::WlrDataControl($($c2)*))*) => $x,
+                ($enum::ExtDataControl($($c1)*)$(, $enum_next::ExtDataControl($($c2)*))*) => $x,
                 _ => unreachable!(),
             }
         };

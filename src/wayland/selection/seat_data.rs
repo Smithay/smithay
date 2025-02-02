@@ -4,7 +4,7 @@ use wayland_server::{Client, DisplayHandle, Resource};
 
 use crate::utils::IsAlive;
 
-use super::device::{DataControlDevice, SelectionDevice};
+use super::device::SelectionDevice;
 use super::offer::{OfferReplySource, SelectionOffer};
 use super::{SelectionHandler, SelectionTarget};
 
@@ -166,22 +166,24 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                 // later on.
                 SelectionDevice::DataDevice(_) => ty == SelectionTarget::Clipboard,
                 SelectionDevice::Primary(_) => ty == SelectionTarget::Primary,
-                SelectionDevice::DataControl(DataControlDevice::Wlr(data_control)) => {
+                SelectionDevice::WlrDataControl(data_control) => {
                     // Primary selection is available for data control only since v2.
                     update_data_control
                         && (data_control.version() >= EVT_PRIMARY_SELECTION_SINCE
                             || ty != SelectionTarget::Primary)
                 }
-                SelectionDevice::DataControl(DataControlDevice::Ext(_)) => update_data_control,
+                SelectionDevice::ExtDataControl(_) => update_data_control,
             })
         {
             // Data control doesn't require focus and should always get selection updates, unless
             // it was requested not to update them.
-            if !matches!(device, SelectionDevice::DataControl(_))
-                && dh
-                    .get_client(device.id())
-                    .map(|c| Some(&c) != client)
-                    .unwrap_or(true)
+            if !matches!(
+                device,
+                SelectionDevice::WlrDataControl(_) | SelectionDevice::ExtDataControl(_)
+            ) && dh
+                .get_client(device.id())
+                .map(|c| Some(&c) != client)
+                .unwrap_or(true)
             {
                 continue;
             }
@@ -199,10 +201,10 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                     // DataControl devices is the client itself, however other devices use
                     // the currently focused one as a client.
                     let client_id = match device {
-                        SelectionDevice::DataControl(DataControlDevice::Wlr(device)) => {
+                        SelectionDevice::WlrDataControl(device) => {
                             dh.get_client(device.id()).ok().map(|c| c.id())
                         }
-                        SelectionDevice::DataControl(DataControlDevice::Ext(device)) => {
+                        SelectionDevice::ExtDataControl(device) => {
                             dh.get_client(device.id()).ok().map(|c| c.id())
                         }
                         _ => client.map(|c| c.id()),
