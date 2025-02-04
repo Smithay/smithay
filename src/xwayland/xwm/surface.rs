@@ -43,7 +43,6 @@ pub struct X11Surface {
     xwm: Option<XwmId>,
     client_scale: Option<Arc<AtomicU32>>,
     window: X11Window,
-    override_redirect: bool,
     conn: Weak<RustConnection>,
     atoms: super::Atoms,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
@@ -61,6 +60,7 @@ pub(crate) struct SharedSurfaceState {
     pub(super) wl_surface_serial: Option<u64>,
     pub(super) mapped_onto: Option<X11Window>,
     pub(super) geometry: Rectangle<i32, Logical>,
+    pub(super) override_redirect: bool,
 
     // The associated wl_surface.
     pub(crate) wl_surface: Option<WlSurface>,
@@ -170,7 +170,6 @@ impl X11Surface {
             xwm: xwm.map(|wm| wm.id),
             client_scale: xwm.map(|wm| wm.client_scale.clone()),
             window,
-            override_redirect,
             conn,
             atoms,
             state: Arc::new(Mutex::new(SharedSurfaceState {
@@ -180,6 +179,7 @@ impl X11Surface {
                 wl_surface: None,
                 mapped_onto: None,
                 geometry,
+                override_redirect,
                 title: String::from(""),
                 class: String::from(""),
                 instance: String::from(""),
@@ -216,7 +216,7 @@ impl X11Surface {
     ///
     /// It is an error to call this function on override redirect windows
     pub fn set_mapped(&self, mapped: bool) -> Result<(), X11SurfaceError> {
-        if self.override_redirect {
+        if self.is_override_redirect() {
             return Err(X11SurfaceError::UnsupportedForOverrideRedirect);
         }
 
@@ -251,7 +251,7 @@ impl X11Surface {
 
     /// Returns if this window has the override redirect flag set or not
     pub fn is_override_redirect(&self) -> bool {
-        self.override_redirect
+        self.state.lock().unwrap().override_redirect
     }
 
     /// Returns if the window is currently mapped or not
@@ -272,7 +272,7 @@ impl X11Surface {
     /// If `rect` is `None` a synthetic configure event with the existing state will be send.
     pub fn configure(&self, rect: impl Into<Option<Rectangle<i32, Logical>>>) -> Result<(), X11SurfaceError> {
         let rect = rect.into();
-        if self.override_redirect && rect.is_some() {
+        if self.is_override_redirect() && rect.is_some() {
             return Err(X11SurfaceError::UnsupportedForOverrideRedirect);
         }
 
