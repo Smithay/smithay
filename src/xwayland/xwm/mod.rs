@@ -1422,6 +1422,14 @@ where
                     }
 
                     surface.state.lock().unwrap().mapped_onto = Some(frame_win);
+
+                    // A MapRequest can only happen when an X11 window does not have the
+                    // override-redirect flag set. It's possible for a window to be created as
+                    // override-redirect and later set the flag to false before mapping.
+                    // In that case, we set the X11Surface's override-redirect state to false here
+                    // to prevent `set_mapped` and `configure` from failing.
+                    surface.state.lock().unwrap().override_redirect = false;
+
                     drop(_guard);
                     state.map_window_request(xwm_id, surface);
                 }
