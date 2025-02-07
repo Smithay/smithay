@@ -116,19 +116,20 @@ pub unsafe fn link_program(
 
 pub(super) unsafe fn texture_program(
     gl: &ffi::Gles2,
-    src: &str,
+    frag_shader: &str,
+    vert_shader: &str,
     additional_uniforms: &[UniformName<'_>],
     destruction_callback_sender: Sender<CleanupResource>,
 ) -> Result<GlesTexProgram, GlesError> {
     let create_variant = |defines: &[&str]| -> Result<GlesTexProgramVariant, GlesError> {
-        let shader = src.replace(
+        let shader = frag_shader.replace(
             "//_DEFINES_",
             &defines.iter().fold(String::new(), |mut shader, define| {
                 let _ = writeln!(&mut shader, "#define {}", define);
                 shader
             }),
         );
-        let debug_shader = src.replace(
+        let debug_shader = frag_shader.replace(
             "//_DEFINES_",
             &defines
                 .iter()
@@ -138,9 +139,8 @@ pub(super) unsafe fn texture_program(
                     shader
                 }),
         );
-
-        let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };
-        let debug_program = unsafe { link_program(gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
+        let program = unsafe { link_program(gl, vert_shader, &shader)? };
+        let debug_program = unsafe { link_program(gl, vert_shader, debug_shader.as_ref())? };
 
         let vert = c"vert";
         let vert_position = c"vert_position";
