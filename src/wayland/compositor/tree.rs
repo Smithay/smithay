@@ -211,7 +211,7 @@ impl PrivateSurfaceData {
         hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     ) -> HookId {
         let hook: Hook<CommitHook> = Hook::new(Arc::new(hook));
-        let id = hook.id;
+        let id = hook.id.clone();
         Self::lock_user_data(surface).pre_commit_hooks.push(hook);
         id
     }
@@ -221,7 +221,7 @@ impl PrivateSurfaceData {
         hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     ) -> HookId {
         let hook: Hook<CommitHook> = Hook::new(Arc::new(hook));
-        let id = hook.id;
+        let id = hook.id.clone();
         Self::lock_user_data(surface).post_commit_hooks.push(hook);
         id
     }
@@ -231,7 +231,7 @@ impl PrivateSurfaceData {
         hook: impl Fn(&mut dyn Any, &WlSurface) + Send + Sync + 'static,
     ) -> HookId {
         let hook: Hook<DestructionHook> = Hook::new(Arc::new(hook));
-        let id = hook.id;
+        let id = hook.id.clone();
         Self::lock_user_data(surface).destruction_hooks.push(hook);
         id
     }
