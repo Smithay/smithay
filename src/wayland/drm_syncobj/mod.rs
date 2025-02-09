@@ -333,8 +333,8 @@ where
         match request {
             wp_linux_drm_syncobj_surface_v1::Request::Destroy => {
                 if let Ok(surface) = data.surface.upgrade() {
-                    compositor::remove_pre_commit_hook(&surface, data.commit_hook_id);
-                    compositor::remove_destruction_hook(&surface, data.destruction_hook_id);
+                    compositor::remove_pre_commit_hook(&surface, data.commit_hook_id.clone());
+                    compositor::remove_destruction_hook(&surface, data.destruction_hook_id.clone());
                     with_states(&surface, |states| {
                         *states
                             .data_map

@@ -486,7 +486,7 @@ impl ShmBufferUserData {
         hook: impl Fn(&mut dyn Any, &wl_buffer::WlBuffer) + Send + Sync + 'static,
     ) -> HookId {
         let hook: Hook<DestructionHook> = Hook::new(Arc::new(hook));
-        let id = hook.id;
+        let id = hook.id.clone();
         self.destruction_hooks.lock().unwrap().push(hook);
         id
     }
