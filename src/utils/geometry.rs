@@ -1115,13 +1115,13 @@ impl<Kind> Rectangle<f64, Kind> {
     /// Convert to i32 by returning the largest integer-space rectangle fitting into the float-based rectangle
     #[inline]
     pub fn to_i32_down<N: Coordinate>(self) -> Rectangle<N, Kind> {
-        Rectangle::from_extemities(self.loc.to_i32_ceil(), (self.loc + self.size).to_i32_floor())
+        Rectangle::from_extremities(self.loc.to_i32_ceil(), (self.loc + self.size).to_i32_floor())
     }
 
     /// Convert to i32 by returning the smallest integet-space rectangle encapsulating the float-based rectangle
     #[inline]
     pub fn to_i32_up<N: Coordinate>(self) -> Rectangle<N, Kind> {
-        Rectangle::from_extemities(self.loc.to_i32_floor(), (self.loc + self.size).to_i32_ceil())
+        Rectangle::from_extremities(self.loc.to_i32_floor(), (self.loc + self.size).to_i32_ceil())
     }
 }
 
@@ -1162,7 +1162,18 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
 
     /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its bottom-right corner
     #[inline]
+    #[deprecated = "use Rectangle::from_extremities instead"]
+    #[doc(hidden)]
     pub fn from_extemities(
+        topleft: impl Into<Point<N, Kind>>,
+        bottomright: impl Into<Point<N, Kind>>,
+    ) -> Self {
+        Rectangle::from_extremities(topleft, bottomright)
+    }
+
+    /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its bottom-right corner
+    #[inline]
+    pub fn from_extremities(
         topleft: impl Into<Point<N, Kind>>,
         bottomright: impl Into<Point<N, Kind>>,
     ) -> Self {
@@ -1236,7 +1247,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         if !self.overlaps(other) {
             return None;
         }
-        Some(Rectangle::from_extemities(
+        Some(Rectangle::from_extremities(
             (self.loc.x.max(other.loc.x), self.loc.y.max(other.loc.y)),
             (
                 (self.loc.x.saturating_add(self.size.w)).min(other.loc.x.saturating_add(other.size.w)),
@@ -1257,7 +1268,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
 
         match ret {
             None => Rectangle::default(),
-            Some((min_point, max_point)) => Rectangle::from_extemities(min_point, max_point),
+            Some((min_point, max_point)) => Rectangle::from_extremities(min_point, max_point),
         }
     }
 
