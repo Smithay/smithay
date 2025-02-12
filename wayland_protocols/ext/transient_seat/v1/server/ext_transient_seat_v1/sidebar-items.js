@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_DENIED_OPCODE","EVT_DENIED_SINCE","EVT_READY_OPCODE","EVT_READY_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE"],"enum":["Event","Request"],"struct":["ExtTransientSeatV1"]};

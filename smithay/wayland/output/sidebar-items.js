@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["OutputManagerState","OutputUserData","WlOutputData","XdgOutputUserData"],"trait":["OutputHandler"]};

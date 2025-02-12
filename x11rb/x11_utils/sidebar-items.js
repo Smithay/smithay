@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BigRequests"],"fn":["parse_request_header"],"struct":["ExtensionInformation","RequestHeader","X11Error"],"trait":["ExtInfoProvider","Request","Serialize","TryParse","TryParseFd"],"type":["ReplyParsingFunction"]};

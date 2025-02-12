@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["EXT_IDLE_NOTIFICATION_V1_INTERFACE","EXT_IDLE_NOTIFIER_V1_INTERFACE","ext_idle_notification_v1_interface","ext_idle_notifier_v1_interface"]};

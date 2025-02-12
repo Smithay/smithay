@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["XWAYLAND_SHELL_ROLE"],"struct":["XWaylandShellCachedState","XWaylandShellState","XWaylandSurfaceUserData"],"trait":["XWaylandShellHandler"]};
