@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["WP_CONTENT_TYPE_MANAGER_V1_INTERFACE","WP_CONTENT_TYPE_V1_INTERFACE","wp_content_type_manager_v1_interface","wp_content_type_v1_interface"]};

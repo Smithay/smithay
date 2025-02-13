@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_OFFER_OPCODE","EVT_OFFER_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_RECEIVE_OPCODE","REQ_RECEIVE_SINCE"],"enum":["Event","Request"],"struct":["ZwpPrimarySelectionOfferV1"]};
