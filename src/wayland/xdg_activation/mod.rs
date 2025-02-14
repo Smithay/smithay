@@ -153,6 +153,19 @@ impl XdgActivationTokenData {
     }
 }
 
+impl Default for XdgActivationTokenData {
+    fn default() -> Self {
+        Self {
+            client_id: None,
+            serial: None,
+            app_id: None,
+            surface: None,
+            timestamp: Instant::now(),
+            user_data: Arc::new(UserDataMap::new()),
+        }
+    }
+}
+
 /// Tracks the list of pending and current activation requests
 #[derive(Debug)]
 pub struct XdgActivationState {
@@ -185,9 +198,10 @@ impl XdgActivationState {
     /// instead use the return arguments to handle any initialization of the data you might need and to copy the token.
     pub fn create_external_token(
         &mut self,
-        app_id: impl Into<Option<String>>,
+        data: impl Into<Option<XdgActivationTokenData>>,
     ) -> (&XdgActivationToken, &XdgActivationTokenData) {
-        let (token, data) = XdgActivationTokenData::new(None, None, app_id.into(), None);
+        let token = XdgActivationToken::new();
+        let data = data.into().unwrap_or_default();
         self.known_tokens.insert(token.clone(), data);
         self.known_tokens.get_key_value(&token).unwrap()
     }
