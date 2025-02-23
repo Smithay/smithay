@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+## 0.5.0
+
+### API Changes
+Items either removed or deprecated from the public API
+```rs
+/// Use Clone instead
+impl Copy for smithay::utils::HookId;
+/// Use `from_extremities` instead
+fn smithay::utils::Rectangle::from_extemities(topleft, bottomright) -> Self;
+```
+
+Items added to the public API
+```rs
+/// Replaces deprecated `from_extemities`
+fn smithay::utils::Rectangle::from_extremities(topleft, bottomright) -> Self;
+/// Access the active text-input instance for the currently focused surface.
+fn smithay::wayland::text_input::TextInputHandle::with_active_text_input(&self, f);
+/// Just a new protocol
+mod smithay::wayland::selection::ext_data_control;
+```
+
+Items changed in the public API
+```diff
+# create_external_token now accepts `XdgActivationTokenData` instead of `String`
+-fn smithay::wayland::xdg_activation::XdgActivationState::create_external_token(&mut self, app_id: impl Into<Option<String>>);
++fn smithay::wayland::xdg_activation::XdgActivationState::create_external_token(&mut self, data: impl Into<Option<XdgActivationTokenData>>);
+```
+
+### New protocols
+* Introduce ext data control protocol by @PolyMeilex in https://github.com/Smithay/smithay/pull/1577
+* Update idle notify to version 2 by @PolyMeilex in https://github.com/Smithay/smithay/pull/1618
+
+### TextInput improvements
+* Revert "Fix repeated key input issue in Chrome with multiple windows" by @Drakulix in https://github.com/Smithay/smithay/pull/1647
+* text-input: fix active instance tracking by @kchibisov in https://github.com/Smithay/smithay/pull/1648
+* text-input: properly handle double buffered state by @kchibisov in https://github.com/Smithay/smithay/pull/1649
+
+### Miscellaneous
+* clock: Fix current monotonic time in millis u32 overflow panic by @YaLTeR in https://github.com/Smithay/smithay/pull/1645
+* xwm: Update override-redirect flag on map request by @Ottatop in https://github.com/Smithay/smithay/pull/1656
+* utils: Rework `HookId` recycle logic by @Paraworker in https://github.com/Smithay/smithay/pull/1657
+* rename Rectangle::from_extemities to Rectangle::from_extremeties by @m4rch3n1ng in https://github.com/Smithay/smithay/pull/1646
+* xdg_activation: Allow passing all data in XdgActivationState::create_external_token by @bbb651 in https://github.com/Smithay/smithay/pull/1658
+
 ## 0.4.0
 
 ### Breaking Changes
