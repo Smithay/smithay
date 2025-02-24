@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","zwp_keyboard_shortcuts_inhibit_manager_v1","zwp_keyboard_shortcuts_inhibitor_v1"]};

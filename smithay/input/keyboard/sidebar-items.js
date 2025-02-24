@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Error","FilterResult"],"mod":["keysyms","xkb"],"struct":["GrabStartData","KeyboardHandle","KeyboardInnerHandle","Keycode","KeymapFile","Keysym","KeysymHandle","Layout","LedMapping","LedState","ModifiersState","SerializedMods","Xkb","XkbConfig","XkbContext"],"trait":["KeyboardGrab","KeyboardTarget"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["keyboard","pointer","touch"],"struct":["Seat","SeatState"],"trait":["SeatHandler"]};
