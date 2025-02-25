@@ -82,6 +82,8 @@ pub enum Error {
 impl From<Error> for SwapBuffersError {
     #[inline]
     fn from(err: Error) -> SwapBuffersError {
+        // FIXME: replace the special handling for EBUSY with ErrorKind::ResourceBusy once
+        // we reach MSRV >= 1.83
         match err {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
             Error::Access(AccessError {
@@ -89,7 +91,7 @@ impl From<Error> for SwapBuffersError {
             }) if matches!(
                 source.kind(),
                 ErrorKind::PermissionDenied | ErrorKind::WouldBlock | ErrorKind::Interrupted
-            ) =>
+            ) || rustix::io::Errno::from_io_error(&source) == Some(rustix::io::Errno::BUSY) =>
             {
                 SwapBuffersError::TemporaryFailure(Box::new(Error::Access(AccessError {
                     errmsg,
