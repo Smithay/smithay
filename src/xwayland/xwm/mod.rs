@@ -908,11 +908,13 @@ impl X11Wm {
             span,
         };
 
-        let event_handle = handle.clone();
+        let event_handle = handle.downgrade();
         handle.insert_source(source, move |event, _, data| match event {
             calloop::channel::Event::Msg(event) => {
-                if let Err(err) = handle_event(&event_handle, data, id, event) {
-                    warn!(id = id.0, err = ?err, "Failed to handle X11 event");
+                if let Some(event_handle) = event_handle.upgrade() {
+                    if let Err(err) = handle_event(&event_handle, data, id, event) {
+                        warn!(id = id.0, err = ?err, "Failed to handle X11 event");
+                    }
                 }
             }
             calloop::channel::Event::Closed => {
