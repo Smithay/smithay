@@ -140,8 +140,29 @@ impl LayerMap {
     /// Returns the geometry of a given mapped [`LayerSurface`].
     ///
     /// If the surface was not previously mapped onto this layer map,
+    /// or if the surface has not been arranged,
     /// this function return `None`.
     pub fn layer_geometry(&self, layer: &LayerSurface) -> Option<Rectangle<i32, Logical>> {
+        if !self.layers.contains(layer) {
+            return None;
+        }
+        let size = with_states(layer.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<LayerSurfaceData>()
+                .and_then(|data| data.lock().unwrap().current.size)
+        })?;
+        let mut geo = Rectangle::new(Point::default(), size);
+        let state = layer_state(layer);
+        geo.loc += state.location.unwrap_or_default();
+        Some(geo)
+    }
+
+    /// Returns the bounding box of a given mapped [`LayerSurface`], including subsurfaces.
+    ///
+    /// If the surface was not previously mapped onto this layer map,
+    /// this function return `None`.
+    pub fn layer_bbox(&self, layer: &LayerSurface) -> Option<Rectangle<i32, Logical>> {
         if !self.layers.contains(layer) {
             return None;
         }
