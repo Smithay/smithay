@@ -79,6 +79,9 @@ use wayland_server::protocol::{wl_buffer, wl_shm, wl_surface::WlSurface};
 #[cfg(all(feature = "backend_gbm", feature = "backend_egl", feature = "renderer_gl"))]
 pub mod gbm;
 
+#[cfg(all(feature = "backend_drm", feature = "renderer_pixman"))]
+pub mod drm;
+
 /// Tracks available gpus from a given [`GraphicsApi`]
 #[derive(Debug)]
 pub struct GpuManager<A: GraphicsApi> {
