@@ -15,7 +15,7 @@ use crate::backend::{
     egl::{context::ContextPriority, EGLContext, EGLDisplay, Error as EGLError},
     renderer::{
         gles::{GlesError, GlesRenderer},
-        multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
+        multigpu::{ApiDevice, Error as MultiError, GraphicsApi, TryImportEgl},
         Renderer,
     },
     SwapBuffersError,
@@ -266,7 +266,7 @@ impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<R, A> ImportEgl for MultiRenderer<'_, '_, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
+impl<R, A, T> ImportEgl for MultiRenderer<'_, '_, GbmGlesBackend<R, A>, T>
 where
     A: AsFd + Clone + 'static,
     R: From<GlesRenderer>
@@ -279,6 +279,12 @@ where
         + ExportMem
         + 'static,
     <R as Renderer>::TextureId: Clone + Send,
+    T: GraphicsApi + 'static,
+    <T as GraphicsApi>::Device: TryImportEgl<<<T as GraphicsApi>::Device as ApiDevice>::Renderer>,
+    <<T as GraphicsApi>::Device as ApiDevice>::Renderer: ImportDma + ImportMem + ExportMem + Bind<Dmabuf>,
+    <T as GraphicsApi>::Error: 'static,
+    <<<T as GraphicsApi>::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<<T as GraphicsApi>::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
 {
     fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
@@ -297,17 +303,17 @@ where
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        if let Some(dmabuf) = Self::try_import_egl(self.render.renderer_mut(), buffer)
+        if let Some(dmabuf) = GbmGlesDevice::<R>::try_import_egl(self.render.renderer_mut(), buffer)
             .ok()
             .or_else(|| {
-                self.target
-                    .as_mut()
-                    .and_then(|renderer| Self::try_import_egl(renderer.device.renderer_mut(), buffer).ok())
+                self.target.as_mut().and_then(|renderer| {
+                    T::Device::try_import_egl(renderer.device.renderer_mut(), buffer).ok()
+                })
             })
             .or_else(|| {
-                self.other_renderers
-                    .iter_mut()
-                    .find_map(|renderer| Self::try_import_egl(renderer.renderer_mut(), buffer).ok())
+                self.other_renderers.iter_mut().find_map(|renderer| {
+                    GbmGlesDevice::<R>::try_import_egl(renderer.renderer_mut(), buffer).ok()
+                })
             })
         {
             let texture = MultiTexture::from_surface(surface, dmabuf.size(), dmabuf.format());
@@ -325,10 +331,8 @@ where
     }
 }
 
-#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<R, A> MultiRenderer<'_, '_, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
+impl<R> TryImportEgl<R> for GbmGlesDevice<R>
 where
-    A: AsFd + Clone + 'static,
     R: From<GlesRenderer>
         + BorrowMut<GlesRenderer>
         + Renderer<Error = GlesError>
@@ -338,47 +342,37 @@ where
         + ExportMem
         + 'static,
 {
-    #[profiling::function]
-    fn try_import_egl(
-        renderer: &mut R,
-        buffer: &wl_buffer::WlBuffer,
-    ) -> Result<Dmabuf, MultigpuError<GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>> {
+    type Error = GlesError;
+
+    fn try_import_egl(renderer: &mut R, buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, Self::Error> {
         if !renderer
             .borrow_mut()
             .extensions
             .iter()
             .any(|ext| ext == "GL_OES_EGL_image")
         {
-            return Err(MultigpuError::Render(GlesError::GLExtensionNotSupported(&[
-                "GL_OES_EGL_image",
-            ])));
+            return Err(GlesError::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
         if renderer.egl_reader().is_none() {
-            return Err(MultigpuError::Render(GlesError::EGLBufferAccessError(
+            return Err(GlesError::EGLBufferAccessError(
                 crate::backend::egl::BufferAccessError::NotManaged(crate::backend::egl::EGLError::BadDisplay),
-            )));
+            ));
         }
 
-        renderer
-            .borrow_mut()
-            .make_current()
-            .map_err(GlesError::from)
-            .map_err(MultigpuError::Render)?;
+        renderer.borrow_mut().make_current().map_err(GlesError::from)?;
 
         let egl = renderer
             .egl_reader()
             .as_ref()
             .unwrap()
             .egl_buffer_contents(buffer)
-            .map_err(GlesError::EGLBufferAccessError)
-            .map_err(MultigpuError::Render)?;
+            .map_err(GlesError::EGLBufferAccessError)?;
         renderer
             .borrow_mut()
             .egl_context()
             .display()
             .create_dmabuf_from_image(egl.image(0).unwrap(), egl.size, egl.y_inverted)
             .map_err(GlesError::BindBufferEGLError)
-            .map_err(MultigpuError::Render)
     }
 }
