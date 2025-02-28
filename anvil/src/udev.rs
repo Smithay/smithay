@@ -25,26 +25,30 @@ use smithay::backend::renderer::{multigpu::MultiTexture, ImportMem};
 use smithay::{
     backend::{
         allocator::{
-            dmabuf::Dmabuf,
+            dmabuf::{AsDmabuf, Dmabuf},
+            dumb::{DumbAllocator, DumbBuffer},
             format::FormatSet,
-            gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
-            Fourcc,
+            gbm::{GbmAllocator, GbmBuffer, GbmBufferFlags, GbmConvertError, GbmDevice},
+            Allocator, Fourcc,
         },
         drm::{
-            compositor::{DrmCompositor, FrameFlags},
+            compositor::FrameFlags,
+            dumb::DumbFramebuffer,
+            exporter::ExportFramebuffer,
+            gbm::GbmFramebuffer,
             output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
             CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
-            DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
+            DrmNode, DrmSurface, Framebuffer, NodeType,
         },
-        egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
+        egl::{context::ContextPriority, EGLDevice, EGLDisplay},
         input::InputEvent,
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::Error as OutputDamageTrackerError,
             element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElementStates},
             gles::GlesRenderer,
-            multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
-            DebugFlags, ImportDma, ImportMemWl,
+            multigpu::{drm::DrmPixmanBackend, gbm::GbmGlesBackend, GpuManager},
+            Bind, DebugFlags, ImportAll, ImportDma, ImportMem, ImportMemWl, Renderer,
         },
         session::{
             libseat::{self, LibSeatSession},
@@ -111,13 +115,6 @@ const SUPPORTED_FORMATS: &[Fourcc] = &[
 ];
 const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
-type UdevRenderer<'a> = MultiRenderer<
-    'a,
-    'a,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
->;
-
 #[derive(Debug, PartialEq)]
 struct UdevOutputId {
     device_id: DrmNode,
@@ -130,7 +127,9 @@ pub struct UdevData {
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     syncobj_state: Option<DrmSyncobjState>,
     primary_gpu: DrmNode,
-    gpus: GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
+    hardware_gpus: GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
+    software_gpus: GpuManager<DrmPixmanBackend>,
+    primary_use_software: bool,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, MemoryRenderBuffer)>,
     pointer_element: PointerElement,
@@ -165,13 +164,21 @@ impl DmabufHandler for AnvilState<UdevData> {
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
-        if self
-            .backend_data
-            .gpus
-            .single_renderer(&self.backend_data.primary_gpu)
-            .and_then(|mut renderer| renderer.import_dmabuf(&dmabuf, None))
-            .is_ok()
-        {
+        let imported = if self.backend_data.primary_use_software {
+            self.backend_data
+                .software_gpus
+                .single_renderer(&self.backend_data.primary_gpu)
+                .and_then(|mut renderer| renderer.import_dmabuf(&dmabuf, None))
+                .is_ok()
+        } else {
+            self.backend_data
+                .hardware_gpus
+                .single_renderer(&self.backend_data.primary_gpu)
+                .and_then(|mut renderer| renderer.import_dmabuf(&dmabuf, None))
+                .is_ok()
+        };
+
+        if imported {
             dmabuf.set_node(self.backend_data.primary_gpu);
             let _ = notifier.successful::<AnvilState<UdevData>>();
         } else {
@@ -200,8 +207,14 @@ impl Backend for UdevData {
     }
 
     fn early_import(&mut self, surface: &wl_surface::WlSurface) {
-        if let Err(err) = self.gpus.early_import(self.primary_gpu, surface) {
-            warn!("Early buffer import failed: {}", err);
+        if self.primary_use_software {
+            if let Err(err) = self.software_gpus.early_import(self.primary_gpu, surface) {
+                warn!("Early buffer import failed: {}", err);
+            }
+        } else {
+            if let Err(err) = self.hardware_gpus.early_import(self.primary_gpu, surface) {
+                warn!("Early buffer import failed: {}", err);
+            }
         }
     }
 
@@ -247,7 +260,9 @@ pub fn run_udev() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    let gpus = GpuManager::new(GbmGlesBackend::with_context_priority(ContextPriority::High)).unwrap();
+    let hardware_gpus =
+        GpuManager::new(GbmGlesBackend::with_context_priority(ContextPriority::High)).unwrap();
+    let software_gpus = GpuManager::new(DrmPixmanBackend::default()).unwrap();
 
     let data = UdevData {
         dh: display_handle.clone(),
@@ -255,7 +270,9 @@ pub fn run_udev() {
         syncobj_state: None,
         session,
         primary_gpu,
-        gpus,
+        hardware_gpus,
+        software_gpus,
+        primary_use_software: false,
         backends: HashMap::new(),
         pointer_image: crate::cursor::Cursor::load(),
         pointer_images: Vec::new(),
@@ -366,54 +383,106 @@ pub fn run_udev() {
             error!("Skipping device {device_id}: {err}");
         }
     }
-    state.shm_state.update_formats(
+
+    let shm_formats = if state.backend_data.primary_use_software {
         state
             .backend_data
-            .gpus
+            .software_gpus
             .single_renderer(&primary_gpu)
             .unwrap()
-            .shm_formats(),
-    );
+            .shm_formats()
+    } else {
+        state
+            .backend_data
+            .hardware_gpus
+            .single_renderer(&primary_gpu)
+            .unwrap()
+            .shm_formats()
+    };
 
-    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut renderer = state.backend_data.gpus.single_renderer(&primary_gpu).unwrap();
+    state.shm_state.update_formats(shm_formats);
 
-    #[cfg(feature = "debug")]
-    {
-        #[allow(deprecated)]
-        let fps_image =
-            image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
-                .decode()
-                .unwrap();
-        let fps_texture = renderer
-            .import_memory(
-                &fps_image.to_rgba8(),
-                Fourcc::Abgr8888,
-                (fps_image.width() as i32, fps_image.height() as i32).into(),
-                false,
+    let dmabuf_formats = if state.backend_data.primary_use_software {
+        let renderer = state
+            .backend_data
+            .software_gpus
+            .single_renderer(&primary_gpu)
+            .unwrap();
+
+        #[cfg(feature = "debug")]
+        {
+            #[allow(deprecated)]
+            let fps_image = image::io::Reader::with_format(
+                std::io::Cursor::new(FPS_NUMBERS_PNG),
+                image::ImageFormat::Png,
             )
-            .expect("Unable to upload FPS texture");
+            .decode()
+            .unwrap();
+            let fps_texture = renderer
+                .import_memory(
+                    &fps_image.to_rgba8(),
+                    Fourcc::Abgr8888,
+                    (fps_image.width() as i32, fps_image.height() as i32).into(),
+                    false,
+                )
+                .expect("Unable to upload FPS texture");
 
-        for backend in state.backend_data.backends.values_mut() {
-            for surface in backend.surfaces.values_mut() {
-                surface.fps_element = Some(FpsElement::new(fps_texture.clone()));
+            for backend in state.backend_data.backends.values_mut() {
+                for surface in backend.surfaces.values_mut() {
+                    surface.fps_element = Some(FpsElement::new(fps_texture.clone()));
+                }
+            }
+            state.backend_data.fps_texture = Some(fps_texture);
+        }
+
+        renderer.dmabuf_formats()
+    } else {
+        #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
+        let mut renderer = state
+            .backend_data
+            .hardware_gpus
+            .single_renderer(&primary_gpu)
+            .unwrap();
+
+        #[cfg(feature = "debug")]
+        {
+            #[allow(deprecated)]
+            let fps_image = image::io::Reader::with_format(
+                std::io::Cursor::new(FPS_NUMBERS_PNG),
+                image::ImageFormat::Png,
+            )
+            .decode()
+            .unwrap();
+            let fps_texture = renderer
+                .import_memory(
+                    &fps_image.to_rgba8(),
+                    Fourcc::Abgr8888,
+                    (fps_image.width() as i32, fps_image.height() as i32).into(),
+                    false,
+                )
+                .expect("Unable to upload FPS texture");
+
+            for backend in state.backend_data.backends.values_mut() {
+                for surface in backend.surfaces.values_mut() {
+                    surface.fps_element = Some(FpsElement::new(fps_texture.clone()));
+                }
+            }
+            state.backend_data.fps_texture = Some(fps_texture);
+        }
+
+        #[cfg(feature = "egl")]
+        {
+            info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration",);
+            match renderer.bind_wl_display(&display_handle) {
+                Ok(_) => info!("EGL hardware-acceleration enabled"),
+                Err(err) => info!(?err, "Failed to initialize EGL hardware-acceleration"),
             }
         }
-        state.backend_data.fps_texture = Some(fps_texture);
-    }
 
-    #[cfg(feature = "egl")]
-    {
-        info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration",);
-        match renderer.bind_wl_display(&display_handle) {
-            Ok(_) => info!("EGL hardware-acceleration enabled"),
-            Err(err) => info!(?err, "Failed to initialize EGL hardware-acceleration"),
-        }
-    }
+        renderer.dmabuf_formats()
+    };
 
-    // init dmabuf support with format list from our primary gpu
-    let dmabuf_formats = renderer.dmabuf_formats();
-    let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
+    let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats.clone())
         .build()
         .unwrap();
     let mut dmabuf_state = DmabufState::new();
@@ -421,20 +490,36 @@ pub fn run_udev() {
         .create_global_with_default_feedback::<AnvilState<UdevData>>(&display_handle, &default_feedback);
     state.backend_data.dmabuf_state = Some((dmabuf_state, global));
 
-    let gpus = &mut state.backend_data.gpus;
+    let hardware_gpus = &mut state.backend_data.hardware_gpus;
+    let software_gpus = &mut state.backend_data.software_gpus;
     state.backend_data.backends.values_mut().for_each(|backend_data| {
         // Update the per drm surface dmabuf feedback
         backend_data.surfaces.values_mut().for_each(|surface_data| {
-            surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
-                surface_data.drm_output.with_compositor(|compositor| {
-                    get_surface_dmabuf_feedback(
-                        primary_gpu,
-                        surface_data.render_node,
-                        gpus,
-                        compositor.surface(),
-                    )
-                })
-            });
+            let render_formats = if backend_data.use_software {
+                software_gpus
+                    .single_renderer(&surface_data.render_node)
+                    .map(|renderer| renderer.dmabuf_formats())
+                    .ok()
+            } else {
+                hardware_gpus
+                    .single_renderer(&surface_data.render_node)
+                    .map(|renderer| renderer.dmabuf_formats())
+                    .ok()
+            };
+
+            if let Some(render_formats) = render_formats {
+                surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
+                    surface_data.drm_output.with_compositor(|compositor| {
+                        Some(get_surface_dmabuf_feedback(
+                            primary_gpu,
+                            surface_data.render_node,
+                            dmabuf_formats.clone(),
+                            render_formats,
+                            compositor.surface(),
+                        ))
+                    })
+                });
+            }
         });
     });
 
@@ -580,26 +665,12 @@ impl DrmSyncobjHandler for AnvilState<UdevData> {
 }
 smithay::delegate_drm_syncobj!(AnvilState<UdevData>);
 
-pub type RenderSurface = GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
-
-pub type GbmDrmCompositor = DrmCompositor<
-    GbmAllocator<DrmDeviceFd>,
-    GbmDevice<DrmDeviceFd>,
-    Option<OutputPresentationFeedback>,
-    DrmDeviceFd,
->;
-
 struct SurfaceData {
     dh: DisplayHandle,
     device_id: DrmNode,
     render_node: DrmNode,
     global: Option<GlobalId>,
-    drm_output: DrmOutput<
-        GbmAllocator<DrmDeviceFd>,
-        GbmDevice<DrmDeviceFd>,
-        Option<OutputPresentationFeedback>,
-        DrmDeviceFd,
-    >,
+    drm_output: DrmOutput<UdevAllocator, UdevExporter, Option<OutputPresentationFeedback>, DrmDeviceFd>,
     disable_direct_scanout: bool,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
@@ -621,15 +692,12 @@ struct BackendData {
     non_desktop_connectors: Vec<(connector::Handle, crtc::Handle)>,
     leasing_global: Option<DrmLeaseState>,
     active_leases: Vec<DrmLease>,
-    drm_output_manager: DrmOutputManager<
-        GbmAllocator<DrmDeviceFd>,
-        GbmDevice<DrmDeviceFd>,
-        Option<OutputPresentationFeedback>,
-        DrmDeviceFd,
-    >,
+    drm_output_manager:
+        DrmOutputManager<UdevAllocator, UdevExporter, Option<OutputPresentationFeedback>, DrmDeviceFd>,
     drm_scanner: DrmScanner,
     render_node: DrmNode,
     registration_token: RegistrationToken,
+    use_software: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -638,23 +706,17 @@ enum DeviceAddError {
     DeviceOpen(libseat::Error),
     #[error("Failed to initialize drm device: {0}")]
     DrmDevice(DrmError),
-    #[error("Failed to initialize gbm device: {0}")]
-    GbmDevice(std::io::Error),
     #[error("Failed to access drm node: {0}")]
     DrmNode(CreateDrmNodeError),
-    #[error("Failed to add device to GpuManager: {0}")]
-    AddNode(egl::Error),
 }
 
 fn get_surface_dmabuf_feedback(
     primary_gpu: DrmNode,
     render_node: DrmNode,
-    gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
+    primary_formats: FormatSet,
+    render_formats: FormatSet,
     surface: &DrmSurface,
-) -> Option<SurfaceDmabufFeedback> {
-    let primary_formats = gpus.single_renderer(&primary_gpu).ok()?.dmabuf_formats();
-    let render_formats = gpus.single_renderer(&render_node).ok()?.dmabuf_formats();
-
+) -> SurfaceDmabufFeedback {
     let all_render_formats = primary_formats
         .iter()
         .chain(render_formats.iter())
@@ -694,10 +756,204 @@ fn get_surface_dmabuf_feedback(
         .build()
         .unwrap();
 
-    Some(SurfaceDmabufFeedback {
+    SurfaceDmabufFeedback {
         render_feedback,
         scanout_feedback,
-    })
+    }
+}
+
+#[derive(Debug, Clone)]
+enum UdevAllocator {
+    Gbm(GbmAllocator<DrmDeviceFd>),
+    Dumb(DumbAllocator),
+}
+
+#[derive(Debug)]
+enum UdevBuffer {
+    Gbm(GbmBuffer),
+    Dumb(DumbBuffer),
+}
+
+#[derive(Debug, thiserror::Error)]
+enum UdevDmabufError {
+    #[error(transparent)]
+    Gbm(GbmConvertError),
+    #[error(transparent)]
+    Dumb(std::io::Error),
+}
+
+impl AsDmabuf for UdevBuffer {
+    type Error = UdevDmabufError;
+
+    fn export(&self) -> Result<Dmabuf, Self::Error> {
+        match self {
+            UdevBuffer::Gbm(gbm_buffer) => gbm_buffer.export().map_err(UdevDmabufError::Gbm),
+            UdevBuffer::Dumb(dumb_buffer) => dumb_buffer.export().map_err(UdevDmabufError::Dumb),
+        }
+    }
+}
+
+impl smithay::backend::allocator::Buffer for UdevBuffer {
+    fn size(&self) -> smithay::utils::Size<i32, smithay::utils::Buffer> {
+        match self {
+            UdevBuffer::Gbm(gbm_buffer) => gbm_buffer.size(),
+            UdevBuffer::Dumb(dumb_buffer) => dumb_buffer.size(),
+        }
+    }
+
+    fn format(&self) -> smithay::backend::allocator::Format {
+        match self {
+            UdevBuffer::Gbm(gbm_buffer) => gbm_buffer.format(),
+            UdevBuffer::Dumb(dumb_buffer) => dumb_buffer.format(),
+        }
+    }
+}
+
+impl Allocator for UdevAllocator {
+    type Buffer = UdevBuffer;
+
+    type Error = std::io::Error;
+
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[smithay::reexports::gbm::Modifier],
+    ) -> Result<Self::Buffer, Self::Error> {
+        match self {
+            UdevAllocator::Gbm(gbm_allocator) => gbm_allocator
+                .create_buffer(width, height, fourcc, modifiers)
+                .map(UdevBuffer::Gbm),
+            UdevAllocator::Dumb(dumb_allocator) => dumb_allocator
+                .create_buffer(width, height, fourcc, modifiers)
+                .map(UdevBuffer::Dumb),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum UdevExporter {
+    Gbm(GbmDevice<DrmDeviceFd>),
+    Dumb(DrmDeviceFd),
+}
+
+#[derive(Debug)]
+enum UdevFramebuffer {
+    Gbm(GbmFramebuffer),
+    Dumb(DumbFramebuffer),
+}
+
+impl AsRef<smithay::reexports::drm::control::framebuffer::Handle> for UdevFramebuffer {
+    fn as_ref(&self) -> &smithay::reexports::drm::control::framebuffer::Handle {
+        match self {
+            UdevFramebuffer::Gbm(gbm_framebuffer) => gbm_framebuffer.as_ref(),
+            UdevFramebuffer::Dumb(dumb_framebuffer) => dumb_framebuffer.as_ref(),
+        }
+    }
+}
+
+impl Framebuffer for UdevFramebuffer {
+    fn format(&self) -> smithay::backend::allocator::Format {
+        match self {
+            UdevFramebuffer::Gbm(gbm_framebuffer) => gbm_framebuffer.format(),
+            UdevFramebuffer::Dumb(dumb_framebuffer) => dumb_framebuffer.format(),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum UdevError {
+    #[error(transparent)]
+    Gbm(#[from] smithay::backend::drm::gbm::Error),
+    #[error(transparent)]
+    Dumb(#[from] smithay::backend::drm::exporter::dumb::Error),
+    #[error("an incompatible buffer has been passed")]
+    IncompatibleBuffer,
+}
+
+impl ExportFramebuffer<UdevBuffer> for UdevExporter {
+    type Framebuffer = UdevFramebuffer;
+
+    type Error = UdevError;
+
+    fn add_framebuffer(
+        &self,
+        drm: &DrmDeviceFd,
+        buffer: smithay::backend::drm::exporter::ExportBuffer<'_, UdevBuffer>,
+        use_opaque: bool,
+    ) -> Result<Option<Self::Framebuffer>, Self::Error> {
+        match self {
+            UdevExporter::Gbm(device) => {
+                let buffer = match buffer {
+                    smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer) => {
+                        smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer)
+                    }
+                    smithay::backend::drm::exporter::ExportBuffer::Allocator(buffer) => match buffer {
+                        UdevBuffer::Gbm(gbm_buffer) => {
+                            smithay::backend::drm::exporter::ExportBuffer::Allocator(gbm_buffer)
+                        }
+                        UdevBuffer::Dumb(_) => return Err(UdevError::IncompatibleBuffer),
+                    },
+                };
+                ExportFramebuffer::add_framebuffer(device, drm, buffer, use_opaque)
+                    .map_err(UdevError::Gbm)
+                    .map(|fb| fb.map(UdevFramebuffer::Gbm))
+            }
+            UdevExporter::Dumb(device) => {
+                let buffer = match buffer {
+                    smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer) => {
+                        smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer)
+                    }
+                    smithay::backend::drm::exporter::ExportBuffer::Allocator(buffer) => match buffer {
+                        UdevBuffer::Gbm(_) => return Err(UdevError::IncompatibleBuffer),
+                        UdevBuffer::Dumb(dumb_buffer) => {
+                            smithay::backend::drm::exporter::ExportBuffer::Allocator(dumb_buffer)
+                        }
+                    },
+                };
+                ExportFramebuffer::add_framebuffer(device, drm, buffer, use_opaque)
+                    .map_err(UdevError::Dumb)
+                    .map(|fb| fb.map(UdevFramebuffer::Dumb))
+            }
+        }
+    }
+
+    fn can_add_framebuffer(
+        &self,
+        buffer: &smithay::backend::drm::exporter::ExportBuffer<'_, UdevBuffer>,
+    ) -> bool {
+        match self {
+            UdevExporter::Gbm(device) => {
+                let buffer = match buffer {
+                    smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer) => {
+                        smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer)
+                    }
+                    smithay::backend::drm::exporter::ExportBuffer::Allocator(buffer) => match buffer {
+                        UdevBuffer::Gbm(gbm_buffer) => {
+                            smithay::backend::drm::exporter::ExportBuffer::Allocator(gbm_buffer)
+                        }
+                        UdevBuffer::Dumb(_) => return false,
+                    },
+                };
+                ExportFramebuffer::can_add_framebuffer(device, &buffer)
+            }
+            UdevExporter::Dumb(device) => {
+                let buffer = match buffer {
+                    smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer) => {
+                        smithay::backend::drm::exporter::ExportBuffer::Wayland(wl_buffer)
+                    }
+                    smithay::backend::drm::exporter::ExportBuffer::Allocator(buffer) => match buffer {
+                        UdevBuffer::Gbm(_) => return false,
+                        UdevBuffer::Dumb(dumb_buffer) => {
+                            smithay::backend::drm::exporter::ExportBuffer::Allocator(dumb_buffer)
+                        }
+                    },
+                };
+                ExportFramebuffer::can_add_framebuffer(device, &buffer)
+            }
+        }
+    }
 }
 
 impl AnvilState<UdevData> {
@@ -715,7 +971,7 @@ impl AnvilState<UdevData> {
         let fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
-        let gbm = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;
+        let gbm = GbmDevice::new(fd.clone()).ok();
 
         let registration_token = self
             .handle
@@ -733,31 +989,81 @@ impl AnvilState<UdevData> {
             )
             .unwrap();
 
-        let render_node = EGLDevice::device_for_display(&unsafe { EGLDisplay::new(gbm.clone()).unwrap() })
-            .ok()
-            .and_then(|x| x.try_get_render_node().ok().flatten())
-            .unwrap_or(node);
+        let mut init_hardware_gpu = || {
+            if std::env::var("ANVIL_FORCE_SOFTWARE").is_ok() {
+                return None;
+            };
 
-        self.backend_data
-            .gpus
-            .as_mut()
-            .add_node(render_node, gbm.clone())
-            .map_err(DeviceAddError::AddNode)?;
+            let Some(gbm) = gbm.as_ref() else { return None };
 
-        let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
+            let egl_display = unsafe { EGLDisplay::new(gbm.clone()) }.ok()?;
+            let render_node = EGLDevice::device_for_display(&egl_display)
+                .ok()
+                .and_then(|x| x.try_get_render_node().ok().flatten())?;
+
+            if let Err(err) = self
+                .backend_data
+                .hardware_gpus
+                .as_mut()
+                .add_node(render_node, gbm.clone())
+            {
+                warn!(?err, "failed to add hardware gpu");
+                return None;
+            }
+
+            let allocator =
+                GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
+            let exporter = UdevExporter::Gbm(gbm.clone());
+            Some((render_node, UdevAllocator::Gbm(allocator), exporter))
+        };
+
+        let (render_node, allocator, exporter, use_software) =
+            if let Some((render_node, allocator, exporter)) = init_hardware_gpu() {
+                (render_node, allocator, exporter, false)
+            } else {
+                let render_node = node
+                    .node_with_type(NodeType::Render)
+                    .and_then(|x| x.ok())
+                    .unwrap_or(node);
+                self.backend_data
+                    .software_gpus
+                    .as_mut()
+                    .add_node(render_node, &drm);
+                let allocator = DumbAllocator::new(fd.clone());
+                let exporter = UdevExporter::Dumb(fd.clone());
+                (render_node, UdevAllocator::Dumb(allocator), exporter, true)
+            };
+
+        if render_node == self.backend_data.primary_gpu {
+            self.backend_data.primary_use_software = use_software;
+        }
+
         let color_formats = if std::env::var("ANVIL_DISABLE_10BIT").is_ok() {
             SUPPORTED_FORMATS_8BIT_ONLY
         } else {
             SUPPORTED_FORMATS
         };
-        let mut renderer = self.backend_data.gpus.single_renderer(&render_node).unwrap();
-        let render_formats = renderer.as_mut().egl_context().dmabuf_render_formats().clone();
+        let render_formats = if use_software {
+            let renderer = self
+                .backend_data
+                .software_gpus
+                .single_renderer(&render_node)
+                .unwrap();
+            Bind::<Dmabuf>::supported_formats(&renderer).unwrap()
+        } else {
+            let renderer = self
+                .backend_data
+                .hardware_gpus
+                .single_renderer(&render_node)
+                .unwrap();
+            Bind::<Dmabuf>::supported_formats(&renderer).unwrap()
+        };
 
         let drm_device_manager = DrmOutputManager::new(
             drm,
             allocator,
-            gbm.clone(),
-            Some(gbm),
+            exporter,
+            gbm,
             color_formats.iter().copied(),
             render_formats,
         );
@@ -777,6 +1083,7 @@ impl AnvilState<UdevData> {
                     })
                     .ok(),
                 active_leases: Vec::new(),
+                use_software,
             },
         );
 
@@ -791,12 +1098,6 @@ impl AnvilState<UdevData> {
         } else {
             return;
         };
-
-        let mut renderer = self
-            .backend_data
-            .gpus
-            .single_renderer(&device.render_node)
-            .unwrap();
 
         let output_name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
         info!(?crtc, "Trying to setup connector {}", output_name,);
@@ -909,36 +1210,102 @@ impl AnvilState<UdevData> {
                 planes.overlay = vec![];
             }
 
-            let drm_output = match device
-                .drm_output_manager
-                .initialize_output::<_, OutputRenderElements<UdevRenderer<'_>, WindowRenderElement<UdevRenderer<'_>>>>(
-                    crtc,
-                    drm_mode,
-                    &[connector.handle()],
-                    &output,
-                    Some(planes),
-                    &mut renderer,
-                    &DrmOutputRenderElements::default(),
-                ) {
-                Ok(drm_output) => drm_output,
-                Err(err) => {
-                    warn!("Failed to initialize drm output: {}", err);
-                    return;
+            let drm_output = if device.use_software {
+                let mut renderer = self
+                    .backend_data
+                    .software_gpus
+                    .single_renderer(&device.render_node)
+                    .unwrap();
+                let result = device
+                    .drm_output_manager
+                    .initialize_output::<_, OutputRenderElements<_, WindowRenderElement<_>>>(
+                        crtc,
+                        drm_mode,
+                        &[connector.handle()],
+                        &output,
+                        Some(planes),
+                        &mut renderer,
+                        &DrmOutputRenderElements::default(),
+                    );
+                match result {
+                    Ok(drm_output) => drm_output,
+                    Err(err) => {
+                        warn!("Failed to initialize drm output: {}", err);
+                        return;
+                    }
+                }
+            } else {
+                let mut renderer = self
+                    .backend_data
+                    .hardware_gpus
+                    .single_renderer(&device.render_node)
+                    .unwrap();
+                let result = device
+                    .drm_output_manager
+                    .initialize_output::<_, OutputRenderElements<_, WindowRenderElement<_>>>(
+                        crtc,
+                        drm_mode,
+                        &[connector.handle()],
+                        &output,
+                        Some(planes),
+                        &mut renderer,
+                        &DrmOutputRenderElements::default(),
+                    );
+                match result {
+                    Ok(drm_output) => drm_output,
+                    Err(err) => {
+                        warn!("Failed to initialize drm output: {}", err);
+                        return;
+                    }
                 }
             };
 
             let disable_direct_scanout = std::env::var("ANVIL_DISABLE_DIRECT_SCANOUT").is_ok();
 
-            let dmabuf_feedback = drm_output.with_compositor(|compositor| {
-                compositor.set_debug_flags(self.backend_data.debug_flags);
+            let primary_formats = if self.backend_data.primary_use_software {
+                self.backend_data
+                    .software_gpus
+                    .single_renderer(&self.backend_data.primary_gpu)
+                    .map(|renderer| renderer.dmabuf_formats())
+                    .ok()
+            } else {
+                self.backend_data
+                    .hardware_gpus
+                    .single_renderer(&self.backend_data.primary_gpu)
+                    .map(|renderer| renderer.dmabuf_formats())
+                    .ok()
+            };
 
-                get_surface_dmabuf_feedback(
-                    self.backend_data.primary_gpu,
-                    device.render_node,
-                    &mut self.backend_data.gpus,
-                    compositor.surface(),
-                )
-            });
+            let render_formats = if device.use_software {
+                self.backend_data
+                    .software_gpus
+                    .single_renderer(&device.render_node)
+                    .map(|renderer| renderer.dmabuf_formats())
+                    .ok()
+            } else {
+                self.backend_data
+                    .hardware_gpus
+                    .single_renderer(&device.render_node)
+                    .map(|renderer| renderer.dmabuf_formats())
+                    .ok()
+            };
+
+            let dmabuf_feedback = match (primary_formats, render_formats) {
+                (Some(primary_formats), Some(render_formats)) => {
+                    Some(drm_output.with_compositor(|compositor| {
+                        compositor.set_debug_flags(self.backend_data.debug_flags);
+
+                        get_surface_dmabuf_feedback(
+                            self.backend_data.primary_gpu,
+                            device.render_node,
+                            primary_formats,
+                            render_formats,
+                            compositor.surface(),
+                        )
+                    }))
+                }
+                _ => None,
+            };
 
             let surface = SurfaceData {
                 dh: self.display_handle.clone(),
@@ -998,20 +1365,23 @@ impl AnvilState<UdevData> {
             }
         }
 
+        if device.use_software {
+        } else {
+        };
+
         let mut renderer = self
             .backend_data
-            .gpus
+            .hardware_gpus
             .single_renderer(&device.render_node)
             .unwrap();
-        let _ = device.drm_output_manager.try_to_restore_modifiers::<_, OutputRenderElements<
-            UdevRenderer<'_>,
-            WindowRenderElement<UdevRenderer<'_>>,
-        >>(
-            &mut renderer,
-            // FIXME: For a flicker free operation we should return the actual elements for this output..
-            // Instead we just use black to "simulate" a modeset :)
-            &DrmOutputRenderElements::default(),
-        );
+        let _ = device
+            .drm_output_manager
+            .try_to_restore_modifiers::<_, OutputRenderElements<_, WindowRenderElement<_>>>(
+                &mut renderer,
+                // FIXME: For a flicker free operation we should return the actual elements for this output..
+                // Instead we just use black to "simulate" a modeset :)
+                &DrmOutputRenderElements::default(),
+            );
     }
 
     fn device_changed(&mut self, node: DrmNode) {
@@ -1080,7 +1450,7 @@ impl AnvilState<UdevData> {
             }
 
             self.backend_data
-                .gpus
+                .hardware_gpus
                 .as_mut()
                 .remove_node(&backend_data.render_node);
 
@@ -1302,15 +1672,6 @@ impl AnvilState<UdevData> {
 
         let render_node = surface.render_node;
         let primary_gpu = self.backend_data.primary_gpu;
-        let mut renderer = if primary_gpu == render_node {
-            self.backend_data.gpus.single_renderer(&render_node)
-        } else {
-            let format = surface.drm_output.format();
-            self.backend_data
-                .gpus
-                .renderer(&primary_gpu, &render_node, format)
-        }
-        .unwrap();
 
         let pointer_images = &mut self.backend_data.pointer_images;
         let pointer_image = pointer_images
@@ -1335,18 +1696,129 @@ impl AnvilState<UdevData> {
                 buffer
             });
 
-        let result = render_surface(
-            surface,
-            &mut renderer,
-            &self.space,
-            &output,
-            self.pointer.current_location(),
-            &pointer_image,
-            &mut self.backend_data.pointer_element,
-            &self.dnd_icon,
-            &mut self.cursor_status,
-            self.show_window_preview,
-        );
+        let result = if primary_gpu == render_node {
+            if device.use_software {
+                let mut renderer = self
+                    .backend_data
+                    .software_gpus
+                    .single_renderer(&render_node)
+                    .unwrap();
+                render_surface(
+                    surface,
+                    &mut renderer,
+                    &self.space,
+                    &output,
+                    self.pointer.current_location(),
+                    &pointer_image,
+                    &mut self.backend_data.pointer_element,
+                    &self.dnd_icon,
+                    &mut self.cursor_status,
+                    self.show_window_preview,
+                )
+            } else {
+                let mut renderer = self
+                    .backend_data
+                    .hardware_gpus
+                    .single_renderer(&render_node)
+                    .unwrap();
+                render_surface(
+                    surface,
+                    &mut renderer,
+                    &self.space,
+                    &output,
+                    self.pointer.current_location(),
+                    &pointer_image,
+                    &mut self.backend_data.pointer_element,
+                    &self.dnd_icon,
+                    &mut self.cursor_status,
+                    self.show_window_preview,
+                )
+            }
+        } else if self.backend_data.primary_use_software {
+            let format = surface.drm_output.format();
+            if device.use_software {
+                let mut renderer = self
+                    .backend_data
+                    .software_gpus
+                    .renderer(&primary_gpu, &render_node, format)
+                    .unwrap();
+                render_surface(
+                    surface,
+                    &mut renderer,
+                    &self.space,
+                    &output,
+                    self.pointer.current_location(),
+                    &pointer_image,
+                    &mut self.backend_data.pointer_element,
+                    &self.dnd_icon,
+                    &mut self.cursor_status,
+                    self.show_window_preview,
+                )
+            } else {
+                let mut renderer = smithay::backend::renderer::multigpu::GpuManager::cross_renderer(
+                    &mut self.backend_data.software_gpus,
+                    &mut self.backend_data.hardware_gpus,
+                    &primary_gpu,
+                    &render_node,
+                    format,
+                )
+                .unwrap();
+                render_surface(
+                    surface,
+                    &mut renderer,
+                    &self.space,
+                    &output,
+                    self.pointer.current_location(),
+                    &pointer_image,
+                    &mut self.backend_data.pointer_element,
+                    &self.dnd_icon,
+                    &mut self.cursor_status,
+                    self.show_window_preview,
+                )
+            }
+        } else {
+            let format = surface.drm_output.format();
+            if device.use_software {
+                let mut renderer = smithay::backend::renderer::multigpu::GpuManager::cross_renderer(
+                    &mut self.backend_data.hardware_gpus,
+                    &mut self.backend_data.software_gpus,
+                    &primary_gpu,
+                    &render_node,
+                    format,
+                )
+                .unwrap();
+                render_surface(
+                    surface,
+                    &mut renderer,
+                    &self.space,
+                    &output,
+                    self.pointer.current_location(),
+                    &pointer_image,
+                    &mut self.backend_data.pointer_element,
+                    &self.dnd_icon,
+                    &mut self.cursor_status,
+                    self.show_window_preview,
+                )
+            } else {
+                let mut renderer = self
+                    .backend_data
+                    .hardware_gpus
+                    .renderer(&primary_gpu, &render_node, format)
+                    .unwrap();
+                render_surface(
+                    surface,
+                    &mut renderer,
+                    &self.space,
+                    &output,
+                    self.pointer.current_location(),
+                    &pointer_image,
+                    &mut self.backend_data.pointer_element,
+                    &self.dnd_icon,
+                    &mut self.cursor_status,
+                    self.show_window_preview,
+                )
+            }
+        };
         let reschedule = match result {
             Ok((has_rendered, states)) => {
                 let dmabuf_feedback = surface.dmabuf_feedback.clone();
@@ -1417,9 +1889,9 @@ impl AnvilState<UdevData> {
 
 #[allow(clippy::too_many_arguments)]
 #[profiling::function]
-fn render_surface<'a>(
+fn render_surface<'a, R>(
     surface: &'a mut SurfaceData,
-    renderer: &mut UdevRenderer<'a>,
+    renderer: &mut R,
     space: &Space<WindowElement>,
     output: &Output,
     pointer_location: Point<f64, Logical>,
@@ -1428,7 +1900,13 @@ fn render_surface<'a>(
     dnd_icon: &Option<DndIcon>,
     cursor_status: &mut CursorImageStatus,
     show_window_preview: bool,
-) -> Result<(bool, RenderElementStates), SwapBuffersError> {
+) -> Result<(bool, RenderElementStates), SwapBuffersError>
+where
+    R: Renderer + ImportAll + ImportMem + Bind<Dmabuf>,
+    <R as Renderer>::TextureId: Clone + Send + 'static,
+    <R as Renderer>::Error: Send + Sync + 'static,
+    SwapBuffersError: From<<R as Renderer>::Error>,
+{
     let output_geometry = space.output_geometry(output).unwrap();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
@@ -1485,7 +1963,7 @@ fn render_surface<'a>(
                     .to_physical(scale)
                     .to_i32_round();
                 if icon.surface.alive() {
-                    custom_elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+                    custom_elements.extend(AsRenderElements::<_>::render_elements(
                         &SurfaceTree::from_surface(&icon.surface),
                         renderer,
                         dnd_icon_pos,
@@ -1523,9 +2001,7 @@ fn render_surface<'a>(
             (!render_frame_result.is_empty, render_frame_result.states)
         })
         .map_err(|err| match err {
-            smithay::backend::drm::compositor::RenderFrameError::PrepareFrame(err) => {
-                SwapBuffersError::from(err)
-            }
+            smithay::backend::drm::compositor::RenderFrameError::PrepareFrame(err) => err.into(),
             smithay::backend::drm::compositor::RenderFrameError::RenderFrame(
                 OutputDamageTrackerError::Rendering(err),
             ) => SwapBuffersError::from(err),
