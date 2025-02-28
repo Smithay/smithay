@@ -2953,3 +2953,13 @@ where
         }
     }
 }
+
+/// Trait for failable import of egl buffers as [`Dmabuf`]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+pub trait TryImportEgl<R> {
+    /// Error returned from trying to import the egl buffer
+    type Error: std::error::Error;
+
+    /// Tries to import the provided [`WlBuffer`](wl_buffer::WlBuffer) as a [`Dmabuf`]
+    fn try_import_egl(renderer: &mut R, buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, Self::Error>;
+}
