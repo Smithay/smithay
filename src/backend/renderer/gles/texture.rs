@@ -51,6 +51,15 @@ impl GlesTexture {
     pub fn is_y_inverted(&self) -> bool {
         self.0.y_inverted
     }
+
+    /// Whether this is the only reference to this texture (strong or weak)
+    ///
+    /// Note that this tracks only references to this Smithay object (that you can get by cloning
+    /// it). If you make a reference via OpenGL directly somehow, you need to keep track of it on
+    /// your own.
+    pub fn is_unique_reference(&mut self) -> bool {
+        Arc::get_mut(&mut self.0).is_some()
+    }
 }
 
 #[derive(Debug, Default)]
