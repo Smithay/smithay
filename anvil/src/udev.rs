@@ -211,10 +211,8 @@ impl Backend for UdevData {
             if let Err(err) = self.software_gpus.early_import(self.primary_gpu, surface) {
                 warn!("Early buffer import failed: {}", err);
             }
-        } else {
-            if let Err(err) = self.hardware_gpus.early_import(self.primary_gpu, surface) {
-                warn!("Early buffer import failed: {}", err);
-            }
+        } else if let Err(err) = self.hardware_gpus.early_import(self.primary_gpu, surface) {
+            warn!("Early buffer import failed: {}", err);
         }
     }
 
@@ -1023,8 +1021,7 @@ impl AnvilState<UdevData> {
                 return None;
             };
 
-            let Some(gbm) = gbm.as_ref() else { return None };
-
+            let gbm = gbm.as_ref()?;
             let egl_display = unsafe { EGLDisplay::new(gbm.clone()) }.ok()?;
             let render_node = EGLDevice::device_for_display(&egl_display)
                 .ok()

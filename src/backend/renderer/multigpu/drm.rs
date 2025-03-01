@@ -7,32 +7,38 @@ use std::{collections::HashMap, sync::atomic::AtomicBool};
 
 use drm::node::{CreateDrmNodeError, DrmNode};
 use tracing::warn;
+
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use wayland_server::protocol::wl_buffer;
 
 use crate::backend::allocator::dmabuf::DmabufAllocator;
 #[cfg(feature = "backend_gbm")]
 use crate::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use crate::backend::drm::DrmDeviceFd;
-use crate::backend::renderer::pixman::PixmanError;
-use crate::backend::renderer::{ImportDma, ImportMem, Renderer};
-use crate::backend::SwapBuffersError;
+
 use crate::backend::{
     allocator::{
         dmabuf::{AnyError, Dmabuf},
         dumb::DumbAllocator,
         Allocator,
     },
-    drm::DrmDevice,
-    renderer::pixman::PixmanRenderer,
+    drm::{DrmDevice, DrmDeviceFd},
+    renderer::{
+        multigpu::{ApiDevice, GraphicsApi},
+        pixman::{PixmanError, PixmanRenderer},
+    },
+    SwapBuffersError,
 };
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::backend::{
-    egl::{display::EGLBufferReader, Error as EGLError},
-    renderer::{multigpu::Error as MultigpuError, ImportEgl},
+use crate::{
+    backend::{
+        egl::{display::EGLBufferReader, Error as EGLError},
+        renderer::{
+            multigpu::{Error as MultigpuError, MultiRenderer, TryImportEgl},
+            ImportDma, ImportEgl, ImportMem, Renderer,
+        },
+    },
+    utils::{Buffer as BufferCoords, Rectangle},
 };
-use crate::utils::{Buffer as BufferCoords, Rectangle};
-
-use super::{ApiDevice, GraphicsApi, MultiRenderer, TryImportEgl};
 
 /// Errors raised by the [`DrmPixmanBackend`]
 #[derive(Debug, thiserror::Error)]

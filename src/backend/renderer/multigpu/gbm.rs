@@ -15,7 +15,7 @@ use crate::backend::{
     egl::{context::ContextPriority, EGLContext, EGLDisplay, Error as EGLError},
     renderer::{
         gles::{GlesError, GlesRenderer},
-        multigpu::{ApiDevice, Error as MultiError, GraphicsApi, TryImportEgl},
+        multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
         Renderer,
     },
     SwapBuffersError,
@@ -26,7 +26,7 @@ use crate::{
         allocator::Buffer as BufferTrait,
         egl::display::EGLBufferReader,
         renderer::{
-            multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
+            multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture, TryImportEgl},
             Bind, ExportMem, ImportDma, ImportEgl, ImportMem,
         },
     },
@@ -331,6 +331,7 @@ where
     }
 }
 
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl<R> TryImportEgl<R> for GbmGlesDevice<R>
 where
     R: From<GlesRenderer>
@@ -344,7 +345,7 @@ where
 {
     type Error = GlesError;
 
-    fn try_import_egl(renderer: &mut R, buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, Self::Error> {
+    fn try_import_egl(renderer: &mut R, buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, GlesError> {
         if !renderer
             .borrow_mut()
             .extensions
