@@ -971,7 +971,21 @@ impl AnvilState<UdevData> {
         let fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
-        let gbm = GbmDevice::new(fd.clone()).ok();
+
+        let has_force_env = |key| {
+            std::env::var(key)
+                .map(|env| {
+                    env == "1"
+                        || env == "yes"
+                        || node.dev_path().map(|path| path.ends_with(&env)).unwrap_or(false)
+                })
+                .unwrap_or(false)
+        };
+
+        let force_dumb = has_force_env("ANVIL_FORCE_DUMB");
+        let force_software = has_force_env("ANVIL_FORCE_SOFTWARE");
+
+        let gbm = (!force_dumb).then(|| GbmDevice::new(fd.clone()).ok()).flatten();
 
         let registration_token = self
             .handle
@@ -989,8 +1003,23 @@ impl AnvilState<UdevData> {
             )
             .unwrap();
 
+        let allocator = gbm
+            .as_ref()
+            .map(|gbm| {
+                UdevAllocator::Gbm(GbmAllocator::new(
+                    gbm.clone(),
+                    GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
+                ))
+            })
+            .unwrap_or_else(|| UdevAllocator::Dumb(DumbAllocator::new(fd.clone())));
+
+        let exporter = gbm
+            .as_ref()
+            .map(|gbm| UdevExporter::Gbm(gbm.clone()))
+            .unwrap_or_else(|| UdevExporter::Dumb(fd.clone()));
+
         let mut init_hardware_gpu = || {
-            if std::env::var("ANVIL_FORCE_SOFTWARE").is_ok() {
+            if force_software {
                 return None;
             };
 
@@ -1011,28 +1040,31 @@ impl AnvilState<UdevData> {
                 return None;
             }
 
-            let allocator =
-                GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
-            let exporter = UdevExporter::Gbm(gbm.clone());
-            Some((render_node, UdevAllocator::Gbm(allocator), exporter))
+            Some(render_node)
         };
 
-        let (render_node, allocator, exporter, use_software) =
-            if let Some((render_node, allocator, exporter)) = init_hardware_gpu() {
-                (render_node, allocator, exporter, false)
+        let init_hardware_gpu_result = init_hardware_gpu();
+        let use_software = init_hardware_gpu_result.is_none();
+
+        let render_node = init_hardware_gpu_result.unwrap_or_else(|| {
+            node.node_with_type(NodeType::Render)
+                .and_then(|x| x.ok())
+                .unwrap_or(node)
+        });
+
+        if use_software {
+            if let Some(gbm) = gbm.as_ref() {
+                self.backend_data
+                    .software_gpus
+                    .as_mut()
+                    .add_node(render_node, gbm);
             } else {
-                let render_node = node
-                    .node_with_type(NodeType::Render)
-                    .and_then(|x| x.ok())
-                    .unwrap_or(node);
                 self.backend_data
                     .software_gpus
                     .as_mut()
                     .add_node(render_node, &drm);
-                let allocator = DumbAllocator::new(fd.clone());
-                let exporter = UdevExporter::Dumb(fd.clone());
-                (render_node, UdevAllocator::Dumb(allocator), exporter, true)
             };
+        }
 
         if render_node == self.backend_data.primary_gpu {
             self.backend_data.primary_use_software = use_software;
