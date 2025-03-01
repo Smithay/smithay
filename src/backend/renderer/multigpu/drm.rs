@@ -256,7 +256,7 @@ impl TryImportEgl<PixmanRenderer> for DrmPixmanDevice {
         _renderer: &mut PixmanRenderer,
         _buffer: &wl_buffer::WlBuffer,
     ) -> Result<Dmabuf, Self::Error> {
-        return Err(PixmanError::Unsupported);
+        Err(PixmanError::Unsupported)
     }
 }
 

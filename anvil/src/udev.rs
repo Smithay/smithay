@@ -20,8 +20,6 @@ use crate::{
 use smithay::backend::drm::compositor::PrimaryPlaneElement;
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
-#[cfg(feature = "debug")]
-use smithay::backend::renderer::{multigpu::MultiTexture, ImportMem};
 use smithay::{
     backend::{
         allocator::{
@@ -47,7 +45,7 @@ use smithay::{
             damage::Error as OutputDamageTrackerError,
             element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElementStates},
             gles::GlesRenderer,
-            multigpu::{drm::DrmPixmanBackend, gbm::GbmGlesBackend, GpuManager},
+            multigpu::{drm::DrmPixmanBackend, gbm::GbmGlesBackend, GpuManager, MultiTexture},
             Bind, DebugFlags, ImportAll, ImportDma, ImportMem, ImportMemWl, Renderer,
         },
         session::{
@@ -401,7 +399,8 @@ pub fn run_udev() {
     state.shm_state.update_formats(shm_formats);
 
     let dmabuf_formats = if state.backend_data.primary_use_software {
-        let renderer = state
+        #[cfg_attr(not(feature = "debug"), allow(unused_mut))]
+        let mut renderer = state
             .backend_data
             .software_gpus
             .single_renderer(&primary_gpu)
@@ -1943,7 +1942,7 @@ fn render_surface<'a, R>(
     show_window_preview: bool,
 ) -> Result<(bool, RenderElementStates), SwapBuffersError>
 where
-    R: Renderer + ImportAll + ImportMem + Bind<Dmabuf>,
+    R: Renderer<TextureId = MultiTexture> + ImportAll + ImportMem + Bind<Dmabuf>,
     <R as Renderer>::TextureId: Clone + Send + 'static,
     <R as Renderer>::Error: Send + Sync + 'static,
     SwapBuffersError: From<<R as Renderer>::Error>,
