@@ -10,6 +10,9 @@ use tracing::warn;
 use wayland_server::protocol::wl_buffer;
 
 use crate::backend::allocator::dmabuf::DmabufAllocator;
+#[cfg(feature = "backend_gbm")]
+use crate::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
+use crate::backend::drm::DrmDeviceFd;
 use crate::backend::renderer::pixman::PixmanError;
 use crate::backend::renderer::{ImportDma, ImportMem, Renderer};
 use crate::backend::SwapBuffersError;
@@ -52,23 +55,71 @@ impl From<Error> for SwapBuffersError {
     }
 }
 
+/// Device used to allocate buffers from
+#[derive(Debug)]
+pub enum AllocatorDevice<'a> {
+    /// Drm device to be used
+    Drm(&'a DrmDevice),
+    /// Gbm device to be used
+    #[cfg(feature = "backend_gbm")]
+    Gbm(&'a GbmDevice<DrmDeviceFd>),
+}
+
+impl<'a> From<&'a DrmDevice> for AllocatorDevice<'a> {
+    fn from(device: &'a DrmDevice) -> Self {
+        AllocatorDevice::Drm(device)
+    }
+}
+
+impl<'a> From<&'a GbmDevice<DrmDeviceFd>> for AllocatorDevice<'a> {
+    fn from(device: &'a GbmDevice<DrmDeviceFd>) -> Self {
+        AllocatorDevice::Gbm(device)
+    }
+}
+
+#[derive(Debug)]
+enum BackendAllocator {
+    Dumb(DumbAllocator),
+    #[cfg(feature = "backend_gbm")]
+    Gbm(GbmAllocator<DrmDeviceFd>),
+}
+
 /// A [`GraphicsApi`] utilizing user-provided DRM Devices and Pixman for rendering.
 #[derive(Debug)]
 pub struct DrmPixmanBackend {
-    devices: HashMap<DrmNode, DumbAllocator>,
+    devices: HashMap<DrmNode, BackendAllocator>,
+    #[cfg(feature = "backend_gbm")]
+    gbm_allocator_flags: GbmBufferFlags,
     needs_enumeration: AtomicBool,
 }
 
 impl DrmPixmanBackend {
     /// Add a new DRM device for a given node to the api
-    pub fn add_node(&mut self, node: DrmNode, drm: &DrmDevice) {
+    pub fn add_node<'a>(&mut self, node: DrmNode, allocator_device: impl Into<AllocatorDevice<'a>>) {
         if self.devices.contains_key(&node) {
             return;
         }
 
-        let allocator = DumbAllocator::new(drm.device_fd().clone());
+        let allocator_device = allocator_device.into();
+        let allocator = match allocator_device {
+            AllocatorDevice::Drm(drm) => BackendAllocator::Dumb(DumbAllocator::new(drm.device_fd().clone())),
+            #[cfg(feature = "backend_gbm")]
+            AllocatorDevice::Gbm(gbm) => {
+                BackendAllocator::Gbm(GbmAllocator::new(gbm.clone(), self.gbm_allocator_flags))
+            }
+        };
+
         self.devices.insert(node, allocator);
         self.needs_enumeration.store(true, Ordering::SeqCst);
+    }
+
+    /// Sets the default flags to use for allocating buffers via the [`GbmAllocator`]
+    /// provided by these backends devices.
+    ///
+    /// Only affects nodes added via [`add_node`][Self::add_node] *after* calling this method.
+    #[cfg(feature = "backend_gbm")]
+    pub fn set_gbm_allocator_flags(&mut self, flags: GbmBufferFlags) {
+        self.gbm_allocator_flags = flags;
     }
 
     /// Remove a given node from the api
@@ -84,6 +135,8 @@ impl Default for DrmPixmanBackend {
     fn default() -> Self {
         Self {
             devices: Default::default(),
+            #[cfg(feature = "backend_gbm")]
+            gbm_allocator_flags: GbmBufferFlags::RENDERING,
             needs_enumeration: AtomicBool::new(true),
         }
     }
@@ -113,13 +166,20 @@ impl GraphicsApi for DrmPixmanBackend {
                     .iter()
                     .any(|renderer| renderer.node.dev_id() == node.dev_id())
             })
-            .map(|(node, drm)| {
+            .map(|(node, backend_allocator)| {
                 let renderer = PixmanRenderer::new()?;
+
+                let allocator: Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>> = match backend_allocator
+                {
+                    BackendAllocator::Dumb(allocator) => Box::new(DmabufAllocator(allocator.clone())),
+                    #[cfg(feature = "backend_gbm")]
+                    BackendAllocator::Gbm(allocator) => Box::new(DmabufAllocator(allocator.clone())),
+                };
 
                 Ok(DrmPixmanDevice {
                     node: *node,
                     renderer,
-                    allocator: Box::new(DmabufAllocator(drm.clone())),
+                    allocator,
                 })
             })
             .flat_map(|x: Result<DrmPixmanDevice, Error>| match x {
