@@ -1398,22 +1398,34 @@ impl AnvilState<UdevData> {
         }
 
         if device.use_software {
+            let mut renderer = self
+                .backend_data
+                .software_gpus
+                .single_renderer(&device.render_node)
+                .unwrap();
+            let _ = device
+                .drm_output_manager
+                .try_to_restore_modifiers::<_, OutputRenderElements<_, WindowRenderElement<_>>>(
+                    &mut renderer,
+                    // FIXME: For a flicker free operation we should return the actual elements for this output..
+                    // Instead we just use black to "simulate" a modeset :)
+                    &DrmOutputRenderElements::default(),
+                );
         } else {
+            let mut renderer = self
+                .backend_data
+                .hardware_gpus
+                .single_renderer(&device.render_node)
+                .unwrap();
+            let _ = device
+                .drm_output_manager
+                .try_to_restore_modifiers::<_, OutputRenderElements<_, WindowRenderElement<_>>>(
+                    &mut renderer,
+                    // FIXME: For a flicker free operation we should return the actual elements for this output..
+                    // Instead we just use black to "simulate" a modeset :)
+                    &DrmOutputRenderElements::default(),
+                );
         };
-
-        let mut renderer = self
-            .backend_data
-            .hardware_gpus
-            .single_renderer(&device.render_node)
-            .unwrap();
-        let _ = device
-            .drm_output_manager
-            .try_to_restore_modifiers::<_, OutputRenderElements<_, WindowRenderElement<_>>>(
-                &mut renderer,
-                // FIXME: For a flicker free operation we should return the actual elements for this output..
-                // Instead we just use black to "simulate" a modeset :)
-                &DrmOutputRenderElements::default(),
-            );
     }
 
     fn device_changed(&mut self, node: DrmNode) {
