@@ -717,7 +717,12 @@ impl PixmanRenderer {
         }
 
         let size = dmabuf.size();
-        let format = dmabuf.format();
+        let mut format = dmabuf.format();
+
+        if format.modifier == DrmModifier::Invalid {
+            tracing::warn!("got dmabuf with implicit modifier, treating as linear");
+            format.modifier = DrmModifier::Linear;
+        }
 
         if format.modifier != DrmModifier::Linear {
             return Err(PixmanError::UnsupportedModifier(format.modifier));
