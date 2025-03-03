@@ -201,7 +201,8 @@ use indexmap::{IndexMap, IndexSet};
 use rustix::fs::{seek, SeekFrom};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1},
-    zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
+    zwp_linux_dmabuf_feedback_v1::{self, TrancheFlags},
+    zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
     backend::{GlobalId, InvalidId},
@@ -316,7 +317,7 @@ impl DmabufFeedbackBuilder {
         let feedback_formats: IndexSet<Format> = formats.into_iter().collect();
         let format_indices: IndexSet<usize> = (0..feedback_formats.len()).collect();
         let main_tranche = DmabufFeedbackTranche {
-            flags: zwp_linux_dmabuf_feedback_v1::TrancheFlags::empty(),
+            flags: zwp_linux_dmabuf_feedback_v1::TrancheFlags::Sampling,
             indices: format_indices,
             target_device: main_device,
         };
@@ -341,11 +342,9 @@ impl DmabufFeedbackBuilder {
     pub fn add_preference_tranche(
         mut self,
         target_device: libc::dev_t,
-        flags: Option<zwp_linux_dmabuf_feedback_v1::TrancheFlags>,
+        flags: zwp_linux_dmabuf_feedback_v1::TrancheFlags,
         formats: impl IntoIterator<Item = Format>,
     ) -> Self {
-        let flags = flags.unwrap_or(zwp_linux_dmabuf_feedback_v1::TrancheFlags::empty());
-
         let mut tranche = DmabufFeedbackTranche {
             target_device,
             flags,
@@ -447,7 +446,9 @@ impl PartialEq for DmabufFeedback {
 impl DmabufFeedback {
     /// Send this feedback to the provided [`ZwpLinuxDmabufFeedbackV1`](zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1)
     pub fn send(&self, feedback: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1) {
-        feedback.main_device(self.0.main_device.to_ne_bytes().to_vec());
+        if feedback.version() <= 5 {
+            feedback.main_device(self.0.main_device.to_ne_bytes().to_vec());
+        }
         feedback.format_table(
             self.0.format_table.file.as_fd(),
             self.0.format_table.file.size() as u32,
@@ -455,7 +456,11 @@ impl DmabufFeedback {
 
         for tranche in self.0.tranches.iter() {
             feedback.tranche_target_device(tranche.target_device.to_ne_bytes().to_vec());
-            feedback.tranche_flags(tranche.flags);
+            if feedback.version() <= 5 && tranche.flags.contains(TrancheFlags::Scanout) {
+                feedback.tranche_flags(TrancheFlags::Scanout);
+            } else {
+                feedback.tranche_flags(tranche.flags);
+            }
             feedback.tranche_formats(
                 tranche
                     .indices
@@ -473,7 +478,9 @@ impl DmabufFeedback {
         self.0
             .tranches
             .iter()
-            .filter(|tranche| tranche.target_device == self.0.main_device && tranche.flags.is_empty())
+            .filter(|tranche| {
+                tranche.target_device == self.0.main_device && tranche.flags == TrancheFlags::Sampling
+            })
             .map(|tranche| tranche.indices.clone())
             .reduce(|mut acc, item| {
                 acc.extend(item);
@@ -717,7 +724,7 @@ impl DmabufState {
             );
 
         let formats = Arc::new(formats);
-        let version = if default_feedback.is_some() { 5 } else { 3 };
+        let version = if default_feedback.is_some() { 6 } else { 3 };
 
         let known_default_feedbacks = Arc::new(Mutex::new(Vec::new()));
         let default_feedback = default_feedback.map(|f| Arc::new(Mutex::new(f.clone())));
@@ -836,6 +843,8 @@ pub struct DmabufParamsData {
     /// Pending planes for the params.
     modifier: Mutex<Option<Modifier>>,
     planes: Mutex<Vec<Plane>>,
+
+    node: Mutex<Option<libc::dev_t>>,
 }
 
 /// A handle to a registered dmabuf global.
