@@ -188,11 +188,12 @@ impl MemoryBuffer {
 
     /// Resize this buffer to the size specified
     pub fn resize(&mut self, size: impl Into<Size<i32, Buffer>>) -> bool {
-        let size = size.into();
-        let stride = size.w * (get_bpp(self.format).expect("Format with unknown bits per pixel") / 8) as i32;
-        let mem = Arc::make_mut(&mut self.mem);
-        let mem_size = (stride * size.h) as usize;
-        if mem.len() != mem_size {
+        self.size = size.into();
+        self.stride =
+            self.size.w * (get_bpp(self.format).expect("Format with unknown bits per pixel") / 8) as i32;
+        let mem_size = (self.stride * self.size.h) as usize;
+        if self.mem.len() != mem_size {
+            let mem = Arc::make_mut(&mut self.mem);
             mem.resize(mem_size, 0);
             true
         } else {
