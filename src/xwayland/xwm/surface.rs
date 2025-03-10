@@ -27,9 +27,12 @@ use wayland_server::protocol::wl_surface::WlSurface;
 use x11rb::{
     connection::Connection as _,
     properties::{WmClass, WmHints, WmSizeHints},
-    protocol::xproto::{
-        Atom, AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask, InputFocus,
-        PropMode, Window as X11Window,
+    protocol::{
+        res::{query_client_ids, ClientIdSpec},
+        xproto::{
+            Atom, AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask,
+            InputFocus, PropMode, Window as X11Window,
+        },
     },
     rust_connection::{ConnectionError, RustConnection},
     wrapper::ConnectionExt,
@@ -923,6 +926,40 @@ impl X11Surface {
             conn.destroy_window(self.window)?;
         }
         conn.flush()
+    }
+
+    /// Get the client PID associated with the X11 window.
+    pub fn get_client_pid(&self) -> Result<u32, Box<dyn std::error::Error>> {
+        if let Some(connection) = self.conn.upgrade() {
+            let window = self.window;
+
+            match query_client_ids(
+                &connection,
+                &[ClientIdSpec {
+                    client: window,
+                    mask: x11rb::protocol::res::ClientIdMask::LOCAL_CLIENT_PID,
+                }],
+            ) {
+                Ok(cookie) => {
+                    let reply = cookie.reply()?;
+
+                    if let Some(id_value) = reply.ids.first() {
+                        if let Some(pid) = id_value.value.first().copied() {
+                            return Ok(pid);
+                        } else {
+                            return Err(Box::new(std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                "No matching client ID found",
+                            )));
+                        }
+                    }
+                }
+                Err(_) => {
+                    return Ok(0);
+                }
+            }
+        }
+        Ok(0)
     }
 }
 
