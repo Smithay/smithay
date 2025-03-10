@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConnectError","ConnectionError","DisplayParsingError","LibxcbLoadError","ParseError","ReplyError","ReplyOrIdError"],"struct":["IdsExhausted"]};
