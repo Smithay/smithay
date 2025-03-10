@@ -1219,9 +1219,11 @@ impl Offscreen<Image<'static, 'static>> for PixmanRenderer {
     }
 }
 
-impl Bind<Image<'static, 'static>> for PixmanRenderer {
+impl<'data> Bind<Image<'data, 'static>> for PixmanRenderer {
     #[profiling::function]
-    fn bind<'a>(&mut self, target: &'a mut Image<'static, 'static>) -> Result<PixmanTarget<'a>, Self::Error> {
+    fn bind<'a>(&mut self, target: &'a mut Image<'data, 'static>) -> Result<PixmanTarget<'a>, Self::Error> {
+        let target =
+            unsafe { std::mem::transmute::<&mut pixman::Image<'_, '_>, &mut pixman::Image<'_, '_>>(target) };
         Ok(PixmanTarget(PixmanTargetInternal::Image(target)))
     }
 
