@@ -84,7 +84,7 @@ pkg-config = { version = "0.3.17", optional = true }
 cc = { version = "1.0.79", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_pixman", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_pixman", "renderer_auto", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"]
 backend_winit = ["winit", "backend_egl", "wayland-client", "wayland-cursor", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/xinput", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
@@ -102,6 +102,7 @@ renderer_gl = ["gl_generator", "backend_egl"]
 renderer_glow = ["renderer_gl", "glow"]
 renderer_multi = ["backend_drm", "aliasable"]
 renderer_pixman = ["pixman"]
+renderer_auto = []
 renderer_test = []
 use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys", "gbm?/import-wayland"]
 use_bindgen = ["drm-ffi/use_bindgen", "gbm/use_bindgen", "input/use_bindgen"]
