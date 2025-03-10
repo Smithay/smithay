@@ -134,6 +134,23 @@ impl GlowRenderer {
         }
         Ok(func(&self.glow))
     }
+
+    /// Run custom code in the GL context owned by this renderer after turning
+    /// the given target into the current framebuffer.
+    ///
+    /// The OpenGL state of the renderer is considered an implementation detail
+    /// and no guarantee is made about what can or cannot be changed,
+    /// as such you should reset everything you change back to its previous value
+    /// or check the source code of the version of Smithay you are using to ensure
+    /// your changes don't interfere with the renderer's behavior.
+    /// Doing otherwise can lead to rendering errors while using other functions of this renderer.    
+    pub fn with_context_bound_fb<F, R>(&mut self, fb: &GlesTarget<'_>, func: F) -> Result<R, GlesError>
+    where
+        F: FnOnce(&Arc<Context>) -> R,
+    {
+        fb.0.make_current(&self.gl.gl, &self.gl.egl_context());
+        Ok(func(&self.glow))
+    }
 }
 
 impl GlowFrame<'_, '_> {

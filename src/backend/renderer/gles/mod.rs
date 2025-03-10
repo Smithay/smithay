@@ -1788,6 +1788,24 @@ impl GlesRenderer {
         Ok(func(&self.gl))
     }
 
+    /// Run custom code in the GL context owned by this renderer after turning
+    /// the given target into the current framebuffer.
+    ///
+    /// The OpenGL state of the renderer is considered an implementation detail
+    /// and no guarantee is made about what can or cannot be changed,
+    /// as such you should reset everything you change back to its previous value
+    /// or check the source code of the version of Smithay you are using to ensure
+    /// your changes don't interfere with the renderer's behavior.
+    /// Doing otherwise can lead to rendering errors while using other functions of this renderer.    
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
+    pub fn with_context_bound_fb<F, R>(&mut self, fb: &GlesTarget<'_>, func: F) -> Result<R, GlesError>
+    where
+        F: FnOnce(&ffi::Gles2) -> R,
+    {
+        fb.0.make_current(&self.gl, &self.egl)?;
+        Ok(func(&self.gl))
+    }
+
     /// Compile a custom pixel shader for rendering with [`GlesFrame::render_pixel_shader_to`].
     ///
     /// Pixel shaders can be used for completely shader-driven drawing into a given region.
