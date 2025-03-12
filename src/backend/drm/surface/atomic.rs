@@ -368,7 +368,7 @@ impl AtomicDrmSurface {
             self.fd
                 .atomic_commit(
                     AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
-                    req.build(),
+                    req.build()?,
                 )
                 .map_err(|_| Error::TestFailed(self.crtc))?;
 
@@ -427,7 +427,7 @@ impl AtomicDrmSurface {
         self.fd
             .atomic_commit(
                 AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
-                req.build(),
+                req.build()?,
             )
             .map_err(|_| Error::TestFailed(self.crtc))?;
 
@@ -485,7 +485,7 @@ impl AtomicDrmSurface {
         self.fd
             .atomic_commit(
                 AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
-                req.build(),
+                req.build()?,
             )
             .map_err(|_| Error::TestFailed(self.crtc))?;
 
@@ -539,7 +539,7 @@ impl AtomicDrmSurface {
             .fd
             .atomic_commit(
                 AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
-                req.build(),
+                req.build()?,
             )
             .map_err(|_| Error::TestFailed(self.crtc))
         {
@@ -723,7 +723,7 @@ impl AtomicDrmSurface {
         } else {
             AtomicCommitFlags::TEST_ONLY
         };
-        self.fd.atomic_commit(flags, req.build()).map_err(|source| {
+        self.fd.atomic_commit(flags, req.build()?).map_err(|source| {
             Error::Access(AccessError {
                 errmsg: "Error testing state",
                 dev: self.fd.dev_path(),
@@ -792,7 +792,7 @@ impl AtomicDrmSurface {
 
             if let Err(err) = self.fd.atomic_commit(
                 AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
-                req.build(),
+                req.build()?,
             ) {
                 warn!("New screen configuration invalid!:\n\t{:?}\n\t{}\n", req, err);
 
@@ -827,7 +827,7 @@ impl AtomicDrmSurface {
                 } else {
                     AtomicCommitFlags::ALLOW_MODESET
                 },
-                req.build(),
+                req.build()?,
             )
             .map_err(|source| {
                 Error::Access(AccessError {
@@ -889,7 +889,7 @@ impl AtomicDrmSurface {
                 } else {
                     AtomicCommitFlags::NONBLOCK
                 },
-                req.build(),
+                req.build()?,
             )
             .map_err(|source| {
                 Error::Access(AccessError {
@@ -924,7 +924,7 @@ impl AtomicDrmSurface {
         let mapping = self.prop_mapping.read().unwrap();
         let mut req = AtomicRequest::new(&mapping);
         req.reset_plane(plane);
-        let req = req.build();
+        let req = req.build()?;
 
         let result = self
             .fd
@@ -970,7 +970,7 @@ impl AtomicDrmSurface {
 
         let res = self
             .fd
-            .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req.build())
+            .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req.build()?)
             .map_err(|source| {
                 Error::Access(AccessError {
                     errmsg: "Failed to commit on clear_state",
@@ -1305,30 +1305,26 @@ impl<'a> AtomicRequest<'a> {
         }
     }
 
-    fn build(&self) -> AtomicModeReq {
+    fn build(&self) -> Result<AtomicModeReq, Error> {
         let mut req = AtomicModeReq::new();
 
         for (crtc, props) in &self.crtc_props {
             for (name, value) in props {
-                req.add_property(*crtc, self.mapping.crtc_prop_handle(*crtc, name).unwrap(), *value);
+                req.add_property(*crtc, self.mapping.crtc_prop_handle(*crtc, name)?, *value);
             }
         }
         for (conn, props) in &self.connector_props {
             for (name, value) in props {
-                req.add_property(*conn, self.mapping.conn_prop_handle(*conn, name).unwrap(), *value);
+                req.add_property(*conn, self.mapping.conn_prop_handle(*conn, name)?, *value);
             }
         }
         for (plane, props) in &self.plane_props {
             for (name, value) in props {
-                req.add_property(
-                    *plane,
-                    self.mapping.plane_prop_handle(*plane, name).unwrap(),
-                    *value,
-                );
+                req.add_property(*plane, self.mapping.plane_prop_handle(*plane, name)?, *value);
             }
         }
 
-        req
+        Ok(req)
     }
 }
 
