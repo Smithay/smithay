@@ -38,7 +38,7 @@ impl PropMapping {
     ) -> Result<property::Handle, Error> {
         self.connectors
             .get(&handle)
-            .expect("Unknown handle")
+            .ok_or(Error::UnknownConnector(handle))?
             .get(name)
             .ok_or_else(|| Error::UnknownProperty {
                 handle: handle.into(),
@@ -54,7 +54,7 @@ impl PropMapping {
     ) -> Result<property::Handle, Error> {
         self.crtcs
             .get(&handle)
-            .expect("Unknown handle")
+            .ok_or(Error::UnknownCrtc(handle))?
             .get(name)
             .ok_or_else(|| Error::UnknownProperty {
                 handle: handle.into(),
@@ -70,7 +70,7 @@ impl PropMapping {
     ) -> Result<property::Handle, Error> {
         self.planes
             .get(&handle)
-            .expect("Unknown handle")
+            .ok_or(Error::UnknownPlane(handle))?
             .get(name)
             .ok_or_else(|| Error::UnknownProperty {
                 handle: handle.into(),

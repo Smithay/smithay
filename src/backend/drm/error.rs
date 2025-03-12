@@ -66,6 +66,15 @@ pub enum Error {
         /// CRTC
         crtc: crtc::Handle,
     },
+    /// Unknown connector handle
+    #[error("The connector ({0:?}) is unknown")]
+    UnknownConnector(connector::Handle),
+    /// Unknown crtc handle
+    #[error("The crtc ({0:?}) is unknown")]
+    UnknownCrtc(crtc::Handle),
+    /// Unknown crtc handle
+    #[error("The plane ({0:?}) is unknown")]
+    UnknownPlane(plane::Handle),
     /// The DrmDevice is missing a required property
     #[error("The DrmDevice is missing a required property '{name}' for handle ({handle:?})")]
     UnknownProperty {
