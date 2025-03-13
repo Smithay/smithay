@@ -206,6 +206,11 @@ impl XdgActivationState {
         self.known_tokens.get_key_value(&token).unwrap()
     }
 
+    /// Iterate over all known tokens and their associated data
+    pub fn tokens(&self) -> impl Iterator<Item = (&XdgActivationToken, &XdgActivationTokenData)> {
+        self.known_tokens.iter()
+    }
+
     /// Access the data of a known token
     pub fn data_for_token(&self, token: &XdgActivationToken) -> Option<&XdgActivationTokenData> {
         self.known_tokens.get(token)
