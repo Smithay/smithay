@@ -923,7 +923,7 @@ impl AtomicDrmSurface {
 
         let mapping = self.prop_mapping.read().unwrap();
         let mut req = AtomicRequest::new(&mapping);
-        req.reset_plane(plane);
+        req.reset_plane(plane)?;
         let req = req.build()?;
 
         let result = self
@@ -955,17 +955,17 @@ impl AtomicDrmSurface {
         let mut req = AtomicRequest::new(&prop_mapping);
         // reset all planes we used
         for plane in self.used_planes.lock().unwrap().iter() {
-            req.reset_plane(*plane);
+            req.reset_plane(*plane)?;
         }
 
         // disable connectors again
         let current = self.state.read().unwrap();
         for conn in current.connectors.iter() {
-            req.reset_connector(*conn);
+            req.reset_connector(*conn)?;
         }
 
         // disable crtc
-        req.reset_crtc(self.crtc);
+        req.reset_crtc(self.crtc)?;
         std::mem::drop(current);
 
         let res = self
@@ -1145,14 +1145,16 @@ impl<'a> AtomicRequest<'a> {
         }
     }
 
-    fn set_connector(&mut self, conn: connector::Handle, crtc: crtc::Handle) {
+    fn set_connector(&mut self, conn: connector::Handle, crtc: crtc::Handle) -> Result<(), Error> {
         let connector_props = self.connector_props.entry(conn).or_default();
         connector_props.insert("CRTC_ID", property::Value::CRTC(Some(crtc)));
+        Ok(())
     }
 
-    fn reset_connector(&mut self, conn: connector::Handle) {
+    fn reset_connector(&mut self, conn: connector::Handle) -> Result<(), Error> {
         let connector_props = self.connector_props.entry(conn).or_default();
         connector_props.insert("CRTC_ID", property::Value::CRTC(None));
+        Ok(())
     }
 
     fn set_crtc(
@@ -1179,7 +1181,7 @@ impl<'a> AtomicRequest<'a> {
         Ok(())
     }
 
-    fn reset_crtc(&mut self, crtc: crtc::Handle) {
+    fn reset_crtc(&mut self, crtc: crtc::Handle) -> Result<(), Error> {
         let crtc_props = self.crtc_props.entry(crtc).or_default();
 
         crtc_props.insert("ACTIVE", property::Value::Boolean(false));
@@ -1187,6 +1189,7 @@ impl<'a> AtomicRequest<'a> {
         if self.mapping.crtc_prop_handle(crtc, "VRR_ENABLED").is_ok() {
             crtc_props.insert("VRR_ENABLED", property::Value::Boolean(false));
         }
+        Ok(())
     }
 
     fn set_plane(&mut self, crtc: crtc::Handle, plane_state: &PlaneState<'a>) -> Result<(), Error> {
@@ -1266,13 +1269,13 @@ impl<'a> AtomicRequest<'a> {
                 });
             }
         } else {
-            self.reset_plane(handle);
+            self.reset_plane(handle)?;
         }
 
         Ok(())
     }
 
-    fn reset_plane(&mut self, plane: plane::Handle) {
+    fn reset_plane(&mut self, plane: plane::Handle) -> Result<(), Error> {
         let plane_props = self.plane_props.entry(plane).or_default();
 
         plane_props.insert("CRTC_ID", property::Value::CRTC(None));
@@ -1303,6 +1306,7 @@ impl<'a> AtomicRequest<'a> {
         if self.mapping.plane_prop_handle(plane, "IN_FENCE_FD").is_ok() {
             plane_props.insert("IN_FENCE_FD", property::Value::SignedRange(-1));
         }
+        Ok(())
     }
 
     fn build(&self) -> Result<AtomicModeReq, Error> {
@@ -1337,20 +1341,22 @@ impl<'a> AtomicRequest<'a> {
         }
     }
 
-    fn set_connector(&mut self, conn: connector::Handle, crtc: crtc::Handle) {
+    fn set_connector(&mut self, conn: connector::Handle, crtc: crtc::Handle) -> Result<(), Error> {
         self.request.add_property(
             conn,
-            self.mapping.conn_prop_handle(conn, "CRTC_ID").unwrap(),
+            self.mapping.conn_prop_handle(conn, "CRTC_ID")?,
             property::Value::CRTC(Some(crtc)),
         );
+        Ok(())
     }
 
-    fn reset_connector(&mut self, conn: connector::Handle) {
+    fn reset_connector(&mut self, conn: connector::Handle) -> Result<(), Error> {
         self.request.add_property(
             conn,
-            self.mapping.conn_prop_handle(conn, "CRTC_ID").unwrap(),
+            self.mapping.conn_prop_handle(conn, "CRTC_ID")?,
             property::Value::CRTC(None),
         );
+        Ok(())
     }
 
     fn set_crtc(
@@ -1383,21 +1389,22 @@ impl<'a> AtomicRequest<'a> {
         Ok(())
     }
 
-    fn reset_crtc(&mut self, crtc: crtc::Handle) {
+    fn reset_crtc(&mut self, crtc: crtc::Handle) -> Result<(), Error> {
         self.request.add_property(
             crtc,
-            self.mapping.crtc_prop_handle(crtc, "ACTIVE").unwrap(),
+            self.mapping.crtc_prop_handle(crtc, "ACTIVE")?,
             property::Value::Boolean(false),
         );
         self.request.add_property(
             crtc,
-            self.mapping.crtc_prop_handle(crtc, "MODE_ID").unwrap(),
+            self.mapping.crtc_prop_handle(crtc, "MODE_ID")?,
             property::Value::Blob(0),
         );
         if let Ok(prop) = self.mapping.crtc_prop_handle(crtc, "VRR_ENABLED") {
             self.request
                 .add_property(crtc, prop, property::Value::Boolean(false));
         }
+        Ok(())
     }
 
     fn set_plane(&mut self, crtc: crtc::Handle, plane_state: &PlaneState<'_>) -> Result<(), Error> {
@@ -1513,69 +1520,69 @@ impl<'a> AtomicRequest<'a> {
                 });
             }
         } else {
-            self.reset_plane(handle);
+            self.reset_plane(handle)?;
         }
 
         Ok(())
     }
 
-    fn reset_plane(&mut self, plane: plane::Handle) {
+    fn reset_plane(&mut self, plane: plane::Handle) -> Result<(), Error> {
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_ID").unwrap(),
+            self.mapping.plane_prop_handle(plane, "CRTC_ID")?,
             property::Value::CRTC(None),
         );
 
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "FB_ID").unwrap(),
+            self.mapping.plane_prop_handle(plane, "FB_ID")?,
             property::Value::Framebuffer(None),
         );
 
         // reset the plane properties
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "SRC_X").unwrap(),
+            self.mapping.plane_prop_handle(plane, "SRC_X")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "SRC_Y").unwrap(),
+            self.mapping.plane_prop_handle(plane, "SRC_Y")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "SRC_W").unwrap(),
+            self.mapping.plane_prop_handle(plane, "SRC_W")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "SRC_H").unwrap(),
+            self.mapping.plane_prop_handle(plane, "SRC_H")?,
             // these are 16.16. fixed point
             property::Value::UnsignedRange(0u64),
         );
 
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_X").unwrap(),
+            self.mapping.plane_prop_handle(plane, "CRTC_X")?,
             property::Value::SignedRange(0i64),
         );
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_Y").unwrap(),
+            self.mapping.plane_prop_handle(plane, "CRTC_Y")?,
             property::Value::SignedRange(0i64),
         );
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_W").unwrap(),
+            self.mapping.plane_prop_handle(plane, "CRTC_W")?,
             property::Value::UnsignedRange(0u64),
         );
         self.request.add_property(
             plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_H").unwrap(),
+            self.mapping.plane_prop_handle(plane, "CRTC_H")?,
             property::Value::UnsignedRange(0u64),
         );
         if let Ok(prop) = self.mapping.plane_prop_handle(plane, "rotation") {
@@ -1596,10 +1603,11 @@ impl<'a> AtomicRequest<'a> {
             self.request
                 .add_property(plane, prop, property::Value::SignedRange(-1));
         }
+        Ok(())
     }
 
-    fn build(&self) -> AtomicModeReq {
-        self.request.clone()
+    fn build(&self) -> Result<AtomicModeReq, Error> {
+        Ok(self.request.clone())
     }
 }
 
@@ -1620,7 +1628,7 @@ impl<'a> AtomicRequest<'a> {
 
         // for every connector that is new, we need to set our crtc_id
         for conn in connectors {
-            req.set_connector(*conn, crtc);
+            req.set_connector(*conn, crtc)?;
         }
 
         // for every connector that got removed, we need to set no crtc_id.
@@ -1628,7 +1636,7 @@ impl<'a> AtomicRequest<'a> {
         // in the right order to move a connector to another surface. otherwise we disable the
         // the connector here again...)
         for conn in removed_connectors {
-            req.reset_connector(*conn);
+            req.reset_connector(*conn)?;
         }
 
         // Set the crtc properties (active, mode_id, vrr_enabled).
