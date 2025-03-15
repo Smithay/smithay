@@ -97,6 +97,11 @@ where
     pub fn device_mut(&mut self) -> &mut DrmDevice {
         &mut self.device
     }
+
+    /// Access the [`Allocator`] of this output manager
+    pub fn allocator(&self) -> &A {
+        &self.allocator
+    }
 }
 
 impl<A, F, U, G> DrmOutputManager<A, F, U, G>
