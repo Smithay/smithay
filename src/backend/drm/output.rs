@@ -13,11 +13,7 @@ use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 
 use crate::{
     backend::{
-        allocator::{
-            dmabuf::{AsDmabuf, Dmabuf},
-            gbm::GbmDevice,
-            Allocator,
-        },
+        allocator::{gbm::GbmDevice, Allocator},
         renderer::{element::RenderElement, Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture},
     },
     output::OutputModeSource,
@@ -25,14 +21,14 @@ use crate::{
 
 use super::{
     compositor::{
-        DrmCompositor, FrameError, FrameFlags, FrameResult, PrimaryPlaneElement, RenderFrameError,
-        RenderFrameErrorType, RenderFrameResult,
+        AsRenderTarget, DefaultAsRenderTarget, DrmCompositor, FrameError, FrameFlags, FrameResult,
+        PrimaryPlaneElement, RenderFrameError, RenderFrameErrorType, RenderFrameResult,
     },
     exporter::ExportFramebuffer,
     DrmDevice, DrmError, Planes,
 };
 
-type CompositorList<A, F, U, G> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>>;
+type CompositorList<A, F, U, G, T> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G, T>>>>>;
 
 /// Provides synchronization between a [`DrmDevice`] and derived [`DrmOutput`]s.
 ///
@@ -43,7 +39,7 @@ type CompositorList<A, F, U, G> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmComp
 ///
 /// The `DrmOutputManager` provides a way to handle operation commonly affected by this by locking the
 /// whole device, while still providing [`DrmOutput`]-handles to drive individual surfaces.
-pub struct DrmOutputManager<A, F, U, G>
+pub struct DrmOutputManager<A, F, U, G, T = DefaultAsRenderTarget>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -54,12 +50,12 @@ where
     allocator: A,
     exporter: F,
     gbm: Option<GbmDevice<G>>,
-    compositor: CompositorList<A, F, U, G>,
+    compositor: CompositorList<A, F, U, G, T>,
     color_formats: Vec<DrmFourcc>,
     renderer_formats: Vec<DrmFormat>,
 }
 
-impl<A, F, U, G> fmt::Debug for DrmOutputManager<A, F, U, G>
+impl<A, F, U, G, T> fmt::Debug for DrmOutputManager<A, F, U, G, T>
 where
     A: Allocator + fmt::Debug,
     <A as Allocator>::Buffer: fmt::Debug,
@@ -67,6 +63,7 @@ where
     U: fmt::Debug,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
     G: AsFd + fmt::Debug + 'static,
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DrmOutputManager")
@@ -81,7 +78,7 @@ where
     }
 }
 
-impl<A, F, U, G> DrmOutputManager<A, F, U, G>
+impl<A, F, U, G, T> DrmOutputManager<A, F, U, G, T>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -99,7 +96,7 @@ where
     }
 }
 
-impl<A, F, U, G> DrmOutputManager<A, F, U, G>
+impl<A, F, U, G, T> DrmOutputManager<A, F, U, G, T>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -114,12 +111,12 @@ where
 
 /// Errors returned by `DrmOutputManager`'s methods
 #[derive(thiserror::Error, Debug)]
-pub enum DrmOutputManagerError<A, B, F, R>
+pub enum DrmOutputManagerError<A, F, R, T>
 where
     A: std::error::Error + Send + Sync + 'static,
-    B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
     R: std::error::Error + Send + Sync + 'static,
+    T: std::error::Error + Send + Sync + 'static,
 {
     /// The specified CRTC is already in use
     #[error("The specified CRTC {0:?} is already in use.")]
@@ -129,30 +126,27 @@ where
     Drm(#[from] DrmError),
     /// The underlying [`DrmCompositor`] returned an error
     #[error(transparent)]
-    Frame(FrameError<A, B, F>),
+    Frame(FrameError<A, F>),
     /// The underlying [`DrmCompositor`] returned an error upon rendering a frame
     #[error(transparent)]
-    RenderFrame(RenderFrameError<A, B, F, R>),
+    RenderFrame(RenderFrameError<A, F, R, T>),
 }
 
 /// Result returned by `DrmOutputManager`'s methods
-pub type DrmOutputManagerResult<U, A, F, R> = Result<
+pub type DrmOutputManagerResult<U, A, F, R, T> = Result<
     U,
     DrmOutputManagerError<
         <A as Allocator>::Error,
-        <<A as Allocator>::Buffer as AsDmabuf>::Error,
         <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
         <R as RendererSuper>::Error,
+        <T as AsRenderTarget<<A as Allocator>::Buffer, R>>::Error,
     >,
 >;
 
-impl<A, F, U, G> DrmOutputManager<A, F, U, G>
+impl<A, F, U, G, T> DrmOutputManager<A, F, U, G, T>
 where
     A: Allocator + std::clone::Clone + std::fmt::Debug,
-    <A as Allocator>::Buffer: AsDmabuf,
     <A as Allocator>::Error: Send + Sync + 'static,
-    <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
@@ -220,12 +214,14 @@ where
         planes: Option<Planes>,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> DrmOutputManagerResult<DrmOutput<A, F, U, G>, A, F, R>
+    ) -> DrmOutputManagerResult<DrmOutput<A, F, U, G, T>, A, F, R, T>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
+        R: Renderer,
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
+        T: AsRenderTarget<A::Buffer, R>,
+        R: for<'buffer> Bind<T::Target<'buffer>>,
     {
         let output_mode_source = output_mode_source.into();
 
@@ -235,11 +231,11 @@ where
         }
 
         let mut create_compositor =
-            |implicit_modifiers: bool| -> FrameResult<DrmCompositor<A, F, U, G>, A, F> {
+            |implicit_modifiers: bool| -> FrameResult<DrmCompositor<A, F, U, G, T>, A, F> {
                 let surface = self.device.create_surface(crtc, mode, connectors)?;
 
                 if implicit_modifiers {
-                    DrmCompositor::<A, F, U, G>::new(
+                    DrmCompositor::<A, F, U, G, T>::new(
                         output_mode_source.clone(),
                         surface,
                         planes.clone(),
@@ -254,7 +250,7 @@ where
                         self.gbm.clone(),
                     )
                 } else {
-                    DrmCompositor::<A, F, U, G>::new(
+                    DrmCompositor::<A, F, U, G, T>::new(
                         output_mode_source.clone(),
                         surface,
                         planes.clone(),
@@ -396,7 +392,7 @@ where
     /// Grants exclusive access to all underlying [`DrmCompositor`]s.
     pub fn with_compositors<R>(
         &mut self,
-        f: impl FnOnce(&HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>) -> R,
+        f: impl FnOnce(&HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G, T>>>) -> R,
     ) -> R {
         let write_guard = self.compositor.write().unwrap();
         f(&*write_guard)
@@ -416,12 +412,14 @@ where
         mode: Mode,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> DrmOutputManagerResult<(), A, F, R>
+    ) -> DrmOutputManagerResult<(), A, F, R, T>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
+        R: Renderer,
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
+        T: AsRenderTarget<A::Buffer, R>,
+        R: for<'buffer> Bind<T::Target<'buffer>>,
     {
         use_mode_internal(
             &self.compositor,
@@ -445,12 +443,14 @@ where
         &mut self,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> DrmOutputManagerResult<(), A, F, R>
+    ) -> DrmOutputManagerResult<(), A, F, R, T>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
+        R: Renderer,
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
+        T: AsRenderTarget<A::Buffer, R>,
+        R: for<'buffer> Bind<T::Target<'buffer>>,
     {
         let mut write_guard = self.compositor.write().unwrap();
 
@@ -517,20 +517,20 @@ where
 }
 
 /// A handle to an underlying [`DrmCompositor`] handled by an [`DrmOutputManager`].
-pub struct DrmOutput<A, F, U, G>
+pub struct DrmOutput<A, F, U, G, T = DefaultAsRenderTarget>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     G: AsFd + 'static,
 {
-    compositor: CompositorList<A, F, U, G>,
+    compositor: CompositorList<A, F, U, G, T>,
     crtc: crtc::Handle,
     allocator: A,
     renderer_formats: Vec<DrmFormat>,
 }
 
-impl<A, F, U, G> fmt::Debug for DrmOutput<A, F, U, G>
+impl<A, F, U, G, T> fmt::Debug for DrmOutput<A, F, U, G, T>
 where
     A: Allocator + fmt::Debug,
     <A as Allocator>::Buffer: fmt::Debug,
@@ -538,6 +538,7 @@ where
     U: fmt::Debug,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
     G: AsFd + fmt::Debug + 'static,
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_struct("DrmOutput");
@@ -550,12 +551,10 @@ where
     }
 }
 
-impl<A, F, U, G> DrmOutput<A, F, U, G>
+impl<A, F, U, G, T> DrmOutput<A, F, U, G, T>
 where
     A: Allocator + std::clone::Clone + fmt::Debug,
-    <A as Allocator>::Buffer: AsDmabuf,
     <A as Allocator>::Error: Send + Sync + 'static,
-    <<A as Allocator>::Buffer as AsDmabuf>::Error: std::marker::Send + std::marker::Sync + 'static,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
@@ -600,12 +599,14 @@ where
         elements: &'a [E],
         clear_color: impl Into<Color32F>,
         frame_mode: FrameFlags,
-    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
+    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R, T>>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
+        R: Renderer,
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
+        T: AsRenderTarget<A::Buffer, R>,
+        R: for<'buffer> Bind<T::Target<'buffer>>,
     {
         self.with_compositor(|compositor| {
             compositor.render_frame(renderer, elements, clear_color, frame_mode)
@@ -662,12 +663,14 @@ where
         mode: Mode,
         renderer: &mut R,
         render_elements: &DrmOutputRenderElements<R, E>,
-    ) -> DrmOutputManagerResult<(), A, F, R>
+    ) -> DrmOutputManagerResult<(), A, F, R, T>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
+        R: Renderer,
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
+        T: AsRenderTarget<A::Buffer, R>,
+        R: for<'buffer> Bind<T::Target<'buffer>>,
     {
         use_mode_internal(
             &self.compositor,
@@ -681,7 +684,7 @@ where
     }
 }
 
-impl<A, F, U, G> DrmOutput<A, F, U, G>
+impl<A, F, U, G, T> DrmOutput<A, F, U, G, T>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -694,9 +697,9 @@ where
     }
 
     /// Provides exclusive access to the underlying [`DrmCompositor`]
-    pub fn with_compositor<T, R>(&self, f: T) -> R
+    pub fn with_compositor<C, R>(&self, f: C) -> R
     where
-        T: FnOnce(&mut DrmCompositor<A, F, U, G>) -> R,
+        C: FnOnce(&mut DrmCompositor<A, F, U, G, T>) -> R,
     {
         let read_guard = self.compositor.read().unwrap();
         let mut compositor_guard = read_guard.get(&self.crtc).unwrap().lock().unwrap();
@@ -704,7 +707,7 @@ where
     }
 }
 
-impl<A, F, U, G> Drop for DrmOutput<A, F, U, G>
+impl<A, F, U, G, T> Drop for DrmOutput<A, F, U, G, T>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -717,21 +720,18 @@ where
     }
 }
 
-fn use_mode_internal<A, F, U, G, R, E>(
-    compositor: &CompositorList<A, F, U, G>,
+fn use_mode_internal<A, F, U, G, R, E, T>(
+    compositor: &CompositorList<A, F, U, G, T>,
     crtc: &crtc::Handle,
     mode: Mode,
     allocator: &A,
     renderer_formats: &[DrmFormat],
     renderer: &mut R,
     render_elements: &DrmOutputRenderElements<R, E>,
-) -> DrmOutputManagerResult<(), A, F, R>
+) -> DrmOutputManagerResult<(), A, F, R, T>
 where
     A: Allocator + std::clone::Clone + fmt::Debug,
-    <A as Allocator>::Buffer: AsDmabuf,
     <A as Allocator>::Error: Send + Sync + 'static,
-    <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
-        std::marker::Send + std::marker::Sync + 'static,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
@@ -739,9 +739,11 @@ where
     G: AsFd + std::clone::Clone + 'static,
     U: 'static,
     E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
+    R: Renderer,
     R::TextureId: Texture + 'static,
     R::Error: Send + Sync + 'static,
+    T: AsRenderTarget<A::Buffer, R>,
+    R: for<'buffer> Bind<T::Target<'buffer>>,
 {
     let mut write_guard = compositor.write().unwrap();
 
@@ -832,7 +834,7 @@ where
 pub struct DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
+    R: Renderer,
     R::TextureId: Texture + 'static,
     R::Error: Send + Sync + 'static,
 {
@@ -843,7 +845,7 @@ where
 impl<R, E> DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
+    R: Renderer,
     R::TextureId: Texture + 'static,
     R::Error: Send + Sync + 'static,
 {
@@ -868,7 +870,7 @@ where
 impl<R, E> Default for DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
+    R: Renderer,
     R::TextureId: Texture + 'static,
     R::Error: Send + Sync + 'static,
 {
@@ -880,7 +882,7 @@ where
 impl<R, E> DrmOutputRenderElements<R, E>
 where
     E: RenderElement<R>,
-    R: Renderer + Bind<Dmabuf>,
+    R: Renderer,
     R::TextureId: Texture + 'static,
     R::Error: Send + Sync + 'static,
 {
@@ -898,23 +900,22 @@ where
             .insert(*crtc, (elements.into_iter().collect(), clear_color));
     }
 
-    fn submit_composited_frame<A, F, U, G>(
+    fn submit_composited_frame<A, F, U, G, T>(
         &self,
-        compositor: &mut DrmCompositor<A, F, U, G>,
+        compositor: &mut DrmCompositor<A, F, U, G, T>,
         renderer: &mut R,
-    ) -> DrmOutputManagerResult<(), A, F, R>
+    ) -> DrmOutputManagerResult<(), A, F, R, T>
     where
         A: Allocator + std::clone::Clone + std::fmt::Debug,
-        <A as Allocator>::Buffer: AsDmabuf,
         <A as Allocator>::Error: Send + Sync + 'static,
-        <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
-            std::marker::Send + std::marker::Sync + 'static,
         F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
         <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
         <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
             std::marker::Send + std::marker::Sync + 'static,
         G: AsFd + std::clone::Clone + 'static,
         U: 'static,
+        T: AsRenderTarget<A::Buffer, R>,
+        R: for<'buffer> Bind<T::Target<'buffer>>,
     {
         let (elements, clear_color) = self
             .render_elements
