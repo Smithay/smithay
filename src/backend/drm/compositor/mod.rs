@@ -58,7 +58,11 @@
 //! # use std::{collections::HashSet, mem::MaybeUninit};
 //! #
 //! use smithay::{
-//!     backend::drm::{compositor::{DrmCompositor, FrameFlags}, DrmSurface},
+//!     backend::drm::{
+//!         compositor::{DrmCompositor, FrameFlags},
+//!         exporter::gbm::GbmFramebufferExporter,
+//!         DrmSurface,
+//!     },
 //!     output::{Output, PhysicalProperties, Subpixel},
 //!     utils::Size,
 //! };
@@ -80,7 +84,7 @@
 //! # let device: DrmDevice = todo!();
 //! # let surface: DrmSurface = todo!();
 //! # let allocator: GbmAllocator<DrmDeviceFd> = todo!();
-//! # let exporter: GbmDevice<DrmDeviceFd> = todo!();
+//! # let exporter: GbmFramebufferExporter<DrmDeviceFd> = todo!();
 //! # let color_formats = [DrmFourcc::Argb8888];
 //! # let renderer_formats = HashSet::from([DrmFormat {
 //! #     code: DrmFourcc::Argb8888,
@@ -172,7 +176,7 @@ use crate::{
 
 use super::{
     error::AccessError,
-    exporter::{ExportBuffer, ExportFramebuffer},
+    exporter::{gbm::GbmFramebufferExporter, ExportBuffer, ExportFramebuffer},
     surface::VrrSupport,
     DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes,
 };
@@ -839,7 +843,7 @@ pub(crate) type RenderFrameErrorType<A, F, R> = RenderFrameError<
 #[derive(Debug)]
 struct CursorState<G: AsFd + 'static> {
     allocator: GbmAllocator<G>,
-    framebuffer_exporter: GbmDevice<G>,
+    framebuffer_exporter: GbmFramebufferExporter<G>,
     previous_output_transform: Option<Transform>,
     previous_output_scale: Option<Scale<f64>>,
     #[cfg(feature = "renderer_pixman")]
@@ -1223,9 +1227,10 @@ where
 
                         let cursor_allocator =
                             GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
+                        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone());
                         CursorState {
                             allocator: cursor_allocator,
-                            framebuffer_exporter: gbm,
+                            framebuffer_exporter,
                             previous_output_scale: None,
                             previous_output_transform: None,
                             #[cfg(feature = "renderer_pixman")]
@@ -1404,9 +1409,10 @@ where
 
             let cursor_allocator =
                 GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
+            let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone());
             CursorState {
                 allocator: cursor_allocator,
-                framebuffer_exporter: gbm,
+                framebuffer_exporter,
                 previous_output_scale: None,
                 previous_output_transform: None,
                 #[cfg(feature = "renderer_pixman")]
@@ -4415,5 +4421,6 @@ fn drm_compositor_is_send() {
         let _ = PhantomData::<T>;
     }
 
-    is_send::<DrmCompositor<GbmAllocator<DrmDeviceFd>, GbmDevice<DrmDeviceFd>, (), DrmDeviceFd>>();
+    is_send::<DrmCompositor<GbmAllocator<DrmDeviceFd>, GbmFramebufferExporter<DrmDeviceFd>, (), DrmDeviceFd>>(
+    );
 }
