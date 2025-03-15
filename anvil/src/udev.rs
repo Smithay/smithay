@@ -28,10 +28,11 @@ use smithay::{
             dmabuf::Dmabuf,
             format::FormatSet,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
-            Fourcc,
+            Fourcc, Modifier,
         },
         drm::{
             compositor::{DrmCompositor, FrameFlags},
+            exporter::gbm::GbmFramebufferExporter,
             output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
             CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
             DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
@@ -358,7 +359,31 @@ pub fn run_udev() {
         })
         .unwrap();
 
+    // We try to initialize the primary node before others to make sure
+    // any display only node can fall back to the primary node for rendering
+    let primary_node = primary_gpu
+        .node_with_type(NodeType::Primary)
+        .and_then(|node| node.ok());
+    let primary_device = udev_backend.device_list().find(|(device_id, _)| {
+        primary_node
+            .map(|primary_node| *device_id == primary_node.dev_id())
+            .unwrap_or(false)
+            || *device_id == primary_gpu.dev_id()
+    });
+
+    if let Some((device_id, path)) = primary_device {
+        let node = DrmNode::from_dev_id(device_id).expect("failed to get primary node");
+        state
+            .device_added(node, path)
+            .expect("failed to initialize primary node");
+    }
+
+    let primary_device_id = primary_device.map(|(device_id, _)| device_id);
     for (device_id, path) in udev_backend.device_list() {
+        if Some(device_id) == primary_device_id {
+            continue;
+        }
+
         if let Err(err) = DrmNode::from_dev_id(device_id)
             .map_err(DeviceAddError::DrmNode)
             .and_then(|node| state.device_added(node, path))
@@ -422,21 +447,26 @@ pub fn run_udev() {
     state.backend_data.dmabuf_state = Some((dmabuf_state, global));
 
     let gpus = &mut state.backend_data.gpus;
-    state.backend_data.backends.values_mut().for_each(|backend_data| {
-        // Update the per drm surface dmabuf feedback
-        backend_data.surfaces.values_mut().for_each(|surface_data| {
-            surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
-                surface_data.drm_output.with_compositor(|compositor| {
-                    get_surface_dmabuf_feedback(
-                        primary_gpu,
-                        surface_data.render_node,
-                        gpus,
-                        compositor.surface(),
-                    )
-                })
+    state
+        .backend_data
+        .backends
+        .iter_mut()
+        .for_each(|(node, backend_data)| {
+            // Update the per drm surface dmabuf feedback
+            backend_data.surfaces.values_mut().for_each(|surface_data| {
+                surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
+                    surface_data.drm_output.with_compositor(|compositor| {
+                        get_surface_dmabuf_feedback(
+                            primary_gpu,
+                            surface_data.render_node,
+                            *node,
+                            gpus,
+                            compositor.surface(),
+                        )
+                    })
+                });
             });
         });
-    });
 
     // Expose syncobj protocol if supported by primary GPU
     if let Some(primary_node) = state
@@ -592,11 +622,11 @@ pub type GbmDrmCompositor = DrmCompositor<
 struct SurfaceData {
     dh: DisplayHandle,
     device_id: DrmNode,
-    render_node: DrmNode,
+    render_node: Option<DrmNode>,
     global: Option<GlobalId>,
     drm_output: DrmOutput<
         GbmAllocator<DrmDeviceFd>,
-        GbmDevice<DrmDeviceFd>,
+        GbmFramebufferExporter<DrmDeviceFd>,
         Option<OutputPresentationFeedback>,
         DrmDeviceFd,
     >,
@@ -623,12 +653,12 @@ struct BackendData {
     active_leases: Vec<DrmLease>,
     drm_output_manager: DrmOutputManager<
         GbmAllocator<DrmDeviceFd>,
-        GbmDevice<DrmDeviceFd>,
+        GbmFramebufferExporter<DrmDeviceFd>,
         Option<OutputPresentationFeedback>,
         DrmDeviceFd,
     >,
     drm_scanner: DrmScanner,
-    render_node: DrmNode,
+    render_node: Option<DrmNode>,
     registration_token: RegistrationToken,
 }
 
@@ -644,16 +674,25 @@ enum DeviceAddError {
     DrmNode(CreateDrmNodeError),
     #[error("Failed to add device to GpuManager: {0}")]
     AddNode(egl::Error),
+    #[error("The device has no render node")]
+    NoRenderNode,
+    #[error("Primary GPU is missing")]
+    PrimaryGpuMissing,
 }
 
 fn get_surface_dmabuf_feedback(
     primary_gpu: DrmNode,
-    render_node: DrmNode,
+    render_node: Option<DrmNode>,
+    scanout_node: DrmNode,
     gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
     surface: &DrmSurface,
 ) -> Option<SurfaceDmabufFeedback> {
     let primary_formats = gpus.single_renderer(&primary_gpu).ok()?.dmabuf_formats();
-    let render_formats = gpus.single_renderer(&render_node).ok()?.dmabuf_formats();
+    let render_formats = if let Some(render_node) = render_node {
+        gpus.single_renderer(&render_node).ok()?.dmabuf_formats()
+    } else {
+        FormatSet::default()
+    };
 
     let all_render_formats = primary_formats
         .iter()
@@ -678,11 +717,15 @@ fn get_surface_dmabuf_feedback(
         .collect::<FormatSet>();
 
     let builder = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), primary_formats);
-    let render_feedback = builder
-        .clone()
-        .add_preference_tranche(render_node.dev_id(), None, render_formats.clone())
-        .build()
-        .unwrap();
+    let render_feedback = if let Some(render_node) = render_node {
+        builder
+            .clone()
+            .add_preference_tranche(render_node.dev_id(), None, render_formats.clone())
+            .build()
+            .unwrap()
+    } else {
+        builder.clone().build().unwrap()
+    };
 
     let scanout_feedback = builder
         .add_preference_tranche(
@@ -690,7 +733,7 @@ fn get_surface_dmabuf_feedback(
             Some(zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout),
             planes_formats,
         )
-        .add_preference_tranche(render_node.dev_id(), None, render_formats)
+        .add_preference_tranche(scanout_node.dev_id(), None, render_formats)
         .build()
         .unwrap();
 
@@ -733,30 +776,72 @@ impl AnvilState<UdevData> {
             )
             .unwrap();
 
-        let render_node = EGLDevice::device_for_display(&unsafe { EGLDisplay::new(gbm.clone()).unwrap() })
-            .ok()
-            .and_then(|x| x.try_get_render_node().ok().flatten())
-            .unwrap_or(node);
+        let mut try_initialize_gpu = || {
+            let display = unsafe { EGLDisplay::new(gbm.clone()).map_err(DeviceAddError::AddNode)? };
+            let egl_device = EGLDevice::device_for_display(&display).map_err(DeviceAddError::AddNode)?;
 
-        self.backend_data
-            .gpus
-            .as_mut()
-            .add_node(render_node, gbm.clone())
-            .map_err(DeviceAddError::AddNode)?;
+            if egl_device.is_software() {
+                return Err(DeviceAddError::NoRenderNode);
+            }
 
-        let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
+            let render_node = egl_device.try_get_render_node().ok().flatten().unwrap_or(node);
+            self.backend_data
+                .gpus
+                .as_mut()
+                .add_node(render_node, gbm.clone())
+                .map_err(DeviceAddError::AddNode)?;
+
+            std::result::Result::<DrmNode, DeviceAddError>::Ok(render_node)
+        };
+
+        let render_node = try_initialize_gpu()
+            .inspect_err(|err| {
+                warn!(?err, "failed to initialize gpu");
+            })
+            .ok();
+
+        let allocator = render_node
+            .is_some()
+            .then(|| GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT))
+            .or_else(|| {
+                self.backend_data
+                    .backends
+                    .get(&self.backend_data.primary_gpu)
+                    .or_else(|| {
+                        self.backend_data
+                            .backends
+                            .values()
+                            .find(|backend| backend.render_node == Some(self.backend_data.primary_gpu))
+                    })
+                    .map(|backend| backend.drm_output_manager.allocator().clone())
+            })
+            .ok_or(DeviceAddError::PrimaryGpuMissing)?;
+
+        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone());
+
         let color_formats = if std::env::var("ANVIL_DISABLE_10BIT").is_ok() {
             SUPPORTED_FORMATS_8BIT_ONLY
         } else {
             SUPPORTED_FORMATS
         };
-        let mut renderer = self.backend_data.gpus.single_renderer(&render_node).unwrap();
-        let render_formats = renderer.as_mut().egl_context().dmabuf_render_formats().clone();
+        let mut renderer = self
+            .backend_data
+            .gpus
+            .single_renderer(&render_node.unwrap_or(self.backend_data.primary_gpu))
+            .unwrap();
+        let render_formats = renderer
+            .as_mut()
+            .egl_context()
+            .dmabuf_render_formats()
+            .iter()
+            .filter(|format| render_node.is_some() || format.modifier == Modifier::Linear)
+            .copied()
+            .collect::<FormatSet>();
 
-        let drm_device_manager = DrmOutputManager::new(
+        let drm_output_manager = DrmOutputManager::new(
             drm,
             allocator,
-            gbm.clone(),
+            framebuffer_exporter,
             Some(gbm),
             color_formats.iter().copied(),
             render_formats,
@@ -766,7 +851,7 @@ impl AnvilState<UdevData> {
             node,
             BackendData {
                 registration_token,
-                drm_output_manager: drm_device_manager,
+                drm_output_manager,
                 drm_scanner: DrmScanner::new(),
                 non_desktop_connectors: Vec::new(),
                 render_node,
@@ -792,11 +877,8 @@ impl AnvilState<UdevData> {
             return;
         };
 
-        let mut renderer = self
-            .backend_data
-            .gpus
-            .single_renderer(&device.render_node)
-            .unwrap();
+        let render_node = device.render_node.unwrap_or(self.backend_data.primary_gpu);
+        let mut renderer = self.backend_data.gpus.single_renderer(&render_node).unwrap();
 
         let output_name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
         info!(?crtc, "Trying to setup connector {}", output_name,);
@@ -935,6 +1017,7 @@ impl AnvilState<UdevData> {
                 get_surface_dmabuf_feedback(
                     self.backend_data.primary_gpu,
                     device.render_node,
+                    node,
                     &mut self.backend_data.gpus,
                     compositor.surface(),
                 )
@@ -998,11 +1081,8 @@ impl AnvilState<UdevData> {
             }
         }
 
-        let mut renderer = self
-            .backend_data
-            .gpus
-            .single_renderer(&device.render_node)
-            .unwrap();
+        let render_node = device.render_node.unwrap_or(self.backend_data.primary_gpu);
+        let mut renderer = self.backend_data.gpus.single_renderer(&render_node).unwrap();
         let _ = device.drm_output_manager.try_to_restore_modifiers::<_, OutputRenderElements<
             UdevRenderer<'_>,
             WindowRenderElement<UdevRenderer<'_>>,
@@ -1079,10 +1159,9 @@ impl AnvilState<UdevData> {
                 leasing_global.disable_global::<AnvilState<UdevData>>();
             }
 
-            self.backend_data
-                .gpus
-                .as_mut()
-                .remove_node(&backend_data.render_node);
+            if let Some(render_node) = backend_data.render_node {
+                self.backend_data.gpus.as_mut().remove_node(&render_node);
+            }
 
             self.handle.remove(backend_data.registration_token);
 
@@ -1218,7 +1297,11 @@ impl AnvilState<UdevData> {
             // and do some prediction for the next repaint.
             let repaint_delay = Duration::from_secs_f64(frame_duration.as_secs_f64() * 0.6f64);
 
-            let timer = if self.backend_data.primary_gpu != surface.render_node {
+            let timer = if surface
+                .render_node
+                .map(|render_node| render_node != self.backend_data.primary_gpu)
+                .unwrap_or(true)
+            {
                 // However, if we need to do a copy, that might not be enough.
                 // (And without actual comparision to previous frames we cannot really know.)
                 // So lets ignore that in those cases to avoid thrashing performance.
@@ -1300,8 +1383,8 @@ impl AnvilState<UdevData> {
             .pointer_image
             .get_image(1 /*scale*/, self.clock.now().into());
 
-        let render_node = surface.render_node;
         let primary_gpu = self.backend_data.primary_gpu;
+        let render_node = surface.render_node.unwrap_or(primary_gpu);
         let mut renderer = if primary_gpu == render_node {
             self.backend_data.gpus.single_renderer(&render_node)
         } else {
