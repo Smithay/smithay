@@ -27,6 +27,12 @@ pub mod glow;
 #[cfg(feature = "renderer_pixman")]
 pub mod pixman;
 
+#[cfg(all(
+    feature = "renderer_auto",
+    any(feature = "renderer_gl", feature = "renderer_pixman")
+))]
+pub mod auto;
+
 mod color;
 pub use color::Color32F;
 
