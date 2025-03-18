@@ -37,9 +37,12 @@ use super::{
     sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
     Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
-use crate::backend::egl::{
-    ffi::egl::{self as ffi_egl, types::EGLImage},
-    EGLContext, EGLSurface, MakeCurrentError,
+use crate::backend::{
+    allocator::Buffer,
+    egl::{
+        ffi::egl::{self as ffi_egl, types::EGLImage},
+        EGLContext, EGLSurface, MakeCurrentError,
+    },
 };
 use crate::backend::{
     allocator::{
@@ -160,6 +163,34 @@ enum GlesTargetInternal<'a> {
         buf: &'a mut GlesRenderbuffer,
         fbo: ffi::types::GLuint,
     },
+}
+
+impl Texture for GlesTarget<'_> {
+    fn height(&self) -> u32 {
+        self.size().h as u32
+    }
+
+    fn width(&self) -> u32 {
+        self.size().w as u32
+    }
+
+    fn size(&self) -> Size<i32, BufferCoord> {
+        match &self.0 {
+            GlesTargetInternal::Image { dmabuf, .. } => dmabuf.size(),
+            GlesTargetInternal::Surface { surface } => surface
+                .get_size()
+                .expect("a bound EGLSurface needs to have a size")
+                .to_logical(1)
+                .to_buffer(1, Transform::Normal),
+            GlesTargetInternal::Texture { texture, .. } => texture.size(),
+            GlesTargetInternal::Renderbuffer { buf, .. } => buf.size(),
+        }
+    }
+
+    fn format(&self) -> Option<Fourcc> {
+        let (gl_format, _) = self.0.format()?;
+        gl_internal_format_to_fourcc(gl_format)
+    }
 }
 
 impl GlesTargetInternal<'_> {

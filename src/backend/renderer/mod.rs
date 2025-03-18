@@ -268,7 +268,7 @@ pub trait RendererSuper: fmt::Debug {
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
     /// Framebuffer to draw onto
-    type Framebuffer<'buffer>;
+    type Framebuffer<'buffer>: Texture;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
     type Frame<'frame, 'buffer>: Frame<Error = Self::Error, TextureId = Self::TextureId>
     where
