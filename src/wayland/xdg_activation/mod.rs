@@ -125,8 +125,8 @@ pub struct XdgActivationTokenData {
     pub surface: Option<WlSurface>,
     /// Timestamp of the token
     ///
-    /// You can use this do ignore tokens based on time.
-    /// For example you coould ignore all tokens older that 5s.
+    /// You can use this to ignore tokens based on time.
+    /// For example you could ignore all tokens older than 5s.
     pub timestamp: Instant,
     /// Additional user data attached
     pub user_data: Arc<UserDataMap>,
