@@ -775,6 +775,36 @@ where
     }
 }
 
+impl<R: GraphicsApi, T: GraphicsApi> Texture for MultiFramebuffer<'_, R, T> {
+    fn size(&self) -> Size<i32, BufferCoords> {
+        match &self.0 {
+            MultiFramebufferInternal::Render(framebuffer) => framebuffer.size(),
+            MultiFramebufferInternal::Target(framebuffer) => framebuffer.size(),
+        }
+    }
+
+    fn width(&self) -> u32 {
+        match &self.0 {
+            MultiFramebufferInternal::Render(framebuffer) => framebuffer.width(),
+            MultiFramebufferInternal::Target(framebuffer) => framebuffer.width(),
+        }
+    }
+
+    fn height(&self) -> u32 {
+        match &self.0 {
+            MultiFramebufferInternal::Render(framebuffer) => framebuffer.height(),
+            MultiFramebufferInternal::Target(framebuffer) => framebuffer.height(),
+        }
+    }
+
+    fn format(&self) -> Option<Fourcc> {
+        match &self.0 {
+            MultiFramebufferInternal::Render(framebuffer) => framebuffer.format(),
+            MultiFramebufferInternal::Target(framebuffer) => framebuffer.format(),
+        }
+    }
+}
+
 /// [`Frame`] implementation of a [`MultiRenderer`].
 ///
 /// Leaking the frame will potentially keep it from doing necessary copies

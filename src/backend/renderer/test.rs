@@ -209,6 +209,20 @@ impl ImportDmaWl for DummyRenderer {}
 #[derive(Debug)]
 pub struct DummyFramebuffer;
 
+impl Texture for DummyFramebuffer {
+    fn width(&self) -> u32 {
+        0
+    }
+
+    fn height(&self) -> u32 {
+        0
+    }
+
+    fn format(&self) -> Option<Fourcc> {
+        None
+    }
+}
+
 #[derive(Debug)]
 pub struct DummyFrame {}
 

@@ -71,6 +71,36 @@ enum PixmanTargetInternal<'a> {
     Image(&'a mut pixman::Image<'static, 'static>),
 }
 
+impl Texture for PixmanTarget<'_> {
+    fn width(&self) -> u32 {
+        match &self.0 {
+            PixmanTargetInternal::Dmabuf { dmabuf, .. } => dmabuf.width(),
+            PixmanTargetInternal::Image(image) => image.width() as u32,
+        }
+    }
+
+    fn height(&self) -> u32 {
+        match &self.0 {
+            PixmanTargetInternal::Dmabuf { dmabuf, .. } => dmabuf.height(),
+            PixmanTargetInternal::Image(image) => image.height() as u32,
+        }
+    }
+
+    fn format(&self) -> Option<DrmFourcc> {
+        match &self.0 {
+            PixmanTargetInternal::Dmabuf { dmabuf, .. } => Some(dmabuf.format().code),
+            PixmanTargetInternal::Image(image) => DrmFourcc::try_from(image.format()).ok(),
+        }
+    }
+
+    fn size(&self) -> Size<i32, BufferCoords> {
+        match &self.0 {
+            PixmanTargetInternal::Dmabuf { dmabuf, .. } => dmabuf.size(),
+            PixmanTargetInternal::Image(image) => Size::from((image.width() as i32, image.height() as i32)),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct PixmanDmabufMapping {
     dmabuf: WeakDmabuf,
@@ -222,6 +252,11 @@ impl Texture for PixmanTexture {
 
     fn height(&self) -> u32 {
         self.0 .0.image.lock().unwrap().height() as u32
+    }
+
+    fn size(&self) -> Size<i32, BufferCoords> {
+        let lock = self.0 .0.image.lock().unwrap();
+        Size::from((lock.width() as i32, lock.height() as i32))
     }
 
     fn format(&self) -> Option<DrmFourcc> {
