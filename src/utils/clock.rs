@@ -180,17 +180,29 @@ impl<Kind> From<Time<Kind>> for Timespec {
 const NANOS_PER_SEC: rustix::time::Nsecs = 1_000_000_000;
 
 fn saturating_sub_timespec(lhs: Timespec, rhs: Timespec) -> Option<Duration> {
-    if let Some(mut secs) = lhs.tv_sec.checked_sub(rhs.tv_sec) {
-        let nanos = if lhs.tv_nsec >= rhs.tv_nsec {
-            lhs.tv_nsec - rhs.tv_nsec
+    debug_assert!(!lhs.tv_sec.is_negative());
+    debug_assert!(!lhs.tv_nsec.is_negative());
+    debug_assert!(!rhs.tv_sec.is_negative());
+    debug_assert!(!rhs.tv_nsec.is_negative());
+    debug_assert!(lhs.tv_nsec < NANOS_PER_SEC);
+    debug_assert!(rhs.tv_nsec < NANOS_PER_SEC);
+
+    let lhs_tv_sec = lhs.tv_sec as u64;
+    let lhs_tv_nsec = lhs.tv_nsec as u64;
+    let rhs_tv_sec = rhs.tv_sec as u64;
+    let rhs_tv_nsec = rhs.tv_nsec as u64;
+
+    if let Some(mut secs) = lhs_tv_sec.checked_sub(rhs_tv_sec) {
+        let nanos = if lhs_tv_nsec >= rhs_tv_nsec {
+            lhs_tv_nsec - rhs_tv_nsec
         } else if let Some(sub_secs) = secs.checked_sub(1) {
             secs = sub_secs;
-            lhs.tv_nsec + NANOS_PER_SEC - rhs.tv_nsec
+            lhs_tv_nsec + (NANOS_PER_SEC as u64) - rhs_tv_nsec
         } else {
             return None;
         };
-        debug_assert!(nanos < NANOS_PER_SEC);
-        Some(Duration::new(secs as u64, nanos as u32))
+        debug_assert!(nanos < (NANOS_PER_SEC as u64));
+        Some(Duration::new(secs, nanos as u32))
     } else {
         None
     }
