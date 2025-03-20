@@ -120,9 +120,11 @@
 //! }
 //! ```
 use std::{
+    cell::UnsafeCell,
     collections::HashMap,
     fmt::Debug,
     io::ErrorKind,
+    marker::PhantomData,
     os::unix::io::{AsFd, OwnedFd},
     str::FromStr,
     sync::Arc,
@@ -146,7 +148,6 @@ use crate::backend::renderer::{
 use crate::{
     backend::{
         allocator::{
-            dmabuf::{AsDmabuf, Dmabuf},
             format::{get_opaque, has_alpha},
             gbm::{GbmAllocator, GbmBuffer, GbmBufferFlags, GbmDevice},
             Allocator, Buffer, Slot, Swapchain,
@@ -179,9 +180,11 @@ use super::{
 
 mod elements;
 mod frame_result;
+mod render_target;
 
 use elements::*;
 pub use frame_result::*;
+pub use render_target::*;
 
 impl RenderElementState {
     pub(crate) fn zero_copy(visible_area: usize) -> Self {
@@ -199,11 +202,36 @@ impl RenderElementState {
     }
 }
 
+#[derive(Debug)]
+struct SwapchainBuffer<B: Buffer>(Arc<UnsafeCell<Slot<B>>>);
+
+unsafe impl<B: Buffer> Send for SwapchainBuffer<B> where B: Send {}
+
+impl<B: Buffer> From<Slot<B>> for SwapchainBuffer<B> {
+    fn from(buffer: Slot<B>) -> Self {
+        Self(Arc::new(UnsafeCell::new(buffer)))
+    }
+}
+
+impl<B: Buffer> Clone for SwapchainBuffer<B> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<B: Buffer> std::ops::Deref for SwapchainBuffer<B> {
+    type Target = Slot<B>;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*self.0.get() }
+    }
+}
+
 #[allow(dead_code)] // This structs purpose is to keep buffer objects alive, most variants won't be read
 #[derive(Debug)]
 enum ScanoutBuffer<B: Buffer> {
     Wayland(crate::backend::renderer::utils::Buffer),
-    Swapchain(Arc<Slot<B>>),
+    Swapchain(SwapchainBuffer<B>),
     Cursor(Arc<GbmBuffer>),
 }
 
@@ -821,19 +849,16 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
 type CompositorFrameState<A, F> =
     FrameState<<A as Allocator>::Buffer, <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer>;
 
-type FrameErrorType<A, F> = FrameError<
-    <A as Allocator>::Error,
-    <<A as Allocator>::Buffer as AsDmabuf>::Error,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
->;
+type FrameErrorType<A, F> =
+    FrameError<<A as Allocator>::Error, <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error>;
 
 pub(crate) type FrameResult<T, A, F> = Result<T, FrameErrorType<A, F>>;
 
-pub(crate) type RenderFrameErrorType<A, F, R> = RenderFrameError<
+pub(crate) type RenderFrameErrorType<A, F, R, T> = RenderFrameError<
     <A as Allocator>::Error,
-    <<A as Allocator>::Buffer as AsDmabuf>::Error,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error,
     <R as RendererSuper>::Error,
+    <T as AsRenderTarget<<A as Allocator>::Buffer, R>>::Error,
 >;
 
 #[derive(Debug)]
@@ -1039,7 +1064,7 @@ bitflags::bitflags! {
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
 #[derive(Debug)]
-pub struct DrmCompositor<A, F, U, G>
+pub struct DrmCompositor<A, F, U, G, T = DefaultAsRenderTarget>
 where
     A: Allocator,
     F: ExportFramebuffer<A::Buffer>,
@@ -1075,16 +1100,16 @@ where
     opaque_regions: Vec<Rectangle<i32, Physical>>,
     element_opaque_regions_workhouse: Vec<Rectangle<i32, Physical>>,
 
+    _as_render_target: PhantomData<T>,
+
     debug_flags: DebugFlags,
     span: tracing::Span,
 }
 
-impl<A, F, U, G> DrmCompositor<A, F, U, G>
+impl<A, F, U, G, T> DrmCompositor<A, F, U, G, T>
 where
     A: Allocator,
     <A as Allocator>::Error: std::error::Error + Send + Sync,
-    <A as Allocator>::Buffer: AsDmabuf,
-    <A::Buffer as AsDmabuf>::Error: std::error::Error + Send + Sync + std::fmt::Debug,
     F: ExportFramebuffer<A::Buffer>,
     <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     <F as ExportFramebuffer<A::Buffer>>::Error: std::error::Error + Send + Sync,
@@ -1260,6 +1285,7 @@ where
                         opaque_regions: Vec::new(),
                         element_opaque_regions_workhouse: Vec::new(),
                         supports_fencing,
+                        _as_render_target: PhantomData,
                         debug_flags: DebugFlags::empty(),
                         span,
                     };
@@ -1441,6 +1467,7 @@ where
             opaque_regions: Vec::new(),
             element_opaque_regions_workhouse: Vec::new(),
             supports_fencing,
+            _as_render_target: PhantomData,
             debug_flags: DebugFlags::empty(),
             span,
         };
@@ -1503,13 +1530,6 @@ where
             Err(err) => return Err((swapchain.allocator, FrameError::Allocator(err))),
         };
 
-        let dmabuf = match buffer.export() {
-            Ok(dmabuf) => dmabuf,
-            Err(err) => {
-                return Err((swapchain.allocator, FrameError::AsDmabufError(err)));
-            }
-        };
-
         let use_opaque = !plane_formats.iter().any(|f| f.code == code);
         let fb_buffer = match framebuffer_exporter.add_framebuffer(
             drm.device_fd(),
@@ -1542,20 +1562,21 @@ where
             }
         };
 
+        let buffer_format = buffer.format();
         let plane_state = PlaneState {
             skip: false,
             needs_test: true,
             element_state: None,
             config: Some(PlaneConfig {
                 properties: PlaneProperties {
-                    src: Rectangle::from_size(dmabuf.size()).to_f64(),
+                    src: Rectangle::from_size(buffer.size()).to_f64(),
                     dst: Rectangle::from_size(mode_size),
                     transform: Transform::Normal,
                     alpha: 1.0,
                     format: buffer.format(),
                 },
                 buffer: DrmScanoutBuffer {
-                    buffer: ScanoutBuffer::Swapchain(Arc::new(buffer)),
+                    buffer: ScanoutBuffer::Swapchain(buffer.into()),
                     fb: handle,
                 },
                 damage_clips: None,
@@ -1569,8 +1590,7 @@ where
             Err(err) => {
                 warn!(
                     "Mode-setting failed with buffer format {:?}: {}",
-                    dmabuf.format(),
-                    err
+                    buffer_format, err
                 );
                 Err((swapchain.allocator, err.into()))
             }
@@ -1681,17 +1701,19 @@ where
         elements: &'a [E],
         clear_color: impl Into<Color32F>,
         frame_flags: FrameFlags,
-    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
+    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R, T>>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf>,
+        R: Renderer,
         R::TextureId: Texture + 'static,
+        T: AsRenderTarget<A::Buffer, R>,
+        R: for<'buffer> Bind<T::Target<'buffer>>,
     {
         let mut clear_color = clear_color.into();
 
         if !self.surface.is_active() {
-            return Err(RenderFrameErrorType::<A, F, R>::PrepareFrame(
-                FrameError::DrmError(DrmError::DeviceInactive),
+            return Err(RenderFrameErrorType::<A, F, R, T>::PrepareFrame(
+                PrepareFrameError::DrmError(DrmError::DeviceInactive),
             ));
         }
 
@@ -1726,11 +1748,11 @@ where
         let primary_plane_buffer = self
             .swapchain
             .acquire()
-            .map_err(FrameError::Allocator)?
-            .ok_or(FrameError::NoFreeSlotsError)?;
+            .map_err(PrepareFrameError::Allocator)?
+            .ok_or(PrepareFrameError::NoFreeSlotsError)?;
 
-        // It is safe to call export multiple times as the Slot will cache the dmabuf for us
-        let dmabuf = primary_plane_buffer.export().map_err(FrameError::AsDmabufError)?;
+        // // It is safe to call export multiple times as the Slot will cache the dmabuf for us
+        // let dmabuf = primary_plane_buffer.export().map_err(FrameError::AsDmabufError)?;
 
         // Let's check if we already have a cached framebuffer for this Slot, if not try to export
         // it and use the Slot userdata to cache it
@@ -1745,8 +1767,8 @@ where
                     ExportBuffer::Allocator(&primary_plane_buffer),
                     self.primary_is_opaque,
                 )
-                .map_err(FrameError::FramebufferExport)?
-                .ok_or(FrameError::NoFramebuffer)?;
+                .map_err(PrepareFrameError::FramebufferExport)?
+                .ok_or(PrepareFrameError::NoFramebuffer)?;
             primary_plane_buffer
                 .userdata()
                 .insert_if_missing(|| CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
@@ -1802,7 +1824,7 @@ where
         // explicitly set skip to false
         let plane_claim = self.surface.claim_plane(self.surface.plane()).ok_or_else(|| {
             error!("failed to claim primary plane");
-            FrameError::PrimaryPlaneClaimFailed
+            PrepareFrameError::PrimaryPlaneClaimFailed
         })?;
         let primary_plane_state: PlaneState<
             <A as Allocator>::Buffer,
@@ -1813,7 +1835,7 @@ where
             element_state: None,
             config: Some(PlaneConfig {
                 properties: PlaneProperties {
-                    src: Rectangle::from_size(dmabuf.size()).to_f64(),
+                    src: Rectangle::from_size(primary_plane_buffer.size()).to_f64(),
                     dst: Rectangle::from_size(current_size),
                     // NOTE: We do not apply the transform to the primary plane as this is handled by the dtr/renderer
                     transform: Transform::Normal,
@@ -1821,7 +1843,7 @@ where
                     format: primary_plane_buffer.format(),
                 },
                 buffer: DrmScanoutBuffer {
-                    buffer: ScanoutBuffer::Swapchain(Arc::new(primary_plane_buffer)),
+                    buffer: ScanoutBuffer::Swapchain(primary_plane_buffer.into()),
                     fb,
                 },
                 damage_clips: None,
@@ -2165,18 +2187,19 @@ where
                 primary_plane_elements.len(),
                 self.surface.plane(),
             );
-            let (mut dmabuf, age) = {
+            let (mut target, age) = {
                 let primary_plane_state = next_frame_state.plane_state(self.surface.plane()).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
-                let slot = match &config.buffer.buffer {
-                    ScanoutBuffer::Swapchain(slot) => slot,
+                let swapchain_buffer = match &config.buffer.buffer {
+                    ScanoutBuffer::Swapchain(swapchain_buffer) => swapchain_buffer,
                     _ => unreachable!(),
                 };
 
-                // It is safe to call export multiple times as the Slot will cache the dmabuf for us
-                let dmabuf = slot.export().map_err(FrameError::AsDmabufError)?;
-                let age = slot.age().into();
-                (dmabuf, age)
+                let slot = unsafe { &mut *swapchain_buffer.0.get() };
+                let target =
+                    T::as_render_target(renderer, slot).map_err(PrepareFrameError::AsRenderTarget)?;
+                let age = swapchain_buffer.age().into();
+                (target, age)
             };
 
             // store the current renderer debug flags and replace them
@@ -2231,11 +2254,17 @@ where
                 .collect::<Vec<_>>();
 
             let mut framebuffer = renderer
-                .bind(&mut dmabuf)
+                .bind(&mut target)
                 .map_err(|err| RenderFrameError::RenderFrame(OutputDamageTrackerError::Rendering(err)))?;
             let render_res =
                 self.damage_tracker
                     .render_output(renderer, &mut framebuffer, age, &elements, clear_color);
+            std::mem::drop(framebuffer);
+            std::mem::drop(target);
+            // let render_res: Result<
+            //     crate::backend::renderer::damage::RenderOutputResult<'_>,
+            //     OutputDamageTrackerError<R::Error>,
+            // > = todo!();
 
             // restore the renderer debug flags
             renderer.set_debug_flags(renderer_debug_flags);
@@ -2811,7 +2840,7 @@ where
         frame_flags: FrameFlags,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
-        R: Renderer + Bind<Dmabuf>,
+        R: Renderer,
         E: RenderElement<R>,
     {
         // Check if we have a free plane, otherwise we can exit early
@@ -4304,7 +4333,6 @@ impl<B: Framebuffer> Framebuffer for CachedDrmFramebuffer<B> {
 #[derive(Debug, thiserror::Error)]
 pub enum FrameError<
     A: std::error::Error + Send + Sync + 'static,
-    B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
 > {
     /// Failed to claim the primary plane
@@ -4316,18 +4344,12 @@ pub enum FrameError<
     /// No supported pixel format for the given renderer could be determined
     #[error("No supported renderer buffer format found")]
     NoSupportedRendererFormat,
-    /// The swapchain is exhausted, you need to call `frame_submitted`
-    #[error("Failed to allocate a new buffer")]
-    NoFreeSlotsError,
     /// Error accessing the drm device
     #[error("The underlying drm surface encountered an error: {0}")]
     DrmError(#[from] DrmError),
     /// Error during buffer allocation
     #[error("The underlying allocator encountered an error: {0}")]
     Allocator(#[source] A),
-    /// Error during exporting the buffer as dmabuf
-    #[error("Failed to export the allocated buffer as dmabuf: {0}")]
-    AsDmabufError(#[source] B),
     /// Error during exporting a framebuffer
     #[error("The framebuffer export encountered an error: {0}")]
     FramebufferExport(#[source] F),
@@ -4342,28 +4364,58 @@ pub enum FrameError<
     EmptyFrame,
 }
 
+/// Errors thrown by a [`DrmCompositor`]
+#[derive(Debug, thiserror::Error)]
+pub enum PrepareFrameError<
+    A: std::error::Error + Send + Sync + 'static,
+    F: std::error::Error + Send + Sync + 'static,
+    T: std::error::Error + Send + Sync + 'static,
+> {
+    /// Failed to claim the primary plane
+    #[error("Failed to claim the primary plane")]
+    PrimaryPlaneClaimFailed,
+    /// The swapchain is exhausted, you need to call `frame_submitted`
+    #[error("Failed to allocate a new buffer")]
+    NoFreeSlotsError,
+    /// Error accessing the drm device
+    #[error("The underlying drm surface encountered an error: {0}")]
+    DrmError(#[from] DrmError),
+    /// Error during buffer allocation
+    #[error("The underlying allocator encountered an error: {0}")]
+    Allocator(#[source] A),
+    /// Error during getting render target
+    #[error("Failed to get render target from allocator buffer: {0}")]
+    AsRenderTarget(#[source] T),
+    /// Error during exporting a framebuffer
+    #[error("The framebuffer export encountered an error: {0}")]
+    FramebufferExport(#[source] F),
+    /// No framebuffer available
+    #[error("No framebuffer available")]
+    NoFramebuffer,
+}
+
 /// Error returned from [`DrmCompositor::render_frame`]
 #[derive(thiserror::Error)]
 pub enum RenderFrameError<
     A: std::error::Error + Send + Sync + 'static,
-    B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
     R: std::error::Error,
+    T: std::error::Error + Send + Sync + 'static,
 > {
     /// Preparing the frame encountered an error
     #[error(transparent)]
-    PrepareFrame(#[from] FrameError<A, B, F>),
+    PrepareFrame(#[from] PrepareFrameError<A, F, T>),
     /// Rendering the frame encountered en error
     #[error(transparent)]
     RenderFrame(#[from] OutputDamageTrackerError<R>),
 }
 
-impl<A, B, F, R> std::fmt::Debug for RenderFrameError<A, B, F, R>
+impl<A, F, R, T> std::fmt::Debug for RenderFrameError<A, F, R, T>
 where
     A: std::error::Error + Send + Sync + 'static,
-    B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
     R: std::error::Error,
+    T: std::error::Error + Send + Sync + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -4373,26 +4425,41 @@ where
     }
 }
 
-impl<
-        A: std::error::Error + Send + Sync + 'static,
-        B: std::error::Error + Send + Sync + 'static,
-        F: std::error::Error + Send + Sync + 'static,
-    > From<FrameError<A, B, F>> for SwapBuffersError
+impl<A: std::error::Error + Send + Sync + 'static, F: std::error::Error + Send + Sync + 'static>
+    From<FrameError<A, F>> for SwapBuffersError
 {
     #[inline]
-    fn from(err: FrameError<A, B, F>) -> SwapBuffersError {
+    fn from(err: FrameError<A, F>) -> SwapBuffersError {
         match err {
             x @ FrameError::NoSupportedPlaneFormat
             | x @ FrameError::NoSupportedRendererFormat
             | x @ FrameError::PrimaryPlaneClaimFailed
             | x @ FrameError::NoFramebuffer => SwapBuffersError::ContextLost(Box::new(x)),
-            x @ FrameError::NoFreeSlotsError | x @ FrameError::EmptyFrame => {
-                SwapBuffersError::TemporaryFailure(Box::new(x))
-            }
+            x @ FrameError::EmptyFrame => SwapBuffersError::TemporaryFailure(Box::new(x)),
             FrameError::DrmError(err) => err.into(),
             FrameError::Allocator(err) => SwapBuffersError::ContextLost(Box::new(err)),
-            FrameError::AsDmabufError(err) => SwapBuffersError::ContextLost(Box::new(err)),
             FrameError::FramebufferExport(err) => SwapBuffersError::ContextLost(Box::new(err)),
+        }
+    }
+}
+
+impl<
+        A: std::error::Error + Send + Sync + 'static,
+        F: std::error::Error + Send + Sync + 'static,
+        T: std::error::Error + Send + Sync + 'static,
+    > From<PrepareFrameError<A, F, T>> for SwapBuffersError
+{
+    #[inline]
+    fn from(err: PrepareFrameError<A, F, T>) -> SwapBuffersError {
+        match err {
+            x @ PrepareFrameError::PrimaryPlaneClaimFailed | x @ PrepareFrameError::NoFramebuffer => {
+                SwapBuffersError::ContextLost(Box::new(x))
+            }
+            x @ PrepareFrameError::NoFreeSlotsError => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            PrepareFrameError::DrmError(err) => err.into(),
+            PrepareFrameError::Allocator(err) => SwapBuffersError::ContextLost(Box::new(err)),
+            PrepareFrameError::AsRenderTarget(err) => SwapBuffersError::ContextLost(Box::new(err)),
+            PrepareFrameError::FramebufferExport(err) => SwapBuffersError::ContextLost(Box::new(err)),
         }
     }
 }
