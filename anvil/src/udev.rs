@@ -1,8 +1,9 @@
 use std::{
     collections::hash_map::HashMap,
     io,
+    ops::Not,
     path::Path,
-    sync::{atomic::Ordering, Mutex},
+    sync::{atomic::Ordering, Mutex, Once},
     time::{Duration, Instant},
 };
 
@@ -35,7 +36,7 @@ use smithay::{
             exporter::gbm::GbmFramebufferExporter,
             output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
             CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
-            DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
+            DrmEventTime, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
         egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
         input::InputEvent,
@@ -636,6 +637,8 @@ struct SurfaceData {
     #[cfg(feature = "debug")]
     fps_element: Option<FpsElement<MultiTexture>>,
     dmabuf_feedback: Option<SurfaceDmabufFeedback>,
+    last_presentation_time: Option<Time<Monotonic>>,
+    vblank_throttle_timer: Option<RegistrationToken>,
 }
 
 impl Drop for SurfaceData {
@@ -1035,6 +1038,8 @@ impl AnvilState<UdevData> {
                 #[cfg(feature = "debug")]
                 fps_element,
                 dmabuf_feedback,
+                last_presentation_time: None,
+                vblank_throttle_timer: None,
             };
 
             device.surfaces.insert(crtc, surface);
@@ -1190,6 +1195,10 @@ impl AnvilState<UdevData> {
             }
         };
 
+        if let Some(timer_token) = surface.vblank_throttle_timer.take() {
+            self.handle.remove(timer_token);
+        }
+
         let output = if let Some(output) = self.space.outputs().find(|o| {
             o.user_data().get::<UdevOutputId>()
                 == Some(&UdevOutputId {
@@ -1203,8 +1212,15 @@ impl AnvilState<UdevData> {
             return;
         };
 
+        let Some(frame_duration) = output
+            .current_mode()
+            .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
+        else {
+            return;
+        };
+
         let tp = metadata.as_ref().and_then(|metadata| match metadata.time {
-            smithay::backend::drm::DrmEventTime::Monotonic(tp) => Some(tp),
+            smithay::backend::drm::DrmEventTime::Monotonic(tp) => tp.is_zero().not().then_some(tp),
             smithay::backend::drm::DrmEventTime::Realtime(_) => None,
         });
 
@@ -1221,17 +1237,40 @@ impl AnvilState<UdevData> {
             (self.clock.now(), wp_presentation_feedback::Kind::Vsync)
         };
 
+        let vblank_remaining_time = surface.last_presentation_time.map(|last_presentation_time| {
+            frame_duration.saturating_sub(Time::elapsed(&last_presentation_time, clock))
+        });
+
+        if let Some(vblank_remaining_time) = vblank_remaining_time {
+            if vblank_remaining_time > frame_duration / 2 {
+                static WARN_ONCE: Once = Once::new();
+                WARN_ONCE.call_once(|| {
+                    warn!("display running faster than expected, throttling vblanks and disabling HwClock")
+                });
+                let throttled_time = tp
+                    .map(|tp| tp.saturating_add(vblank_remaining_time))
+                    .unwrap_or(Duration::ZERO);
+                let throttled_metadata = DrmEventMetadata {
+                    sequence: seq,
+                    time: DrmEventTime::Monotonic(throttled_time),
+                };
+                let timer_token = self
+                    .handle
+                    .insert_source(Timer::from_duration(vblank_remaining_time), move |_, _, data| {
+                        data.frame_finish(dev_id, crtc, &mut Some(throttled_metadata));
+                        TimeoutAction::Drop
+                    })
+                    .expect("failed to register vblank throttle timer");
+                surface.vblank_throttle_timer = Some(timer_token);
+                return;
+            }
+        }
+        surface.last_presentation_time = Some(clock);
+
         let submit_result = surface
             .drm_output
             .frame_submitted()
             .map_err(Into::<SwapBuffersError>::into);
-
-        let Some(frame_duration) = output
-            .current_mode()
-            .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
-        else {
-            return;
-        };
 
         let schedule_render = match submit_result {
             Ok(user_data) => {
