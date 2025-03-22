@@ -98,6 +98,8 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+      - name: Downgrade bytemuck for MSRV
+        run: cargo update bytemuck_derive --precise 1.8.1
       - name: Check
         run: cargo check --features "test_all_features"
 
