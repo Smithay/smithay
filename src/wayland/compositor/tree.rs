@@ -1,5 +1,6 @@
 use crate::{
     utils::{
+        alive_tracker::AliveTracker,
         hook::{Hook, HookId},
         Serial,
     },
@@ -164,17 +165,38 @@ impl PrivateSurfaceData {
         surface.data::<SurfaceUserData>().unwrap().inner.lock().unwrap()
     }
 
-    pub fn set_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
+    pub fn set_role(
+        surface: &WlSurface,
+        role: &'static str,
+        track: bool,
+    ) -> Result<AliveTracker, AlreadyHasRole> {
         let mut my_data = Self::lock_user_data(surface);
-        if my_data.public_data.role.is_some() && my_data.public_data.role != Some(role) {
+        let has_active_role = my_data
+            .public_data
+            .role
+            .as_ref()
+            .map(|(exiting_role, existing_alive_tracker)| {
+                role != *exiting_role || existing_alive_tracker.alive()
+            })
+            .unwrap_or(false);
+        if has_active_role {
             return Err(AlreadyHasRole);
         }
-        my_data.public_data.role = Some(role);
-        Ok(())
+        let alive_tracker = if track {
+            AliveTracker::default()
+        } else {
+            AliveTracker::notified()
+        };
+        my_data.public_data.role = Some((role, alive_tracker.clone()));
+        Ok(alive_tracker)
     }
 
     pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
-        Self::lock_user_data(surface).public_data.role
+        Self::lock_user_data(surface)
+            .public_data
+            .role
+            .as_ref()
+            .map(|(role, _)| *role)
     }
 
     pub fn with_states<T, F: FnOnce(&SurfaceData) -> T>(surface: &WlSurface, f: F) -> T {
@@ -349,35 +371,29 @@ impl PrivateSurfaceData {
     ///
     /// if this surface already has a role, does nothing and fails, otherwise
     /// its role is now to be a subsurface
-    pub fn set_parent(child: &WlSurface, parent: &WlSurface) -> Result<(), AlreadyHasRole> {
-        // debug_assert!(child.as_ref().is_alive());
-        // debug_assert!(parent.as_ref().is_alive());
-
+    pub fn set_parent(child: &WlSurface, parent: &WlSurface) -> Result<AliveTracker, AlreadyHasRole> {
         // ensure the child is not the parent itself or its ancestor
         if child == parent || Self::is_ancestor(child, parent) {
             return Err(AlreadyHasRole);
         }
 
+        let alive_tracker = PrivateSurfaceData::set_role(child, SUBSURFACE_ROLE, true)?;
+
         // change child's parent
         {
             let mut child_guard = Self::lock_user_data(child);
-            // if surface already has a role, it cannot become a subsurface
-            if child_guard.public_data.role.is_some() && child_guard.public_data.role != Some(SUBSURFACE_ROLE)
-            {
-                return Err(AlreadyHasRole);
-            }
+
             // ensure the child doesn't have a parent already set by a previous
             // wl_subcompositor.get_subsurface request
             if child_guard.parent.is_some() {
                 return Err(AlreadyHasRole);
             }
-            child_guard.public_data.role = Some(SUBSURFACE_ROLE);
             child_guard.parent = Some(parent.clone());
         }
         // register child to new parent
         Self::lock_user_data(parent).children.push(child.clone());
 
-        Ok(())
+        Ok(alive_tracker)
     }
 
     /// Remove a pre-existing parent of this child

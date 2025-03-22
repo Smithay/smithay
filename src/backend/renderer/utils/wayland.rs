@@ -422,7 +422,7 @@ impl SurfaceView {
         let dst = viewport
             .size()
             .unwrap_or(surface_size.to_client(1).to_logical(client_scale as i32));
-        let offset = if states.role == Some("subsurface") {
+        let offset = if states.role_name() == Some(compositor::SUBSURFACE_ROLE) {
             states
                 .cached_state
                 .get::<SubsurfaceCachedState>()

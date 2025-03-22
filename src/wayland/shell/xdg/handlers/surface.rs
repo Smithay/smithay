@@ -93,10 +93,10 @@ where
                 let surface = &data.wl_surface;
                 let shell = &data.wm_base;
 
-                if compositor::give_role(surface, XDG_TOPLEVEL_ROLE).is_err() {
+                let Ok(alive_tracker) = compositor::give_role(surface, XDG_TOPLEVEL_ROLE) else {
                     shell.post_error(xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
-                }
+                };
 
                 data.has_active_role.store(true, Ordering::Release);
 
@@ -135,7 +135,7 @@ where
                         wm_base: data.wm_base.clone(),
                         decoration: Default::default(),
                         dialog: Default::default(),
-                        alive_tracker: Default::default(),
+                        alive_tracker,
                     },
                 );
 
@@ -178,10 +178,11 @@ where
                     }),
                     ..Default::default()
                 };
-                if compositor::give_role(surface, XDG_POPUP_ROLE).is_err() {
+
+                let Ok(alive_tracker) = compositor::give_role(surface, XDG_POPUP_ROLE) else {
                     shell.post_error(xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
-                }
+                };
 
                 data.has_active_role.store(true, Ordering::Release);
 
@@ -217,7 +218,7 @@ where
                         wm_base: data.wm_base.clone(),
                         decoration: Default::default(),
                         dialog: Default::default(),
-                        alive_tracker: Default::default(),
+                        alive_tracker,
                     },
                 );
 
@@ -286,7 +287,7 @@ where
                 //
                 // This can be used to integrate custom protocol extensions
                 let found_configure = compositor::with_states(surface, |states| {
-                    if states.role == Some(XDG_TOPLEVEL_ROLE) {
+                    if states.role_name() == Some(XDG_TOPLEVEL_ROLE) {
                         Ok(states
                             .data_map
                             .get::<XdgToplevelSurfaceData>()
@@ -294,7 +295,7 @@ where
                             .lock()
                             .unwrap()
                             .ack_configure(serial))
-                    } else if states.role == Some(XDG_POPUP_ROLE) {
+                    } else if states.role_name() == Some(XDG_POPUP_ROLE) {
                         Ok(states
                             .data_map
                             .get::<XdgPopupSurfaceData>()
