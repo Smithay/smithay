@@ -21,6 +21,8 @@ use tracing::instrument;
 /// A GBM buffer object
 #[derive(Debug)]
 pub struct GbmBuffer {
+    #[cfg(feature = "backend_drm")]
+    drm_node: Option<DrmNode>,
     bo: BufferObject<()>,
     size: Size<i32, BufferCoords>,
     format: Format,
@@ -93,6 +95,20 @@ impl GbmBuffer {
     ///
     /// Gbm might otherwise give us the underlying or a non-sensical modifier,
     /// which can fail in various other apis.
+    #[cfg(feature = "backend_drm")]
+    pub fn from_bo(bo: BufferObject<()>, implicit: bool) -> Self {
+        let drm_node = DrmNode::from_file(bo.device_fd()).ok();
+        Self::from_bo_with_node(bo, implicit, drm_node)
+    }
+
+    /// Create a [`GbmBuffer`] from an existing [`BufferObject`]
+    ///
+    /// `implicit` forces the object to assume the modifier is `Invalid` for cases,
+    /// where the buffer was allocated with an older api, that doesn't support modifiers.
+    ///
+    /// Gbm might otherwise give us the underlying or a non-sensical modifier,
+    /// which can fail in various other apis.
+    #[cfg(not(feature = "backend_drm"))]
     pub fn from_bo(bo: BufferObject<()>, implicit: bool) -> Self {
         let size = (bo.width() as i32, bo.height() as i32).into();
         let format = Format {
@@ -104,6 +120,38 @@ impl GbmBuffer {
             },
         };
         Self { bo, size, format }
+    }
+
+    /// Create a [`GbmBuffer`] from an existing [`BufferObject`] explicitly defining the device node
+    ///
+    /// `implicit` forces the object to assume the modifier is `Invalid` for cases,
+    /// where the buffer was allocated with an older api, that doesn't support modifiers.
+    ///
+    /// Gbm might otherwise give us the underlying or a non-sensical modifier,
+    /// which can fail in various other apis.
+    #[cfg(feature = "backend_drm")]
+    pub fn from_bo_with_node(bo: BufferObject<()>, implicit: bool, drm_node: Option<DrmNode>) -> Self {
+        let size = (bo.width() as i32, bo.height() as i32).into();
+        let format = Format {
+            code: bo.format(),
+            modifier: if implicit {
+                Modifier::Invalid
+            } else {
+                bo.modifier()
+            },
+        };
+        Self {
+            drm_node,
+            bo,
+            size,
+            format,
+        }
+    }
+
+    /// Get the [`DrmNode`] of the device the buffer was allocated when available
+    #[cfg(feature = "backend_drm")]
+    pub fn device_node(&self) -> Option<DrmNode> {
+        self.drm_node
     }
 }
 
@@ -126,6 +174,8 @@ impl std::ops::DerefMut for GbmBuffer {
 /// Light wrapper around an [`GbmDevice`] to implement the [`Allocator`]-trait
 #[derive(Clone, Debug)]
 pub struct GbmAllocator<A: AsFd + 'static> {
+    #[cfg(feature = "backend_drm")]
+    drm_node: Option<DrmNode>,
     device: GbmDevice<A>,
     default_flags: GbmBufferFlags,
 }
@@ -154,6 +204,19 @@ impl<A: AsFd + 'static> AsFd for GbmAllocator<A> {
 impl<A: AsFd + 'static> GbmAllocator<A> {
     /// Create a new [`GbmAllocator`] from a [`GbmDevice`] with some default usage flags,
     /// to be used when [`Allocator::create_buffer`] is invoked.
+    #[cfg(feature = "backend_drm")]
+    pub fn new(device: GbmDevice<A>, default_flags: GbmBufferFlags) -> GbmAllocator<A> {
+        let drm_node = DrmNode::from_file(device.as_fd()).ok();
+        GbmAllocator {
+            drm_node,
+            device,
+            default_flags,
+        }
+    }
+
+    /// Create a new [`GbmAllocator`] from a [`GbmDevice`] with some default usage flags,
+    /// to be used when [`Allocator::create_buffer`] is invoked.
+    #[cfg(not(feature = "backend_drm"))]
     pub fn new(device: GbmDevice<A>, default_flags: GbmBufferFlags) -> GbmAllocator<A> {
         GbmAllocator {
             device,
@@ -173,22 +236,27 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
         modifiers: &[Modifier],
         flags: GbmBufferFlags,
     ) -> Result<GbmBuffer, std::io::Error> {
+        #[cfg(feature = "backend_drm")]
+        let buffer_from_bo = |bo, implicit| GbmBuffer::from_bo_with_node(bo, implicit, self.drm_node);
+        #[cfg(not(feature = "backend_drm"))]
+        let buffer_from_bo = |bo, implicit| GbmBuffer::from_bo(bo, implicit);
+
         #[cfg(feature = "backend_gbm_has_create_with_modifiers2")]
         let result = self
             .device
             .create_buffer_object_with_modifiers2(width, height, fourcc, modifiers.iter().copied(), flags)
-            .map(|bo| GbmBuffer::from_bo(bo, false));
+            .map(|bo| buffer_from_bo(bo, false));
 
         #[cfg(not(feature = "backend_gbm_has_create_with_modifiers2"))]
         let result = if (flags & !(GbmBufferFlags::SCANOUT | GbmBufferFlags::RENDERING)).is_empty() {
             self.device
                 .create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied())
-                .map(|bo| GbmBuffer::from_bo(bo, false))
+                .map(|bo| buffer_from_bo(bo, false))
         } else if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
             return self
                 .device
                 .create_buffer_object(width, height, fourcc, flags)
-                .map(|bo| GbmBuffer::from_bo(bo, true));
+                .map(|bo| buffer_from_bo(bo, true));
         } else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -202,7 +270,7 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
                 if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
                     self.device
                         .create_buffer_object(width, height, fourcc, flags)
-                        .map(|bo| GbmBuffer::from_bo(bo, true))
+                        .map(|bo| buffer_from_bo(bo, true))
                 } else {
                     Err(err)
                 }
@@ -272,7 +340,7 @@ impl AsDmabuf for GbmBuffer {
         }
 
         #[cfg(feature = "backend_drm")]
-        if let Ok(node) = DrmNode::from_file(self.device_fd()) {
+        if let Some(node) = self.device_node() {
             builder.set_node(node);
         }
 
@@ -315,7 +383,7 @@ impl AsDmabuf for GbmBuffer {
         }
 
         #[cfg(feature = "backend_drm")]
-        if let Ok(node) = DrmNode::from_file(self.device_fd()) {
+        if let Some(node) = self.device_node() {
             builder.set_node(node);
         }
 

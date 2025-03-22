@@ -224,12 +224,7 @@ impl EGLDevice {
                 let path = self.drm_device_path()?;
                 let node = DrmNode::from_path(path).ok();
                 // and try to convert it to a render_node
-                Ok(node.map(|node| {
-                    node.node_with_type(NodeType::Render)
-                        .and_then(Result::ok)
-                        // and otherwise go with whatever we got initially
-                        .unwrap_or(node)
-                }))
+                Ok(node.and_then(|node| node.node_with_type(NodeType::Render).and_then(|x| x.ok())))
             }
         }
     }
