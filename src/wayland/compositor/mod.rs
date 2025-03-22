@@ -121,6 +121,7 @@ use self::transaction::TransactionQueue;
 pub use self::transaction::{Barrier, Blocker, BlockerState};
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
+use crate::utils::alive_tracker::AliveTracker;
 pub use crate::utils::hook::HookId;
 use crate::utils::Transform;
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
@@ -165,11 +166,18 @@ pub struct SurfaceData {
     /// The current role of the surface.
     ///
     /// If `None` if the surface has not yet been assigned a role
-    pub role: Option<&'static str>,
+    pub role: Option<(&'static str, AliveTracker)>,
     /// The non-buffered typemap storage of this surface
     pub data_map: UserDataMap,
     /// The double-buffered typemap storage of this surface
     pub cached_state: MultiCache,
+}
+
+impl SurfaceData {
+    /// Returns the name of the assigned role if any.
+    pub fn role_name(&self) -> Option<&'static str> {
+        self.role.as_ref().map(|(role_name, _)| *role_name)
+    }
 }
 
 /// New buffer assignation for a surface
@@ -389,9 +397,20 @@ pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
 
 /// Register that this surface has given role
 ///
-/// Fails if the surface already has a role.
-pub fn give_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
-    PrivateSurfaceData::set_role(surface, role)
+/// Fails if the surface already has a role and differs or the existing role
+/// is still marked as alive.
+///
+/// Note: The caller is responsible for marking the assigned role object as destroyed
+/// with [`AliveTracker::destroy_notify`].
+pub fn give_role(surface: &WlSurface, role: &'static str) -> Result<AliveTracker, AlreadyHasRole> {
+    PrivateSurfaceData::set_role(surface, role, true)
+}
+
+/// Register that this surface has given role without tracking role liveness
+///
+/// Fails if the surface already has a role and the newly assigned differs.
+pub fn give_role_no_tracking(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
+    PrivateSurfaceData::set_role(surface, role, false).map(|_| ())
 }
 
 /// Access the states associated to this surface

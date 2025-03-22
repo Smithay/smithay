@@ -23,8 +23,8 @@ use crate::utils::{
 use super::{
     cache::Cacheable,
     tree::{Location, PrivateSurfaceData},
-    AlreadyHasRole, BufferAssignment, CompositorHandler, CompositorState, Damage, Rectangle, RectangleKind,
-    RegionAttributes, SurfaceAttributes,
+    BufferAssignment, CompositorHandler, CompositorState, Damage, Rectangle, RectangleKind, RegionAttributes,
+    SurfaceAttributes,
 };
 
 use tracing::trace;
@@ -444,16 +444,17 @@ where
     ) {
         match request {
             wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
-                if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
+                let Ok(alive_tracker) = PrivateSurfaceData::set_parent(&surface, &parent) else {
                     subcompositor
                         .post_error(wl_subcompositor::Error::BadSurface, "Surface already has a role.");
                     return;
-                }
+                };
 
                 data_init.init(
                     id,
                     SubsurfaceUserData {
                         surface: surface.clone(),
+                        alive_tracker,
                     },
                 );
 
@@ -477,6 +478,7 @@ where
 #[derive(Debug)]
 pub struct SubsurfaceUserData {
     surface: WlSurface,
+    alive_tracker: AliveTracker,
 }
 
 impl SubsurfaceUserData {
@@ -628,6 +630,7 @@ where
             *guard.pending() = Default::default();
             *guard.current() = Default::default();
         });
+        data.alive_tracker.destroy_notify();
     }
 }
 
