@@ -22,7 +22,7 @@ use tracing::{error, instrument, warn};
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
-use super::{CommitCounter, DamageBag, DamageSet, SurfaceView};
+use super::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, SurfaceView};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -279,9 +279,9 @@ impl RendererSurfaceState {
         })
     }
 
-    /// Gets the raw damage of this surface
-    pub fn damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<i32, BufferCoord>>> {
-        self.damage.damage()
+    /// Gets the current damage of this surface
+    pub fn damage(&self) -> DamageSnapshot<i32, BufferCoord> {
+        self.damage.snapshot()
     }
 
     /// Returns the logical size of the current attached buffer
