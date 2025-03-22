@@ -301,6 +301,10 @@ where
                 }
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
+                if width < 0 || height < 0 {
+                    return;
+                }
+
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
