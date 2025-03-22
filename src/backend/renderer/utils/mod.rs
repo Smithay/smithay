@@ -182,7 +182,7 @@ impl<N: Clone, Kind> DamageSnapshot<N, Kind> {
     }
 
     /// Provides raw access to the stored damage
-    pub fn damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<N, Kind>>> {
+    pub fn raw(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<N, Kind>>> {
         self.damage.iter().map(|d| d.iter())
     }
 
@@ -253,8 +253,8 @@ impl<N: Clone, Kind> DamageBag<N, Kind> {
     }
 
     /// Provides raw access to the stored damage
-    pub fn damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<N, Kind>>> {
-        self.state.damage()
+    pub fn raw(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle<N, Kind>>> {
+        self.state.raw()
     }
 
     /// Reset the damage
