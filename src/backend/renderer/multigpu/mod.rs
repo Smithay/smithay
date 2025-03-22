@@ -491,7 +491,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                             // If we need more on rendering - which we cannot know at this point - we will call import_missing later
                             // to receive the rest.
                             // FIXME: We should be able to get rid of this allocation here
-                            let buffer_damage = data.damage().take(1).flatten().cloned().fold(
+                            let buffer_damage = data.damage().raw().take(1).flatten().cloned().fold(
                                 Vec::<Rectangle<i32, BufferCoords>>::new(),
                                 |damage, mut rect| {
                                     // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
