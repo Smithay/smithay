@@ -91,6 +91,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
         }
     }
 
+    /*
     #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
     if matches!(
         crate::backend::renderer::buffer_type(buffer),
@@ -118,6 +119,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
             drm: drm.clone(),
         }));
     }
+    */
 
     Ok(None)
 }
