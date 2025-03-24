@@ -408,13 +408,13 @@ where
     /// Type of the render element
     type RenderElement: RenderElement<R>;
     /// Returns render elements for a given position and scale
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<C>;
+    ) -> Vec<Self::RenderElement>;
 }
 
 impl<E> Element for &E

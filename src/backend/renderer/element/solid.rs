@@ -242,13 +242,19 @@ where
 {
     type RenderElement = SolidColorRenderElement;
 
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements(
         &self,
         _renderer: &mut R,
-        location: crate::utils::Point<i32, crate::utils::Physical>,
-        scale: crate::utils::Scale<f64>,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<C> {
-        vec![SolidColorRenderElement::from_buffer(self, location, scale, alpha, Kind::Unspecified).into()]
+    ) -> Vec<Self::RenderElement> {
+        vec![SolidColorRenderElement::from_buffer(
+            self,
+            location,
+            scale,
+            alpha,
+            Kind::Unspecified,
+        )]
     }
 }
