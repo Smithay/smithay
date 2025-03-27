@@ -26,7 +26,7 @@ use crate::{
         },
         Seat,
     },
-    utils::{Client as ClientCoords, Point, Serial},
+    utils::{iter::new_locked_obj_iter_from_vec, Client as ClientCoords, Point, Serial},
     wayland::{compositor, pointer_constraints::with_pointer_constraint},
 };
 
@@ -52,18 +52,9 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     }
 
     /// Return all raw [`WlPointer`] instances for a particular [`Client`]
-    pub fn client_pointers(&self, client: &Client) -> Vec<WlPointer> {
-        self.wl_pointer
-            .known_pointers
-            .lock()
-            .unwrap()
-            .iter()
-            .filter_map(|p| {
-                p.upgrade()
-                    .ok()
-                    .filter(|p| p.client().is_some_and(|c| c == *client))
-            })
-            .collect()
+    pub fn client_pointers<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlPointer> + 'a {
+        let guard = self.wl_pointer.known_pointers.lock().unwrap();
+        new_locked_obj_iter_from_vec(guard, client.id())
     }
 }
 

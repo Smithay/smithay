@@ -17,7 +17,7 @@ use crate::{
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
         Seat, SeatHandler, SeatState,
     },
-    utils::Serial,
+    utils::{iter::new_locked_obj_iter_from_vec, Serial},
     wayland::{input_method::InputMethodSeat, text_input::TextInputSeat},
 };
 
@@ -39,18 +39,10 @@ where
     }
 
     /// Return all raw [`WlKeyboard`] instances for a particular [`Client`]
-    pub fn client_keyboards(&self, client: &Client) -> Vec<WlKeyboard> {
-        self.arc
-            .known_kbds
-            .lock()
-            .unwrap()
-            .iter()
-            .filter_map(|k| {
-                k.upgrade()
-                    .ok()
-                    .filter(|k| k.client().is_some_and(|c| c == *client))
-            })
-            .collect()
+    pub fn client_keyboards<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlKeyboard> + 'a {
+        let guard = self.arc.known_kbds.lock().unwrap();
+
+        new_locked_obj_iter_from_vec(guard, client.id())
     }
 
     /// Register a new keyboard to this handler
