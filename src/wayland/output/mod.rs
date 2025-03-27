@@ -78,7 +78,10 @@ use std::sync::{
     Arc,
 };
 
-use crate::output::{Inner, Mode, Output, Scale, Subpixel, WeakOutput};
+use crate::{
+    output::{Inner, Mode, Output, Scale, Subpixel, WeakOutput},
+    utils::iter::new_locked_obj_iter,
+};
 
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
@@ -268,24 +271,14 @@ impl Output {
     }
 
     /// This function returns all managed [WlOutput] matching the provided [Client]
-    pub fn client_outputs(&self, client: &Client) -> Vec<WlOutput> {
+    pub fn client_outputs<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlOutput> + 'a {
         self.client_outputs_internal(client.id())
     }
 
-    fn client_outputs_internal(&self, client: ClientId) -> Vec<WlOutput> {
-        let data = self.inner.0.lock().unwrap();
-        data.instances
-            .iter()
-            .filter_map(|output| output.upgrade().ok())
-            .filter(|output| {
-                data.handle
-                    .as_ref()
-                    .and_then(|handle| handle.upgrade())
-                    .and_then(|handle| handle.get_client(output.id()).ok())
-                    .map(|output_client| output_client == client)
-                    .unwrap_or(false)
-            })
-            .collect()
+    fn client_outputs_internal(&self, client: ClientId) -> impl Iterator<Item = WlOutput> + '_ {
+        let guard = self.inner.0.lock().unwrap();
+
+        new_locked_obj_iter(guard, client, |inner| inner.instances.iter())
     }
 
     /// Sends `wl_surface.enter` for the provided surface

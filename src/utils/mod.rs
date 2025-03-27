@@ -12,6 +12,9 @@ pub mod user_data;
 pub(crate) mod alive_tracker;
 pub use self::alive_tracker::IsAlive;
 
+#[cfg(feature = "wayland_frontend")]
+pub(crate) mod iter;
+
 mod fd;
 pub use fd::*;
 
