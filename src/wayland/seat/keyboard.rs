@@ -7,7 +7,7 @@ use wayland_server::{
         wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Dispatch, DisplayHandle, Resource,
+    Client, Dispatch, DisplayHandle, Resource,
 };
 
 use super::WaylandFocus;
@@ -36,6 +36,21 @@ where
             .as_ref()
             .map(|f| f.0.same_client_as(id))
             .unwrap_or(false)
+    }
+
+    /// Return all raw [`WlKeyboard`] instances for a particular [`Client`]
+    pub fn client_keyboards(&self, client: &Client) -> Vec<WlKeyboard> {
+        self.arc
+            .known_kbds
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|k| {
+                k.upgrade()
+                    .ok()
+                    .filter(|k| k.client().is_some_and(|c| c == *client))
+            })
+            .collect()
     }
 
     /// Register a new keyboard to this handler
@@ -152,7 +167,8 @@ pub(crate) fn for_each_focused_kbds<D: SeatHandler + 'static>(
     }
 }
 
-fn serialize_pressed_keys(keys: impl Iterator<Item = Keycode>) -> Vec<u8> {
+/// Serialize keycodes for the `WlKeyboard` interface
+pub fn serialize_pressed_keys(keys: impl Iterator<Item = Keycode>) -> Vec<u8> {
     keys.flat_map(|key| (key.raw() - 8).to_ne_bytes()).collect()
 }
 

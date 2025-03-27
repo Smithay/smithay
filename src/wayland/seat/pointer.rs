@@ -12,7 +12,7 @@ use wayland_server::{
         },
         wl_surface::WlSurface,
     },
-    Dispatch, DisplayHandle, Resource, Weak,
+    Client, Dispatch, DisplayHandle, Resource, Weak,
 };
 
 use crate::{
@@ -26,7 +26,7 @@ use crate::{
         },
         Seat,
     },
-    utils::{Client, Point, Serial},
+    utils::{Client as ClientCoords, Point, Serial},
     wayland::{compositor, pointer_constraints::with_pointer_constraint},
 };
 
@@ -49,6 +49,21 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the keyboard capability.
     pub fn from_resource(seat: &WlPointer) -> Option<Self> {
         seat.data::<PointerUserData<D>>()?.handle.clone()
+    }
+
+    /// Return all raw [`WlPointer`] instances for a particular [`Client`]
+    pub fn client_pointers(&self, client: &Client) -> Vec<WlPointer> {
+        self.wl_pointer
+            .known_pointers
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|p| {
+                p.upgrade()
+                    .ok()
+                    .filter(|p| p.client().is_some_and(|c| c == *client))
+            })
+            .collect()
     }
 }
 
@@ -397,7 +412,7 @@ where
                                 .unwrap()
                                 .client_scale
                                 .load(Ordering::Acquire);
-                            let hotspot = Point::<i32, Client>::from((hotspot_x, hotspot_y))
+                            let hotspot = Point::<i32, ClientCoords>::from((hotspot_x, hotspot_y))
                                 .to_logical(client_scale as i32);
                             states
                                 .data_map
