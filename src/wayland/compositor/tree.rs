@@ -395,7 +395,7 @@ impl PrivateSurfaceData {
 
     /// Retrieve the parent surface (if any) of this surface
     pub fn get_parent(child: &WlSurface) -> Option<WlSurface> {
-        Self::lock_user_data(child).parent.as_ref().cloned()
+        Self::lock_user_data(child).parent.clone()
     }
 
     /// Retrieve the children surface (if any) of this surface
@@ -412,7 +412,7 @@ impl PrivateSurfaceData {
     ///
     /// Fails if `relative_to` is not a sibling or parent of `surface`.
     pub fn reorder(surface: &WlSurface, to: Location, relative_to: &WlSurface) -> Result<(), ()> {
-        let parent = Self::lock_user_data(surface).parent.as_ref().cloned().unwrap();
+        let parent = Self::get_parent(surface).ok_or(())?;
 
         fn index_of(surface: &WlSurface, slice: &[WlSurface]) -> Option<usize> {
             for (i, s) in slice.iter().enumerate() {
