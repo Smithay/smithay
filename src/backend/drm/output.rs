@@ -25,11 +25,11 @@ use crate::{
 
 use super::{
     compositor::{
-        DrmCompositor, FrameError, FrameFlags, FrameResult, PrimaryPlaneElement, RenderFrameError,
-        RenderFrameErrorType, RenderFrameResult,
+        Capabilities, DrmCompositor, FrameError, FrameFlags, FrameResult, PrimaryPlaneElement,
+        RenderFrameError, RenderFrameErrorType, RenderFrameResult,
     },
     exporter::ExportFramebuffer,
-    DrmDevice, DrmError, Planes,
+    DrmDevice, DrmError, DrmSurface, Planes,
 };
 
 type CompositorList<A, F, U, G> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>>;
@@ -227,6 +227,56 @@ where
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
     {
+        self.initialize_output_with_capabilities(
+            crtc,
+            mode,
+            connectors,
+            output_mode_source,
+            planes,
+            renderer,
+            render_elements,
+            Capabilities::from_surface,
+        )
+    }
+
+    /// Create a new [`DrmOutput`] for the provided crtc of the underlying device.
+    ///
+    /// The [`OutputModeSource`] can be created from an [`Output`](crate::output::Output), which will automatically track
+    /// the output's mode changes. An [`OutputModeSource::Static`] variant should only be used when
+    /// manually updating modes using [`DrmCompositor::set_output_mode_source`].
+    ///
+    /// This might cause commits on other surfaces to meet the bandwidth
+    /// requirements of the output by temporarily disabling additional planes,
+    /// forcing composition or falling back to implicit modifiers.
+    ///
+    /// - `crtc` - the crtc the underlying surface should drive
+    /// - `mode` - the mode the underlying surface should be initialized with
+    /// - `connectors` - the set of connectors the underlying surface should be initialized with
+    /// - `output_mode_source`  used to to determine the size, scale and transform
+    /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
+    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`][super::DrmSurface::planes]
+    /// - `renderer` used for compositing, when commits are necessarily to realize bandwidth constraints
+    /// - `render_elements` used for rendering, when commits are necessarily to realize bandwidth constraints
+    /// - `capabilities_factory` used to initialize the [`Capabilities`] used for this output
+    #[allow(clippy::too_many_arguments)]
+    pub fn initialize_output_with_capabilities<R, E, C>(
+        &mut self,
+        crtc: crtc::Handle,
+        mode: control::Mode,
+        connectors: &[connector::Handle],
+        output_mode_source: impl Into<OutputModeSource> + std::fmt::Debug,
+        planes: Option<Planes>,
+        renderer: &mut R,
+        render_elements: &DrmOutputRenderElements<R, E>,
+        capabilities_factory: C,
+    ) -> DrmOutputManagerResult<DrmOutput<A, F, U, G>, A, F, R>
+    where
+        E: RenderElement<R>,
+        R: Renderer + Bind<Dmabuf>,
+        R::TextureId: Texture + 'static,
+        R::Error: Send + Sync + 'static,
+        C: Fn(&DrmSurface) -> Result<Capabilities, DrmError>,
+    {
         let output_mode_source = output_mode_source.into();
 
         let mut write_guard = self.compositor.write().unwrap();
@@ -238,8 +288,10 @@ where
             |implicit_modifiers: bool| -> FrameResult<DrmCompositor<A, F, U, G>, A, F> {
                 let surface = self.device.create_surface(crtc, mode, connectors)?;
 
+                let capabilities = capabilities_factory(&surface)?;
+
                 if implicit_modifiers {
-                    DrmCompositor::<A, F, U, G>::new(
+                    DrmCompositor::<A, F, U, G>::with_capabilities(
                         output_mode_source.clone(),
                         surface,
                         planes.clone(),
@@ -252,9 +304,10 @@ where
                             .copied(),
                         self.device.cursor_size(),
                         self.gbm.clone(),
+                        capabilities,
                     )
                 } else {
-                    DrmCompositor::<A, F, U, G>::new(
+                    DrmCompositor::<A, F, U, G>::with_capabilities(
                         output_mode_source.clone(),
                         surface,
                         planes.clone(),
@@ -264,6 +317,7 @@ where
                         self.renderer_formats.iter().copied(),
                         self.device.cursor_size(),
                         self.gbm.clone(),
+                        capabilities,
                     )
                 }
             };
