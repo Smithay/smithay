@@ -177,20 +177,20 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         match &self {
             #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer { surface, .. } => surface
                 .render_elements(renderer, location, scale, alpha)
                 .into_iter()
                 .map(SpaceRenderElements::Surface)
-                .collect(),
+                .collect::<Vec<_>>(),
             SpaceElements::Element(element) => element
                 .element
                 .render_elements(renderer, location, scale, alpha)
                 .into_iter()
                 .map(|x| SpaceRenderElements::Element(Wrap::from(x)))
-                .collect(),
+                .collect::<Vec<_>>(),
         }
     }
 }

@@ -414,7 +414,7 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement>;
+    ) -> impl IntoIterator<Item = Self::RenderElement>;
 }
 
 impl<E> Element for &E

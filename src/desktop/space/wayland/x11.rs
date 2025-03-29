@@ -108,7 +108,7 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         let state = self.state.lock().unwrap();
         let Some(surface) = state.wl_surface.as_ref() else {
             return Vec::new();

@@ -97,7 +97,7 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         match self.underlying_surface() {
             WindowSurface::Wayland(s) => {
                 let mut render_elements = Vec::new();
@@ -131,7 +131,9 @@ where
                 render_elements
             }
             #[cfg(feature = "xwayland")]
-            WindowSurface::X11(s) => AsRenderElements::render_elements(s, renderer, location, scale, alpha),
+            WindowSurface::X11(s) => AsRenderElements::render_elements(s, renderer, location, scale, alpha)
+                .into_iter()
+                .collect::<Vec<_>>(),
         }
     }
 }

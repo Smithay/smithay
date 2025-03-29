@@ -248,13 +248,13 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement> {
-        vec![SolidColorRenderElement::from_buffer(
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
+        Some(SolidColorRenderElement::from_buffer(
             self,
             location,
             scale,
             alpha,
             Kind::Unspecified,
-        )]
+        ))
     }
 }

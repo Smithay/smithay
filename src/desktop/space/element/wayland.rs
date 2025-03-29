@@ -43,7 +43,7 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         crate::backend::renderer::element::surface::render_elements_from_surface_tree(
             renderer,
             &self.surface,

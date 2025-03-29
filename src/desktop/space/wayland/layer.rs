@@ -24,7 +24,7 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         let surface = self.wl_surface();
 
         let mut render_elements = Vec::new();
