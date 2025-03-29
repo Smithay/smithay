@@ -83,17 +83,17 @@ where
                     }
                 };
 
-                if compositor::give_role(&wl_surface, LAYER_SURFACE_ROLE).is_err() {
+                let Ok(alive_tracker) = compositor::give_role(&wl_surface, LAYER_SURFACE_ROLE) else {
                     shell.post_error(zwlr_layer_shell_v1::Error::Role, "Surface already has a role.");
                     return;
-                }
+                };
 
                 let id = data_init.init(
                     id,
                     WlrLayerSurfaceUserData {
                         shell_data: state.shell_state().clone(),
                         wl_surface: wl_surface.downgrade(),
-                        alive_tracker: Default::default(),
+                        alive_tracker,
                     },
                 );
 
