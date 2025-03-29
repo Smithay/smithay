@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_ADD_BUFFER_OPCODE","REQ_ADD_BUFFER_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_SET_NAME_OPCODE","REQ_SET_NAME_SINCE"],"enum":["Error","Event","Request"],"struct":["XdgToplevelIconV1"]};
