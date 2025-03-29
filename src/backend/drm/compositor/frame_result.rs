@@ -19,7 +19,7 @@ use crate::{
     utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{DrmScanoutBuffer, ScanoutBuffer};
+use super::{Capabilities, DrmScanoutBuffer, ScanoutBuffer};
 
 /// Result for [`DrmCompositor::render_frame`][super::DrmCompositor::render_frame]
 ///
@@ -52,14 +52,14 @@ pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
     pub cursor_element: Option<&'a E>,
 
     pub(super) primary_plane_element_id: Id,
-    pub(super) supports_fencing: bool,
+    pub(super) capabilities: Capabilities,
 }
 
 impl<B: Buffer, F: Framebuffer, E> RenderFrameResult<'_, B, F, E> {
     /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
     pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
-            !self.supports_fencing || !element.sync.is_exportable()
+            !self.capabilities.contains(Capabilities::EXPLICIT_SYNC) || !element.sync.is_exportable()
         } else {
             false
         }
