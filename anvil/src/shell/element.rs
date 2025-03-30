@@ -426,7 +426,7 @@ where
         mut location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<Self::RenderElement> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         let window_bbox = SpaceElement::bbox(&self.0);
 
         if self.decoration_state().is_ssd && !window_bbox.is_empty() {

@@ -132,6 +132,8 @@ where
                 constrain,
                 constrain_behavior,
             )
+            .into_iter()
+            .collect::<Vec<_>>()
         })
 }
 
@@ -153,7 +155,7 @@ where
         .and_then(|f| f.get())
     {
         let scale = output.current_scale().fractional_scale().into();
-        let window_render_elements: Vec<WindowRenderElement<R>> =
+        let window_render_elements =
             AsRenderElements::<R>::render_elements(&window, renderer, (0, 0).into(), scale, 1.0);
 
         let elements = custom_elements
