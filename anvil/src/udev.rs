@@ -1468,14 +1468,17 @@ fn render_surface<'a>(
         }
 
         custom_elements.extend(
-            pointer_element.render_elements(
-                renderer,
-                (cursor_pos - cursor_hotspot.to_f64())
-                    .to_physical(scale)
-                    .to_i32_round(),
-                scale,
-                1.0,
-            ),
+            pointer_element
+                .render_elements(
+                    renderer,
+                    (cursor_pos - cursor_hotspot.to_f64())
+                        .to_physical(scale)
+                        .to_i32_round(),
+                    scale,
+                    1.0,
+                )
+                .into_iter()
+                .map(CustomRenderElements::Pointer),
         );
 
         // draw the dnd icon if applicable
@@ -1485,13 +1488,17 @@ fn render_surface<'a>(
                     .to_physical(scale)
                     .to_i32_round();
                 if icon.surface.alive() {
-                    custom_elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
-                        &SurfaceTree::from_surface(&icon.surface),
-                        renderer,
-                        dnd_icon_pos,
-                        scale,
-                        1.0,
-                    ));
+                    custom_elements.extend(
+                        AsRenderElements::<UdevRenderer<'a>>::render_elements(
+                            &SurfaceTree::from_surface(&icon.surface),
+                            renderer,
+                            dnd_icon_pos,
+                            scale,
+                            1.0,
+                        )
+                        .into_iter()
+                        .map(CustomRenderElements::Surface),
+                    );
                 }
             }
         }

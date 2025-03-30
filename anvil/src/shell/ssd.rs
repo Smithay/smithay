@@ -233,13 +233,13 @@ impl HeaderBar {
 impl<R: Renderer> AsRenderElements<R> for HeaderBar {
     type RenderElement = SolidColorRenderElement;
 
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements(
         &self,
         _renderer: &mut R,
         location: Point<i32, smithay::utils::Physical>,
         scale: smithay::utils::Scale<f64>,
         alpha: f32,
-    ) -> Vec<C> {
+    ) -> Vec<Self::RenderElement> {
         let header_end_offset: Point<i32, Logical> = Point::from((self.width as i32, 0));
         let button_offset: Point<i32, Logical> = Point::from((BUTTON_WIDTH as i32, 0));
 

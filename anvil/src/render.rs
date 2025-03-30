@@ -72,15 +72,15 @@ impl<R: Renderer + ImportAll + ImportMem, E: RenderElement<R> + std::fmt::Debug>
     }
 }
 
-pub fn space_preview_elements<'a, R, C>(
+pub fn space_preview_elements<'a, R>(
     renderer: &'a mut R,
     space: &'a Space<WindowElement>,
     output: &'a Output,
-) -> impl Iterator<Item = C> + 'a
+) -> impl Iterator<Item = CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowRenderElement<R>>>>>
+       + 'a
 where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Clone + 'static,
-    C: From<CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowRenderElement<R>>>>> + 'a,
 {
     let constrain_behavior = ConstrainBehavior {
         reference: ConstrainReference::BoundingBox,
@@ -173,7 +173,11 @@ where
             .collect::<Vec<_>>();
 
         if show_window_preview && space.elements_for_output(output).count() > 0 {
-            output_render_elements.extend(space_preview_elements(renderer, space, output));
+            output_render_elements.extend(
+                space_preview_elements(renderer, space, output)
+                    .into_iter()
+                    .map(OutputRenderElements::Preview),
+            );
         }
 
         let space_elements = smithay::desktop::space::space_render_elements::<_, WindowElement, _>(
