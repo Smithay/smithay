@@ -250,18 +250,15 @@ impl<R: Renderer> AsRenderElements<R> for HeaderBar {
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
             SolidColorRenderElement::from_buffer(
                 &self.maximize_button,
                 location + (header_end_offset - button_offset.upscale(2)).to_physical_precise_round(scale),
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
-            SolidColorRenderElement::from_buffer(&self.background, location, scale, alpha, Kind::Unspecified)
-                .into(),
+            ),
+            SolidColorRenderElement::from_buffer(&self.background, location, scale, alpha, Kind::Unspecified),
         ]
     }
 }

@@ -94,8 +94,7 @@ where
                             Kind::Cursor,
                         )
                         .expect("Lost system pointer buffer"),
-                    )
-                    .into()]
+                    )]
                 } else {
                     vec![]
                 }

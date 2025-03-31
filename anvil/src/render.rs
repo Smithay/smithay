@@ -173,11 +173,8 @@ where
             .collect::<Vec<_>>();
 
         if show_window_preview && space.elements_for_output(output).count() > 0 {
-            output_render_elements.extend(
-                space_preview_elements(renderer, space, output)
-                    .into_iter()
-                    .map(OutputRenderElements::Preview),
-            );
+            output_render_elements
+                .extend(space_preview_elements(renderer, space, output).map(OutputRenderElements::Preview));
         }
 
         let space_elements = smithay::desktop::space::space_render_elements::<_, WindowElement, _>(
