@@ -25,35 +25,6 @@ use crate::{
     utils::SealedFile,
 };
 
-struct SenderState {
-    name: Option<String>,
-    connection: eis::Connection,
-    seat: eis::Seat,
-    last_serial: u32,
-}
-
-impl SenderState {
-    fn new(name: Option<String>, connection: eis::Connection) -> Self {
-        // TODO create seat, etc.
-        // check protocol versions
-        let seat = connection.seat(1);
-        seat.name("default");
-        seat.capability(0x2, "ei_pointer");
-        seat.capability(0x4, "ei_pointer_absolute");
-        seat.capability(0x8, "ei_button");
-        seat.capability(0x10, "ei_scroll");
-        seat.capability(0x20, "ei_keyboard");
-        seat.capability(0x40, "ei_touchscreen");
-        seat.done();
-        Self {
-            name,
-            connection,
-            seat,
-            last_serial: 0,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct EiInput {
     source: reis::calloop::EisRequestSource,
