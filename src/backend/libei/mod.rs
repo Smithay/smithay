@@ -93,10 +93,18 @@ impl input::Device for request::Device {
     }
 
     fn has_capability(&self, capability: input::DeviceCapability) -> bool {
-        if let Ok(capability) = DeviceCapability::try_from(capability) {
-            self.has_capability(capability)
-        } else {
-            false
+        match capability {
+            input::DeviceCapability::Gesture => false,
+            input::DeviceCapability::Keyboard => self.has_capability(DeviceCapability::Keyboard),
+            // TODO also require button?
+            input::DeviceCapability::Pointer => {
+                self.has_capability(DeviceCapability::Pointer)
+                    || self.has_capability(DeviceCapability::PointerAbsolute)
+            }
+            input::DeviceCapability::Switch => false,
+            input::DeviceCapability::TabletPad => false,
+            input::DeviceCapability::TabletTool => false,
+            input::DeviceCapability::Touch => self.has_capability(DeviceCapability::Touch),
         }
     }
 
@@ -501,21 +509,5 @@ fn convert_request(request: EisRequest) -> Option<InputEvent<EiInput>> {
         | EisRequest::Bind(_)
         | EisRequest::DeviceStartEmulating(_)
         | EisRequest::DeviceStopEmulating(_) => None,
-    }
-}
-
-// XXX not a direct match?
-impl TryFrom<input::DeviceCapability> for DeviceCapability {
-    type Error = ();
-    fn try_from(other: input::DeviceCapability) -> Result<DeviceCapability, ()> {
-        match other {
-            input::DeviceCapability::Gesture => Err(()),
-            input::DeviceCapability::Keyboard => Ok(DeviceCapability::Keyboard),
-            input::DeviceCapability::Pointer => Ok(DeviceCapability::Pointer),
-            input::DeviceCapability::Switch => Err(()),
-            input::DeviceCapability::TabletPad => Err(()),
-            input::DeviceCapability::TabletTool => Err(()),
-            input::DeviceCapability::Touch => Ok(DeviceCapability::Touch),
-        }
     }
 }
