@@ -7,11 +7,9 @@
 //!
 //! - Raw OpenGL ES 2
 
-use std::error::Error;
-use std::fmt;
-
-use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
+use crate::utils::{ids::id_gen, Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
 use cgmath::Matrix3;
+use std::{error::Error, fmt, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::{compositor::SurfaceData, shm::fourcc_to_shm_format};
@@ -58,6 +56,34 @@ pub mod sync;
 // Use `--features renderer_test` when running doc tests manually.
 #[cfg(any(feature = "renderer_test", test, doctest))]
 pub mod test;
+
+id_gen!(renderer_id);
+
+/// Id of a [`Renderer`]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RendererId(Arc<InnerId>);
+
+impl RendererId {
+    /// Generates next [`RendererId`]
+    pub fn next() -> RendererId {
+        RendererId(Arc::new(InnerId::new()))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct InnerId(usize);
+
+impl InnerId {
+    fn new() -> Self {
+        Self(renderer_id::next())
+    }
+}
+
+impl Drop for InnerId {
+    fn drop(&mut self) {
+        renderer_id::remove(self.0);
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Texture filtering methods
@@ -165,9 +191,8 @@ pub trait Frame {
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
 
-    /// Returns an id, that is unique to all renderers, that can use
-    /// `TextureId`s originating from any of these renderers.
-    fn id(&self) -> usize;
+    /// Returns the [`RendererId`] of the associated renderer.
+    fn id(&self) -> RendererId;
 
     /// Clear the complete current target with a single given color.
     ///
@@ -280,9 +305,10 @@ pub trait RendererSuper: fmt::Debug {
 ///
 /// *Note*: Associated types are defined in [`RendererSuper`].
 pub trait Renderer: RendererSuper {
-    /// Returns an id, that is unique to all renderers, that can use
-    /// `TextureId`s originating from any of these renderers.
-    fn id(&self) -> usize;
+    /// Returns the unique [`RendererId`] of this renderer
+    ///
+    /// New id can be generated using [`RendererId::next()`]
+    fn id(&self) -> RendererId;
 
     /// Set the filter method to be used when rendering a texture into a smaller area than its size
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;

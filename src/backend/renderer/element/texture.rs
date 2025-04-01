@@ -10,7 +10,7 @@
 //! It is possible to either use a [`pre-existing texture`](TextureBuffer::from_texture) or to create the texture
 //! from [`RGBA memory`](TextureBuffer::from_memory).
 //! The [`TextureBuffer`] can be used in the smithay pipeline by using [`TextureRenderElement::from_texture_buffer`].
-//!  
+//!
 //! ## Hardware accelerated rendering
 //!
 //! [`TextureRenderBuffer`] provides a solution for hardware accelerated rending with
@@ -62,7 +62,7 @@
 //! const HEIGHT: i32 = 10;
 //!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
-//! # let mut renderer = DummyRenderer;
+//! # let mut renderer = DummyRenderer::default();
 //! # let mut framebuffer = DummyFramebuffer;
 //!
 //! // Create the texture buffer from a chunk of memory
@@ -120,7 +120,7 @@
 //! const HEIGHT: i32 = 10;
 //!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
-//! # let mut renderer = DummyRenderer;
+//! # let mut renderer = DummyRenderer::default();
 //! # let mut framebuffer = DummyFramebuffer;
 //!
 //! // Create the texture buffer from a chunk of memory
@@ -203,7 +203,7 @@ use crate::{
         allocator::Fourcc,
         renderer::{
             utils::{DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
-            Frame, ImportMem, Renderer, Texture,
+            Frame, ImportMem, Renderer, RendererId, Texture,
         },
     },
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -215,7 +215,7 @@ use super::{CommitCounter, Element, Id, Kind, RenderElement};
 #[derive(Debug, Clone)]
 pub struct TextureBuffer<T> {
     id: Id,
-    renderer_id: usize,
+    renderer_id: RendererId,
     texture: T,
     scale: i32,
     transform: Transform,
@@ -276,7 +276,7 @@ impl<T> TextureBuffer<T> {
 #[derive(Debug, Clone)]
 pub struct TextureRenderBuffer<T> {
     id: Id,
-    renderer_id: usize,
+    renderer_id: RendererId,
     texture: T,
     scale: i32,
     transform: Transform,
@@ -416,7 +416,7 @@ impl<T> Drop for RenderContext<'_, T> {
 pub struct TextureRenderElement<T> {
     location: Point<f64, Physical>,
     id: Id,
-    renderer_id: usize,
+    renderer_id: RendererId,
     pub(crate) texture: T,
     scale: i32,
     transform: Transform,
@@ -448,7 +448,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             buffer.id.clone(),
-            buffer.renderer_id,
+            buffer.renderer_id.clone(),
             location,
             buffer.texture.clone(),
             buffer.scale,
@@ -473,7 +473,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
     ) -> Self {
         TextureRenderElement::from_static_texture(
             buffer.id.clone(),
-            buffer.renderer_id,
+            buffer.renderer_id.clone(),
             location,
             buffer.texture.clone(),
             buffer.scale,
@@ -493,7 +493,7 @@ impl<T: Texture> TextureRenderElement<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn from_texture_with_damage(
         id: Id,
-        renderer_id: usize,
+        renderer_id: RendererId,
         location: impl Into<Point<f64, Physical>>,
         texture: T,
         scale: i32,
@@ -532,7 +532,7 @@ impl<T: Texture> TextureRenderElement<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn from_static_texture(
         id: Id,
-        renderer_id: usize,
+        renderer_id: RendererId,
         location: impl Into<Point<f64, Physical>>,
         texture: T,
         scale: i32,

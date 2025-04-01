@@ -26,10 +26,20 @@ use crate::{
     utils::{Buffer, Physical, Rectangle, Size, Transform},
 };
 
-use super::Color32F;
+use super::{Color32F, RendererId};
 
-#[derive(Debug, Default)]
-pub struct DummyRenderer;
+#[derive(Debug)]
+pub struct DummyRenderer {
+    id: RendererId,
+}
+
+impl Default for DummyRenderer {
+    fn default() -> Self {
+        Self {
+            id: RendererId::next(),
+        }
+    }
+}
 
 /// Error returned by the DummyRenderer
 #[derive(thiserror::Error, Debug)]
@@ -53,17 +63,31 @@ impl From<DummyError> for SwapBuffersError {
 impl RendererSuper for DummyRenderer {
     type Error = DummyError;
     type TextureId = DummyTexture;
+    type Framebuffer<'buffer> = DummyFramebuffer;
     type Frame<'frame, 'buffer>
         = DummyFrame
     where
         'buffer: 'frame,
         Self: 'frame;
-    type Framebuffer<'buffer> = DummyFramebuffer;
 }
 
 impl Renderer for DummyRenderer {
-    fn id(&self) -> usize {
-        0
+    fn id(&self) -> RendererId {
+        self.id.clone()
+    }
+
+    fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn upscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn set_debug_flags(&mut self, _flags: DebugFlags) {}
+
+    fn debug_flags(&self) -> DebugFlags {
+        DebugFlags::empty()
     }
 
     fn render<'frame, 'buffer>(
@@ -75,21 +99,7 @@ impl Renderer for DummyRenderer {
     where
         'buffer: 'frame,
     {
-        Ok(DummyFrame {})
-    }
-
-    fn upscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn set_debug_flags(&mut self, _flags: DebugFlags) {}
-
-    fn debug_flags(&self) -> DebugFlags {
-        DebugFlags::empty()
+        Ok(DummyFrame { id: self.id() })
     }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
@@ -224,14 +234,16 @@ impl Texture for DummyFramebuffer {
 }
 
 #[derive(Debug)]
-pub struct DummyFrame {}
+pub struct DummyFrame {
+    id: RendererId,
+}
 
 impl Frame for DummyFrame {
     type Error = DummyError;
     type TextureId = DummyTexture;
 
-    fn id(&self) -> usize {
-        0
+    fn id(&self) -> RendererId {
+        self.id.clone()
     }
 
     fn clear(&mut self, _color: Color32F, _damage: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {

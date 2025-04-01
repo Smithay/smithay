@@ -66,7 +66,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
         })
         .unwrap();
 
-    let mut renderer = DummyRenderer;
+    let mut renderer = DummyRenderer::default();
     let mut framebuffer = DummyFramebuffer;
 
     let mode = Mode {

@@ -49,7 +49,7 @@ use std::{
 
 use super::{
     sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
-    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    Offscreen, Renderer, RendererId, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
@@ -1030,7 +1030,7 @@ where
     }
 }
 
-static MAX_CPU_COPIES: usize = 3; // TODO, benchmark this
+const MAX_CPU_COPIES: usize = 3; // TODO, benchmark this
 
 impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> RendererSuper for MultiRenderer<'render, 'target, R, T>
 where
@@ -1064,7 +1064,7 @@ where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
-    fn id(&self) -> usize {
+    fn id(&self) -> RendererId {
         self.render.renderer().id()
     }
 
@@ -1813,7 +1813,7 @@ where
     type TextureId = MultiTexture;
     type Error = Error<R, T>;
 
-    fn id(&self) -> usize {
+    fn id(&self) -> RendererId {
         self.frame.as_ref().unwrap().id()
     }
 

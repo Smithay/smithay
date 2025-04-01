@@ -1,7 +1,9 @@
 #[cfg(feature = "backend_drm")]
 use crate::wayland::drm_syncobj::{DrmSyncPoint, DrmSyncobjCachedState};
 use crate::{
-    backend::renderer::{buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer},
+    backend::renderer::{
+        buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer, RendererId,
+    },
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
@@ -12,17 +14,15 @@ use crate::{
         viewporter,
     },
 };
-use std::sync::Arc;
-use std::{
-    any::TypeId,
-    collections::{hash_map::Entry, HashMap},
-    sync::Mutex,
-};
-use tracing::{error, instrument, warn};
 
-use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::{Arc, Mutex},
+};
 
 use super::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, SurfaceView};
+use tracing::{error, instrument, warn};
+use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -42,15 +42,15 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<Buffer>,
     pub(crate) damage: DamageBag<i32, BufferCoord>,
-    pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
-    pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
+    pub(crate) renderer_seen: HashMap<RendererId, CommitCounter>,
+    pub(crate) textures: HashMap<RendererId, Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
 }
 
 // SAFETY: Only thing unsafe here is the `Box<dyn std::any::Any>`, which are the textures.
 // Those are guarded by our Renderers handling thread-safety and the TypeId+render-id.
-// Theoretically a renderer could be thread-safe, but it's texture type isn't, but that is **very** theoretical.
+// Theoretically a renderer could be thread-safe, but its texture type isn't, but that is **very** theoretical.
 unsafe impl Send for RendererSurfaceState {}
 unsafe impl Sync for RendererSurfaceState {}
 
@@ -316,13 +316,12 @@ impl RendererSurfaceState {
     }
 
     /// Gets a reference to the texture for the specified renderer
-    pub fn texture<R>(&self, id: usize) -> Option<&R::TextureId>
+    pub fn texture<R>(&self, id: RendererId) -> Option<&R::TextureId>
     where
         R: Renderer,
         R::TextureId: 'static,
     {
-        let texture_id = (TypeId::of::<R::TextureId>(), id);
-        self.textures.get(&texture_id).and_then(|e| e.downcast_ref())
+        self.textures.get(&id).and_then(|e| e.downcast_ref())
     }
 
     /// Gets the opaque regions of this surface
@@ -496,13 +495,13 @@ where
     R::TextureId: 'static,
 {
     if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-        let texture_id = (TypeId::of::<R::TextureId>(), renderer.id());
+        let renderer_id = renderer.id();
         let mut data_ref = data.lock().unwrap();
         let data = &mut *data_ref;
 
-        let last_commit = data.renderer_seen.get(&texture_id);
+        let last_commit = data.renderer_seen.get(&renderer_id);
         let buffer_damage = data.damage_since(last_commit.copied());
-        if let Entry::Vacant(e) = data.textures.entry(texture_id) {
+        if let Entry::Vacant(e) = data.textures.entry(renderer_id.clone()) {
             if let Some(buffer) = data.buffer.as_ref() {
                 // There is no point in importing a single pixel buffer
                 if matches!(
@@ -515,7 +514,7 @@ where
                 match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                     Some(Ok(m)) => {
                         e.insert(Box::new(m));
-                        data.renderer_seen.insert(texture_id, data.current_commit());
+                        data.renderer_seen.insert(renderer_id, data.current_commit());
                     }
                     Some(Err(err)) => {
                         warn!("Error loading buffer: {}", err);
@@ -549,7 +548,6 @@ where
     let scale = 1.0;
     let location: Point<f64, Physical> = (0.0, 0.0).into();
 
-    let texture_id = (TypeId::of::<R::TextureId>(), renderer.id());
     let mut result = Ok(());
     with_surface_tree_downward(
         surface,
@@ -565,7 +563,7 @@ where
                 let mut data_ref = data.lock().unwrap();
                 let data = &mut *data_ref;
                 // Now, should we be drawn ?
-                if data.textures.contains_key(&texture_id) {
+                if data.textures.contains_key(&renderer.id()) {
                     // if yes, also process the children
                     let surface_view = data.surface_view.unwrap();
                     location += surface_view.offset.to_f64().to_physical(scale);

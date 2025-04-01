@@ -5,7 +5,9 @@ use core::slice;
 use std::{
     collections::HashMap,
     ffi::{CStr, CString},
-    fmt, mem,
+    fmt,
+    marker::PhantomData,
+    mem,
     os::raw::c_char,
     ptr,
     rc::Rc,
@@ -35,24 +37,23 @@ use self::version::GlVersion;
 
 use super::{
     sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
-    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    Offscreen, Renderer, RendererId, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
-use crate::backend::{
-    allocator::Buffer,
-    egl::{
-        ffi::egl::{self as ffi_egl, types::EGLImage},
-        EGLContext, EGLSurface, MakeCurrentError,
+use crate::{
+    backend::{
+        allocator::{
+            dmabuf::{Dmabuf, WeakDmabuf},
+            format::{get_bpp, get_opaque, has_alpha, FormatSet},
+            Buffer, Format, Fourcc,
+        },
+        egl::{
+            fence::EGLFence,
+            ffi::egl::{self as ffi_egl, types::EGLImage},
+            EGLContext, EGLSurface, MakeCurrentError,
+        },
     },
+    utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
 };
-use crate::backend::{
-    allocator::{
-        dmabuf::{Dmabuf, WeakDmabuf},
-        format::{get_bpp, get_opaque, has_alpha, FormatSet},
-        Format, Fourcc,
-    },
-    egl::fence::EGLFence,
-};
-use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -68,14 +69,6 @@ use wayland_server::protocol::wl_buffer;
 #[allow(clippy::all, missing_docs, missing_debug_implementations)]
 pub mod ffi {
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
-}
-
-crate::utils::ids::id_gen!(renderer_id);
-struct RendererId(usize);
-impl Drop for RendererId {
-    fn drop(&mut self) {
-        renderer_id::remove(self.0);
-    }
 }
 
 enum CleanupResource {
@@ -307,7 +300,7 @@ pub struct GlesRenderer {
 
     // caches
     buffers: Vec<GlesBuffer>,
-    dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
+    dmabuf_cache: HashMap<WeakDmabuf, GlesTexture>,
     vbos: [ffi::types::GLuint; 2],
     vertices: Vec<f32>,
     non_opaque_damage: Vec<Rectangle<i32, Physical>>,
@@ -318,7 +311,7 @@ pub struct GlesRenderer {
     destruction_callback_sender: Sender<CleanupResource>,
 
     // markers
-    _not_send: *mut (),
+    _not_send: PhantomData<*mut ()>,
 
     // debug
     span: tracing::Span,
@@ -617,7 +610,7 @@ impl GlesRenderer {
 
         context
             .user_data()
-            .insert_if_missing_threadsafe(|| RendererId(renderer_id::next()));
+            .insert_if_missing_threadsafe(|| RendererId::next());
         drop(_guard);
 
         let renderer = GlesRenderer {
@@ -646,7 +639,7 @@ impl GlesRenderer {
             destruction_callback_sender: tx,
 
             debug_flags: DebugFlags::empty(),
-            _not_send: std::ptr::null_mut(),
+            _not_send: PhantomData,
             span,
             gl_debug_span,
         };
@@ -778,7 +771,7 @@ impl ImportMemWl for GlesRenderer {
 
         // why not store a `GlesTexture`? because the user might do so.
         // this is guaranteed a non-public internal type, so we are good.
-        type CacheMap = HashMap<usize, Arc<GlesTextureInternal>>;
+        type CacheMap = HashMap<RendererId, Arc<GlesTextureInternal>>;
 
         let mut surface_lock = surface.as_ref().map(|surface_data| {
             surface_data
@@ -2018,8 +2011,8 @@ impl RendererSuper for GlesRenderer {
 }
 
 impl Renderer for GlesRenderer {
-    fn id(&self) -> usize {
-        self.egl.user_data().get::<RendererId>().unwrap().0
+    fn id(&self) -> RendererId {
+        self.egl.user_data().get::<RendererId>().unwrap().clone()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
@@ -2207,7 +2200,7 @@ impl Frame for GlesFrame<'_, '_> {
     type TextureId = GlesTexture;
     type Error = GlesError;
 
-    fn id(&self) -> usize {
+    fn id(&self) -> RendererId {
         self.renderer.id()
     }
 
