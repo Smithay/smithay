@@ -1,8 +1,6 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
-};
+use std::sync::{atomic::Ordering, Arc};
 
+use atomic_float::AtomicF64;
 use wayland_server::{
     backend::ClientId,
     protocol::wl_touch::{self, WlTouch},
@@ -70,7 +68,7 @@ where
                 .unwrap()
                 .client_scale
                 .load(Ordering::Acquire);
-            let location = event.location.to_client(client_scale as f64);
+            let location = event.location.to_client(client_scale);
             touch.down(
                 serial.into(),
                 event.time,
@@ -98,7 +96,7 @@ where
                 .unwrap()
                 .client_scale
                 .load(Ordering::Acquire);
-            let location = event.location.to_client(client_scale as f64);
+            let location = event.location.to_client(client_scale);
             touch.motion(event.time, slot.into(), location.x, location.y);
         })
     }
@@ -134,7 +132,7 @@ where
 #[derive(Debug)]
 pub struct TouchUserData<D: SeatHandler> {
     pub(crate) handle: Option<TouchHandle<D>>,
-    pub(crate) client_scale: Arc<AtomicU32>,
+    pub(crate) client_scale: Arc<AtomicF64>,
 }
 
 impl<D> Dispatch<WlTouch, TouchUserData<D>, D> for SeatState<D>

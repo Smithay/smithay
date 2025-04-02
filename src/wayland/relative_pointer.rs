@@ -84,11 +84,9 @@
 //! delegate_relative_pointer!(State);
 //! ```
 
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{atomic::Ordering, Arc, Mutex};
 
+use atomic_float::AtomicF64;
 use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_manager_v1::{self, ZwpRelativePointerManagerV1},
     zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
@@ -130,8 +128,8 @@ impl WpRelativePointerHandle {
                 .unwrap()
                 .client_scale
                 .load(Ordering::Acquire);
-            let delta = event.delta.to_client(client_scale as f64);
-            let delta_unaccel = event.delta_unaccel.to_client(client_scale as f64);
+            let delta = event.delta.to_client(client_scale);
+            let delta_unaccel = event.delta_unaccel.to_client(client_scale);
 
             let utime_hi = (event.utime >> 32) as u32;
             let utime_lo = (event.utime & 0xffffffff) as u32;
@@ -160,7 +158,7 @@ impl WpRelativePointerHandle {
 #[derive(Debug)]
 pub struct RelativePointerUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
-    client_scale: Arc<AtomicU32>,
+    client_scale: Arc<AtomicF64>,
 }
 
 /// State of the relative pointer manager

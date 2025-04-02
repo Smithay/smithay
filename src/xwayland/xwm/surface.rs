@@ -13,13 +13,11 @@ use crate::{
     utils::{user_data::UserDataMap, Client, IsAlive, Logical, Rectangle, Serial, Size},
     wayland::compositor,
 };
+use atomic_float::AtomicF64;
 use encoding_rs::WINDOWS_1252;
 use std::{
     collections::HashSet,
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc, Mutex, Weak,
-    },
+    sync::{atomic::Ordering, Arc, Mutex, Weak},
 };
 use tracing::warn;
 use wayland_server::protocol::wl_surface::WlSurface;
@@ -41,7 +39,7 @@ use super::{send_configure_notify, X11Wm, XwmId};
 #[derive(Debug, Clone)]
 pub struct X11Surface {
     xwm: Option<XwmId>,
-    client_scale: Option<Arc<AtomicU32>>,
+    client_scale: Option<Arc<AtomicF64>>,
     window: X11Window,
     conn: Weak<RustConnection>,
     atoms: super::Atoms,
@@ -282,9 +280,9 @@ impl X11Surface {
                 .client_scale
                 .as_ref()
                 .map(|s| s.load(Ordering::Acquire))
-                .unwrap_or(1);
+                .unwrap_or(1.);
             let logical_rect = rect.unwrap_or(state.geometry);
-            let rect = logical_rect.to_client(client_scale as i32);
+            let rect = logical_rect.to_client_precise_round(client_scale);
             let aux = ConfigureWindowAux::default()
                 .x(rect.loc.x)
                 .y(rect.loc.y)
@@ -398,14 +396,14 @@ impl X11Surface {
             .client_scale
             .as_ref()
             .map(|s| s.load(Ordering::Acquire))
-            .unwrap_or(1);
+            .unwrap_or(1.);
         let state = self.state.lock().unwrap();
         state
             .normal_hints
             .as_ref()
             .and_then(|hints| hints.min_size)
             .map(Size::<i32, Client>::from)
-            .map(|s| s.to_logical(client_scale as i32))
+            .map(|s| s.to_f64().to_logical(client_scale).to_i32_round())
     }
 
     /// Returns the suggested minimum size of the underlying X11 window
@@ -414,14 +412,14 @@ impl X11Surface {
             .client_scale
             .as_ref()
             .map(|s| s.load(Ordering::Acquire))
-            .unwrap_or(1);
+            .unwrap_or(1.);
         let state = self.state.lock().unwrap();
         state
             .normal_hints
             .as_ref()
             .and_then(|hints| hints.max_size)
             .map(Size::<i32, Client>::from)
-            .map(|s| s.to_logical(client_scale as i32))
+            .map(|s| s.to_f64().to_logical(client_scale).to_i32_round())
     }
 
     /// Returns the suggested base size of the underlying X11 window
@@ -430,14 +428,14 @@ impl X11Surface {
             .client_scale
             .as_ref()
             .map(|s| s.load(Ordering::Acquire))
-            .unwrap_or(1);
+            .unwrap_or(1.);
         let state = self.state.lock().unwrap();
         let res = state
             .normal_hints
             .as_ref()
             .and_then(|hints| hints.base_size)
             .map(Size::<i32, Client>::from)
-            .map(|s| s.to_logical(client_scale as i32));
+            .map(|s| s.to_f64().to_logical(client_scale).to_i32_round());
         std::mem::drop(state);
         res.or_else(|| self.min_size())
     }

@@ -1,8 +1,6 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{atomic::Ordering, Arc, Mutex};
 
+use atomic_float::AtomicF64;
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
@@ -78,7 +76,7 @@ impl WlPointerHandle {
                 .unwrap()
                 .client_scale
                 .load(Ordering::Acquire);
-            let location = event.location.to_client(client_scale as f64);
+            let location = event.location.to_client(client_scale);
             ptr.enter(event.serial.into(), surface, location.x, location.y);
         })
     }
@@ -101,7 +99,7 @@ impl WlPointerHandle {
                 .unwrap()
                 .client_scale
                 .load(Ordering::Acquire);
-            let location = event.location.to_client(client_scale as f64);
+            let location = event.location.to_client(client_scale);
             ptr.motion(event.time, location.x, location.y);
         })
     }
@@ -197,7 +195,7 @@ impl WlPointerHandle {
                 ptr.axis(
                     details.time,
                     WlAxis::HorizontalScroll,
-                    details.axis.0 * client_scale as f64,
+                    details.axis.0 * client_scale,
                 );
             }
             if details.axis.1 != 0.0 {
@@ -207,7 +205,7 @@ impl WlPointerHandle {
                 ptr.axis(
                     details.time,
                     WlAxis::VerticalScroll,
-                    details.axis.1 * client_scale as f64,
+                    details.axis.1 * client_scale,
                 );
             }
         })
@@ -347,7 +345,7 @@ where
 #[derive(Debug)]
 pub struct PointerUserData<D: SeatHandler> {
     pub(crate) handle: Option<PointerHandle<D>>,
-    pub(crate) client_scale: Arc<AtomicU32>,
+    pub(crate) client_scale: Arc<AtomicF64>,
 }
 
 impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
@@ -404,7 +402,9 @@ where
                                 .client_scale
                                 .load(Ordering::Acquire);
                             let hotspot = Point::<i32, ClientCoords>::from((hotspot_x, hotspot_y))
-                                .to_logical(client_scale as i32);
+                                .to_f64()
+                                .to_logical(client_scale)
+                                .to_i32_round();
                             states
                                 .data_map
                                 .get::<Mutex<CursorImageAttributes>>()

@@ -290,7 +290,10 @@ where
                         None
                     } else {
                         let client_scale = state.client_compositor_state(client).client_scale();
-                        let dst = Size::<_, Client>::from((width, height)).to_logical(client_scale as i32);
+                        let dst = Size::<_, Client>::from((width, height))
+                            .to_f64()
+                            .to_logical(client_scale)
+                            .to_i32_round();
                         trace!(surface = ?surface, size = ?dst, "setting surface viewport destination size");
                         Some(dst)
                     };

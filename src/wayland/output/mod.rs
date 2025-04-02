@@ -73,16 +73,14 @@
 mod handlers;
 pub(crate) mod xdg;
 
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
-};
+use std::sync::{atomic::Ordering, Arc};
 
 use crate::{
     output::{Inner, Mode, Output, Scale, Subpixel, WeakOutput},
     utils::iter::new_locked_obj_iter,
 };
 
+use atomic_float::AtomicF64;
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_server::{
@@ -148,15 +146,15 @@ impl OutputManagerState {
 #[derive(Debug)]
 pub struct OutputUserData {
     pub(crate) output: WeakOutput,
-    last_client_scale: AtomicU32,
-    client_scale: Arc<AtomicU32>,
+    last_client_scale: AtomicF64,
+    client_scale: Arc<AtomicF64>,
 }
 
 impl Clone for OutputUserData {
     fn clone(&self) -> Self {
         OutputUserData {
             output: self.output.clone(),
-            last_client_scale: AtomicU32::new(self.last_client_scale.load(Ordering::Acquire)),
+            last_client_scale: AtomicF64::new(self.last_client_scale.load(Ordering::Acquire)),
             client_scale: self.client_scale.clone(),
         }
     }
@@ -250,7 +248,7 @@ impl Output {
                 inner.send_geometry_to(&output);
             }
             if (new_scale.is_some() || scale_changed) && output.version() >= 2 {
-                let scale = (inner.scale.integer_scale() / client_scale as i32).max(1);
+                let scale = (inner.scale.integer_scale() as f64 / client_scale).max(1.).ceil() as i32;
                 output.scale(scale);
             }
             if output.version() >= 2 {

@@ -60,14 +60,14 @@ impl XdgOutput {
             .client_scale
             .load(Ordering::Acquire);
 
-        let logical_position = inner.logical_position.to_client(client_scale as i32);
+        let logical_position = inner.logical_position.to_client_precise_round(client_scale);
         xdg_output.logical_position(logical_position.x, logical_position.y);
 
         if let Some(size) = inner.physical_size {
             let logical_size = size
                 .to_f64()
                 .to_logical(inner.scale.fractional_scale())
-                .to_client(client_scale as f64)
+                .to_client(client_scale)
                 .to_i32_round();
             let transformed_size = inner.transform.transform_size(logical_size);
             xdg_output.logical_size(transformed_size.w, transformed_size.h);
@@ -126,7 +126,7 @@ impl XdgOutput {
                     let logical_size = size
                         .to_f64()
                         .to_logical(output.scale.fractional_scale())
-                        .to_client(client_scale as f64)
+                        .to_client(client_scale)
                         .to_i32_round();
                     let transformed_size = output.transform.transform_size(logical_size);
                     instance.logical_size(transformed_size.w, transformed_size.h);
@@ -134,7 +134,7 @@ impl XdgOutput {
             }
 
             if new_location.is_some() || scale_changed {
-                let logical_position = output.logical_position.to_client(client_scale as i32);
+                let logical_position = output.logical_position.to_client_precise_round(client_scale);
                 instance.logical_position(logical_position.x, logical_position.y);
             }
 

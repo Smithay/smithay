@@ -111,7 +111,7 @@ mod transaction;
 mod tree;
 
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::{any::Any, sync::Mutex};
 
@@ -124,6 +124,7 @@ use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
 pub use crate::utils::hook::HookId;
 use crate::utils::Transform;
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
+use atomic_float::AtomicF64;
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
@@ -246,7 +247,7 @@ pub struct SurfaceAttributes {
     /// associated with this commit has been displayed on the screen.
     pub frame_callbacks: Vec<wl_callback::WlCallback>,
 
-    pub(crate) client_scale: u32,
+    pub(crate) client_scale: f64,
 }
 
 impl Default for SurfaceAttributes {
@@ -260,7 +261,7 @@ impl Default for SurfaceAttributes {
             input_region: None,
             damage: Vec::new(),
             frame_callbacks: Vec::new(),
-            client_scale: 1,
+            client_scale: 1.,
         }
     }
 }
@@ -613,14 +614,14 @@ pub struct CompositorState {
 #[derive(Debug)]
 pub struct CompositorClientState {
     queue: Mutex<Option<TransactionQueue>>,
-    scale_override: Arc<AtomicU32>,
+    scale_override: Arc<AtomicF64>,
 }
 
 impl Default for CompositorClientState {
     fn default() -> Self {
         CompositorClientState {
             queue: Mutex::new(None),
-            scale_override: Arc::new(AtomicU32::new(1)),
+            scale_override: Arc::new(AtomicF64::new(1.)),
         }
     }
 }
@@ -651,7 +652,7 @@ impl CompositorClientState {
     /// Only the minimal set of protocols used by xwayland are guaranteed to be supported.
     ///
     /// Buffer sizes are unaffected.
-    pub fn set_client_scale(&self, new_scale: u32) {
+    pub fn set_client_scale(&self, new_scale: f64) {
         self.scale_override.store(new_scale, Ordering::Release);
     }
 
@@ -659,11 +660,11 @@ impl CompositorClientState {
     /// coordinate space and this clients logical coordinate space.
     ///
     /// This is mainly intended to support out-of-tree protocol implementations.
-    pub fn client_scale(&self) -> u32 {
+    pub fn client_scale(&self) -> f64 {
         self.scale_override.load(Ordering::Acquire)
     }
 
-    pub(crate) fn clone_client_scale(&self) -> Arc<AtomicU32> {
+    pub(crate) fn clone_client_scale(&self) -> Arc<AtomicF64> {
         self.scale_override.clone()
     }
 }

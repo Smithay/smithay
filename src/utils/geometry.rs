@@ -478,6 +478,15 @@ impl<N: Coordinate> Point<N, Logical> {
     }
 
     #[inline]
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) fn to_client_precise_round<S: Coordinate, R: Coordinate>(
+        self,
+        scale: impl Into<Scale<S>>,
+    ) -> Point<R, Client> {
+        self.to_f64().to_client(scale.into().to_f64()).to_i32_round()
+    }
+
+    #[inline]
     /// Convert this logical point to physical coordinate space according to given scale factor
     pub fn to_physical(self, scale: impl Into<Scale<N>>) -> Point<N, Physical> {
         let scale = scale.into();
@@ -1399,6 +1408,15 @@ impl<N: Coordinate> Rectangle<N, Logical> {
             loc: self.loc.to_client(scale),
             size: self.size.to_client(scale),
         }
+    }
+
+    #[inline]
+    #[cfg(feature = "xwayland")]
+    pub(crate) fn to_client_precise_round<S: Coordinate, R: Coordinate>(
+        self,
+        scale: impl Into<Scale<S>>,
+    ) -> Rectangle<R, Client> {
+        self.to_f64().to_client(scale.into().to_f64()).to_i32_round()
     }
 
     /// Convert this logical rectangle to physical coordinate space according to given scale factor

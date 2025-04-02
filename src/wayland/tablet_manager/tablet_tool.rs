@@ -1,5 +1,5 @@
 use std::fmt;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use crate::backend::input::{ButtonState, TabletToolCapabilities, TabletToolDescriptor, TabletToolType};
@@ -7,6 +7,7 @@ use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
 use crate::utils::{Client as ClientCoords, Logical, Point};
 use crate::wayland::compositor::CompositorHandler;
 use crate::wayland::seat::CURSOR_IMAGE_ROLE;
+use atomic_float::AtomicF64;
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
@@ -56,7 +57,7 @@ impl TabletTool {
                     .unwrap()
                     .client_scale
                     .load(Ordering::Acquire);
-                let srel_loc = (loc - sloc).to_client(client_scale as f64);
+                let srel_loc = (loc - sloc).to_client(client_scale);
                 wl_tool.motion(srel_loc.x, srel_loc.y);
                 wl_tool.frame(time);
             });
@@ -140,7 +141,7 @@ impl TabletTool {
                             .unwrap()
                             .client_scale
                             .load(Ordering::Acquire);
-                        let srel_loc = (pos - focus.1).to_client(client_scale as f64);
+                        let srel_loc = (pos - focus.1).to_client(client_scale);
                         wl_tool.motion(srel_loc.x, srel_loc.y);
 
                         if let Some(pressure) = self.pending_pressure.take() {
@@ -452,7 +453,7 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
 pub struct TabletToolUserData {
     pub(crate) handle: TabletToolHandle,
     pub(crate) desc: TabletToolDescriptor,
-    client_scale: Arc<AtomicU32>,
+    client_scale: Arc<AtomicF64>,
 }
 
 impl fmt::Debug for TabletToolUserData {
@@ -514,7 +515,9 @@ where
                                     .client_scale
                                     .load(Ordering::Acquire);
                                 let hotspot = Point::<_, ClientCoords>::from((hotspot_x, hotspot_y))
-                                    .to_logical(client_scale as i32);
+                                    .to_f64()
+                                    .to_logical(client_scale)
+                                    .to_i32_round();
                                 states
                                     .data_map
                                     .get::<Mutex<CursorImageAttributes>>()

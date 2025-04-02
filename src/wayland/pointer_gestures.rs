@@ -96,11 +96,9 @@
 //! delegate_pointer_gestures!(State);
 //! ```
 
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{atomic::Ordering, Arc, Mutex};
 
+use atomic_float::AtomicF64;
 use wayland_protocols::wp::pointer_gestures::zv1::server::{
     zwp_pointer_gesture_hold_v1::{self, ZwpPointerGestureHoldV1},
     zwp_pointer_gesture_pinch_v1::{self, ZwpPointerGesturePinchV1},
@@ -202,7 +200,7 @@ impl WpPointerGesturePointerHandle {
             // Check that the ongoing gesture is for this surface.
             if ongoing.as_ref() == Some(surface) {
                 let client_scale = data.client_scale.load(Ordering::Acquire);
-                let delta = event.delta.to_client(client_scale as f64);
+                let delta = event.delta.to_client(client_scale);
                 gesture.update(event.time, delta.x, delta.y);
             } else if ongoing.take().is_some() {
                 // If it was for a different surface, cancel it.
@@ -259,7 +257,7 @@ impl WpPointerGesturePointerHandle {
             // Check that the ongoing gesture is for this surface.
             if ongoing.as_ref() == Some(surface) {
                 let client_scale = data.client_scale.load(Ordering::Acquire);
-                let delta = event.delta.to_client(client_scale as f64);
+                let delta = event.delta.to_client(client_scale);
                 gesture.update(event.time, delta.x, delta.y, event.scale, event.rotation);
             } else if ongoing.take().is_some() {
                 // If it was for a different surface, cancel it.
@@ -368,7 +366,7 @@ pub struct PointerGestureUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
     /// This gesture is in the middle between its begin() and end() on this surface.
     pub(crate) in_progress_on: Mutex<Option<WlSurface>>,
-    client_scale: Arc<AtomicU32>,
+    client_scale: Arc<AtomicF64>,
 }
 
 /// State of the pointer gestures

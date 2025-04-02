@@ -92,12 +92,13 @@
 //! ```
 
 use crate::{
-    utils::{x11rb::X11Source, Client, Coordinate, Logical, Point, Rectangle, Size},
+    utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
     wayland::{
         selection::SelectionTarget,
         xwayland_shell::{self, XWaylandShellHandler},
     },
 };
+use atomic_float::AtomicF64;
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
 use rustix::fs::OFlags;
 use std::{
@@ -108,10 +109,7 @@ use std::{
         io::{AsFd, BorrowedFd, OwnedFd},
         net::UnixStream,
     },
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Arc,
-    },
+    sync::{atomic::Ordering, Arc},
 };
 use tracing::{debug, debug_span, error, info, trace, warn};
 use wayland_server::Resource;
@@ -396,7 +394,7 @@ pub trait XwmHandler {
 pub struct X11Wm {
     id: XwmId,
     conn: Arc<RustConnection>,
-    client_scale: Arc<AtomicU32>,
+    client_scale: Arc<AtomicF64>,
     screen: Screen,
     wm_window: X11Window,
     atoms: Atoms,
@@ -1485,22 +1483,22 @@ where
                     xwm_id,
                     surface.clone(),
                     if u16::from(r.value_mask) & u16::from(ConfigWindow::X) != 0 {
-                        Some((r.x as i32).downscale(client_scale as i32))
+                        Some(((r.x as f64) / client_scale).round() as i32)
                     } else {
                         None
                     },
                     if u16::from(r.value_mask) & u16::from(ConfigWindow::Y) != 0 {
-                        Some((r.y as i32).downscale(client_scale as i32))
+                        Some(((r.y as f64) / client_scale).round() as i32)
                     } else {
                         None
                     },
                     if u16::from(r.value_mask) & u16::from(ConfigWindow::WIDTH) != 0 {
-                        Some((r.width as u32).downscale(client_scale))
+                        Some(((r.width as f64) / client_scale).round() as u32)
                     } else {
                         None
                     },
                     if u16::from(r.value_mask) & u16::from(ConfigWindow::HEIGHT) != 0 {
-                        Some((r.height as u32).downscale(client_scale))
+                        Some(((r.height as f64) / client_scale).round() as u32)
                     } else {
                         None
                     },
@@ -1541,7 +1539,9 @@ where
                 (n.x as i32, n.y as i32).into(),
                 (n.width as i32, n.height as i32).into(),
             )
-            .to_logical(client_scale as i32);
+            .to_f64()
+            .to_logical(client_scale)
+            .to_i32_round();
 
             if let Some(surface) = xwm
                 .windows
