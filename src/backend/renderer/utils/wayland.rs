@@ -411,7 +411,7 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
 }
 
 impl SurfaceView {
-    fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>, client_scale: u32) -> SurfaceView {
+    fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>, client_scale: f64) -> SurfaceView {
         viewporter::ensure_viewport_valid(states, surface_size);
         let mut viewport_state = states.cached_state.get::<viewporter::ViewportCachedState>();
         let viewport = viewport_state.current();
@@ -419,9 +419,13 @@ impl SurfaceView {
         let src = viewport
             .src
             .unwrap_or_else(|| Rectangle::from_size(surface_size.to_f64()));
-        let dst = viewport
-            .size()
-            .unwrap_or(surface_size.to_client(1).to_logical(client_scale as i32));
+        let dst = viewport.size().unwrap_or(
+            surface_size
+                .to_f64()
+                .to_client(1.)
+                .to_logical(client_scale)
+                .to_i32_round(),
+        );
         let offset = if states.role == Some("subsurface") {
             states
                 .cached_state

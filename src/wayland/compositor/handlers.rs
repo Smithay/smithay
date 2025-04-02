@@ -192,8 +192,8 @@ where
                     None
                 };
 
-                let client_scale = state.client_compositor_state(client).client_scale() as i32;
-                let offset = offset.map(|p| p.to_logical(client_scale));
+                let client_scale = state.client_compositor_state(client).client_scale();
+                let offset = offset.map(|p| p.to_f64().to_logical(client_scale).to_i32_round());
 
                 PrivateSurfaceData::with_states(surface, |states| {
                     let mut guard = states.cached_state.get::<SurfaceAttributes>();
@@ -211,7 +211,7 @@ where
                 });
             }
             wl_surface::Request::Damage { x, y, width, height } => {
-                let client_scale = state.client_compositor_state(client).client_scale() as i32;
+                let client_scale = state.client_compositor_state(client).client_scale();
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
@@ -220,7 +220,9 @@ where
                         .damage
                         .push(Damage::Surface(
                             Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
-                                .to_logical(client_scale),
+                                .to_f64()
+                                .to_logical(client_scale)
+                                .to_i32_round(),
                         ));
                 });
             }
@@ -318,13 +320,18 @@ where
                 });
             }
             wl_surface::Request::Offset { x, y } => {
-                let client_scale = state.client_compositor_state(client).client_scale() as i32;
+                let client_scale = state.client_compositor_state(client).client_scale();
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
                         .cached_state
                         .get::<SurfaceAttributes>()
                         .pending()
-                        .buffer_delta = Some(Point::<i32, Client>::from((x, y)).to_logical(client_scale));
+                        .buffer_delta = Some(
+                        Point::<i32, Client>::from((x, y))
+                            .to_f64()
+                            .to_logical(client_scale)
+                            .to_i32_round(),
+                    );
                 });
             }
             wl_surface::Request::Destroy => {
@@ -387,16 +394,22 @@ where
         _init: &mut wayland_server::DataInit<'_, D>,
     ) {
         let mut guard = data.inner.lock().unwrap();
-        let client_scale = state.client_compositor_state(client).client_scale() as i32;
+        let client_scale = state.client_compositor_state(client).client_scale();
 
         match request {
             wl_region::Request::Add { x, y, width, height } => guard.rects.push((
                 RectangleKind::Add,
-                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into()).to_logical(client_scale),
+                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
+                    .to_f64()
+                    .to_logical(client_scale)
+                    .to_i32_round(),
             )),
             wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
                 RectangleKind::Subtract,
-                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into()).to_logical(client_scale),
+                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
+                    .to_f64()
+                    .to_logical(client_scale)
+                    .to_i32_round(),
             )),
             wl_region::Request::Destroy => {
                 // all is handled by our destructor
@@ -565,13 +578,16 @@ where
     ) {
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
-                let client_scale = state.client_compositor_state(client).client_scale() as i32;
+                let client_scale = state.client_compositor_state(client).client_scale();
                 PrivateSurfaceData::with_states(&data.surface, |state| {
                     state
                         .cached_state
                         .get::<SubsurfaceCachedState>()
                         .pending()
-                        .location = Point::<i32, Client>::from((x, y)).to_logical(client_scale);
+                        .location = Point::<i32, Client>::from((x, y))
+                        .to_f64()
+                        .to_logical(client_scale)
+                        .to_i32_round();
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {

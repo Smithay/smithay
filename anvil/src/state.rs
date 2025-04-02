@@ -745,8 +745,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 } => {
                     let xwayland_scale = std::env::var("ANVIL_XWAYLAND_SCALE")
                         .ok()
-                        .and_then(|s| s.parse::<u32>().ok())
-                        .unwrap_or(1);
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .unwrap_or(1.);
                     data.client_compositor_state(&client)
                         .set_client_scale(xwayland_scale);
                     let mut wm = X11Wm::start_wm(data.handle.clone(), x11_socket, client.clone())
