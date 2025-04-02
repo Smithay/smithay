@@ -1446,7 +1446,10 @@ where
                       x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
-                if surface.is_override_redirect() {
+                // Client may have changed override-redirect flag since window creation
+                surface.state.lock().unwrap().override_redirect = n.override_redirect;
+
+                if n.override_redirect {
                     drop(_guard);
                     state.mapped_override_redirect_window(xwm_id, surface);
                 } else {
