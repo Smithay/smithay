@@ -63,7 +63,7 @@ wayland-server = { version = "0.31.7", optional = true }
 wayland-sys = { version = "0.31.6", optional = true }
 wayland-backend = { version = "0.3.8", optional = true }
 winit = { version = "0.30.0", default-features = false, features = ["wayland", "wayland-dlopen", "x11", "rwh_06"], optional = true }
-x11rb = { version = "0.13.0", optional = true }
+x11rb = { version = "0.13.0", optional = true, features = ["res"]}
 xkbcommon = { version = "0.8.0", features = ["wayland"]}
 encoding_rs = { version = "0.8.33", optional = true }
 profiling = "1.0.13"
