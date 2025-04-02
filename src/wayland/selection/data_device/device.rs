@@ -71,7 +71,7 @@ where
                 if let Some(pointer) = seat.get_pointer() {
                     if pointer.has_grab(serial) {
                         if let Some(ref icon) = icon {
-                            if compositor::give_role(icon, DND_ICON_ROLE).is_err() {
+                            if compositor::give_role_no_tracking(icon, DND_ICON_ROLE).is_err() {
                                 resource.post_error(
                                     wl_data_device::Error::Role,
                                     "Given surface already has an other role",
@@ -94,7 +94,7 @@ where
                 if let Some(touch) = seat.get_touch() {
                     if touch.has_grab(serial) {
                         if let Some(ref icon) = icon {
-                            if compositor::give_role(icon, DND_ICON_ROLE).is_err() {
+                            if compositor::give_role_no_tracking(icon, DND_ICON_ROLE).is_err() {
                                 resource.post_error(
                                     wl_data_device::Error::Role,
                                     "Given surface already has an other role",

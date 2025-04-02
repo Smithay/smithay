@@ -16,7 +16,7 @@ use wayland_server::{
 
 use crate::{
     input::{keyboard::KeyboardHandle, SeatHandler},
-    utils::{alive_tracker::AliveTracker, Logical, Rectangle, SERIAL_COUNTER},
+    utils::{Logical, Rectangle, SERIAL_COUNTER},
     wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
@@ -241,13 +241,11 @@ where
                 data.text_input_handle.done(serial != current_serial);
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
-                if compositor::give_role(&surface, INPUT_POPUP_SURFACE_ROLE).is_err()
-                    && compositor::get_role(&surface) != Some(INPUT_POPUP_SURFACE_ROLE)
-                {
+                let Ok(alive_tracker) = compositor::give_role(&surface, INPUT_POPUP_SURFACE_ROLE) else {
                     // Protocol requires this raise an error, but doesn't define an error enum
                     seat.post_error(0u32, "Surface already has a role.");
                     return;
-                }
+                };
 
                 let parent = match data.text_input_handle.focus().clone() {
                     Some(parent) => {
@@ -261,12 +259,7 @@ where
                 };
                 let mut input_method = data.handle.inner.lock().unwrap();
 
-                let instance = data_init.init(
-                    id,
-                    InputMethodPopupSurfaceUserData {
-                        alive_tracker: AliveTracker::default(),
-                    },
-                );
+                let instance = data_init.init(id, InputMethodPopupSurfaceUserData { alive_tracker });
                 let popup_rect = Arc::new(Mutex::new(input_method.popup_handle.rectangle));
                 let popup = PopupSurface::new(instance, surface, popup_rect, parent);
                 input_method.popup_handle.surface = Some(popup.clone());

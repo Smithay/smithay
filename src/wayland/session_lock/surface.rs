@@ -2,6 +2,7 @@
 
 use std::sync::Mutex;
 
+use crate::utils::alive_tracker::AliveTracker;
 use crate::utils::{IsAlive, Logical, Serial, Size, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use _session_lock::ext_session_lock_surface_v1::{Error, ExtSessionLockSurfaceV1, Request};
@@ -18,6 +19,7 @@ pub struct ExtLockSurfaceUserData {
     // `ExtSessionLockSurfaceV1`. So this reference needs to be weak to avoid a
     // cycle.
     pub(crate) surface: Weak<WlSurface>,
+    pub(crate) alive_tracker: AliveTracker,
 }
 
 impl<D> Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData, D> for SessionLockManagerState
@@ -59,6 +61,15 @@ where
             Request::Destroy => (),
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(
+        _state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &ExtSessionLockSurfaceV1,
+        data: &ExtLockSurfaceUserData,
+    ) {
+        data.alive_tracker.destroy_notify();
     }
 }
 

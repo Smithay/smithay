@@ -385,9 +385,7 @@ where
                 let cursor_image = match surface {
                     Some(surface) => {
                         // tolerate re-using the same surface
-                        if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
-                            && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
-                        {
+                        if compositor::give_role_no_tracking(&surface, CURSOR_IMAGE_ROLE).is_err() {
                             pointer.post_error(wl_pointer::Error::Role, "Given wl_surface has another role.");
                             return;
                         }

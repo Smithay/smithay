@@ -73,6 +73,7 @@ use wayland_server::{
 };
 
 use crate::{
+    utils::alive_tracker::AliveTracker,
     wayland::compositor,
     xwayland::{xwm::XwmId, X11Surface, XWaylandClientData, XwmHandler},
 };
@@ -121,6 +122,7 @@ impl XWaylandShellState {
 #[derive(Debug, Clone)]
 pub struct XWaylandSurfaceUserData {
     pub(crate) wl_surface: wl_surface::WlSurface,
+    pub(crate) alive_tracker: AliveTracker,
 }
 
 /// Handler for the xwayland shell protocol.
@@ -193,14 +195,20 @@ where
     ) {
         match request {
             xwayland_shell_v1::Request::GetXwaylandSurface { id, surface } => {
-                if compositor::give_role(&surface, XWAYLAND_SHELL_ROLE).is_err() {
+                let Ok(alive_tracker) = compositor::give_role(&surface, XWAYLAND_SHELL_ROLE) else {
                     resource.post_error(xwayland_shell_v1::Error::Role, "Surface already has a role.");
                     return;
-                }
+                };
 
                 compositor::add_pre_commit_hook::<D, _>(&surface, serial_commit_hook);
 
-                data_init.init(id, XWaylandSurfaceUserData { wl_surface: surface });
+                data_init.init(
+                    id,
+                    XWaylandSurfaceUserData {
+                        wl_surface: surface,
+                        alive_tracker,
+                    },
+                );
                 // We call the handler callback once the serial is set.
             }
             xwayland_shell_v1::Request::Destroy => {
@@ -247,6 +255,15 @@ where
             }
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(
+        _state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &XwaylandSurfaceV1,
+        data: &XWaylandSurfaceUserData,
+    ) {
+        data.alive_tracker.destroy_notify();
     }
 }
 

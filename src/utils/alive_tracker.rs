@@ -5,18 +5,31 @@
 // So we need to silence some warnings in other cases.
 #![allow(dead_code)]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 /// Util to track wayland object's life time
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[must_use]
 pub struct AliveTracker {
-    is_alive: AtomicBool,
+    is_alive: Arc<AtomicBool>,
+}
+
+impl AliveTracker {
+    /// Create an already notified alive tracker
+    pub fn notified() -> Self {
+        Self {
+            is_alive: Arc::new(AtomicBool::new(false)),
+        }
+    }
 }
 
 impl Default for AliveTracker {
     fn default() -> Self {
         Self {
-            is_alive: AtomicBool::new(true),
+            is_alive: Arc::new(AtomicBool::new(true)),
         }
     }
 }

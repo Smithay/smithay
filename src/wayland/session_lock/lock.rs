@@ -52,10 +52,10 @@ where
         match request {
             Request::GetLockSurface { id, surface, output } => {
                 // Assign surface a role and ensure it never had one before.
-                if compositor::give_role(&surface, LOCK_SURFACE_ROLE).is_err() {
+                let Ok(alive_tracker) = compositor::give_role(&surface, LOCK_SURFACE_ROLE) else {
                     lock.post_error(Error::Role, "Surface already has a role.");
                     return;
-                }
+                };
 
                 // Ensure output is not already locked.
                 let lock_state = state.lock_state();
@@ -80,6 +80,7 @@ where
 
                 let data = ExtLockSurfaceUserData {
                     surface: surface.downgrade(),
+                    alive_tracker,
                 };
                 let lock_surface = data_init.init(id, data);
 
