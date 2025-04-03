@@ -58,7 +58,7 @@ use wayland_server::{
     Dispatch, DisplayHandle, GlobalDispatch,
 };
 
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 
 use crate::utils::{user_data::UserDataMap, Serial};
 
@@ -70,7 +70,7 @@ pub struct XdgActivationToken(String);
 
 impl XdgActivationToken {
     fn new() -> Self {
-        Self(Alphanumeric.sample_string(&mut rand::thread_rng(), 32))
+        Self(Alphanumeric.sample_string(&mut rand::rng(), 32))
     }
 
     /// Extracts a string slice containing the entire token.
