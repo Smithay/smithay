@@ -36,7 +36,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 use wayland_protocols::ext::foreign_toplevel_list::v1::server::{
     ext_foreign_toplevel_handle_v1::{self, ExtForeignToplevelHandleV1},
     ext_foreign_toplevel_list_v1::{self, ExtForeignToplevelListV1},
@@ -328,7 +328,7 @@ impl ForeignToplevelListState {
         app_id: impl Into<String>,
     ) -> ForeignToplevelHandle {
         let handle = ForeignToplevelHandle::new(
-            Alphanumeric.sample_string(&mut rand::thread_rng(), 32),
+            Alphanumeric.sample_string(&mut rand::rng(), 32),
             title.into(),
             app_id.into(),
             Vec::with_capacity(self.list_instances.len()),
