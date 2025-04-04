@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_bpp","get_depth","get_opaque","get_transparent","has_alpha"],"struct":["FormatSet","FormatSetIntersection","FormatSetIntoIter","FormatSetIter"]};

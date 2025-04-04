@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","wp_cursor_shape_device_v1","wp_cursor_shape_manager_v1"]};

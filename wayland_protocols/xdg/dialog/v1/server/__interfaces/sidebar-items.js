@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["XDG_DIALOG_V1_INTERFACE","XDG_WM_DIALOG_V1_INTERFACE","xdg_dialog_v1_interface","xdg_wm_dialog_v1_interface"]};
