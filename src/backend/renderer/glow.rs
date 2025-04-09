@@ -32,7 +32,7 @@ use std::{
     sync::Arc,
 };
 
-use super::{element::RenderElement, Frame};
+use super::{element::RenderElement, Frame, RendererId};
 
 #[derive(Debug)]
 /// A renderer utilizing OpenGL ES 2 and [`glow`] on top for easier custom rendering.
@@ -202,16 +202,16 @@ impl<'frame, 'buffer> BorrowMut<GlesFrame<'frame, 'buffer>> for GlowFrame<'frame
 impl RendererSuper for GlowRenderer {
     type Error = GlesError;
     type TextureId = GlesTexture;
+    type Framebuffer<'buffer> = GlesTarget<'buffer>;
     type Frame<'frame, 'buffer>
         = GlowFrame<'frame, 'buffer>
     where
         'buffer: 'frame,
         Self: 'frame;
-    type Framebuffer<'buffer> = GlesTarget<'buffer>;
 }
 
 impl Renderer for GlowRenderer {
-    fn id(&self) -> usize {
+    fn id(&self) -> RendererId {
         self.gl.id()
     }
 
@@ -262,7 +262,7 @@ impl Frame for GlowFrame<'_, '_> {
     type TextureId = GlesTexture;
     type Error = GlesError;
 
-    fn id(&self) -> usize {
+    fn id(&self) -> RendererId {
         self.frame.as_ref().unwrap().id()
     }
 

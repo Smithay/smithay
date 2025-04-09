@@ -34,7 +34,7 @@ use wayland_server::protocol::wl_buffer;
 use super::ImportEgl;
 use super::{
     sync::SyncPoint, Bind, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
-    RendererSuper, Texture, TextureFilter, TextureMapping,
+    RendererId, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 
 mod error;
@@ -356,8 +356,8 @@ impl Frame for PixmanFrame<'_, '_> {
 
     type TextureId = PixmanTexture;
 
-    fn id(&self) -> usize {
-        0
+    fn id(&self) -> RendererId {
+        self.renderer.id()
     }
 
     #[profiling::function]
@@ -690,6 +690,7 @@ impl Drop for PixmanFrame<'_, '_> {
 /// A renderer utilizing pixman
 #[derive(Debug)]
 pub struct PixmanRenderer {
+    id: RendererId,
     downscale_filter: TextureFilter,
     upscale_filter: TextureFilter,
     debug_flags: DebugFlags,
@@ -705,6 +706,7 @@ impl PixmanRenderer {
     pub fn new() -> Result<Self, PixmanError> {
         let tint = pixman::Solid::new([0.0, 0.2, 0.0, 0.2]).map_err(|_| PixmanError::Unsupported)?;
         Ok(Self {
+            id: RendererId::next(),
             downscale_filter: TextureFilter::Linear,
             upscale_filter: TextureFilter::Linear,
             debug_flags: DebugFlags::empty(),
@@ -818,8 +820,8 @@ impl RendererSuper for PixmanRenderer {
 }
 
 impl Renderer for PixmanRenderer {
-    fn id(&self) -> usize {
-        0
+    fn id(&self) -> RendererId {
+        self.id.clone()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {

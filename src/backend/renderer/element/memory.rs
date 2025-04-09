@@ -71,7 +71,7 @@
 //!
 //! // Initialize a static damage tracker
 //! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
-//! # let mut renderer = DummyRenderer;
+//! # let mut renderer = DummyRenderer::default();
 //! # let mut framebuffer = DummyFramebuffer;
 //!
 //! let mut last_update = Instant::now();
@@ -104,7 +104,6 @@
 //! ```
 
 use std::{
-    any::TypeId,
     collections::{hash_map::Entry, HashMap},
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -116,7 +115,7 @@ use crate::{
         allocator::{format::get_bpp, Fourcc},
         renderer::{
             utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
-            Frame, ImportMem, Renderer,
+            Frame, ImportMem, Renderer, RendererId,
         },
     },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -223,8 +222,8 @@ struct MemoryRenderBufferInner {
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     damage_bag: DamageBag<i32, Buffer>,
-    textures: HashMap<(TypeId, usize), Box<dyn std::any::Any + Send>>,
-    renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
+    textures: HashMap<RendererId, Box<dyn std::any::Any + Send>>,
+    renderer_seen: HashMap<RendererId, CommitCounter>,
 }
 
 impl Default for MemoryRenderBufferInner {
@@ -309,16 +308,16 @@ impl MemoryRenderBufferInner {
         R: Renderer + ImportMem,
         R::TextureId: Send + Clone + 'static,
     {
-        let texture_id = (TypeId::of::<R::TextureId>(), renderer.id());
+        let renderer_id = renderer.id();
         let current_commit = self.damage_bag.current_commit();
-        let last_commit = self.renderer_seen.get(&texture_id).copied();
+        let last_commit = self.renderer_seen.get(&renderer_id).copied();
         let buffer_damage = self
             .damage_bag
             .damage_since(last_commit)
             .map(|d| d.into_iter().reduce(|a, b| a.merge(b)).unwrap_or_default())
             .unwrap_or_else(|| Rectangle::from_size(self.mem.size()));
 
-        let tex = match self.textures.entry(texture_id) {
+        let tex = match self.textures.entry(renderer_id.clone()) {
             Entry::Occupied(entry) => {
                 let tex = entry.get().downcast_ref().unwrap();
                 if !buffer_damage.is_empty() {
@@ -335,7 +334,7 @@ impl MemoryRenderBufferInner {
             }
         };
 
-        self.renderer_seen.insert(texture_id, current_commit);
+        self.renderer_seen.insert(renderer_id, current_commit);
         Ok(tex)
     }
 }
