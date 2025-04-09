@@ -127,10 +127,10 @@ pub trait ClientDndGrabHandler: SeatHandler + Sized {
     /// A client started a drag'n'drop as response to a user pointer action
     ///
     /// * `source` - The data source provided by the client.
-    ///              If it is `None`, this means the DnD is restricted to surfaces of the
-    ///              same client and the client will manage data transfer by itself.
+    ///   If it is `None`, this means the DnD is restricted to surfaces of the
+    ///   same client and the client will manage data transfer by itself.
     /// * `icon` - The icon the client requested to be used to be associated with the cursor icon
-    ///            during the drag'n'drop.
+    ///   during the drag'n'drop.
     /// * `seat` - The seat on which the DnD operation was started
     fn started(&mut self, source: Option<WlDataSource>, icon: Option<WlSurface>, seat: Seat<Self>) {}
 
@@ -142,7 +142,7 @@ pub trait ClientDndGrabHandler: SeatHandler + Sized {
     ///
     /// * `target` - The target surface that the contents were dropped on.
     /// * `validated` - Whether the drop offer was negotiated and accepted. If `false`, the drop
-    ///                 was cancelled or otherwise not successful.
+    ///   was cancelled or otherwise not successful.
     /// * `seat` - The seat on which the DnD action was finished.
     fn dropped(&mut self, target: Option<WlSurface>, validated: bool, seat: Seat<Self>) {}
 }

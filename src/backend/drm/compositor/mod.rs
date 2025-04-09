@@ -1285,10 +1285,10 @@ where
     /// - `output_mode_source` is used to determine the current mode, scale and transform
     /// - `surface` for the compositor to use
     /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
-    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
+    ///   `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
     /// - `allocator` used for the primary plane swapchain
     /// - `framebuffer_exporter` is used to create drm framebuffers for the swapchain buffers (and if possible
-    ///                          for element buffers) for scan-out
+    ///   for element buffers) for scan-out
     /// - `code` is the fixed format to initialize the framebuffer with
     /// - `modifiers` is the set of modifiers allowed, when allocating buffers with the specified color format
     /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
@@ -3627,13 +3627,12 @@ where
                         // that to influence the test state of our elements.
                         // Adding or removing cursor can influence the other planes, but
                         // is already covered in the active planes check.
-                        let primary_plane_changed = current_plane_snapshot
-                            .primary
-                            .then(|| {
-                                frame_state.plane_properties(self.surface.plane())
-                                    != previous_frame_state.plane_properties(self.surface.plane())
-                            })
-                            .unwrap_or(false);
+                        let primary_plane_changed = if current_plane_snapshot.primary {
+                            frame_state.plane_properties(self.surface.plane())
+                                != previous_frame_state.plane_properties(self.surface.plane())
+                        } else {
+                            false
+                        };
 
                         let overlay_plane_changed =
                             self.planes.overlay.iter().enumerate().any(|(index, plane)| {

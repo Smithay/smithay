@@ -173,11 +173,11 @@ impl DrmDevice {
     ///
     /// - `fd` - Open drm node
     /// - `disable_connectors` - Setting this to true will initialize all connectors \
-    ///     as disabled on device creation. smithay enables connectors, when attached \
-    ///     to a surface, and disables them, when detached. Setting this to `false` \
-    ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
-    ///     showing garbage, but will also prevent flickering of already turned on \
-    ///     connectors (assuming you won't change the resolution).
+    ///   as disabled on device creation. smithay enables connectors, when attached \
+    ///   to a surface, and disables them, when detached. Setting this to `false` \
+    ///   requires usage of `drm-rs` to disable unused connectors to prevent them \
+    ///   showing garbage, but will also prevent flickering of already turned on \
+    ///   connectors (assuming you won't change the resolution).
     ///
     /// # Return
     ///

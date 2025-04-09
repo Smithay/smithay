@@ -113,8 +113,8 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         let min_width = min_size.w.max(1);
         let min_height = min_size.h.max(1);
 
-        let max_width = (max_size.w == 0).then(i32::max_value).unwrap_or(max_size.w);
-        let max_height = (max_size.h == 0).then(i32::max_value).unwrap_or(max_size.h);
+        let max_width = if max_size.w == 0 { i32::MAX } else { max_size.w };
+        let max_height = if max_size.h == 0 { i32::MAX } else { max_size.h };
 
         self.last_window_size = Size::from((
             new_window_width.max(min_width).min(max_width),

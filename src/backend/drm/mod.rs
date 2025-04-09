@@ -7,23 +7,23 @@
 //! out of:
 //! - [`connectors`](drm::control::connector) represents a port on your computer, possibly with a connected monitor, TV, capture card, etc.
 //! - [`encoder`](drm::control::encoder) encodes the data of connected crtcs into a video signal for a fixed set of connectors.
-//!     E.g. you might have an analog encoder based on a DAG for VGA ports, but another one for digital ones.
-//!     Also not every encoder might be connected to every crtc.
+//!   E.g. you might have an analog encoder based on a DAG for VGA ports, but another one for digital ones.
+//!   Also not every encoder might be connected to every crtc.
 //! - [`framebuffer`] represents a buffer you may display, see `DrmSurface` below.
 //! - [`plane`] adds another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
-//!     then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes have to be explicitly used by the user to be useful.
-//!     Every device has at least one primary plane used to display an image to the whole crtc. Additionally cursor and overlay planes may be present.
-//!     Cursor planes are usually very restricted in size and meant to be used for hardware cursors, while overlay planes may
-//!     be used for performance reasons to display any overlay on top of the image, e.g. the top-most windows.
-//!     Overlay planes may have a bunch of weird limitation, that you cannot query, e.g. only working on round pixel coordinates.
-//!     You code should never rely on a fixed set of overlay planes, but always have a fallback solution in place.
+//!   then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes have to be explicitly used by the user to be useful.
+//!   Every device has at least one primary plane used to display an image to the whole crtc. Additionally cursor and overlay planes may be present.
+//!   Cursor planes are usually very restricted in size and meant to be used for hardware cursors, while overlay planes may
+//!   be used for performance reasons to display any overlay on top of the image, e.g. the top-most windows.
+//!   Overlay planes may have a bunch of weird limitation, that you cannot query, e.g. only working on round pixel coordinates.
+//!   You code should never rely on a fixed set of overlay planes, but always have a fallback solution in place.
 //! - [`crtc`]s represent scanout engines of the device pointer to one framebuffer.
-//!     Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
-//!     The number of crtc's represent the number of independent output devices the hardware may handle.
+//!   Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
+//!   The number of crtc's represent the number of independent output devices the hardware may handle.
 //!
-//!     On modern graphic cards it is better to think about the `crtc` as some sort of rendering engine.
-//!     You can only have so many different pictures, you may display, as you have `crtc`s, but a single image
-//!     may be put onto multiple displays.
+//!  On modern graphic cards it is better to think about the `crtc` as some sort of rendering engine.
+//!  You can only have so many different pictures, you may display, as you have `crtc`s, but a single image
+//!  may be put onto multiple displays.
 //!
 //! The main functionality of a `Device` in smithay is to give access to all these properties for the user to
 //! choose an appropriate rendering configuration. What that means is defined by the requirements and constraints documented

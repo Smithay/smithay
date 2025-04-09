@@ -165,14 +165,14 @@ where
     /// - `device` the underlying [`DrmDevice`]
     /// - `allocator` used by created [`DrmOutput`]s for primary plane swapchains.
     /// - `exporter` used by created [`DrmOutput`]s to create drm framebuffers
-    ///              for the swapchain buffers (and if possible for element buffers)
-    ///              for scan-out.
+    ///   for the swapchain buffers (and if possible for element buffers)
+    ///   for scan-out.
     /// - `gbm` device used by created [`DrmOutput`]s for creating buffers for the
-    ///              cursor plane, `None` will disable the cursor plane.
+    ///   cursor plane, `None` will disable the cursor plane.
     /// - `color_formats` as tested in order when creating a new [`DrmOutput`]
     /// - `renderer_formats` as reported by the used renderer, used to build the
-    ///              intersection between the possible scan-out formats of the
-    ///              primary plane of created [`DrmOutput`]s and the renderer
+    ///   intersection between the possible scan-out formats of the
+    ///   primary plane of created [`DrmOutput`]s and the renderer
     pub fn new(
         device: DrmDevice,
         allocator: A,
@@ -207,7 +207,7 @@ where
     /// - `connectors` - the set of connectors the underlying surface should be initialized with
     /// - `output_mode_source`  used to to determine the size, scale and transform
     /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
-    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`][super::DrmSurface::planes]
+    ///   `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`][super::DrmSurface::planes]
     /// - `renderer` used for compositing, when commits are necessarily to realize bandwidth constraints
     /// - `render_elements` used for rendering, when commits are necessarily to realize bandwidth constraints
     #[allow(clippy::too_many_arguments)]
