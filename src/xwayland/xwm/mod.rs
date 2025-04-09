@@ -92,6 +92,7 @@
 //! ```
 
 use crate::{
+    output::Output,
     utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
     wayland::{
         selection::SelectionTarget,
@@ -117,9 +118,10 @@ use wayland_server::Resource;
 pub use x11rb::protocol::xproto::Window as X11Window;
 use x11rb::{
     connection::Connection as _,
-    errors::ReplyOrIdError,
+    errors::{ReplyError, ReplyOrIdError},
     protocol::{
         composite::{ConnectionExt as _, Redirect},
+        randr::{ConnectionExt, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
         xfixes::{ConnectionExt as _, SelectionEventMask},
         xproto::{
@@ -385,6 +387,11 @@ pub trait XwmHandler {
         let _ = (xwm, selection);
     }
 
+    /// The primary output of the randr protocol state was updated
+    fn randr_primary_output_change(&mut self, xwm: XwmId, output_name: Option<String>) {
+        let _ = (xwm, output_name);
+    }
+
     /// WM has lost connection to X server
     fn disconnected(&mut self, _xwm: XwmId) {}
 }
@@ -399,6 +406,7 @@ pub struct X11Wm {
     wm_window: X11Window,
     atoms: Atoms,
     xsettings: XSettings,
+    randr_primary: u32,
 
     pub(crate) unpaired_surfaces: HashMap<u64, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
@@ -691,6 +699,23 @@ pub enum SettingsError {
     },
 }
 
+/// Errors generated updating the primary output
+#[derive(Debug, thiserror::Error)]
+pub enum PrimaryOutputError {
+    /// X11 Error occured updating xrandr primary output
+    #[error(transparent)]
+    X11Error(#[from] ReplyError),
+    /// The output was unknown to Xwayland
+    #[error("The provided output wasn't known to Xwayland")]
+    OutputUnknown,
+}
+
+impl From<ConnectionError> for PrimaryOutputError {
+    fn from(value: ConnectionError) -> Self {
+        PrimaryOutputError::X11Error(value.into())
+    }
+}
+
 impl X11Wm {
     /// Start a new window manager for a given Xwayland connection
     ///
@@ -719,6 +744,7 @@ impl X11Wm {
         let conn = RustConnection::connect_to_stream(stream, screen)?;
         let atoms = Atoms::new(&conn)?.reply()?;
         let screen = conn.setup().roots[0].clone();
+        let randr_primary = conn.randr_get_output_primary(screen.root)?.reply()?.output;
 
         {
             let font = FontWrapper::open_font(&conn, "cursor".as_bytes())?;
@@ -749,6 +775,8 @@ impl X11Wm {
                     // and also set a default root cursor in case downstream doesn't
                     .cursor(cursor.cursor()),
             )?;
+            // Watch for primary output changes
+            conn.randr_select_input(screen.root, NotifyMask::OUTPUT_CHANGE)?;
         }
 
         // Tell XWayland that we are the WM by acquiring the WM_S0 selection. No X11 clients are accepted before this.
@@ -866,6 +894,7 @@ impl X11Wm {
             screen,
             atoms,
             xsettings,
+            randr_primary,
             wm_window: win,
             _xfixes_data,
             clipboard,
@@ -1283,6 +1312,75 @@ impl X11Wm {
         self.xsettings.update(&self.conn)?;
 
         Ok(())
+    }
+
+    /// Gets the current primary output as advertised by xrandr
+    pub fn get_randr_primary_output(&self) -> Result<Option<String>, ReplyError> {
+        let current_primary = self
+            .conn
+            .randr_get_output_primary(self.screen.root)?
+            .reply()?
+            .output;
+        if current_primary == x11rb::NONE {
+            return Ok(None);
+        }
+
+        let res = self
+            .conn
+            .randr_get_screen_resources_current(self.screen.root)?
+            .reply()?;
+        let info = self
+            .conn
+            .randr_get_output_info(current_primary, res.config_timestamp)?
+            .reply()?;
+        Ok(Some(
+            std::str::from_utf8(&info.name)
+                .expect("X11 protocol violation, output name not utf-8")
+                .to_string(),
+        ))
+    }
+
+    /// Updates the primary output as advertised by xrandr
+    pub fn set_randr_primary_output(&mut self, output: Option<&Output>) -> Result<(), PrimaryOutputError> {
+        let current_primary = self
+            .conn
+            .randr_get_output_primary(self.screen.root)?
+            .reply()?
+            .output;
+        let Some(output) = output else {
+            if current_primary != x11rb::NONE {
+                let cookie = self
+                    .conn
+                    .randr_set_output_primary(self.screen.root, x11rb::NONE)?;
+                self.sequences_to_ignore
+                    .push(Reverse(cookie.sequence_number() as u16));
+            }
+            return Ok(());
+        };
+
+        let res = self
+            .conn
+            .randr_get_screen_resources_current(self.screen.root)?
+            .reply()?;
+        for output_xid in res.outputs {
+            let info = self
+                .conn
+                .randr_get_output_info(output_xid, res.config_timestamp)?
+                .reply()?;
+            let name =
+                std::str::from_utf8(&info.name).expect("X11 protocol violation, output name not utf-8");
+            if name == output.name() {
+                // we got our output
+                if output_xid != current_primary {
+                    let cookie = self.conn.randr_set_output_primary(self.screen.root, output_xid)?;
+                    self.sequences_to_ignore
+                        .push(Reverse(cookie.sequence_number() as u16));
+                    return Ok(());
+                }
+            }
+        }
+
+        Err(PrimaryOutputError::OutputUnknown)
     }
 }
 
@@ -2335,6 +2433,22 @@ where
                         "Unhandled client msg of type {:?}",
                         String::from_utf8(conn.get_atom_name(x)?.reply_unchecked()?.unwrap().name).ok()
                     )
+                }
+            }
+        }
+        Event::RandrNotify(n) => {
+            if n.sub_code == Notify::OUTPUT_CHANGE {
+                let current_primary = xwm
+                    .conn
+                    .randr_get_output_primary(xwm.screen.root)?
+                    .reply()?
+                    .output;
+                if current_primary != xwm.randr_primary {
+                    xwm.randr_primary = current_primary;
+                    let primary_name = xwm.get_randr_primary_output().unwrap();
+                    drop(_guard);
+
+                    state.randr_primary_output_change(xwm_id, primary_name);
                 }
             }
         }
