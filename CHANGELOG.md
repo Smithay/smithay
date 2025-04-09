@@ -2,6 +2,110 @@
 
 ## Unreleased
 
+## 0.6.0
+
+### Braking Changes
+
+`RenderContext::draw` callback now accepts a mutable reference
+```diff
+-fn smithay::backend::renderer::element::texture::RenderContext::draw(&mut self, f: impl FnOnce(&T))
++fn smithay::backend::renderer::element::texture::RenderContext::draw(&mut self, f: impl FnOnce(&mut T))
+```
+
+Framebuffer now requires `Texture` implementation
+```rs
+type smithay::backend::renderer::RendererSuper::Framebuffer: smithay::backend::renderer::Texture
+```
+
+`Output::client_outputs` no longer returns a Vec
+```diff
+-fn smithay::output::Output::client_outputs(&self, client: &Client) -> Vec<WlOutput>;
++fn smithay::output::Output::client_outputs(&self, client: &Client) -> impl Iterator<Item = WlOutput>;
+```
+DamageBag/DamageSnapshot damage getters got renamed
+```diff
+-fn smithay::backend::renderer::utils::DamageBag::damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle>>
++fn smithay::backend::renderer::utils::DamageBag::raw(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle>>
+-fn smithay::backend::renderer::utils::DamageSnapshot::damage(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle>>
++fn smithay::backend::renderer::utils::DamageSnapshot::raw(&self) -> impl Iterator<Item = impl Iterator<Item = &Rectangle>>
+```
+RendererSurfaceState::damage now returns a DamageSnapshot
+```diff
+-fn smithay::backend::renderer::utils::RendererSurfaceState::damage(&self) -> impl core::iter::traits::iterator::Iterator<Item = impl core::iter::traits::iterator::Iterator<Item = &smithay::utils::Rectangle<i32, smithay::utils::Buffer>>>
++fn smithay::backend::renderer::utils::RendererSurfaceState::damage(&self) -> smithay::backend::renderer::utils::DamageSnapshot<i32, smithay::utils::Buffer>
+```
+Client scale can now be fractional
+```diff
+-fn smithay::wayland::compositor::CompositorClientState::client_scale(&self) -> u32
++fn smithay::wayland::compositor::CompositorClientState::client_scale(&self) -> f64
+-fn smithay::wayland::compositor::CompositorClientState::set_client_scale(&self, new_scale: u32)
++fn smithay::wayland::compositor::CompositorClientState::set_client_scale(&self, new_scale: f64)
+```
+
+The explicit frame buffers got introduced, but for the sake of my sanity those changes are not described here, you can look at: https://github.com/Smithay/smithay/commit/df08c6f29eb6ebfa2fce6fc374590483bcbaf21a
+
+### API Additions
+
+It is now possible to check if the OpenGL context is shared with another.
+```rs
+fn smithay::backend::egl::context::EGLContext::is_shared();
+```
+It is now possible to check that there are no other references to the underlying GL texture.
+```rs
+fn smithay::backend::renderer::gles::GlesTexture::is_unique_reference();
+```
+
+There is a new gles capability for support of fencing and exporting to EGL
+```rs
+smithay::backend::renderer::gles::Capability::ExportFence;
+```
+
+There is a new BlitFrame trait for frames that support blitting contents from/to the current framebuffer to/from another.
+```rs
+trait smithay::backend::renderer::BlitFrame;
+impl BlitFrame for smithay::backend::renderer::gles::GlesFrame;
+impl BlitFrame for smithay::backend::renderer::glow::GlowFrame;
+impl BlitFrame for smithay::backend::renderer::multigpu::MultiFrame;
+```
+
+It is now possible to iterate over all known tokens and their associated data
+```rs
+fn smithay::wayland::xdg_activation::XdgActivationState::tokens() -> impl Iterator<Item = (&XdgActivationToken, &XdgActivationTokenData)>;
+```
+
+There are new errors for missing DRM crtc/connector/plane mapping
+```rs
+smithay::backend::drm::DrmError::{UnknownConnector, UnknownCrtc, UnknownPlane};
+```
+
+Texture has a few new implementations
+```rs
+impl Texture for smithay::backend::renderer::gles::GlesTarget;
+impl Texture for smithay::backend::renderer::multigpu:MultiFramebuffer;
+impl Texture for smithay::backend::renderer::pixman::PixmanTarget;
+impl Texture for smithay::backend::renderer::test::DummyFramebuffer
+```
+
+It is now possible to access WlKeyboard/WlPointer instances
+```rs
+fn smithay::input::keyboard::KeyboardHandle::client_keyboards(&self, client: &Client) -> impl Iterator<Item = WlKeyboard>;
+fn smithay::input::pointer::PointerHandle::client_pointers(&self, client: &:Client) -> impl Iterator<Item = WlPointer>;
+```
+
+New APIs for X11 randr output management 
+```rs
+enum smithay::xwayland::xwm::PrimaryOutputError { OutputUnknown, X11Error(x11rb::errors::ReplyError) };
+
+impl From<x11rb::errors::ConnectionError> for smithay::xwayland::xwm::PrimaryOutputError;
+fn smithay::xwayland::xwm::PrimaryOutputError::from(value: x11rb::errors::ConnectionError) -> Self;
+fn smithay::xwayland::xwm::X11Wm::get_randr_primary_output(&self) -> Result<Option<String>, x11rb::errors::ReplyError>;
+fn smithay::xwayland::xwm::X11Wm::get_randr_primary_output(&self) -> Result<Option<String>, x11rb::errors::ReplyError>;
+fn smithay::xwayland::xwm::X11Wm::set_randr_primary_output(&mut self, output: Option<&smithay::output::Output>) -> Result<(), smithay::xwayland::xwm::PrimaryOutputError>;
+fn smithay::xwayland::xwm::X11Wm::set_randr_primary_output(&mut self, output: Option<&smithay::output::Output>) -> Result<(), smithay::xwayland::xwm::PrimaryOutputError>;
+fn smithay::xwayland::xwm::XwmHandler::randr_primary_output_change(&mut self, xwm: smithay::xwayland::xwm::XwmId, output_name: Option<String>);
+fn smithay::xwayland::XwmHandler::randr_primary_output_change(&mut self, xwm: smithay::xwayland::xwm::XwmId, output_name: Option<String>);
+```
+
 ## 0.5.0
 
 ### API Changes
