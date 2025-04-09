@@ -1103,10 +1103,10 @@ pub trait XdgShellHandler {
     /// ## Arguments
     ///
     /// - `positioner` - The state of the positioner at the timethe popup was requested.
-    ///     The positioner state can be used by the compositor
-    ///     to calculate the best placement for the popup.
-    ///     For example the compositor should prevent that a popup
-    ///     is placed outside the visible rectangle of a output.
+    ///   The positioner state can be used by the compositor
+    ///   to calculate the best placement for the popup.
+    ///   For example the compositor should prevent that a popup
+    ///   is placed outside the visible rectangle of a output.
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState);
 
     /// The client requested the start of an interactive move for this surface
@@ -1171,14 +1171,14 @@ pub trait XdgShellHandler {
     /// ## Arguments
     ///
     /// - `positioner` - The state of the positioner at the time the reposition request was made.
-    ///     The positioner state can be used by the compositor
-    ///     to calculate the best placement for the popup.
-    ///     For example the compositor should prevent that a popup
-    ///     is placed outside the visible rectangle of a output.
+    ///   The positioner state can be used by the compositor
+    ///   to calculate the best placement for the popup.
+    ///   For example the compositor should prevent that a popup
+    ///   is placed outside the visible rectangle of a output.
     /// - `token` - The passed token will be sent in the corresponding xdg_popup.repositioned event.
-    ///     The new popup position will not take effect until the corresponding configure event
-    ///     is acknowledged by the client. See xdg_popup.repositioned for details.
-    ///     The token itself is opaque, and has no other special meaning.
+    ///   The new popup position will not take effect until the corresponding configure event
+    ///   is acknowledged by the client. See xdg_popup.repositioned for details.
+    ///   The token itself is opaque, and has no other special meaning.
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32);
 
     /// A shell client was destroyed.

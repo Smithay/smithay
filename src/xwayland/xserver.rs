@@ -92,17 +92,17 @@ impl XWayland {
     /// ## Arguments
     ///
     /// - `display` - if provided, only the given display number will be tested.
-    ///     If you wish smithay to choose a display for you, pass `None`.
+    ///   If you wish smithay to choose a display for you, pass `None`.
     /// - `envs` - Allows additionally environment variables to be set when
     ///   launching XWayland.
     /// - `open_abstract_socket` - Open an abstract socket as well as filesystem
-    ///    sockets (only on available on Linux).
+    ///   sockets (only on available on Linux).
     /// - `stdout, stderr` - Allows redirecting stdout and stderr of the
     ///   XWayland process. XWayland output is rarely useful, so `Stdio::null()`
     ///   is a good choice if you're not sure.
     /// - `user_data` - Allows mutating the `XWaylandClientData::user_data`-map
-    ///    before the client is added to the wayland display. Useful for
-    ///    initializing state for global filters.
+    ///   before the client is added to the wayland display. Useful for
+    ///   initializing state for global filters.
     ///
     /// Returns a handle to the XWayland instance and the
     /// [Client](wayland_server::Client) representing the XWayland server. The

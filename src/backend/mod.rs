@@ -40,11 +40,11 @@
 //! structured around two modules:
 //!
 //! - [`allocator`] contains generic traits representing the capability to
-//!     allocate and convert graphical buffers, as well as an implementation of this
-//!     capability using GBM (see its module-level docs for details).
+//!   allocate and convert graphical buffers, as well as an implementation of this
+//!   capability using GBM (see its module-level docs for details).
 //! - [`renderer`] provides traits representing the capability of graphics
-//!     rendering using those buffers, as well as an implementation of this
-//!     capability using GLes2 (see its module-level docs for details).
+//!   rendering using those buffers, as well as an implementation of this
+//!   capability using GLes2 (see its module-level docs for details).
 //!
 //! Alongside this backbone capability, Smithay also provides the [`drm`] module, which handles
 //! direct interaction with the graphical physical devices to setup the display pipeline and
