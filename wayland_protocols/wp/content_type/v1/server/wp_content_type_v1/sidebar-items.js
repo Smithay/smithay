@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_SET_CONTENT_TYPE_OPCODE","REQ_SET_CONTENT_TYPE_SINCE"],"enum":["Event","Request","Type"],"struct":["WpContentTypeV1"]};
