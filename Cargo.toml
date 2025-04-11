@@ -104,7 +104,7 @@ renderer_glow = ["renderer_gl", "glow"]
 renderer_multi = ["backend_drm", "aliasable"]
 renderer_pixman = ["pixman"]
 renderer_test = []
-use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys", "gbm?/import-wayland"]
+use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys"]
 use_bindgen = ["drm-ffi/use_bindgen", "gbm/use_bindgen", "input/use_bindgen"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "wayland-protocols-wlr", "wayland-protocols-misc", "tempfile"]
 x11rb_event_source = ["x11rb"]
@@ -142,3 +142,15 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch.crates-io]
+wayland-egl = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-protocols = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-protocols-wlr = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-protocols-misc = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-server = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-cursor = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-client = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-sys = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-backend = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
+wayland-scanner = { git = "https://github.com/Drakulix/wayland-rs", branch = "multi-gpu-dmabuf" }
