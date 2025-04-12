@@ -48,8 +48,8 @@ use std::{
 };
 
 use super::{
-    sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
-    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma,
+    ImportMem, Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
@@ -1064,8 +1064,8 @@ where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
-    fn id(&self) -> usize {
-        self.render.renderer().id()
+    fn context_id(&self) -> ContextId {
+        self.render.renderer().context_id()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
@@ -1813,8 +1813,8 @@ where
     type Error = Error<R, T>;
     type TextureId = MultiTexture;
 
-    fn id(&self) -> usize {
-        self.frame.as_ref().unwrap().id()
+    fn context_id(&self) -> ContextId {
+        self.frame.as_ref().unwrap().context_id()
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]

@@ -1,6 +1,4 @@
 #![allow(missing_docs)]
-#[cfg(feature = "wayland_frontend")]
-use std::cell::Cell;
 
 #[cfg(all(
     feature = "wayland_frontend",
@@ -26,7 +24,14 @@ use crate::{
     utils::{Buffer, Physical, Rectangle, Size, Transform},
 };
 
-use super::Color32F;
+#[cfg(feature = "wayland_frontend")]
+use std::cell::Cell;
+use std::sync::LazyLock;
+
+use super::{Color32F, ContextId};
+
+/// All [`DummyRenderer`] instances share the same static [`ContextId`].
+static CONTEXT_ID: LazyLock<ContextId> = LazyLock::new(ContextId::next);
 
 #[derive(Debug, Default)]
 pub struct DummyRenderer;
@@ -62,8 +67,8 @@ impl RendererSuper for DummyRenderer {
 }
 
 impl Renderer for DummyRenderer {
-    fn id(&self) -> usize {
-        0
+    fn context_id(&self) -> ContextId {
+        CONTEXT_ID.clone()
     }
 
     fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
@@ -230,8 +235,8 @@ impl Frame for DummyFrame {
     type Error = DummyError;
     type TextureId = DummyTexture;
 
-    fn id(&self) -> usize {
-        0
+    fn context_id(&self) -> ContextId {
+        CONTEXT_ID.clone()
     }
 
     fn clear(&mut self, _color: Color32F, _damage: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {

@@ -32,7 +32,7 @@ use std::{
     sync::Arc,
 };
 
-use super::{element::RenderElement, Frame};
+use super::{element::RenderElement, ContextId, Frame};
 
 #[derive(Debug)]
 /// A renderer utilizing OpenGL ES 2 and [`glow`] on top for easier custom rendering.
@@ -211,8 +211,8 @@ impl RendererSuper for GlowRenderer {
 }
 
 impl Renderer for GlowRenderer {
-    fn id(&self) -> usize {
-        self.gl.id()
+    fn context_id(&self) -> ContextId {
+        self.gl.context_id()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
@@ -262,8 +262,8 @@ impl Frame for GlowFrame<'_, '_> {
     type Error = GlesError;
     type TextureId = GlesTexture;
 
-    fn id(&self) -> usize {
-        self.frame.as_ref().unwrap().id()
+    fn context_id(&self) -> ContextId {
+        self.frame.as_ref().unwrap().context_id()
     }
 
     #[profiling::function]

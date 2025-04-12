@@ -203,7 +203,7 @@ use crate::{
         allocator::Fourcc,
         renderer::{
             utils::{DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
-            Frame, ImportMem, Renderer, Texture,
+            ContextId, Frame, ImportMem, Renderer, Texture,
         },
     },
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -215,7 +215,7 @@ use super::{CommitCounter, Element, Id, Kind, RenderElement};
 #[derive(Debug, Clone)]
 pub struct TextureBuffer<T> {
     id: Id,
-    renderer_id: usize,
+    context_id: ContextId,
     texture: T,
     scale: i32,
     transform: Transform,
@@ -233,7 +233,7 @@ impl<T> TextureBuffer<T> {
     ) -> Self {
         TextureBuffer {
             id: Id::new(),
-            renderer_id: renderer.id(),
+            context_id: renderer.context_id(),
             texture,
             scale,
             transform,
@@ -276,7 +276,7 @@ impl<T> TextureBuffer<T> {
 #[derive(Debug, Clone)]
 pub struct TextureRenderBuffer<T> {
     id: Id,
-    renderer_id: usize,
+    context_id: ContextId,
     texture: T,
     scale: i32,
     transform: Transform,
@@ -295,7 +295,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
     ) -> Self {
         TextureRenderBuffer {
             id: Id::new(),
-            renderer_id: renderer.id(),
+            context_id: renderer.context_id(),
             texture,
             scale,
             transform,
@@ -335,7 +335,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) {
-        assert_eq!(self.renderer_id, renderer.id());
+        assert_eq!(self.context_id, renderer.context_id());
         self.texture = texture;
         self.scale = scale;
         self.transform = transform;
@@ -351,7 +351,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
         region: Rectangle<i32, Buffer>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Result<(), R::Error> {
-        assert_eq!(self.renderer_id, renderer.id());
+        assert_eq!(self.context_id, renderer.context_id());
         renderer.update_memory(&self.texture, data, region)?;
         self.damage_tracker.lock().unwrap().add([region]);
         self.opaque_regions = opaque_regions;
@@ -416,7 +416,7 @@ impl<T> Drop for RenderContext<'_, T> {
 pub struct TextureRenderElement<T> {
     location: Point<f64, Physical>,
     id: Id,
-    renderer_id: usize,
+    context_id: ContextId,
     pub(crate) texture: T,
     scale: i32,
     transform: Transform,
@@ -448,7 +448,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             buffer.id.clone(),
-            buffer.renderer_id,
+            buffer.context_id.clone(),
             location,
             buffer.texture.clone(),
             buffer.scale,
@@ -473,7 +473,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
     ) -> Self {
         TextureRenderElement::from_static_texture(
             buffer.id.clone(),
-            buffer.renderer_id,
+            buffer.context_id.clone(),
             location,
             buffer.texture.clone(),
             buffer.scale,
@@ -493,7 +493,7 @@ impl<T: Texture> TextureRenderElement<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn from_texture_with_damage(
         id: Id,
-        renderer_id: usize,
+        context_id: ContextId,
         location: impl Into<Point<f64, Physical>>,
         texture: T,
         scale: i32,
@@ -514,7 +514,7 @@ impl<T: Texture> TextureRenderElement<T> {
         TextureRenderElement {
             location: location.into(),
             id,
-            renderer_id,
+            context_id,
             texture,
             scale,
             transform,
@@ -532,7 +532,7 @@ impl<T: Texture> TextureRenderElement<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn from_static_texture(
         id: Id,
-        renderer_id: usize,
+        context_id: ContextId,
         location: impl Into<Point<f64, Physical>>,
         texture: T,
         scale: i32,
@@ -545,7 +545,7 @@ impl<T: Texture> TextureRenderElement<T> {
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             id,
-            renderer_id,
+            context_id,
             location,
             texture,
             scale,
@@ -694,8 +694,8 @@ where
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
-        if frame.id() != self.renderer_id {
-            warn!("trying to render texture from different renderer");
+        if frame.context_id() != self.context_id {
+            warn!("trying to render texture from different renderer context");
             return Ok(());
         }
 
