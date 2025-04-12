@@ -470,7 +470,7 @@ impl SurfaceView {
 ///
 /// Calls [`compositor::with_states`] internally.
 ///
-/// Returns `None`, if there never was an commit processed through `on_commit_buffer_handler`.
+/// Returns `None`, if there never was a commit processed through `on_commit_buffer_handler`.
 pub fn with_renderer_surface_state<F, T>(surface: &WlSurface, cb: F) -> Option<T>
 where
     F: FnOnce(&mut RendererSurfaceState) -> T,

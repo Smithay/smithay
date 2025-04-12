@@ -53,17 +53,31 @@ impl From<DummyError> for SwapBuffersError {
 impl RendererSuper for DummyRenderer {
     type Error = DummyError;
     type TextureId = DummyTexture;
+    type Framebuffer<'buffer> = DummyFramebuffer;
     type Frame<'frame, 'buffer>
         = DummyFrame
     where
         'buffer: 'frame,
         Self: 'frame;
-    type Framebuffer<'buffer> = DummyFramebuffer;
 }
 
 impl Renderer for DummyRenderer {
     fn id(&self) -> usize {
         0
+    }
+
+    fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn upscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn set_debug_flags(&mut self, _flags: DebugFlags) {}
+
+    fn debug_flags(&self) -> DebugFlags {
+        DebugFlags::empty()
     }
 
     fn render<'frame, 'buffer>(
@@ -75,21 +89,7 @@ impl Renderer for DummyRenderer {
     where
         'buffer: 'frame,
     {
-        Ok(DummyFrame {})
-    }
-
-    fn upscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn set_debug_flags(&mut self, _flags: DebugFlags) {}
-
-    fn debug_flags(&self) -> DebugFlags {
-        DebugFlags::empty()
+        Ok(DummyFrame)
     }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
@@ -224,7 +224,7 @@ impl Texture for DummyFramebuffer {
 }
 
 #[derive(Debug)]
-pub struct DummyFrame {}
+pub struct DummyFrame;
 
 impl Frame for DummyFrame {
     type Error = DummyError;
@@ -264,12 +264,12 @@ impl Frame for DummyFrame {
         Transform::Normal
     }
 
-    fn finish(self) -> Result<SyncPoint, Self::Error> {
-        Ok(SyncPoint::default())
-    }
-
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         sync.wait().map_err(|_| DummyError::SyncInterrupted)
+    }
+
+    fn finish(self) -> Result<SyncPoint, Self::Error> {
+        Ok(SyncPoint::default())
     }
 }
 

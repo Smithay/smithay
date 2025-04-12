@@ -47,7 +47,7 @@
 //!
 //! const WIDTH: i32 = 10;
 //! const HEIGHT: i32 = 10;
-//! # let mut renderer = DummyRenderer;
+//! # let mut renderer = DummyRenderer::default();
 //! # let mut framebuffer = DummyFramebuffer;
 //! # let buffer_age = 0;
 //!

@@ -644,13 +644,13 @@ impl Frame for PixmanFrame<'_, '_> {
         self.transform
     }
 
+    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        sync.wait().map_err(|_| PixmanError::SyncInterrupted)
+    }
+
     #[profiling::function]
     fn finish(mut self) -> Result<SyncPoint, Self::Error> {
         self.finish_internal()
-    }
-
-    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
-        sync.wait().map_err(|_| PixmanError::SyncInterrupted)
     }
 }
 

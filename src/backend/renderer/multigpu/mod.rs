@@ -1030,7 +1030,7 @@ where
     }
 }
 
-static MAX_CPU_COPIES: usize = 3; // TODO, benchmark this
+const MAX_CPU_COPIES: usize = 3; // TODO, benchmark this
 
 impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> RendererSuper for MultiRenderer<'render, 'target, R, T>
 where
@@ -1810,8 +1810,8 @@ where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
-    type TextureId = MultiTexture;
     type Error = Error<R, T>;
+    type TextureId = MultiTexture;
 
     fn id(&self) -> usize {
         self.frame.as_ref().unwrap().id()
@@ -1892,13 +1892,13 @@ where
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
-        self.finish_internal()
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().wait(sync).map_err(Error::Render)
     }
 
     #[profiling::function]
-    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
-        self.frame.as_mut().unwrap().wait(sync).map_err(Error::Render)
+    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
+        self.finish_internal()
     }
 }
 
