@@ -5,7 +5,9 @@ use core::slice;
 use std::{
     collections::HashMap,
     ffi::{CStr, CString},
-    fmt, mem,
+    fmt,
+    marker::PhantomData,
+    mem,
     os::raw::c_char,
     ptr,
     rc::Rc,
@@ -307,7 +309,7 @@ pub struct GlesRenderer {
 
     // caches
     buffers: Vec<GlesBuffer>,
-    dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
+    dmabuf_cache: HashMap<WeakDmabuf, GlesTexture>,
     vbos: [ffi::types::GLuint; 2],
     vertices: Vec<f32>,
     non_opaque_damage: Vec<Rectangle<i32, Physical>>,
@@ -318,7 +320,7 @@ pub struct GlesRenderer {
     destruction_callback_sender: Sender<CleanupResource>,
 
     // markers
-    _not_send: *mut (),
+    _not_send: PhantomData<*mut ()>,
 
     // debug
     span: tracing::Span,
@@ -646,7 +648,7 @@ impl GlesRenderer {
             destruction_callback_sender: tx,
 
             debug_flags: DebugFlags::empty(),
-            _not_send: std::ptr::null_mut(),
+            _not_send: PhantomData,
             span,
             gl_debug_span,
         };
@@ -2204,8 +2206,8 @@ static OUTPUT_VERTS: [ffi::types::GLfloat; 8] = [
 ];
 
 impl Frame for GlesFrame<'_, '_> {
-    type TextureId = GlesTexture;
     type Error = GlesError;
+    type TextureId = GlesTexture;
 
     fn id(&self) -> usize {
         self.renderer.id()
@@ -2293,13 +2295,13 @@ impl Frame for GlesFrame<'_, '_> {
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<SyncPoint, Self::Error> {
-        self.finish_internal()
+    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        self.renderer.wait(sync)
     }
 
     #[profiling::function]
-    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
-        self.renderer.wait(sync)
+    fn finish(mut self) -> Result<SyncPoint, Self::Error> {
+        self.finish_internal()
     }
 }
 

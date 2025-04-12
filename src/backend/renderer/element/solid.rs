@@ -30,7 +30,7 @@
 //!
 //! // Initialize a static damage tracked renderer
 //! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
-//! # let mut renderer = DummyRenderer;
+//! # let mut renderer = DummyRenderer::default();
 //! # let mut framebuffer = DummyFramebuffer;
 //!
 //! loop {

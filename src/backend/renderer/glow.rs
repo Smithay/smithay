@@ -202,12 +202,12 @@ impl<'frame, 'buffer> BorrowMut<GlesFrame<'frame, 'buffer>> for GlowFrame<'frame
 impl RendererSuper for GlowRenderer {
     type Error = GlesError;
     type TextureId = GlesTexture;
+    type Framebuffer<'buffer> = GlesTarget<'buffer>;
     type Frame<'frame, 'buffer>
         = GlowFrame<'frame, 'buffer>
     where
         'buffer: 'frame,
         Self: 'frame;
-    type Framebuffer<'buffer> = GlesTarget<'buffer>;
 }
 
 impl Renderer for GlowRenderer {
@@ -259,8 +259,8 @@ impl Renderer for GlowRenderer {
 }
 
 impl Frame for GlowFrame<'_, '_> {
-    type TextureId = GlesTexture;
     type Error = GlesError;
+    type TextureId = GlesTexture;
 
     fn id(&self) -> usize {
         self.frame.as_ref().unwrap().id()
@@ -333,13 +333,13 @@ impl Frame for GlowFrame<'_, '_> {
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
-        self.finish_internal()
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().wait(sync)
     }
 
     #[profiling::function]
-    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
-        self.frame.as_mut().unwrap().wait(sync)
+    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
+        self.finish_internal()
     }
 }
 

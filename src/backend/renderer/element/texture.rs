@@ -10,7 +10,7 @@
 //! It is possible to either use a [`pre-existing texture`](TextureBuffer::from_texture) or to create the texture
 //! from [`RGBA memory`](TextureBuffer::from_memory).
 //! The [`TextureBuffer`] can be used in the smithay pipeline by using [`TextureRenderElement::from_texture_buffer`].
-//!  
+//!
 //! ## Hardware accelerated rendering
 //!
 //! [`TextureRenderBuffer`] provides a solution for hardware accelerated rending with
@@ -62,7 +62,7 @@
 //! const HEIGHT: i32 = 10;
 //!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
-//! # let mut renderer = DummyRenderer;
+//! # let mut renderer = DummyRenderer::default();
 //! # let mut framebuffer = DummyFramebuffer;
 //!
 //! // Create the texture buffer from a chunk of memory
@@ -120,7 +120,7 @@
 //! const HEIGHT: i32 = 10;
 //!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
-//! # let mut renderer = DummyRenderer;
+//! # let mut renderer = DummyRenderer::default();
 //! # let mut framebuffer = DummyFramebuffer;
 //!
 //! // Create the texture buffer from a chunk of memory
