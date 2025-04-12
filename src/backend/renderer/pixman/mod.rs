@@ -33,8 +33,8 @@ use wayland_server::protocol::wl_buffer;
 ))]
 use super::ImportEgl;
 use super::{
-    sync::SyncPoint, Bind, Color32F, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
-    RendererSuper, Texture, TextureFilter, TextureMapping,
+    sync::SyncPoint, Bind, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
+    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 
 mod error;
@@ -356,8 +356,8 @@ impl Frame for PixmanFrame<'_, '_> {
 
     type TextureId = PixmanTexture;
 
-    fn id(&self) -> usize {
-        0
+    fn context_id(&self) -> ContextId {
+        self.renderer.context_id()
     }
 
     #[profiling::function]
@@ -818,8 +818,12 @@ impl RendererSuper for PixmanRenderer {
 }
 
 impl Renderer for PixmanRenderer {
-    fn id(&self) -> usize {
-        0
+    fn context_id(&self) -> ContextId {
+        // Pixman textures are just memory slices, and there's nothing in the API
+        // that prevents sharing them between different `PixmanRenderer` instances.
+        // So they all share the same static `ContextId`.
+        static CONTEXT_ID: LazyLock<ContextId> = LazyLock::new(ContextId::next);
+        CONTEXT_ID.clone()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
