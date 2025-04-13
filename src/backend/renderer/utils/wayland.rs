@@ -2,7 +2,8 @@
 use crate::wayland::drm_syncobj::{DrmSyncPoint, DrmSyncobjCachedState};
 use crate::{
     backend::renderer::{
-        buffer_dimensions, buffer_has_alpha, element::RenderElement, ContextId, ImportAll, Renderer,
+        buffer_dimensions, buffer_has_alpha, element::RenderElement, ContextId, ErasedContextId, ImportAll,
+        Renderer, Texture,
     },
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
@@ -43,8 +44,8 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<Buffer>,
     pub(crate) damage: DamageBag<i32, BufferCoord>,
-    pub(crate) renderer_seen: HashMap<ContextId, CommitCounter>,
-    pub(crate) textures: HashMap<ContextId, Box<dyn Any>>,
+    pub(crate) renderer_seen: HashMap<ErasedContextId, CommitCounter>,
+    pub(crate) textures: HashMap<ErasedContextId, Box<dyn Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
 }
@@ -317,12 +318,11 @@ impl RendererSurfaceState {
     }
 
     /// Gets a reference to the texture for the specified renderer context
-    pub fn texture<R>(&self, id: &ContextId) -> Option<&R::TextureId>
+    pub fn texture<T>(&self, id: ContextId<T>) -> Option<&T>
     where
-        R: Renderer,
-        R::TextureId: 'static,
+        T: Texture + 'static,
     {
-        self.textures.get(id).and_then(|e| e.downcast_ref())
+        self.textures.get(&id.erased()).and_then(|e| e.downcast_ref())
     }
 
     /// Gets the opaque regions of this surface
@@ -496,7 +496,7 @@ where
     R::TextureId: 'static,
 {
     if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-        let context_id = renderer.context_id();
+        let context_id = renderer.context_id().erased();
         let mut data_ref = data.lock().unwrap();
         let data = &mut *data_ref;
 
@@ -564,7 +564,7 @@ where
                 let mut data_ref = data.lock().unwrap();
                 let data = &mut *data_ref;
                 // Now, should we be drawn ?
-                if data.textures.contains_key(&renderer.context_id()) {
+                if data.textures.contains_key(&renderer.context_id().erased()) {
                     // if yes, also process the children
                     let surface_view = data.surface_view.unwrap();
                     location += surface_view.offset.to_f64().to_physical(scale);

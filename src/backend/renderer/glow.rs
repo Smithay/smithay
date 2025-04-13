@@ -211,7 +211,7 @@ impl RendererSuper for GlowRenderer {
 }
 
 impl Renderer for GlowRenderer {
-    fn context_id(&self) -> ContextId {
+    fn context_id(&self) -> ContextId<GlesTexture> {
         self.gl.context_id()
     }
 
@@ -262,7 +262,7 @@ impl Frame for GlowFrame<'_, '_> {
     type Error = GlesError;
     type TextureId = GlesTexture;
 
-    fn context_id(&self) -> ContextId {
+    fn context_id(&self) -> ContextId<GlesTexture> {
         self.frame.as_ref().unwrap().context_id()
     }
 

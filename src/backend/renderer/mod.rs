@@ -9,7 +9,15 @@
 
 use crate::utils::{ids::id_gen, Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
 use cgmath::Matrix3;
-use std::{error::Error, fmt, sync::Arc};
+use std::{
+    any::TypeId,
+    cmp::Ordering,
+    error::Error,
+    fmt,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    sync::Arc,
+};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::{compositor::SurfaceData, shm::fourcc_to_shm_format};
@@ -57,32 +65,102 @@ pub mod sync;
 #[cfg(any(feature = "renderer_test", test, doctest))]
 pub mod test;
 
-id_gen!(context_id);
-
-/// Identifies a renderer context
+/// Identifies a renderer context for a specific texture type.
 ///
-/// Renderers with the same [`ContextId`] are assumed to be texture-compatible,
-/// meaning textures created by one can be imported to another.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ContextId(Arc<InnerId>);
+/// Renderers with the same `ContextId` are assumed to be texture-compatible,
+/// meaning textures created by one can be imported into another.
+pub struct ContextId<T: Texture>(Arc<InnerContextId>, PhantomData<fn() -> T>);
 
-impl ContextId {
-    /// Generates next [`ContextId`]
-    pub fn next() -> ContextId {
-        ContextId(Arc::new(InnerId::new()))
+/// A type-erased [`ContextId`] without the `Texture` generic.
+///
+/// This allows representing and comparing renderer contexts across different texture types.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ErasedContextId(Arc<InnerContextId>, TypeId);
+
+impl<T: Texture> ContextId<T> {
+    /// Allocates a new `ContextId`.
+    pub fn new() -> Self {
+        ContextId(Arc::new(InnerContextId::new()), PhantomData)
+    }
+
+    /// Maps this `ContextId` to one with another `Texture` type.
+    ///
+    /// This is typically used by wrapper or derivative renderers that define a new `TextureId`
+    /// while reusing the underlying context for rendering.
+    pub fn map<Tex: Texture>(self) -> ContextId<Tex> {
+        ContextId(self.0, PhantomData)
+    }
+
+    /// Returns an [`ErasedContextId`] representing this context without the texture type.
+    ///
+    /// This is useful when storing or comparing contexts across different texture types.
+    pub fn erased(self) -> ErasedContextId
+    where
+        T: 'static,
+    {
+        ErasedContextId(self.0, TypeId::of::<T>())
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct InnerId(usize);
+impl<T: Texture> Default for ContextId<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-impl InnerId {
+impl<T: Texture> fmt::Debug for ContextId<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ContextId")
+            .field(&self.0)
+            .field(&format_args!("_"))
+            .finish()
+    }
+}
+
+impl<T: Texture> Clone for ContextId<T> {
+    fn clone(&self) -> Self {
+        ContextId(self.0.clone(), PhantomData)
+    }
+}
+
+impl<T: Texture> PartialEq for ContextId<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Texture> Eq for ContextId<T> {}
+
+impl<T: Texture> PartialOrd for ContextId<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Texture> Ord for ContextId<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl<T: Texture> Hash for ContextId<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+id_gen!(context_id);
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct InnerContextId(usize);
+
+impl InnerContextId {
     fn new() -> Self {
         Self(context_id::next())
     }
 }
 
-impl Drop for InnerId {
+impl Drop for InnerContextId {
     fn drop(&mut self) {
         context_id::remove(self.0);
     }
@@ -195,7 +273,7 @@ pub trait Frame {
     type TextureId: Texture;
 
     /// Returns the [`ContextId`] of the associated renderer.
-    fn context_id(&self) -> ContextId;
+    fn context_id(&self) -> ContextId<Self::TextureId>;
 
     /// Clear the complete current target with a single given color.
     ///
@@ -311,7 +389,7 @@ pub trait Renderer: RendererSuper {
     /// Returns the [`ContextId`] of this renderer
     ///
     /// See [`ContextId`] for more details.
-    fn context_id(&self) -> ContextId;
+    fn context_id(&self) -> ContextId<Self::TextureId>;
 
     /// Set the filter method to be used when rendering a texture into a smaller area than its size
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;

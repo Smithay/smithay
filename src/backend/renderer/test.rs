@@ -31,7 +31,7 @@ use std::sync::LazyLock;
 use super::{Color32F, ContextId};
 
 /// All [`DummyRenderer`] instances share the same static [`ContextId`].
-static CONTEXT_ID: LazyLock<ContextId> = LazyLock::new(ContextId::next);
+static CONTEXT_ID: LazyLock<ContextId<DummyTexture>> = LazyLock::new(ContextId::new);
 
 #[derive(Debug, Default)]
 pub struct DummyRenderer;
@@ -67,7 +67,7 @@ impl RendererSuper for DummyRenderer {
 }
 
 impl Renderer for DummyRenderer {
-    fn context_id(&self) -> ContextId {
+    fn context_id(&self) -> ContextId<DummyTexture> {
         CONTEXT_ID.clone()
     }
 
@@ -235,7 +235,7 @@ impl Frame for DummyFrame {
     type Error = DummyError;
     type TextureId = DummyTexture;
 
-    fn context_id(&self) -> ContextId {
+    fn context_id(&self) -> ContextId<DummyTexture> {
         CONTEXT_ID.clone()
     }
 

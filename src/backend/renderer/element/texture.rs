@@ -213,18 +213,18 @@ use super::{CommitCounter, Element, Id, Kind, RenderElement};
 
 /// A single texture buffer
 #[derive(Debug, Clone)]
-pub struct TextureBuffer<T> {
+pub struct TextureBuffer<T: Texture> {
     id: Id,
-    context_id: ContextId,
+    context_id: ContextId<T>,
     texture: T,
     scale: i32,
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
 }
 
-impl<T> TextureBuffer<T> {
+impl<T: Texture> TextureBuffer<T> {
     /// Create a [`TextureBuffer`] from an existing texture
-    pub fn from_texture<R: Renderer>(
+    pub fn from_texture<R: Renderer<TextureId = T>>(
         renderer: &R,
         texture: T,
         scale: i32,
@@ -274,9 +274,9 @@ impl<T> TextureBuffer<T> {
 
 /// A texture backed render buffer
 #[derive(Debug, Clone)]
-pub struct TextureRenderBuffer<T> {
+pub struct TextureRenderBuffer<T: Texture> {
     id: Id,
-    context_id: ContextId,
+    context_id: ContextId<T>,
     texture: T,
     scale: i32,
     transform: Transform,
@@ -286,7 +286,7 @@ pub struct TextureRenderBuffer<T> {
 
 impl<T: Texture> TextureRenderBuffer<T> {
     /// Create [`TextureRenderBuffer`] from an existing texture
-    pub fn from_texture<R: Renderer>(
+    pub fn from_texture<R: Renderer<TextureId = T>>(
         renderer: &R,
         texture: T,
         scale: i32,
@@ -327,7 +327,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
     }
 
     /// Replace the stored texture
-    pub fn update_from_texture<R: Renderer>(
+    pub fn update_from_texture<R: Renderer<TextureId = T>>(
         &mut self,
         renderer: &R,
         texture: T,
@@ -375,13 +375,13 @@ impl<T: Texture> TextureRenderBuffer<T> {
 
 /// A render context for [`TextureRenderBuffer`]
 #[derive(Debug)]
-pub struct RenderContext<'a, T> {
+pub struct RenderContext<'a, T: Texture> {
     buffer: &'a mut TextureRenderBuffer<T>,
     damage: Vec<Rectangle<i32, Buffer>>,
     opaque_regions: Option<Option<Vec<Rectangle<i32, Buffer>>>>,
 }
 
-impl<T> RenderContext<'_, T> {
+impl<T: Texture> RenderContext<'_, T> {
     /// Draw to the buffer
     pub fn draw<F, E>(&mut self, f: F) -> Result<(), E>
     where
@@ -398,7 +398,7 @@ impl<T> RenderContext<'_, T> {
     }
 }
 
-impl<T> Drop for RenderContext<'_, T> {
+impl<T: Texture> Drop for RenderContext<'_, T> {
     fn drop(&mut self) {
         self.buffer
             .damage_tracker
@@ -413,10 +413,10 @@ impl<T> Drop for RenderContext<'_, T> {
 
 /// A render element for a [`TextureRenderBuffer`]
 #[derive(Debug)]
-pub struct TextureRenderElement<T> {
+pub struct TextureRenderElement<T: Texture> {
     location: Point<f64, Physical>,
     id: Id,
-    context_id: ContextId,
+    context_id: ContextId<T>,
     pub(crate) texture: T,
     scale: i32,
     transform: Transform,
@@ -493,7 +493,7 @@ impl<T: Texture> TextureRenderElement<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn from_texture_with_damage(
         id: Id,
-        context_id: ContextId,
+        context_id: ContextId<T>,
         location: impl Into<Point<f64, Physical>>,
         texture: T,
         scale: i32,
@@ -532,7 +532,7 @@ impl<T: Texture> TextureRenderElement<T> {
     #[allow(clippy::too_many_arguments)]
     pub fn from_static_texture(
         id: Id,
-        context_id: ContextId,
+        context_id: ContextId<T>,
         location: impl Into<Point<f64, Physical>>,
         texture: T,
         scale: i32,

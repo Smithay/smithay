@@ -608,7 +608,9 @@ impl GlesRenderer {
         );
         gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
 
-        context.user_data().insert_if_missing_threadsafe(ContextId::next);
+        context
+            .user_data()
+            .insert_if_missing_threadsafe(ContextId::<GlesTexture>::new);
 
         drop(_guard);
 
@@ -770,7 +772,7 @@ impl ImportMemWl for GlesRenderer {
 
         // why not store a `GlesTexture`? because the user might do so.
         // this is guaranteed a non-public internal type, so we are good.
-        type CacheMap = HashMap<ContextId, Arc<GlesTextureInternal>>;
+        type CacheMap = HashMap<ContextId<GlesTexture>, Arc<GlesTextureInternal>>;
 
         let mut surface_lock = surface.as_ref().map(|surface_data| {
             surface_data
@@ -2010,8 +2012,12 @@ impl RendererSuper for GlesRenderer {
 }
 
 impl Renderer for GlesRenderer {
-    fn context_id(&self) -> ContextId {
-        self.egl.user_data().get::<ContextId>().unwrap().clone()
+    fn context_id(&self) -> ContextId<GlesTexture> {
+        self.egl
+            .user_data()
+            .get::<ContextId<GlesTexture>>()
+            .unwrap()
+            .clone()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
@@ -2199,7 +2205,7 @@ impl Frame for GlesFrame<'_, '_> {
     type Error = GlesError;
     type TextureId = GlesTexture;
 
-    fn context_id(&self) -> ContextId {
+    fn context_id(&self) -> ContextId<GlesTexture> {
         self.renderer.context_id()
     }
 
