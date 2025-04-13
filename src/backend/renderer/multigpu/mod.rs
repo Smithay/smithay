@@ -272,6 +272,7 @@ impl<A: GraphicsApi> GpuManager<A> {
             .devices
             .iter_mut()
             .partition::<Vec<_>, _>(|dev| dev.node() == device);
+
         Ok(MultiRenderer {
             render: render.remove(0),
             target: None,
@@ -452,7 +453,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ///
     /// - `target` referrs to the gpu node, that the buffer needs to be accessable on later.
     ///    *Note*: Usually this will be **render**ing gpu of a [`MultiRenderer`]
-    /// - `surface` is the wayland surface, whos buffer and subsurfaces buffers shall be imported
+    /// - `surface` is the wayland surface, whose buffer and subsurfaces buffers shall be imported
     ///
     /// Note: This will do nothing, if you are not using
     /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
@@ -810,7 +811,7 @@ impl<R: GraphicsApi, T: GraphicsApi> Texture for MultiFramebuffer<'_, R, T> {
 /// Leaking the frame will potentially keep it from doing necessary copies
 /// of the internal framebuffer for some multi-gpu configurations. The result would
 /// be no updated framebuffer contents.
-/// Additionally all problems related to the Frame-implementation of the underlying
+/// Additionally, all problems related to the Frame-implementation of the underlying
 /// [`GraphicsApi`] will be present.
 pub struct MultiFrame<'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi>
 where
@@ -824,6 +825,7 @@ where
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
     node: DrmNode,
+
     frame: Option<<<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>>,
     framebuffer:
         Option<AliasableBox<<<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'frame>>>,
@@ -1064,8 +1066,8 @@ where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
-    fn context_id(&self) -> ContextId {
-        self.render.renderer().context_id()
+    fn context_id(&self) -> ContextId<MultiTexture> {
+        self.render.renderer().context_id().map()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
@@ -1813,8 +1815,8 @@ where
     type Error = Error<R, T>;
     type TextureId = MultiTexture;
 
-    fn context_id(&self) -> ContextId {
-        self.frame.as_ref().unwrap().context_id()
+    fn context_id(&self) -> ContextId<MultiTexture> {
+        self.frame.as_ref().unwrap().context_id().map()
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]

@@ -356,7 +356,7 @@ impl Frame for PixmanFrame<'_, '_> {
 
     type TextureId = PixmanTexture;
 
-    fn context_id(&self) -> ContextId {
+    fn context_id(&self) -> ContextId<PixmanTexture> {
         self.renderer.context_id()
     }
 
@@ -818,11 +818,11 @@ impl RendererSuper for PixmanRenderer {
 }
 
 impl Renderer for PixmanRenderer {
-    fn context_id(&self) -> ContextId {
+    fn context_id(&self) -> ContextId<PixmanTexture> {
         // Pixman textures are just memory slices, and there's nothing in the API
         // that prevents sharing them between different `PixmanRenderer` instances.
         // So they all share the same static `ContextId`.
-        static CONTEXT_ID: LazyLock<ContextId> = LazyLock::new(ContextId::next);
+        static CONTEXT_ID: LazyLock<ContextId<PixmanTexture>> = LazyLock::new(ContextId::new);
         CONTEXT_ID.clone()
     }
 

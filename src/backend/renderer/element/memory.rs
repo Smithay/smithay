@@ -116,7 +116,7 @@ use crate::{
         allocator::{format::get_bpp, Fourcc},
         renderer::{
             utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
-            ContextId, Frame, ImportMem, Renderer,
+            ErasedContextId, Frame, ImportMem, Renderer,
         },
     },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -223,8 +223,8 @@ struct MemoryRenderBufferInner {
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     damage_bag: DamageBag<i32, Buffer>,
-    textures: HashMap<ContextId, Box<dyn Any + Send>>,
-    renderer_seen: HashMap<ContextId, CommitCounter>,
+    textures: HashMap<ErasedContextId, Box<dyn Any + Send>>,
+    renderer_seen: HashMap<ErasedContextId, CommitCounter>,
 }
 
 impl Default for MemoryRenderBufferInner {
@@ -309,7 +309,7 @@ impl MemoryRenderBufferInner {
         R: Renderer + ImportMem,
         R::TextureId: Send + Clone + 'static,
     {
-        let context_id = renderer.context_id();
+        let context_id = renderer.context_id().erased();
         let current_commit = self.damage_bag.current_commit();
         let last_commit = self.renderer_seen.get(&context_id).copied();
         let buffer_damage = self
