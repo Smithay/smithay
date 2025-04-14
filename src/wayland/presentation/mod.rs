@@ -320,6 +320,14 @@ impl Cacheable for PresentationFeedbackCachedState {
     }
 
     fn merge_into(mut self, into: &mut Self, _dh: &DisplayHandle) {
+        // In case our cached state does not contain any callbacks we can
+        // exit early. This is important for commits on a subsurface tree
+        // where we might end up merging the state multiple times which
+        // would override the callbacks without this check.
+        if self.callbacks.is_empty() {
+            return;
+        }
+
         // discard unprocessed callbacks as defined by the spec
         // ...the user did not see the content update because it was superseded...
         for callback in std::mem::replace(&mut into.callbacks, std::mem::take(&mut self.callbacks)) {
