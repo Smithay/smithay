@@ -34,7 +34,7 @@ use std::{
     ops::Deref,
 };
 
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 use wayland_protocols::xdg::foreign::zv2::server::{
     zxdg_exporter_v2::ZxdgExporterV2, zxdg_imported_v2::ZxdgImportedV2, zxdg_importer_v2::ZxdgImporterV2,
 };
@@ -56,7 +56,7 @@ struct XdgForeignHandle(String);
 
 impl XdgForeignHandle {
     fn new() -> Self {
-        Self(Alphanumeric.sample_string(&mut rand::thread_rng(), 32))
+        Self(Alphanumeric.sample_string(&mut rand::rng(), 32))
     }
 
     fn as_str(&self) -> &str {
