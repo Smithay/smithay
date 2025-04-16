@@ -234,6 +234,15 @@ impl EGLDevice {
         }
     }
 
+    /// Queries if device is not backed by any actual device node and simply renders into client memory.
+    ///
+    /// Note: This simply tests presence of the [`EGL_MESA_device_software`](https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/_extra/specs/EGL_MESA_device_software.txt) extension.
+    pub fn is_software(&self) -> bool {
+        // Note: EGL_MESA_device_software requires EGL_EXT_device_query which we already test for initializing the device,
+        // so there is no need to re-test it here again.
+        self.extensions().contains(&"EGL_MESA_device_software".to_owned())
+    }
+
     /// Returns the pointer to the raw [`EGLDevice`].
     ///
     /// The pointer will become invalid, when this struct is destroyed.
