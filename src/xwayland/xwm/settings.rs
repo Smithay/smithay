@@ -227,7 +227,8 @@ impl Value {
             Value::String(val) => {
                 let val = val.as_bytes();
                 data.extend(&(val.len() as u32).to_ne_bytes());
-                data.extend(val)
+                data.extend(val);
+                data.extend(std::iter::repeat(0u8).take(pad(val.len())));
             }
             Value::Color(val) => {
                 for component in val {
