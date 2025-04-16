@@ -29,7 +29,7 @@ members = [
 appendlist = "1.4"
 ash = { version = "0.38.0", optional = true }
 bitflags = "2.2.1"
-calloop = "0.14.0"
+calloop = { git = "https://github.com/Smithay/calloop" } # XXX
 cursor-icon = "1.0.0"
 cgmath = "0.18.0"
 downcast-rs = "1.2.0"
