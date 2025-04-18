@@ -121,7 +121,7 @@
 use std::{
     fmt,
     hash::Hash,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use tracing::{info_span, instrument};
@@ -185,6 +185,32 @@ impl<D: SeatHandler> fmt::Debug for SeatState<D> {
 /// See module-level documentation for details of use.
 pub struct Seat<D: SeatHandler> {
     pub(crate) arc: Arc<SeatRc<D>>,
+}
+
+/// Weak variant of an [`Seat`]
+///
+/// Does not keep associated user data alive,
+/// and can be used to refer to a potentially already destroyed seat.
+#[derive(Debug, Clone)]
+pub struct WeakSeat<D: SeatHandler>(Weak<SeatRc<D>>);
+
+impl<D: SeatHandler> WeakSeat<D> {
+    /// Try to retrieve the original `Seat`, if it still exists
+    pub fn upgrade(&self) -> Option<Seat<D>> {
+        self.0.upgrade().map(|arc| Seat { arc })
+    }
+
+    /// Check if the seat is still alive
+    pub fn is_alive(&self) -> bool {
+        self.0.strong_count() != 0
+    }
+}
+
+impl<D: SeatHandler> Seat<D> {
+    /// Create a weak reference to this seat
+    pub fn downgrade(&self) -> WeakSeat<D> {
+        WeakSeat(Arc::downgrade(&self.arc))
+    }
 }
 
 impl<D: SeatHandler> fmt::Debug for Seat<D> {
