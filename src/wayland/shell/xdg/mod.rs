@@ -749,7 +749,7 @@ impl PositionerState {
                 geo.loc.x -= min(off_right, -off_left);
             }
 
-            (_, off_right, _, _) = compute_offsets(target, geo);
+            (off_left, off_right, _, _) = compute_offsets(target, geo);
             // off_top and off_bottom are the same since we're using rectangles.
         }
 
@@ -765,26 +765,38 @@ impl PositionerState {
                 geo.loc.y -= min(off_bottom, -off_top);
             }
 
-            (_, _, _, off_bottom) = compute_offsets(target, geo);
+            (_, _, off_top, off_bottom) = compute_offsets(target, geo);
             // off_left and off_right are the same since we're using rectangles.
         }
 
-        // Try to resize horizontally. This makes sense only if the popup is at least partially to the left
-        // of the right target edge, which is the same as checking that the offset is smaller than the width.
-        if off_right > 0
-            && off_right < geo.size.w
-            && self.constraint_adjustment.contains(ConstraintAdjustment::ResizeX)
-        {
-            geo.size.w -= off_right;
+        // Try to resize horizontally.
+        if self.constraint_adjustment.contains(ConstraintAdjustment::ResizeX) {
+            // Unconstrain both edges by clamping the left and right sides of the popup rectangle.
+            // Skip if the offset is larger than the width, in which case the entirety of the popup
+            // is outside the target rectangle and a clamp would result in a zero-sized geometry.
+
+            if off_left > 0 && off_left < geo.size.w {
+                geo.loc.x += off_left;
+                geo.size.w -= off_left;
+            }
+            if off_right > 0 && off_right < geo.size.w {
+                geo.size.w -= off_right;
+            }
         }
 
-        // Try to resize vertically. This makes sense only if the popup is at least partially to the top of
-        // the bottom target edge, which is the same as checking that the offset is smaller than the height.
-        if off_bottom > 0
-            && off_bottom < geo.size.h
-            && self.constraint_adjustment.contains(ConstraintAdjustment::ResizeY)
-        {
-            geo.size.h -= off_bottom;
+        // Try to resize vertically.
+        if self.constraint_adjustment.contains(ConstraintAdjustment::ResizeY) {
+            // Unconstrain both edges by clamping the top and bottom sides of the popup rectangle.
+            // Skip if the offset is larger than the height, in which case the entirety of the popup
+            // is outside the target rectangle and a clamp would result in a zero-sized geometry.
+
+            if off_top > 0 && off_top < geo.size.h {
+                geo.loc.y += off_top;
+                geo.size.h -= off_top;
+            }
+            if off_bottom > 0 && off_bottom < geo.size.h {
+                geo.size.h -= off_bottom;
+            }
         }
 
         geo
