@@ -104,14 +104,15 @@ use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::
 use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::Request as ManagerRequest;
 use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1 as CursorShapeManager;
 use wayland_protocols::wp::tablet::zv2::server::zwp_tablet_tool_v2::ZwpTabletToolV2;
-use wayland_server::protocol::wl_pointer::WlPointer;
 use wayland_server::GlobalDispatch;
 use wayland_server::Resource;
 use wayland_server::WEnum;
+use wayland_server::Weak;
 use wayland_server::{backend::GlobalId, Dispatch, DisplayHandle};
 
 use crate::input::pointer::{CursorIcon, CursorImageStatus};
 use crate::input::SeatHandler;
+use crate::input::WeakSeat;
 use crate::utils::Serial;
 use crate::wayland::seat::{pointer::allow_setting_cursor, WaylandFocus};
 
@@ -165,12 +166,12 @@ where
 impl<D> Dispatch<CursorShapeManager, (), D> for CursorShapeManagerState
 where
     D: Dispatch<CursorShapeManager, ()>,
-    D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData>,
+    D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &wayland_server::Client,
         _resource: &CursorShapeManager,
         request: <CursorShapeManager as wayland_server::Resource>::Request,
@@ -183,9 +184,27 @@ where
                 cursor_shape_device,
                 pointer,
             } => {
+                let pointer_data = pointer.data::<PointerUserData<D>>();
+                let handle = match pointer_data.and_then(|data| data.handle.as_ref()) {
+                    Some(handle) => handle,
+                    None => return,
+                };
+
+                let Some(seat) = state
+                    .seat_state()
+                    .seats
+                    .iter()
+                    .find(|seat| seat.get_pointer().map(|h| &h == handle).unwrap_or(false))
+                    .cloned()
+                else {
+                    return;
+                };
+
                 data_init.init(
                     cursor_shape_device,
-                    CursorShapeDeviceUserData(CursorShapeDeviceUserDataInner::Pointer(pointer)),
+                    CursorShapeDeviceUserData(CursorShapeDeviceUserDataInner::Pointer {
+                        seat: seat.downgrade(),
+                    }),
                 );
             }
             ManagerRequest::GetTabletToolV2 {
@@ -194,7 +213,9 @@ where
             } => {
                 data_init.init(
                     cursor_shape_device,
-                    CursorShapeDeviceUserData(CursorShapeDeviceUserDataInner::Tablet(tablet_tool)),
+                    CursorShapeDeviceUserData(CursorShapeDeviceUserDataInner::Tablet(
+                        tablet_tool.downgrade(),
+                    )),
                 );
             }
             ManagerRequest::Destroy => {}
@@ -205,20 +226,20 @@ where
 
 #[doc(hidden)]
 #[derive(Debug, Clone)]
-pub struct CursorShapeDeviceUserData(CursorShapeDeviceUserDataInner);
+pub struct CursorShapeDeviceUserData<D: SeatHandler>(CursorShapeDeviceUserDataInner<D>);
 
 #[derive(Debug, Clone)]
-pub(crate) enum CursorShapeDeviceUserDataInner {
+pub(crate) enum CursorShapeDeviceUserDataInner<D: SeatHandler> {
     /// The device was created for the pointer.
-    Pointer(WlPointer),
+    Pointer { seat: WeakSeat<D> },
     /// The device was created for the tablet tool.
-    Tablet(ZwpTabletToolV2),
+    Tablet(Weak<ZwpTabletToolV2>),
 }
 
-impl<D> Dispatch<CursorShapeDevice, CursorShapeDeviceUserData, D> for CursorShapeManagerState
+impl<D> Dispatch<CursorShapeDevice, CursorShapeDeviceUserData<D>, D> for CursorShapeManagerState
 where
     D: Dispatch<CursorShapeManager, ()>,
-    D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData>,
+    D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData<D>>,
     D: SeatHandler + TabletSeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
@@ -226,9 +247,9 @@ where
     fn request(
         state: &mut D,
         _client: &wayland_server::Client,
-        _resource: &CursorShapeDevice,
+        resource: &CursorShapeDevice,
         request: <CursorShapeDevice as wayland_server::Resource>::Request,
-        data: &CursorShapeDeviceUserData,
+        data: &CursorShapeDeviceUserData<D>,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -238,30 +259,29 @@ where
                 shape: WEnum::Value(shape),
             } => {
                 match &data.0 {
-                    CursorShapeDeviceUserDataInner::Pointer(pointer) => {
-                        let pointer_data = pointer.data::<PointerUserData<D>>();
-                        let handle = match pointer_data.and_then(|data| data.handle.as_ref()) {
-                            Some(handle) => handle,
-                            None => return,
+                    CursorShapeDeviceUserDataInner::Pointer { seat } => {
+                        let Some(seat) = seat.upgrade() else {
+                            return;
                         };
 
-                        if !allow_setting_cursor(handle, Serial(serial), &pointer.id()) {
+                        let Some(handle) = seat.get_pointer() else {
+                            // When the pointer capability is removed from the wl_seat,
+                            // the wp_cursor_shape_device_v1 object becomes inert.
+                            return;
+                        };
+
+                        if !allow_setting_cursor(&handle, Serial(serial), &resource.id()) {
                             return;
                         }
 
-                        let seat = state
-                            .seat_state()
-                            .seats
-                            .iter()
-                            .find(|seat| seat.get_pointer().map(|h| &h == handle).unwrap_or(false))
-                            .cloned();
-
-                        if let Some(seat) = seat {
-                            let cursor_icon = shape_to_cursor_icon(shape);
-                            state.cursor_image(&seat, CursorImageStatus::Named(cursor_icon));
-                        }
+                        let cursor_icon = shape_to_cursor_icon(shape);
+                        state.cursor_image(&seat, CursorImageStatus::Named(cursor_icon));
                     }
                     CursorShapeDeviceUserDataInner::Tablet(tablet) => {
+                        let Ok(tablet) = tablet.upgrade() else {
+                            // When the zwp_tablet_tool_v2 is removed, the wp_cursor_shape_device_v1 object becomes inert.
+                            return;
+                        };
                         let tablet_data = match tablet.data::<TabletToolUserData>() {
                             Some(data) => data,
                             None => return,
@@ -346,7 +366,7 @@ macro_rules! delegate_cursor_shape {
             $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1: ()
         ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1: $crate::wayland::cursor_shape::CursorShapeDeviceUserData
+            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1: $crate::wayland::cursor_shape::CursorShapeDeviceUserData<$ty>
         ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
     };
 }
