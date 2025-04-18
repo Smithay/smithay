@@ -50,10 +50,31 @@ use crate::utils::Serial;
 
 use super::{tree::PrivateSurfaceData, CompositorHandler};
 
+/// Kind for a [`Blocker`]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum BlockerKind {
+    /// A immediate blocker which needs to be cleared before all delayed blockers.
+    Immediate,
+    /// Defines a delayed blocker which will be evaluated after
+    /// all immediate blockers are cleared.
+    Delayed,
+}
+
 /// Types potentially blocking state changes
 pub trait Blocker {
     /// Retrieve the current state of the blocker
     fn state(&self) -> BlockerState;
+
+    /// Retrieve the kind of the blocker
+    fn kind(&self) -> BlockerKind {
+        BlockerKind::Immediate
+    }
+
+    /// Notifies the blocker that all immediate blockers have been cleared
+    /// for a particular surface
+    fn notify(&self, surface: &WlSurface) {
+        let _ = surface;
+    }
 }
 
 /// States of a [`Blocker`]
@@ -241,7 +262,7 @@ impl Transaction {
     /// - if at least one blocker is cancelled, the transaction is cancelled
     /// - otherwise, if at least one blocker is pending, the transaction is pending
     /// - otherwise, all blockers are released, and the transaction is also released
-    pub(crate) fn state(&self) -> BlockerState {
+    pub(crate) fn state(&self, kind: Option<BlockerKind>) -> BlockerState {
         // In case all of our surfaces have been destroyed we can cancel this transaction
         // as we won't apply its state anyway
         if !self.surfaces.iter().any(|surface| surface.0.is_alive()) {
@@ -251,11 +272,24 @@ impl Transaction {
         use BlockerState::*;
         self.blockers
             .iter()
+            .filter(|blocker| kind.map(|kind| kind == blocker.kind()).unwrap_or(true))
             .fold(Released, |acc, blocker| match (acc, blocker.state()) {
                 (Cancelled, _) | (_, Cancelled) => Cancelled,
                 (Pending, _) | (_, Pending) => Pending,
                 (Released, Released) => Released,
             })
+    }
+
+    pub(crate) fn notify_blockers(&self) {
+        for (s, _) in &self.surfaces {
+            let Ok(surface) = s.upgrade() else {
+                continue;
+            };
+
+            for blocker in self.blockers.iter() {
+                blocker.notify(&surface);
+            }
+        }
     }
 
     pub(crate) fn apply<C: CompositorHandler + 'static>(self, dh: &DisplayHandle, state: &mut C) {
@@ -304,7 +338,7 @@ impl TransactionQueue {
         while i < self.transactions.len() {
             let mut skip = false;
             // does the transaction have any active blocker?
-            match self.transactions[i].state() {
+            match self.transactions[i].state(Some(BlockerKind::Immediate)) {
                 BlockerState::Cancelled => {
                     // this transaction is cancelled, remove it without further processing
                     self.transactions.remove(i);
@@ -342,7 +376,30 @@ impl TransactionQueue {
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                ready_transactions.push(self.transactions.remove(i));
+                let transaction = &mut self.transactions[i];
+
+                transaction.notify_blockers();
+
+                match transaction.state(None) {
+                    BlockerState::Pending => {
+                        // this transaction is not yet ready and should be skipped, add its surfaces to our
+                        // seen list
+                        for (s, _) in &transaction.surfaces {
+                            // TODO: is this alive check still needed?
+                            if !s.is_alive() {
+                                continue;
+                            }
+                            self.seen_surfaces.insert(s.id().protocol_id());
+                        }
+                        i += 1;
+                    }
+                    BlockerState::Released => ready_transactions.push(self.transactions.remove(i)),
+                    BlockerState::Cancelled =>
+                    // this transaction is cancelled, remove it without further processing
+                    {
+                        self.transactions.remove(i);
+                    }
+                }
             }
         }
 
