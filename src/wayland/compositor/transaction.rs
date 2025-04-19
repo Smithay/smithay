@@ -39,16 +39,17 @@
 // but will be once proper transaction & blockers support is
 // added to smithay
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt,
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
+use calloop::ping::Ping;
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource, Weak};
 
 use crate::utils::Serial;
 
-use super::{tree::PrivateSurfaceData, CompositorHandler};
+use super::{add_blocker, tree::PrivateSurfaceData, CompositorHandler};
 
 /// Kind for a [`Blocker`]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -125,6 +126,114 @@ impl Blocker for Barrier {
             BlockerState::Released
         } else {
             BlockerState::Pending
+        }
+    }
+}
+
+/// A barrier waiting for multiple surfaces to be notified
+#[derive(Debug, Clone)]
+pub struct SurfaceBarrier {
+    barrier: Barrier,
+    ping: Ping,
+    ready: Arc<AtomicBool>,
+    surfaces: Arc<Mutex<HashMap<Weak<WlSurface>, bool>>>,
+}
+
+impl SurfaceBarrier {
+    /// Initialize an empty surface barrier
+    ///
+    /// [`Ping`] will be used to notify once all [`BlockerKind::Immediate`] blockers are cleared for tracked surfaces.
+    /// On receiving the ping [`SurfaceBarrier::release`] has to be called to clear the surface barrier blockers and
+    /// let the tracked surfaces make progress.
+    pub fn new(ping: Ping) -> Self {
+        Self::with_surfaces(ping, [])
+    }
+
+    /// Initializes a new [`SurfaceBarrier`] from a list of [`WlSurface`]
+    ///
+    /// See [`SurfaceBarrier::new`] for more information.
+    pub fn with_surfaces<'a>(ping: Ping, surfaces: impl IntoIterator<Item = &'a WlSurface>) -> Self {
+        let barrier = Barrier::new(false);
+        let ready = Arc::new(AtomicBool::new(false));
+        let barrier = Self {
+            barrier,
+            ping,
+            ready,
+            surfaces: Arc::new(Mutex::new(HashMap::new())),
+        };
+        barrier.register_surfaces(surfaces);
+        barrier
+    }
+
+    /// Register surfaces to be tracked by this barrier.
+    ///
+    /// This will automatically insert a blocker that will resolve on [`SurfaceBarrier::release`].
+    pub fn register_surfaces<'a>(&self, surfaces: impl IntoIterator<Item = &'a WlSurface>) {
+        let mut lock = self.surfaces.lock().unwrap();
+        for surface in surfaces {
+            if let std::collections::hash_map::Entry::Vacant(vacant_entry) = lock.entry(surface.downgrade()) {
+                vacant_entry.insert(false);
+                add_blocker(
+                    surface,
+                    SurfaceBarrierBlocker {
+                        barrier: self.barrier.clone(),
+                        ping: self.ping.clone(),
+                        ready: self.ready.clone(),
+                        surfaces: self.surfaces.clone(),
+                    },
+                );
+            }
+        }
+        self.ready.store(false, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Release this barrier and clear the blocker on all tracked surfaces
+    pub fn release<D: CompositorHandler + 'static>(&self, dh: &DisplayHandle, state: &mut D) {
+        self.barrier.signal();
+        #[allow(clippy::mutable_key_type)]
+        let surfaces = { std::mem::take(&mut *self.surfaces.lock().unwrap()) };
+        for (surface, _) in surfaces {
+            let Ok(surface) = surface.upgrade() else {
+                continue;
+            };
+            let Some(client) = surface.client() else {
+                continue;
+            };
+            state.client_compositor_state(&client).blocker_cleared(state, dh);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SurfaceBarrierBlocker {
+    barrier: Barrier,
+    ping: Ping,
+    ready: Arc<AtomicBool>,
+    surfaces: Arc<Mutex<HashMap<Weak<WlSurface>, bool>>>,
+}
+
+impl Blocker for SurfaceBarrierBlocker {
+    fn state(&self) -> BlockerState {
+        self.barrier.state()
+    }
+
+    fn kind(&self) -> BlockerKind {
+        BlockerKind::Delayed
+    }
+
+    fn notify(&self, surface: &WlSurface) {
+        let mut surfaces = self.surfaces.lock().unwrap();
+        surfaces
+            .entry(surface.downgrade())
+            .and_modify(|state| *state = true);
+        if surfaces
+            .iter()
+            .all(|(surface, state)| *state || !surface.is_alive())
+        {
+            let signaled = self.ready.swap(true, std::sync::atomic::Ordering::Acquire);
+            if !signaled {
+                self.ping.ping();
+            }
         }
     }
 }
