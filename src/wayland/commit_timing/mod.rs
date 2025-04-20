@@ -404,6 +404,11 @@ impl CommitTimerBarrierState {
         });
         barrier
     }
+
+    /// Retrieve the next deadline when available
+    pub fn next_deadline(&self) -> Option<Timestamp> {
+        self.barriers.peek().map(|barrier| barrier.timestamp)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
