@@ -368,6 +368,12 @@ impl<Kind> From<Time<Kind>> for Timestamp {
     }
 }
 
+impl<Kind> From<Timestamp> for Time<Kind> {
+    fn from(value: Timestamp) -> Self {
+        Time::from(value.0)
+    }
+}
+
 impl CommitTimerBarrierState {
     /// Signal all tracked barriers matching the specified deadline
     ///
