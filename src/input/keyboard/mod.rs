@@ -1084,9 +1084,46 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
     }
 
-    /// Get the current modifiers state
+    /// Get the current modifiers state.
     pub fn modifier_state(&self) -> ModifiersState {
         self.arc.internal.lock().unwrap().mods_state
+    }
+
+    /// Set the modifiers state.
+    pub fn set_modifier_state(&self, mods_state: ModifiersState) -> u32 {
+        let internal = &mut self.arc.internal.lock().unwrap();
+
+        let (leds_changed, led_state, modifiers_changed) = {
+            let state = &mut internal.xkb.lock().unwrap().state;
+
+            let serialized = mods_state.serialize_back(state);
+
+            let modifiers_changed = state.update_mask(
+                serialized.depressed,
+                serialized.latched,
+                serialized.locked,
+                serialized.layout_effective & xkb::STATE_LAYOUT_DEPRESSED,
+                serialized.layout_effective & xkb::STATE_LAYOUT_LATCHED,
+                serialized.layout_effective & xkb::STATE_LAYOUT_LOCKED,
+            );
+
+            // Return early it nothing changed.
+            if modifiers_changed == 0 {
+                return 0;
+            }
+
+            let led_mapping = &internal.led_mapping;
+            let mut led_state = internal.led_state;
+            let leds_changed = led_state.update_with(state, led_mapping);
+
+            (leds_changed, led_state, modifiers_changed)
+        };
+
+        if leds_changed {
+            internal.led_state = led_state;
+        }
+
+        modifiers_changed
     }
 
     /// Get the current led state
