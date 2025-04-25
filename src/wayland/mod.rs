@@ -84,6 +84,7 @@ pub mod xdg_activation;
 pub mod xdg_foreign;
 pub mod xdg_system_bell;
 pub mod xdg_toplevel_icon;
+pub mod xdg_toplevel_tag;
 #[cfg(feature = "xwayland")]
 pub mod xwayland_keyboard_grab;
 #[cfg(feature = "xwayland")]
