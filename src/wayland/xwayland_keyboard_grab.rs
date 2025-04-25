@@ -87,6 +87,13 @@ pub struct XWaylandKeyboardGrab<D: SeatHandler + 'static> {
     start_data: keyboard::GrabStartData<D>,
 }
 
+impl<D: XWaylandKeyboardGrabHandler + 'static> XWaylandKeyboardGrab<D> {
+    /// Get the `zwp_xwayland_keyboard_grab_v1` object that created the grab
+    pub fn grab(&self) -> &ZwpXwaylandKeyboardGrabV1 {
+        &self.grab
+    }
+}
+
 impl<D: XWaylandKeyboardGrabHandler + 'static> Clone for XWaylandKeyboardGrab<D> {
     fn clone(&self) -> Self {
         Self {
