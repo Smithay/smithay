@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_SET_PRESENTATION_HINT_OPCODE","REQ_SET_PRESENTATION_HINT_SINCE"],"enum":["Event","PresentationHint","Request"],"struct":["WpTearingControlV1"]};
