@@ -10,7 +10,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::input::SeatHandler;
 use crate::utils::{Logical, Rectangle};
-use crate::wayland::input_method::InputMethodHandle;
+use crate::wayland::input_method_v3::InputMethodHandle;
 
 use super::TextInputManagerState;
 
@@ -312,13 +312,10 @@ where
                 }
 
                 if let Some(rect) = new_state.cursor_rectangle.take() {
-                    data.input_method_handle
-                        .set_text_input_rectangle::<D>(state, rect);
+                    data.input_method_handle.set_cursor_rectangle::<D>(state, rect);
                 }
 
-                data.input_method_handle.with_instance(|input_method| {
-                    input_method.done();
-                });
+                data.input_method_handle.done();
             }
             zwp_text_input_v3::Request::Destroy => {
                 // Nothing to do
