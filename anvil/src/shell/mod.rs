@@ -342,20 +342,26 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
         return;
     }
 
-    if let Some(popup) = popups.find_popup(surface) {
-        let popup = match popup {
-            PopupKind::Xdg(ref popup) => popup,
+    if let Some(mut popup) = popups.find_popup(surface) {
+        match popup {
+            PopupKind::Xdg(ref popup) => {
+                if !popup.is_initial_configure_sent() {
+                    // NOTE: This should never fail as the initial configure is always
+                    // allowed.
+                    popup.send_configure().expect("initial configure failed");
+                };
+            }
             // Doesn't require configure
             PopupKind::InputMethod(ref _input_popup) => {
                 return;
             }
+            PopupKind::InputMethodV3(ref mut popup) => {
+                if !popup.is_initial_configure_sent() {
+                    popup.send_pending_configure();
+                    popup.input_method().done();
+                };
+            }
         };
-
-        if !popup.is_initial_configure_sent() {
-            // NOTE: This should never fail as the initial configure is always
-            // allowed.
-            popup.send_configure().expect("initial configure failed");
-        }
 
         return;
     };
