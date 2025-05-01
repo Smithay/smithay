@@ -18,7 +18,9 @@ use crate::{
         Seat, SeatHandler, SeatState,
     },
     utils::{iter::new_locked_obj_iter_from_vec, Serial},
-    wayland::{input_method::InputMethodSeat, text_input::TextInputSeat},
+    wayland::{
+        input_method::InputMethodSeat, input_method_v3::InputMethodSeat as _, text_input::TextInputSeat,
+    },
 };
 
 impl<D> KeyboardHandle<D>
@@ -182,12 +184,17 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
             input_method.deactivate_input_method(state);
         }
 
+        let input_method_v3 = seat.input_method_v3();
+        if input_method_v3.has_instance() {
+            input_method_v3.deactivate_input_method(state);
+        }
+
         // NOTE: Always set focus regardless whether the client actually has the
         // text-input global bound due to clients doing lazy global binding.
         text_input.set_focus(Some(self.clone()));
 
         // Only notify on `enter` once we have an actual IME.
-        if input_method.has_instance() {
+        if input_method.has_instance() || input_method_v3.has_instance() {
             text_input.enter();
         }
     }
@@ -200,6 +207,14 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
 
         if input_method.has_instance() {
             input_method.deactivate_input_method(state);
+        }
+
+        let input_method_v3 = seat.input_method_v3();
+        if input_method_v3.has_instance() {
+            input_method_v3.deactivate_input_method(state);
+        }
+
+        if input_method.has_instance() || input_method_v3.has_instance() {
             text_input.leave();
         }
 

@@ -64,6 +64,7 @@ pub mod fractional_scale;
 pub mod idle_inhibit;
 pub mod idle_notify;
 pub mod input_method;
+pub mod input_method_v3;
 pub mod keyboard_shortcuts_inhibit;
 pub mod output;
 pub mod pointer_constraints;
