@@ -73,6 +73,17 @@ aliasable = { version = "0.1.3", optional = true }
 atomic_float = "1.1.0"
 
 
+[patch.crates-io]
+wayland-egl = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2"}
+wayland-protocols = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-protocols-wlr = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-protocols-misc = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-server = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-client = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-sys = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-backend = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-scanner = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
 criterion = { version = "0.5" }
