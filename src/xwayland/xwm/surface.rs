@@ -388,6 +388,11 @@ impl X11Surface {
         self.state.lock().unwrap().transient_for
     }
 
+    /// Returns the hints for the underlying X11 window
+    pub fn hints(&self) -> Option<WmHints> {
+        self.state.lock().unwrap().hints
+    }
+
     /// Returns the size hints for the underlying X11 window
     pub fn size_hints(&self) -> Option<WmSizeHints> {
         self.state.lock().unwrap().normal_hints
