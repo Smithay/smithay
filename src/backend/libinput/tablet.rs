@@ -142,7 +142,7 @@ where
     }
 
     fn tilt_x(&self) -> f64 {
-        tablet_tool::TabletToolEventTrait::dx(self)
+        tablet_tool::TabletToolEventTrait::tilt_x(self)
     }
 
     fn tilt_x_has_changed(&self) -> bool {
@@ -150,7 +150,7 @@ where
     }
 
     fn tilt_y(&self) -> f64 {
-        tablet_tool::TabletToolEventTrait::dy(self)
+        tablet_tool::TabletToolEventTrait::tilt_y(self)
     }
 
     fn tilt_y_has_changed(&self) -> bool {
