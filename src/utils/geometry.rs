@@ -992,6 +992,19 @@ impl<N: Coordinate + Div<Output = N>, KindLhs, KindRhs> Div<Size<N, KindRhs>> fo
     }
 }
 
+impl<N: Coordinate + Div, Kind> Div<N> for Size<N, Kind> {
+    type Output = Size<<N as Div>::Output, Kind>;
+
+    #[inline]
+    fn div(self, rhs: N) -> Self::Output {
+        Size {
+            w: self.w / rhs,
+            h: self.h / rhs,
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<N: Coordinate + Mul, Kind> Mul<N> for Size<N, Kind> {
     type Output = Size<<N as Mul>::Output, Kind>;
 
