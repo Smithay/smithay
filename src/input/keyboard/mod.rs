@@ -1093,7 +1093,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     pub fn set_modifier_state(&self, mods_state: ModifiersState) -> u32 {
         let internal = &mut self.arc.internal.lock().unwrap();
 
-        let (leds_changed, led_state, modifiers_changed) = {
+        let (leds_changed, led_state, modifiers_changed, serialized) = {
             let state = &mut internal.xkb.lock().unwrap().state;
 
             let serialized = mods_state.serialize_back(state);
@@ -1116,8 +1116,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             let mut led_state = internal.led_state;
             let leds_changed = led_state.update_with(state, led_mapping);
 
-            (leds_changed, led_state, modifiers_changed)
+            (leds_changed, led_state, modifiers_changed, serialized)
         };
+
+        internal.mods_state = mods_state;
+        internal.mods_state.serialized = serialized;
 
         if leds_changed {
             internal.led_state = led_state;
