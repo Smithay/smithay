@@ -1,6 +1,7 @@
 use calloop::generic::Generic;
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm::control::Device;
+use std::sync::{Mutex, Weak};
 use std::{
     io,
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
@@ -10,47 +11,102 @@ use std::{
     },
 };
 
-use crate::backend::drm::DrmDeviceFd;
+use crate::backend::drm::{DrmDeviceFd, WeakDrmDeviceFd};
 use crate::backend::renderer::sync::{Fence, Interrupted};
 use crate::wayland::compositor::{Blocker, BlockerState};
 
-#[derive(Debug, PartialEq)]
-struct DrmTimelineInner {
-    device: DrmDeviceFd,
-    syncobj: drm::control::syncobj::Handle,
+#[derive(Debug)]
+pub(super) struct DrmTimelineInner {
+    timeline_fd: OwnedFd,
+    dev_ctx: Mutex<DrmTimelineDeviceSpecific>,
 }
 
-impl Drop for DrmTimelineInner {
-    fn drop(&mut self) {
-        let _ = self.device.destroy_syncobj(self.syncobj);
+impl DrmTimelineInner {
+    pub(super) fn update_device(&self, device: &DrmDeviceFd) -> io::Result<()> {
+        let mut ctx = self.dev_ctx.lock().unwrap();
+        let mut new = DrmTimelineDeviceSpecific::import(self.timeline_fd.as_fd(), device)?;
+        for (point, eventfd) in ctx
+            .event_fds
+            .iter()
+            .flat_map(|(p, fd)| fd.upgrade().map(|fd| (p, fd)))
+        {
+            device.syncobj_eventfd(new.syncobj, *point, eventfd.as_fd(), false)?;
+            new.event_fds.push((*point, Arc::downgrade(&eventfd)));
+        }
+        *ctx = new;
+        Ok(())
+    }
+
+    pub(super) fn invalidate(&self) {
+        self.dev_ctx.lock().unwrap().invalidate()
+    }
+}
+
+#[derive(Debug)]
+struct DrmTimelineDeviceSpecific {
+    device: WeakDrmDeviceFd,
+    syncobj: drm::control::syncobj::Handle,
+    event_fds: Vec<(u64, Weak<OwnedFd>)>,
+}
+
+impl DrmTimelineDeviceSpecific {
+    fn import(fd: BorrowedFd<'_>, device: &DrmDeviceFd) -> io::Result<Self> {
+        let syncobj = device.fd_to_syncobj(fd, false)?;
+        Ok(DrmTimelineDeviceSpecific {
+            device: device.downgrade(),
+            syncobj,
+            event_fds: Vec::new(),
+        })
+    }
+
+    fn invalidate(&mut self) {
+        if let Some(device) = self.device.upgrade() {
+            let _ = device.destroy_syncobj(self.syncobj);
+        }
+        self.device = WeakDrmDeviceFd::new();
+        // trigger event fds
+        for eventfd in self.event_fds.drain(..).filter_map(|(_, x)| Weak::upgrade(&x)) {
+            let _ = rustix::io::write(&eventfd, &[1]);
+        }
     }
 }
 
 /// DRM timeline syncobj
-#[derive(Clone, Debug, PartialEq)]
-pub struct DrmTimeline(Arc<DrmTimelineInner>);
+#[derive(Clone, Debug)]
+pub struct DrmTimeline(pub(super) Arc<DrmTimelineInner>);
+
+impl PartialEq for DrmTimeline {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
 
 impl DrmTimeline {
     /// Import DRM timeline from file descriptor
-    pub fn new(device: &DrmDeviceFd, fd: BorrowedFd<'_>) -> io::Result<Self> {
+    pub fn new(device: &DrmDeviceFd, fd: OwnedFd) -> io::Result<Self> {
+        let dev_ctx = Mutex::new(DrmTimelineDeviceSpecific::import(fd.as_fd(), device)?);
         Ok(Self(Arc::new(DrmTimelineInner {
-            device: device.clone(),
-            syncobj: device.fd_to_syncobj(fd, false)?,
+            timeline_fd: fd,
+            dev_ctx,
         })))
     }
 
     /// Query the last signalled timeline point
     pub fn query_signalled_point(&self) -> io::Result<u64> {
-        let mut points = [0];
-        self.0
+        let ctx = self.0.dev_ctx.lock().unwrap();
+        let device = ctx
             .device
-            .syncobj_timeline_query(&[self.0.syncobj], &mut points, false)?;
+            .upgrade()
+            .ok_or::<io::Error>(io::ErrorKind::InvalidInput.into())?;
+
+        let mut points = [0];
+        device.syncobj_timeline_query(&[ctx.syncobj], &mut points, false)?;
         Ok(points[0])
     }
 }
 
 /// Point on a DRM timeline syncobj
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct DrmSyncPoint {
     pub(super) timeline: DrmTimeline,
     pub(super) point: u64,
@@ -58,51 +114,59 @@ pub struct DrmSyncPoint {
 
 impl DrmSyncPoint {
     /// Create an eventfd that will be signaled by the syncpoint
-    pub fn eventfd(&self) -> io::Result<OwnedFd> {
+    pub fn eventfd(&self) -> io::Result<Arc<OwnedFd>> {
         let fd = rustix::event::eventfd(
             0,
             rustix::event::EventfdFlags::CLOEXEC | rustix::event::EventfdFlags::NONBLOCK,
         )?;
-        self.timeline
-            .0
-            .device
-            .syncobj_eventfd(self.timeline.0.syncobj, self.point, fd.as_fd(), false)?;
+        let mut ctx = self.timeline.0.dev_ctx.lock().unwrap();
+        ctx.device
+            .upgrade()
+            .ok_or::<io::Error>(io::ErrorKind::InvalidInput.into())?
+            .syncobj_eventfd(ctx.syncobj, self.point, fd.as_fd(), false)?;
+
+        let fd = Arc::new(fd);
+        ctx.event_fds.retain(|(_, fd)| fd.upgrade().is_some());
+        ctx.event_fds.push((self.point, Arc::downgrade(&fd)));
         Ok(fd)
     }
 
     /// Signal the sync point.
     pub fn signal(&self) -> io::Result<()> {
-        self.timeline
-            .0
-            .device
-            .syncobj_timeline_signal(&[self.timeline.0.syncobj], &[self.point])
+        let ctx = self.timeline.0.dev_ctx.lock().unwrap();
+        ctx.device
+            .upgrade()
+            .ok_or::<io::Error>(io::ErrorKind::InvalidInput.into())?
+            .syncobj_timeline_signal(&[ctx.syncobj], &[self.point])
     }
 
     /// Wait for sync point.
     pub fn wait(&self, timeout_nsec: i64) -> io::Result<()> {
-        self.timeline.0.device.syncobj_timeline_wait(
-            &[self.timeline.0.syncobj],
-            &[self.point],
-            timeout_nsec,
-            false,
-            false,
-            false,
-        )?;
+        let ctx = self.timeline.0.dev_ctx.lock().unwrap();
+        ctx.device
+            .upgrade()
+            .ok_or::<io::Error>(io::ErrorKind::InvalidInput.into())?
+            .syncobj_timeline_wait(&[ctx.syncobj], &[self.point], timeout_nsec, false, false, false)?;
         Ok(())
     }
 
     /// Export DRM sync file for sync point.
     pub fn export_sync_file(&self) -> io::Result<OwnedFd> {
-        let syncobj = self.timeline.0.device.create_syncobj(false)?;
-        // Wrap in `DrmTimelineInner` to destroy on drop
-        let syncobj = DrmTimelineInner {
-            device: self.timeline.0.device.clone(),
-            syncobj,
+        let ctx = self.timeline.0.dev_ctx.lock().unwrap();
+        let Some(device) = ctx.device.upgrade() else {
+            return Err(io::ErrorKind::InvalidInput.into());
         };
-        syncobj
-            .device
-            .syncobj_timeline_transfer(self.timeline.0.syncobj, syncobj.syncobj, self.point, 0)?;
-        syncobj.device.syncobj_to_fd(syncobj.syncobj, true)
+
+        let syncobj = device.create_syncobj(false)?;
+        if let Err(err) = device.syncobj_timeline_transfer(ctx.syncobj, syncobj, self.point, 0) {
+            let _ = device.destroy_syncobj(syncobj);
+            return Err(err);
+        };
+        let res = device.syncobj_to_fd(syncobj, true);
+        if res.is_err() {
+            let _ = device.destroy_syncobj(syncobj);
+        }
+        res
     }
 
     /// Create an [`calloop::EventSource`] and [`Blocker`] for this sync point.
@@ -147,7 +211,7 @@ impl Fence for DrmSyncPoint {
 /// Event source generating an event when a [`DrmSyncPoint`] is signalled..
 #[derive(Debug)]
 pub struct DrmSyncPointSource {
-    source: Generic<OwnedFd>,
+    source: Generic<Arc<OwnedFd>>,
     signal: Arc<AtomicBool>,
 }
 
@@ -174,15 +238,18 @@ impl EventSource for DrmSyncPointSource {
     }
 
     fn register(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> calloop::Result<()> {
-        self.source.register(poll, token_factory)
+        self.source.register(poll, token_factory)?;
+        Ok(())
     }
 
     fn reregister(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> calloop::Result<()> {
-        self.source.reregister(poll, token_factory)
+        self.source.reregister(poll, token_factory)?;
+        Ok(())
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
-        self.source.unregister(poll)
+        self.source.unregister(poll)?;
+        Ok(())
     }
 }
 
