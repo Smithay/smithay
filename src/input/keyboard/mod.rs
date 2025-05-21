@@ -24,7 +24,7 @@ use wayland_server::{Resource, Weak};
 #[cfg(feature = "wayland_frontend")]
 mod keymap_file;
 #[cfg(feature = "wayland_frontend")]
-pub use keymap_file::KeymapFile;
+pub use keymap_file::{KeymapFile, KeymapFileId};
 
 mod modifiers_state;
 pub use modifiers_state::{ModifiersState, SerializedMods};
@@ -360,7 +360,7 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) last_enter: Mutex<Option<Serial>>,
     pub(crate) span: tracing::Span,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) active_keymap: RwLock<usize>,
+    pub(crate) active_keymap: RwLock<KeymapFileId>,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
