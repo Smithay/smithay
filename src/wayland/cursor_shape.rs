@@ -134,7 +134,7 @@ impl CursorShapeManagerState {
         D: SeatHandler,
         D: 'static,
     {
-        let global = display.create_global::<D, CursorShapeManager, _>(1, ());
+        let global = display.create_global::<D, CursorShapeManager, _>(2, ());
         Self { global }
     }
 
@@ -351,6 +351,8 @@ fn shape_to_cursor_icon(shape: Shape) -> CursorIcon {
         Shape::AllScroll => CursorIcon::AllScroll,
         Shape::ZoomIn => CursorIcon::ZoomIn,
         Shape::ZoomOut => CursorIcon::ZoomOut,
+        Shape::DndAsk => CursorIcon::DndAsk,
+        Shape::AllResize => CursorIcon::AllResize,
         _ => CursorIcon::Default,
     }
 }
