@@ -484,11 +484,15 @@ where
     }
 }
 
+// Clippy: `large_enum_variant` is easily triggered here, as the `_GenericCatcher` is always zero-size.
+//          Thus we disable the lint.
+
 #[macro_export]
 #[doc(hidden)]
 macro_rules! render_elements_internal {
     (@enum $(#[$attr:meta])* $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name {
             $(
                 $(
@@ -502,6 +506,7 @@ macro_rules! render_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident $($custom:ident)+; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$($custom),+> {
             $(
                 $(
@@ -515,6 +520,7 @@ macro_rules! render_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident $lt:lifetime; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$lt> {
             $(
                 $(
@@ -528,6 +534,7 @@ macro_rules! render_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident $lt:lifetime $($custom:ident)+; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$lt, $($custom),+> {
             $(
                 $(
@@ -542,6 +549,7 @@ macro_rules! render_elements_internal {
 
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
@@ -558,6 +566,7 @@ macro_rules! render_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $($custom:ident),+>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
@@ -577,6 +586,7 @@ macro_rules! render_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
@@ -594,6 +604,7 @@ macro_rules! render_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $($custom:ident),+>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$lt, $renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,

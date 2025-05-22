@@ -206,11 +206,15 @@ where
     }
 }
 
+// Clippy: `large_enum_variant` is easily triggered here, as the `_GenericCatcher` is always zero-size.
+//          Thus we disable the lint.
+
 #[macro_export]
 #[doc(hidden)]
 macro_rules! space_elements_internal {
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$lt, $custom> {
             $(
                 $(
@@ -224,6 +228,7 @@ macro_rules! space_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$custom> {
             $(
                 $(
@@ -237,6 +242,7 @@ macro_rules! space_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name<$lt> {
             $(
                 $(
@@ -250,6 +256,7 @@ macro_rules! space_elements_internal {
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
+        #[allow(clippy::large_enum_variant)]
         $vis enum $name {
             $(
                 $(

@@ -212,8 +212,13 @@ impl EGLSurface {
     pub fn is_current(&self) -> bool {
         let surface = self.surface.load(Ordering::SeqCst);
         unsafe {
-            ffi::egl::GetCurrentSurface(ffi::egl::DRAW as _) == surface as *const _
-                && ffi::egl::GetCurrentSurface(ffi::egl::READ as _) == surface as *const _
+            std::ptr::eq(
+                ffi::egl::GetCurrentSurface(ffi::egl::DRAW as _),
+                surface as *const _,
+            ) && std::ptr::eq(
+                ffi::egl::GetCurrentSurface(ffi::egl::READ as _),
+                surface as *const _,
+            )
         }
     }
 
