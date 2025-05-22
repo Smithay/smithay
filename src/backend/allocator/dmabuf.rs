@@ -12,7 +12,7 @@
 
 use calloop::generic::Generic;
 use calloop::{EventSource, Interest, Mode, PostAction};
-use rustix::ioctl::{Setter, WriteOpcode};
+use rustix::ioctl::Setter;
 
 use super::{Allocator, Buffer, Format, Fourcc, Modifier};
 #[cfg(feature = "backend_drm")]
@@ -335,7 +335,7 @@ impl Dmabuf {
             .planes
             .get(idx)
             .ok_or(DmabufSyncFailed::PlaneIndexOutOfBound)?;
-        unsafe { rustix::ioctl::ioctl(&plane.fd, Setter::<DmaBufSync, _>::new(dma_buf_sync { flags })) }
+        unsafe { rustix::ioctl::ioctl(&plane.fd, Setter::<DMA_BUF_SYNC, _>::new(dma_buf_sync { flags })) }
             .map_err(std::io::Error::from)?;
         Ok(())
     }
@@ -413,7 +413,7 @@ struct dma_buf_sync {
     flags: DmabufSyncFlags,
 }
 
-type DmaBufSync = WriteOpcode<b'b', 0, dma_buf_sync>;
+const DMA_BUF_SYNC: rustix::ioctl::Opcode = rustix::ioctl::opcode::write::<dma_buf_sync>(b'b', 0);
 
 /// A mapping into a [`Dmabuf`]
 #[derive(Debug)]
@@ -615,7 +615,10 @@ impl DmabufSource {
                             rustix::event::PollFlags::IN
                         },
                     )],
-                    0
+                    Some(&rustix::time::Timespec {
+                        tv_sec: 0,
+                        tv_nsec: 0
+                    })
                 ),
                 Ok(1)
             ) {

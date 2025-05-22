@@ -1,21 +1,30 @@
 use std::ffi::CString;
 use std::os::unix::io::{AsFd, BorrowedFd};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
+use sha2::{Digest, Sha256};
 use tracing::error;
 use xkbcommon::xkb::{self, Keymap, KEYMAP_FORMAT_TEXT_V1};
 
 use crate::utils::SealedFile;
 
-/// Keymap ID, uniquely identifying the keymap without requiring a full content hash.
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+/// Unique ID for a keymap
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct KeymapFileId([u8; 32]);
+
+impl KeymapFileId {
+    fn for_keymap(keymap: &str) -> Self {
+        // Use a hash, so `keymap` events aren't sent when keymap hasn't changed, particularly
+        // with `virtual-keyboard-unstable-v1`.
+        Self(Sha256::digest(keymap).as_slice().try_into().unwrap())
+    }
+}
 
 /// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
 #[derive(Debug)]
 pub struct KeymapFile {
     sealed: Option<SealedFile>,
     keymap: String,
-    id: usize,
+    id: KeymapFileId,
 }
 
 impl KeymapFile {
@@ -29,12 +38,10 @@ impl KeymapFile {
             error!("Error when creating sealed keymap file: {}", err);
         }
 
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-
         Self {
+            id: KeymapFileId::for_keymap(&keymap),
             sealed: sealed.ok(),
             keymap,
-            id,
         }
     }
 
@@ -49,7 +56,7 @@ impl KeymapFile {
             error!("Error when creating sealed keymap file: {}", err);
         }
 
-        self.id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        self.id = KeymapFileId::for_keymap(&keymap);
         self.sealed = sealed.ok();
         self.keymap = keymap;
     }
@@ -91,7 +98,7 @@ impl KeymapFile {
     }
 
     /// Get this keymap's unique ID.
-    pub(crate) fn id(&self) -> usize {
+    pub(crate) fn id(&self) -> KeymapFileId {
         self.id
     }
 }

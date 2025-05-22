@@ -178,7 +178,7 @@ fn open_socket(addr: SocketAddrUnix) -> rustix::io::Result<UnixStream> {
         None,
     )?;
     // bind it to requested address
-    rustix::net::bind_unix(&fd, &addr)?;
+    rustix::net::bind(&fd, &addr)?;
     rustix::net::listen(&fd, 1)?;
     Ok(UnixStream::from(fd))
 }

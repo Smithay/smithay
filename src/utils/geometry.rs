@@ -341,6 +341,17 @@ pub struct Point<N, Kind> {
     _kind: std::marker::PhantomData<Kind>,
 }
 
+impl<N, Kind> Point<N, Kind> {
+    /// Create a new Point
+    pub const fn new(x: N, y: N) -> Point<N, Kind> {
+        Point {
+            x,
+            y,
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<N: Coordinate, Kind> Point<N, Kind> {
     /// Convert this [`Point`] to a [`Size`] with the same coordinates
     ///
@@ -593,11 +604,7 @@ impl<N: Coordinate> Point<N, Buffer> {
 impl<N, Kind> From<(N, N)> for Point<N, Kind> {
     #[inline]
     fn from((x, y): (N, N)) -> Point<N, Kind> {
-        Point {
-            x,
-            y,
-            _kind: std::marker::PhantomData,
-        }
+        Point::new(x, y)
     }
 }
 
@@ -699,6 +706,22 @@ pub struct Size<N, Kind> {
     /// vertical coordinate
     pub h: N,
     _kind: std::marker::PhantomData<Kind>,
+}
+
+impl<N: Coordinate, Kind> Size<N, Kind> {
+    /// Create a new Size
+    pub fn new(w: N, h: N) -> Size<N, Kind> {
+        debug_assert!(
+            w.non_negative() && h.non_negative(),
+            "Attempting to create a `Size` of negative size: {:?}",
+            (w, h)
+        );
+        Size {
+            w,
+            h,
+            _kind: std::marker::PhantomData,
+        }
+    }
 }
 
 impl<N: Coordinate, Kind> Size<N, Kind> {
@@ -920,16 +943,7 @@ impl<N: Coordinate> Size<N, Buffer> {
 impl<N: Coordinate, Kind> From<(N, N)> for Size<N, Kind> {
     #[inline]
     fn from((w, h): (N, N)) -> Size<N, Kind> {
-        debug_assert!(
-            w.non_negative() && h.non_negative(),
-            "Attempting to create a `Size` of negative size: {:?}",
-            (w, h)
-        );
-        Size {
-            w,
-            h,
-            _kind: std::marker::PhantomData,
-        }
+        Size::new(w, h)
     }
 }
 
@@ -988,6 +1002,19 @@ impl<N: Coordinate + Div<Output = N>, KindLhs, KindRhs> Div<Size<N, KindRhs>> fo
         Scale {
             x: self.w / rhs.w,
             y: self.h / rhs.h,
+        }
+    }
+}
+
+impl<N: Coordinate + Div, Kind> Div<N> for Size<N, Kind> {
+    type Output = Size<<N as Div>::Output, Kind>;
+
+    #[inline]
+    fn div(self, rhs: N) -> Self::Output {
+        Size {
+            w: self.w / rhs,
+            h: self.h / rhs,
+            _kind: std::marker::PhantomData,
         }
     }
 }
