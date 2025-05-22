@@ -911,7 +911,7 @@ pub struct ToplevelStateSet {
 impl ToplevelStateSet {
     /// Returns `true` if the states contains a state.
     pub fn contains(&self, state: xdg_toplevel::State) -> bool {
-        self.states.iter().any(|s| *s == state)
+        self.states.contains(&state)
     }
 
     /// Adds a state to the states.

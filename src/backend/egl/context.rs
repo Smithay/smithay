@@ -415,7 +415,7 @@ impl EGLContext {
 
     /// Returns true if the OpenGL context is the current one in the thread.
     pub fn is_current(&self) -> bool {
-        unsafe { ffi::egl::GetCurrentContext() == self.context as *const _ }
+        unsafe { std::ptr::eq(ffi::egl::GetCurrentContext(), self.context as *const _) }
     }
 
     /// Returns true if the OpenGL context is (possibly) shared with another.
