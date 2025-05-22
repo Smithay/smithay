@@ -38,6 +38,7 @@ pub(crate) struct InputMethod {
 pub(crate) struct Instance {
     pub object: ZwpInputMethodV2,
     pub serial: u32,
+    pub preedit_sent: bool,
 }
 
 impl Instance {
@@ -60,10 +61,12 @@ impl InputMethodHandle {
         if let Some(instance) = inner.instance.as_mut() {
             instance.serial = 0;
             instance.object.unavailable();
+            instance.preedit_sent = false
         } else {
             inner.instance = Some(Instance {
                 object: instance.clone(),
                 serial: 0,
+                preedit_sent: false,
             });
         }
     }
@@ -215,6 +218,11 @@ where
                 cursor_begin,
                 cursor_end,
             } => {
+                let mut input_method = data.handle.inner.lock().unwrap();
+                if let Some(instance) = input_method.instance.as_mut() {
+                    instance.preedit_sent = true;
+                }
+
                 data.text_input_handle.with_active_text_input(|ti, _surface| {
                     ti.preedit_string(Some(text.clone()), cursor_begin, cursor_end);
                 });
@@ -228,15 +236,19 @@ where
                 });
             }
             zwp_input_method_v2::Request::Commit { serial } => {
-                let current_serial = data
-                    .handle
-                    .inner
-                    .lock()
-                    .unwrap()
-                    .instance
-                    .as_ref()
-                    .map(|i| i.serial)
-                    .unwrap_or(0);
+                let mut input_method = data.handle.inner.lock().unwrap();
+                if let Some(instance) = input_method.instance.as_mut() {
+                    if !instance.preedit_sent {
+                        data.text_input_handle.with_active_text_input(|ti, _surface| {
+                            ti.preedit_string(Some("".into()), 0, 0);
+                        });
+                    }
+
+                    instance.done();
+                    instance.preedit_sent = false;
+                }
+
+                let current_serial = input_method.instance.as_ref().map(|i| i.serial).unwrap_or(0);
 
                 data.text_input_handle.done(serial != current_serial);
             }
