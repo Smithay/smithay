@@ -363,14 +363,17 @@ pub fn run_x11() {
 
             pointer_element.set_status(state.cursor_status.clone());
             elements.extend(
-                pointer_element.render_elements(
-                    &mut backend_data.renderer,
-                    (cursor_pos - cursor_hotspot.to_f64())
-                        .to_physical(scale)
-                        .to_i32_round(),
-                    scale,
-                    1.0,
-                ),
+                pointer_element
+                    .render_elements(
+                        &mut backend_data.renderer,
+                        (cursor_pos - cursor_hotspot.to_f64())
+                            .to_physical(scale)
+                            .to_i32_round(),
+                        scale,
+                        1.0,
+                    )
+                    .into_iter()
+                    .map(CustomRenderElements::Pointer),
             );
 
             // draw the dnd icon if any
@@ -379,13 +382,17 @@ pub fn run_x11() {
                     .to_physical(scale)
                     .to_i32_round();
                 if icon.surface.alive() {
-                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
-                        &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
-                        &mut backend_data.renderer,
-                        dnd_icon_pos,
-                        scale,
-                        1.0,
-                    ));
+                    elements.extend(
+                        AsRenderElements::<GlesRenderer>::render_elements(
+                            &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
+                            &mut backend_data.renderer,
+                            dnd_icon_pos,
+                            scale,
+                            1.0,
+                        )
+                        .into_iter()
+                        .map(CustomRenderElements::Surface),
+                    );
                 }
             }
 

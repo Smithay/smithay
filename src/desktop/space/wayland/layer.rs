@@ -18,16 +18,17 @@ where
     type RenderElement = WaylandSurfaceRenderElement<R>;
 
     #[profiling::function]
-    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
+    fn render_elements(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<C> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         let surface = self.wl_surface();
 
-        let mut render_elements: Vec<C> = Vec::new();
+        let mut render_elements = Vec::new();
+
         let popup_render_elements =
             PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
                 let offset = (popup_offset - popup.geometry().loc)
@@ -44,7 +45,6 @@ where
                     Kind::Unspecified,
                 )
             });
-
         render_elements.extend(popup_render_elements);
 
         render_elements.extend(render_elements_from_surface_tree(
