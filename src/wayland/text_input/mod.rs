@@ -62,7 +62,7 @@ use crate::input::{Seat, SeatHandler};
 pub use text_input_handle::TextInputHandle;
 pub use text_input_handle::TextInputUserData;
 
-use super::input_method::InputMethodHandle;
+use super::input_method_v3::InputMethodHandle;
 
 const MANAGER_VERSION: u32 = 1;
 
