@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_IDLED_OPCODE","EVT_IDLED_SINCE","EVT_RESUMED_OPCODE","EVT_RESUMED_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE"],"enum":["Event","Request"],"struct":["ExtIdleNotificationV1"]};
