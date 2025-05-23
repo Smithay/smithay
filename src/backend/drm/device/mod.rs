@@ -12,7 +12,7 @@ use libc::dev_t;
 
 pub(super) mod atomic;
 mod fd;
-pub use self::fd::DrmDeviceFd;
+pub use self::fd::{DrmDeviceFd, WeakDrmDeviceFd};
 pub(super) mod legacy;
 use crate::utils::{Buffer, DevPath, Size};
 
