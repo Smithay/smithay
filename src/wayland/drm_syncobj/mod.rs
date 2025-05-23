@@ -22,8 +22,8 @@
 //! }
 //!
 //! impl DrmSyncobjHandler for State {
-//!     fn drm_syncobj_state(&mut self) -> &mut DrmSyncobjState {
-//!         self.syncobj_state.as_mut().unwrap()
+//!     fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+//!         self.syncobj_state.as_mut()
 //!     }
 //! }
 //!
@@ -39,15 +39,20 @@
 //! delegate_drm_syncobj!(State);
 //! ```
 
-use std::{cell::RefCell, os::unix::io::AsFd};
+use std::{
+    cell::RefCell,
+    os::unix::io::AsFd,
+    sync::{Arc, Weak},
+};
+use tracing::warn;
 use wayland_protocols::wp::linux_drm_syncobj::v1::server::{
     wp_linux_drm_syncobj_manager_v1::{self, WpLinuxDrmSyncobjManagerV1},
     wp_linux_drm_syncobj_surface_v1::{self, WpLinuxDrmSyncobjSurfaceV1},
     wp_linux_drm_syncobj_timeline_v1::{self, WpLinuxDrmSyncobjTimelineV1},
 };
 use wayland_server::{
-    protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource, Weak,
+    backend::GlobalId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
+    GlobalDispatch, New, Resource, Weak as WlWeak,
 };
 
 use super::{
@@ -73,7 +78,7 @@ pub fn supports_syncobj_eventfd(device: &DrmDeviceFd) -> bool {
 /// Handler trait for DRM syncobj protocol.
 pub trait DrmSyncobjHandler {
     /// Returns a mutable reference to the [`DrmSyncobjState`] delegate type
-    fn drm_syncobj_state(&mut self) -> &mut DrmSyncobjState;
+    fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState>;
 }
 
 /// Data associated with a drm syncobj global
@@ -115,7 +120,9 @@ impl Cacheable for DrmSyncobjCachedState {
 /// Delegate type for a `wp_linux_drm_syncobj_manager_v1` global
 #[derive(Debug)]
 pub struct DrmSyncobjState {
+    global: GlobalId,
     import_device: DrmDeviceFd,
+    known_timelines: Vec<Weak<DrmTimelineInner>>,
 }
 
 impl DrmSyncobjState {
@@ -139,14 +146,42 @@ impl DrmSyncobjState {
         D: 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let _global = display.create_global::<D, WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>(
+        let global = display.create_global::<D, WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>(
             1,
             DrmSyncobjGlobalData {
                 filter: Box::new(filter),
             },
         );
 
-        Self { import_device }
+        Self {
+            global,
+            import_device,
+            known_timelines: Vec::new(),
+        }
+    }
+
+    /// Sets a new `import_device` to import the syncobj fds and wait on them.
+    ///
+    /// Note: This will not update already existing timeline objects,
+    /// which will continue to use the previous device.
+    pub fn update_device(&mut self, import_device: DrmDeviceFd) {
+        for timeline in self.known_timelines.iter().filter_map(Weak::upgrade) {
+            if let Err(err) = timeline.update_device(&import_device) {
+                warn!(?err, "Failed to update existing timeline");
+            }
+        }
+        self.import_device = import_device;
+    }
+
+    /// Destroys the state and returns the `GlobalId` for compositors to disable/destroy.
+    ///
+    /// Note: This will cause any future timeline import to raise a protocol error for
+    /// clients that have bound this protocol until [`DrmSyncobjHandler::drm_syncobj_state`] returns `Some` again.
+    pub fn into_global(self) -> GlobalId {
+        for timeline in self.known_timelines.iter().filter_map(Weak::upgrade) {
+            timeline.invalidate();
+        }
+        self.global
     }
 }
 
@@ -291,16 +326,24 @@ where
                 });
             }
             wp_linux_drm_syncobj_manager_v1::Request::ImportTimeline { id, fd } => {
-                match DrmTimeline::new(&state.drm_syncobj_state().import_device, fd.as_fd()) {
-                    Ok(timeline) => {
-                        data_init.init::<_, _>(id, DrmSyncobjTimelineData { timeline });
+                if let Some(state) = state.drm_syncobj_state() {
+                    match DrmTimeline::new(&state.import_device, fd) {
+                        Ok(timeline) => {
+                            state.known_timelines.push(Arc::downgrade(&timeline.0));
+                            data_init.init::<_, _>(id, DrmSyncobjTimelineData { timeline });
+                        }
+                        Err(err) => {
+                            resource.post_error(
+                                wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
+                                format!("failed to import syncobj timeline: {}", err),
+                            );
+                        }
                     }
-                    Err(err) => {
-                        resource.post_error(
-                            wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
-                            format!("failed to import syncobj timeline: {}", err),
-                        );
-                    }
+                } else {
+                    resource.post_error(
+                        wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
+                        "global orphaned",
+                    )
                 }
             }
             wp_linux_drm_syncobj_manager_v1::Request::Destroy => {}
@@ -312,7 +355,7 @@ where
 /// Data attached to wp_linux_drm_syncobj_surface_v1 objects
 #[derive(Debug)]
 pub struct DrmSyncobjSurfaceData {
-    surface: Weak<WlSurface>,
+    surface: WlWeak<WlSurface>,
     commit_hook_id: HookId,
     destruction_hook_id: HookId,
 }
@@ -418,7 +461,9 @@ pub struct DrmSyncobjTimelineData {
     timeline: DrmTimeline,
 }
 
-impl<D> Dispatch<WpLinuxDrmSyncobjTimelineV1, DrmSyncobjTimelineData, D> for DrmSyncobjState {
+impl<D: DrmSyncobjHandler> Dispatch<WpLinuxDrmSyncobjTimelineV1, DrmSyncobjTimelineData, D>
+    for DrmSyncobjState
+{
     fn request(
         _state: &mut D,
         _client: &Client,
@@ -431,6 +476,19 @@ impl<D> Dispatch<WpLinuxDrmSyncobjTimelineV1, DrmSyncobjTimelineData, D> for Drm
         match request {
             wp_linux_drm_syncobj_timeline_v1::Request::Destroy => {}
             _ => unreachable!(),
+        }
+    }
+
+    fn destroyed(
+        state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &WpLinuxDrmSyncobjTimelineV1,
+        data: &DrmSyncobjTimelineData,
+    ) {
+        if let Some(state) = state.drm_syncobj_state() {
+            state
+                .known_timelines
+                .retain(|t| t.upgrade().is_some_and(|t| !Arc::ptr_eq(&t, &data.timeline.0)))
         }
     }
 }

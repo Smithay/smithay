@@ -89,7 +89,7 @@ use std::sync::Once;
 use crate::utils::{DevPath, Physical, Size};
 pub use device::{
     DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmEvent, EventMetadata as DrmEventMetadata, PlaneClaim,
-    Time as DrmEventTime,
+    Time as DrmEventTime, WeakDrmDeviceFd,
 };
 pub use drm::node::{CreateDrmNodeError, DrmNode, NodeType};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};

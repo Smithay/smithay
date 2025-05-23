@@ -605,8 +605,8 @@ impl DrmLeaseHandler for AnvilState<UdevData> {
 delegate_drm_lease!(AnvilState<UdevData>);
 
 impl DrmSyncobjHandler for AnvilState<UdevData> {
-    fn drm_syncobj_state(&mut self) -> &mut DrmSyncobjState {
-        self.backend_data.syncobj_state.as_mut().unwrap()
+    fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        self.backend_data.syncobj_state.as_mut()
     }
 }
 smithay::delegate_drm_syncobj!(AnvilState<UdevData>);
