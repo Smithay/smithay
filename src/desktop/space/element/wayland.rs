@@ -37,13 +37,13 @@ where
     type RenderElement = WaylandSurfaceRenderElement<R>;
 
     #[profiling::function]
-    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
+    fn render_elements(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<C> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         crate::backend::renderer::element::surface::render_elements_from_surface_tree(
             renderer,
             &self.surface,

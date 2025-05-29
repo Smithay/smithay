@@ -87,22 +87,21 @@ use super::{CommitCounter, Element, Id, Kind, RenderElement, UnderlyingStorage};
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
 #[instrument(level = "trace", skip(renderer, location, scale))]
 #[profiling::function]
-pub fn render_elements_from_surface_tree<R, E>(
+pub fn render_elements_from_surface_tree<R>(
     renderer: &mut R,
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
     alpha: f32,
     kind: Kind,
-) -> Vec<E>
+) -> Vec<WaylandSurfaceRenderElement<R>>
 where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
-    E: From<WaylandSurfaceRenderElement<R>>,
 {
     let location = location.into().to_f64();
     let scale = scale.into();
-    let mut surfaces: Vec<E> = Vec::new();
+    let mut surfaces = Vec::new();
 
     compositor::with_surface_tree_downward(
         surface,
@@ -138,7 +137,7 @@ where
                     match WaylandSurfaceRenderElement::from_surface(
                         renderer, surface, states, location, alpha, kind,
                     ) {
-                        Ok(Some(surface)) => surfaces.push(surface.into()),
+                        Ok(Some(surface)) => surfaces.push(surface),
                         Ok(None) => {} // surface is not mapped
                         Err(err) => {
                             warn!("Failed to import surface: {}", err);
