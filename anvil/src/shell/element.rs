@@ -420,13 +420,13 @@ where
 {
     type RenderElement = WindowRenderElement<R>;
 
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements(
         &self,
         renderer: &mut R,
         mut location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<C> {
+    ) -> Vec<Self::RenderElement> {
         let window_bbox = SpaceElement::bbox(&self.0);
 
         if self.decoration_state().is_ssd && !window_bbox.is_empty() {
@@ -435,24 +435,24 @@ where
             let mut state = self.decoration_state();
             let width = window_geo.size.w;
             state.header_bar.redraw(width as u32);
-            let mut vec = AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                &state.header_bar,
-                renderer,
-                location,
-                scale,
-                alpha,
-            );
+            let mut vec: Vec<WindowRenderElement<R>> =
+                AsRenderElements::<R>::render_elements(&state.header_bar, renderer, location, scale, alpha)
+                    .into_iter()
+                    .map(WindowRenderElement::Decoration)
+                    .collect();
 
             location.y += (scale.y * HEADER_BAR_HEIGHT as f64) as i32;
 
             let window_elements =
-                AsRenderElements::render_elements(&self.0, renderer, location, scale, alpha);
+                AsRenderElements::render_elements(&self.0, renderer, location, scale, alpha)
+                    .into_iter()
+                    .map(WindowRenderElement::Window);
             vec.extend(window_elements);
-            vec.into_iter().map(C::from).collect()
+            vec
         } else {
             AsRenderElements::render_elements(&self.0, renderer, location, scale, alpha)
                 .into_iter()
-                .map(C::from)
+                .map(WindowRenderElement::Window)
                 .collect()
         }
     }
