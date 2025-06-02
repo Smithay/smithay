@@ -1897,9 +1897,7 @@ impl GlesRenderer {
                         .collect(),
                 },
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
-                uniform_tint: self
-                    .context
-                    .gl
+                uniform_tint: gl
                     .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
             })))
         }
