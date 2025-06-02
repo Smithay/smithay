@@ -1,7 +1,10 @@
 use std::{fmt, ops};
 
-use super::ffi;
-use crate::backend::egl::{EGLContext, EGLSurface, MakeCurrentError};
+use super::{ffi, GlesTexture};
+use crate::backend::{
+    egl::{EGLContext, EGLSurface, MakeCurrentError},
+    renderer::ContextId,
+};
 
 pub struct GlesContext {
     egl: EGLContext,
@@ -18,7 +21,17 @@ impl fmt::Debug for GlesContext {
 impl GlesContext {
     pub unsafe fn new(egl: EGLContext) -> Self {
         let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
+        egl.user_data()
+            .insert_if_missing_threadsafe(ContextId::<GlesTexture>::new);
         Self { egl, gl }
+    }
+
+    pub fn context_id(&self) -> ContextId<GlesTexture> {
+        self.egl
+            .user_data()
+            .get::<ContextId<GlesTexture>>()
+            .unwrap()
+            .clone()
     }
 
     pub fn egl(&self) -> &EGLContext {
@@ -55,6 +68,10 @@ pub struct CurrentGlesContext<'a>(&'a mut GlesContext);
 impl CurrentGlesContext<'_> {
     pub fn egl(&self) -> &EGLContext {
         &self.0.egl
+    }
+
+    pub fn context_id(&self) -> ContextId<GlesTexture> {
+        self.0.context_id()
     }
 }
 

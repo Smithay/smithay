@@ -609,11 +609,6 @@ impl GlesRenderer {
         );
         gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
 
-        context
-            .egl()
-            .user_data()
-            .insert_if_missing_threadsafe(ContextId::<GlesTexture>::new);
-
         drop(_guard);
 
         let renderer = GlesRenderer {
@@ -650,29 +645,27 @@ impl GlesRenderer {
     }
 
     fn bind_texture<'a>(&mut self, texture: &'a GlesTexture) -> Result<GlesTarget<'a>, GlesError> {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let bind = || {
             let mut sync_lock = texture.0.sync.write().unwrap();
             let mut fbo = 0;
             unsafe {
-                sync_lock.wait_for_all(&self.context.gl);
-                self.context.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                self.context.gl.FramebufferTexture2D(
+                sync_lock.wait_for_all(&gl);
+                gl.GenFramebuffers(1, &mut fbo as *mut _);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                gl.FramebufferTexture2D(
                     ffi::FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::TEXTURE_2D,
                     texture.0.texture,
                     0,
                 );
-                let status = self.context.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                let status = gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
                 if status != ffi::FRAMEBUFFER_COMPLETE {
-                    self.context.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    gl.DeleteFramebuffers(1, &mut fbo as *mut _);
                     return Err(GlesError::FramebufferBindingError);
                 }
             }
@@ -819,11 +812,9 @@ impl ImportMemWl for GlesRenderer {
 
             let mut upload_full = false;
 
-            unsafe {
-                self.context.egl().make_current()?;
-            }
+            let gl = unsafe { self.context.make_current()? };
 
-            let id = self.context_id();
+            let id = gl.context_id();
             let texture = GlesTexture(
                 surface_lock
                     .as_ref()
@@ -831,7 +822,7 @@ impl ImportMemWl for GlesRenderer {
                     .filter(|texture| texture.size == (width, height).into())
                     .unwrap_or_else(|| {
                         let mut tex = 0;
-                        unsafe { self.context.gl.GenTextures(1, &mut tex) };
+                        unsafe { gl.GenTextures(1, &mut tex) };
                         // new texture, upload in full
                         upload_full = true;
                         let new = Arc::new(GlesTextureInternal {
@@ -854,25 +845,15 @@ impl ImportMemWl for GlesRenderer {
 
             let mut sync_lock = texture.0.sync.write().unwrap();
             unsafe {
-                sync_lock.wait_for_all(&self.context.gl);
-                self.context.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
-                self.context.gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_WRAP_S,
-                    ffi::CLAMP_TO_EDGE as i32,
-                );
-                self.context.gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_WRAP_T,
-                    ffi::CLAMP_TO_EDGE as i32,
-                );
-                self.context
-                    .gl
-                    .PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize as i32);
+                sync_lock.wait_for_all(&*gl);
+                gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+                gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize as i32);
 
                 if upload_full || damage.is_empty() {
                     trace!("Uploading shm texture");
-                    self.context.gl.TexImage2D(
+                    gl.TexImage2D(
                         ffi::TEXTURE_2D,
                         0,
                         internal_format as i32,
@@ -886,9 +867,9 @@ impl ImportMemWl for GlesRenderer {
                 } else {
                     for region in damage.iter() {
                         trace!("Uploading partial shm texture");
-                        self.context.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
-                        self.context.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
-                        self.context.gl.TexSubImage2D(
+                        gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
+                        gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
+                        gl.TexSubImage2D(
                             ffi::TEXTURE_2D,
                             0,
                             region.loc.x,
@@ -899,18 +880,18 @@ impl ImportMemWl for GlesRenderer {
                             type_,
                             ptr.offset(offset as isize) as *const _,
                         );
-                        self.context.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
-                        self.context.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+                        gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
+                        gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
                     }
                 }
 
-                self.context.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
-                self.context.gl.BindTexture(ffi::TEXTURE_2D, 0);
+                gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
+                gl.BindTexture(ffi::TEXTURE_2D, 0);
 
                 if self.capabilities.contains(&Capability::Fencing) {
-                    sync_lock.update_write(&self.context.gl);
-                } else if self.context.egl().is_shared() {
-                    self.context.gl.Finish();
+                    sync_lock.update_write(&*gl);
+                } else if gl.egl().is_shared() {
+                    gl.Finish();
                 }
             }
             std::mem::drop(sync_lock);
@@ -2071,12 +2052,7 @@ impl RendererSuper for GlesRenderer {
 
 impl Renderer for GlesRenderer {
     fn context_id(&self) -> ContextId<GlesTexture> {
-        self.context
-            .egl()
-            .user_data()
-            .get::<ContextId<GlesTexture>>()
-            .unwrap()
-            .clone()
+        self.context.context_id()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
