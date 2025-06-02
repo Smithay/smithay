@@ -1382,9 +1382,7 @@ impl ExportMem for GlesRenderer {
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
     ) -> Result<&'a [u8], Self::Error> {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let size = texture_mapping.size();
         let len = size.w * size.h * 4;
@@ -1392,16 +1390,9 @@ impl ExportMem for GlesRenderer {
         let mapping_ptr = texture_mapping.mapping.load(Ordering::SeqCst);
         let ptr = if mapping_ptr.is_null() {
             unsafe {
-                self.context
-                    .gl
-                    .BindBuffer(ffi::PIXEL_PACK_BUFFER, texture_mapping.pbo);
-                let ptr = self.context.gl.MapBufferRange(
-                    ffi::PIXEL_PACK_BUFFER,
-                    0,
-                    len as isize,
-                    ffi::MAP_READ_BIT,
-                );
-                self.context.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+                gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, texture_mapping.pbo);
+                let ptr = gl.MapBufferRange(ffi::PIXEL_PACK_BUFFER, 0, len as isize, ffi::MAP_READ_BIT);
+                gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
 
                 if ptr.is_null() {
                     return Err(GlesError::MappingError);
@@ -1439,13 +1430,10 @@ impl Bind<Dmabuf> for GlesRenderer {
                 })
                 .map(|buf| Ok(buf.clone()))
                 .unwrap_or_else(|| {
-                    unsafe {
-                        self.context.egl().make_current()?;
-                    }
+                    let gl = unsafe { self.context.make_current()? };
 
                     trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
-                    let image = self
-                        .context
+                    let image = gl
                         .egl()
                         .display()
                         .create_image_from_dmabuf(dmabuf)
@@ -1453,32 +1441,27 @@ impl Bind<Dmabuf> for GlesRenderer {
 
                     unsafe {
                         let mut rbo = 0;
-                        self.context.gl.GenRenderbuffers(1, &mut rbo as *mut _);
-                        self.context.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-                        self.context
-                            .gl
-                            .EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
-                        self.context.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+                        gl.GenRenderbuffers(1, &mut rbo as *mut _);
+                        gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+                        gl.EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
+                        gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
                         let mut fbo = 0;
-                        self.context.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                        self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                        self.context.gl.FramebufferRenderbuffer(
+                        gl.GenFramebuffers(1, &mut fbo as *mut _);
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                        gl.FramebufferRenderbuffer(
                             ffi::FRAMEBUFFER,
                             ffi::COLOR_ATTACHMENT0,
                             ffi::RENDERBUFFER,
                             rbo,
                         );
-                        let status = self.context.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                        self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                        let status = gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
                         if status != ffi::FRAMEBUFFER_COMPLETE {
-                            self.context.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                            self.context.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
-                            ffi_egl::DestroyImageKHR(
-                                **self.context.egl().display().get_display_handle(),
-                                image,
-                            );
+                            gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                            gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
+                            ffi_egl::DestroyImageKHR(**gl.egl().display().get_display_handle(), image);
                             return Err(GlesError::FramebufferBindingError);
                         }
                         let buf = GlesBuffer {
@@ -1517,30 +1500,26 @@ impl Bind<GlesTexture> for GlesRenderer {
 
 impl Bind<GlesRenderbuffer> for GlesRenderer {
     fn bind<'a>(&mut self, renderbuffer: &'a mut GlesRenderbuffer) -> Result<GlesTarget<'a>, GlesError> {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let bind = |renderbuffer: &'a mut GlesRenderbuffer| {
             let mut fbo = 0;
             unsafe {
-                self.context.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                self.context
-                    .gl
-                    .BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
-                self.context.gl.FramebufferRenderbuffer(
+                gl.GenFramebuffers(1, &mut fbo as *mut _);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                gl.BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
+                gl.FramebufferRenderbuffer(
                     ffi::FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::RENDERBUFFER,
                     renderbuffer.0.rbo,
                 );
-                let status = self.context.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                self.context.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+                let status = gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
                 if status != ffi::FRAMEBUFFER_COMPLETE {
-                    self.context.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    gl.DeleteFramebuffers(1, &mut fbo as *mut _);
                     return Err(GlesError::FramebufferBindingError);
                 }
             }
@@ -1577,11 +1556,11 @@ impl Offscreen<GlesTexture> for GlesRenderer {
         }
 
         let tex = unsafe {
-            self.context.egl().make_current()?;
+            let gl = self.context.make_current()?;
             let mut tex = 0;
-            self.context.gl.GenTextures(1, &mut tex);
-            self.context.gl.BindTexture(ffi::TEXTURE_2D, tex);
-            self.context.gl.TexImage2D(
+            gl.GenTextures(1, &mut tex);
+            gl.BindTexture(ffi::TEXTURE_2D, tex);
+            gl.TexImage2D(
                 ffi::TEXTURE_2D,
                 0,
                 internal as i32,
@@ -1619,15 +1598,13 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
         }
 
         unsafe {
-            self.context.egl().make_current()?;
+            let gl = self.context.make_current()?;
 
             let mut rbo = 0;
-            self.context.gl.GenRenderbuffers(1, &mut rbo);
-            self.context.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-            self.context
-                .gl
-                .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
-            self.context.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+            gl.GenRenderbuffers(1, &mut rbo);
+            gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+            gl.RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
+            gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
             Ok(GlesRenderbuffer(Rc::new(GlesRenderbufferInternal {
                 rbo,
