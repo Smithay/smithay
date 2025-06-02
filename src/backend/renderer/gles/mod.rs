@@ -1740,16 +1740,14 @@ impl Drop for GlesRenderer {
     fn drop(&mut self) {
         let _guard = self.span.enter();
         unsafe {
-            if self.context.egl().make_current().is_ok() {
-                self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                self.context.gl.DeleteProgram(self.solid_program.program);
-                self.context
-                    .gl
-                    .DeleteBuffers(self.vbos.len() as i32, self.vbos.as_ptr());
+            if let Ok(gl) = self.context.make_current() {
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                gl.DeleteProgram(self.solid_program.program);
+                gl.DeleteBuffers(self.vbos.len() as i32, self.vbos.as_ptr());
 
                 if self.extensions.iter().any(|ext| ext == "GL_KHR_debug") {
-                    self.context.gl.Disable(ffi::DEBUG_OUTPUT);
-                    self.context.gl.DebugMessageCallback(None, ptr::null());
+                    gl.Disable(ffi::DEBUG_OUTPUT);
+                    gl.DebugMessageCallback(None, ptr::null());
                 }
 
                 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
