@@ -957,23 +957,16 @@ impl ImportMem for GlesRenderer {
             };
         }
 
+        let gl = unsafe { self.context.make_current()? };
+
         let texture = GlesTexture(Arc::new({
             let mut tex = 0;
             unsafe {
-                self.context.egl().make_current()?;
-                self.context.gl.GenTextures(1, &mut tex);
-                self.context.gl.BindTexture(ffi::TEXTURE_2D, tex);
-                self.context.gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_WRAP_S,
-                    ffi::CLAMP_TO_EDGE as i32,
-                );
-                self.context.gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_WRAP_T,
-                    ffi::CLAMP_TO_EDGE as i32,
-                );
-                self.context.gl.TexImage2D(
+                gl.GenTextures(1, &mut tex);
+                gl.BindTexture(ffi::TEXTURE_2D, tex);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+                gl.TexImage2D(
                     ffi::TEXTURE_2D,
                     0,
                     internal as i32,
@@ -984,15 +977,15 @@ impl ImportMem for GlesRenderer {
                     layout,
                     data.as_ptr() as *const _,
                 );
-                self.context.gl.BindTexture(ffi::TEXTURE_2D, 0);
+                gl.BindTexture(ffi::TEXTURE_2D, 0);
             }
 
             let mut sync = RwLock::<TextureSync>::default();
             if self.capabilities.contains(&Capability::Fencing) {
-                sync.get_mut().unwrap().update_write(&self.context.gl);
-            } else if self.context.egl().is_shared() {
+                sync.get_mut().unwrap().update_write(&*gl);
+            } else if gl.egl().is_shared() {
                 unsafe {
-                    self.context.gl.Finish();
+                    gl.Finish();
                 }
             };
 
@@ -1039,21 +1032,15 @@ impl ImportMem for GlesRenderer {
 
         let mut sync_lock = texture.0.sync.write().unwrap();
         unsafe {
-            self.context.egl().make_current()?;
-            sync_lock.wait_for_all(&self.context.gl);
-            self.context.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
-            self.context
-                .gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-            self.context
-                .gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-            self.context
-                .gl
-                .PixelStorei(ffi::UNPACK_ROW_LENGTH, texture.0.size.w);
-            self.context.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
-            self.context.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
-            self.context.gl.TexSubImage2D(
+            let gl = self.context.make_current()?;
+            sync_lock.wait_for_all(&*gl);
+            gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
+            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+            gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, texture.0.size.w);
+            gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
+            gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
+            gl.TexSubImage2D(
                 ffi::TEXTURE_2D,
                 0,
                 region.loc.x,
@@ -1064,15 +1051,15 @@ impl ImportMem for GlesRenderer {
                 type_,
                 data.as_ptr() as *const _,
             );
-            self.context.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
-            self.context.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
-            self.context.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
-            self.context.gl.BindTexture(ffi::TEXTURE_2D, 0);
+            gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
+            gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
+            gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+            gl.BindTexture(ffi::TEXTURE_2D, 0);
 
             if self.capabilities.contains(&Capability::Fencing) {
-                sync_lock.update_write(&self.context.gl);
-            } else if self.context.egl().is_shared() {
-                self.context.gl.Finish();
+                sync_lock.update_write(&*gl);
+            } else if gl.egl().is_shared() {
+                gl.Finish();
             }
         }
 
@@ -1223,8 +1210,8 @@ impl ImportDmaWl for GlesRenderer {}
 
 impl GlesRenderer {
     #[profiling::function]
-    fn existing_dmabuf_texture(&self, buffer: &Dmabuf) -> Result<Option<GlesTexture>, GlesError> {
-        let Some(texture) = self.dmabuf_cache.get(&buffer.weak()) else {
+    fn existing_dmabuf_texture(&mut self, buffer: &Dmabuf) -> Result<Option<GlesTexture>, GlesError> {
+        let Some(texture) = self.dmabuf_cache.get(&buffer.weak()).cloned() else {
             return Ok(None);
         };
 
@@ -1236,22 +1223,20 @@ impl GlesRenderer {
             let tex = Some(texture.0.texture);
             self.import_egl_image(egl_images[0], texture.0.is_external, tex)?;
         }
-        Ok(Some(texture.clone()))
+        Ok(Some(texture))
     }
 
     #[profiling::function]
     fn import_egl_image(
-        &self,
+        &mut self,
         image: EGLImage,
         is_external: bool,
         tex: Option<u32>,
     ) -> Result<u32, GlesError> {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
         let tex = tex.unwrap_or_else(|| unsafe {
             let mut tex = 0;
-            self.context.gl.GenTextures(1, &mut tex);
+            gl.GenTextures(1, &mut tex);
             tex
         });
         let target = if is_external {
@@ -1260,9 +1245,9 @@ impl GlesRenderer {
             ffi::TEXTURE_2D
         };
         unsafe {
-            self.context.gl.BindTexture(target, tex);
-            self.context.gl.EGLImageTargetTexture2DOES(target, image);
-            self.context.gl.BindTexture(target, 0);
+            gl.BindTexture(target, tex);
+            gl.EGLImageTargetTexture2DOES(target, image);
+            gl.BindTexture(target, 0);
         }
 
         Ok(tex)
