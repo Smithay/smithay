@@ -1787,10 +1787,8 @@ impl GlesRenderer {
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
-        Ok(func(&self.context.gl))
+        let gl = unsafe { self.context.make_current()? };
+        Ok(func(&*gl))
     }
 
     /// Compile a custom pixel shader for rendering with [`GlesFrame::render_pixel_shader_to`].
@@ -1819,14 +1817,12 @@ impl GlesRenderer {
         src: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesPixelProgram, GlesError> {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let shader = format!("#version 100\n{}", src.as_ref());
-        let program = unsafe { link_program(&self.context.gl, shaders::VERTEX_SHADER, &shader)? };
+        let program = unsafe { link_program(&gl, shaders::VERTEX_SHADER, &shader)? };
         let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
-        let debug_program = unsafe { link_program(&self.context.gl, shaders::VERTEX_SHADER, &debug_shader)? };
+        let debug_program = unsafe { link_program(&gl, shaders::VERTEX_SHADER, &debug_shader)? };
 
         let vert = c"vert";
         let vert_position = c"vert_position";
@@ -1840,38 +1836,22 @@ impl GlesRenderer {
             Ok(GlesPixelProgram(Arc::new(GlesPixelProgramInner {
                 normal: GlesPixelProgramInternal {
                     program,
-                    uniform_matrix: self
-                        .context
-                        .gl
+                    uniform_matrix: gl
                         .GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_tex_matrix: self
-                        .context
-                        .gl
+                    uniform_tex_matrix: gl
                         .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_alpha: self
-                        .context
-                        .gl
+                    uniform_alpha: gl
                         .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-                    uniform_size: self
-                        .context
-                        .gl
-                        .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
-                    attrib_vert: self
-                        .context
-                        .gl
-                        .GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-                    attrib_position: self
-                        .context
-                        .gl
+                    uniform_size: gl.GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
+                    attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
+                    attrib_position: gl
                         .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
                     additional_uniforms: additional_uniforms
                         .iter()
                         .map(|uniform| {
                             let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                            let location = self
-                                .context
-                                .gl
-                                .GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
+                            let location =
+                                gl.GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
                             (
                                 uniform.name.clone().into_owned(),
                                 UniformDesc {
@@ -1884,27 +1864,17 @@ impl GlesRenderer {
                 },
                 debug: GlesPixelProgramInternal {
                     program: debug_program,
-                    uniform_matrix: self
-                        .context
-                        .gl
+                    uniform_matrix: gl
                         .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_tex_matrix: self
-                        .context
-                        .gl
+                    uniform_tex_matrix: gl
                         .GetUniformLocation(debug_program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_alpha: self
-                        .context
-                        .gl
+                    uniform_alpha: gl
                         .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
-                    uniform_size: self
-                        .context
-                        .gl
+                    uniform_size: gl
                         .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
-                    attrib_vert: self
-                        .context
-                        .gl
+                    attrib_vert: gl
                         .GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
-                    attrib_position: self.context.gl.GetAttribLocation(
+                    attrib_position: gl.GetAttribLocation(
                         debug_program,
                         vert_position.as_ptr() as *const ffi::types::GLchar,
                     ),
@@ -1912,7 +1882,7 @@ impl GlesRenderer {
                         .iter()
                         .map(|uniform| {
                             let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                            let location = self.context.gl.GetUniformLocation(
+                            let location = gl.GetUniformLocation(
                                 debug_program,
                                 name.as_ptr() as *const ffi::types::GLchar,
                             );
