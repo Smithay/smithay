@@ -115,7 +115,7 @@ pub unsafe fn link_program(
 }
 
 pub(super) unsafe fn texture_program(
-    gl: &ffi::Gles2,
+    gl: &CurrentGlesContext<'_>,
     src: &str,
     additional_uniforms: &[UniformName<'_>],
     destruction_callback_sender: Sender<CleanupResource>,
@@ -220,7 +220,7 @@ pub(super) unsafe fn texture_program(
     })))
 }
 
-pub(super) unsafe fn solid_program(gl: &ffi::Gles2) -> Result<GlesSolidProgram, GlesError> {
+pub(super) unsafe fn solid_program(gl: &CurrentGlesContext<'_>) -> Result<GlesSolidProgram, GlesError> {
     let program = link_program(gl, shaders::VERTEX_SHADER_SOLID, shaders::FRAGMENT_SHADER_SOLID)?;
 
     let matrix = c"matrix";
