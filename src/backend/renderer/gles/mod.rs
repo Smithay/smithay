@@ -818,6 +818,10 @@ impl ImportMemWl for GlesRenderer {
 
             let mut upload_full = false;
 
+            unsafe {
+                self.egl.make_current()?;
+            }
+
             let id = self.context_id();
             let texture = GlesTexture(
                 surface_lock
@@ -849,7 +853,6 @@ impl ImportMemWl for GlesRenderer {
 
             let mut sync_lock = texture.0.sync.write().unwrap();
             unsafe {
-                self.egl.make_current()?;
                 sync_lock.wait_for_all(&self.gl);
                 self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
                 self.gl
