@@ -124,14 +124,17 @@ impl PrivateSurfaceData {
 
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
     pub fn cleanup<D: 'static>(state: &mut D, surface_data: &SurfaceUserData, surface: &WlSurface) {
-        let my_data_mutex = &surface_data.inner;
-        let mut my_data = my_data_mutex.lock().unwrap();
-        if let Some(old_parent) = my_data.parent.take() {
+        // Don't hold the lock on `surface_data.inner`, while also locking the parent
+        let old_parent = surface_data.inner.lock().unwrap().parent.take();
+        if let Some(old_parent) = old_parent {
             // We had a parent, lets unregister ourselves from it
             let old_parent_mutex = &old_parent.data::<SurfaceUserData>().unwrap().inner;
             let mut old_parent_guard = old_parent_mutex.lock().unwrap();
             old_parent_guard.children.retain(|c| c.id() != surface.id());
         }
+
+        let my_data_mutex = &surface_data.inner;
+        let mut my_data = my_data_mutex.lock().unwrap();
         // orphan all our children
         for child in my_data.children.drain(..) {
             let child_mutex = &child.data::<SurfaceUserData>().unwrap().inner;
@@ -338,7 +341,9 @@ impl PrivateSurfaceData {
             if parent.id() == a.id() {
                 true
             } else {
-                Self::is_ancestor(a, parent)
+                let parent = parent.clone();
+                std::mem::drop(b_guard);
+                Self::is_ancestor(a, &parent)
             }
         } else {
             false
