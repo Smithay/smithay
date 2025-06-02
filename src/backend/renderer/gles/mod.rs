@@ -1663,60 +1663,54 @@ impl Blit for GlesRenderer {
             return Err(GlesError::GLVersionNotSupported(version::GLES_3_0));
         }
 
-        match (&src_target.0, &dst_target.0) {
+        let gl = match (&src_target.0, &dst_target.0) {
             (
                 GlesTargetInternal::Surface { surface: src, .. },
                 GlesTargetInternal::Surface { surface: dst, .. },
-            ) => unsafe {
-                self.context
-                    .egl()
-                    .make_current_with_draw_and_read_surface(dst, src)?;
-            },
+            ) => unsafe { self.context.make_current_with_draw_and_read_surface(dst, src)? },
             (GlesTargetInternal::Surface { surface: src, .. }, _) => unsafe {
-                self.context.egl().make_current_with_surface(src)?;
+                self.context.make_current_with_surface(src)?
             },
             (_, GlesTargetInternal::Surface { surface: dst, .. }) => unsafe {
-                self.context.egl().make_current_with_surface(dst)?;
+                self.context.make_current_with_surface(dst)?
             },
-            (_, _) => unsafe {
-                self.context.egl().make_current()?;
-            },
-        }
+            (_, _) => unsafe { self.context.make_current()? },
+        };
 
         match &src_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.context.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.fbo)
+                gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.fbo)
             },
             GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
-                self.context.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
             GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
-                self.context.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
         match &dst_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.context.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.fbo)
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.fbo)
             },
             GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
-                self.context.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
             GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
-                self.context.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
 
-        let status = unsafe { self.context.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
+        let status = unsafe { gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
         if status != ffi::FRAMEBUFFER_COMPLETE {
             let _ = self.unbind();
             return Err(GlesError::FramebufferBindingError);
         }
 
         let errno = unsafe {
-            while self.context.gl.GetError() != ffi::NO_ERROR {} // clear flag before
-            self.context.gl.BlitFramebuffer(
+            while gl.GetError() != ffi::NO_ERROR {} // clear flag before
+            gl.BlitFramebuffer(
                 src.loc.x,
                 src.loc.y,
                 src.loc.x + src.size.w,
@@ -1731,7 +1725,7 @@ impl Blit for GlesRenderer {
                     TextureFilter::Nearest => ffi::NEAREST,
                 },
             );
-            self.context.gl.GetError()
+            gl.GetError()
         };
 
         if errno == ffi::INVALID_OPERATION {
