@@ -144,11 +144,11 @@ pub mod touch;
 /// Handler trait for Seats
 pub trait SeatHandler: Sized {
     /// Type used to represent the target currently holding the keyboard focus
-    type KeyboardFocus: KeyboardTarget<Self> + 'static;
+    type KeyboardFocus: KeyboardTarget<Self> + PartialEq + Clone + 'static;
     /// Type used to represent the target currently holding the pointer focus
-    type PointerFocus: PointerTarget<Self> + 'static;
+    type PointerFocus: PointerTarget<Self> + PartialEq + Clone + 'static;
     /// Type used to represent the target currently holding the touch focus
-    type TouchFocus: TouchTarget<Self> + 'static;
+    type TouchFocus: TouchTarget<Self> + PartialEq + Clone + 'static;
 
     /// [SeatState] getter
     fn seat_state(&mut self) -> &mut SeatState<Self>;
