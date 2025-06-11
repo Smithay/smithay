@@ -1227,7 +1227,7 @@ where
 
                         let cursor_allocator =
                             GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
-                        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone());
+                        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), None);
                         CursorState {
                             allocator: cursor_allocator,
                             framebuffer_exporter,
@@ -1409,7 +1409,7 @@ where
 
             let cursor_allocator =
                 GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
-            let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone());
+            let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), None);
             CursorState {
                 allocator: cursor_allocator,
                 framebuffer_exporter,

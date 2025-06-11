@@ -34,13 +34,23 @@ pub enum Error {
 pub struct GbmFramebufferExporter<A: AsFd + 'static> {
     gbm: gbm::Device<A>,
     drm_node: Option<DrmNode>,
+    #[cfg_attr(not(feature = "wayland_frontend"), allow(unused))]
+    import_node: Option<DrmNode>,
 }
 
 impl<A: AsFd + 'static> GbmFramebufferExporter<A> {
-    /// Initialize a new framebuffer exporter
-    pub fn new(gbm: gbm::Device<A>) -> Self {
+    /// Initialize a new framebuffer exporter.
+    ///
+    /// `import_node` will be used to filter dmabufs to originate from a particular
+    /// device before considering them for direct scanout.
+    /// If `import_node` is `None` direct-scanout of client-buffers won't be used.
+    pub fn new(gbm: gbm::Device<A>, import_node: Option<DrmNode>) -> Self {
         let drm_node = DrmNode::from_file(gbm.as_fd()).ok();
-        Self { gbm, drm_node }
+        Self {
+            gbm,
+            drm_node,
+            import_node,
+        }
     }
 }
 
@@ -85,13 +95,13 @@ impl<A: AsFd + 'static> ExportFramebuffer<GbmBuffer> for GbmFramebufferExporter<
             #[cfg(not(all(feature = "backend_egl", feature = "use_system_lib")))]
             ExportBuffer::Wayland(buffer) => crate::wayland::dmabuf::get_dmabuf(buffer)
                 .ok()
-                .is_some_and(|buf| buf.node().is_some_and(|node| Some(node) == self.drm_node)),
+                .is_some_and(|buf| buf.node().is_some_and(|node| Some(node) == self.import_node)),
             #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
             ExportBuffer::Wayland(buffer) => match crate::backend::renderer::buffer_type(buffer) {
                 Some(crate::backend::renderer::BufferType::Dma) => crate::wayland::dmabuf::get_dmabuf(buffer)
                     .unwrap()
                     .node()
-                    .is_some_and(|node| Some(node) == self.drm_node),
+                    .is_some_and(|node| Some(node) == self.import_node),
                 // Argubly we need specialization here. If the renderer (which we have in `element_config`, which calls this function)
                 // has `ImportEGL`, we can verify that `EGLBufferRender` is some, which means we have the renderer advertised via wl_drm,
                 // which means this is probably fine.
