@@ -83,16 +83,25 @@ impl<A: AsFd + 'static> ExportFramebuffer<GbmBuffer> for GbmFramebufferExporter<
     fn can_add_framebuffer(&self, buffer: &ExportBuffer<'_, GbmBuffer>) -> bool {
         match buffer {
             #[cfg(not(all(feature = "backend_egl", feature = "use_system_lib")))]
-            ExportBuffer::Wayland(buffer) => matches!(
-                crate::backend::renderer::buffer_type(buffer),
-                Some(crate::backend::renderer::BufferType::Dma)
-            ),
+            ExportBuffer::Wayland(buffer) => crate::wayland::dmabuf::get_dmabuf(buffer)
+                .ok()
+                .is_some_and(|buf| buf.node().is_some_and(|node| Some(node) == self.drm_node)),
             #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
-            ExportBuffer::Wayland(buffer) => matches!(
-                crate::backend::renderer::buffer_type(buffer),
-                Some(crate::backend::renderer::BufferType::Dma)
-                    | Some(crate::backend::renderer::BufferType::Egl)
-            ),
+            ExportBuffer::Wayland(buffer) => match crate::backend::renderer::buffer_type(buffer) {
+                Some(crate::backend::renderer::BufferType::Dma) => crate::wayland::dmabuf::get_dmabuf(buffer)
+                    .unwrap()
+                    .node()
+                    .is_some_and(|node| Some(node) == self.drm_node),
+                // Argubly we need specialization here. If the renderer (which we have in `element_config`, which calls this function)
+                // has `ImportEGL`, we can verify that `EGLBufferRender` is some, which means we have the renderer advertised via wl_drm,
+                // which means this is probably fine.
+                // If we don't have `ImportEGL` or `EGLBufferReader` is none, we should reject this, but we don't want to require `ImportEGL`.
+                //
+                // So for now hope that `gbm_framebuffer_from_wayland_buffer` is smart enough to deal with this correctly.
+                // (And most modern compositor don't use wl_drm anyway.)
+                Some(crate::backend::renderer::BufferType::Egl) => true,
+                _ => false,
+            },
             ExportBuffer::Allocator(_) => true,
         }
     }
