@@ -2,6 +2,86 @@
 
 ## Unreleased
 
+## 0.7.0
+
+### Breaking changes
+`DrmSyncobjHandler::drm_syncobj_state` is now Optional.
+Whenever state is None `ImportTimeline` request will result in `InvalidTimeline` protocol error.
+This allows one to destroy DrmSyncobjState by calling `DrmSyncobjState::into_global()`
+```diff
+-fn DrmSyncobjHandler::drm_syncobj_state(&mut self) -> &mut DrmSyncobjState
++fn DrmSyncobjHandler::drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState>
+```
+
+`DrmTimeline` constructor now accepts OwnedFd:
+```diff
+-fn DrmTimeline::new(device: &DrmDeviceFd, fd: BorrowedFd<'_>) -> io::Result<Self>
++fn DrmTimeline::new(device: &DrmDeviceFd, fd: OwnedFd) -> io::Result<Self>
+```
+`DrmSyncPoint::eventfd` now returns `Arc<OwnedFd>`:
+```diff
+-fn DrmSyncPoint::eventfd(&self) -> io::Result<OwnedFd>
++fn DrmSyncPoint::eventfd(&self) -> io::Result<Arc<OwnedFd>>
+```
+`GbmFramebufferExporter` constructor now accepts `import_node`,
+it will be used to filter DMA-BUFs to only those originating from a specific device before considering them for direct scanout.
+If `import_node` is `None` direct-scanout of client-buffers won't be used.
+```diff
+-fn GbmFramebufferExporter::new(gbm: Device<A>) -> Self
++fn GbmFramebufferExporter::new(gbm: Device<A>, import_node: Option<DrmNode>) -> Self
+```
+
+### Additions
+
+#### WeakDrmDeviceFd
+```rs
+/// Returns a weak reference to the underlying device
+fn DrmDeviceFd::downgrade(&self) -> WeakDrmDeviceFd;
+/// Construct an empty Weak reference, that will never upgrade successfully
+fn WeakDrmDeviceFd::new() -> Self;
+/// Try to upgrade to a strong reference
+fn WeakDrmDeviceFd::upgrade(&self) -> Option<DrmDeviceFd>;
+```
+
+#### KeyboardHandle::set_modifier_state
+```rs
+/// Set the modifiers state.
+fn KeyboardHandle::set_modifier_state(&self, mods_state: ModifiersState) -> u32;
+/// Serialize modifier state back to be sent to xkb.
+fn ModifiersState::serialize_back(&self, state: &xkb::State) -> SerializedMods;
+```
+
+#### XWaylandKeyboardGrab
+```rs
+/// Get the `zwp_xwayland_keyboard_grab_v1` object that created the grab
+fn XWaylandKeyboardGrab::grab(&self) -> &ZwpXwaylandKeyboardGrabV1;
+/// Grab is now clonable
+impl Clone for XWaylandKeyboardGrab;
+```
+
+#### X11Surface
+```rs
+/// Returns the hints for the underlying X11 window
+fn X11Surface::hints(&self) -> Option<x11rb::properties::WmHints>;
+/// Get the client PID associated with the X11 window.
+fn X11Surface::get_client_pid(&self) -> Result<u32, Box<dyn Error>>;
+```
+
+#### DrmSyncobjState
+```rs
+/// Destroys the state and returns the `GlobalId` for compositors to disable/destroy.
+fn DrmSyncobjState::into_global(self) -> GlobalId;
+/// Sets a new `import_device` to import the syncobj fds and wait on them.
+fn DrmSyncobjState::update_device(&mut self, import_device: DrmDeviceFd);
+```
+
+#### xdg-toplevel-tag-v1
+XdgToplevelTag protocol is now available in `smithay::wayland::xdg_toplevel_tag` module.
+
+#### cursor-shape-v1
+CursorShape is now updated to version `2`
+
+
 ## 0.6.0
 
 ### Breaking Changes
