@@ -73,6 +73,18 @@ aliasable = { version = "0.1.3", optional = true }
 atomic_float = "1.1.0"
 sha2 = "0.10.9"
 
+[patch.crates-io]
+wayland-client = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-cursor = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-egl = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-protocols = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-protocols-wlr = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-protocols-misc = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-server = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-sys = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-backend = { git = "https://github.com/Smithay/wayland-rs.git" }
+wayland-scanner = { git = "https://github.com/Smithay/wayland-rs.git" }
+
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
 criterion = { version = "0.5" }
