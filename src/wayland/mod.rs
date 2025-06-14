@@ -46,6 +46,7 @@
 //!
 
 pub mod alpha_modifier;
+pub mod background_effect;
 pub mod buffer;
 pub mod commit_timing;
 pub mod compositor;
