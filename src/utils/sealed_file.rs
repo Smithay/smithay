@@ -53,13 +53,13 @@ impl SealedFile {
     /// Create a `[SealedFile]` with the given binary data.
     #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "android")))]
     pub fn with_data(name: &CStr, data: &[u8]) -> Result<Self, std::io::Error> {
-        use rand::{distributions::Alphanumeric, Rng};
+        use rand::{distr::Alphanumeric, Rng};
         use rustix::{
             io::Errno,
             shm::{self, Mode},
         };
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // `memfd_create` isn't available. Instead, try `shm_open` with a randomized name, and
         // loop a couple times if it exists.
