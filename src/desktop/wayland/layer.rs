@@ -1,7 +1,7 @@
 use crate::{
     desktop::{utils::*, PopupManager},
     output::{Output, WeakOutput},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Size},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SurfaceData, TraversalAction},
         dmabuf::DmabufFeedback,
@@ -20,6 +20,7 @@ use wayland_server::protocol::wl_surface::{self, WlSurface};
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
+    num::Saturating,
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
@@ -264,7 +265,11 @@ impl LayerMap {
                     })
                     .unwrap_or_else(|| (0, 0).into()),
             );
-            let mut zone = output_rect;
+            let zone = output_rect;
+            let mut zone: Rectangle<_, Logical> = Rectangle::new(
+                Point::new(Saturating(zone.loc.x), Saturating(zone.loc.y)),
+                Size::new(Saturating(zone.size.w), Saturating(zone.size.h)),
+            );
             trace!("Arranging layers into {:?}", output_rect.size);
 
             for layer in self.layers.iter() {
@@ -298,7 +303,10 @@ impl LayerMap {
 
                 let mut source = match data.exclusive_zone {
                     ExclusiveZone::Exclusive(_) | ExclusiveZone::Neutral => zone,
-                    ExclusiveZone::DontCare => output_rect,
+                    ExclusiveZone::DontCare => Rectangle::new(
+                        Point::new(Saturating(output_rect.loc.x), Saturating(output_rect.loc.y)),
+                        Size::new(Saturating(output_rect.size.w), Saturating(output_rect.size.h)),
+                    ),
                 };
 
                 // adjust the copy rect to account for the margins
@@ -315,14 +323,14 @@ impl LayerMap {
                     source.size.h -= data.margin.bottom
                 }
 
-                let mut size = data.size;
+                let mut size: Size<_, Logical> = Size::new(Saturating(data.size.w), Saturating(data.size.h));
                 size.w = size.w.min(source.size.w);
                 size.h = size.h.min(source.size.h);
-                if size.w == 0 {
-                    size.w = source.size.w / 2;
+                if size.w.0 == 0 {
+                    size.w.0 = source.size.w.0 / 2;
                 }
-                if size.h == 0 {
-                    size.h = source.size.h / 2;
+                if size.h.0 == 0 {
+                    size.h.0 = source.size.h.0 / 2;
                 }
                 if data.anchor.anchored_horizontally() {
                     size.w = source.size.w;
@@ -332,29 +340,32 @@ impl LayerMap {
                 }
 
                 let x = if data.anchor.contains(Anchor::LEFT) {
-                    source.loc.x + data.margin.left
+                    source.loc.x + Saturating(data.margin.left)
                 } else if data.anchor.contains(Anchor::RIGHT) {
                     source.loc.x + (source.size.w - size.w)
                 } else {
-                    source.loc.x + ((source.size.w / 2) - (size.w / 2))
+                    source.loc.x + Saturating((source.size.w.0 / 2) - (size.w.0 / 2))
                 };
 
                 let y = if data.anchor.contains(Anchor::TOP) {
-                    source.loc.y + data.margin.top
+                    source.loc.y + Saturating(data.margin.top)
                 } else if data.anchor.contains(Anchor::BOTTOM) {
                     source.loc.y + (source.size.h - size.h)
                 } else {
-                    source.loc.y + ((source.size.h / 2) - (size.h / 2))
+                    source.loc.y + Saturating((source.size.h.0 / 2) - (size.h.0 / 2))
                 };
 
-                let location: Point<i32, Logical> = (x, y).into();
+                let location: Point<i32, Logical> = (x.0, y.0).into();
 
                 if let ExclusiveZone::Exclusive(amount) = data.exclusive_zone {
+                    let amount = Saturating(amount as i32);
+
                     match data.anchor {
                         x if x.contains(Anchor::TOP) && x.contains(Anchor::BOTTOM) => {
-                            zone.size.w -= amount as i32;
+                            zone.size.w -= amount;
                             if x.contains(Anchor::LEFT) {
-                                zone.loc.x += amount as i32 + data.margin.left;
+                                zone.loc.x += amount;
+                                zone.loc.x += data.margin.left;
                                 zone.size.w -= data.margin.left;
                             }
                             if x.contains(Anchor::RIGHT) {
@@ -362,9 +373,10 @@ impl LayerMap {
                             }
                         }
                         x if x.contains(Anchor::LEFT) && x.contains(Anchor::RIGHT) => {
-                            zone.size.h -= amount as i32;
+                            zone.size.h -= amount;
                             if x.contains(Anchor::TOP) {
-                                zone.loc.y += amount as i32 + data.margin.top;
+                                zone.loc.y += amount;
+                                zone.loc.y += data.margin.top;
                                 zone.size.h -= data.margin.top
                             }
                             if x.contains(Anchor::BOTTOM) {
@@ -372,27 +384,30 @@ impl LayerMap {
                             }
                         }
                         x if x == Anchor::all() => {
-                            zone.size.w = 0;
-                            zone.size.h = 0;
+                            zone.size.w.0 = 0;
+                            zone.size.h.0 = 0;
                         }
                         x if x.contains(Anchor::LEFT) && !x.contains(Anchor::RIGHT) => {
-                            zone.loc.x += amount as i32 + data.margin.left;
-                            zone.size.w -= amount as i32 + data.margin.left;
+                            let sum = amount + Saturating(data.margin.left);
+                            zone.loc.x += sum;
+                            zone.size.w -= sum;
                         }
                         x if x.contains(Anchor::TOP) && !x.contains(Anchor::BOTTOM) => {
-                            zone.loc.y += amount as i32 + data.margin.top;
-                            zone.size.h -= amount as i32 + data.margin.top;
+                            let sum = amount + Saturating(data.margin.top);
+                            zone.loc.y += sum;
+                            zone.size.h -= sum;
                         }
                         x if x.contains(Anchor::RIGHT) && !x.contains(Anchor::LEFT) => {
-                            zone.size.w -= amount as i32 + data.margin.right;
+                            zone.size.w -= amount + Saturating(data.margin.right);
                         }
                         x if x.contains(Anchor::BOTTOM) && !x.contains(Anchor::TOP) => {
-                            zone.size.h -= amount as i32 + data.margin.bottom;
+                            zone.size.h -= amount + Saturating(data.margin.bottom);
                         }
                         _ => {}
                     }
                 }
 
+                let size = Size::new(size.w.0.max(0), size.h.0.max(0));
                 trace!("Setting layer to pos {:?} and size {:?}", location, size);
                 let size_changed = layer.0.surface.with_pending_state(|state| {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
@@ -427,6 +442,10 @@ impl LayerMap {
                 }
             }
 
+            let zone = Rectangle::new(
+                Point::new(zone.loc.x.0, zone.loc.y.0),
+                Size::new(zone.size.w.0.max(0), zone.size.h.0.max(0)),
+            );
             trace!("Remaining zone {:?}", zone);
             self.zone = zone;
         }
