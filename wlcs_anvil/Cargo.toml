@@ -20,10 +20,7 @@ smithay = { path = "..", default-features = false, features = [
     "renderer_test",
 ] }
 anvil = { path = "../anvil", default-features = false }
-wayland-sys = { git = "https://github.com/edfloreshz-ext/wayland-rs", branch = "feat/ext-background-effect", features = [
-    "client",
-    "server",
-] }
+wayland-sys = { version = "0.31.1", features = ["client", "server"] }
 wlcs = "0.1"
 libc = "0.2"
 memoffset = "0.9"
