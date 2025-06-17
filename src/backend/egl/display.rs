@@ -1042,7 +1042,7 @@ impl EGLBufferReader {
     /// Try to receive [`EGLBuffer`] from a given [`WlBuffer`].
     ///
     /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm))
-    /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
+    /// a [`BufferAccessError::NotManaged`] is returned.
     #[profiling::function]
     pub fn egl_buffer_contents(
         &self,

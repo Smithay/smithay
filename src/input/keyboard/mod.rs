@@ -942,7 +942,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// [`FilterResult::Intercept`] a value can be passed to be returned by the whole function.
     /// This mechanism can be used to implement compositor-level key bindings for example.
     ///
-    /// The module [`keysyms`](crate::input::keyboard::keysyms) exposes definitions of all possible keysyms
+    /// The module [`keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data, filter))]
     pub fn input<T, F>(
