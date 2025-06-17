@@ -19,6 +19,7 @@ use std::{
 };
 use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
 
+mod context;
 pub mod element;
 mod error;
 pub mod format;
@@ -27,6 +28,7 @@ mod texture;
 mod uniform;
 mod version;
 
+use context::*;
 pub use error::*;
 use format::*;
 pub use shaders::*;
@@ -284,10 +286,9 @@ pub struct GlesRenderer {
     debug_flags: DebugFlags,
 
     // internals
-    egl: EGLContext,
+    context: GlesContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
     egl_reader: Option<EGLBufferReader>,
-    gl: ffi::Gles2,
 
     // optionals
     gl_version: GlVersion,
@@ -357,10 +358,10 @@ impl fmt::Debug for GlesRenderer {
             .field("buffers", &self.buffers)
             .field("extensions", &self.extensions)
             .field("capabilities", &self.capabilities)
+            .field("context", &self.context)
             .field("tex_program", &self.tex_program)
             .field("solid_program", &self.solid_program)
             .field("dmabuf_cache", &self.dmabuf_cache)
-            .field("egl", &self.egl)
             .field("gl_version", &self.gl_version)
             // ffi::Gles does not implement Debug
             .field("vbos", &self.vbos)
@@ -495,8 +496,6 @@ impl GlesRenderer {
         let span = info_span!(parent: &context.span, "renderer_gles2");
         let _guard = span.enter();
 
-        context.make_current()?;
-
         let supported_capabilities = Self::supported_capabilities(&context)?;
         let requested_capabilities = capabilities.into_iter().collect::<Vec<_>>();
 
@@ -521,8 +520,10 @@ impl GlesRenderer {
             return Err(err);
         };
 
-        let (gl, gl_version, exts, capabilities, gl_debug_span) = {
-            let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
+        let mut context = GlesContext::new(context);
+        let gl = context.make_current()?;
+
+        let (gl_version, exts, capabilities, gl_debug_span) = {
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
                 return Err(GlesError::GLFunctionLoaderError);
@@ -549,7 +550,7 @@ impl GlesRenderer {
             );
             info!("Supported GL Extensions: {:?}", exts);
 
-            let gl_version = version::GlVersion::try_from(&gl).unwrap_or_else(|_| {
+            let gl_version = version::GlVersion::try_from(&*gl).unwrap_or_else(|_| {
                 warn!("Failed to detect GLES version, defaulting to 2.0");
                 version::GLES_2_0
             });
@@ -576,7 +577,7 @@ impl GlesRenderer {
                 None
             };
 
-            (gl, gl_version, exts, requested_capabilities, gl_debug_span)
+            (gl_version, exts, requested_capabilities, gl_debug_span)
         };
 
         let (tx, rx) = channel();
@@ -608,15 +609,10 @@ impl GlesRenderer {
         );
         gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
 
-        context
-            .user_data()
-            .insert_if_missing_threadsafe(ContextId::<GlesTexture>::new);
-
         drop(_guard);
 
         let renderer = GlesRenderer {
-            gl,
-            egl: context,
+            context,
             #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
             egl_reader: None,
 
@@ -644,34 +640,32 @@ impl GlesRenderer {
             span,
             gl_debug_span,
         };
-        renderer.egl.unbind()?;
+        renderer.context.egl().unbind()?;
         Ok(renderer)
     }
 
     fn bind_texture<'a>(&mut self, texture: &'a GlesTexture) -> Result<GlesTarget<'a>, GlesError> {
-        unsafe {
-            self.egl.make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let bind = || {
             let mut sync_lock = texture.0.sync.write().unwrap();
             let mut fbo = 0;
             unsafe {
-                sync_lock.wait_for_all(&self.gl);
-                self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                self.gl.FramebufferTexture2D(
+                sync_lock.wait_for_all(&gl);
+                gl.GenFramebuffers(1, &mut fbo as *mut _);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                gl.FramebufferTexture2D(
                     ffi::FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::TEXTURE_2D,
                     texture.0.texture,
                     0,
                 );
-                let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                let status = gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
                 if status != ffi::FRAMEBUFFER_COMPLETE {
-                    self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    gl.DeleteFramebuffers(1, &mut fbo as *mut _);
                     return Err(GlesError::FramebufferBindingError);
                 }
             }
@@ -694,11 +688,11 @@ impl GlesRenderer {
     #[profiling::function]
     fn unbind(&mut self) -> Result<(), GlesError> {
         unsafe {
-            self.egl.make_current()?;
+            self.context.egl().make_current()?;
         }
-        unsafe { self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0) };
+        unsafe { self.context.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0) };
         self.cleanup();
-        self.egl.unbind()?;
+        self.context.egl().unbind()?;
         Ok(())
     }
 
@@ -712,9 +706,9 @@ impl GlesRenderer {
             if self.buffers[i].dmabuf.is_gone() {
                 let old = self.buffers.remove(i);
                 unsafe {
-                    self.gl.DeleteFramebuffers(1, &old.fbo as *const _);
-                    self.gl.DeleteRenderbuffers(1, &old.rbo as *const _);
-                    ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), old.image);
+                    self.context.gl.DeleteFramebuffers(1, &old.fbo as *const _);
+                    self.context.gl.DeleteRenderbuffers(1, &old.rbo as *const _);
+                    ffi_egl::DestroyImageKHR(**self.context.egl().display().get_display_handle(), old.image);
                 }
             } else {
                 i += 1;
@@ -723,30 +717,30 @@ impl GlesRenderer {
         for resource in self.destruction_callback.try_iter() {
             match resource {
                 CleanupResource::Texture(texture) => unsafe {
-                    self.gl.DeleteTextures(1, &texture);
+                    self.context.gl.DeleteTextures(1, &texture);
                 },
                 CleanupResource::EGLImage(image) => unsafe {
-                    ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
+                    ffi_egl::DestroyImageKHR(**self.context.egl().display().get_display_handle(), image);
                 },
                 CleanupResource::FramebufferObject(fbo) => unsafe {
-                    self.gl.DeleteFramebuffers(1, &fbo);
+                    self.context.gl.DeleteFramebuffers(1, &fbo);
                 },
                 CleanupResource::RenderbufferObject(rbo) => unsafe {
-                    self.gl.DeleteRenderbuffers(1, &rbo);
+                    self.context.gl.DeleteRenderbuffers(1, &rbo);
                 },
                 CleanupResource::Mapping(pbo, mapping) => unsafe {
                     if !mapping.is_null() {
-                        self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
-                        self.gl.UnmapBuffer(ffi::PIXEL_PACK_BUFFER);
-                        self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+                        self.context.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
+                        self.context.gl.UnmapBuffer(ffi::PIXEL_PACK_BUFFER);
+                        self.context.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
                     }
-                    self.gl.DeleteBuffers(1, &pbo);
+                    self.context.gl.DeleteBuffers(1, &pbo);
                 },
                 CleanupResource::Program(program) => unsafe {
-                    self.gl.DeleteProgram(program);
+                    self.context.gl.DeleteProgram(program);
                 },
                 CleanupResource::Sync(sync) => unsafe {
-                    self.gl.DeleteSync(sync);
+                    self.context.gl.DeleteSync(sync);
                 },
             }
         }
@@ -818,11 +812,9 @@ impl ImportMemWl for GlesRenderer {
 
             let mut upload_full = false;
 
-            unsafe {
-                self.egl.make_current()?;
-            }
+            let gl = unsafe { self.context.make_current()? };
 
-            let id = self.context_id();
+            let id = gl.context_id();
             let texture = GlesTexture(
                 surface_lock
                     .as_ref()
@@ -830,7 +822,7 @@ impl ImportMemWl for GlesRenderer {
                     .filter(|texture| texture.size == (width, height).into())
                     .unwrap_or_else(|| {
                         let mut tex = 0;
-                        unsafe { self.gl.GenTextures(1, &mut tex) };
+                        unsafe { gl.GenTextures(1, &mut tex) };
                         // new texture, upload in full
                         upload_full = true;
                         let new = Arc::new(GlesTextureInternal {
@@ -853,18 +845,15 @@ impl ImportMemWl for GlesRenderer {
 
             let mut sync_lock = texture.0.sync.write().unwrap();
             unsafe {
-                sync_lock.wait_for_all(&self.gl);
-                self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
-                self.gl
-                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-                self.gl
-                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-                self.gl
-                    .PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize as i32);
+                sync_lock.wait_for_all(&*gl);
+                gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+                gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize as i32);
 
                 if upload_full || damage.is_empty() {
                     trace!("Uploading shm texture");
-                    self.gl.TexImage2D(
+                    gl.TexImage2D(
                         ffi::TEXTURE_2D,
                         0,
                         internal_format as i32,
@@ -878,9 +867,9 @@ impl ImportMemWl for GlesRenderer {
                 } else {
                     for region in damage.iter() {
                         trace!("Uploading partial shm texture");
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
-                        self.gl.TexSubImage2D(
+                        gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
+                        gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
+                        gl.TexSubImage2D(
                             ffi::TEXTURE_2D,
                             0,
                             region.loc.x,
@@ -891,18 +880,18 @@ impl ImportMemWl for GlesRenderer {
                             type_,
                             ptr.offset(offset as isize) as *const _,
                         );
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+                        gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
+                        gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
                     }
                 }
 
-                self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
-                self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+                gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
+                gl.BindTexture(ffi::TEXTURE_2D, 0);
 
                 if self.capabilities.contains(&Capability::Fencing) {
-                    sync_lock.update_write(&self.gl);
-                } else if self.egl.is_shared() {
-                    self.gl.Finish();
+                    sync_lock.update_write(&*gl);
+                } else if gl.egl().is_shared() {
+                    gl.Finish();
                 }
             }
             std::mem::drop(sync_lock);
@@ -968,17 +957,16 @@ impl ImportMem for GlesRenderer {
             };
         }
 
+        let gl = unsafe { self.context.make_current()? };
+
         let texture = GlesTexture(Arc::new({
             let mut tex = 0;
             unsafe {
-                self.egl.make_current()?;
-                self.gl.GenTextures(1, &mut tex);
-                self.gl.BindTexture(ffi::TEXTURE_2D, tex);
-                self.gl
-                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-                self.gl
-                    .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-                self.gl.TexImage2D(
+                gl.GenTextures(1, &mut tex);
+                gl.BindTexture(ffi::TEXTURE_2D, tex);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+                gl.TexImage2D(
                     ffi::TEXTURE_2D,
                     0,
                     internal as i32,
@@ -989,15 +977,15 @@ impl ImportMem for GlesRenderer {
                     layout,
                     data.as_ptr() as *const _,
                 );
-                self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+                gl.BindTexture(ffi::TEXTURE_2D, 0);
             }
 
             let mut sync = RwLock::<TextureSync>::default();
             if self.capabilities.contains(&Capability::Fencing) {
-                sync.get_mut().unwrap().update_write(&self.gl);
-            } else if self.egl.is_shared() {
+                sync.get_mut().unwrap().update_write(&*gl);
+            } else if gl.egl().is_shared() {
                 unsafe {
-                    self.gl.Finish();
+                    gl.Finish();
                 }
             };
 
@@ -1044,17 +1032,15 @@ impl ImportMem for GlesRenderer {
 
         let mut sync_lock = texture.0.sync.write().unwrap();
         unsafe {
-            self.egl.make_current()?;
-            sync_lock.wait_for_all(&self.gl);
-            self.gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
-            self.gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-            self.gl
-                .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-            self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, texture.0.size.w);
-            self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
-            self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
-            self.gl.TexSubImage2D(
+            let gl = self.context.make_current()?;
+            sync_lock.wait_for_all(&*gl);
+            gl.BindTexture(ffi::TEXTURE_2D, texture.0.texture);
+            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
+            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+            gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, texture.0.size.w);
+            gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
+            gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
+            gl.TexSubImage2D(
                 ffi::TEXTURE_2D,
                 0,
                 region.loc.x,
@@ -1065,15 +1051,15 @@ impl ImportMem for GlesRenderer {
                 type_,
                 data.as_ptr() as *const _,
             );
-            self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
-            self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
-            self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
-            self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+            gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
+            gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
+            gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
+            gl.BindTexture(ffi::TEXTURE_2D, 0);
 
             if self.capabilities.contains(&Capability::Fencing) {
-                sync_lock.update_write(&self.gl);
-            } else if self.egl.is_shared() {
-                self.gl.Finish();
+                sync_lock.update_write(&*gl);
+            } else if gl.egl().is_shared() {
+                gl.Finish();
             }
         }
 
@@ -1099,7 +1085,7 @@ impl ImportEgl for GlesRenderer {
         &mut self,
         display: &wayland_server::DisplayHandle,
     ) -> Result<(), crate::backend::egl::Error> {
-        self.egl_reader = Some(self.egl.display().bind_wl_display(display)?);
+        self.egl_reader = Some(self.context.egl().display().bind_wl_display(display)?);
         Ok(())
     }
 
@@ -1177,9 +1163,14 @@ impl ImportDma for GlesRenderer {
         }
 
         self.existing_dmabuf_texture(buffer)?.map(Ok).unwrap_or_else(|| {
-            let is_external = !self.egl.dmabuf_render_formats().contains(&buffer.format());
+            let is_external = !self
+                .context
+                .egl()
+                .dmabuf_render_formats()
+                .contains(&buffer.format());
             let image = self
-                .egl
+                .context
+                .egl()
                 .display()
                 .create_image_from_dmabuf(buffer)
                 .map_err(GlesError::BindBufferEGLError)?;
@@ -1206,11 +1197,11 @@ impl ImportDma for GlesRenderer {
     }
 
     fn dmabuf_formats(&self) -> FormatSet {
-        self.egl.dmabuf_texture_formats().clone()
+        self.context.egl().dmabuf_texture_formats().clone()
     }
 
     fn has_dmabuf_format(&self, format: Format) -> bool {
-        self.egl.dmabuf_texture_formats().contains(&format)
+        self.context.egl().dmabuf_texture_formats().contains(&format)
     }
 }
 
@@ -1219,8 +1210,8 @@ impl ImportDmaWl for GlesRenderer {}
 
 impl GlesRenderer {
     #[profiling::function]
-    fn existing_dmabuf_texture(&self, buffer: &Dmabuf) -> Result<Option<GlesTexture>, GlesError> {
-        let Some(texture) = self.dmabuf_cache.get(&buffer.weak()) else {
+    fn existing_dmabuf_texture(&mut self, buffer: &Dmabuf) -> Result<Option<GlesTexture>, GlesError> {
+        let Some(texture) = self.dmabuf_cache.get(&buffer.weak()).cloned() else {
             return Ok(None);
         };
 
@@ -1232,22 +1223,20 @@ impl GlesRenderer {
             let tex = Some(texture.0.texture);
             self.import_egl_image(egl_images[0], texture.0.is_external, tex)?;
         }
-        Ok(Some(texture.clone()))
+        Ok(Some(texture))
     }
 
     #[profiling::function]
     fn import_egl_image(
-        &self,
+        &mut self,
         image: EGLImage,
         is_external: bool,
         tex: Option<u32>,
     ) -> Result<u32, GlesError> {
-        unsafe {
-            self.egl.make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
         let tex = tex.unwrap_or_else(|| unsafe {
             let mut tex = 0;
-            self.gl.GenTextures(1, &mut tex);
+            gl.GenTextures(1, &mut tex);
             tex
         });
         let target = if is_external {
@@ -1256,9 +1245,9 @@ impl GlesRenderer {
             ffi::TEXTURE_2D
         };
         unsafe {
-            self.gl.BindTexture(target, tex);
-            self.gl.EGLImageTargetTexture2DOES(target, image);
-            self.gl.BindTexture(target, 0);
+            gl.BindTexture(target, tex);
+            gl.EGLImageTargetTexture2DOES(target, image);
+            gl.BindTexture(target, 0);
         }
 
         Ok(tex)
@@ -1276,27 +1265,29 @@ impl ExportMem for GlesRenderer {
         region: Rectangle<i32, BufferCoord>,
         fourcc: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        target.0.make_current(&self.gl, &self.egl)?;
+        target.0.make_current(&self.context.gl, &self.context.egl())?;
 
         let (_, has_alpha) = target.0.format().ok_or(GlesError::UnknownPixelFormat)?;
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
 
         let mut pbo = 0;
         let err = unsafe {
-            self.gl.GetError(); // clear errors
-            self.gl.GenBuffers(1, &mut pbo);
-            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
+            self.context.gl.GetError(); // clear errors
+            self.context.gl.GenBuffers(1, &mut pbo);
+            self.context.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
             let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
             let size = (region.size.w * region.size.h * bpp as i32) as isize;
-            self.gl
+            self.context
+                .gl
                 .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
-            self.gl
+            self.context
+                .gl
                 .ReadBuffer(if matches!(target.0, GlesTargetInternal::Surface { .. }) {
                     ffi::BACK
                 } else {
                     ffi::COLOR_ATTACHMENT0
                 });
-            self.gl.ReadPixels(
+            self.context.gl.ReadPixels(
                 region.loc.x,
                 region.loc.y,
                 region.size.w,
@@ -1305,9 +1296,9 @@ impl ExportMem for GlesRenderer {
                 layout,
                 ptr::null_mut(),
             );
-            self.gl.ReadBuffer(ffi::NONE);
-            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
-            self.gl.GetError()
+            self.context.gl.ReadBuffer(ffi::NONE);
+            self.context.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+            self.context.gl.GetError()
         };
 
         match err {
@@ -1340,23 +1331,23 @@ impl ExportMem for GlesRenderer {
     ) -> Result<Self::TextureMapping, Self::Error> {
         let mut pbo = 0;
         let target = self.bind_texture(texture)?;
-        target.0.make_current(&self.gl, &self.egl)?;
+        target.0.make_current(&self.context.gl, &self.context.egl())?;
 
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
         let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
 
         let err = unsafe {
-            self.gl.GetError(); // clear errors
-            self.gl.GenBuffers(1, &mut pbo);
-            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
-            self.gl.BufferData(
+            self.context.gl.GetError(); // clear errors
+            self.context.gl.GenBuffers(1, &mut pbo);
+            self.context.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
+            self.context.gl.BufferData(
                 ffi::PIXEL_PACK_BUFFER,
                 (region.size.w * region.size.h * bpp as i32) as isize,
                 ptr::null(),
                 ffi::STREAM_READ,
             );
-            self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
-            self.gl.ReadPixels(
+            self.context.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
+            self.context.gl.ReadPixels(
                 region.loc.x,
                 region.loc.y,
                 region.size.w,
@@ -1365,9 +1356,9 @@ impl ExportMem for GlesRenderer {
                 layout,
                 ptr::null_mut(),
             );
-            self.gl.ReadBuffer(ffi::NONE);
-            self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
-            self.gl.GetError()
+            self.context.gl.ReadBuffer(ffi::NONE);
+            self.context.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+            self.context.gl.GetError()
         };
 
         match err {
@@ -1391,9 +1382,7 @@ impl ExportMem for GlesRenderer {
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
     ) -> Result<&'a [u8], Self::Error> {
-        unsafe {
-            self.egl.make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let size = texture_mapping.size();
         let len = size.w * size.h * 4;
@@ -1401,11 +1390,9 @@ impl ExportMem for GlesRenderer {
         let mapping_ptr = texture_mapping.mapping.load(Ordering::SeqCst);
         let ptr = if mapping_ptr.is_null() {
             unsafe {
-                self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, texture_mapping.pbo);
-                let ptr = self
-                    .gl
-                    .MapBufferRange(ffi::PIXEL_PACK_BUFFER, 0, len as isize, ffi::MAP_READ_BIT);
-                self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+                gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, texture_mapping.pbo);
+                let ptr = gl.MapBufferRange(ffi::PIXEL_PACK_BUFFER, 0, len as isize, ffi::MAP_READ_BIT);
+                gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
 
                 if ptr.is_null() {
                     return Err(GlesError::MappingError);
@@ -1443,41 +1430,38 @@ impl Bind<Dmabuf> for GlesRenderer {
                 })
                 .map(|buf| Ok(buf.clone()))
                 .unwrap_or_else(|| {
-                    unsafe {
-                        self.egl.make_current()?;
-                    }
+                    let gl = unsafe { self.context.make_current()? };
 
                     trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
-                    let image = self
-                        .egl
+                    let image = gl
+                        .egl()
                         .display()
                         .create_image_from_dmabuf(dmabuf)
                         .map_err(GlesError::BindBufferEGLError)?;
 
                     unsafe {
                         let mut rbo = 0;
-                        self.gl.GenRenderbuffers(1, &mut rbo as *mut _);
-                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-                        self.gl
-                            .EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
-                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+                        gl.GenRenderbuffers(1, &mut rbo as *mut _);
+                        gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+                        gl.EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
+                        gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
                         let mut fbo = 0;
-                        self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                        self.gl.FramebufferRenderbuffer(
+                        gl.GenFramebuffers(1, &mut fbo as *mut _);
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                        gl.FramebufferRenderbuffer(
                             ffi::FRAMEBUFFER,
                             ffi::COLOR_ATTACHMENT0,
                             ffi::RENDERBUFFER,
                             rbo,
                         );
-                        let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                        let status = gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
                         if status != ffi::FRAMEBUFFER_COMPLETE {
-                            self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                            self.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
-                            ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
+                            gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                            gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
+                            ffi_egl::DestroyImageKHR(**gl.egl().display().get_display_handle(), image);
                             return Err(GlesError::FramebufferBindingError);
                         }
                         let buf = GlesBuffer {
@@ -1504,7 +1488,7 @@ impl Bind<Dmabuf> for GlesRenderer {
     }
 
     fn supported_formats(&self) -> Option<FormatSet> {
-        Some(self.egl.display().dmabuf_render_formats().clone())
+        Some(self.context.egl().display().dmabuf_render_formats().clone())
     }
 }
 
@@ -1516,28 +1500,26 @@ impl Bind<GlesTexture> for GlesRenderer {
 
 impl Bind<GlesRenderbuffer> for GlesRenderer {
     fn bind<'a>(&mut self, renderbuffer: &'a mut GlesRenderbuffer) -> Result<GlesTarget<'a>, GlesError> {
-        unsafe {
-            self.egl.make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let bind = |renderbuffer: &'a mut GlesRenderbuffer| {
             let mut fbo = 0;
             unsafe {
-                self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                self.gl.BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
-                self.gl.FramebufferRenderbuffer(
+                gl.GenFramebuffers(1, &mut fbo as *mut _);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                gl.BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
+                gl.FramebufferRenderbuffer(
                     ffi::FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::RENDERBUFFER,
                     renderbuffer.0.rbo,
                 );
-                let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+                let status = gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
                 if status != ffi::FRAMEBUFFER_COMPLETE {
-                    self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    gl.DeleteFramebuffers(1, &mut fbo as *mut _);
                     return Err(GlesError::FramebufferBindingError);
                 }
             }
@@ -1574,11 +1556,11 @@ impl Offscreen<GlesTexture> for GlesRenderer {
         }
 
         let tex = unsafe {
-            self.egl.make_current()?;
+            let gl = self.context.make_current()?;
             let mut tex = 0;
-            self.gl.GenTextures(1, &mut tex);
-            self.gl.BindTexture(ffi::TEXTURE_2D, tex);
-            self.gl.TexImage2D(
+            gl.GenTextures(1, &mut tex);
+            gl.BindTexture(ffi::TEXTURE_2D, tex);
+            gl.TexImage2D(
                 ffi::TEXTURE_2D,
                 0,
                 internal as i32,
@@ -1616,14 +1598,13 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
         }
 
         unsafe {
-            self.egl.make_current()?;
+            let gl = self.context.make_current()?;
 
             let mut rbo = 0;
-            self.gl.GenRenderbuffers(1, &mut rbo);
-            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-            self.gl
-                .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
-            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+            gl.GenRenderbuffers(1, &mut rbo);
+            gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+            gl.RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
+            gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
             Ok(GlesRenderbuffer(Rc::new(GlesRenderbufferInternal {
                 rbo,
@@ -1647,7 +1628,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         let res = self.renderer.blit(self.target, to, src, dst, filter);
         self.target
             .0
-            .make_current(&self.renderer.gl, &self.renderer.egl)?;
+            .make_current(&self.renderer.context.gl, &self.renderer.context.egl())?;
         res
     }
 
@@ -1661,7 +1642,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         let res = self.renderer.blit(from, self.target, src, dst, filter);
         self.target
             .0
-            .make_current(&self.renderer.gl, &self.renderer.egl)?;
+            .make_current(&self.renderer.context.gl, &self.renderer.context.egl())?;
         res
     }
 }
@@ -1682,58 +1663,54 @@ impl Blit for GlesRenderer {
             return Err(GlesError::GLVersionNotSupported(version::GLES_3_0));
         }
 
-        match (&src_target.0, &dst_target.0) {
+        let gl = match (&src_target.0, &dst_target.0) {
             (
                 GlesTargetInternal::Surface { surface: src, .. },
                 GlesTargetInternal::Surface { surface: dst, .. },
-            ) => unsafe {
-                self.egl.make_current_with_draw_and_read_surface(dst, src)?;
-            },
+            ) => unsafe { self.context.make_current_with_draw_and_read_surface(dst, src)? },
             (GlesTargetInternal::Surface { surface: src, .. }, _) => unsafe {
-                self.egl.make_current_with_surface(src)?;
+                self.context.make_current_with_surface(src)?
             },
             (_, GlesTargetInternal::Surface { surface: dst, .. }) => unsafe {
-                self.egl.make_current_with_surface(dst)?;
+                self.context.make_current_with_surface(dst)?
             },
-            (_, _) => unsafe {
-                self.egl.make_current()?;
-            },
-        }
+            (_, _) => unsafe { self.context.make_current()? },
+        };
 
         match &src_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.fbo)
+                gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.fbo)
             },
             GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
             GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
         match &dst_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.fbo)
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.fbo)
             },
             GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
             GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
 
-        let status = unsafe { self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
+        let status = unsafe { gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
         if status != ffi::FRAMEBUFFER_COMPLETE {
             let _ = self.unbind();
             return Err(GlesError::FramebufferBindingError);
         }
 
         let errno = unsafe {
-            while self.gl.GetError() != ffi::NO_ERROR {} // clear flag before
-            self.gl.BlitFramebuffer(
+            while gl.GetError() != ffi::NO_ERROR {} // clear flag before
+            gl.BlitFramebuffer(
                 src.loc.x,
                 src.loc.y,
                 src.loc.x + src.size.w,
@@ -1748,7 +1725,7 @@ impl Blit for GlesRenderer {
                     TextureFilter::Nearest => ffi::NEAREST,
                 },
             );
-            self.gl.GetError()
+            gl.GetError()
         };
 
         if errno == ffi::INVALID_OPERATION {
@@ -1763,19 +1740,19 @@ impl Drop for GlesRenderer {
     fn drop(&mut self) {
         let _guard = self.span.enter();
         unsafe {
-            if self.egl.make_current().is_ok() {
-                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                self.gl.DeleteProgram(self.solid_program.program);
-                self.gl.DeleteBuffers(self.vbos.len() as i32, self.vbos.as_ptr());
+            if let Ok(gl) = self.context.make_current() {
+                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                gl.DeleteProgram(self.solid_program.program);
+                gl.DeleteBuffers(self.vbos.len() as i32, self.vbos.as_ptr());
 
                 if self.extensions.iter().any(|ext| ext == "GL_KHR_debug") {
-                    self.gl.Disable(ffi::DEBUG_OUTPUT);
-                    self.gl.DebugMessageCallback(None, ptr::null());
+                    gl.Disable(ffi::DEBUG_OUTPUT);
+                    gl.DebugMessageCallback(None, ptr::null());
                 }
 
                 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
                 let _ = self.egl_reader.take();
-                let _ = self.egl.unbind();
+                let _ = self.context.egl().unbind();
             }
 
             if let Some(gl_debug_ptr) = self.gl_debug_span.take() {
@@ -1794,7 +1771,7 @@ impl GlesRenderer {
     /// To make sure a certain modification does not interfere with
     /// the renderer's behaviour, check the source.
     pub fn egl_context(&self) -> &EGLContext {
-        &self.egl
+        self.context.egl()
     }
 
     /// Run custom code in the GL context owned by this renderer.
@@ -1810,10 +1787,8 @@ impl GlesRenderer {
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
-        unsafe {
-            self.egl.make_current()?;
-        }
-        Ok(func(&self.gl))
+        let gl = unsafe { self.context.make_current()? };
+        Ok(func(&*gl))
     }
 
     /// Compile a custom pixel shader for rendering with [`GlesFrame::render_pixel_shader_to`].
@@ -1842,14 +1817,12 @@ impl GlesRenderer {
         src: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesPixelProgram, GlesError> {
-        unsafe {
-            self.egl.make_current()?;
-        }
+        let gl = unsafe { self.context.make_current()? };
 
         let shader = format!("#version 100\n{}", src.as_ref());
-        let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &shader)? };
+        let program = unsafe { link_program(&gl, shaders::VERTEX_SHADER, &shader)? };
         let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
-        let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &debug_shader)? };
+        let debug_program = unsafe { link_program(&gl, shaders::VERTEX_SHADER, &debug_shader)? };
 
         let vert = c"vert";
         let vert_position = c"vert_position";
@@ -1863,31 +1836,22 @@ impl GlesRenderer {
             Ok(GlesPixelProgram(Arc::new(GlesPixelProgramInner {
                 normal: GlesPixelProgramInternal {
                     program,
-                    uniform_matrix: self
-                        .gl
+                    uniform_matrix: gl
                         .GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_tex_matrix: self
-                        .gl
+                    uniform_tex_matrix: gl
                         .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_alpha: self
-                        .gl
+                    uniform_alpha: gl
                         .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-                    uniform_size: self
-                        .gl
-                        .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
-                    attrib_vert: self
-                        .gl
-                        .GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-                    attrib_position: self
-                        .gl
+                    uniform_size: gl.GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
+                    attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
+                    attrib_position: gl
                         .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
                     additional_uniforms: additional_uniforms
                         .iter()
                         .map(|uniform| {
                             let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                            let location = self
-                                .gl
-                                .GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
+                            let location =
+                                gl.GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
                             (
                                 uniform.name.clone().into_owned(),
                                 UniformDesc {
@@ -1900,22 +1864,17 @@ impl GlesRenderer {
                 },
                 debug: GlesPixelProgramInternal {
                     program: debug_program,
-                    uniform_matrix: self
-                        .gl
+                    uniform_matrix: gl
                         .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_tex_matrix: self
-                        .gl
+                    uniform_tex_matrix: gl
                         .GetUniformLocation(debug_program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_alpha: self
-                        .gl
+                    uniform_alpha: gl
                         .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
-                    uniform_size: self
-                        .gl
+                    uniform_size: gl
                         .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
-                    attrib_vert: self
-                        .gl
+                    attrib_vert: gl
                         .GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
-                    attrib_position: self.gl.GetAttribLocation(
+                    attrib_position: gl.GetAttribLocation(
                         debug_program,
                         vert_position.as_ptr() as *const ffi::types::GLchar,
                     ),
@@ -1923,7 +1882,7 @@ impl GlesRenderer {
                         .iter()
                         .map(|uniform| {
                             let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                            let location = self.gl.GetUniformLocation(
+                            let location = gl.GetUniformLocation(
                                 debug_program,
                                 name.as_ptr() as *const ffi::types::GLchar,
                             );
@@ -1938,8 +1897,7 @@ impl GlesRenderer {
                         .collect(),
                 },
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
-                uniform_tint: self
-                    .gl
+                uniform_tint: gl
                     .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
             })))
         }
@@ -1972,12 +1930,12 @@ impl GlesRenderer {
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesTexProgram, GlesError> {
         unsafe {
-            self.egl.make_current()?;
+            self.context.egl().make_current()?;
         }
 
         unsafe {
             texture_program(
-                &self.gl,
+                &self.context.gl,
                 shader.as_ref(),
                 additional_uniforms,
                 self.destruction_callback_sender.clone(),
@@ -2000,7 +1958,7 @@ impl GlesFrame<'_, '_> {
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
-        Ok(func(&self.renderer.gl))
+        Ok(func(&self.renderer.context.gl))
     }
 }
 
@@ -2016,11 +1974,7 @@ impl RendererSuper for GlesRenderer {
 
 impl Renderer for GlesRenderer {
     fn context_id(&self) -> ContextId<GlesTexture> {
-        self.egl
-            .user_data()
-            .get::<ContextId<GlesTexture>>()
-            .unwrap()
-            .clone()
+        self.context.context_id()
     }
 
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
@@ -2050,16 +2004,16 @@ impl Renderer for GlesRenderer {
     where
         'buffer: 'frame,
     {
-        target.0.make_current(&self.gl, &self.egl)?;
+        target.0.make_current(&self.context.gl, &self.context.egl())?;
 
         unsafe {
-            self.gl.Viewport(0, 0, output_size.w, output_size.h);
+            self.context.gl.Viewport(0, 0, output_size.w, output_size.h);
 
-            self.gl.Scissor(0, 0, output_size.w, output_size.h);
-            self.gl.Enable(ffi::SCISSOR_TEST);
+            self.context.gl.Scissor(0, 0, output_size.w, output_size.h);
+            self.context.gl.Enable(ffi::SCISSOR_TEST);
 
-            self.gl.Enable(ffi::BLEND);
-            self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+            self.context.gl.Enable(ffi::BLEND);
+            self.context.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
 
         // Handle the width/height swap when the output is rotated by 90°/270°.
@@ -2107,7 +2061,7 @@ impl Renderer for GlesRenderer {
     #[profiling::function]
     fn wait(&mut self, sync: &super::sync::SyncPoint) -> Result<(), Self::Error> {
         unsafe {
-            self.egl.make_current()?;
+            self.context.egl().make_current()?;
         }
 
         let display = self.egl_context().display();
@@ -2142,7 +2096,7 @@ impl Renderer for GlesRenderer {
     #[profiling::function]
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
         unsafe {
-            self.egl.make_current()?;
+            self.context.egl().make_current()?;
         }
         self.cleanup();
         Ok(())
@@ -2220,14 +2174,17 @@ impl Frame for GlesFrame<'_, '_> {
         }
 
         unsafe {
-            self.renderer.gl.Disable(ffi::BLEND);
+            self.renderer.context.gl.Disable(ffi::BLEND);
         }
 
         let res = self.draw_solid(Rectangle::from_size(self.size), at, color);
 
         unsafe {
-            self.renderer.gl.Enable(ffi::BLEND);
-            self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+            self.renderer.context.gl.Enable(ffi::BLEND);
+            self.renderer
+                .context
+                .gl
+                .BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
         res
     }
@@ -2248,7 +2205,7 @@ impl Frame for GlesFrame<'_, '_> {
 
         if is_opaque {
             unsafe {
-                self.renderer.gl.Disable(ffi::BLEND);
+                self.renderer.context.gl.Disable(ffi::BLEND);
             }
         }
 
@@ -2256,8 +2213,11 @@ impl Frame for GlesFrame<'_, '_> {
 
         if is_opaque {
             unsafe {
-                self.renderer.gl.Enable(ffi::BLEND);
-                self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+                self.renderer.context.gl.Enable(ffi::BLEND);
+                self.renderer
+                    .context
+                    .gl
+                    .BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
             }
         }
 
@@ -2314,12 +2274,12 @@ impl GlesFrame<'_, '_> {
         }
 
         unsafe {
-            self.renderer.gl.Disable(ffi::SCISSOR_TEST);
-            self.renderer.gl.Disable(ffi::BLEND);
+            self.renderer.context.gl.Disable(ffi::SCISSOR_TEST);
+            self.renderer.context.gl.Disable(ffi::BLEND);
         }
 
         if let GlesTargetInternal::Texture { sync_lock, .. } = &mut self.target.0 {
-            sync_lock.update_write(&self.renderer.gl);
+            sync_lock.update_write(&self.renderer.context.gl);
         }
 
         // delayed destruction until the next frame rendering.
@@ -2327,9 +2287,9 @@ impl GlesFrame<'_, '_> {
 
         // if we support egl fences we should use it
         if self.renderer.capabilities.contains(&Capability::ExportFence) {
-            if let Ok(fence) = EGLFence::create(self.renderer.egl.display()) {
+            if let Ok(fence) = EGLFence::create(self.renderer.context.egl().display()) {
                 unsafe {
-                    self.renderer.gl.Flush();
+                    self.renderer.context.gl.Flush();
                 }
                 return Ok(SyncPoint::from(fence));
             }
@@ -2337,7 +2297,7 @@ impl GlesFrame<'_, '_> {
 
         // as a last option we force finish, this is unlikely to happen
         unsafe {
-            self.renderer.gl.Finish();
+            self.renderer.context.gl.Finish();
         }
         Ok(SyncPoint::signaled())
     }
@@ -2418,7 +2378,7 @@ impl GlesFrame<'_, '_> {
             }));
         }
 
-        let gl = &self.renderer.gl;
+        let gl = &self.renderer.context.gl;
         unsafe {
             gl.UseProgram(self.renderer.solid_program.program);
             gl.Uniform4f(
@@ -2583,14 +2543,17 @@ impl GlesFrame<'_, '_> {
 
         let opaque_render_res = if !opaque_damage.is_empty() {
             unsafe {
-                self.renderer.gl.Disable(ffi::BLEND);
+                self.renderer.context.gl.Disable(ffi::BLEND);
             }
 
             let res = render_texture(self, &opaque_damage);
 
             unsafe {
-                self.renderer.gl.Enable(ffi::BLEND);
-                self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+                self.renderer.context.gl.Enable(ffi::BLEND);
+                self.renderer
+                    .context
+                    .gl
+                    .BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
             }
 
             res
@@ -2697,7 +2660,7 @@ impl GlesFrame<'_, '_> {
         };
 
         // render
-        let gl = &self.renderer.gl;
+        let gl = &self.renderer.context.gl;
         let sync_lock = tex.0.sync.read().unwrap();
         unsafe {
             sync_lock.wait_for_upload(gl);
@@ -2783,7 +2746,7 @@ impl GlesFrame<'_, '_> {
 
             if self.renderer.capabilities.contains(&Capability::Fencing) {
                 sync_lock.update_read(gl);
-            } else if self.renderer.egl.is_shared() {
+            } else if self.renderer.context.egl().is_shared() {
                 gl.Finish();
             };
         }
@@ -2868,7 +2831,7 @@ impl GlesFrame<'_, '_> {
         };
 
         // render
-        let gl = &self.renderer.gl;
+        let gl = &self.renderer.context.gl;
         unsafe {
             gl.UseProgram(program.program);
 
@@ -2949,7 +2912,7 @@ impl GlesFrame<'_, '_> {
     /// To make sure a certain modification does not interfere with
     /// the renderer's behaviour, check the source.
     pub fn egl_context(&self) -> &EGLContext {
-        self.renderer.egl_context()
+        self.renderer.context.egl()
     }
 
     /// Returns the supported [`Capabilities`](Capability) of the underlying renderer.
