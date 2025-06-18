@@ -72,6 +72,7 @@ pub struct BackgroundEffectState {
 }
 
 impl BackgroundEffectState {
+    /// Regiseter new [ExtBackgroundEffectV1] global
     pub fn new<D>(display: &DisplayHandle) -> BackgroundEffectState
     where
         D: GlobalDispatch<ExtBackgroundEffectManagerV1, ()>
@@ -83,6 +84,7 @@ impl BackgroundEffectState {
         BackgroundEffectState { global }
     }
 
+    /// Returns the [ExtBackgroundEffectV1] global id
     pub fn global(&self) -> GlobalId {
         self.global.clone()
     }

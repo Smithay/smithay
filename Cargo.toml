@@ -72,18 +72,18 @@ udev = { version = "0.9.0", optional = true }
 wayland-client = { version = "0.31.10", optional = true }
 wayland-cursor = { version = "0.31.10", optional = true }
 wayland-egl = { version = "0.32.7", optional = true }
-wayland-protocols = { git = "https://github.com/Smithay/wayland-rs", features = [
+wayland-protocols = { version = "0.32.8", features = [
     "unstable",
     "staging",
     "server",
 ], optional = true }
-wayland-protocols-wlr = { git = "https://github.com/Smithay/wayland-rs", features = [
+wayland-protocols-wlr = { version = "0.3.8", features = [
     "server",
 ], optional = true }
-wayland-protocols-misc = { git = "https://github.com/Smithay/wayland-rs", features = [
+wayland-protocols-misc = { version = "0.3.8", features = [
     "server",
 ], optional = true }
-wayland-server = { git = "https://github.com/Smithay/wayland-rs", optional = true }
+wayland-server = { version = "0.31.9", optional = true }
 wayland-sys = { version = "0.31.6", optional = true }
 wayland-backend = { version = "0.3.10", optional = true }
 winit = { version = "0.30.0", default-features = false, features = [
@@ -236,3 +236,20 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch.crates-io]
+wayland-client = { git = "https://github.com/Smithay/wayland-rs", optional = true }
+wayland-protocols = { git = "https://github.com/Smithay/wayland-rs", features = [
+    "unstable",
+    "staging",
+    "server",
+], optional = true }
+wayland-protocols-wlr = { git = "https://github.com/Smithay/wayland-rs", features = [
+    "server",
+], optional = true }
+wayland-protocols-misc = { git = "https://github.com/Smithay/wayland-rs", features = [
+    "server",
+], optional = true }
+wayland-server = { git = "https://github.com/Smithay/wayland-rs", optional = true }
+wayland-sys = { git = "https://github.com/Smithay/wayland-rs", optional = true }
+wayland-backend = { git = "https://github.com/Smithay/wayland-rs", optional = true }

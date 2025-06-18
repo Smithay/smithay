@@ -51,6 +51,7 @@ where
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
+        tracing::info!("Received request: {:#?}", request);
         match request {
             ManagerRequest::GetBackgroundEffect { id, surface } => {
                 let already_taken = with_states(&surface, |states| {
@@ -94,6 +95,8 @@ where
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
+        tracing::info!("Received request: {:#?}", request);
+
         match request {
             SurfaceRequest::SetBlurRegion { region } => {
                 let Some(surface) = data.wl_surface() else {
