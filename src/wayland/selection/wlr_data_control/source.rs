@@ -1,26 +1,33 @@
+use std::cell::RefCell;
 use std::sync::Mutex;
 
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::{
     self, ZwlrDataControlSourceV1,
 };
 use wayland_server::backend::ClientId;
-use wayland_server::{Dispatch, DisplayHandle, Resource};
+use wayland_server::{Dispatch, DisplayHandle};
 
-use crate::utils::alive_tracker::AliveTracker;
-use crate::utils::IsAlive;
+use crate::input::Seat;
+use crate::wayland::selection::offer::OfferReplySource;
+use crate::wayland::selection::seat_data::SeatData;
+use crate::wayland::selection::source::SelectionSourceProvider;
+use crate::wayland::selection::SelectionTarget;
 
 use super::{DataControlHandler, DataControlState};
 
 #[doc(hidden)]
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct DataControlSourceUserData {
     pub(crate) inner: Mutex<SourceMetadata>,
-    alive_tracker: AliveTracker,
+    display_handle: DisplayHandle,
 }
 
 impl DataControlSourceUserData {
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub(crate) fn new(display_handle: DisplayHandle) -> Self {
+        Self {
+            inner: Default::default(),
+            display_handle,
+        }
     }
 }
 
@@ -57,19 +64,50 @@ where
     }
 
     fn destroyed(
-        _state: &mut D,
+        state: &mut D,
         _client: ClientId,
-        _resource: &ZwlrDataControlSourceV1,
+        source: &ZwlrDataControlSourceV1,
         data: &DataControlSourceUserData,
     ) {
-        data.alive_tracker.destroy_notify();
-    }
-}
+        // Remove the source from the used ones.
+        let seat = match state
+            .data_control_state()
+            .used_sources
+            .remove(source)
+            .as_ref()
+            .and_then(Seat::<D>::from_resource)
+        {
+            Some(seat) => seat,
+            None => return,
+        };
 
-impl IsAlive for ZwlrDataControlSourceV1 {
-    #[inline]
-    fn alive(&self) -> bool {
-        let data: &DataControlSourceUserData = self.data().unwrap();
-        data.alive_tracker.alive()
+        let mut seat_data = seat
+            .user_data()
+            .get::<RefCell<SeatData<D::SelectionUserData>>>()
+            .unwrap()
+            .borrow_mut();
+
+        for target in [SelectionTarget::Primary, SelectionTarget::Clipboard] {
+            let selection = match target {
+                SelectionTarget::Primary => seat_data.get_primary_selection(),
+                SelectionTarget::Clipboard => seat_data.get_clipboard_selection(),
+            };
+
+            match selection {
+                Some(OfferReplySource::Client(SelectionSourceProvider::WlrDataControl(set_source)))
+                    if set_source == source =>
+                {
+                    match target {
+                        SelectionTarget::Primary => {
+                            seat_data.set_primary_selection::<D>(&data.display_handle, None)
+                        }
+                        SelectionTarget::Clipboard => {
+                            seat_data.set_clipboard_selection::<D>(&data.display_handle, None)
+                        }
+                    }
+                }
+                _ => (),
+            };
+        }
     }
 }
