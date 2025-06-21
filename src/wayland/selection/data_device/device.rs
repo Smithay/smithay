@@ -67,6 +67,22 @@ where
                 icon,
                 serial,
             } => {
+                // Each source can only be used once.
+                if let Some(source) = source.as_ref() {
+                    if handler
+                        .data_device_state()
+                        .used_sources
+                        .insert(source.clone(), data.wl_seat.clone())
+                        .is_some()
+                    {
+                        resource.post_error(
+                            wl_data_device::Error::UsedSource,
+                            "selection source can be used only once.",
+                        );
+                        return;
+                    }
+                }
+
                 let serial = Serial::from(serial);
                 if let Some(pointer) = seat.get_pointer() {
                     if pointer.has_grab(serial) {
@@ -129,6 +145,23 @@ where
                         return;
                     }
                 };
+
+                // Each source can only be used once.
+                if let Some(source) = source.as_ref() {
+                    if handler
+                        .data_device_state()
+                        .used_sources
+                        .insert(source.clone(), data.wl_seat.clone())
+                        .is_some()
+                    {
+                        resource.post_error(
+                            wl_data_device::Error::UsedSource,
+                            "selection source can be used only once.",
+                        );
+                        return;
+                    }
+                }
+
                 let source = source.map(SelectionSourceProvider::DataDevice);
 
                 handler.new_selection(
