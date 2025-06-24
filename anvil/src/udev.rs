@@ -624,6 +624,7 @@ struct SurfaceData {
     dh: DisplayHandle,
     device_id: DrmNode,
     render_node: Option<DrmNode>,
+    output: Output,
     global: Option<GlobalId>,
     drm_output: DrmOutput<
         GbmAllocator<DrmDeviceFd>,
@@ -643,6 +644,7 @@ struct SurfaceData {
 
 impl Drop for SurfaceData {
     fn drop(&mut self) {
+        self.output.leave_all();
         if let Some(global) = self.global.take() {
             self.dh.remove_global::<AnvilState<UdevData>>(global);
         }
@@ -1030,6 +1032,7 @@ impl AnvilState<UdevData> {
                 dh: self.display_handle.clone(),
                 device_id: node,
                 render_node: device.render_node,
+                output,
                 global: Some(global),
                 drm_output,
                 disable_direct_scanout,
@@ -1067,23 +1070,9 @@ impl AnvilState<UdevData> {
             if let Some(leasing_state) = device.leasing_global.as_mut() {
                 leasing_state.withdraw_connector(connector.handle());
             }
-        } else {
-            device.surfaces.remove(&crtc);
-
-            let output = self
-                .space
-                .outputs()
-                .find(|o| {
-                    o.user_data()
-                        .get::<UdevOutputId>()
-                        .map(|id| id.device_id == node && id.crtc == crtc)
-                        .unwrap_or(false)
-                })
-                .cloned();
-
-            if let Some(output) = output {
-                self.space.unmap_output(&output);
-            }
+        } else if let Some(surface) = device.surfaces.remove(&crtc) {
+            self.space.unmap_output(&surface.output);
+            self.space.refresh();
         }
 
         let render_node = device.render_node.unwrap_or(self.backend_data.primary_gpu);
