@@ -73,6 +73,7 @@
 mod handlers;
 pub(crate) mod xdg;
 
+use std::mem;
 use std::sync::{atomic::Ordering, Arc};
 
 use crate::{
@@ -314,6 +315,29 @@ impl Output {
             drop(inner);
 
             if let Some(client) = client {
+                for output in self.client_outputs_internal(client) {
+                    surface.leave(&output);
+                }
+            }
+        }
+    }
+
+    /// Sends `wl_surface.leave` for all surfaces on output
+    pub fn leave_all(&self) {
+        let mut inner = self.inner.0.lock().unwrap();
+        #[allow(clippy::mutable_key_type)]
+        let surfaces = mem::take(&mut inner.surfaces);
+        let Some(handle) = inner.handle.as_ref().and_then(|handle| handle.upgrade()) else {
+            return;
+        };
+        drop(inner);
+
+        for surface in surfaces {
+            let Ok(surface) = surface.upgrade() else {
+                continue;
+            };
+
+            if let Ok(client) = handle.get_client(surface.id()) {
                 for output in self.client_outputs_internal(client) {
                     surface.leave(&output);
                 }
