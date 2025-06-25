@@ -662,7 +662,10 @@ impl GlesRenderer {
             (gl_version, exts, requested_capabilities, gl_debug_span)
         };
 
-        let gles_cleanup = context.user_data().get_or_insert_threadsafe(GlesCleanup::default);
+        let gles_cleanup = gl
+            .egl()
+            .user_data()
+            .get_or_insert_threadsafe(GlesCleanup::default);
 
         let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], gles_cleanup.sender.clone())?;
         let solid_program = solid_program(&gl)?;
@@ -784,7 +787,7 @@ impl GlesRenderer {
     fn cleanup(&mut self) {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
         self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
-        self.gles_cleanup().cleanup(&self.egl, &self.gl);
+        self.gles_cleanup().cleanup(&self.context.egl(), &self.context.gl);
     }
 
     /// Returns the supported [`Capabilities`](Capability) of this renderer.
@@ -1939,8 +1942,7 @@ impl GlesRenderer {
                         .collect(),
                 },
                 destruction_callback_sender: self.gles_cleanup().sender.clone(),
-                uniform_tint: self
-                    .gl
+                uniform_tint: gl
                     .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
             })))
         }
