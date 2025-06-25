@@ -1977,16 +1977,15 @@ impl GlesRenderer {
         shader: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesTexProgram, GlesError> {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
+        let destruction_callback_sender = self.gles_cleanup().sender.clone();
+        let gl = unsafe { self.context.make_current()? };
 
         unsafe {
             texture_program(
-                &self.context.gl,
+                &gl,
                 shader.as_ref(),
                 additional_uniforms,
-                self.gles_cleanup().sender.clone(),
+                destruction_callback_sender,
             )
         }
     }
