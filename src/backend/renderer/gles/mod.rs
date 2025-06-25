@@ -13,8 +13,8 @@ use std::{
     rc::Rc,
     sync::{
         atomic::{AtomicBool, AtomicPtr, Ordering},
-        mpsc::{channel, Receiver, Sender},
-        Arc, Mutex, RwLock, RwLockWriteGuard,
+        mpsc::{self, Sender},
+        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
     },
 };
 use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
@@ -294,6 +294,74 @@ pub enum Capability {
     Debug,
 }
 
+/// GL resources need to be destroyed with a context active on the current thread,
+/// so `Drop` impls don't directly destroy objects, and instead send messages
+/// to free resources on periodic calls to `cleanup`.
+///
+/// Stored as `EGLContext` user data, so shared contexts can share cleanup. And
+/// destroying one renderer will not leak resources, but allow another renderer
+/// with a shared context to clean them up.
+struct GlesCleanup {
+    receiver: Mutex<mpsc::Receiver<CleanupResource>>,
+    sender: mpsc::Sender<CleanupResource>,
+}
+
+impl Default for GlesCleanup {
+    fn default() -> Self {
+        let (sender, receiver) = mpsc::channel();
+        Self {
+            receiver: Mutex::new(receiver),
+            sender,
+        }
+    }
+}
+
+impl GlesCleanup {
+    fn cleanup(&self, egl: &EGLContext, gl: &ffi::Gles2) {
+        let receiver = match self.receiver.try_lock() {
+            Ok(receiver) => receiver,
+            Err(TryLockError::Poisoned(err)) => {
+                self.receiver.clear_poison();
+                err.into_inner()
+            }
+            Err(TryLockError::WouldBlock) => {
+                // Another thread is running `cleanup`, so just return
+                return;
+            }
+        };
+        for resource in receiver.try_iter() {
+            match resource {
+                CleanupResource::Texture(texture) => unsafe {
+                    gl.DeleteTextures(1, &texture);
+                },
+                CleanupResource::EGLImage(image) => unsafe {
+                    ffi_egl::DestroyImageKHR(**egl.display().get_display_handle(), image);
+                },
+                CleanupResource::FramebufferObject(fbo) => unsafe {
+                    gl.DeleteFramebuffers(1, &fbo);
+                },
+                CleanupResource::RenderbufferObject(rbo) => unsafe {
+                    gl.DeleteRenderbuffers(1, &rbo);
+                },
+                CleanupResource::Mapping(pbo, mapping) => unsafe {
+                    if !mapping.is_null() {
+                        gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
+                        gl.UnmapBuffer(ffi::PIXEL_PACK_BUFFER);
+                        gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+                    }
+                    gl.DeleteBuffers(1, &pbo);
+                },
+                CleanupResource::Program(program) => unsafe {
+                    gl.DeleteProgram(program);
+                },
+                CleanupResource::Sync(sync) => unsafe {
+                    gl.DeleteSync(sync);
+                },
+            }
+        }
+    }
+}
+
 /// A renderer utilizing OpenGL ES
 pub struct GlesRenderer {
     // state
@@ -323,10 +391,6 @@ pub struct GlesRenderer {
     vertices: Vec<f32>,
     non_opaque_damage: Vec<Rectangle<i32, Physical>>,
     opaque_damage: Vec<Rectangle<i32, Physical>>,
-
-    // cleanup
-    destruction_callback: Receiver<CleanupResource>,
-    destruction_callback_sender: Sender<CleanupResource>,
 
     // markers
     _not_send: PhantomData<*mut ()>,
@@ -597,8 +661,9 @@ impl GlesRenderer {
             (gl, gl_version, exts, requested_capabilities, gl_debug_span)
         };
 
-        let (tx, rx) = channel();
-        let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], tx.clone())?;
+        let gles_cleanup = context.user_data().get_or_insert_threadsafe(GlesCleanup::default);
+
+        let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], gles_cleanup.sender.clone())?;
         let solid_program = solid_program(&gl)?;
 
         // Initialize vertices based on drawing methodology.
@@ -654,9 +719,6 @@ impl GlesRenderer {
             non_opaque_damage: Vec::with_capacity(16),
             opaque_damage: Vec::with_capacity(16),
 
-            destruction_callback: rx,
-            destruction_callback_sender: tx,
-
             debug_flags: DebugFlags::empty(),
             _not_send: PhantomData,
             span,
@@ -697,7 +759,7 @@ impl GlesRenderer {
             Ok(GlesTarget(GlesTargetInternal::Texture {
                 texture: texture.clone(),
                 sync_lock,
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
                 fbo,
             }))
         };
@@ -720,40 +782,15 @@ impl GlesRenderer {
         Ok(())
     }
 
+    fn gles_cleanup(&self) -> &GlesCleanup {
+        self.egl_context().user_data().get().unwrap()
+    }
+
     #[profiling::function]
     fn cleanup(&mut self) {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
         self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
-        for resource in self.destruction_callback.try_iter() {
-            match resource {
-                CleanupResource::Texture(texture) => unsafe {
-                    self.gl.DeleteTextures(1, &texture);
-                },
-                CleanupResource::EGLImage(image) => unsafe {
-                    ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
-                },
-                CleanupResource::FramebufferObject(fbo) => unsafe {
-                    self.gl.DeleteFramebuffers(1, &fbo);
-                },
-                CleanupResource::RenderbufferObject(rbo) => unsafe {
-                    self.gl.DeleteRenderbuffers(1, &rbo);
-                },
-                CleanupResource::Mapping(pbo, mapping) => unsafe {
-                    if !mapping.is_null() {
-                        self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
-                        self.gl.UnmapBuffer(ffi::PIXEL_PACK_BUFFER);
-                        self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
-                    }
-                    self.gl.DeleteBuffers(1, &pbo);
-                },
-                CleanupResource::Program(program) => unsafe {
-                    self.gl.DeleteProgram(program);
-                },
-                CleanupResource::Sync(sync) => unsafe {
-                    self.gl.DeleteSync(sync);
-                },
-            }
-        }
+        self.gles_cleanup().cleanup(&self.egl, &self.gl);
     }
 
     /// Returns the supported [`Capabilities`](Capability) of this renderer.
@@ -846,7 +883,7 @@ impl ImportMemWl for GlesRenderer {
                             y_inverted: false,
                             size: (width, height).into(),
                             egl_images: None,
-                            destruction_callback_sender: self.destruction_callback_sender.clone(),
+                            destruction_callback_sender: self.gles_cleanup().sender.clone(),
                         });
                         if let Some(cache) = surface_lock.as_mut() {
                             cache.insert(id, new.clone());
@@ -1015,7 +1052,7 @@ impl ImportMem for GlesRenderer {
                 y_inverted: flipped,
                 size,
                 egl_images: None,
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
             }
         }));
 
@@ -1160,7 +1197,7 @@ impl ImportEgl for GlesRenderer {
             y_inverted: egl.y_inverted,
             size: egl.size,
             egl_images: Some(egl.into_images()),
-            destruction_callback_sender: self.destruction_callback_sender.clone(),
+            destruction_callback_sender: self.gles_cleanup().sender.clone(),
         }));
 
         Ok(texture)
@@ -1202,7 +1239,7 @@ impl ImportDma for GlesRenderer {
                 y_inverted: buffer.y_inverted(),
                 size: buffer.size(),
                 egl_images: Some(vec![image]),
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
             }));
             self.dmabuf_cache.insert(buffer.weak(), texture.clone());
             Ok(texture)
@@ -1322,7 +1359,7 @@ impl ExportMem for GlesRenderer {
                 has_alpha,
                 size: region.size,
                 mapping: AtomicPtr::new(ptr::null_mut()),
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
             }),
             ffi::INVALID_ENUM | ffi::INVALID_OPERATION => Err(GlesError::UnsupportedPixelFormat(fourcc)),
             _ => Err(GlesError::UnknownPixelFormat),
@@ -1382,7 +1419,7 @@ impl ExportMem for GlesRenderer {
                 has_alpha: texture.0.has_alpha,
                 size: region.size,
                 mapping: AtomicPtr::new(ptr::null_mut()),
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
             }),
             ffi::INVALID_ENUM | ffi::INVALID_OPERATION => Err(GlesError::UnsupportedPixelFormat(fourcc)),
             _ => Err(GlesError::UnknownPixelFormat),
@@ -1489,7 +1526,7 @@ impl Bind<Dmabuf> for GlesRenderer {
                             image,
                             rbo,
                             fbo,
-                            destruction_callback_sender: self.destruction_callback_sender.clone(),
+                            destruction_callback_sender: self.gles_cleanup().sender.clone(),
                         }));
 
                         self.buffers.push(buf.clone());
@@ -1635,7 +1672,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
                 format: internal,
                 has_alpha,
                 size,
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
             })))
         }
     }
@@ -1942,7 +1979,7 @@ impl GlesRenderer {
                         })
                         .collect(),
                 },
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
                 uniform_tint: self
                     .gl
                     .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
@@ -1985,7 +2022,7 @@ impl GlesRenderer {
                 &self.gl,
                 shader.as_ref(),
                 additional_uniforms,
-                self.destruction_callback_sender.clone(),
+                self.gles_cleanup().sender.clone(),
             )
         }
     }

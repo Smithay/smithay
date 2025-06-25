@@ -36,7 +36,7 @@ impl GlesTexture {
             y_inverted: false,
             size,
             egl_images: None,
-            destruction_callback_sender: renderer.destruction_callback_sender.clone(),
+            destruction_callback_sender: renderer.gles_cleanup().sender.clone(),
         }))
     }
 
