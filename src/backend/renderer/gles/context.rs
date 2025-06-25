@@ -41,46 +41,62 @@ impl GlesContext {
     pub unsafe fn make_current(&mut self) -> Result<CurrentGlesContext<'_>, MakeCurrentError> {
         // TODO test current context on thread; re-enterency
         self.egl.make_current()?;
-        Ok(CurrentGlesContext(self))
+        Ok(CurrentGlesContext {
+            context: self,
+            draw_read_surfaces: None,
+        })
     }
 
-    pub unsafe fn make_current_with_surface(
-        &mut self,
-        surface: &EGLSurface,
-    ) -> Result<CurrentGlesContext<'_>, MakeCurrentError> {
+    pub unsafe fn make_current_with_surface<'a>(
+        &'a mut self,
+        surface: &'a EGLSurface,
+    ) -> Result<CurrentGlesContext<'a>, MakeCurrentError> {
         self.make_current_with_draw_and_read_surface(surface, surface)
     }
 
-    pub unsafe fn make_current_with_draw_and_read_surface(
-        &mut self,
-        draw: &EGLSurface,
-        read: &EGLSurface,
-    ) -> Result<CurrentGlesContext<'_>, MakeCurrentError> {
+    pub unsafe fn make_current_with_draw_and_read_surface<'a>(
+        &'a mut self,
+        draw: &'a EGLSurface,
+        read: &'a EGLSurface,
+    ) -> Result<CurrentGlesContext<'a>, MakeCurrentError> {
         self.egl.make_current_with_draw_and_read_surface(draw, read)?;
-        Ok(CurrentGlesContext(self))
+        Ok(CurrentGlesContext {
+            context: self,
+            draw_read_surfaces: Some((draw, read)),
+        })
     }
 }
 
 #[derive(Debug)]
-pub struct CurrentGlesContext<'a>(&'a mut GlesContext);
+pub struct CurrentGlesContext<'a> {
+    context: &'a mut GlesContext,
+    draw_read_surfaces: Option<(&'a EGLSurface, &'a EGLSurface)>,
+}
 
 impl CurrentGlesContext<'_> {
     pub fn egl(&self) -> &EGLContext {
-        &self.0.egl
+        &self.context.egl
     }
 
     pub fn context_id(&self) -> ContextId<GlesTexture> {
-        self.0.context_id()
+        self.context.context_id()
     }
 
-    /*
-    pub fn call_without_current<T, F: FnOnce(&mut GlesContext) -> T>(&mut self, f: F) -> T {
-        // XXX eglGetCurrentContext
-        // XXX eglGetCurrentSurface
-        f(self.0)
-        // TODO restore context
+    pub fn call_without_current<T, F: FnOnce(&mut GlesContext) -> T>(
+        &mut self,
+        f: F,
+    ) -> Result<T, MakeCurrentError> {
+        // TODO make context not current?
+        let res = f(self.context);
+        unsafe {
+            if let Some((draw, read)) = self.draw_read_surfaces {
+                self.egl().make_current_with_draw_and_read_surface(draw, read)?;
+            } else {
+                self.egl().make_current()?;
+            }
+        }
+        Ok(res)
     }
-    */
 }
 
 // TODO make no context curreent on Drop? At least on debug_assertions?
@@ -89,6 +105,6 @@ impl ops::Deref for CurrentGlesContext<'_> {
     type Target = ffi::Gles2;
 
     fn deref(&self) -> &ffi::Gles2 {
-        &self.0.gl
+        &self.context.gl
     }
 }
