@@ -5,7 +5,6 @@ use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
 use wayland_server::{protocol::wl_data_source::WlDataSource, Resource};
 
-use crate::utils::IsAlive;
 use crate::wayland::selection::primary_selection::PrimarySourceUserData;
 
 use super::data_device::DataSourceUserData;
@@ -94,13 +93,6 @@ impl SelectionSourceProvider {
                 data.inner.lock().unwrap().mime_types.clone()
             }
         }
-    }
-}
-
-impl IsAlive for SelectionSourceProvider {
-    #[inline]
-    fn alive(&self) -> bool {
-        selection_dispatch!(self; Self(source) => source.alive())
     }
 }
 

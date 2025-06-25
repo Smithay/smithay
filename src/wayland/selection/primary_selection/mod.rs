@@ -55,7 +55,7 @@
 //!     type SelectionUserData = ();
 //! }
 //! impl PrimarySelectionHandler for State {
-//!     fn primary_selection_state(&self) -> &PrimarySelectionState { &self.primary_selection_state }
+//!     fn primary_selection_state(&mut self) -> &mut PrimarySelectionState { &mut self.primary_selection_state }
 //!     // ... override default implementations here to customize handling ...
 //! }
 //! delegate_primary_selection!(State);
@@ -63,15 +63,19 @@
 //! // You're now ready to go!
 //! ```
 
-use std::{
-    cell::{Ref, RefCell},
-    os::unix::io::OwnedFd,
-    sync::Arc,
-};
+use std::cell::{Ref, RefCell};
+use std::collections::HashMap;
+use std::os::unix::io::OwnedFd;
+use std::sync::Arc;
 
 use tracing::instrument;
-use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager;
-use wayland_server::{backend::GlobalId, Client, DisplayHandle, GlobalDispatch};
+use wayland_protocols::wp::primary_selection::zv1::{
+    server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
+    server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
+};
+use wayland_server::backend::GlobalId;
+use wayland_server::protocol::wl_seat::WlSeat;
+use wayland_server::{Client, DisplayHandle, GlobalDispatch};
 
 use crate::{
     input::{Seat, SeatHandler},
@@ -91,13 +95,18 @@ use super::{offer::OfferReplySource, seat_data::SeatData};
 /// Access the primary selection state.
 pub trait PrimarySelectionHandler: Sized + SeatHandler + SelectionHandler {
     /// [PrimarySelectionState] getter.
-    fn primary_selection_state(&self) -> &PrimarySelectionState;
+    fn primary_selection_state(&mut self) -> &mut PrimarySelectionState;
 }
 
 /// State of the primary selection.
 pub struct PrimarySelectionState {
     manager_global: GlobalId,
     pub(super) filter: Arc<Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>>,
+    /// Used sources.
+    ///
+    /// Protocol states that each source can only be used once. We
+    /// also use it during destruction to get seat data.
+    pub(crate) used_sources: HashMap<ZwpPrimarySelectionSourceV1, WlSeat>,
 }
 
 impl std::fmt::Debug for PrimarySelectionState {
@@ -136,6 +145,7 @@ impl PrimarySelectionState {
         Self {
             manager_global,
             filter,
+            used_sources: Default::default(),
         }
     }
 
@@ -350,12 +360,12 @@ mod handlers {
             _resource: &PrimaryDeviceManager,
             request: primary_device_manager::Request,
             _data: &(),
-            _dhandle: &DisplayHandle,
+            dhandle: &DisplayHandle,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
             match request {
                 primary_device_manager::Request::CreateSource { id } => {
-                    data_init.init(id, PrimarySourceUserData::new());
+                    data_init.init(id, PrimarySourceUserData::new(dhandle.clone()));
                 }
                 primary_device_manager::Request::GetDevice { id, seat: wl_seat } => {
                     match Seat::<D>::from_resource(&wl_seat) {
