@@ -82,13 +82,31 @@ enum CleanupResource {
 }
 unsafe impl Send for CleanupResource {}
 
-#[derive(Debug, Clone)]
-struct GlesBuffer {
+#[derive(Debug)]
+struct GlesBufferInner {
     dmabuf: WeakDmabuf,
     image: EGLImage,
     rbo: ffi::types::GLuint,
     fbo: ffi::types::GLuint,
+    destruction_callback_sender: Sender<CleanupResource>,
 }
+
+impl Drop for GlesBufferInner {
+    fn drop(&mut self) {
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::FramebufferObject(self.fbo));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::RenderbufferObject(self.rbo));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::EGLImage(self.image));
+    }
+}
+
+#[derive(Debug, Clone)]
+struct GlesBuffer(Rc<GlesBufferInner>);
 
 /// Offscreen render surface
 ///
@@ -222,7 +240,7 @@ impl GlesTargetInternal<'_> {
                 egl.make_current()?;
                 match self {
                     GlesTargetInternal::Image { ref buf, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo)
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo)
                     }
                     GlesTargetInternal::Texture { ref fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
                     GlesTargetInternal::Renderbuffer { ref fbo, .. } => {
@@ -705,21 +723,7 @@ impl GlesRenderer {
     #[profiling::function]
     fn cleanup(&mut self) {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
-        // Free outdated buffer resources
-        // TODO: Replace with `drain_filter` once it lands
-        let mut i = 0;
-        while i != self.buffers.len() {
-            if self.buffers[i].dmabuf.is_gone() {
-                let old = self.buffers.remove(i);
-                unsafe {
-                    self.gl.DeleteFramebuffers(1, &old.fbo as *const _);
-                    self.gl.DeleteRenderbuffers(1, &old.rbo as *const _);
-                    ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), old.image);
-                }
-            } else {
-                i += 1;
-            }
-        }
+        self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
         for resource in self.destruction_callback.try_iter() {
             match resource {
                 CleanupResource::Texture(texture) => unsafe {
@@ -1435,7 +1439,7 @@ impl Bind<Dmabuf> for GlesRenderer {
                 .buffers
                 .iter_mut()
                 .find(|buffer| {
-                    if let Some(dma) = buffer.dmabuf.upgrade() {
+                    if let Some(dma) = buffer.0.dmabuf.upgrade() {
                         dma == *dmabuf
                     } else {
                         false
@@ -1480,12 +1484,13 @@ impl Bind<Dmabuf> for GlesRenderer {
                             ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
                             return Err(GlesError::FramebufferBindingError);
                         }
-                        let buf = GlesBuffer {
+                        let buf = GlesBuffer(Rc::new(GlesBufferInner {
                             dmabuf: dmabuf.weak(),
                             image,
                             rbo,
                             fbo,
-                        };
+                            destruction_callback_sender: self.destruction_callback_sender.clone(),
+                        }));
 
                         self.buffers.push(buf.clone());
 
@@ -1702,7 +1707,7 @@ impl Blit for GlesRenderer {
 
         match &src_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.fbo)
+                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.0.fbo)
             },
             GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
@@ -1714,7 +1719,7 @@ impl Blit for GlesRenderer {
         }
         match &dst_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.fbo)
+                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.0.fbo)
             },
             GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
