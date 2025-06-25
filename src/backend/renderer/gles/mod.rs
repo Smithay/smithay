@@ -728,6 +728,7 @@ impl GlesRenderer {
     }
 
     fn bind_texture<'a>(&mut self, texture: &'a GlesTexture) -> Result<GlesTarget<'a>, GlesError> {
+        let destruction_callback_sender = self.gles_cleanup().sender.clone();
         let gl = unsafe { self.context.make_current()? };
 
         let bind = || {
@@ -756,7 +757,7 @@ impl GlesRenderer {
             Ok(GlesTarget(GlesTargetInternal::Texture {
                 texture: texture.clone(),
                 sync_lock,
-                destruction_callback_sender: self.gles_cleanup().sender.clone(),
+                destruction_callback_sender,
                 fbo,
             }))
         };
@@ -856,6 +857,7 @@ impl ImportMemWl for GlesRenderer {
 
             let mut upload_full = false;
 
+            let destruction_callback_sender = self.gles_cleanup().sender.clone();
             let gl = unsafe { self.context.make_current()? };
 
             let id = gl.context_id();
@@ -878,7 +880,7 @@ impl ImportMemWl for GlesRenderer {
                             y_inverted: false,
                             size: (width, height).into(),
                             egl_images: None,
-                            destruction_callback_sender: self.gles_cleanup().sender.clone(),
+                            destruction_callback_sender,
                         });
                         if let Some(cache) = surface_lock.as_mut() {
                             cache.insert(id, new.clone());
@@ -1862,6 +1864,7 @@ impl GlesRenderer {
         src: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesPixelProgram, GlesError> {
+        let destruction_callback_sender = self.gles_cleanup().sender.clone();
         let gl = unsafe { self.context.make_current()? };
 
         let shader = format!("#version 100\n{}", src.as_ref());
@@ -1941,7 +1944,7 @@ impl GlesRenderer {
                         })
                         .collect(),
                 },
-                destruction_callback_sender: self.gles_cleanup().sender.clone(),
+                destruction_callback_sender,
                 uniform_tint: gl
                     .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
             })))
