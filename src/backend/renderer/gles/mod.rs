@@ -2107,9 +2107,9 @@ impl Renderer for GlesRenderer {
 
     #[profiling::function]
     fn wait(&mut self, sync: &super::sync::SyncPoint) -> Result<(), Self::Error> {
-        unsafe {
-            self.context.egl().make_current()?;
-        }
+        let _gl = unsafe {
+            self.context.make_current()?;
+        };
 
         let display = self.egl_context().display();
 
