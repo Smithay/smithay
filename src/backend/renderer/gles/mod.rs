@@ -2107,11 +2107,11 @@ impl Renderer for GlesRenderer {
 
     #[profiling::function]
     fn wait(&mut self, sync: &super::sync::SyncPoint) -> Result<(), Self::Error> {
-        let _gl = unsafe {
-            self.context.make_current()?;
+        let gl = unsafe {
+            self.context.make_current()?
         };
 
-        let display = self.egl_context().display();
+        let display = gl.egl().display();
 
         // if the sync point holds a EGLFence we can try
         // to directly insert it in our context
@@ -2134,6 +2134,8 @@ impl Renderer for GlesRenderer {
                 }
             }
         }
+
+        drop(gl);
 
         // if everything above failed we can only
         // block until the sync point has been reached
