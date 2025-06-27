@@ -451,7 +451,7 @@ bitflags::bitflags! {
 /// See [`constrain_render_elements`] for more information
 #[profiling::function]
 #[allow(clippy::too_many_arguments)]
-pub fn constrain_as_render_elements<R, E, C>(
+pub fn constrain_as_render_elements<R, E>(
     element: &E,
     renderer: &mut R,
     location: impl Into<Point<i32, Physical>>,
@@ -461,20 +461,18 @@ pub fn constrain_as_render_elements<R, E, C>(
     behavior: ConstrainScaleBehavior,
     align: ConstrainAlign,
     output_scale: impl Into<Scale<f64>>,
-) -> impl Iterator<Item = C>
+) -> impl Iterator<
+    Item = CropRenderElement<
+        RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R>>::RenderElement>>,
+    >,
+>
 where
     R: Renderer,
     E: AsRenderElements<R>,
-    C: From<
-        CropRenderElement<
-            RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R>>::RenderElement>>,
-        >,
-    >,
 {
     let location = location.into();
     let output_scale = output_scale.into();
-    let elements: Vec<<E as AsRenderElements<R>>::RenderElement> =
-        AsRenderElements::<R>::render_elements(element, renderer, location, output_scale, alpha);
+    let elements = element.render_elements(renderer, location, output_scale, alpha);
     constrain_render_elements(
         elements,
         location,
@@ -484,7 +482,6 @@ where
         align,
         output_scale,
     )
-    .map(C::from)
 }
 
 /// Constrain render elements on a specific location with a specific size
