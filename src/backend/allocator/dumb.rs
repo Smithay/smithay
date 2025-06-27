@@ -99,6 +99,11 @@ impl DumbBuffer {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
+
+    /// Map the dumb buffer for read/write access
+    pub fn map(&mut self) -> std::io::Result<drm::control::dumbbuffer::DumbMapping<'_>> {
+        self.fd.map_dumb_buffer(&mut self.handle)
+    }
 }
 
 impl AsDmabuf for DumbBuffer {
