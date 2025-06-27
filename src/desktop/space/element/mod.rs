@@ -1,11 +1,7 @@
 use std::hash::Hash;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::{
-    backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
-    desktop::LayerSurface,
-    wayland::shell::wlr_layer::Layer,
-};
+use crate::{backend::renderer::ImportAll, desktop::LayerSurface, wayland::shell::wlr_layer::Layer};
 use crate::{
     backend::renderer::{
         element::{AsRenderElements, Wrap},
@@ -171,37 +167,30 @@ impl<
 where
     R::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
     type RenderElement = SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>;
 
     #[profiling::function]
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<C> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         match &self {
             #[cfg(feature = "wayland_frontend")]
-            SpaceElements::Layer { surface, .. } => AsRenderElements::<R>::render_elements::<
-                WaylandSurfaceRenderElement<R>,
-            >(surface, renderer, location, scale, alpha)
-            .into_iter()
-            .map(SpaceRenderElements::Surface)
-            .map(C::from)
-            .collect(),
+            SpaceElements::Layer { surface, .. } => surface
+                .render_elements(renderer, location, scale, alpha)
+                .into_iter()
+                .map(SpaceRenderElements::Surface)
+                .collect::<Vec<_>>(),
             SpaceElements::Element(element) => element
                 .element
-                .render_elements::<Wrap<<E as AsRenderElements<R>>::RenderElement>>(
-                    renderer, location, scale, alpha,
-                )
+                .render_elements(renderer, location, scale, alpha)
                 .into_iter()
-                .map(SpaceRenderElements::Element)
-                .map(C::from)
-                .collect(),
+                .map(|x| SpaceRenderElements::Element(Wrap::from(x)))
+                .collect::<Vec<_>>(),
         }
     }
 }
