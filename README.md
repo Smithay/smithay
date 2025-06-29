@@ -48,6 +48,7 @@ To get informations about it and how you can run it visit [anvil README](https:/
 - [Sudbury](https://gitlab.freedesktop.org/bwidawsk/sudbury): Compositor designed for ChromeOS
 - [wprs](https://github.com/wayland-transpositor/wprs): Like [xpra](https://en.wikipedia.org/wiki/Xpra), but for Wayland, and written in
 Rust.
+- [Local Desktop](https://github.com/localdesktop/localdesktop): An Android app for running GUI Linux via PRoot and Wayland.
 
 ## System Dependencies
 
