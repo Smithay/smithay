@@ -66,6 +66,8 @@ use smithay::{
 };
 
 impl<BackendData: Backend> AnvilState<BackendData> {
+    // Allow in this method because of existing usage
+    #[allow(clippy::uninlined_format_args)]
     fn process_common_key_action(&mut self, action: KeyAction) {
         match action {
             KeyAction::None => (),

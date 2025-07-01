@@ -12,6 +12,8 @@ static POSSIBLE_BACKENDS: &[&str] = &[
 static GLOBAL: profiling::tracy_client::ProfiledAllocator<std::alloc::System> =
     profiling::tracy_client::ProfiledAllocator::new(std::alloc::System, 10);
 
+// Allow in this function because of existing usage
+#[allow(clippy::uninlined_format_args)]
 fn main() {
     if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
         tracing_subscriber::fmt()

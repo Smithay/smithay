@@ -1,3 +1,5 @@
+// Allow in this module because of existing usage
+#![allow(clippy::uninlined_format_args)]
 use std::{
     collections::hash_map::HashMap,
     io,
