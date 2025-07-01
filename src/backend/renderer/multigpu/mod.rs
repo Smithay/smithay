@@ -2190,6 +2190,7 @@ where
     let modifiers = read_formats
         .intersection(&write_formats)
         .map(|f| f.modifier)
+        .filter(|m| *m != Modifier::Invalid)
         .collect::<Vec<_>>();
 
     if modifiers.is_empty() {
