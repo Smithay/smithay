@@ -824,7 +824,7 @@ impl AnvilState<UdevData> {
             })
             .ok_or(DeviceAddError::PrimaryGpuMissing)?;
 
-        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), render_node);
+        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), render_node.into());
 
         let color_formats = if std::env::var("ANVIL_DISABLE_10BIT").is_ok() {
             SUPPORTED_FORMATS_8BIT_ONLY
