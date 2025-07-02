@@ -335,7 +335,7 @@ where
                         Err(err) => {
                             resource.post_error(
                                 wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
-                                format!("failed to import syncobj timeline: {}", err),
+                                format!("failed to import syncobj timeline: {err}"),
                             );
                         }
                     }

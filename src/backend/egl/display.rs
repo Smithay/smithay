@@ -1079,7 +1079,7 @@ impl EGLBufferReader {
             ffi::egl::TEXTURE_Y_XUXV_WL => {
                 return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV))
             }
-            x => panic!("EGL returned invalid texture type: {}", x),
+            x => panic!("EGL returned invalid texture type: {x}"),
         };
 
         let mut width: i32 = 0;

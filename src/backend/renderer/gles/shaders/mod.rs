@@ -124,7 +124,7 @@ pub(super) unsafe fn texture_program(
         let shader = src.replace(
             "//_DEFINES_",
             &defines.iter().fold(String::new(), |mut shader, define| {
-                let _ = writeln!(&mut shader, "#define {}", define);
+                let _ = writeln!(&mut shader, "#define {define}");
                 shader
             }),
         );
@@ -134,7 +134,7 @@ pub(super) unsafe fn texture_program(
                 .iter()
                 .chain(&[shaders::DEBUG_FLAGS])
                 .fold(String::new(), |mut shader, define| {
-                    let _ = writeln!(shader, "#define {}", define);
+                    let _ = writeln!(shader, "#define {define}");
                     shader
                 }),
         );
