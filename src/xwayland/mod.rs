@@ -1,3 +1,5 @@
+// Allow in this module because of existing usage
+#![allow(clippy::uninlined_format_args)]
 //! XWayland utilities
 //!
 //! This module contains helpers to manage XWayland from your compositor, in order

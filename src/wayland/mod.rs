@@ -1,3 +1,5 @@
+// Allow in this module because of existing usage
+#![allow(clippy::uninlined_format_args)]
 //! Protocol-related utilities
 //!
 //! This module contains several handlers to manage the Wayland protocol
