@@ -128,12 +128,11 @@ where
                 let message = if offset < 0 {
                     Some("offset must not be negative".to_string())
                 } else if width <= 0 || height <= 0 {
-                    Some(format!("invalid width or height ({}x{})", width, height))
+                    Some(format!("invalid width or height ({width}x{height})"))
                 } else if stride.checked_div(wl_bytes_per_pixel(format)).unwrap_or(0) < width {
                     // stride is in bytes...
                     Some(format!(
-                        "width must not be larger than stride (width {}, stride {})",
-                        width,
+                        "width must not be larger than stride (width {width}, stride {})",
                         stride.checked_div(wl_bytes_per_pixel(format)).unwrap_or(0)
                     ))
                 } else if (i32::MAX / stride) < height {
@@ -157,7 +156,7 @@ where
                         if !state.shm_state().formats.contains(&format) {
                             pool.post_error(
                                 wl_shm::Error::InvalidFormat,
-                                format!("format {:?} not supported", format),
+                                format!("format {format:?} not supported"),
                             );
 
                             return;
@@ -181,7 +180,7 @@ where
                     WEnum::Unknown(unknown) => {
                         pool.post_error(
                             wl_shm::Error::InvalidFormat,
-                            format!("unknown format 0x{:x}", unknown),
+                            format!("unknown format 0x{unknown:x}"),
                         );
                     }
                 }

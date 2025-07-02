@@ -29,7 +29,7 @@ pub(crate) fn prepare_x11_sockets(
                     // we got a lockfile, try and create the socket
                     match open_x11_sockets_for_display(d, open_abstract_socket) {
                         Ok(sockets) => return Ok((lock, sockets)),
-                        Err(err) => warn!(display = d, "Failed to create sockets: {}", err),
+                        Err(err) => warn!(display = d, "Failed to create sockets: {err}"),
                     }
                 }
             }
@@ -53,7 +53,7 @@ impl X11Lock {
     /// Try to grab a lockfile for given X display number
     fn grab(number: u32) -> Result<X11Lock, ()> {
         debug!(display = number, "Attempting to aquire an X11 display lock");
-        let filename = format!("/tmp/.X{}-lock", number);
+        let filename = format!("/tmp/.X{number}-lock");
         let lockfile = ::std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -141,7 +141,7 @@ fn open_x11_sockets_for_display(
     display: u32,
     open_abstract_socket: bool,
 ) -> rustix::io::Result<Vec<UnixStream>> {
-    let path = format!("/tmp/.X11-unix/X{}", display);
+    let path = format!("/tmp/.X11-unix/X{display}");
     let _ = ::std::fs::remove_file(&path);
     // We know this path is not too long, these unwrap cannot fail
     let fs_addr = SocketAddrUnix::new(path.as_bytes()).unwrap();

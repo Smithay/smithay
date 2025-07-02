@@ -928,7 +928,7 @@ impl AnvilState<UdevData> {
                 lease_state.add_connector::<AnvilState<UdevData>>(
                     connector.handle(),
                     output_name,
-                    format!("{} {}", make, model),
+                    format!("{make} {model}"),
                 );
             }
         } else {
@@ -1289,7 +1289,7 @@ impl AnvilState<UdevData> {
                             ..
                         })) if source.kind() == io::ErrorKind::PermissionDenied
                     ),
-                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {err}"),
                 }
             }
         };
@@ -1489,7 +1489,7 @@ impl AnvilState<UdevData> {
                                 .expect("failed to reset drm device");
                             true
                         }
-                        _ => panic!("Rendering loop lost: {}", err),
+                        _ => panic!("Rendering loop lost: {err}"),
                     },
                 }
             }

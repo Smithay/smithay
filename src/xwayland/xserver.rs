@@ -139,7 +139,7 @@ impl XWayland {
         command
             .stdout(stdout)
             .stderr(stderr)
-            .arg(format!(":{}", display_number))
+            .arg(format!(":{display_number}"))
             .arg("-verbose")
             .arg("-rootless")
             .arg("-terminate")

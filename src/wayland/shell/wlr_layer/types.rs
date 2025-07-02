@@ -36,7 +36,7 @@ impl TryFrom<WEnum<zwlr_layer_shell_v1::Layer>> for Layer {
             WEnum::Value(Layer::Overlay) => Ok(Self::Overlay),
             layer => Err((
                 zwlr_layer_shell_v1::Error::InvalidLayer,
-                format!("invalid layer: {:?}", layer),
+                format!("invalid layer: {layer:?}"),
             )),
         }
     }
@@ -113,7 +113,7 @@ impl TryFrom<WEnum<zwlr_layer_surface_v1::KeyboardInteractivity>> for KeyboardIn
             WEnum::Value(KeyboardInteractivity::OnDemand) => Ok(Self::OnDemand),
             ki => Err((
                 zwlr_layer_surface_v1::Error::InvalidKeyboardInteractivity,
-                format!("wrong keyboard interactivity value: {:?}", ki),
+                format!("wrong keyboard interactivity value: {ki:?}"),
             )),
         }
     }
@@ -171,7 +171,7 @@ impl TryFrom<WEnum<zwlr_layer_surface_v1::Anchor>> for Anchor {
 
         a.ok_or((
             zwlr_layer_surface_v1::Error::InvalidAnchor,
-            format!("invalid anchor {:?}", anchor),
+            format!("invalid anchor {anchor:?}"),
         ))
     }
 }
