@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["EXT_FOREIGN_TOPLEVEL_IMAGE_CAPTURE_SOURCE_MANAGER_V1_INTERFACE","EXT_IMAGE_CAPTURE_SOURCE_V1_INTERFACE","EXT_OUTPUT_IMAGE_CAPTURE_SOURCE_MANAGER_V1_INTERFACE","ext_foreign_toplevel_image_capture_source_manager_v1_interface","ext_image_capture_source_v1_interface","ext_output_image_capture_source_manager_v1_interface"]};
