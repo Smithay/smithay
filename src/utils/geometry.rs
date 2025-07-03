@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::Saturating;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 #[cfg(feature = "wayland_frontend")]
@@ -189,6 +190,53 @@ macro_rules! signed_coordinate_impl {
             #[inline]
             fn saturating_mul(self, other: Self) -> Self {
                 self.saturating_mul(other)
+            }
+        }
+
+        impl Coordinate for Saturating<$ty> {
+            const ZERO: Saturating<$ty> = Saturating(0);
+
+            #[inline]
+            fn downscale(self, scale: Self) -> Self {
+                self / scale
+            }
+
+            #[inline]
+            fn upscale(self, scale: Self) -> Self {
+                self * scale
+            }
+
+            #[inline]
+            fn to_f64(self) -> f64 {
+                self.0 as f64
+            }
+
+            #[inline]
+            fn from_f64(v: f64) -> Self {
+                Saturating(v as $ty)
+            }
+
+            #[inline]
+            fn non_negative(self) -> bool {
+                self.0 >= 0
+            }
+
+            #[inline]
+            fn abs(self) -> Self {
+                self.abs()
+            }
+
+            #[inline]
+            fn saturating_add(self, other: Self) -> Self {
+                self + other
+            }
+            #[inline]
+            fn saturating_sub(self, other: Self) -> Self {
+                self - other
+            }
+            #[inline]
+            fn saturating_mul(self, other: Self) -> Self {
+                self * other
             }
         }
     };
