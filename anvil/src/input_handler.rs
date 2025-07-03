@@ -88,7 +88,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                             .into_iter()
                             .chain(
                                 #[cfg(feature = "xwayland")]
-                                self.xdisplay.map(|v| ("DISPLAY", format!(":{}", v))),
+                                self.xdisplay.map(|v| ("DISPLAY", format!(":{v}"))),
                                 #[cfg(not(feature = "xwayland"))]
                                 None,
                             ),

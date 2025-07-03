@@ -1107,7 +1107,7 @@ impl DmabufParamsData {
             Err(_) => {
                 params.post_error(
                     zwp_linux_buffer_params_v1::Error::InvalidFormat,
-                    format!("Format {:x} is not supported", format),
+                    format!("Format {format:x} is not supported"),
                 );
 
                 return None;
@@ -1119,7 +1119,7 @@ impl DmabufParamsData {
         if !self.formats.contains_key(&format) {
             params.post_error(
                 zwp_linux_buffer_params_v1::Error::InvalidFormat,
-                format!("Format {:?}/{:x} is not supported.", format, format as u32),
+                format!("Format {format:?}/{:x} is not supported.", format as u32),
             );
             return None;
         }

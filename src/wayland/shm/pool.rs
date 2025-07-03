@@ -306,7 +306,7 @@ unsafe fn place_sigbus_handler() {
             let mut old_action = mem::zeroed();
             if libc::sigaction(libc::SIGBUS, &action, &mut old_action) == -1 {
                 let e = rustix::io::Errno::from_raw_os_error(errno::errno().0);
-                panic!("sigaction failed for SIGBUS handler: {:?}", e);
+                panic!("sigaction failed for SIGBUS handler: {e:?}");
             }
 
             old_action

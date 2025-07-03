@@ -254,7 +254,7 @@ where
                 if plane_idx as usize >= MAX_PLANES {
                     params.post_error(
                         zwp_linux_buffer_params_v1::Error::PlaneIdx,
-                        format!("Plane index {} is out of bounds", plane_idx),
+                        format!("Plane index {plane_idx} is out of bounds"),
                     );
                     return;
                 }
@@ -265,7 +265,7 @@ where
                 if planes.iter().any(|plane| plane.plane_idx == plane_idx) {
                     params.post_error(
                         zwp_linux_buffer_params_v1::Error::PlaneSet,
-                        format!("Plane index {} is already set.", plane_idx),
+                        format!("Plane index {plane_idx} is already set."),
                     );
                     return;
                 }
@@ -283,10 +283,7 @@ where
                     if params.version() >= 5 && modifier != data_modifier {
                         params.post_error(
                             zwp_linux_buffer_params_v1::Error::InvalidFormat,
-                            format!(
-                                "Planes have non-matching modifiers: {:?} != {:?}",
-                                modifier, data_modifier
-                            ),
+                            format!("Planes have non-matching modifiers: {modifier:?} != {data_modifier:?}",),
                         );
                     }
                 } else {

@@ -61,7 +61,7 @@ fn main() {
                 println!();
                 println!("Possible backends are:");
                 for b in POSSIBLE_BACKENDS {
-                    println!("\t{}", b);
+                    println!("\t{b}");
                 }
             }
         }

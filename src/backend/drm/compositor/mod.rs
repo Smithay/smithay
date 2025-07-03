@@ -176,7 +176,7 @@ use crate::{
 
 use super::{
     error::AccessError,
-    exporter::{gbm::GbmFramebufferExporter, ExportBuffer, ExportFramebuffer},
+    exporter::{gbm::GbmFramebufferExporter, gbm::NodeFilter, ExportBuffer, ExportFramebuffer},
     surface::VrrSupport,
     DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes,
 };
@@ -1227,7 +1227,7 @@ where
 
                         let cursor_allocator =
                             GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
-                        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), None);
+                        let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), NodeFilter::None);
                         CursorState {
                             allocator: cursor_allocator,
                             framebuffer_exporter,
@@ -1409,7 +1409,7 @@ where
 
             let cursor_allocator =
                 GbmAllocator::new(gbm.clone(), GbmBufferFlags::CURSOR | GbmBufferFlags::WRITE);
-            let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), None);
+            let framebuffer_exporter = GbmFramebufferExporter::new(gbm.clone(), NodeFilter::None);
             CursorState {
                 allocator: cursor_allocator,
                 framebuffer_exporter,
