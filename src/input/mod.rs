@@ -17,7 +17,7 @@
 //!
 //! ```
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
-//! # use smithay::backend::input::KeyState;
+//! # use smithay::backend::input::KeyEvent;
 //! # use smithay::input::{
 //! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
 //! #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
@@ -70,7 +70,7 @@
 //! #       seat: &Seat<State>,
 //! #       data: &mut State,
 //! #       key: KeysymHandle<'_>,
-//! #       state: KeyState,
+//! #       event: KeyEvent,
 //! #       serial: Serial,
 //! #       time: u32,
 //! #   ) {}
@@ -363,7 +363,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     ///
     /// ```no_run
     /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
-    /// # use smithay::backend::input::KeyState;
+    /// # use smithay::backend::input::KeyEvent;
     /// # use smithay::input::{
     /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
     /// #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
@@ -404,7 +404,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #       seat: &Seat<State>,
     /// #       data: &mut State,
     /// #       key: KeysymHandle<'_>,
-    /// #       state: KeyState,
+    /// #       event: KeyEvent,
     /// #       serial: Serial,
     /// #       time: u32,
     /// #   ) {}
@@ -484,7 +484,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     ///
     /// ```no_run
     /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::XkbConfig, pointer::CursorImageStatus};
-    /// # use smithay::backend::input::KeyState;
+    /// # use smithay::backend::input::KeyEvent;
     /// # use smithay::input::{
     /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
     /// #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
@@ -525,7 +525,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #       seat: &Seat<State>,
     /// #       data: &mut State,
     /// #       key: KeysymHandle<'_>,
-    /// #       state: KeyState,
+    /// #       event: KeyEvent,
     /// #       serial: Serial,
     /// #       time: u32,
     /// #   ) {}

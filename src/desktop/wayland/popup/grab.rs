@@ -6,7 +6,7 @@ use std::{
 use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 use crate::{
-    backend::input::{ButtonState, KeyState, Keycode},
+    backend::input::{ButtonState, KeyEvent, Keycode},
     input::{
         keyboard::{
             GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
@@ -443,7 +443,7 @@ where
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
-        state: KeyState,
+        event: KeyEvent,
         modifiers: Option<ModifiersState>,
         serial: Serial,
         time: u32,
@@ -459,7 +459,7 @@ where
             handle.unset_grab(self, data, serial, false);
         }
 
-        handle.input(data, keycode, state, modifiers, serial, time)
+        handle.input(data, keycode, event, modifiers, serial, time)
     }
 
     fn set_focus(

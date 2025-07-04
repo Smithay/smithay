@@ -21,7 +21,7 @@
 //!
 //! use smithay::wayland::pointer_gestures::PointerGesturesState;
 //! use smithay::delegate_pointer_gestures;
-//! # use smithay::backend::input::KeyState;
+//! # use smithay::backend::input::KeyEvent;
 //! # use smithay::input::{
 //! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
 //! #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
@@ -63,7 +63,7 @@
 //! #       seat: &Seat<State>,
 //! #       data: &mut State,
 //! #       key: KeysymHandle<'_>,
-//! #       state: KeyState,
+//! #       event: KeyEvent,
 //! #       serial: Serial,
 //! #       time: u32,
 //! #   ) {}

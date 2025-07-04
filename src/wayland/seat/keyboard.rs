@@ -12,7 +12,7 @@ use wayland_server::{
 
 use super::WaylandFocus;
 use crate::{
-    backend::input::{KeyState, Keycode},
+    backend::input::{KeyEvent, Keycode},
     input::{
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
         Seat, SeatHandler, SeatState, WeakSeat,
@@ -72,7 +72,12 @@ where
 
         let guard = self.arc.internal.lock().unwrap();
         if kbd.version() >= 4 {
-            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
+            let rate = if kbd.version() >= 10 {
+                0 // Enables compositor-side key repeat. See wl_keyboard key event
+            } else {
+                guard.repeat_rate
+            };
+            kbd.repeat_info(rate, guard.repeat_delay);
         }
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if focused.same_client_as(&kbd.id()) {
@@ -291,12 +296,12 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         seat: &Seat<D>,
         _data: &mut D,
         key: KeysymHandle<'_>,
-        state: KeyState,
+        event: KeyEvent,
         serial: Serial,
         time: u32,
     ) {
         for_each_focused_kbds(seat, self, |kbd| {
-            kbd.key(serial.into(), time, key.raw_code().raw() - 8, state.into())
+            kbd.key(serial.into(), time, key.raw_code().raw() - 8, event.into())
         })
     }
 
@@ -314,12 +319,13 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     }
 }
 
-impl From<KeyState> for WlKeyState {
+impl From<KeyEvent> for WlKeyState {
     #[inline]
-    fn from(state: KeyState) -> WlKeyState {
-        match state {
-            KeyState::Pressed => WlKeyState::Pressed,
-            KeyState::Released => WlKeyState::Released,
+    fn from(event: KeyEvent) -> WlKeyState {
+        match event {
+            KeyEvent::Pressed => WlKeyState::Pressed,
+            KeyEvent::Released => WlKeyState::Released,
+            KeyEvent::Repeated => WlKeyState::Repeated,
         }
     }
 }
@@ -328,13 +334,14 @@ impl From<KeyState> for WlKeyState {
 #[error("Unknown KeyState {0:?}")]
 pub struct UnknownKeyState(WlKeyState);
 
-impl TryFrom<WlKeyState> for KeyState {
+impl TryFrom<WlKeyState> for KeyEvent {
     type Error = UnknownKeyState;
     #[inline]
-    fn try_from(state: WlKeyState) -> Result<Self, Self::Error> {
-        match state {
-            WlKeyState::Pressed => Ok(KeyState::Pressed),
-            WlKeyState::Released => Ok(KeyState::Released),
+    fn try_from(event: WlKeyState) -> Result<Self, Self::Error> {
+        match event {
+            WlKeyState::Pressed => Ok(KeyEvent::Pressed),
+            WlKeyState::Released => Ok(KeyEvent::Released),
+            WlKeyState::Repeated => Ok(KeyEvent::Repeated),
             x => Err(UnknownKeyState(x)),
         }
     }

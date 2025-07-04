@@ -47,7 +47,7 @@ use wayland_server::{
 };
 
 use crate::{
-    backend::input::{KeyState, Keycode},
+    backend::input::{KeyEvent, Keycode},
     input::{
         keyboard::{self, KeyboardGrab, KeyboardInnerHandle},
         Seat, SeatHandler,
@@ -109,7 +109,7 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
-        state: KeyState,
+        event: KeyEvent,
         modifiers: Option<keyboard::ModifiersState>,
         serial: Serial,
         time: u32,
@@ -120,7 +120,7 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
             handle.unset_grab(self, data, serial, false);
         }
 
-        handle.input(data, keycode, state, modifiers, serial, time)
+        handle.input(data, keycode, event, modifiers, serial, time)
     }
 
     fn set_focus(

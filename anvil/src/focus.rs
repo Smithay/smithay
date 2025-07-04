@@ -5,7 +5,7 @@ use smithay::xwayland::xwm::XwmOfferData;
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::X11Surface;
 pub use smithay::{
-    backend::input::KeyState,
+    backend::input::KeyEvent,
     desktop::{LayerSurface, PopupKind},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
@@ -261,12 +261,12 @@ impl<BackendData: Backend> KeyboardTarget<AnvilState<BackendData>> for KeyboardF
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         key: KeysymHandle<'_>,
-        state: KeyState,
+        event: KeyEvent,
         serial: Serial,
         time: u32,
     ) {
         self.inner_keyboard_target()
-            .key(seat, data, key, state, serial, time)
+            .key(seat, data, key, event, serial, time)
     }
     fn modifiers(
         &self,
