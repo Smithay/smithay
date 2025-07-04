@@ -142,3 +142,14 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch.crates-io]
+wayland-client = { git="https://github.com/Smithay/wayland-rs", version = "0.31.10", optional = true }
+wayland-cursor = { git="https://github.com/Smithay/wayland-rs", version = "0.31.10", optional = true }
+wayland-egl = { git="https://github.com/Smithay/wayland-rs", version = "0.32.7", optional = true }
+wayland-protocols = { git="https://github.com/Smithay/wayland-rs", version = "0.32.8", features = ["unstable", "staging", "server"], optional = true }
+wayland-protocols-wlr = { git="https://github.com/Smithay/wayland-rs", version = "0.3.8", features = ["server"], optional = true }
+wayland-protocols-misc = { git="https://github.com/Smithay/wayland-rs", version = "0.3.8", features = ["server"], optional = true }
+wayland-server = { git="https://github.com/Smithay/wayland-rs", version = "0.31.9", optional = true }
+wayland-sys = { git="https://github.com/Smithay/wayland-rs", version = "0.31.6", optional = true }
+wayland-backend = { git="https://github.com/Smithay/wayland-rs", version = "0.3.10", optional = true }
