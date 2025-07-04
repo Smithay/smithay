@@ -1,18 +1,23 @@
 //! Keyboard-related types for smithay's input abstraction
 
-use crate::backend::input::KeyState;
+use crate::backend::input::{Event, InputBackend, KeyEvent, KeyState, KeyboardKeyEvent};
+use crate::reexports::calloop::LoopHandle;
 use crate::utils::{IsAlive, Serial, SERIAL_COUNTER};
+use calloop::RegistrationToken;
 use downcast_rs::{impl_downcast, Downcast};
 use std::collections::HashSet;
 #[cfg(feature = "wayland_frontend")]
 use std::sync::RwLock;
+use std::time::Duration;
 use std::{
     default::Default,
     fmt, io,
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
-use tracing::{debug, info, info_span, instrument, trace};
+#[cfg(feature = "wayland_frontend")]
+use tracing::error;
+use tracing::{debug, info, info_span, instrument, trace, warn};
 
 use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
 pub use xkbcommon::xkb::{self, keysyms, Keycode, Keysym};
@@ -47,7 +52,7 @@ where
         seat: &Seat<D>,
         data: &mut D,
         key: KeysymHandle<'_>,
-        state: KeyState,
+        state: KeyEvent,
         serial: Serial,
         time: u32,
     );
@@ -215,6 +220,19 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     led_mapping: LedMapping,
     pub(crate) led_state: LedState,
     grab: GrabStatus<dyn KeyboardGrab<D>>,
+    /// Holds the token to cancel key repeat.
+    /// The token gets cleared when the keyboard is dropped, to neutralize the repeat callback.
+    pub(crate) key_repeat_timer: Arc<Mutex<Option<RegistrationToken>>>,
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<D: SeatHandler> Drop for KbdInternal<D> {
+    fn drop(&mut self) {
+        let timer = self.key_repeat_timer.lock().unwrap().take();
+        if timer.is_some() {
+            error!("A keyboard was dropped without unregistering a repeat handler. This is a bug in smithay or in the compositor.");
+        }
+    }
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
@@ -229,6 +247,7 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
             .field("xkb", &self.xkb)
             .field("repeat_rate", &self.repeat_rate)
             .field("repeat_delay", &self.repeat_delay)
+            .field("key_repeat_timer", &self.key_repeat_timer)
             .finish()
     }
 }
@@ -266,20 +285,24 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             led_mapping,
             led_state,
             grab: GrabStatus::None,
+            key_repeat_timer: Arc::new(Mutex::new(None)),
         })
     }
 
     // returns whether the modifiers or led state has changed
-    fn key_input(&mut self, keycode: Keycode, state: KeyState) -> (bool, bool) {
+    fn key_input(&mut self, keycode: Keycode, state: KeyEvent) -> (bool, bool) {
         // track pressed keys as xkbcommon does not seem to expose it :(
         let direction = match state {
-            KeyState::Pressed => {
+            KeyEvent::Pressed => {
                 self.pressed_keys.insert(keycode);
                 xkb::KeyDirection::Down
             }
-            KeyState::Released => {
+            KeyEvent::Released => {
                 self.pressed_keys.remove(&keycode);
                 xkb::KeyDirection::Up
+            }
+            KeyEvent::Repeated => {
+                return (false, false);
             }
         };
 
@@ -602,10 +625,10 @@ pub trait KeyboardGrab<D: SeatHandler>: Downcast {
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
-        state: KeyState,
+        event: KeyEvent,
         modifiers: Option<ModifiersState>,
         serial: Serial,
-        time: u32,
+        time_ms: u32,
     );
 
     /// A focus change was requested.
@@ -931,6 +954,106 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
     }
 
+    /// Processes the keyboard event, starting or stopping key repeat.
+    /// If this method is used, it must receive all keyboard events.
+    /// The `on_event` argument will be called with all events: the ones received directly and the generated repeats.
+    pub fn key_register_repeat<B: InputBackend>(
+        &self,
+        data: &mut D,
+        get_handle: impl Fn(&D) -> &LoopHandle<'static, D> + 'static,
+        event: B::KeyboardKeyEvent,
+        // event, timeout, code.
+        // This is Clone because there are two closures in here...
+        on_event: impl Fn(&mut D, KeyEvent, u32, Keycode) + Clone + 'static,
+    ) {
+        let time_ms = event.time_msec();
+        let keycode = event.key_code();
+        let state = event.state();
+
+        // Forward initial hardware event as logical event
+        on_event(data, state.into(), time_ms, keycode);
+
+        // Unregister preexisting repeating
+        // Releasing a key press obviously stops the repeat.
+        // But also, pressing another key stops the repeat of the previous key and starts it for the newly pressed key.
+        // TODO: this may had odd consequences when a modifier is pressed as the second key. But is that worth worrying about?
+        self.key_stop_repeat(data, &get_handle);
+
+        // Register repeating
+        match event.state() {
+            KeyState::Pressed => {
+                let mut guard = self.arc.internal.lock().unwrap();
+                let delay = guard.repeat_delay;
+                let rate = guard.repeat_rate;
+                let mut time_ms = time_ms;
+
+                // This closure-in-closure business is somewhat ugly.
+                // The reason is that there are two timers needed: first, the delay timer, and after the delay, the repeat timer. Both of them receive different tokens for cancelling, so we have to swap the token after the delay.
+                // The only comparable alternative I can think of is to wrap the key_repeat_timer in an Mutex<Arc<>> and change the token when delay turns into repeat. But locks are worse than nesting.
+                let kbd = self.arc.clone();
+                let duration = Duration::from_millis(delay as _);
+                let handle = get_handle(data);
+                let token = handle.insert_source(
+                    calloop::timer::Timer::from_duration(duration),
+                    move |_, _, data| {
+                        time_ms += delay as u32;
+                        on_event(data, KeyEvent::Repeated, time_ms, keycode);
+                        let mut guard = kbd.internal.lock().unwrap();
+
+                        let handle = get_handle(data);
+                        {
+                            let timer = guard.key_repeat_timer.lock().unwrap();
+                            match *timer {
+                                Some(token) => handle.remove(token),
+                                None => debug!("Key starts repeating but there is no delay timer. Was repeat already cancelled?"),
+                            };
+                        }
+
+                        // This implementation doesn't take into account changes to the repeat rate after repeating begins.
+                        let kbd = kbd.clone();
+                        let on_event = on_event.clone();
+                        let duration = Duration::from_millis(rate as _);
+                        let token = handle.insert_source(
+                            calloop::timer::Timer::from_duration(duration),
+                            move |_, _, data| {
+                                time_ms += rate as u32;
+                                let guard = kbd.internal.lock().unwrap();
+                                let timer = guard.key_repeat_timer.lock().unwrap();
+
+                                // If the timer has been orphaned by dropping the keyboard, don't actually send the event, don't register a repeat.
+                                if timer.is_some() {
+                                    drop(timer);
+                                    drop(guard);
+                                    on_event(data, KeyEvent::Repeated, time_ms, keycode);
+                                    calloop::timer::TimeoutAction::ToDuration(duration)
+                                } else {
+                                    debug!("Cancelling an orphaned keyboard repeat.");
+                                    calloop::timer::TimeoutAction::Drop
+                                }
+                            },
+                        ).unwrap();
+                        guard.key_repeat_timer = Arc::new(Mutex::new(Some(token)));
+                        calloop::timer::TimeoutAction::Drop
+                    }
+                ).unwrap();
+                guard.key_repeat_timer = Arc::new(Mutex::new(Some(token)));
+            }
+            KeyState::Released => {
+                // Nothing to do; timer is released for both in the common path.
+            }
+        }
+    }
+
+    /// Cancels any ongoing key repeat
+    pub fn key_stop_repeat(&self, data: &mut D, get_handle: impl Fn(&D) -> &LoopHandle<'static, D>) {
+        let guard = self.arc.internal.lock().unwrap();
+        let mut timer = guard.key_repeat_timer.lock().unwrap();
+        if let Some(token) = timer.take() {
+            let handle = get_handle(data);
+            handle.remove(token);
+        };
+    }
+
     /// Handle a keystroke
     ///
     /// All keystrokes from the input backend should be fed _in order_ to this method of the
@@ -949,7 +1072,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         &self,
         data: &mut D,
         keycode: Keycode,
-        state: KeyState,
+        state: KeyEvent,
         serial: Serial,
         time: u32,
         filter: F,
@@ -979,13 +1102,13 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         &self,
         data: &mut D,
         keycode: Keycode,
-        state: KeyState,
+        state: KeyEvent,
         filter: F,
     ) -> (T, bool)
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
     {
-        trace!("Handling keystroke");
+        trace!("Handling key event");
 
         let mut guard = self.arc.internal.lock().unwrap();
         let (mods_changed, leds_changed) = guard.key_input(keycode, state);
@@ -1014,26 +1137,18 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         &self,
         data: &mut D,
         keycode: Keycode,
-        state: KeyState,
+        event: KeyEvent,
         serial: Serial,
-        time: u32,
+        time_ms: u32,
         mods_changed: bool,
     ) {
         let mut guard = self.arc.internal.lock().unwrap();
-        match state {
-            KeyState::Pressed => {
-                guard.forwarded_pressed_keys.insert(keycode);
-            }
-            KeyState::Released => {
-                guard.forwarded_pressed_keys.remove(&keycode);
-            }
-        };
 
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
         let modifiers = mods_changed.then_some(guard.mods_state);
         guard.with_grab(data, &seat, |data, handle, grab| {
-            grab.input(data, handle, keycode, state, modifiers, serial, time);
+            grab.input(data, handle, keycode, event, modifiers, serial, time_ms);
         });
         if guard.focus.is_some() {
             trace!("Input forwarded to client");
@@ -1166,6 +1281,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 continue;
             };
             if kbd.version() >= 4 {
+                let rate = if kbd.version() >= 10 {
+                    0 // Enables compositor-side key repeat. See wl_keyboard key event
+                } else {
+                    rate
+                };
                 kbd.repeat_info(rate, delay);
             }
         }
@@ -1281,7 +1401,7 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         &mut self,
         data: &mut D,
         keycode: Keycode,
-        key_state: KeyState,
+        key_state: KeyEvent,
         modifiers: Option<ModifiersState>,
         serial: Serial,
         time: u32,
@@ -1392,7 +1512,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
-        state: KeyState,
+        state: KeyEvent,
         modifiers: Option<ModifiersState>,
         serial: Serial,
         time: u32,
