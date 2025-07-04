@@ -18,7 +18,7 @@ use crate::input::{
 };
 use crate::wayland::text_input::TextInputHandle;
 use crate::{
-    backend::input::{KeyState, Keycode},
+    backend::input::{KeyEvent, Keycode},
     utils::Serial,
 };
 
@@ -45,7 +45,7 @@ where
         _data: &mut D,
         _handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
-        key_state: KeyState,
+        key_state: KeyEvent,
         modifiers: Option<ModifiersState>,
         serial: Serial,
         time: u32,
