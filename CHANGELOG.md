@@ -163,6 +163,9 @@ while using input handle methods that don't affect the grab.) As a result there 
 - `PointerInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 - `TabletToolInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 
+`KeyboardTarget` has a new required method `key_repeat`, called for compositor-side key repeats
+(`wl_keyboard` version 10). If you don't care about compositor-side repeat, it can be left empty.
+
 ### Additions
 
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's

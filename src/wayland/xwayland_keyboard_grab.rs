@@ -100,6 +100,14 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> XWaylandKeyboardGrab<D> {
     pub fn grab(&self) -> &ZwpXwaylandKeyboardGrabV1 {
         &self.grab
     }
+
+    fn update_grab(&mut self, data: &mut D, handle: &mut KeyboardInnerHandle<'_, D>, serial: Serial) {
+        handle.set_focus(data, self.start_data.focus.clone(), serial);
+
+        if !self.grab.is_alive() {
+            handle.unset_grab(self, data, serial, false);
+        }
+    }
 }
 
 impl<D: XWaylandKeyboardGrabHandler + 'static> Clone for XWaylandKeyboardGrab<D> {
@@ -122,13 +130,20 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
         serial: Serial,
         time: InputTime,
     ) {
-        handle.set_focus(data, self.start_data.focus.clone(), serial);
-
-        if !self.grab.is_alive() {
-            handle.unset_grab(self, data, serial, false);
-        }
-
+        self.update_grab(data, handle, serial);
         handle.input(data, keycode, state, modifiers, serial, time)
+    }
+
+    fn input_repeat(
+        &mut self,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        keycode: Keycode,
+        serial: Serial,
+        time: InputTime,
+    ) {
+        self.update_grab(data, handle, serial);
+        handle.input_repeat(data, keycode, serial, time)
     }
 
     fn set_focus(

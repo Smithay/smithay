@@ -28,6 +28,7 @@ use smithay::{
     input::{
         Seat, SeatHandler, SeatState,
         dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source},
+        keyboard::repeat::KeyRepeat,
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, Focus, PointerHandle},
         tablet::TabletSeatHandler,
@@ -171,6 +172,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     // input-related fields
     pub suppressed_keys: Vec<Keysym>,
+    pub key_repeat: KeyRepeat<AnvilState<BackendData>>,
     pub cursor_status: CursorImageStatus,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
@@ -743,7 +745,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         let pointer = seat.add_pointer();
         seat.add_keyboard(XkbConfig::default(), 200, 25)
-            .expect("Failed to initialize the keyboard");
+            .expect("Failed to initialize the keyboard")
+            .set_compositor_side_repeat(true);
 
         let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
@@ -758,7 +761,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             display_handle: dh,
             socket_name,
             running: Arc::new(AtomicBool::new(true)),
-            handle,
+            handle: handle.clone(),
             space: Space::default(),
             popups: PopupManager::default(),
             compositor_state,
@@ -785,6 +788,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             image_copy_capture_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
+            key_repeat: KeyRepeat::new(handle),
             cursor_status: CursorImageStatus::default_named(),
             seat_name,
             seat,

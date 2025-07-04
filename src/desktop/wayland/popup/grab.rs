@@ -432,6 +432,26 @@ where
     }
 }
 
+impl<D> PopupKeyboardGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+{
+    fn update_grab(&mut self, data: &mut D, handle: &mut KeyboardInnerHandle<'_, D>, serial: Serial) {
+        // Check if the grab changed and update the focus
+        // If the grab has ended this will return the root
+        // surface to restore the client expected focus.
+        if let Some(focus) = self.popup_grab.current_grab() {
+            handle.set_focus(data, Some(focus), serial);
+        }
+
+        if self.popup_grab.has_ended() {
+            handle.unset_grab(self, data, serial, false);
+        }
+    }
+}
+
 impl<D> KeyboardGrab<D> for PopupKeyboardGrab<D>
 where
     D: SeatHandler + 'static,
@@ -448,18 +468,20 @@ where
         serial: Serial,
         time: InputTime,
     ) {
-        // Check if the grab changed and update the focus
-        // If the grab has ended this will return the root
-        // surface to restore the client expected focus.
-        if let Some(focus) = self.popup_grab.current_grab() {
-            handle.set_focus(data, Some(focus), serial);
-        }
-
-        if self.popup_grab.has_ended() {
-            handle.unset_grab(self, data, serial, false);
-        }
-
+        self.update_grab(data, handle, serial);
         handle.input(data, keycode, state, modifiers, serial, time)
+    }
+
+    fn input_repeat(
+        &mut self,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        keycode: Keycode,
+        serial: Serial,
+        time: InputTime,
+    ) {
+        self.update_grab(data, handle, serial);
+        handle.input_repeat(data, keycode, serial, time)
     }
 
     fn set_focus(

@@ -74,6 +74,7 @@
 //! #       serial: Serial,
 //! #       time: InputTime,
 //! #   ) {}
+//! #   fn key_repeat(&self, seat: &Seat<State>, data: &mut State, key: KeysymHandle<'_>, serial: Serial, time: InputTime) {}
 //! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
 //! # }
 //! # impl TouchTarget<State> for Target {
@@ -435,6 +436,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #       serial: Serial,
     /// #       time: InputTime,
     /// #   ) {}
+    /// #   fn key_repeat(&self, seat: &Seat<State>, data: &mut State, key: KeysymHandle<'_>, serial: Serial, time: InputTime) {}
     /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
     /// # }
     /// # impl TouchTarget<State> for Target {
@@ -557,6 +559,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #       serial: Serial,
     /// #       time: InputTime,
     /// #   ) {}
+    /// #   fn key_repeat(&self, seat: &Seat<State>, data: &mut State, key: KeysymHandle<'_>, serial: Serial, time: InputTime) {}
     /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
     /// # }
     /// # impl TouchTarget<State> for Target {
