@@ -191,8 +191,14 @@ pub struct Seat<D: SeatHandler> {
 ///
 /// Does not keep associated user data alive,
 /// and can be used to refer to a potentially already destroyed seat.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct WeakSeat<D: SeatHandler>(Weak<SeatRc<D>>);
+
+impl<D: SeatHandler> Clone for WeakSeat<D> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 impl<D: SeatHandler> WeakSeat<D> {
     /// Try to retrieve the original `Seat`, if it still exists
