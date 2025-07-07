@@ -124,14 +124,17 @@ pub fn run(channel: Channel<WlcsEvent>) {
 
             pointer_element.set_status(state.cursor_status.clone());
             elements.extend(
-                pointer_element.render_elements(
-                    &mut renderer,
-                    (cursor_pos - cursor_hotspot.to_f64())
-                        .to_physical(scale)
-                        .to_i32_round(),
-                    scale,
-                    1.0,
-                ),
+                pointer_element
+                    .render_elements(
+                        &mut renderer,
+                        (cursor_pos - cursor_hotspot.to_f64())
+                            .to_physical(scale)
+                            .to_i32_round(),
+                        scale,
+                        1.0,
+                    )
+                    .into_iter()
+                    .map(CustomRenderElements::Pointer),
             );
 
             // draw the dnd icon if any
@@ -140,13 +143,17 @@ pub fn run(channel: Channel<WlcsEvent>) {
                     let dnd_icon_pos = (cursor_pos + icon.offset.to_f64())
                         .to_physical(scale)
                         .to_i32_round();
-                    elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
-                        &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
-                        &mut renderer,
-                        dnd_icon_pos,
-                        scale,
-                        1.0,
-                    ));
+                    elements.extend(
+                        AsRenderElements::<DummyRenderer>::render_elements(
+                            &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
+                            &mut renderer,
+                            dnd_icon_pos,
+                            scale,
+                            1.0,
+                        )
+                        .into_iter()
+                        .map(CustomRenderElements::Surface),
+                    );
                 }
             }
 

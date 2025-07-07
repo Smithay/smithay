@@ -402,12 +402,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .flat_map(|e| {
                 let location = e.render_location() - region.loc;
                 e.element
-                    .render_elements::<<E as AsRenderElements<R>>::RenderElement>(
-                        renderer,
-                        location.to_physical_precise_round(scale),
-                        scale,
-                        alpha,
-                    )
+                    .render_elements(renderer, location.to_physical_precise_round(scale), scale, alpha)
             })
             .collect::<Vec<_>>()
     }
@@ -429,8 +424,6 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         R::TextureId: Clone + Texture + 'static,
         E: AsRenderElements<R>,
         <E as AsRenderElements<R>>::RenderElement: 'a,
-        SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-            From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
     {
         if !self.outputs.contains(output) {
             return Err(OutputError::Unmapped);
@@ -462,7 +455,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             })
             .flat_map(|e| {
                 let location = e.render_location() - output_geo.loc;
-                e.render_elements::<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>(
+                e.render_elements(
                     renderer,
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
@@ -590,8 +583,6 @@ pub fn space_render_elements<
 where
     R::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
     let mut render_elements = Vec::new();
     let output_scale = output.current_scale().fractional_scale();
@@ -610,15 +601,15 @@ where
                 .into_iter()
                 .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
                 .flat_map(|(loc, surface)| {
-                    AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
-                        surface,
-                        renderer,
-                        loc.to_physical_precise_round(output_scale),
-                        Scale::from(output_scale),
-                        alpha,
-                    )
-                    .into_iter()
-                    .map(SpaceRenderElements::Surface)
+                    surface
+                        .render_elements(
+                            renderer,
+                            loc.to_physical_precise_round(output_scale),
+                            Scale::from(output_scale),
+                            alpha,
+                        )
+                        .into_iter()
+                        .map(SpaceRenderElements::Surface)
                 }),
         );
 
@@ -643,15 +634,15 @@ where
             .into_iter()
             .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
             .flat_map(|(loc, surface)| {
-                AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
-                    surface,
-                    renderer,
-                    loc.to_physical_precise_round(output_scale),
-                    Scale::from(output_scale),
-                    alpha,
-                )
-                .into_iter()
-                .map(SpaceRenderElements::Surface)
+                surface
+                    .render_elements(
+                        renderer,
+                        loc.to_physical_precise_round(output_scale),
+                        Scale::from(output_scale),
+                        alpha,
+                    )
+                    .into_iter()
+                    .map(SpaceRenderElements::Surface)
             }),
     );
 
@@ -686,8 +677,6 @@ pub fn render_output<
 where
     R::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
     if let OutputModeSource::Auto(renderer_output) = damage_tracker.mode() {
         assert!(renderer_output == output);
