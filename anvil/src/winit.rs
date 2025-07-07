@@ -318,14 +318,17 @@ pub fn run_winit() {
                 let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
 
                 elements.extend(
-                    pointer_element.render_elements(
-                        renderer,
-                        (cursor_pos - cursor_hotspot.to_f64())
-                            .to_physical(scale)
-                            .to_i32_round(),
-                        scale,
-                        1.0,
-                    ),
+                    pointer_element
+                        .render_elements(
+                            renderer,
+                            (cursor_pos - cursor_hotspot.to_f64())
+                                .to_physical(scale)
+                                .to_i32_round(),
+                            scale,
+                            1.0,
+                        )
+                        .into_iter()
+                        .map(CustomRenderElements::Pointer),
                 );
 
                 // draw the dnd icon if any
@@ -334,13 +337,17 @@ pub fn run_winit() {
                         .to_physical(scale)
                         .to_i32_round();
                     if icon.surface.alive() {
-                        elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
-                            &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
-                            renderer,
-                            dnd_icon_pos,
-                            scale,
-                            1.0,
-                        ));
+                        elements.extend(
+                            AsRenderElements::<GlesRenderer>::render_elements(
+                                &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
+                                renderer,
+                                dnd_icon_pos,
+                                scale,
+                                1.0,
+                            )
+                            .into_iter()
+                            .map(CustomRenderElements::Surface),
+                        );
                     }
                 }
 

@@ -71,16 +71,13 @@ where
     R: Renderer<TextureId = T> + ImportAll + ImportMem,
 {
     type RenderElement = PointerRenderElement<R>;
-    fn render_elements<E>(
+    fn render_elements(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<E>
-    where
-        E: From<PointerRenderElement<R>>,
-    {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         match &self.status {
             CursorImageStatus::Hidden => vec![],
             // Always render `Default` for a named shape.
@@ -104,16 +101,17 @@ where
                 }
             }
             CursorImageStatus::Surface(surface) => {
-                let elements: Vec<PointerRenderElement<R>> =
-                    smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
-                        renderer,
-                        surface,
-                        location,
-                        scale,
-                        alpha,
-                        Kind::Cursor,
-                    );
-                elements.into_iter().map(E::from).collect()
+                smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
+                    renderer,
+                    surface,
+                    location,
+                    scale,
+                    alpha,
+                    Kind::Cursor,
+                )
+                .into_iter()
+                .map(PointerRenderElement::Surface)
+                .collect()
             }
         }
     }

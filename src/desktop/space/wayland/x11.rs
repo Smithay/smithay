@@ -102,13 +102,13 @@ where
     type RenderElement = WaylandSurfaceRenderElement<R>;
 
     #[profiling::function]
-    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
+    fn render_elements(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         alpha: f32,
-    ) -> Vec<C> {
+    ) -> impl IntoIterator<Item = Self::RenderElement> {
         let state = self.state.lock().unwrap();
         let Some(surface) = state.wl_surface.as_ref() else {
             return Vec::new();
