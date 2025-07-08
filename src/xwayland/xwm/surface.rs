@@ -78,6 +78,7 @@ pub(crate) struct SharedSurfaceState {
     net_state: HashSet<Atom>,
     motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
+    pub(crate) opacity: Option<u32>,
 }
 
 pub(super) type Protocols = Vec<WMProtocol>;
@@ -147,6 +148,7 @@ pub enum WmWindowProperty {
     MotifHints,
     StartupId,
     Pid,
+    Opacity,
 }
 
 impl X11Surface {
@@ -193,6 +195,7 @@ impl X11Surface {
                 net_state: HashSet::new(),
                 motif_hints: vec![0; 5],
                 window_type: Vec::new(),
+                opacity: None,
             })),
             user_data: Arc::new(UserDataMap::new()),
         }
@@ -371,6 +374,11 @@ impl X11Surface {
     /// Returns the PID of the underlying X11 window
     pub fn pid(&self) -> Option<u32> {
         self.state.lock().unwrap().pid
+    }
+
+    /// Returns the opacity of the underlying X11 window
+    pub fn opacity(&self) -> Option<u32> {
+        self.state.lock().unwrap().opacity
     }
 
     /// Returns if the window is considered to be a popup.
@@ -634,6 +642,7 @@ impl X11Surface {
         self.update_motif_hints()?;
         self.update_startup_id()?;
         self.update_pid()?;
+        self.update_opacity()?;
         Ok(())
     }
 
@@ -678,6 +687,10 @@ impl X11Surface {
             atom if atom == self.atoms._NET_WM_PID => {
                 self.update_pid()?;
                 Ok(Some(WmWindowProperty::Pid))
+            }
+            atom if atom == self.atoms._NET_WM_WINDOW_OPACITY => {
+                self.update_opacity()?;
+                Ok(Some(WmWindowProperty::Opacity))
             }
 
             _ => Ok(None), // unknown
@@ -765,6 +778,14 @@ impl X11Surface {
         if let Some(pid) = self.read_window_property_u32(self.atoms._NET_WM_PID)? {
             let mut state = self.state.lock().unwrap();
             state.pid = Some(pid);
+        }
+        Ok(())
+    }
+
+    fn update_opacity(&self) -> Result<(), ConnectionError> {
+        if let Some(opacity) = self.read_window_property_u32(self.atoms._NET_WM_WINDOW_OPACITY)? {
+            let mut state = self.state.lock().unwrap();
+            state.opacity = Some(opacity);
         }
         Ok(())
     }
