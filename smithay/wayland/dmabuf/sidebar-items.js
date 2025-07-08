@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_dmabuf"],"struct":["DmabufData","DmabufFeedback","DmabufFeedbackBuilder","DmabufFeedbackData","DmabufGlobal","DmabufGlobalData","DmabufParamsData","DmabufState","ImportNotifier","SurfaceDmabufFeedbackState"],"trait":["DmabufHandler"]};
