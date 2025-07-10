@@ -1,5 +1,4 @@
 use crate::{
-    backend::input::KeyState,
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{
@@ -20,7 +19,10 @@ use std::{
     sync::{atomic::Ordering, Arc, Mutex, Weak},
 };
 use tracing::warn;
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::protocol::{
+    wl_keyboard::KeyState,
+    wl_surface::WlSurface,
+};
 
 use x11rb::{
     connection::Connection as _,

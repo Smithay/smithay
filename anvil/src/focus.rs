@@ -3,14 +3,20 @@ use std::borrow::Cow;
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::X11Surface;
 pub use smithay::{
-    backend::input::KeyState,
     desktop::{LayerSurface, PopupKind},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
         Seat,
     },
-    reexports::wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, Resource},
+    reexports::wayland_server::{
+        backend::ObjectId,
+        protocol::{
+            wl_keyboard::KeyState,
+            wl_surface::WlSurface,
+        },
+        Resource,
+    },
     utils::{IsAlive, Serial},
     wayland::seat::WaylandFocus,
 };

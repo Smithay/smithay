@@ -35,7 +35,7 @@ use smithay::{
     },
     output::Output,
     reexports::{
-        calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
+        calloop::{self, generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken},
         wayland_protocols::xdg::decoration::{
             self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
         },
@@ -300,6 +300,27 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
 
     fn led_state_changed(&mut self, _seat: &Seat<Self>, led_state: LedState) {
         self.backend_data.update_led_state(led_state)
+    }
+
+    fn set_timeout(
+        &mut self,
+        duration: std::time::Duration,
+        mut callback: impl FnMut(&mut Self) + 'static,
+    ) -> RegistrationToken {
+        self.handle.insert_source(
+            calloop::timer::Timer::from_duration(duration),
+            move |_, _, state| {
+                callback(state);
+                calloop::timer::TimeoutAction::ToDuration(duration)
+            },
+        ).unwrap()
+    }
+    
+    fn clear_timeout(
+        &mut self,
+        token: RegistrationToken,
+    ) {
+        self.handle.remove(token);
     }
 }
 delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
