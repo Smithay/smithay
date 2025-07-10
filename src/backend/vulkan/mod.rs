@@ -715,15 +715,15 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
         // terminator.
         let message = unsafe { CStr::from_ptr((*p_callback_data).p_message) }.to_string_lossy();
         // Message type is in full uppercase since we print the bitflag debug representation.
-        let ty = format!("{:?}", message_type).to_lowercase();
+        let ty = format!("{message_type:?}").to_lowercase();
 
         match message_severity {
             vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => {
-                trace!(ty, "{}", message)
+                trace!(ty, "{message}")
             }
-            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => info!(ty, "{}", message),
-            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => warn!(ty, "{}", message),
-            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => error!(ty, "{}", message),
+            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => info!(ty, "{message}"),
+            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => warn!(ty, "{message}"),
+            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => error!(ty, "{message}"),
             _ => (),
         }
     });

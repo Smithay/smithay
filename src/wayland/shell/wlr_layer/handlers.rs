@@ -77,7 +77,7 @@ where
                     Err(layer) => {
                         shell.post_error(
                             zwlr_layer_shell_v1::Error::InvalidLayer,
-                            format!("invalid layer: {:?}", layer),
+                            format!("invalid layer: {layer:?}"),
                         );
                         return;
                     }

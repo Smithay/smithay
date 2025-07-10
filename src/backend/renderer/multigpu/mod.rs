@@ -167,15 +167,15 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::RenderApiError(err) => write!(f, "Error::RenderApiError({:?})", err),
-            Error::TargetApiError(err) => write!(f, "Error::TargetApiError({:?})", err),
-            Error::NoDevice(dev) => write!(f, "Error::NoDevice({:?})", dev),
-            Error::MismatchedDevice(dev) => write!(f, "Error::MismatchedDevice({:?})", dev),
+            Error::RenderApiError(err) => write!(f, "Error::RenderApiError({err:?})"),
+            Error::TargetApiError(err) => write!(f, "Error::TargetApiError({err:?})"),
+            Error::NoDevice(dev) => write!(f, "Error::NoDevice({dev:?})"),
+            Error::MismatchedDevice(dev) => write!(f, "Error::MismatchedDevice({dev:?})"),
             Error::DeviceMissing => write!(f, "Error::DeviceMissing"),
-            Error::Render(err) => write!(f, "Error::Render({:?})", err),
-            Error::Target(err) => write!(f, "Error::Target({:?})", err),
+            Error::Render(err) => write!(f, "Error::Render({err:?})"),
+            Error::Target(err) => write!(f, "Error::Target({err:?})"),
             Error::ImportFailed => write!(f, "Error::ImportFailed"),
-            Error::AllocatorError(err) => write!(f, "Error::AllocationError({})", err),
+            Error::AllocatorError(err) => write!(f, "Error::AllocationError({err})"),
         }
     }
 }

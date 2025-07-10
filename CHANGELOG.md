@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Breaking changes
+
+`GbmFramebufferExporter::new` now accepts a `NodeFilter` as import node, which
+enables accepting dmabufs originating from any node.
+
+```diff
+-GbmFramebufferExporter::new(gbm, node);
++GbmFramebufferExporter::new(gbm, node.into());
+
+-GbmFramebufferExporter::new(gbm, None);
++GbmFramebufferExporter::new(gbm, NodeFilter::None);
+
+-GbmFramebufferExporter::new(gbm, Some(node));
++GbmFramebufferExporter::new(gbm, node.into());
+
++GbmFramebufferExporter::new(gbm, NodeFilter::All);
+```
+
 ## 0.7.0
 
 ### Breaking changes

@@ -120,11 +120,10 @@ impl fmt::Debug for BufferAccessError {
             BufferAccessError::EGLImageCreationFailed(_) => {
                 write!(formatter, "BufferAccessError::EGLImageCreationFailed")
             }
-            BufferAccessError::EglExtensionNotSupported(ref err) => write!(formatter, "{:?}", err),
+            BufferAccessError::EglExtensionNotSupported(ref err) => write!(formatter, "{err:?}"),
             BufferAccessError::UnsupportedMultiPlanarFormat(ref fmt) => write!(
                 formatter,
-                "BufferAccessError::UnsupportedMultiPlanerFormat({:?})",
-                fmt
+                "BufferAccessError::UnsupportedMultiPlanerFormat({fmt:?})",
             ),
             BufferAccessError::Destroyed => write!(formatter, "BufferAccessError::Destroyed"),
         }
