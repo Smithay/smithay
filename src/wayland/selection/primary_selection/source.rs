@@ -1,11 +1,14 @@
-use std::sync::Mutex;
+use std::{cell::RefCell, sync::Mutex};
 
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::{
     self as primary_source, ZwpPrimarySelectionSourceV1 as PrimarySource,
 };
-use wayland_server::{backend::ClientId, Dispatch, DisplayHandle, Resource};
+use wayland_server::{backend::ClientId, Dispatch, DisplayHandle};
 
-use crate::utils::{alive_tracker::AliveTracker, IsAlive};
+use crate::{
+    input::Seat,
+    wayland::selection::{offer::OfferReplySource, seat_data::SeatData, source::SelectionSourceProvider},
+};
 
 use super::{PrimarySelectionHandler, PrimarySelectionState};
 
@@ -20,14 +23,14 @@ pub struct SourceMetadata {
 #[derive(Debug)]
 pub struct PrimarySourceUserData {
     pub(crate) inner: Mutex<SourceMetadata>,
-    alive_tracker: AliveTracker,
+    display_handle: DisplayHandle,
 }
 
 impl PrimarySourceUserData {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(display_handle: DisplayHandle) -> Self {
         Self {
             inner: Default::default(),
-            alive_tracker: Default::default(),
+            display_handle,
         }
     }
 }
@@ -59,15 +62,32 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _resource: &PrimarySource, data: &PrimarySourceUserData) {
-        data.alive_tracker.destroy_notify();
-    }
-}
+    fn destroyed(state: &mut D, _client: ClientId, source: &PrimarySource, data: &PrimarySourceUserData) {
+        // Remove the source from the used ones.
+        let seat = match state
+            .primary_selection_state()
+            .used_sources
+            .remove(source)
+            .as_ref()
+            .and_then(Seat::<D>::from_resource)
+        {
+            Some(seat) => seat,
+            None => return,
+        };
 
-impl IsAlive for PrimarySource {
-    #[inline]
-    fn alive(&self) -> bool {
-        let data: &PrimarySourceUserData = self.data().unwrap();
-        data.alive_tracker.alive()
+        let mut seat_data = seat
+            .user_data()
+            .get::<RefCell<SeatData<D::SelectionUserData>>>()
+            .unwrap()
+            .borrow_mut();
+
+        match seat_data.get_primary_selection() {
+            Some(OfferReplySource::Client(SelectionSourceProvider::Primary(set_source)))
+                if set_source == source =>
+            {
+                seat_data.set_primary_selection::<D>(&data.display_handle, None)
+            }
+            _ => (),
+        }
     }
 }
