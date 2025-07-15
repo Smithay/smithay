@@ -67,8 +67,11 @@ const SUPPORTED_FORMATS: &[DrmFourcc] = &[
 pub struct PixmanTarget<'a>(PixmanTargetInternal<'a>);
 #[derive(Debug)]
 enum PixmanTargetInternal<'a> {
-    Dmabuf { dmabuf: &'a Dmabuf, image: PixmanImage },
-    Image(&'a mut pixman::Image<'static, 'static>),
+    Dmabuf {
+        dmabuf: &'a Dmabuf,
+        image: PixmanImage<'a>,
+    },
+    Image(&'a mut pixman::Image<'a, 'static>),
 }
 
 impl Texture for PixmanTarget<'_> {
@@ -108,20 +111,20 @@ struct PixmanDmabufMapping {
 }
 
 #[derive(Debug)]
-struct PixmanImageInner {
+struct PixmanImageInner<'a> {
     #[cfg(feature = "wayland_frontend")]
     buffer: Option<wl_buffer::WlBuffer>,
     dmabuf: Option<PixmanDmabufMapping>,
-    image: Mutex<Image<'static, 'static>>,
+    image: Mutex<Image<'a, 'static>>,
     _flipped: bool, /* TODO: What about flipped textures? */
 }
 
 #[derive(Debug, Clone)]
-struct PixmanImage(Arc<PixmanImageInner>);
+struct PixmanImage<'a>(Arc<PixmanImageInner<'a>>);
 
-impl PixmanImage {
+impl<'a> PixmanImage<'a> {
     #[profiling::function]
-    fn accessor<'l>(&'l self) -> Result<TextureAccessor<'l>, PixmanError> {
+    fn accessor<'l>(&'l self) -> Result<TextureAccessor<'l, 'a>, PixmanError> {
         let guard = if let Some(mapping) = self.0.dmabuf.as_ref() {
             let dmabuf = mapping.dmabuf.upgrade().ok_or(PixmanError::BufferDestroyed)?;
             Some(DmabufReadGuard::new(dmabuf)?)
@@ -140,7 +143,7 @@ impl PixmanImage {
 
 /// A handle to a pixman texture
 #[derive(Debug, Clone)]
-pub struct PixmanTexture(PixmanImage);
+pub struct PixmanTexture(PixmanImage<'static>);
 
 impl From<pixman::Image<'static, 'static>> for PixmanTexture {
     #[inline]
@@ -179,17 +182,17 @@ impl Drop for DmabufReadGuard {
     }
 }
 
-struct TextureAccessor<'l> {
+struct TextureAccessor<'l, 'd> {
     #[cfg(feature = "wayland_frontend")]
     buffer: Option<wl_buffer::WlBuffer>,
-    image: &'l Mutex<Image<'static, 'static>>,
+    image: &'l Mutex<Image<'d, 'static>>,
     _guard: Option<DmabufReadGuard>,
 }
 
-impl TextureAccessor<'_> {
+impl TextureAccessor<'_, '_> {
     fn with_image<F, R>(&self, f: F) -> Result<R, PixmanError>
     where
-        F: for<'a> FnOnce(&'a mut Image<'static, 'static>) -> R,
+        F: for<'a, 'b> FnOnce(&'a mut Image<'b, 'static>) -> R,
     {
         let mut image = self.image.lock().unwrap();
 
@@ -240,7 +243,7 @@ impl TextureAccessor<'_> {
 
 impl PixmanTexture {
     #[profiling::function]
-    fn accessor<'l>(&'l self) -> Result<TextureAccessor<'l>, PixmanError> {
+    fn accessor<'l>(&'l self) -> Result<TextureAccessor<'l, 'static>, PixmanError> {
         self.0.accessor()
     }
 }
@@ -696,8 +699,8 @@ pub struct PixmanRenderer {
     tint: pixman::Solid<'static>,
 
     // caches
-    buffers: Vec<PixmanImage>,
-    dmabuf_cache: Vec<PixmanImage>,
+    buffers: Vec<PixmanImage<'static>>,
+    dmabuf_cache: Vec<PixmanImage<'static>>,
 }
 
 impl PixmanRenderer {
@@ -717,7 +720,7 @@ impl PixmanRenderer {
 }
 
 impl PixmanRenderer {
-    fn existing_dmabuf(&self, dmabuf: &Dmabuf) -> Option<PixmanImage> {
+    fn existing_dmabuf(&self, dmabuf: &Dmabuf) -> Option<PixmanImage<'static>> {
         self.dmabuf_cache
             .iter()
             .find(|image| {
@@ -735,7 +738,7 @@ impl PixmanRenderer {
         &mut self,
         dmabuf: &Dmabuf,
         mode: DmabufMappingMode,
-    ) -> Result<PixmanImage, PixmanError> {
+    ) -> Result<PixmanImage<'static>, PixmanError> {
         if dmabuf.num_planes() != 1 {
             return Err(PixmanError::UnsupportedNumberOfPlanes);
         }
@@ -1222,6 +1225,9 @@ impl Bind<Dmabuf> for PixmanRenderer {
             image
         };
 
+        // SAFETY: The image data is guaranteed to live at least as long
+        // as the image itself as the image owns the data.
+        let image = unsafe { std::mem::transmute::<PixmanImage<'_>, PixmanImage<'_>>(image) };
         Ok(PixmanTarget(PixmanTargetInternal::Dmabuf {
             dmabuf: target,
             image,
@@ -1258,9 +1264,12 @@ impl Offscreen<Image<'static, 'static>> for PixmanRenderer {
     }
 }
 
-impl Bind<Image<'static, 'static>> for PixmanRenderer {
+impl<'data> Bind<Image<'data, 'static>> for PixmanRenderer {
     #[profiling::function]
-    fn bind<'a>(&mut self, target: &'a mut Image<'static, 'static>) -> Result<PixmanTarget<'a>, Self::Error> {
+    fn bind<'a>(&mut self, target: &'a mut Image<'data, 'static>) -> Result<PixmanTarget<'a>, Self::Error> {
+        // SAFETY: 'data is guaranteed to outlive the reference defined in 'a
+        let target =
+            unsafe { std::mem::transmute::<&mut pixman::Image<'_, '_>, &mut pixman::Image<'_, '_>>(target) };
         Ok(PixmanTarget(PixmanTargetInternal::Image(target)))
     }
 

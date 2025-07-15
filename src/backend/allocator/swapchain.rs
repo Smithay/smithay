@@ -1,6 +1,7 @@
 use std::{
+    cell::UnsafeCell,
     fmt,
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
@@ -75,11 +76,13 @@ pub struct Slot<B: Buffer>(Arc<InternalSlot<B>>);
 
 #[derive(Debug)]
 struct InternalSlot<B: Buffer> {
-    buffer: Option<B>,
+    buffer: Option<UnsafeCell<B>>,
     acquired: AtomicBool,
     age: AtomicU8,
     userdata: UserDataMap,
 }
+
+unsafe impl<B: Buffer> Sync for InternalSlot<B> where B: Sync {}
 
 impl<B: Buffer> Slot<B> {
     /// Retrieve userdata for this slot.
@@ -107,7 +110,13 @@ impl<B: Buffer> Default for InternalSlot<B> {
 impl<B: Buffer> Deref for Slot<B> {
     type Target = B;
     fn deref(&self) -> &B {
-        Option::as_ref(&self.0.buffer).unwrap()
+        unsafe { &*Option::as_ref(&self.0.buffer).unwrap().get() }
+    }
+}
+
+impl<B: Buffer> DerefMut for Slot<B> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { &mut *Option::as_ref(&self.0.buffer).unwrap().get() }
     }
 }
 
@@ -171,7 +180,7 @@ where
                     .allocator
                     .create_buffer(self.width, self.height, self.fourcc, &self.modifiers)
                 {
-                    Ok(buffer) => free_slot.buffer = Some(buffer),
+                    Ok(buffer) => free_slot.buffer = Some(UnsafeCell::new(buffer)),
                     Err(err) => {
                         free_slot.acquired.store(false, Ordering::SeqCst);
                         return Err(err);
