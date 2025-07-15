@@ -350,6 +350,7 @@ pub fn run_udev() {
                     // we will try to reset the state when trying to queue a frame.
                     backend
                         .drm_output_manager
+                        .lock()
                         .activate(false)
                         .expect("failed to activate drm backend");
                     if let Some(lease_global) = backend.leasing_global.as_mut() {
@@ -1000,6 +1001,7 @@ impl AnvilState<UdevData> {
 
             let drm_output = match device
                 .drm_output_manager
+                .lock()
                 .initialize_output::<_, OutputRenderElements<UdevRenderer<'_>, WindowRenderElement<UdevRenderer<'_>>>>(
                     crtc,
                     drm_mode,
@@ -1079,7 +1081,7 @@ impl AnvilState<UdevData> {
 
         let render_node = device.render_node.unwrap_or(self.backend_data.primary_gpu);
         let mut renderer = self.backend_data.gpus.single_renderer(&render_node).unwrap();
-        let _ = device.drm_output_manager.try_to_restore_modifiers::<_, OutputRenderElements<
+        let _ = device.drm_output_manager.lock().try_to_restore_modifiers::<_, OutputRenderElements<
             UdevRenderer<'_>,
             WindowRenderElement<UdevRenderer<'_>>,
         >>(
