@@ -46,8 +46,8 @@ impl SelectionHandler for Smallvil {
 }
 
 impl DataDeviceHandler for Smallvil {
-    fn data_device_state(&mut self) -> &mut DataDeviceState {
-        &mut self.data_device_state
+    fn data_device_state(&self) -> &DataDeviceState {
+        &self.data_device_state
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::Mutex};
+use std::sync::Mutex;
 use tracing::error;
 
 use wayland_server::{
@@ -8,11 +8,7 @@ use wayland_server::{
     Dispatch, DisplayHandle, Resource,
 };
 
-use crate::input::Seat;
 use crate::utils::{alive_tracker::AliveTracker, IsAlive};
-use crate::wayland::selection::offer::OfferReplySource;
-use crate::wayland::selection::seat_data::SeatData;
-use crate::wayland::selection::source::SelectionSourceProvider;
 
 use super::{DataDeviceHandler, DataDeviceState};
 
@@ -39,15 +35,13 @@ impl Default for SourceMetadata {
 pub struct DataSourceUserData {
     pub(crate) inner: Mutex<SourceMetadata>,
     alive_tracker: AliveTracker,
-    display_handle: DisplayHandle,
 }
 
 impl DataSourceUserData {
-    pub(super) fn new(display_handle: DisplayHandle) -> Self {
+    pub(super) fn new() -> Self {
         Self {
             inner: Default::default(),
             alive_tracker: Default::default(),
-            display_handle,
         }
     }
 }
@@ -86,35 +80,8 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _client: ClientId, source: &WlDataSource, data: &DataSourceUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, _resource: &WlDataSource, data: &DataSourceUserData) {
         data.alive_tracker.destroy_notify();
-
-        // Remove the source from the used ones.
-        let seat = match state
-            .data_device_state()
-            .used_sources
-            .remove(source)
-            .as_ref()
-            .and_then(Seat::<D>::from_resource)
-        {
-            Some(seat) => seat,
-            None => return,
-        };
-
-        let mut seat_data = seat
-            .user_data()
-            .get::<RefCell<SeatData<D::SelectionUserData>>>()
-            .unwrap()
-            .borrow_mut();
-
-        match seat_data.get_clipboard_selection() {
-            Some(OfferReplySource::Client(SelectionSourceProvider::DataDevice(set_source)))
-                if set_source == source =>
-            {
-                seat_data.set_clipboard_selection::<D>(&data.display_handle, None)
-            }
-            _ => (),
-        }
     }
 }
 

@@ -60,7 +60,7 @@
 //!     type SelectionUserData = ();
 //! }
 //! impl DataDeviceHandler for State {
-//!     fn data_device_state(&mut self) -> &mut DataDeviceState { &mut self.data_device_state }
+//!     fn data_device_state(&self) -> &DataDeviceState { &self.data_device_state }
 //!     // ... override default implementations here to customize handling ...
 //! }
 //! delegate_data_device!(State);
@@ -70,7 +70,6 @@
 
 use std::{
     cell::{Ref, RefCell},
-    collections::HashMap,
     os::unix::io::OwnedFd,
 };
 
@@ -80,7 +79,6 @@ use wayland_server::{
     protocol::{
         wl_data_device_manager::{DndAction, WlDataDeviceManager},
         wl_data_source::WlDataSource,
-        wl_seat::WlSeat,
         wl_surface::WlSurface,
     },
     Client, DisplayHandle, GlobalDispatch,
@@ -115,7 +113,7 @@ use super::{
 #[allow(unused_variables)]
 pub trait DataDeviceHandler: Sized + SelectionHandler + ClientDndGrabHandler + ServerDndGrabHandler {
     /// [DataDeviceState] getter
-    fn data_device_state(&mut self) -> &mut DataDeviceState;
+    fn data_device_state(&self) -> &DataDeviceState;
 
     /// Action chooser for DnD negociation
     fn action_choice(&mut self, available: DndAction, preferred: DndAction) -> DndAction {
@@ -197,11 +195,6 @@ pub trait ServerDndGrabHandler: SeatHandler {
 #[derive(Debug)]
 pub struct DataDeviceState {
     manager_global: GlobalId,
-    /// Used sources.
-    ///
-    /// Protocol states that each source can only be used once. We
-    /// also use it during destruction to get seat data.
-    pub(crate) used_sources: HashMap<WlDataSource, WlSeat>,
 }
 
 impl DataDeviceState {
@@ -213,10 +206,7 @@ impl DataDeviceState {
     {
         let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, ());
 
-        Self {
-            manager_global,
-            used_sources: Default::default(),
-        }
+        Self { manager_global }
     }
 
     /// [WlDataDeviceManager] GlobalId getter
@@ -477,12 +467,12 @@ mod handlers {
             _resource: &WlDataDeviceManager,
             request: wl_data_device_manager::Request,
             _data: &(),
-            dhandle: &DisplayHandle,
+            _dhandle: &DisplayHandle,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
             match request {
                 wl_data_device_manager::Request::CreateDataSource { id } => {
-                    data_init.init(id, DataSourceUserData::new(dhandle.clone()));
+                    data_init.init(id, DataSourceUserData::new());
                 }
                 wl_data_device_manager::Request::GetDataDevice { id, seat: wl_seat } => {
                     match Seat::<D>::from_resource(&wl_seat) {
