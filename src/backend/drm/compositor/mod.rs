@@ -1047,7 +1047,7 @@ pub struct DrmCompositor<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<A::Buffer>,
-    <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
     output_mode_source: OutputModeSource,
@@ -1090,7 +1090,7 @@ where
     <A as Allocator>::Buffer: AsDmabuf,
     <A::Buffer as AsDmabuf>::Error: std::error::Error + Send + Sync + std::fmt::Debug,
     F: ExportFramebuffer<A::Buffer>,
-    <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     <F as ExportFramebuffer<A::Buffer>>::Error: std::error::Error + Send + Sync,
     G: AsFd + Clone,
 {
@@ -1528,7 +1528,7 @@ where
         };
         buffer
             .userdata()
-            .insert_if_missing(|| CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
+            .insert_if_missing_threadsafe(|| CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
 
         let mode = drm.pending_mode();
         let handle = buffer
@@ -1753,9 +1753,9 @@ where
                 )
                 .map_err(FrameError::FramebufferExport)?
                 .ok_or(FrameError::NoFramebuffer)?;
-            primary_plane_buffer
-                .userdata()
-                .insert_if_missing(|| CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
+            primary_plane_buffer.userdata().insert_if_missing_threadsafe(|| {
+                CachedDrmFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer))
+            });
         }
 
         // This unwrap is safe as we error out above if we were unable to export a framebuffer

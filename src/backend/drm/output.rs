@@ -47,7 +47,7 @@ pub struct DrmOutputManager<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
     device: DrmDevice,
@@ -65,7 +65,7 @@ where
     <A as Allocator>::Buffer: fmt::Debug,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + fmt::Debug,
     U: fmt::Debug,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + Send + Sync + 'static,
     G: AsFd + fmt::Debug + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -85,7 +85,7 @@ impl<A, F, U, G> DrmOutputManager<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
     /// Access the underlying managed device
@@ -108,7 +108,7 @@ impl<A, F, U, G> DrmOutputManager<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
     /// Pause the underlying device. See [`DrmDevice::pause`].
@@ -159,7 +159,7 @@ where
     <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
         std::marker::Send + std::marker::Sync + 'static,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
         std::marker::Send + std::marker::Sync + 'static,
     G: AsFd + std::clone::Clone + 'static,
@@ -526,7 +526,7 @@ pub struct DrmOutput<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
     compositor: CompositorList<A, F, U, G>,
@@ -541,7 +541,7 @@ where
     <A as Allocator>::Buffer: fmt::Debug,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + fmt::Debug,
     U: fmt::Debug,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + fmt::Debug + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -562,7 +562,7 @@ where
     <A as Allocator>::Error: Send + Sync + 'static,
     <<A as Allocator>::Buffer as AsDmabuf>::Error: std::marker::Send + std::marker::Sync + 'static,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
         std::marker::Send + std::marker::Sync + 'static,
     G: AsFd + std::clone::Clone + 'static,
@@ -690,7 +690,7 @@ impl<A, F, U, G> DrmOutput<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
     /// Returns the underlying [`crtc`] of this surface
@@ -713,7 +713,7 @@ impl<A, F, U, G> Drop for DrmOutput<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
     fn drop(&mut self) {
@@ -738,7 +738,7 @@ where
     <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
         std::marker::Send + std::marker::Sync + 'static,
     F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
         std::marker::Send + std::marker::Sync + 'static,
     G: AsFd + std::clone::Clone + 'static,
@@ -915,7 +915,8 @@ where
         <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
             std::marker::Send + std::marker::Sync + 'static,
         F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
-        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
+        <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer:
+            std::fmt::Debug + Send + Sync + 'static,
         <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
             std::marker::Send + std::marker::Sync + 'static,
         G: AsFd + std::clone::Clone + 'static,
