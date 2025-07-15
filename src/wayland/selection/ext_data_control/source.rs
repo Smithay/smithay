@@ -1,14 +1,10 @@
-use std::cell::RefCell;
 use std::sync::Mutex;
 
 use wayland_server::backend::ClientId;
-use wayland_server::{Dispatch, DisplayHandle};
+use wayland_server::{Dispatch, DisplayHandle, Resource};
 
-use crate::input::Seat;
-use crate::wayland::selection::offer::OfferReplySource;
-use crate::wayland::selection::seat_data::SeatData;
-use crate::wayland::selection::source::SelectionSourceProvider;
-use crate::wayland::selection::SelectionTarget;
+use crate::utils::alive_tracker::AliveTracker;
+use crate::utils::IsAlive;
 
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1::{
     self, ExtDataControlSourceV1,
@@ -17,18 +13,15 @@ use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1
 use super::{DataControlHandler, DataControlState};
 
 #[doc(hidden)]
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct ExtDataControlSourceUserData {
     pub(crate) inner: Mutex<SourceMetadata>,
-    display_handle: DisplayHandle,
+    alive_tracker: AliveTracker,
 }
 
 impl ExtDataControlSourceUserData {
-    pub(crate) fn new(display_handle: DisplayHandle) -> Self {
-        Self {
-            inner: Default::default(),
-            display_handle,
-        }
+    pub(crate) fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -65,50 +58,19 @@ where
     }
 
     fn destroyed(
-        state: &mut D,
+        _state: &mut D,
         _client: ClientId,
-        source: &ExtDataControlSourceV1,
+        _resource: &ExtDataControlSourceV1,
         data: &ExtDataControlSourceUserData,
     ) {
-        // Remove the source from the used ones.
-        let seat = match state
-            .data_control_state()
-            .used_sources
-            .remove(source)
-            .as_ref()
-            .and_then(Seat::<D>::from_resource)
-        {
-            Some(seat) => seat,
-            None => return,
-        };
+        data.alive_tracker.destroy_notify();
+    }
+}
 
-        let mut seat_data = seat
-            .user_data()
-            .get::<RefCell<SeatData<D::SelectionUserData>>>()
-            .unwrap()
-            .borrow_mut();
-
-        for target in [SelectionTarget::Primary, SelectionTarget::Clipboard] {
-            let selection = match target {
-                SelectionTarget::Primary => seat_data.get_primary_selection(),
-                SelectionTarget::Clipboard => seat_data.get_clipboard_selection(),
-            };
-
-            match selection {
-                Some(OfferReplySource::Client(SelectionSourceProvider::ExtDataControl(set_source)))
-                    if set_source == source =>
-                {
-                    match target {
-                        SelectionTarget::Primary => {
-                            seat_data.set_primary_selection::<D>(&data.display_handle, None)
-                        }
-                        SelectionTarget::Clipboard => {
-                            seat_data.set_clipboard_selection::<D>(&data.display_handle, None)
-                        }
-                    }
-                }
-                _ => (),
-            };
-        }
+impl IsAlive for ExtDataControlSourceV1 {
+    #[inline]
+    fn alive(&self) -> bool {
+        let data: &ExtDataControlSourceUserData = self.data().unwrap();
+        data.alive_tracker.alive()
     }
 }

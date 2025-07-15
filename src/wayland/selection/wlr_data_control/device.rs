@@ -5,7 +5,7 @@ use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1
     self, ZwlrDataControlDeviceV1,
 };
 use wayland_server::protocol::wl_seat::WlSeat;
-use wayland_server::{Client, Dispatch, DisplayHandle, Resource};
+use wayland_server::{Client, Dispatch, DisplayHandle};
 
 use crate::input::Seat;
 use crate::wayland::selection::device::SelectionDevice;
@@ -45,22 +45,6 @@ where
 
         match request {
             zwlr_data_control_device_v1::Request::SetSelection { source, .. } => {
-                // Each source can only be used once.
-                if let Some(source) = source.as_ref() {
-                    if handler
-                        .data_control_state()
-                        .used_sources
-                        .insert(source.clone(), data.wl_seat.clone())
-                        .is_some()
-                    {
-                        resource.post_error(
-                            zwlr_data_control_device_v1::Error::UsedSource,
-                            "selection source can be used only once.",
-                        );
-                        return;
-                    }
-                }
-
                 seat.user_data()
                     .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
 
