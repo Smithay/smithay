@@ -117,7 +117,7 @@
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 //!
-
+use calloop::RegistrationToken;
 use std::{
     fmt,
     hash::Hash,
@@ -161,6 +161,19 @@ pub trait SeatHandler: Sized {
 
     /// Callback that will be notified whenever the keyboard led state changes.
     fn led_state_changed(&mut self, _seat: &Seat<Self>, _led_state: LedState) {}
+    
+    /// Register a timeout for key repeat.
+    fn set_timeout(
+        &mut self,
+        duration: std::time::Duration,
+        callback: impl FnMut(&mut Self) + 'static,
+    ) -> RegistrationToken;
+    
+    /// Cleare a nonrepeating timeout for key repeat.
+    fn clear_timeout(
+        &mut self,
+        token: RegistrationToken,
+    );
 }
 /// Delegate type for all [Seat] globals.
 ///

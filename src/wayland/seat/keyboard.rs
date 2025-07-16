@@ -68,7 +68,12 @@ where
 
         let guard = self.arc.internal.lock().unwrap();
         if kbd.version() >= 4 {
-            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
+            let rate = if kbd.version() >= 10 {
+                0 // Enables compositor-side key repeat. See wl_keyboard key event
+            } else {
+                guard.repeat_rate
+            };
+            kbd.repeat_info(rate, guard.repeat_delay);
         }
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if focused.same_client_as(&kbd.id()) {
@@ -211,7 +216,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         seat: &Seat<D>,
         _data: &mut D,
         key: KeysymHandle<'_>,
-        state: KeyState,
+        state: WlKeyState,
         serial: Serial,
         time: u32,
     ) {

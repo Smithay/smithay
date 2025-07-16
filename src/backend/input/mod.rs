@@ -96,6 +96,8 @@ pub enum KeyState {
     Pressed,
 }
 
+pub use wayland_server::protocol::wl_keyboard::KeyState as KeyEvent;
+
 /// Trait for keyboard event
 pub trait KeyboardKeyEvent<B: InputBackend>: Event<B> {
     /// Returns the numerical button code of the keyboard button.
