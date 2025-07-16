@@ -5,7 +5,7 @@ use std::{
     fmt,
     marker::PhantomData,
     os::fd::AsFd,
-    sync::{Arc, Mutex, RwLock, TryLockError},
+    sync::{Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError},
 };
 
 use drm::control::{self, connector, crtc, Mode};
@@ -59,6 +59,24 @@ where
     renderer_formats: Vec<DrmFormat>,
 }
 
+/// Locked variant of the [`DrmOutputManager`].
+pub struct LockedDrmOutputManager<'a, A, F, U, G>
+where
+    A: Allocator,
+    F: ExportFramebuffer<<A as Allocator>::Buffer>,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + Send + Sync + 'static,
+    G: AsFd + 'static,
+{
+    device: &'a mut DrmDevice,
+    allocator: &'a mut A,
+    exporter: &'a mut F,
+    gbm: &'a mut Option<GbmDevice<G>>,
+    compositor: RwLockWriteGuard<'a, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
+    compositor_arc: CompositorList<A, F, U, G>,
+    color_formats: &'a [DrmFourcc],
+    renderer_formats: &'a [DrmFormat],
+}
+
 impl<A, F, U, G> fmt::Debug for DrmOutputManager<A, F, U, G>
 where
     A: Allocator + fmt::Debug,
@@ -75,6 +93,29 @@ where
             .field("exporter", &self.exporter)
             .field("gbm", &self.gbm)
             .field("compositor", &self.compositor)
+            .field("color_formats", &self.color_formats)
+            .field("renderer_formats", &self.renderer_formats)
+            .finish()
+    }
+}
+
+impl<'a, A, F, U, G> fmt::Debug for LockedDrmOutputManager<'a, A, F, U, G>
+where
+    A: Allocator + fmt::Debug,
+    <A as Allocator>::Buffer: fmt::Debug,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + fmt::Debug,
+    U: fmt::Debug,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + Send + Sync + 'static,
+    G: AsFd + fmt::Debug + 'static,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LockedDrmOutputManager")
+            .field("device", &self.device)
+            .field("allocator", &self.allocator)
+            .field("exporter", &self.exporter)
+            .field("gbm", &self.gbm)
+            .field("compositor", &self.compositor)
+            // skip compositor_arc to avoid unnecessary repetition
             .field("color_formats", &self.color_formats)
             .field("renderer_formats", &self.renderer_formats)
             .finish()
@@ -102,15 +143,35 @@ where
     pub fn allocator(&self) -> &A {
         &self.allocator
     }
+
+    /// Pause the underlying device. See [`DrmDevice::pause`].
+    pub fn pause(&mut self) {
+        self.device.pause();
+    }
 }
 
-impl<A, F, U, G> DrmOutputManager<A, F, U, G>
+impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
-    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
+    /// Access the underlying managed device
+    pub fn device(&self) -> &DrmDevice {
+        self.device
+    }
+
+    /// Mutably access the underlying managed device
+    pub fn device_mut(&mut self) -> &mut DrmDevice {
+        self.device
+    }
+
+    /// Access the [`Allocator`] of this output manager
+    pub fn allocator(&self) -> &A {
+        self.allocator
+    }
+
     /// Pause the underlying device. See [`DrmDevice::pause`].
     pub fn pause(&mut self) {
         self.device.pause();
@@ -197,6 +258,39 @@ where
         }
     }
 
+    /// Locks the [`DrmOutputManager`] causing derived [`DrmOutput`]s to stall
+    /// until the returned [`LockedDrmOutputManager`] is dropped.
+    ///
+    /// The api of the [`LockedDrmOutputManager`] provides safe access to operations,
+    /// which potentially need to modify the state of multiple underlying surfaces at once.
+    pub fn lock(&mut self) -> LockedDrmOutputManager<'_, A, F, U, G> {
+        LockedDrmOutputManager {
+            device: &mut self.device,
+            allocator: &mut self.allocator,
+            exporter: &mut self.exporter,
+            gbm: &mut self.gbm,
+            compositor: self.compositor.write().unwrap(),
+            compositor_arc: self.compositor.clone(),
+            color_formats: &self.color_formats,
+            renderer_formats: &self.renderer_formats,
+        }
+    }
+}
+
+impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
+where
+    A: Allocator + std::clone::Clone + std::fmt::Debug,
+    <A as Allocator>::Buffer: AsDmabuf,
+    <A as Allocator>::Error: Send + Sync + 'static,
+    <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
+        std::marker::Send + std::marker::Sync + 'static,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
+        std::marker::Send + std::marker::Sync + 'static,
+    G: AsFd + std::clone::Clone + 'static,
+    U: 'static,
+{
     /// Create a new [`DrmOutput`] for the provided crtc of the underlying device.
     ///
     /// The [`OutputModeSource`] can be created from an [`Output`](crate::output::Output), which will automatically track
@@ -234,8 +328,7 @@ where
     {
         let output_mode_source = output_mode_source.into();
 
-        let mut write_guard = self.compositor.write().unwrap();
-        if write_guard.contains_key(&crtc) {
+        if self.compositor.contains_key(&crtc) {
             return Err(DrmOutputManagerError::DuplicateCrtc(crtc));
         }
 
@@ -301,7 +394,7 @@ where
 
         match compositor {
             Ok(compositor) => {
-                write_guard.insert(crtc, Mutex::new(compositor));
+                self.compositor.insert(crtc, Mutex::new(compositor));
             }
             Err(err) => {
                 tracing::warn!(
@@ -310,7 +403,7 @@ where
                     "failed to initialize crtc, trying to lower bandwidth"
                 );
 
-                for compositor in write_guard.values_mut() {
+                for compositor in self.compositor.values_mut() {
                     let compositor = compositor.get_mut().unwrap();
                     if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
                         if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
@@ -323,7 +416,7 @@ where
 
                 match compositor {
                     Ok(compositor) => {
-                        write_guard.insert(crtc, Mutex::new(compositor));
+                        self.compositor.insert(crtc, Mutex::new(compositor));
                     }
                     Err(err) => {
                         tracing::warn!(
@@ -332,7 +425,7 @@ where
                             "failed to initialize crtc, trying implicit modifiers"
                         );
 
-                        for compositor in write_guard.values_mut() {
+                        for compositor in self.compositor.values_mut() {
                             let compositor = compositor.get_mut().unwrap();
 
                             let current_format = compositor.format();
@@ -352,11 +445,11 @@ where
 
                         match compositor {
                             Ok(compositor) => {
-                                write_guard.insert(crtc, Mutex::new(compositor));
+                                self.compositor.insert(crtc, Mutex::new(compositor));
                             }
                             Err(err) => {
                                 // try to reset formats
-                                for compositor in write_guard.values_mut() {
+                                for compositor in self.compositor.values_mut() {
                                     let compositor = compositor.get_mut().unwrap();
 
                                     let current_format = compositor.format();
@@ -386,25 +479,21 @@ where
         // We need to render the new output once to lock in the primary plane as used with the new format, so we don't hit the bandwidth issue,
         // when downstream potentially uses `FrameFlags::DEFAULT` immediately after this.
 
-        let compositor = write_guard.get_mut(&crtc).unwrap();
+        let compositor = self.compositor.get_mut(&crtc).unwrap();
         let compositor = compositor.get_mut().unwrap();
         render_elements.submit_composited_frame(&mut *compositor, renderer)?;
 
         Ok(DrmOutput {
-            compositor: self.compositor.clone(),
+            compositor: self.compositor_arc.clone(),
             crtc,
             allocator: self.allocator.clone(),
-            renderer_formats: self.renderer_formats.clone(),
+            renderer_formats: Vec::from(self.renderer_formats),
         })
     }
 
     /// Grants exclusive access to all underlying [`DrmCompositor`]s.
-    pub fn with_compositors<R>(
-        &mut self,
-        f: impl FnOnce(&HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>) -> R,
-    ) -> R {
-        let write_guard = self.compositor.write().unwrap();
-        f(&*write_guard)
+    pub fn compositors(&mut self) -> &HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>> {
+        &self.compositor
     }
 
     /// Tries to apply a new [`Mode`] for the provided `crtc`.
@@ -429,11 +518,11 @@ where
         R::Error: Send + Sync + 'static,
     {
         use_mode_internal(
-            &self.compositor,
+            &mut self.compositor,
             crtc,
             mode,
-            &self.allocator,
-            &self.renderer_formats,
+            self.allocator,
+            self.renderer_formats,
             renderer,
             render_elements,
         )
@@ -441,7 +530,7 @@ where
 
     /// Tries to restore explicit modifiers on all surfaces.
     ///
-    /// Adding new outputs (via [`DrmOutputManager::initialize_output`]) might cause
+    /// Adding new outputs (via [`LockedDrmOutputManager::initialize_output`]) might cause
     /// surfaces to fall back to implicit modifiers to satisfy bandwidth requirements
     /// of the new output. These should generally be avoided, so it is recommended
     /// to call this method after destroying an individual output to try and re-allocate
@@ -457,15 +546,14 @@ where
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
     {
-        let mut write_guard = self.compositor.write().unwrap();
-
         // check if implicit modifiers are in use
-        if write_guard
+        if self
+            .compositor
             .values_mut()
             .any(|c| c.get_mut().unwrap().modifiers() == [DrmModifier::Invalid])
         {
             // if so, first lower the bandwidth by disabling planes on all compositors
-            for compositor in write_guard.values_mut() {
+            for compositor in self.compositor.values_mut() {
                 let compositor = compositor.get_mut().unwrap();
                 if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
                     if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
@@ -474,7 +562,7 @@ where
                 }
             }
 
-            for compositor in write_guard.values_mut() {
+            for compositor in self.compositor.values_mut() {
                 let compositor = compositor.get_mut().unwrap();
                 if compositor.modifiers() != [DrmModifier::Invalid] {
                     continue;
@@ -510,8 +598,7 @@ where
         self.device.activate(disable_connectors)?;
 
         // We request a write guard here to guarantee unique access
-        let mut write_guard = self.compositor.write().unwrap();
-        for compositor in write_guard.values_mut() {
+        for compositor in self.compositor.values_mut() {
             if let Err(err) = compositor.get_mut().unwrap().reset_state() {
                 tracing::warn!("Failed to reset drm surface state: {}", err);
             }
@@ -674,8 +761,9 @@ where
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
     {
+        let mut write_guard = self.compositor.write().unwrap();
         use_mode_internal(
-            &self.compositor,
+            &mut write_guard,
             &self.crtc,
             mode,
             &self.allocator,
@@ -722,8 +810,8 @@ where
     }
 }
 
-fn use_mode_internal<A, F, U, G, R, E>(
-    compositor: &CompositorList<A, F, U, G>,
+fn use_mode_internal<'a, A, F, U, G, R, E>(
+    compositor_list: &mut RwLockWriteGuard<'a, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
     crtc: &crtc::Handle,
     mode: Mode,
     allocator: &A,
@@ -748,14 +836,12 @@ where
     R::TextureId: Texture + 'static,
     R::Error: Send + Sync + 'static,
 {
-    let mut write_guard = compositor.write().unwrap();
-
-    let res = write_guard.get(crtc).unwrap().lock().unwrap().use_mode(mode);
+    let res = compositor_list.get(crtc).unwrap().lock().unwrap().use_mode(mode);
 
     if let Err(err @ FrameError::DrmError(DrmError::TestFailed(_))) = res.as_ref() {
         tracing::warn!(?crtc, ?err, "failed to set mode, trying to lower bandwidth usage");
 
-        for compositor in write_guard.values_mut() {
+        for compositor in compositor_list.values_mut() {
             let compositor = compositor.get_mut().unwrap();
             if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
                 if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
@@ -764,7 +850,7 @@ where
             }
         }
 
-        let compositor = write_guard.get_mut(crtc).unwrap().get_mut().unwrap();
+        let compositor = compositor_list.get_mut(crtc).unwrap().get_mut().unwrap();
         match compositor.use_mode(mode) {
             Ok(_) => {
                 if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
@@ -776,7 +862,7 @@ where
             Err(err @ FrameError::DrmError(DrmError::TestFailed(_))) => {
                 tracing::warn!(?crtc, ?err, "failed to set mode, trying implicit modifiers");
 
-                for compositor in write_guard.values_mut() {
+                for compositor in compositor_list.values_mut() {
                     let compositor = compositor.get_mut().unwrap();
 
                     let current_format = compositor.format();
@@ -790,13 +876,13 @@ where
                     render_elements.submit_composited_frame(&mut *compositor, renderer)?;
                 }
 
-                let compositor = write_guard.get_mut(crtc).unwrap().get_mut().unwrap();
+                let compositor = compositor_list.get_mut(crtc).unwrap().get_mut().unwrap();
                 match compositor.use_mode(mode) {
                     Ok(_) => render_elements.submit_composited_frame(&mut *compositor, renderer)?,
                     Err(err) => {
                         // try to reset format
 
-                        for compositor in write_guard.values_mut() {
+                        for compositor in compositor_list.values_mut() {
                             let compositor = compositor.get_mut().unwrap();
 
                             let current_format = compositor.format();

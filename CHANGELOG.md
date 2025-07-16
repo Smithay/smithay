@@ -20,6 +20,10 @@ enables accepting dmabufs originating from any node.
 +GbmFramebufferExporter::new(gbm, NodeFilter::All);
 ```
 
+`DrmOutputManager` does now provide an explicit `lock`-method returning a [`LockedDrmOutputManager`].
+All other methods have moved to this new type, allowing compositors to take the same lock across multiple
+operations.
+
 ## 0.7.0
 
 ### Breaking changes
