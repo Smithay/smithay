@@ -51,6 +51,7 @@ where
             scale,
             alpha,
             Kind::Unspecified,
+            |_| true,
         )
     }
 }

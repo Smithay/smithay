@@ -85,7 +85,7 @@ use crate::{
 use super::{CommitCounter, Element, Id, Kind, RenderElement, UnderlyingStorage};
 
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
-#[instrument(level = "trace", skip(renderer, location, scale))]
+#[instrument(level = "trace", skip(renderer, location, scale, consider_for_scanout))]
 #[profiling::function]
 pub fn render_elements_from_surface_tree<R, E>(
     renderer: &mut R,
@@ -94,6 +94,7 @@ pub fn render_elements_from_surface_tree<R, E>(
     scale: impl Into<Scale<f64>>,
     alpha: f32,
     kind: Kind,
+    consider_for_scanout: impl Fn(&SurfaceData) -> bool,
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
@@ -124,6 +125,7 @@ where
         },
         |surface, states, location| {
             let mut location = *location;
+            let scanout = consider_for_scanout(states);
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(data) = data {
@@ -136,7 +138,7 @@ where
 
                 if has_view {
                     match WaylandSurfaceRenderElement::from_surface(
-                        renderer, surface, states, location, alpha, kind,
+                        renderer, surface, states, location, alpha, kind, scanout,
                     ) {
                         Ok(Some(surface)) => surfaces.push(surface.into()),
                         Ok(None) => {} // surface is not mapped
@@ -168,6 +170,7 @@ pub struct WaylandSurfaceRenderElement<R: Renderer> {
     location: Point<f64, Physical>,
     alpha: f32,
     kind: Kind,
+    scanout: bool,
 
     view: SurfaceView,
     buffer: Buffer,
@@ -198,6 +201,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         location: Point<f64, Physical>,
         alpha: f32,
         kind: Kind,
+        scanout: bool,
     ) -> Result<Option<Self>, R::Error>
     where
         R::TextureId: Clone + 'static,
@@ -217,6 +221,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             location,
             alpha * alpha_multiplier,
             kind,
+            scanout,
             &data_ref.lock().unwrap(),
         ))
     }
@@ -227,6 +232,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         location: Point<f64, Physical>,
         alpha: f32,
         kind: Kind,
+        scanout: bool,
         data: &RendererSurfaceState,
     ) -> Option<Self>
     where
@@ -245,6 +251,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             location,
             alpha,
             kind,
+            scanout,
             view: data.view()?,
             buffer,
             buffer_scale: data.buffer_scale(),
@@ -375,7 +382,7 @@ where
 {
     #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
-        Some(UnderlyingStorage::Wayland(&self.buffer))
+        self.scanout.then_some(UnderlyingStorage::Wayland(&self.buffer))
     }
 
     #[instrument(level = "trace", skip(frame))]

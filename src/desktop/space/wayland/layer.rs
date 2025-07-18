@@ -42,6 +42,7 @@ where
                     scale,
                     alpha,
                     Kind::Unspecified,
+                    |_| true,
                 )
             });
 
@@ -54,6 +55,7 @@ where
             scale,
             alpha,
             Kind::Unspecified,
+            |_| true,
         ));
 
         render_elements
