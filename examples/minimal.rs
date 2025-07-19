@@ -77,8 +77,8 @@ impl SelectionHandler for App {
 }
 
 impl DataDeviceHandler for App {
-    fn data_device_state(&self) -> &DataDeviceState {
-        &self.data_device_state
+    fn data_device_state(&mut self) -> &mut DataDeviceState {
+        &mut self.data_device_state
     }
 }
 

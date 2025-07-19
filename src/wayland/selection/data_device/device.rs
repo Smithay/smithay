@@ -67,6 +67,16 @@ where
                 icon,
                 serial,
             } => {
+                // NOTE: While protocol states that selection shouldn't be used more than once,
+                // no-one enforces it, thus we have clients around that do so and crashing them
+                // doesn't worth it at this point.
+                if let Some(source) = source.as_ref() {
+                    handler
+                        .data_device_state()
+                        .used_sources
+                        .insert(source.clone(), data.wl_seat.clone());
+                }
+
                 let serial = Serial::from(serial);
                 if let Some(pointer) = seat.get_pointer() {
                     if pointer.has_grab(serial) {
@@ -129,6 +139,17 @@ where
                         return;
                     }
                 };
+
+                // NOTE: While protocol states that selection shouldn't be used more than once,
+                // no-one enforces it, thus we have clients around that do so and crashing them
+                // doesn't worth it at this point.
+                if let Some(source) = source.as_ref() {
+                    handler
+                        .data_device_state()
+                        .used_sources
+                        .insert(source.clone(), data.wl_seat.clone());
+                }
+
                 let source = source.map(SelectionSourceProvider::DataDevice);
 
                 handler.new_selection(
