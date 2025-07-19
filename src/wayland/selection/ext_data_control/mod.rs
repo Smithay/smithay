@@ -36,7 +36,7 @@
 //!     type SelectionUserData = ();
 //! }
 //! impl DataControlHandler for State {
-//!     fn data_control_state(&self) -> &DataControlState { &self.data_control_state }
+//!     fn data_control_state(&mut self) -> &mut DataControlState { &mut self.data_control_state }
 //!     // ... override default implementations here to customize handling ...
 //! }
 //! delegate_ext_data_control!(State);
@@ -47,8 +47,12 @@
 //! Be aware that data control clients rely on other selection providers to be implemneted, like
 //! wl_data_device or zwp_primary_selection.
 
+use std::collections::HashMap;
+
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_manager_v1::ExtDataControlManagerV1;
+use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1::ExtDataControlSourceV1;
 use wayland_server::backend::GlobalId;
+use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::{Client, DisplayHandle, GlobalDispatch};
 
 mod device;
@@ -63,13 +67,18 @@ use super::SelectionHandler;
 /// Access the data control state.
 pub trait DataControlHandler: Sized + SelectionHandler {
     /// [`DataControlState`] getter.
-    fn data_control_state(&self) -> &DataControlState;
+    fn data_control_state(&mut self) -> &mut DataControlState;
 }
 
 /// State of the data control.
 #[derive(Debug)]
 pub struct DataControlState {
     manager_global: GlobalId,
+    /// Used sources.
+    ///
+    /// Protocol states that each source can only be used once. We
+    /// also use it during destruction to get seat data.
+    pub(crate) used_sources: HashMap<ExtDataControlSourceV1, WlSeat>,
 }
 
 impl DataControlState {
@@ -90,7 +99,10 @@ impl DataControlState {
             filter: Box::new(filter),
         };
         let manager_global = display.create_global::<D, ExtDataControlManagerV1, _>(1, data);
-        Self { manager_global }
+        Self {
+            manager_global,
+            used_sources: Default::default(),
+        }
     }
 
     /// [ExtDataControlManagerV1]  GlobalId getter.
@@ -188,7 +200,7 @@ mod handlers {
         ) {
             match request {
                 ext_data_control_manager_v1::Request::CreateDataSource { id } => {
-                    data_init.init(id, ExtDataControlSourceUserData::new());
+                    data_init.init(id, ExtDataControlSourceUserData::new(dh.clone()));
                 }
                 ext_data_control_manager_v1::Request::GetDataDevice { id, seat: wl_seat } => {
                     match Seat::<D>::from_resource(&wl_seat) {
