@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-use super::PrimarySelectionState;
+use super::{PrimarySelectionHandler, PrimarySelectionState};
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub struct PrimaryDeviceUserData {
 
 impl<D> Dispatch<PrimaryDevice, PrimaryDeviceUserData, D> for PrimarySelectionState
 where
-    D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
+    D: Dispatch<PrimaryDevice, PrimaryDeviceUserData> + PrimarySelectionHandler,
     D: SelectionHandler,
     D: SeatHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
@@ -65,6 +65,16 @@ where
                         return;
                     }
                 };
+
+                // NOTE: While protocol states that selection shouldn't be used more than once,
+                // no-one enforces it, thus we have clients around that do so and crashing them
+                // doesn't worth it at this point.
+                if let Some(source) = source.as_ref() {
+                    handler
+                        .primary_selection_state()
+                        .used_sources
+                        .insert(source.clone(), data.wl_seat.clone());
+                }
 
                 let source = source.map(SelectionSourceProvider::Primary);
 
