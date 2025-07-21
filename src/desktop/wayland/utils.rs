@@ -47,7 +47,7 @@ impl RendererSurfaceState {
             .input_region
             .as_ref()
             .unwrap()
-            .contains(point.to_i32_round())
+            .contains(point.to_i32_floor())
     }
 }
 
