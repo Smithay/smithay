@@ -938,8 +938,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// The `filter` argument is expected to be a closure which will peek at the generated input
     /// as interpreted by the keymap before it is forwarded to the focused client. If this closure
-    /// returns [`FilterResult::Forward`], the input will not be sent to the client. If it returns
-    /// [`FilterResult::Intercept`] a value can be passed to be returned by the whole function.
+    /// returns [`FilterResult::Forward`], the input will be sent to the client. If it returns
+    /// [`FilterResult::Intercept`], a value can be passed to be returned by the whole function.
     /// This mechanism can be used to implement compositor-level key bindings for example.
     ///
     /// The module [`keysyms`] exposes definitions of all possible keysyms to be compared against.
@@ -1090,6 +1090,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Set the modifiers state.
+    ///
+    /// Note that the round-trip from XKB state to serialized form and back to XKB state is lossy,
+    /// as documented in [`xkb::State::update_mask`].
     pub fn set_modifier_state(&self, mods_state: ModifiersState) -> u32 {
         let internal = &mut self.arc.internal.lock().unwrap();
 
@@ -1127,6 +1130,18 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
 
         modifiers_changed
+    }
+
+    /// Advertises changed modifier state using [`KeyboardTarget::modifiers`].
+    ///
+    /// Use this with [`KeyboardHandle::set_modifier_state`] when necessary.
+    pub fn advertise_modifier_state(&self, data: &mut D) {
+        let internal = &mut *self.arc.internal.lock().unwrap();
+
+        if let Some((focus, _)) = internal.focus.as_mut() {
+            let seat = self.get_seat(data);
+            focus.modifiers(&seat, data, internal.mods_state, SERIAL_COUNTER.next_serial());
+        };
     }
 
     /// Get the current led state
