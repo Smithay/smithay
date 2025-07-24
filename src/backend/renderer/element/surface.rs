@@ -84,8 +84,66 @@ use crate::{
 
 use super::{CommitCounter, Element, Id, Kind, RenderElement, UnderlyingStorage};
 
+/// Ways to evaluation the [`Kind`] of a surface.
+pub enum KindEvaluation {
+    /// Static evaluation, which will always return the same [`Kind`]
+    Static(Kind),
+    /// Dynamic evaluation, which will return a [`Kind`] based on the [`SurfaceData`]
+    Dynamic(fn(&SurfaceData) -> Kind),
+    /// Dyanmic evaluation, which will return a [`Kind`] based on the [`SurfaceData`] and potentially additional captured context.
+    Closure(Box<dyn Fn(&SurfaceData) -> Kind>),
+}
+
+impl fmt::Debug for KindEvaluation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KindEvaluation::Static(kind) => kind.fmt(f),
+            _ => f.write_str("Kind::<dynamic>"),
+        }
+    }
+}
+
+impl From<Kind> for KindEvaluation {
+    fn from(value: Kind) -> Self {
+        KindEvaluation::Static(value)
+    }
+}
+
+impl<F: Fn(&SurfaceData) -> Kind + 'static> From<F> for KindEvaluation {
+    fn from(value: F) -> Self {
+        KindEvaluation::Closure(Box::new(value))
+    }
+}
+
+// TODO: specialization
+/*
+impl From<fn(&SurfaceData) -> Kind> for KindEvaluation {
+    fn from(value: fn(&SurfaceData) -> Kind) -> Self {
+        KindEvaluation::Dynamic(value)
+    }
+}
+*/
+
+impl KindEvaluation {
+    /// Create a `KindEvaluation` from a pure function.
+    ///
+    /// Using this instead of the `From`-implementation skips boxing
+    /// and thus can provide better performance as it is not relying on dynamic dispatching.
+    pub fn from_fn(func: fn(&SurfaceData) -> Kind) -> Self {
+        KindEvaluation::Dynamic(func)
+    }
+
+    fn eval(&self, data: &SurfaceData) -> Kind {
+        match self {
+            KindEvaluation::Static(res) => *res,
+            KindEvaluation::Dynamic(func) => func(data),
+            KindEvaluation::Closure(func) => func(data),
+        }
+    }
+}
+
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
-#[instrument(level = "trace", skip(renderer, location, scale, consider_for_scanout))]
+#[instrument(level = "trace", skip(renderer, location, scale, kind))]
 #[profiling::function]
 pub fn render_elements_from_surface_tree<R, E>(
     renderer: &mut R,
@@ -93,8 +151,7 @@ pub fn render_elements_from_surface_tree<R, E>(
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
     alpha: f32,
-    kind: Kind,
-    consider_for_scanout: impl Fn(&SurfaceData) -> bool,
+    kind: impl Into<KindEvaluation>,
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
@@ -103,6 +160,7 @@ where
 {
     let location = location.into().to_f64();
     let scale = scale.into();
+    let kind = kind.into();
     let mut surfaces: Vec<E> = Vec::new();
 
     compositor::with_surface_tree_downward(
@@ -125,7 +183,7 @@ where
         },
         |surface, states, location| {
             let mut location = *location;
-            let scanout = consider_for_scanout(states);
+            let kind = kind.eval(states);
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(data) = data {
@@ -138,7 +196,7 @@ where
 
                 if has_view {
                     match WaylandSurfaceRenderElement::from_surface(
-                        renderer, surface, states, location, alpha, kind, scanout,
+                        renderer, surface, states, location, alpha, kind,
                     ) {
                         Ok(Some(surface)) => surfaces.push(surface.into()),
                         Ok(None) => {} // surface is not mapped
@@ -170,7 +228,6 @@ pub struct WaylandSurfaceRenderElement<R: Renderer> {
     location: Point<f64, Physical>,
     alpha: f32,
     kind: Kind,
-    scanout: bool,
 
     view: SurfaceView,
     buffer: Buffer,
@@ -201,7 +258,6 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         location: Point<f64, Physical>,
         alpha: f32,
         kind: Kind,
-        scanout: bool,
     ) -> Result<Option<Self>, R::Error>
     where
         R::TextureId: Clone + 'static,
@@ -221,7 +277,6 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             location,
             alpha * alpha_multiplier,
             kind,
-            scanout,
             &data_ref.lock().unwrap(),
         ))
     }
@@ -232,7 +287,6 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         location: Point<f64, Physical>,
         alpha: f32,
         kind: Kind,
-        scanout: bool,
         data: &RendererSurfaceState,
     ) -> Option<Self>
     where
@@ -251,7 +305,6 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             location,
             alpha,
             kind,
-            scanout,
             view: data.view()?,
             buffer,
             buffer_scale: data.buffer_scale(),
@@ -382,7 +435,7 @@ where
 {
     #[inline]
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
-        self.scanout.then_some(UnderlyingStorage::Wayland(&self.buffer))
+        Some(UnderlyingStorage::Wayland(&self.buffer))
     }
 
     #[instrument(level = "trace", skip(frame))]

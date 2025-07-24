@@ -116,14 +116,6 @@ where
         if let Some(opacity) = state.opacity {
             alpha *= (opacity as f32) / (u32::MAX as f32);
         }
-        render_elements_from_surface_tree(
-            renderer,
-            surface,
-            location,
-            scale,
-            alpha,
-            Kind::Unspecified,
-            |_| true,
-        )
+        render_elements_from_surface_tree(renderer, surface, location, scale, alpha, Kind::Unspecified)
     }
 }
