@@ -162,10 +162,9 @@ impl DrmSyncPoint {
             let _ = device.destroy_syncobj(syncobj);
             return Err(err);
         };
+
         let res = device.syncobj_to_fd(syncobj, true);
-        if res.is_err() {
-            let _ = device.destroy_syncobj(syncobj);
-        }
+        let _ = device.destroy_syncobj(syncobj);
         res
     }
 
