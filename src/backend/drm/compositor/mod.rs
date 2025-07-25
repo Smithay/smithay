@@ -3715,7 +3715,7 @@ where
             return Err(None);
         }
 
-        // only try to assgin elements on a cursor plane that indicate so
+        // only try to assgin elements on an overlay plane that indicate so
         if element.kind() != Kind::ScanoutCandidate && element.kind() != Kind::Cursor {
             trace!(
                 "skipping element {:?} on overlay plane(s), element kind not scanout-candidate/cursor",
