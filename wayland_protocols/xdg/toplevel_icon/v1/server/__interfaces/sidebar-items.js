@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["XDG_TOPLEVEL_ICON_MANAGER_V1_INTERFACE","XDG_TOPLEVEL_ICON_V1_INTERFACE","xdg_toplevel_icon_manager_v1_interface","xdg_toplevel_icon_v1_interface"]};

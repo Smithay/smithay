@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CURSOR_IMAGE_ROLE"],"struct":["KeyboardUserData","PointerUserData","SeatGlobalData","SeatUserData","TouchUserData"],"trait":["WaylandFocus"]};
