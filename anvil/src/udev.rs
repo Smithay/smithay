@@ -40,13 +40,13 @@ use smithay::{
             CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
             DrmEventTime, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
-        egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
+        egl::{self, context::ContextPriority, EGLContext, EGLDevice, EGLDisplay},
         input::InputEvent,
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::Error as OutputDamageTrackerError,
             element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElementStates},
-            gles::GlesRenderer,
+            gles::{Capability, GlesRenderer},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
             DebugFlags, ImportDma, ImportMemWl,
         },
@@ -251,7 +251,15 @@ pub fn run_udev() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    let gpus = GpuManager::new(GbmGlesBackend::with_context_priority(ContextPriority::High)).unwrap();
+    let gpus = GpuManager::new(GbmGlesBackend::with_factory(|display| {
+        let context = EGLContext::new_with_priority(display, ContextPriority::High)?;
+        let mut capabilities = unsafe { GlesRenderer::supported_capabilities(&context)? };
+        if std::env::var("ANVIL_GLES_DISABLE_INSTANCING").is_ok() {
+            capabilities.retain(|capability| *capability != Capability::Instancing);
+        }
+        Ok(unsafe { GlesRenderer::with_capabilities(context, capabilities)? })
+    }))
+    .unwrap();
 
     let data = UdevData {
         dh: display_handle.clone(),
