@@ -2508,7 +2508,23 @@ impl GlesFrame<'_, '_> {
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
             } else {
-                let count = damage_len * 6;
+                // When we have more than 10 rectangles, draw them in batches of 10.
+                for i in 0..(damage_len - 1) / 10 {
+                    gl.DrawArrays(ffi::TRIANGLES, 0, 60);
+
+                    // Set damage pointer to the next 10 rectangles.
+                    gl.VertexAttribPointer(
+                        self.renderer.solid_program.attrib_position as u32,
+                        4,
+                        ffi::FLOAT,
+                        ffi::FALSE,
+                        0,
+                        self.renderer.vertices.as_ptr().add((i + 1) as usize * 60 * 4) as *const _,
+                    );
+                }
+
+                // Draw the up to 10 remaining rectangles.
+                let count = ((damage_len - 1) % 10 + 1) * 6;
                 gl.DrawArrays(ffi::TRIANGLES, 0, count);
             }
 
@@ -2815,7 +2831,23 @@ impl GlesFrame<'_, '_> {
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len as i32);
             } else {
-                let count = damage_len * 6;
+                // When we have more than 10 rectangles, draw them in batches of 10.
+                for i in 0..(damage_len - 1) / 10 {
+                    gl.DrawArrays(ffi::TRIANGLES, 0, 60);
+
+                    // Set damage pointer to the next 10 rectangles.
+                    gl.VertexAttribPointer(
+                        self.renderer.solid_program.attrib_position as u32,
+                        4,
+                        ffi::FLOAT,
+                        ffi::FALSE,
+                        0,
+                        self.renderer.vertices.as_ptr().add((i + 1) * 60 * 4) as *const _,
+                    );
+                }
+
+                // Draw the up to 10 remaining rectangles.
+                let count = ((damage_len - 1) % 10 + 1) * 6;
                 gl.DrawArrays(ffi::TRIANGLES, 0, count as i32);
             }
 
