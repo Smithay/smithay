@@ -334,6 +334,23 @@ pub enum Kind {
     /// Not marking a cursor element as `Cursor` may result in lower performance and increased power usage.
     /// In contrast, marking elements that change frequently as `Cursor` can degrade performance significantly.
     Cursor,
+    /// The element is a good candidate for scanout
+    ///
+    /// An element marked as a scanout candidate is expected to refresh frequently or with a constant rate.
+    /// As such it makes a good candidate to save resources by placing it on an overlay plane, when using the drm backend
+    /// (see [`DrmCompositor`](crate::backend::drm::compositor::DrmCompositor)).
+    ///
+    /// Examples of applications like this include video players or games. To detect good candidates compositor should
+    /// employ heuristics. For example, it might keep track of the surface commit rate and mark surfaces hitting thresholds
+    /// as scanout candidates.
+    ///
+    /// Note: You can select a different `Kind` every time you create the render element from e.g. a wayland surface.
+    /// This means it is expected that compositors dynamically choose the appropriate `Kind` at runtime instead
+    /// of relying on static configuration. E.g. it can make sense to switch back to `Unspecified` during very dynamic
+    /// scenes like animations, as moving planes can be slow on certain hardware.
+    ///
+    /// Elements not marked as scanout candidates will never be considered, when selecting potential buffers for overlay planes.
+    ScanoutCandidate,
     /// The element kind is unspecified
     #[default]
     Unspecified,
