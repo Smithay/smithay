@@ -3027,7 +3027,7 @@ where
             return None;
         };
 
-        // only try to assgin elements on a cursor plane that indicate so
+        // only try to assign elements on a cursor plane that indicate so
         if element.kind() != Kind::Cursor {
             trace!(
                 "skipping element {:?} on cursor plane(s), element kind not cursor",
@@ -3712,6 +3712,15 @@ where
         E: RenderElement<R>,
     {
         if !frame_flags.contains(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT) {
+            return Err(None);
+        }
+
+        // only try to assign elements on an overlay plane that indicate so
+        if element.kind() != Kind::ScanoutCandidate && element.kind() != Kind::Cursor {
+            trace!(
+                "skipping element {:?} on overlay plane(s), element kind not scanout-candidate/cursor",
+                element.id(),
+            );
             return Err(None);
         }
 
