@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["OutputModeSource","Scale","Subpixel"],"struct":["Mode","Output","OutputNoMode","PhysicalProperties","WeakOutput"]};
