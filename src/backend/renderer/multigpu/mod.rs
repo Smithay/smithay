@@ -41,14 +41,15 @@
 //!
 use aliasable::boxed::AliasableBox;
 use std::{
-    any::{Any, TypeId},
+    any::Any,
     collections::HashMap,
     fmt,
     sync::{Arc, Mutex},
 };
 
 use super::{
-    sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma,
+    sync::{self, SyncPoint},
+    Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ErasedContextId, ExportMem, Frame, ImportDma,
     ImportMem, Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
 };
 #[cfg(feature = "wayland_frontend")]
@@ -67,7 +68,6 @@ use crate::{
             Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
         },
         drm::DrmNode,
-        renderer::sync,
         SwapBuffersError,
     },
     utils::{Buffer as BufferCoords, Physical, Rectangle, Size, Transform},
@@ -559,14 +559,25 @@ impl<A: GraphicsApi> GpuManager<A> {
 
                 let mut devices = self.devices.iter_mut();
                 let first = devices.next().unwrap();
+
                 let src_node = import_on_src_node(dmabuf, Some(damage), &mut texture, first, None, devices)?;
-
                 if src_node != target_node {
-                    let mut texture_internal = texture.0.lock().unwrap();
-                    let api_textures = texture_internal.textures.get_mut(&TypeId::of::<A>()).unwrap();
+                    let target_id = self
+                        .devices
+                        .iter()
+                        .find_map(|dev| (*dev.node() == target_node).then(|| dev.renderer().context_id()))
+                        .unwrap();
+                    let src_id = self
+                        .devices
+                        .iter()
+                        .find_map(|dev| {
+                            (*dev.node() == src_node).then(|| dev.renderer().context_id().erased())
+                        })
+                        .unwrap();
 
+                    let texture_internal = texture.0.lock().unwrap();
                     {
-                        let target_texture = api_textures.get(&target_node);
+                        let target_texture = texture_internal.textures.get(&target_id.erased());
                         if !matches!(
                             target_texture,
                             Some(GpuSingleTexture::Mem {
@@ -585,7 +596,7 @@ impl<A: GraphicsApi> GpuManager<A> {
 
                     // if we do need to do a memory copy, we start with the export early
 
-                    let src_texture = match api_textures.get(&src_node).unwrap() {
+                    let src_texture = match texture_internal.textures.get(&src_id).unwrap() {
                         GpuSingleTexture::Direct(tex) => tex
                             .downcast_ref::<<<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>(
                             )
@@ -647,7 +658,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                     std::mem::drop(texture_internal);
                     texture.insert_mapping::<A, A, _>(
                         src_node,
-                        target_node,
+                        &target_id,
                         texture.size(),
                         mappings.into_iter(),
                     );
@@ -1566,7 +1577,7 @@ where
 pub struct MultiTexture(Arc<Mutex<MultiTextureInternal>>);
 #[derive(Debug)]
 struct MultiTextureInternal {
-    textures: HashMap<TypeId, HashMap<DrmNode, GpuSingleTexture>>,
+    textures: HashMap<ErasedContextId, GpuSingleTexture>,
     size: Size<i32, BufferCoords>,
     format: Option<Fourcc>,
     #[allow(dead_code)]
@@ -1645,15 +1656,14 @@ impl MultiTexture {
     /// - No texture of type `T` is available for the given `DrmNode`
     pub fn get<A: GraphicsApi + 'static>(
         &self,
-        render: &DrmNode,
+        render_id: &ContextId<<<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>,
     ) -> Option<<<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>
     where
         <<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send + 'static,
     {
         let tex = self.0.lock().unwrap();
         tex.textures
-            .get(&TypeId::of::<A>())
-            .and_then(|textures| textures.get(render))
+            .get(&render_id.erased())
             .and_then(|texture| match texture {
                 GpuSingleTexture::Direct(texture) => Some(texture),
                 GpuSingleTexture::Dma { texture, .. } => Some(texture),
@@ -1667,14 +1677,13 @@ impl MultiTexture {
             .cloned()
     }
 
-    fn needs_synchronization<A: GraphicsApi + 'static>(&self, render: &DrmNode) -> Option<SyncPoint>
-    where
-        <<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: 'static,
-    {
+    fn needs_synchronization<A: GraphicsApi + 'static>(
+        &self,
+        render_id: &ContextId<<<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>,
+    ) -> Option<SyncPoint> {
         let mut tex = self.0.lock().unwrap();
         tex.textures
-            .get_mut(&TypeId::of::<A>())
-            .and_then(|textures| textures.get_mut(render))
+            .get_mut(&render_id.erased())
             .and_then(|texture| match texture {
                 GpuSingleTexture::Direct(_) => None,
                 GpuSingleTexture::Dma { sync, .. } => sync.take(),
@@ -1684,7 +1693,7 @@ impl MultiTexture {
 
     fn insert_texture<A: GraphicsApi + 'static>(
         &mut self,
-        render: DrmNode,
+        render_id: &ContextId<<<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>,
         texture: <<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId,
     ) where
         <<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: 'static,
@@ -1697,14 +1706,15 @@ impl MultiTexture {
         }
         tex.format = format;
 
+        let render_id = render_id.erased();
         trace!(
             "Inserting into: {:p} for {:?}: {:?}",
             Arc::as_ptr(&self.0),
-            render,
+            render_id,
             tex
         );
-        let textures = tex.textures.entry(TypeId::of::<A>()).or_default();
-        textures.insert(render, GpuSingleTexture::Direct(Box::new(texture) as Box<_>));
+        tex.textures
+            .insert(render_id, GpuSingleTexture::Direct(Box::new(texture) as Box<_>));
     }
 
     #[cfg(feature = "wayland_frontend")]
@@ -1720,7 +1730,7 @@ impl MultiTexture {
     >(
         &mut self,
         source: DrmNode,
-        render: DrmNode,
+        render_id: &ContextId<<<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>,
         size: Size<i32, BufferCoords>,
         new_mappings: I,
     ) where
@@ -1730,9 +1740,10 @@ impl MultiTexture {
         let mut tex_ref = self.0.lock().unwrap();
         let tex = &mut *tex_ref;
 
-        let textures = tex.textures.entry(TypeId::of::<R>()).or_default();
-        let (old_texture, old_mapping, external_shadow) = textures
-            .remove(&render)
+        let render_id = render_id.erased();
+        let (old_texture, old_mapping, external_shadow) = tex
+            .textures
+            .remove(&render_id)
             .map(|single| match single {
                 GpuSingleTexture::Mem {
                     texture,
@@ -1775,8 +1786,8 @@ impl MultiTexture {
         });
         mappings.extend(new_mappings);
 
-        textures.insert(
-            render,
+        tex.textures.insert(
+            render_id,
             GpuSingleTexture::Mem {
                 mappings: Some((source, mappings)),
                 texture: old_texture,
@@ -1861,8 +1872,9 @@ where
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Error<R, T>> {
-        let sync = texture.needs_synchronization::<R>(&self.node);
-        if let Some(texture) = texture.get::<R>(&self.node) {
+        let render_id = self.frame.as_mut().unwrap().context_id();
+        let sync = texture.needs_synchronization::<R>(&render_id);
+        if let Some(texture) = texture.get::<R>(&render_id) {
             self.damage.extend(damage.iter().copied().map(|mut rect| {
                 rect.loc += dst.loc;
                 rect
@@ -1944,7 +1956,7 @@ where
         })
         .map_err(|_| Error::ImportFailed)??;
         let mut texture = MultiTexture::from_surface(surface, dimensions, format);
-        texture.insert_texture::<R>(*self.render.node(), shm_texture);
+        texture.insert_texture::<R>(&self.render.renderer().context_id(), shm_texture);
         Ok(texture)
     }
 
@@ -1987,7 +1999,7 @@ where
                 modifier: Modifier::Linear,
             },
         );
-        texture.insert_texture::<R>(*self.render.node(), mem_texture);
+        texture.insert_texture::<R>(&self.render.renderer().context_id(), mem_texture);
         Ok(texture)
     }
 
@@ -2000,7 +2012,7 @@ where
         region: Rectangle<i32, BufferCoords>,
     ) -> Result<(), <Self as RendererSuper>::Error> {
         let mem_texture = texture
-            .get::<R>(self.render.node())
+            .get::<R>(&self.render.renderer().context_id())
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
         self.render
             .renderer_mut()
@@ -2105,24 +2117,17 @@ where
     match dmabuf.node() {
         Some(node) => {
             if node == *render.node() {
-                let imported = render
-                    .renderer_mut()
-                    .import_dmabuf(dmabuf, damage)
-                    .map_err(Error::Render)?;
-                texture.insert_texture::<R>(node, imported);
+                let renderer = render.renderer_mut();
+                let imported = renderer.import_dmabuf(dmabuf, damage).map_err(Error::Render)?;
+                texture.insert_texture::<R>(&renderer.context_id(), imported);
             } else if target.as_ref().is_some_and(|target| node == *target.node()) {
-                let imported = target
-                    .unwrap()
-                    .renderer_mut()
-                    .import_dmabuf(dmabuf, damage)
-                    .map_err(Error::Target)?;
-                texture.insert_texture::<T>(node, imported);
+                let renderer = target.unwrap().renderer_mut();
+                let imported = renderer.import_dmabuf(dmabuf, damage).map_err(Error::Target)?;
+                texture.insert_texture::<T>(&renderer.context_id(), imported);
             } else if let Some(other) = others.find(|other| node == *other.node()) {
-                let imported = other
-                    .renderer_mut()
-                    .import_dmabuf(dmabuf, damage)
-                    .map_err(Error::Render)?;
-                texture.insert_texture::<R>(node, imported);
+                let renderer = other.renderer_mut();
+                let imported = renderer.import_dmabuf(dmabuf, damage).map_err(Error::Render)?;
+                texture.insert_texture::<R>(&renderer.context_id(), imported);
             } else {
                 return Err(Error::DeviceMissing);
             };
@@ -2132,25 +2137,24 @@ where
         None => {
             // try them all
             let node = if let Ok(imported) = render.renderer_mut().import_dmabuf(dmabuf, damage) {
-                let node = *render.node();
-                texture.insert_texture::<R>(node, imported);
-                node
+                texture.insert_texture::<R>(&render.renderer().context_id(), imported);
+                *render.node()
             } else if let Some(imported) = target
                 .as_mut()
                 .and_then(|target| target.renderer_mut().import_dmabuf(dmabuf, damage).ok())
             {
-                let node = *target.as_ref().unwrap().node();
-                texture.insert_texture::<T>(node, imported);
-                node
-            } else if let Some((node, imported)) = others.find_map(|other| {
+                let target = target.as_ref().unwrap();
+                texture.insert_texture::<T>(&target.renderer().context_id(), imported);
+                *target.node()
+            } else if let Some((other, imported)) = others.find_map(|other| {
                 other
                     .renderer_mut()
                     .import_dmabuf(dmabuf, damage)
                     .ok()
-                    .map(|imported| (*other.node(), imported))
+                    .map(|imported| (other, imported))
             }) {
-                texture.insert_texture::<R>(node, imported);
-                node
+                texture.insert_texture::<R>(&other.renderer().context_id(), imported);
+                *other.node()
             } else {
                 return Err(Error::DeviceMissing);
             };
@@ -2601,84 +2605,56 @@ where
             Ok(texture)
         } else {
             // else we need to copy
-            if self
-                .target
-                .as_ref()
-                .is_some_and(|target| src_node == *target.device.node())
-            {
-                let mut texture_internal = texture.0.lock().unwrap();
-                // make sure our target exists
-                texture_internal.textures.entry(TypeId::of::<R>()).or_default();
+            let mut texture_internal = texture.0.lock().unwrap();
+            let target_id = self.render.renderer().context_id().erased();
+            let mut target_texture = texture_internal.textures.remove(&target_id);
 
-                // get_many_mut would be very nice here
-                let (mut src_api_textures, other_api_textures) = texture_internal
-                    .textures
-                    .iter_mut()
-                    .partition::<Vec<_>, _>(|(k, _v)| **k == TypeId::of::<T>());
-                let mut target_api_textures = other_api_textures
-                    .into_iter()
-                    .find(|(k, _)| **k == TypeId::of::<R>());
-                let mut target_texture = if TypeId::of::<T>() == TypeId::of::<R>() {
-                    src_api_textures[0].1.remove(self.render.node())
-                } else {
-                    target_api_textures.as_mut().unwrap().1.remove(self.render.node())
-                };
-                let src_texture = match src_api_textures[0].1.get(&src_node).unwrap() {
+            let res = if let Some(target) = self
+                .target
+                .as_mut()
+                .filter(|target| src_node == *target.device.node())
+            {
+                let src_id = target.device.renderer().context_id().erased();
+                let src_texture = match texture_internal.textures.get(&src_id).unwrap() {
                     GpuSingleTexture::Direct(tex) => tex
                         .downcast_ref::<<<T::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>()
                         .unwrap(),
                     _ => unreachable!(),
                 };
 
-                let res = texture_copy::<T, R>(
-                    self.target.as_mut().unwrap().device,
+                texture_copy::<T, R>(
+                    target.device,
                     self.render,
                     src_texture,
                     &mut target_texture,
                     damage,
                 )
-                .map_err(Error::transpose);
-
-                if let Some(target_texture) = target_texture.filter(|_| res.is_ok()) {
-                    if TypeId::of::<T>() == TypeId::of::<R>() {
-                        src_api_textures[0].1.insert(*self.render.node(), target_texture);
-                    } else {
-                        target_api_textures
-                            .unwrap()
-                            .1
-                            .insert(*self.render.node(), target_texture);
-                    }
-                }
-
-                std::mem::drop(texture_internal);
-                res.map(|_| texture)
+                .map_err(Error::transpose)
             } else if let Some(other) = self
                 .other_renderers
                 .iter_mut()
                 .find(|other| src_node == *other.node())
             {
-                let mut texture_internal = texture.0.lock().unwrap();
-                let api_textures = texture_internal.textures.get_mut(&TypeId::of::<R>()).unwrap();
-                let mut target_texture = api_textures.remove(self.render.node());
-                let src_texture = match api_textures.get(&src_node).unwrap() {
+                let src_id = other.renderer().context_id().erased();
+                let src_texture = match texture_internal.textures.get(&src_id).unwrap() {
                     GpuSingleTexture::Direct(tex) => tex
                         .downcast_ref::<<<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>()
                         .unwrap(),
                     _ => unreachable!(),
                 };
 
-                let res = texture_copy::<R, R>(other, self.render, src_texture, &mut target_texture, damage)
-                    .map_err(Error::generalize::<T>);
-
-                if let Some(target_texture) = target_texture.filter(|_| res.is_ok()) {
-                    api_textures.insert(*self.render.node(), target_texture);
-                }
-
-                std::mem::drop(texture_internal);
-                res.map(|_| texture)
+                texture_copy::<R, R>(other, self.render, src_texture, &mut target_texture, damage)
+                    .map_err(Error::generalize::<T>)
             } else {
                 Err(Error::DeviceMissing)
+            };
+
+            if let Some(target_texture) = target_texture.filter(|_| res.is_ok()) {
+                texture_internal.textures.insert(target_id, target_texture);
             }
+
+            std::mem::drop(texture_internal);
+            res.map(|_| texture)
         }
     }
 }
@@ -2815,7 +2791,7 @@ where
         format: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
         let tex = texture
-            .get::<R>(self.render.node())
+            .get::<R>(&self.render.renderer().context_id())
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
         self.render
             .renderer_mut()
@@ -2826,7 +2802,7 @@ where
 
     fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, Self::Error> {
         let tex = texture
-            .get::<R>(self.render.node())
+            .get::<R>(&self.render.renderer().context_id())
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
         self.render
             .renderer_mut()

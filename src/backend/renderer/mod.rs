@@ -94,11 +94,11 @@ impl<T: Texture> ContextId<T> {
     /// Returns an [`ErasedContextId`] representing this context without the texture type.
     ///
     /// This is useful when storing or comparing contexts across different texture types.
-    pub fn erased(self) -> ErasedContextId
+    pub fn erased(&self) -> ErasedContextId
     where
         T: 'static,
     {
-        ErasedContextId(self.0, TypeId::of::<T>())
+        ErasedContextId(self.0.clone(), TypeId::of::<T>())
     }
 }
 
