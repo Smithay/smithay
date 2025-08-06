@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cell::Cell, fmt};
 
 use tracing::{error, instrument, trace, warn};
 use wayland_server::{
@@ -17,8 +17,12 @@ use crate::{
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
         Seat, SeatHandler, SeatState,
     },
-    utils::{iter::new_locked_obj_iter_from_vec, Serial},
-    wayland::{input_method::InputMethodSeat, text_input::TextInputSeat},
+    utils::{iter::new_locked_obj_iter_from_vec, HookId, Serial},
+    wayland::{
+        compositor::{add_destruction_hook, remove_destruction_hook, with_states},
+        input_method::InputMethodSeat,
+        text_input::TextInputSeat,
+    },
 };
 
 impl<D> KeyboardHandle<D>
@@ -164,6 +168,9 @@ pub fn serialize_pressed_keys(keys: impl Iterator<Item = Keycode>) -> Vec<u8> {
     keys.flat_map(|key| (key.raw() - 8).to_ne_bytes()).collect()
 }
 
+#[derive(Default)]
+pub(crate) struct FocusDestroyHook(pub Cell<Option<HookId>>);
+
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     fn enter(&self, seat: &Seat<D>, state: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
         *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = Some(serial);
@@ -174,6 +181,32 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 serialize_pressed_keys(keys.iter().map(|h| h.raw_code())),
             )
         });
+
+        let seat_clone = seat.clone();
+        let hook_id = add_destruction_hook::<D, _>(self, move |_, surface| {
+            if let Some(client) = surface.client() {
+                let keyboard = seat_clone.get_keyboard().unwrap();
+                let inner = keyboard.arc.known_kbds.lock().unwrap();
+                for kbd in &*inner {
+                    let Ok(kbd) = kbd.upgrade() else {
+                        continue;
+                    };
+
+                    if kbd.client().is_some_and(|c| c == client) {
+                        kbd.leave(serial.into(), surface);
+                    }
+                }
+            }
+        });
+        if let Some(old_hook_id) = with_states(self, |states| {
+            states
+                .data_map
+                .get_or_insert::<FocusDestroyHook, _>(Default::default)
+                .0
+                .replace(Some(hook_id))
+        }) {
+            remove_destruction_hook(self, old_hook_id);
+        }
 
         let text_input = seat.text_input();
         let input_method = seat.input_method();
@@ -195,6 +228,15 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     fn leave(&self, seat: &Seat<D>, state: &mut D, serial: Serial) {
         *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = None;
         for_each_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self));
+        if let Some(hook_id) = with_states(self, |states| {
+            states
+                .data_map
+                .get::<FocusDestroyHook>()
+                .and_then(|hook| hook.0.take())
+        }) {
+            remove_destruction_hook(self, hook_id);
+        };
+
         let text_input = seat.text_input();
         let input_method = seat.input_method();
 
