@@ -171,58 +171,65 @@ pub fn serialize_pressed_keys(keys: impl Iterator<Item = Keycode>) -> Vec<u8> {
 #[derive(Default)]
 pub(crate) struct FocusDestroyHook(pub Cell<Option<HookId>>);
 
-impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
-    fn enter(&self, seat: &Seat<D>, state: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = Some(serial);
-        for_each_focused_kbds(seat, self, |kbd| {
-            kbd.enter(
-                serial.into(),
-                self,
-                serialize_pressed_keys(keys.iter().map(|h| h.raw_code())),
-            )
-        });
+pub(crate) fn enter_internal<D: SeatHandler + 'static>(
+    surface: &WlSurface,
+    seat: &Seat<D>,
+    state: &mut D,
+    keys: impl Iterator<Item = Keycode>,
+    serial: Serial,
+) {
+    *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = Some(serial);
+    let serialized_keys = serialize_pressed_keys(keys);
+    for_each_focused_kbds(seat, surface, |kbd| {
+        kbd.enter(serial.into(), surface, serialized_keys.clone())
+    });
 
-        let seat_clone = seat.clone();
-        let hook_id = add_destruction_hook::<D, _>(self, move |_, surface| {
-            if let Some(client) = surface.client() {
-                let keyboard = seat_clone.get_keyboard().unwrap();
-                let inner = keyboard.arc.known_kbds.lock().unwrap();
-                for kbd in &*inner {
-                    let Ok(kbd) = kbd.upgrade() else {
-                        continue;
-                    };
+    let seat_clone = seat.clone();
+    let hook_id = add_destruction_hook::<D, _>(surface, move |_, surface| {
+        if let Some(client) = surface.client() {
+            let keyboard = seat_clone.get_keyboard().unwrap();
+            let inner = keyboard.arc.known_kbds.lock().unwrap();
+            for kbd in &*inner {
+                let Ok(kbd) = kbd.upgrade() else {
+                    continue;
+                };
 
-                    if kbd.client().is_some_and(|c| c == client) {
-                        kbd.leave(serial.into(), surface);
-                    }
+                if kbd.client().is_some_and(|c| c == client) {
+                    kbd.leave(serial.into(), surface);
                 }
             }
-        });
-        if let Some(old_hook_id) = with_states(self, |states| {
-            states
-                .data_map
-                .get_or_insert::<FocusDestroyHook, _>(Default::default)
-                .0
-                .replace(Some(hook_id))
-        }) {
-            remove_destruction_hook(self, old_hook_id);
         }
+    });
+    if let Some(old_hook_id) = with_states(surface, |states| {
+        states
+            .data_map
+            .get_or_insert::<FocusDestroyHook, _>(Default::default)
+            .0
+            .replace(Some(hook_id))
+    }) {
+        remove_destruction_hook(surface, old_hook_id);
+    }
 
-        let text_input = seat.text_input();
-        let input_method = seat.input_method();
+    let text_input = seat.text_input();
+    let input_method = seat.input_method();
 
-        if input_method.has_instance() {
-            input_method.deactivate_input_method(state);
-        }
+    if input_method.has_instance() {
+        input_method.deactivate_input_method(state);
+    }
 
-        // NOTE: Always set focus regardless whether the client actually has the
-        // text-input global bound due to clients doing lazy global binding.
-        text_input.set_focus(Some(self.clone()));
+    // NOTE: Always set focus regardless whether the client actually has the
+    // text-input global bound due to clients doing lazy global binding.
+    text_input.set_focus(Some(surface.clone()));
 
-        // Only notify on `enter` once we have an actual IME.
-        if input_method.has_instance() {
-            text_input.enter();
-        }
+    // Only notify on `enter` once we have an actual IME.
+    if input_method.has_instance() {
+        text_input.enter();
+    }
+}
+
+impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
+    fn enter(&self, seat: &Seat<D>, state: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+        enter_internal(self, seat, state, keys.iter().map(|h| h.raw_code()), serial)
     }
 
     fn leave(&self, seat: &Seat<D>, state: &mut D, serial: Serial) {
