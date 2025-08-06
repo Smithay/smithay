@@ -40,6 +40,73 @@
 //! #         unreachable!()
 //! #     }
 //! # }
+//! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+//! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::backend::input::KeyState;
+//! # use smithay::input::{
+//! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
+//! #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
+//! #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
+//! #             GestureHoldBeginEvent, GestureHoldEndEvent},
+//! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
+//! # };
+//! # use smithay::utils::{IsAlive, Serial};
+//! #
+//! # #[derive(Debug, Clone, PartialEq)]
+//! # struct Target;
+//! # impl IsAlive for Target {
+//! #   fn alive(&self) -> bool { true }
+//! # }
+//! # impl PointerTarget<State> for Target {
+//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+//! #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
+//! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
+//! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State) {}
+//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+//! #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
+//! #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
+//! #   fn gesture_swipe_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeEndEvent) {}
+//! #   fn gesture_pinch_begin(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchBeginEvent) {}
+//! #   fn gesture_pinch_update(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchUpdateEvent) {}
+//! #   fn gesture_pinch_end(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchEndEvent) {}
+//! #   fn gesture_hold_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldBeginEvent) {}
+//! #   fn gesture_hold_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldEndEvent) {}
+//! # }
+//! # impl KeyboardTarget<State> for Target {
+//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
+//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
+//! #   fn key(
+//! #       &self,
+//! #       seat: &Seat<State>,
+//! #       data: &mut State,
+//! #       key: KeysymHandle<'_>,
+//! #       state: KeyState,
+//! #       serial: Serial,
+//! #       time: u32,
+//! #   ) {}
+//! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
+//! # }
+//! # impl TouchTarget<State> for Target {
+//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
+//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
+//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+//! # }
+//! # impl SeatHandler for State {
+//! #     type KeyboardFocus = Target;
+//! #     type PointerFocus = Target;
+//! #     type TouchFocus = Target;
+//! #     fn seat_state(&mut self) -> &mut SeatState<Self> { unreachable!() }
+//! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) {}
+//! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {}
+//! # }
+//!
 //! impl XwmHandler for State {
 //!     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm {
 //!         // ...
@@ -92,6 +159,7 @@
 //! ```
 
 use crate::{
+    input::SeatHandler,
     output::Output,
     utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
     wayland::{
@@ -733,6 +801,7 @@ impl X11Wm {
     where
         D: XwmHandler,
         D: xwayland_shell::XWaylandShellHandler,
+        D: SeatHandler,
         D: 'static,
     {
         let id = XwmId(xwm_id::next());
@@ -1394,6 +1463,7 @@ fn handle_event<D>(
 where
     D: XwmHandler,
     D: xwayland_shell::XWaylandShellHandler,
+    D: SeatHandler,
     D: 'static,
 {
     let xwm = state.xwm_state(xwm_id);
@@ -1715,8 +1785,7 @@ where
                 drop(_guard);
                 state.unmapped_window(xwm_id, surface.clone());
                 {
-                    let mut state = surface.state.lock().unwrap();
-                    state.wl_surface = None;
+                    surface.set_wl_surface(state, None);
                 }
             }
         }
@@ -2314,8 +2383,8 @@ where
                                 "associated X11 window to wl_surface",
                             );
 
-                            guard.wl_surface = Some(wl_surface.clone());
                             std::mem::drop(guard);
+                            xsurface.set_wl_surface(state, Some(wl_surface.clone()));
                             XWaylandShellHandler::surface_associated(state, xwm_id, wl_surface, xsurface);
                         } else {
                             debug!(
@@ -2325,7 +2394,8 @@ where
                             );
                             let xwm = state.xwm_state(xwm_id);
                             xwm.unpaired_surfaces.insert(serial, xsurface.window_id());
-                            guard.wl_surface = None;
+                            std::mem::drop(guard);
+                            xsurface.set_wl_surface(state, None);
                         }
                     }
                 }

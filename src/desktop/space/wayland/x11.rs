@@ -21,7 +21,7 @@ use super::{output_update, WindowOutputUserData};
 impl WaylandFocus for X11Surface {
     #[inline]
     fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
-        self.state.lock().unwrap().wl_surface.clone().map(Cow::Owned)
+        X11Surface::wl_surface(self).map(Cow::Owned)
     }
 }
 
@@ -32,8 +32,7 @@ impl SpaceElement for X11Surface {
     }
 
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
-        let state = self.state.lock().unwrap();
-        if let Some(surface) = state.wl_surface.as_ref() {
+        if let Some(surface) = X11Surface::wl_surface(self).as_ref() {
             under_from_surface_tree(surface, *point, (0, 0), WindowSurfaceType::ALL).is_some()
         } else {
             false
@@ -63,24 +62,22 @@ impl SpaceElement for X11Surface {
             state.borrow_mut().output_overlap.retain(|weak, _| weak != output);
         }
 
-        let state = self.state.lock().unwrap();
-        let Some(surface) = state.wl_surface.as_ref() else {
+        let Some(surface) = X11Surface::wl_surface(self) else {
             return;
         };
-        output_update(output, None, surface);
+        output_update(output, None, &surface);
     }
 
     fn refresh(&self) {
         self.user_data().insert_if_missing(WindowOutputUserData::default);
         let wo_state = self.user_data().get::<WindowOutputUserData>().unwrap().borrow();
 
-        let state = self.state.lock().unwrap();
-        let Some(surface) = state.wl_surface.as_ref() else {
+        let Some(surface) = X11Surface::wl_surface(self) else {
             return;
         };
         for (weak, overlap) in wo_state.output_overlap.iter() {
             if let Some(output) = weak.upgrade() {
-                output_update(&output, Some(*overlap), surface);
+                output_update(&output, Some(*overlap), &surface);
             }
         }
     }
@@ -109,13 +106,12 @@ where
         scale: Scale<f64>,
         mut alpha: f32,
     ) -> Vec<C> {
-        let state = self.state.lock().unwrap();
-        let Some(surface) = state.wl_surface.as_ref() else {
+        let Some(surface) = X11Surface::wl_surface(self) else {
             return Vec::new();
         };
-        if let Some(opacity) = state.opacity {
+        if let Some(opacity) = self.state.lock().unwrap().opacity {
             alpha *= (opacity as f32) / (u32::MAX as f32);
         }
-        render_elements_from_surface_tree(renderer, surface, location, scale, alpha, Kind::Unspecified)
+        render_elements_from_surface_tree(renderer, &surface, location, scale, alpha, Kind::Unspecified)
     }
 }
