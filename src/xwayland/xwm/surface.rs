@@ -11,7 +11,7 @@ use crate::{
         Seat, SeatHandler,
     },
     utils::{user_data::UserDataMap, Client, IsAlive, Logical, Rectangle, Serial, Size},
-    wayland::compositor,
+    wayland::{compositor, seat::keyboard::enter_internal},
 };
 use atomic_float::AtomicF64;
 use encoding_rs::WINDOWS_1252;
@@ -21,6 +21,7 @@ use std::{
 };
 use tracing::warn;
 use wayland_server::protocol::wl_surface::WlSurface;
+use xkbcommon::xkb::Keycode;
 
 use x11rb::{
     connection::Connection as _,
@@ -64,7 +65,7 @@ pub(crate) struct SharedSurfaceState {
     pub(super) override_redirect: bool,
 
     // The associated wl_surface.
-    pub(crate) wl_surface: Option<WlSurface>,
+    wl_surface: Option<WlSurface>,
 
     title: String,
     class: String,
@@ -79,6 +80,12 @@ pub(crate) struct SharedSurfaceState {
     motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
     pub(crate) opacity: Option<u32>,
+    pending_enter: Option<(
+        Box<dyn std::any::Any + Send + 'static>,
+        Vec<Keycode>,
+        Option<ModifiersState>,
+        Serial,
+    )>,
 }
 
 pub(super) type Protocols = Vec<WMProtocol>;
@@ -196,6 +203,7 @@ impl X11Surface {
                 motif_hints: vec![0; 5],
                 window_type: Vec::new(),
                 opacity: None,
+                pending_enter: None,
             })),
             user_data: Arc::new(UserDataMap::new()),
         }
@@ -344,6 +352,21 @@ impl X11Surface {
     /// Otherwise, it will set [`wl_surface_id`][Self::wl_surface_id] instead.
     pub fn wl_surface_serial(&self) -> Option<u64> {
         self.state.lock().unwrap().wl_surface_serial
+    }
+
+    pub(crate) fn set_wl_surface<D: SeatHandler + 'static>(&self, data: &mut D, surface: Option<WlSurface>) {
+        let mut state = self.state.lock().unwrap();
+        if let (Some(surface), None) = (surface.as_ref(), state.wl_surface.as_ref()) {
+            if let Some((seat, keys, mods, serial)) = state.pending_enter.take() {
+                if let Ok(seat) = seat.downcast::<Seat<D>>() {
+                    enter_internal(surface, &seat, data, keys.into_iter(), serial);
+                    if let Some(modifiers) = mods {
+                        KeyboardTarget::modifiers(surface, &seat, data, modifiers, serial);
+                    }
+                }
+            }
+        }
+        state.wl_surface = surface;
     }
 
     /// Returns the current geometry of the underlying X11 window
@@ -1056,8 +1079,16 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             let _ = conn.flush();
         }
 
-        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+        let mut state = self.state.lock().unwrap();
+        if let Some(surface) = state.wl_surface.as_ref() {
             KeyboardTarget::enter(surface, seat, data, keys, serial);
+        } else {
+            state.pending_enter = Some((
+                Box::new(seat.clone()) as Box<dyn std::any::Any + Send>,
+                keys.iter().map(|x| x.raw_code()).collect(),
+                None,
+                serial,
+            ));
         }
     }
 
@@ -1071,7 +1102,9 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             let _ = conn.flush();
         }
 
-        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+        let mut state = self.state.lock().unwrap();
+        let _ = state.pending_enter.take();
+        if let Some(surface) = state.wl_surface.as_ref() {
             KeyboardTarget::leave(surface, seat, data, serial);
         }
     }
@@ -1089,8 +1122,17 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             return;
         }
 
-        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+        let mut xstate = self.state.lock().unwrap();
+        if let Some(surface) = xstate.wl_surface.as_ref() {
             KeyboardTarget::key(surface, seat, data, key, state, serial, time)
+        } else if let Some((_, keys, _, pending_serial)) = xstate.pending_enter.as_mut() {
+            let raw = key.raw_code();
+            if state == KeyState::Released {
+                keys.retain(|c| *c != raw);
+            } else {
+                keys.push(raw);
+            }
+            *pending_serial = serial
         }
     }
 
@@ -1099,8 +1141,12 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             return;
         }
 
-        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+        let mut state = self.state.lock().unwrap();
+        if let Some(surface) = state.wl_surface.as_ref() {
             KeyboardTarget::modifiers(surface, seat, data, modifiers, serial);
+        } else if let Some((_, _, pending_modifiers, pending_serial)) = state.pending_enter.as_mut() {
+            *pending_modifiers = Some(modifiers);
+            *pending_serial = serial;
         }
     }
 }
