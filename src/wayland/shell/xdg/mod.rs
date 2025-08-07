@@ -1880,7 +1880,7 @@ impl PopupSurface {
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
     ///
-    /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
+    /// Returns `Err(`[`PopupConfigureError`]`)` if the initial configure has already been sent and
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive.
     ///
