@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["XDG_TOPLEVEL_DRAG_MANAGER_V1_INTERFACE","XDG_TOPLEVEL_DRAG_V1_INTERFACE","xdg_toplevel_drag_manager_v1_interface","xdg_toplevel_drag_v1_interface"]};
