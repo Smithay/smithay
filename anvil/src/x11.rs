@@ -228,6 +228,7 @@ pub fn run_x11() {
             subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "X11".into(),
+            serial_number: "Unknown".into(),
         },
     );
     let _global = output.create_global::<AnvilState<X11Data>>(&display.handle());

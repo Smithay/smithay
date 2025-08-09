@@ -922,6 +922,11 @@ impl AnvilState<UdevData> {
             .and_then(|info| info.model())
             .unwrap_or_else(|| "Unknown".into());
 
+        let serial_number = display_info
+            .as_ref()
+            .and_then(|info| info.serial())
+            .unwrap_or_else(|| "Unknown".into());
+
         if non_desktop {
             info!("Connector {} is non-desktop, setting up for leasing", output_name);
             device.non_desktop_connectors.push((connector.handle(), crtc));
@@ -950,6 +955,7 @@ impl AnvilState<UdevData> {
                     subpixel: connector.subpixel().into(),
                     make,
                     model,
+                    serial_number,
                 },
             );
             let global = output.create_global::<AnvilState<UdevData>>(&self.display_handle);

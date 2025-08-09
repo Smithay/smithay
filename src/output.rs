@@ -33,6 +33,7 @@
 //!         subpixel: Subpixel::HorizontalRgb,  // subpixel information
 //!         make: "Screens Inc".into(),     // make of the monitor
 //!         model: "Monitor Ultra".into(),  // model of the monitor
+//!         serial_number: "KL11C28J04XJ".into(), // serial number of the monitor
 //!     },
 //! );
 //! // Now you can configure it
@@ -167,6 +168,8 @@ pub struct PhysicalProperties {
     pub make: String,
     /// Textual representation of the model
     pub model: String,
+    /// Textual representation of the serial number
+    pub serial_number: String,
 }
 
 /// Describes the scale advertised to clients.
