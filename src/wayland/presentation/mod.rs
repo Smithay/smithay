@@ -52,6 +52,7 @@
 //! #         subpixel: Subpixel::HorizontalRgb,  // subpixel information
 //! #         make: "Screens Inc".into(),     // make of the monitor
 //! #         model: "Monitor Ultra".into(),  // model of the monitor
+//! #         serial_number: "KL11C28J04XJ".into(), // serial number of the monitor
 //! #     },
 //! # );
 //! // ... render frame ...
