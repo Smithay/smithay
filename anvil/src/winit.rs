@@ -119,6 +119,7 @@ pub fn run_winit() {
             subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "Winit".into(),
+            serial_number: "Unknown".into(),
         },
     );
     let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());

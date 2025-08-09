@@ -81,6 +81,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "WLCS".into(),
+            serial_number: "Unknown".into(),
         },
     );
     let _global = output.create_global::<AnvilState<TestState>>(&state.display_handle);

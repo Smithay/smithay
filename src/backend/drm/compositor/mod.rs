@@ -78,6 +78,7 @@
 //!         make: "N/A".into(),
 //!         model: "N/A".into(),
 //!         subpixel: Subpixel::Unknown,
+//!         serial_number: "N/A".into(),
 //!     },
 //! );
 //!
