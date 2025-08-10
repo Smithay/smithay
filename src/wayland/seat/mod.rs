@@ -70,7 +70,11 @@ pub(crate) mod keyboard;
 pub(crate) mod pointer;
 mod touch;
 
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt,
+    sync::{Arc, Weak},
+};
 
 use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
 
@@ -146,7 +150,8 @@ impl<D: SeatHandler> Inner<D> {
 
 /// Global data of WlSeat
 pub struct SeatGlobalData<D: SeatHandler> {
-    arc: Arc<SeatRc<D>>,
+    // Seat arc
+    arc: Weak<SeatRc<D>>,
 }
 
 impl<D: SeatHandler> fmt::Debug for SeatGlobalData<D> {
@@ -171,12 +176,17 @@ impl<D: SeatHandler + 'static> SeatState<D> {
         <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         N: Into<String>,
     {
-        let Seat { arc } = self.new_seat(name);
+        let seat = self.new_seat(name);
 
-        let global_id = display.create_global::<D, _, _>(9, SeatGlobalData { arc: arc.clone() });
-        arc.inner.lock().unwrap().global = Some(global_id);
+        let global_id = display.create_global::<D, _, _>(
+            9,
+            SeatGlobalData {
+                arc: Arc::downgrade(&seat.arc),
+            },
+        );
+        seat.arc.inner.lock().unwrap().global = Some(global_id);
 
-        Seat { arc }
+        seat
     }
 }
 
@@ -190,7 +200,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// Attempt to retrieve a [`Seat`] from an existing resource
     pub fn from_resource(seat: &WlSeat) -> Option<Self> {
         seat.data::<SeatUserData<D>>()
-            .map(|d| d.arc.clone())
+            .and_then(|d| d.arc.upgrade())
             .map(|arc| Self { arc })
     }
 
@@ -215,7 +225,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
 
 /// User data for seat
 pub struct SeatUserData<D: SeatHandler> {
-    arc: Arc<SeatRc<D>>,
+    arc: Weak<SeatRc<D>>,
 }
 
 impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
@@ -269,18 +279,21 @@ where
     ) {
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let inner = data.arc.inner.lock().unwrap();
+                let ptr_handle = data
+                    .arc
+                    .upgrade()
+                    .and_then(|arc| arc.inner.lock().unwrap().pointer.clone());
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
                 let pointer = data_init.init(
                     id,
                     PointerUserData {
-                        handle: inner.pointer.clone(),
+                        handle: ptr_handle.clone(),
                         client_scale,
                     },
                 );
 
-                if let Some(ref ptr_handle) = inner.pointer {
+                if let Some(ref ptr_handle) = ptr_handle {
                     ptr_handle.wl_pointer.new_pointer(pointer);
                 } else {
                     // we should send a protocol error... but the protocol does not allow
@@ -288,34 +301,40 @@ where
                 }
             }
             wl_seat::Request::GetKeyboard { id } => {
-                let inner = data.arc.inner.lock().unwrap();
+                let kbd_handle = data
+                    .arc
+                    .upgrade()
+                    .and_then(|arc| arc.inner.lock().unwrap().keyboard.clone());
 
                 let keyboard = data_init.init(
                     id,
                     KeyboardUserData {
-                        handle: inner.keyboard.clone(),
+                        handle: kbd_handle.as_ref().map(|h| Arc::downgrade(&h.arc)),
                     },
                 );
 
-                if let Some(ref h) = inner.keyboard {
+                if let Some(ref h) = kbd_handle {
                     h.new_kbd(keyboard);
                 } else {
                     // same as pointer, should error but cannot
                 }
             }
             wl_seat::Request::GetTouch { id } => {
-                let inner = data.arc.inner.lock().unwrap();
+                let touch_handle = data
+                    .arc
+                    .upgrade()
+                    .and_then(|arc| arc.inner.lock().unwrap().touch.clone());
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
                 let touch = data_init.init(
                     id,
                     TouchUserData {
-                        handle: inner.touch.clone(),
+                        handle: touch_handle.clone(),
                         client_scale,
                     },
                 );
 
-                if let Some(ref h) = inner.touch {
+                if let Some(ref h) = touch_handle {
                     h.new_touch(touch);
                 } else {
                     // same as pointer, should error but cannot
@@ -329,12 +348,13 @@ where
     }
 
     fn destroyed(_state: &mut D, _: ClientId, seat: &WlSeat, data: &SeatUserData<D>) {
-        data.arc
-            .inner
-            .lock()
-            .unwrap()
-            .known_seats
-            .retain(|s| s.id() != seat.id());
+        if let Some(arc) = data.arc.upgrade() {
+            arc.inner
+                .lock()
+                .unwrap()
+                .known_seats
+                .retain(|s| s.id() != seat.id());
+        }
     }
 }
 
@@ -362,12 +382,14 @@ where
 
         let resource = data_init.init(resource, data);
 
-        if resource.version() >= 2 {
-            resource.name(global_data.arc.name.clone());
-        }
+        if let Some(arc) = global_data.arc.upgrade() {
+            if resource.version() >= 2 {
+                resource.name(arc.name.clone());
+            }
 
-        let mut inner = global_data.arc.inner.lock().unwrap();
-        resource.capabilities(inner.compute_caps());
-        inner.known_seats.push(resource.downgrade());
+            let mut inner = arc.inner.lock().unwrap();
+            resource.capabilities(inner.compute_caps());
+            inner.known_seats.push(resource.downgrade());
+        }
     }
 }
