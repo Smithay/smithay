@@ -1,4 +1,4 @@
-use std::{cell::Cell, fmt};
+use std::{cell::RefCell, fmt};
 
 use tracing::{error, instrument, trace, warn};
 use wayland_server::{
@@ -15,7 +15,7 @@ use crate::{
     backend::input::{KeyState, Keycode},
     input::{
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
-        Seat, SeatHandler, SeatState,
+        Seat, SeatHandler, SeatState, WeakSeat,
     },
     utils::{iter::new_locked_obj_iter_from_vec, HookId, Serial},
     wayland::{
@@ -168,8 +168,40 @@ pub fn serialize_pressed_keys(keys: impl Iterator<Item = Keycode>) -> Vec<u8> {
     keys.flat_map(|key| (key.raw() - 8).to_ne_bytes()).collect()
 }
 
-#[derive(Default)]
-pub(crate) struct FocusDestroyHook(pub Cell<Option<HookId>>);
+// WeakSeat doesn't implement `Hash`, but we don't expect a lot of seats anyway,
+// so a vector with linear comparision is fine actually.
+pub(crate) struct FocusDestroyHook<D: SeatHandler + 'static>(RefCell<Vec<(WeakSeat<D>, HookId)>>);
+
+impl<D: SeatHandler + 'static> FocusDestroyHook<D> {
+    pub fn insert(&self, seat: &Seat<D>, hook_id: HookId) -> Option<HookId> {
+        let mut set = self.0.borrow_mut();
+        set.retain(|(seat, _)| seat.upgrade().is_some());
+
+        if let Some((_, hook)) = set
+            .iter_mut()
+            .find(|(s, _)| s.upgrade().is_some_and(|s| &s == seat))
+        {
+            Some(std::mem::replace(hook, hook_id))
+        } else {
+            set.push((seat.downgrade(), hook_id));
+            None
+        }
+    }
+
+    pub fn remove(&self, seat: &Seat<D>) -> Option<HookId> {
+        let mut set = self.0.borrow_mut();
+        set.retain(|(seat, _)| seat.upgrade().is_some());
+        set.iter()
+            .position(|(s, _)| s.upgrade().is_some_and(|s| &s == seat))
+            .map(|pos| set.remove(pos).1)
+    }
+}
+
+impl<D: SeatHandler + 'static> Default for FocusDestroyHook<D> {
+    fn default() -> Self {
+        FocusDestroyHook(RefCell::new(Vec::new()))
+    }
+}
 
 pub(crate) fn enter_internal<D: SeatHandler + 'static>(
     surface: &WlSurface,
@@ -203,9 +235,8 @@ pub(crate) fn enter_internal<D: SeatHandler + 'static>(
     if let Some(old_hook_id) = with_states(surface, |states| {
         states
             .data_map
-            .get_or_insert::<FocusDestroyHook, _>(Default::default)
-            .0
-            .replace(Some(hook_id))
+            .get_or_insert::<FocusDestroyHook<D>, _>(Default::default)
+            .insert(seat, hook_id)
     }) {
         remove_destruction_hook(surface, old_hook_id);
     }
@@ -238,8 +269,8 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         if let Some(hook_id) = with_states(self, |states| {
             states
                 .data_map
-                .get::<FocusDestroyHook>()
-                .and_then(|hook| hook.0.take())
+                .get::<FocusDestroyHook<D>>()
+                .and_then(|hook| hook.remove(seat))
         }) {
             remove_destruction_hook(self, hook_id);
         };
