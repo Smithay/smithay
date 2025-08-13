@@ -548,7 +548,7 @@ impl Blit for GlowRenderer {
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), GlesError> {
+    ) -> Result<sync::SyncPoint, GlesError> {
         self.gl.blit(from, to, src, dst, filter)
     }
 }

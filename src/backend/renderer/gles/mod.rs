@@ -1702,7 +1702,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         self.target
             .0
             .make_current(&self.renderer.gl, &self.renderer.egl)?;
-        res
+        res.map(|_| ())
     }
 
     fn blit_from(
@@ -1716,7 +1716,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         self.target
             .0
             .make_current(&self.renderer.gl, &self.renderer.egl)?;
-        res
+        res.map(|_| ())
     }
 }
 
@@ -1730,7 +1730,7 @@ impl Blit for GlesRenderer {
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), GlesError> {
+    ) -> Result<SyncPoint, GlesError> {
         // glBlitFramebuffer is sadly only available for GLES 3.0 and higher
         if self.gl_version < version::GLES_3_0 {
             return Err(GlesError::GLVersionNotSupported(version::GLES_3_0));
@@ -1808,7 +1808,14 @@ impl Blit for GlesRenderer {
         if errno == ffi::INVALID_OPERATION {
             Err(GlesError::BlitError)
         } else {
-            Ok(())
+            if let Some(sync_point) = self.export_sync_point() {
+                return Ok(sync_point);
+            }
+
+            unsafe {
+                self.gl.Finish();
+            }
+            Ok(SyncPoint::signaled())
         }
     }
 }
