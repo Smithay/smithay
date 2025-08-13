@@ -347,7 +347,7 @@ where
         }
 
         // first do the potential blit
-        if let Some((sync, mut dmabuf, geometry)) = primary_dmabuf {
+        if let Some((primary_dmabuf_sync, mut dmabuf, geometry)) = primary_dmabuf {
             let blit_damage = damage
                 .iter()
                 .filter_map(|d| d.intersection(geometry))
@@ -355,20 +355,25 @@ where
 
             tracing::trace!("blitting frame with damage: {:#?}", blit_damage);
 
-            renderer.wait(&sync).map_err(BlitFrameResultError::Rendering)?;
+            renderer
+                .wait(&primary_dmabuf_sync)
+                .map_err(BlitFrameResultError::Rendering)?;
             let fb = renderer
                 .bind(&mut dmabuf)
                 .map_err(BlitFrameResultError::Rendering)?;
             for rect in blit_damage {
-                renderer
-                    .blit(
-                        &fb,
-                        framebuffer,
-                        rect,
-                        rect,
-                        crate::backend::renderer::TextureFilter::Linear,
-                    )
-                    .map_err(BlitFrameResultError::Rendering)?;
+                // TODO: On Vulkan, may need to combine sync points instead of just using latest?
+                sync = Some(
+                    renderer
+                        .blit(
+                            &fb,
+                            framebuffer,
+                            rect,
+                            rect,
+                            crate::backend::renderer::TextureFilter::Linear,
+                        )
+                        .map_err(BlitFrameResultError::Rendering)?,
+                );
             }
         }
 

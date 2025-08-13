@@ -2863,11 +2863,13 @@ where
             let MultiFramebufferInternal::Target(ref mut to_fb) = &mut to.0 else {
                 unreachable!()
             };
-            target
+            let sync = target
                 .device
                 .renderer_mut()
                 .blit(target.framebuffer, to_fb, src, dst, filter)
-                .map_err(Error::Target)
+                .map_err(Error::Target)?;
+            target.device.renderer_mut().wait(&sync).map_err(Error::Target)?;
+            Ok(())
         } else {
             let MultiFramebufferInternal::Render(ref mut to_fb) = &mut to.0 else {
                 unreachable!()
@@ -2894,11 +2896,13 @@ where
             let MultiFramebufferInternal::Target(ref from_fb) = &from.0 else {
                 unreachable!()
             };
-            target
+            let sync = target
                 .device
                 .renderer_mut()
                 .blit(from_fb, target.framebuffer, src, dst, filter)
-                .map_err(Error::Target)
+                .map_err(Error::Target)?;
+            target.device.renderer_mut().wait(&sync).map_err(Error::Target)?;
+            Ok(())
         } else {
             let MultiFramebufferInternal::Render(ref from_fb) = &from.0 else {
                 unreachable!()
@@ -2935,7 +2939,7 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), <Self as RendererSuper>::Error> {
+    ) -> Result<SyncPoint, <Self as RendererSuper>::Error> {
         if let Some(target) = self.target.as_mut() {
             let MultiFramebufferInternal::Target(ref from_fb) = &from.0 else {
                 unreachable!()
