@@ -797,6 +797,18 @@ impl GlesRenderer {
     pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
     }
+
+    fn export_sync_point(&self) -> Option<SyncPoint> {
+        if self.capabilities.contains(&Capability::ExportFence) {
+            if let Ok(fence) = EGLFence::create(self.egl.display()) {
+                unsafe {
+                    self.gl.Flush();
+                }
+                return Some(SyncPoint::from(fence));
+            }
+        }
+        None
+    }
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -2368,13 +2380,8 @@ impl GlesFrame<'_, '_> {
         self.renderer.cleanup();
 
         // if we support egl fences we should use it
-        if self.renderer.capabilities.contains(&Capability::ExportFence) {
-            if let Ok(fence) = EGLFence::create(self.renderer.egl.display()) {
-                unsafe {
-                    self.renderer.gl.Flush();
-                }
-                return Ok(SyncPoint::from(fence));
-            }
+        if let Some(sync_point) = self.renderer.export_sync_point() {
+            return Ok(sync_point);
         }
 
         // as a last option we force finish, this is unlikely to happen
