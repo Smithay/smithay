@@ -11,17 +11,36 @@
 //! use wayland_server::protocol::wl_surface::WlSurface;
 //! use wayland_server::protocol::wl_pointer::WlPointer;
 //! use smithay::delegate_pointer_warp;
-//! use smithay::utils::Serial;
+//! use smithay::utils::{Serial, Logical, Point};
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! #
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
+//! # use smithay::reexports::wayland_server::Client;
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &WlSurface) {}
+//! # }
+//! # smithay::delegate_compositor!(State);
+//! #
+//! # impl smithay::input::SeatHandler for State {
+//! #     type KeyboardFocus = WlSurface;
+//! #     type PointerFocus = WlSurface;
+//! #     type TouchFocus = WlSurface;
+//! #     fn seat_state(&mut self) -> &mut smithay::input::SeatState<Self> {
+//! #         todo!()
+//! #     }
+//! # }
+//! # smithay::delegate_seat!(State);
 //!
 //! PointerWarpManager::new::<State>(
 //!     &display.handle(),
 //! );
 //!
 //! impl PointerWarpHandler for State {
-//!     fn warp_pointer(&mut self, surface: WlSurface, pointer: WlPointer, x: f64, y: f64, serial: Serial) {
+//!     fn warp_pointer(&mut self, surface: WlSurface, pointer: WlPointer, pos: Point<f64, Logical>, serial: Serial) {
 //!         // Pointer warp was requested by the client
 //!     }
 //! }
@@ -29,18 +48,24 @@
 //! delegate_pointer_warp!(State);
 //! ```
 
+use std::sync::atomic::Ordering;
+
 use wayland_protocols::wp::pointer_warp::v1::server::wp_pointer_warp_v1::{self, WpPointerWarpV1};
 use wayland_server::{
     backend::GlobalId,
     protocol::{wl_pointer::WlPointer, wl_surface::WlSurface},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-use crate::utils::Serial;
+use crate::{
+    input::SeatHandler,
+    utils::{Client as ClientCords, Logical, Point, Serial},
+    wayland::seat::PointerUserData,
+};
 
 /// Handler trait for pointer warp events.
 pub trait PointerWarpHandler:
-    GlobalDispatch<WpPointerWarpV1, ()> + Dispatch<WpPointerWarpV1, ()> + 'static
+    SeatHandler + GlobalDispatch<WpPointerWarpV1, ()> + Dispatch<WpPointerWarpV1, ()> + 'static
 {
     /// Request the compositor to move the pointer to a surface-local position.
     /// Whether or not the compositor honors the request is implementation defined, but it should
@@ -52,7 +77,14 @@ pub trait PointerWarpHandler:
     ///
     /// * `serial` - serial number of the surface enter event
     #[allow(unused)]
-    fn warp_pointer(&mut self, surface: WlSurface, pointer: WlPointer, x: f64, y: f64, serial: Serial) {}
+    fn warp_pointer(
+        &mut self,
+        surface: WlSurface,
+        pointer: WlPointer,
+        pos: Point<f64, Logical>,
+        serial: Serial,
+    ) {
+    }
 }
 
 /// Delegate type for handling pointer warp events.
@@ -107,7 +139,15 @@ impl<D: PointerWarpHandler> Dispatch<WpPointerWarpV1, (), D> for PointerWarpMana
                 y,
                 serial,
             } => {
-                state.warp_pointer(surface, pointer, x, y, Serial::from(serial));
+                let client_scale = pointer
+                    .data::<PointerUserData<D>>()
+                    .unwrap()
+                    .client_scale
+                    .load(Ordering::Acquire);
+                let location: Point<f64, ClientCords> = Point::new(x, y);
+                let location = location.to_logical(client_scale);
+
+                state.warp_pointer(surface, pointer, location, Serial::from(serial));
             }
             Request::Destroy => {}
             _ => unreachable!(),
@@ -139,6 +179,15 @@ mod tests {
     fn delegate_pointer_warp_macro() {
         struct State;
         delegate_pointer_warp!(State);
+
+        impl SeatHandler for State {
+            type KeyboardFocus = WlSurface;
+            type PointerFocus = WlSurface;
+            type TouchFocus = WlSurface;
+            fn seat_state(&mut self) -> &mut crate::input::SeatState<Self> {
+                todo!()
+            }
+        }
 
         // `PointerWarpHandler` can only be implemented if the macro works
         impl PointerWarpHandler for State {}
