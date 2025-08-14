@@ -18,7 +18,7 @@ use crate::input::{
 };
 use crate::wayland::text_input::TextInputHandle;
 use crate::{
-    backend::input::{KeyState, Keycode},
+    backend::input::{KeyEvent, Keycode},
     utils::Serial,
 };
 
@@ -45,7 +45,7 @@ where
         _data: &mut D,
         _handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
-        key_state: KeyState,
+        key_event: KeyEvent,
         modifiers: Option<ModifiersState>,
         serial: Serial,
         time: u32,
@@ -55,7 +55,7 @@ where
         inner
             .text_input_handle
             .active_text_input_serial_or_default(serial.0, |serial| {
-                keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
+                keyboard.key(serial, time, keycode.raw() - 8, key_event.into());
                 if let Some(serialized) = modifiers.map(|m| m.serialized) {
                     keyboard.modifiers(
                         serial,
