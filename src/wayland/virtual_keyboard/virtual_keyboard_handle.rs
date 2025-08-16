@@ -10,9 +10,8 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
     self, ZwpVirtualKeyboardV1,
 };
 use wayland_server::{
-    backend::ClientId,
-    protocol::wl_keyboard::{KeyState, KeymapFormat},
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
+    backend::ClientId, protocol::wl_keyboard::KeymapFormat, Client, DataInit, Dispatch, DisplayHandle,
+    Resource,
 };
 use xkbcommon::xkb;
 
@@ -20,10 +19,12 @@ use crate::input::keyboard::{KeyboardTarget, KeymapFile, ModifiersState};
 use crate::{
     input::{Seat, SeatHandler},
     utils::SERIAL_COUNTER,
-    wayland::seat::{keyboard::for_each_focused_kbds, WaylandFocus},
+    wayland::seat::WaylandFocus,
 };
 
-use super::VirtualKeyboardManagerState;
+use crate::backend::input::{KeyState, Keycode};
+
+use super::{VirtualKeyboardHandler, VirtualKeyboardManagerState};
 
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
@@ -71,10 +72,18 @@ impl<D: SeatHandler> fmt::Debug for VirtualKeyboardUserData<D> {
     }
 }
 
+#[cfg(not(feature = "virtual_keyboard_not_use_default_handler"))]
+impl<T: SeatHandler + 'static> VirtualKeyboardHandler for T {
+    fn on_keyboard_event(&mut self, keycode: Keycode, state: KeyState, time: u32) {
+        unreachable!()
+    }
+}
+
 impl<D> Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>, D> for VirtualKeyboardManagerState
 where
     D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
     D: SeatHandler + 'static,
+    D: VirtualKeyboardHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
@@ -90,6 +99,32 @@ where
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
                 update_keymap(data, format, fd, size as usize);
             }
+            #[cfg(feature = "virtual_keyboard_not_use_default_handler")]
+            zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
+                // Ensure keymap was initialized.
+                let mut virtual_data = data.handle.inner.lock().unwrap();
+                let vk_state = match virtual_data.state.as_mut() {
+                    Some(vk_state) => vk_state,
+                    None => {
+                        virtual_keyboard.post_error(NoKeymap, "`key` sent before keymap.");
+                        return;
+                    }
+                };
+                {
+                    // Ensure virtual keyboard's keymap is active.
+                    let keyboard_handle = data.seat.get_keyboard().unwrap();
+                    let mut internal = keyboard_handle.arc.internal.lock().unwrap();
+                    let focus = internal.focus.as_mut().map(|(focus, _)| focus);
+                    keyboard_handle.send_keymap(user_data, &focus, &vk_state.keymap, vk_state.mods);
+                }
+                let key_state = if state == 1 {
+                    KeyState::Pressed
+                } else {
+                    KeyState::Released
+                };
+                user_data.on_keyboard_event((key + 8).into(), key_state, time);
+            }
+            #[cfg(not(feature = "virtual_keyboard_not_use_default_handler"))]
             zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
                 // Ensure keymap was initialized.
                 let mut virtual_data = data.handle.inner.lock().unwrap();
@@ -106,7 +141,7 @@ where
                 let mut internal = keyboard_handle.arc.internal.lock().unwrap();
                 let focus = internal.focus.as_mut().map(|(focus, _)| focus);
                 keyboard_handle.send_keymap(user_data, &focus, &vk_state.keymap, vk_state.mods);
-
+                use wayland_server::protocol::wl_keyboard::KeyState;
                 if let Some(wl_surface) = focus.and_then(|f| f.wl_surface()) {
                     for_each_focused_kbds(&data.seat, &wl_surface, |kbd| {
                         // This should be wl_keyboard::KeyState, but the protocol does not state

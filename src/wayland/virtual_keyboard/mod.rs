@@ -57,9 +57,9 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
 };
 use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
-use crate::input::{Seat, SeatHandler};
-
 use self::virtual_keyboard_handle::VirtualKeyboardHandle;
+use crate::backend::input::{KeyState, Keycode};
+use crate::input::{Seat, SeatHandler};
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -89,6 +89,10 @@ where
     };
 
     display.create_global::<D, ZwpVirtualKeyboardManagerV1, _>(MANAGER_VERSION, data)
+}
+
+pub trait VirtualKeyboardHandler {
+    fn on_keyboard_event(&mut self, keycode: Keycode, state: KeyState, time: u32);
 }
 
 impl VirtualKeyboardManagerState {

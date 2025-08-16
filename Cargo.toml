@@ -110,6 +110,7 @@ wayland_frontend = ["wayland-server", "wayland-protocols", "wayland-protocols-wl
 x11rb_event_source = ["x11rb"]
 xwayland = ["encoding_rs", "wayland_frontend", "x11rb/composite", "x11rb/xfixes", "x11rb/randr", "x11rb_event_source", "scopeguard"]
 test_all_features = ["default", "use_system_lib", "renderer_glow", "renderer_test"]
+virtual_keyboard_not_use_default_handler = [ ]
 
 [[example]]
 name = "minimal"
