@@ -30,7 +30,7 @@ impl fmt::Debug for DumbBuffer {
 }
 
 /// Light wrapper around an [`DrmDeviceFd`] to implement the [`Allocator`]-trait
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DumbAllocator {
     fd: DrmDeviceFd,
 }
