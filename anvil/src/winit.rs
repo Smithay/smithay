@@ -19,7 +19,7 @@ use smithay::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
             gles::GlesRenderer,
-            ImportDma, ImportMemWl,
+            DebugFlags, ImportDma, ImportMemWl, Renderer,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
@@ -91,6 +91,12 @@ impl Backend for WinitData {
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
     fn update_led_state(&mut self, _led_state: LedState) {}
+    fn debug_flags(&self) -> DebugFlags {
+        self.backend.renderer().debug_flags()
+    }
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.backend.renderer_mut().set_debug_flags(flags)
+    }
 }
 
 pub fn run_winit() {

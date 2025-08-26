@@ -4,7 +4,6 @@ use crate::{focus::PointerFocusTarget, shell::FullscreenSurface, AnvilState};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
-#[cfg(feature = "udev")]
 use smithay::backend::renderer::DebugFlags;
 
 use smithay::{
@@ -501,6 +500,12 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     output.change_current_state(None, Some(new_transform), None, None);
                     crate::shell::fixup_positions(&mut self.space, self.pointer.current_location());
                     self.backend_data.reset_buffers(&output);
+                }
+
+                KeyAction::ToggleTint => {
+                    let mut debug_flags = self.backend_data.debug_flags();
+                    debug_flags.toggle(DebugFlags::TINT);
+                    self.backend_data.set_debug_flags(debug_flags);
                 }
 
                 action => match action {
