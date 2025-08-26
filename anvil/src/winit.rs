@@ -70,7 +70,7 @@ impl DmabufHandler for AnvilState<WinitData> {
         if self
             .backend_data
             .backend
-            .renderer()
+            .renderer_mut()
             .import_dmabuf(&dmabuf, None)
             .is_ok()
         {
@@ -134,7 +134,7 @@ pub fn run_winit() {
             .unwrap();
     #[cfg(feature = "debug")]
     let fps_texture = backend
-        .renderer()
+        .renderer_mut()
         .import_memory(
             &fps_image.to_rgba8(),
             Fourcc::Abgr8888,
@@ -184,7 +184,7 @@ pub fn run_winit() {
     };
 
     #[cfg(feature = "egl")]
-    if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
+    if backend.renderer_mut().bind_wl_display(&display.handle()).is_ok() {
         info!("EGL hardware-acceleration enabled");
     };
 
