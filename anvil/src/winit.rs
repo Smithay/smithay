@@ -234,6 +234,7 @@ pub fn run_winit() {
                 crate::shell::fixup_positions(&mut state.space, state.pointer.current_location());
             }
             WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
+            WinitEvent::CloseRequested => state.running.store(false, Ordering::SeqCst),
             _ => (),
         });
 
