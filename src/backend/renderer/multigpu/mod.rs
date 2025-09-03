@@ -730,6 +730,10 @@ pub trait ApiDevice: fmt::Debug {
 
     /// Returns a [`DrmNode`] representing the graphics device
     fn node(&self) -> &DrmNode;
+
+    /// Returns whether the underlying renderer can in principle do cross-device imports.
+    /// (With no guarantee on being able to import a specific buffer.)
+    fn can_do_cross_device_imports(&self) -> bool;
 }
 
 /// Renderer, that transparently copies rendering results to another gpu,
@@ -1288,6 +1292,10 @@ where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
+    if !target.device.can_do_cross_device_imports() {
+        return Err(Error::ImportFailed);
+    }
+
     let target_formats = ImportDma::dmabuf_formats(target.device.renderer())
         .iter()
         .filter(|format| format.code == target.format)
@@ -2136,22 +2144,33 @@ where
         }
         None => {
             // try them all
-            let node = if let Ok(imported) = render.renderer_mut().import_dmabuf(dmabuf, damage) {
+            let node = if let Some(imported) = render
+                .can_do_cross_device_imports()
+                .then(|| render.renderer_mut().import_dmabuf(dmabuf, damage).ok())
+                .flatten()
+            {
                 texture.insert_texture::<R>(&render.renderer().context_id(), imported);
                 *render.node()
-            } else if let Some(imported) = target
-                .as_mut()
-                .and_then(|target| target.renderer_mut().import_dmabuf(dmabuf, damage).ok())
-            {
+            } else if let Some(imported) = target.as_mut().and_then(|target| {
+                target
+                    .can_do_cross_device_imports()
+                    .then(|| target.renderer_mut().import_dmabuf(dmabuf, damage).ok())
+                    .flatten()
+            }) {
                 let target = target.as_ref().unwrap();
                 texture.insert_texture::<T>(&target.renderer().context_id(), imported);
                 *target.node()
             } else if let Some((other, imported)) = others.find_map(|other| {
                 other
-                    .renderer_mut()
-                    .import_dmabuf(dmabuf, damage)
-                    .ok()
-                    .map(|imported| (other, imported))
+                    .can_do_cross_device_imports()
+                    .then(|| {
+                        other
+                            .renderer_mut()
+                            .import_dmabuf(dmabuf, damage)
+                            .ok()
+                            .map(|imported| (other, imported))
+                    })
+                    .flatten()
             }) {
                 texture.insert_texture::<R>(&other.renderer().context_id(), imported);
                 *other.node()
@@ -2180,6 +2199,13 @@ where
     <<S::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: 'static,
 {
+    if target
+        .as_ref()
+        .is_some_and(|target| !target.can_do_cross_device_imports())
+    {
+        return Err(Error::ImportFailed);
+    }
+
     let format = src_texture.format().unwrap_or(Fourcc::Abgr8888);
     let read_formats = if let Some(target) = target.as_ref() {
         ImportDma::dmabuf_formats(target.renderer())

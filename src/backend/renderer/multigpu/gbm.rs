@@ -35,6 +35,7 @@ use crate::{
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::borrow::BorrowMut;
 use std::{
+    borrow::Borrow,
     collections::HashMap,
     fmt,
     os::unix::prelude::AsFd,
@@ -152,8 +153,10 @@ impl<R, A: AsFd + Clone + Send + 'static> GbmGlesBackend<R, A> {
     }
 }
 
-impl<R: From<GlesRenderer> + Renderer<Error = GlesError>, A: AsFd + Clone + 'static> GraphicsApi
-    for GbmGlesBackend<R, A>
+impl<
+        R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>,
+        A: AsFd + Clone + 'static,
+    > GraphicsApi for GbmGlesBackend<R, A>
 {
     type Device = GbmGlesDevice<R>;
     type Error = Error;
@@ -219,8 +222,11 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>, A: AsFd + Clone + 'sta
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
-impl<T: GraphicsApi, R: From<GlesRenderer> + Renderer<Error = GlesError>, A: AsFd + Clone + 'static>
-    std::convert::From<GlesError> for MultiError<GbmGlesBackend<R, A>, T>
+impl<
+        T: GraphicsApi,
+        R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>,
+        A: AsFd + Clone + 'static,
+    > std::convert::From<GlesError> for MultiError<GbmGlesBackend<R, A>, T>
 where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
@@ -248,7 +254,7 @@ impl<R: Renderer> fmt::Debug for GbmGlesDevice<R> {
     }
 }
 
-impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
+impl<R: Renderer + Borrow<GlesRenderer>> ApiDevice for GbmGlesDevice<R> {
     type Renderer = R;
 
     fn renderer(&self) -> &Self::Renderer {
@@ -262,6 +268,9 @@ impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
     }
     fn node(&self) -> &DrmNode {
         &self.node
+    }
+    fn can_do_cross_device_imports(&self) -> bool {
+        !self.renderer.borrow().is_software()
     }
 }
 
