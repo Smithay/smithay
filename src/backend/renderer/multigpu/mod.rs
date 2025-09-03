@@ -764,6 +764,42 @@ impl<R: GraphicsApi, T: GraphicsApi> AsMut<<R::Device as ApiDevice>::Renderer>
     }
 }
 
+impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> MultiRenderer<'render, 'target, R, T> {
+    /// Converts this renderer into a reference of the target-device's renderer,
+    /// if it diverges from the render-device.
+    pub fn target_as_ref(&self) -> Option<&<T::Device as ApiDevice>::Renderer> {
+        self.target.as_ref().map(|data| data.device.renderer())
+    }
+
+    /// Converts this renderer into a mutable reference of the target-device's renderer,
+    /// if it diverges from the render-device.
+    pub fn target_as_mut(&mut self) -> Option<&mut <T::Device as ApiDevice>::Renderer> {
+        self.target.as_mut().map(|data| data.device.renderer_mut())
+    }
+
+    /// Converts this `MultiRenderer` into a `single_renderer` for the provided target device.
+    ///
+    /// Will return the current renderer, if it is already a single-device render.
+    pub fn into_target(self) -> MultiRenderer<'target, 'target, T, T> {
+        if let Some(target) = self.target {
+            MultiRenderer {
+                render: target.device,
+                target: None,
+                other_renderers: Vec::new(),
+                span: self.span,
+            }
+        } else {
+            // Safety: We know R == T and thus 'render == 'target, if target is `None`.
+            unsafe {
+                std::mem::transmute::<
+                    MultiRenderer<'render, 'target, R, T>,
+                    MultiRenderer<'target, 'target, T, T>,
+                >(self)
+            }
+        }
+    }
+}
+
 /// A Framebuffer of a [`MultiRenderer`].
 pub struct MultiFramebuffer<'buffer, R: GraphicsApi, T: GraphicsApi>(MultiFramebufferInternal<'buffer, R, T>);
 enum MultiFramebufferInternal<'buffer, R: GraphicsApi, T: GraphicsApi> {
