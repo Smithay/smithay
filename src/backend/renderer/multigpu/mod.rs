@@ -356,13 +356,10 @@ impl<A: GraphicsApi> GpuManager<A> {
     /// - `target_api` should be the [`GpuManager`] used for the `target_device`.
     /// - `render_device` should referr to the gpu node rendering operations will take place upon.
     /// - `target_device` should referr to the gpu node the composited buffer will end up upon
-    /// - `allocator` should referr to an `Allocator`, that works guaranteed with the `render_device`
-    ///     to do offscreen composition on. Dma copies will be used, if buffers returned by the allocator
-    ///     also work on the `target_device`.
     /// - `copy_format` denotes the format buffers will be allocated in for offscreen rendering.
     #[instrument(level = "trace", skip(render_api, target_api), follows_from = [&render_api.span, &target_api.span])]
     #[profiling::function]
-    pub fn cross_renderer<'render, 'target, B: GraphicsApi, Alloc: Allocator>(
+    pub fn cross_renderer<'render, 'target, B: GraphicsApi>(
         render_api: &'render mut Self,
         target_api: &'target mut GpuManager<B>,
         render_device: &DrmNode,
