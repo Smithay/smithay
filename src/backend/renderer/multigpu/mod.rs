@@ -801,15 +801,14 @@ impl<'render, 'target, R: GraphicsApi, T: GraphicsApi> MultiRenderer<'render, 't
 }
 
 /// A Framebuffer of a [`MultiRenderer`].
-pub struct MultiFramebuffer<'buffer, R: GraphicsApi, T: GraphicsApi>(MultiFramebufferInternal<'buffer, R, T>);
-enum MultiFramebufferInternal<'buffer, R: GraphicsApi, T: GraphicsApi> {
-    Render(<<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>),
+pub struct MultiFramebuffer<'buffer, T: GraphicsApi>(MultiFramebufferInternal<'buffer, T>);
+enum MultiFramebufferInternal<'buffer, T: GraphicsApi> {
+    Render(<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>),
     Target(<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>),
 }
 
-impl<'buffer, R: GraphicsApi, T: GraphicsApi> fmt::Debug for MultiFramebuffer<'buffer, R, T>
+impl<'buffer, T: GraphicsApi> fmt::Debug for MultiFramebuffer<'buffer, T>
 where
-    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>: fmt::Debug,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -820,7 +819,7 @@ where
     }
 }
 
-impl<R: GraphicsApi, T: GraphicsApi> Texture for MultiFramebuffer<'_, R, T> {
+impl<T: GraphicsApi> Texture for MultiFramebuffer<'_, T> {
     fn size(&self) -> Size<i32, BufferCoords> {
         match &self.0 {
             MultiFramebufferInternal::Render(framebuffer) => framebuffer.size(),
@@ -846,6 +845,28 @@ impl<R: GraphicsApi, T: GraphicsApi> Texture for MultiFramebuffer<'_, R, T> {
         match &self.0 {
             MultiFramebufferInternal::Render(framebuffer) => framebuffer.format(),
             MultiFramebufferInternal::Target(framebuffer) => framebuffer.format(),
+        }
+    }
+}
+
+impl<'a, T: GraphicsApi> AsRef<<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'a>>
+    for MultiFramebuffer<'a, T>
+{
+    fn as_ref(&self) -> &<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'a> {
+        match &self.0 {
+            MultiFramebufferInternal::Render(fb) => fb,
+            MultiFramebufferInternal::Target(fb) => fb,
+        }
+    }
+}
+
+impl<'a, T: GraphicsApi> AsMut<<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'a>>
+    for MultiFramebuffer<'a, T>
+{
+    fn as_mut(&mut self) -> &mut <<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'a> {
+        match &mut self.0 {
+            MultiFramebufferInternal::Render(fb) => fb,
+            MultiFramebufferInternal::Target(fb) => fb,
         }
     }
 }
@@ -993,10 +1014,8 @@ where
 impl<R: GraphicsApi, T: GraphicsApi, Target> Offscreen<Target> for MultiRenderer<'_, '_, R, T>
 where
     <T::Device as ApiDevice>::Renderer: Offscreen<Target>,
-    <R::Device as ApiDevice>::Renderer: Offscreen<Target>,
     // We need these because the Bind-impl does and Offscreen requires Bind
     <T::Device as ApiDevice>::Renderer: Bind<Target>,
-    <R::Device as ApiDevice>::Renderer: Bind<Target>,
     // We need these because the Renderer-impl does and Offscreen requires Bind, which requires Unbind, which requires Renderer
     R: 'static,
     R::Error: 'static,
@@ -1021,10 +1040,14 @@ where
                 .create_buffer(format, size)
                 .map_err(Error::Target)
         } else {
-            self.render
-                .renderer_mut()
-                .create_buffer(format, size)
-                .map_err(Error::Render)
+            // SAFETY: We know this is safe, because `self.target` can only be `None` if R == T.
+            let renderer = unsafe {
+                std::mem::transmute::<
+                    &mut <R::Device as ApiDevice>::Renderer,
+                    &mut <T::Device as ApiDevice>::Renderer,
+                >(self.render.renderer_mut())
+            };
+            renderer.create_buffer(format, size).map_err(Error::Target)
         }
     }
 }
@@ -1032,7 +1055,6 @@ where
 impl<R: GraphicsApi, T: GraphicsApi, Target> Bind<Target> for MultiRenderer<'_, '_, R, T>
 where
     <T::Device as ApiDevice>::Renderer: Bind<Target>,
-    <R::Device as ApiDevice>::Renderer: Bind<Target>,
     // We need this because the Renderer-impl does and Bind requires Unbind, which requires Renderer
     R: 'static,
     R::Error: 'static,
@@ -1058,12 +1080,18 @@ where
                 .map(MultiFramebuffer)
                 .map_err(Error::Target)
         } else {
-            self.render
-                .renderer_mut()
+            // SAFETY: We know this is safe, because `self.target` can only be `None` if R == T.
+            let renderer = unsafe {
+                std::mem::transmute::<
+                    &mut <R::Device as ApiDevice>::Renderer,
+                    &mut <T::Device as ApiDevice>::Renderer,
+                >(self.render.renderer_mut())
+            };
+            renderer
                 .bind(bind)
                 .map(MultiFramebufferInternal::Render)
                 .map(MultiFramebuffer)
-                .map_err(Error::Render)
+                .map_err(Error::Target)
         }
     }
 
@@ -1071,7 +1099,13 @@ where
         if let Some(target) = self.target.as_ref() {
             Bind::<Target>::supported_formats(target.device.renderer())
         } else {
-            Bind::<Target>::supported_formats(self.render.renderer())
+            // SAFETY: We know this is safe, because `self.target` can only be `None` if R == T.
+            let renderer = unsafe {
+                std::mem::transmute::<&<R::Device as ApiDevice>::Renderer, &<T::Device as ApiDevice>::Renderer>(
+                    self.render.renderer(),
+                )
+            };
+            Bind::<Target>::supported_formats(renderer)
         }
     }
 }
@@ -1091,7 +1125,7 @@ where
 {
     type Error = Error<R, T>;
     type TextureId = MultiTexture;
-    type Framebuffer<'buffer> = MultiFramebuffer<'buffer, R, T>;
+    type Framebuffer<'buffer> = MultiFramebuffer<'buffer, T>;
     type Frame<'frame, 'buffer>
         = MultiFrame<'render, 'target, 'frame, 'buffer, R, T>
     where
@@ -1228,11 +1262,19 @@ where
         let mut target = None;
         let mut new_framebuffer = None;
         let frame = match &mut framebuffer.0 {
-            MultiFramebufferInternal::Render(framebuffer) => self
-                .render
-                .renderer_mut()
-                .render(framebuffer, size, dst_transform)
-                .map_err(Error::Render)?,
+            MultiFramebufferInternal::Render(framebuffer) => {
+                // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
+                let framebuffer = unsafe {
+                    std::mem::transmute::<
+                        &mut <<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>,
+                        &mut <<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'buffer>,
+                    >(framebuffer)
+                };
+                self.render
+                    .renderer_mut()
+                    .render(framebuffer, size, dst_transform)
+                    .map_err(Error::Render)?
+            }
             MultiFramebufferInternal::Target(target_framebuffer) => {
                 let (target_device, render_framebuffer, texture, format) = target_state.unwrap();
                 target = Some(TargetFrameData {
@@ -2792,7 +2834,7 @@ where
     #[profiling::function]
     fn copy_framebuffer(
         &mut self,
-        framebuffer: &MultiFramebuffer<'_, R, T>,
+        framebuffer: &MultiFramebuffer<'_, T>,
         region: Rectangle<i32, BufferCoords>,
         format: Fourcc,
     ) -> Result<Self::TextureMapping, <Self as RendererSuper>::Error> {
@@ -2806,12 +2848,20 @@ where
                     .map(|mapping| MultiTextureMapping(TextureMappingInternal::Either(mapping)))
                     .map_err(Error::Target)
             }
-            MultiFramebufferInternal::Render(fb) => self
-                .render
-                .renderer_mut()
-                .copy_framebuffer(fb, region, format)
-                .map(|mapping| MultiTextureMapping(TextureMappingInternal::Or(mapping)))
-                .map_err(Error::Render),
+            MultiFramebufferInternal::Render(fb) => {
+                // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
+                let fb = unsafe {
+                    std::mem::transmute::<
+                        &<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                        &<<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                    >(fb)
+                };
+                self.render
+                    .renderer_mut()
+                    .copy_framebuffer(fb, region, format)
+                    .map(|mapping| MultiTextureMapping(TextureMappingInternal::Or(mapping)))
+                    .map_err(Error::Render)
+            }
         }
     }
 
@@ -2867,7 +2917,7 @@ where
     }
 }
 
-impl<'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> BlitFrame<MultiFramebuffer<'buffer, R, T>>
+impl<'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> BlitFrame<MultiFramebuffer<'buffer, T>>
     for MultiFrame<'_, '_, 'frame, 'buffer, R, T>
 where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
@@ -2886,7 +2936,7 @@ where
     #[profiling::function]
     fn blit_to(
         &mut self,
-        to: &mut MultiFramebuffer<'buffer, R, T>,
+        to: &mut MultiFramebuffer<'buffer, T>,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
@@ -2907,6 +2957,13 @@ where
             let MultiFramebufferInternal::Render(ref mut to_fb) = &mut to.0 else {
                 unreachable!()
             };
+            // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
+            let to_fb = unsafe {
+                std::mem::transmute::<
+                    &mut <<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                    &mut <<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                >(to_fb)
+            };
             self.frame
                 .as_mut()
                 .unwrap()
@@ -2919,7 +2976,7 @@ where
     #[profiling::function]
     fn blit_from(
         &mut self,
-        from: &MultiFramebuffer<'buffer, R, T>,
+        from: &MultiFramebuffer<'buffer, T>,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
@@ -2939,6 +2996,13 @@ where
         } else {
             let MultiFramebufferInternal::Render(ref from_fb) = &from.0 else {
                 unreachable!()
+            };
+            // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
+            let from_fb = unsafe {
+                std::mem::transmute::<
+                    &<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                    &<<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                >(from_fb)
             };
             self.frame
                 .as_mut()
@@ -2967,8 +3031,8 @@ where
     #[profiling::function]
     fn blit(
         &mut self,
-        from: &MultiFramebuffer<'_, R, T>,
-        to: &mut MultiFramebuffer<'_, R, T>,
+        from: &MultiFramebuffer<'_, T>,
+        to: &mut MultiFramebuffer<'_, T>,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
@@ -2991,6 +3055,20 @@ where
             };
             let MultiFramebufferInternal::Render(ref mut to_fb) = &mut to.0 else {
                 unreachable!()
+            };
+            // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
+            let from_fb = unsafe {
+                std::mem::transmute::<
+                    &<<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                    &<<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                >(from_fb)
+            };
+            // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
+            let to_fb = unsafe {
+                std::mem::transmute::<
+                    &mut <<T::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                    &mut <<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'_>,
+                >(to_fb)
             };
             self.render
                 .renderer_mut()
