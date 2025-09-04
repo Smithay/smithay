@@ -1,5 +1,5 @@
 use crate::{
-    backend::input::KeyState,
+    backend::input::KeyEvent,
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{
@@ -1114,7 +1114,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         seat: &Seat<D>,
         data: &mut D,
         key: KeysymHandle<'_>,
-        state: KeyState,
+        state: KeyEvent,
         serial: Serial,
         time: u32,
     ) {
