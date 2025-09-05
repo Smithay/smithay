@@ -454,13 +454,15 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 let mut initial_window_location = self.space.element_location(&window).unwrap();
 
                 // If surface is maximized then unmaximize it
-                let current_state = surface.current_state();
-                if current_state.states.contains(xdg_toplevel::State::Maximized) {
-                    surface.with_pending_state(|state| {
-                        state.states.unset(xdg_toplevel::State::Maximized);
+                let changed = surface.with_pending_state(|state| {
+                    if state.states.unset(xdg_toplevel::State::Maximized) {
                         state.size = None;
-                    });
-
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if changed {
                     surface.send_configure();
 
                     // NOTE: In real compositor mouse location should be mapped to a new window size
@@ -518,13 +520,15 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let mut initial_window_location = self.space.element_location(&window).unwrap();
 
         // If surface is maximized then unmaximize it
-        let current_state = surface.current_state();
-        if current_state.states.contains(xdg_toplevel::State::Maximized) {
-            surface.with_pending_state(|state| {
-                state.states.unset(xdg_toplevel::State::Maximized);
+        let changed = surface.with_pending_state(|state| {
+            if state.states.unset(xdg_toplevel::State::Maximized) {
                 state.size = None;
-            });
-
+                true
+            } else {
+                false
+            }
+        });
+        if changed {
             surface.send_configure();
 
             // NOTE: In real compositor mouse location should be mapped to a new window size
