@@ -5,7 +5,7 @@ use crate::{
     utils::Serial,
     wayland::{
         compositor,
-        shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
+        shell::xdg::{PopupCachedState, SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
     },
 };
 
@@ -88,6 +88,10 @@ where
                     .unwrap() = Default::default();
 
                 let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
+
+                let mut guard = states.cached_state.get::<PopupCachedState>();
                 *guard.pending() = Default::default();
                 *guard.current() = Default::default();
             })

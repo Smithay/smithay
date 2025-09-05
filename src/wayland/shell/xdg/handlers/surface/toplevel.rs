@@ -4,7 +4,10 @@ use crate::{
     utils::Serial,
     wayland::{
         compositor,
-        shell::{is_valid_parent, xdg::XdgToplevelSurfaceData},
+        shell::{
+            is_valid_parent,
+            xdg::{ToplevelCachedState, XdgToplevelSurfaceData},
+        },
     },
 };
 
@@ -180,6 +183,10 @@ where
                     .unwrap() = Default::default();
 
                 let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
+
+                let mut guard = states.cached_state.get::<ToplevelCachedState>();
                 *guard.pending() = Default::default();
                 *guard.current() = Default::default();
             })
