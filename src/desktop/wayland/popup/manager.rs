@@ -4,7 +4,7 @@ use crate::{
     wayland::{
         compositor::{get_role, with_states},
         seat::WaylandFocus,
-        shell::xdg::{XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
+        shell::xdg::{PopupCachedState, XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
     },
 };
 use std::sync::{Arc, Mutex};
@@ -249,14 +249,12 @@ pub fn get_popup_toplevel_coords(popup: &PopupKind) -> Point<i32, Logical> {
     while get_role(&parent) == Some(XDG_POPUP_ROLE) {
         offset += with_states(&parent, |states| {
             states
-                .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .current
-                .geometry
-                .loc
+                .cached_state
+                .get::<PopupCachedState>()
+                .current()
+                .last_acked
+                .map(|c| c.state.geometry.loc)
+                .unwrap_or_default()
         });
         parent = with_states(&parent, |states| {
             states

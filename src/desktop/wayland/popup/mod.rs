@@ -10,7 +10,7 @@ use crate::{
     wayland::{
         compositor::with_states,
         input_method,
-        shell::xdg::{self, SurfaceCachedState, XdgPopupSurfaceData},
+        shell::xdg::{self, SurfaceCachedState},
     },
 };
 
@@ -81,21 +81,9 @@ impl PopupKind {
     }
 
     fn location(&self) -> Point<i32, Logical> {
-        let wl_surface = self.wl_surface();
-
         match *self {
-            PopupKind::Xdg(_) => {
-                with_states(wl_surface, |states| {
-                    states
-                        .data_map
-                        .get::<XdgPopupSurfaceData>()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .current
-                        .geometry
-                })
-                .loc
+            PopupKind::Xdg(ref t) => {
+                t.with_committed_state(|current| current.map(|state| state.geometry.loc).unwrap_or_default())
             }
             PopupKind::InputMethod(ref t) => t.location(),
         }

@@ -159,7 +159,8 @@ const XDG_TOPLEVEL_STATE_SUSPENDED_SINCE: u32 = 6;
 macro_rules! xdg_role {
     ($state:ty,
      $(#[$configure_meta:meta])* $configure_name:ident $({$($(#[$configure_field_meta:meta])* $configure_field_vis:vis$configure_field_name:ident:$configure_field_type:ty),*}),*,
-     $(#[$attributes_meta:meta])* $attributes_name:ident {$($(#[$attributes_field_meta:meta])* $attributes_field_vis:vis$attributes_field_name:ident:$attributes_field_type:ty),*}) => {
+     $(#[$attributes_meta:meta])* $attributes_name:ident {$($(#[$attributes_field_meta:meta])* $attributes_field_vis:vis$attributes_field_name:ident:$attributes_field_type:ty),*},
+     $(#[$cached_state_meta:meta])* $cached_state_name:ident) => {
 
         $(#[$configure_meta])*
         pub struct $configure_name {
@@ -200,13 +201,9 @@ macro_rules! xdg_role {
                 pub server_pending: Option<$state>,
                 /// Holds the last server_pending state that has been acknowledged
                 /// by the client. This state should be cloned to the current
-                /// during a commit.
+                /// during a commit. Note that this state can be newer than the last acked state at
+                /// the time of the last commit.
                 pub last_acked: Option<$state>,
-                /// Holds the current state after a successful commit.
-                pub current: $state,
-                /// Holds the last acked configure serial at the time of the last successful
-                /// commit. This serial corresponds to the current state.
-                pub current_serial: Option<Serial>,
                 /// Does the surface have a buffer (updated on every commit)
                 has_buffer: bool,
 
@@ -255,7 +252,7 @@ macro_rules! xdg_role {
             /// This can be used for example to check if the
             /// [`server_pending`](#structfield.server_pending) state
             /// is different from the last configured.
-            pub fn current_server_state(&self) -> &$state {
+            pub fn current_server_state(&self) -> $state {
                 // We check if there is already a non-acked pending
                 // configure and use its state or otherwise we could
                 // loose some state that was previously configured
@@ -263,9 +260,6 @@ macro_rules! xdg_role {
                 // again. If there is no pending state we try to use the
                 // last acked state which could contain state changes
                 // already acked but not committed to the current state.
-                // In case no last acked state is available, which is
-                // the case on the first configure we fallback to the
-                // current state.
                 // In both cases the state already contains all previous
                 // sent states. This way all pending state is accumulated
                 // into the current state.
@@ -273,7 +267,8 @@ macro_rules! xdg_role {
                     .last()
                     .map(|c| &c.state)
                     .or_else(|| self.last_acked.as_ref())
-                    .unwrap_or(&self.current)
+                    .cloned()
+                    .unwrap_or_default()
             }
 
             /// Check if the state has pending changes that have
@@ -283,7 +278,7 @@ macro_rules! xdg_role {
             /// state is [`Some`] in that it also checks if a current pending
             /// state is different from the [`current_server_state`](#method.current_server_state).
             pub fn has_pending_changes(&self) -> bool {
-                self.server_pending.as_ref().map(|s| s != self.current_server_state()).unwrap_or(false)
+                self.server_pending.as_ref().map(|s| *s != self.current_server_state()).unwrap_or(false)
             }
 
             /// Returns a list of configures sent to, but not yet acknowledged by the client.
@@ -304,14 +299,29 @@ macro_rules! xdg_role {
                     initial_configure_sent: false,
                     server_pending: None,
                     last_acked: None,
-                    current: Default::default(),
-                    current_serial: None,
                     has_buffer: false,
 
                     $(
                         $attributes_field_name: Default::default(),
                     )*
                 }
+            }
+        }
+
+        $(#[$cached_state_meta])*
+        pub struct $cached_state_name {
+            /// Configure last acknowledged by the client at the time of the commit.
+            ///
+            /// Reset to `None` when the surface unmaps.
+            pub last_acked: Option<$configure_name>,
+        }
+
+        impl Cacheable for $cached_state_name {
+            fn commit(&mut self, _dh: &DisplayHandle) -> Self {
+                self.clone()
+            }
+            fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
+                *into = self;
             }
         }
     };
@@ -375,7 +385,10 @@ xdg_role!(
         /// An `zxdg_toplevel_decoration_v1::configure` event has been sent
         /// to the client.
         pub initial_decoration_configure_sent: bool
-    }
+    },
+    /// Represents the xdg_toplevel pending state
+    #[derive(Debug, Default, Clone)]
+    ToplevelCachedState
 );
 
 /// Data associated with XDG toplevel surface  
@@ -449,7 +462,10 @@ xdg_role!(
         pub committed: bool,
 
         popup_handle: Option<xdg_popup::XdgPopup>
-    }
+    },
+    /// Represents the xdg_popup pending state
+    #[derive(Debug, Default, Clone)]
+    PopupCachedState
 );
 
 /// Data associated with XDG popup surface  
@@ -1449,7 +1465,7 @@ impl ToplevelSurface {
                 attributes
                     .server_pending
                     .take()
-                    .unwrap_or_else(|| attributes.current_server_state().clone()),
+                    .unwrap_or_else(|| attributes.current_server_state()),
             );
         }
 
@@ -1503,7 +1519,7 @@ impl ToplevelSurface {
 
                 let pending = self
                     .get_pending_state(&mut attributes)
-                    .unwrap_or_else(|| attributes.current_server_state().clone());
+                    .unwrap_or_else(|| attributes.current_server_state());
                 // retrieve the current state before adding it to the
                 // pending state so that we can compare what has changed
                 let current = attributes.current_server_state();
@@ -1633,11 +1649,6 @@ impl ToplevelSurface {
 
                 guard.has_buffer = has_buffer;
             }
-
-            if let Some(state) = guard.last_acked.clone() {
-                guard.current = state;
-                guard.current_serial = guard.configure_serial;
-            }
         });
     }
 
@@ -1707,7 +1718,7 @@ impl ToplevelSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                attributes.server_pending = Some(attributes.current_server_state().clone());
+                attributes.server_pending = Some(attributes.current_server_state());
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
@@ -1732,18 +1743,25 @@ impl ToplevelSurface {
         })
     }
 
-    /// Gets a copy of the current state of this toplevel
-    pub fn current_state(&self) -> ToplevelState {
+    /// Provides access to the current committed cached state.
+    pub fn with_cached_state<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&ToplevelCachedState) -> T,
+    {
         compositor::with_states(&self.wl_surface, |states| {
-            let attributes = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-
-            attributes.current.clone()
+            let mut guard = states.cached_state.get::<ToplevelCachedState>();
+            f(guard.current())
         })
+    }
+
+    /// Provides access to the current committed state.
+    ///
+    /// This is the state that the client last acked before making the current commit.
+    pub fn with_committed_state<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(Option<&ToplevelState>) -> T,
+    {
+        self.with_cached_state(move |state| f(state.last_acked.as_ref().map(|c| &c.state)))
     }
 
     /// Returns the parent of this toplevel surface.
@@ -1839,7 +1857,7 @@ impl PopupSurface {
             let pending = attributes
                 .server_pending
                 .take()
-                .unwrap_or_else(|| *attributes.current_server_state());
+                .unwrap_or_else(|| attributes.current_server_state());
 
             let configure = PopupConfigure {
                 state: pending,
@@ -1902,7 +1920,12 @@ impl PopupSurface {
                 return Err(PopupConfigureError::AlreadyConfigured);
             }
 
-            let is_reactive = attributes.current.positioner.reactive;
+            let mut cached = states.cached_state.get::<PopupCachedState>();
+            let is_reactive = cached
+                .current()
+                .last_acked
+                .as_ref()
+                .is_some_and(|c| c.state.positioner.reactive);
 
             if attributes.initial_configure_sent && !is_reactive {
                 // Return error, the positioner does not allow re-configure
@@ -2024,13 +2047,6 @@ impl PopupSurface {
 
                 attributes.has_buffer = has_buffer;
             }
-
-            if attributes.initial_configure_sent {
-                if let Some(state) = attributes.last_acked {
-                    attributes.current = state;
-                    attributes.current_serial = attributes.configure_serial;
-                }
-            }
         });
     }
 
@@ -2103,7 +2119,7 @@ impl PopupSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                attributes.server_pending = Some(*attributes.current_server_state());
+                attributes.server_pending = Some(attributes.current_server_state());
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
@@ -2126,6 +2142,27 @@ impl PopupSurface {
 
             !attributes.initial_configure_sent || attributes.has_pending_changes()
         })
+    }
+
+    /// Provides access to the current committed cached state.
+    pub fn with_cached_state<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&PopupCachedState) -> T,
+    {
+        compositor::with_states(&self.wl_surface, |states| {
+            let mut guard = states.cached_state.get::<PopupCachedState>();
+            f(guard.current())
+        })
+    }
+
+    /// Provides access to the current committed state.
+    ///
+    /// This is the state that the client last acked before making the current commit.
+    pub fn with_committed_state<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(Option<&PopupState>) -> T,
+    {
+        self.with_cached_state(move |state| f(state.last_acked.as_ref().map(|c| &c.state)))
     }
 }
 

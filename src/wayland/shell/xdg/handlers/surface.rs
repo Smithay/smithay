@@ -5,7 +5,9 @@ use std::sync::Mutex;
 use indexmap::IndexSet;
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
-use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
+use crate::wayland::shell::xdg::{
+    Configure, PopupCachedState, ToplevelCachedState, XdgPopupSurfaceData, XdgToplevelSurfaceData,
+};
 use crate::{
     utils::{Rectangle, Serial},
     wayland::{
@@ -107,14 +109,17 @@ where
 
                     // Initialize the toplevel capabilities from the default capabilities
                     let default_capabilities = &state.xdg_shell_state().default_capabilities;
-                    let current_capabilties = &mut states
+                    let mut attributes = states
                         .data_map
                         .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
                         .unwrap()
                         .lock()
-                        .unwrap()
-                        .current
-                        .capabilities;
+                        .unwrap();
+                    if attributes.server_pending.is_none() {
+                        let current = attributes.current_server_state();
+                        attributes.server_pending = Some(current);
+                    }
+                    let current_capabilties = &mut attributes.server_pending.as_mut().unwrap().capabilities;
                     current_capabilties.replace(default_capabilities.capabilities.iter().copied());
 
                     initial
@@ -324,6 +329,17 @@ where
                         return;
                     }
                 };
+
+                compositor::with_states(surface, |states| match &configure {
+                    Configure::Toplevel(configure) => {
+                        let mut state = states.cached_state.get::<ToplevelCachedState>();
+                        state.pending().last_acked = Some(configure.clone());
+                    }
+                    Configure::Popup(configure) => {
+                        let mut state = states.cached_state.get::<PopupCachedState>();
+                        state.pending().last_acked = Some(*configure);
+                    }
+                });
 
                 XdgShellHandler::ack_configure(state, surface.clone(), configure);
             }
