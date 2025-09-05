@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","ext_background_effect_manager_v1","ext_background_effect_surface_v1"]};
