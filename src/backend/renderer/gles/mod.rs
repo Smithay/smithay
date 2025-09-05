@@ -49,7 +49,7 @@ use crate::{
         egl::{
             fence::EGLFence,
             ffi::egl::{self as ffi_egl, types::EGLImage},
-            EGLContext, EGLSurface, MakeCurrentError,
+            EGLContext, EGLDevice, EGLSurface, MakeCurrentError,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -378,6 +378,7 @@ pub struct GlesRenderer {
     // optionals
     gl_version: GlVersion,
     pub(crate) extensions: Vec<String>,
+    is_software: bool,
     capabilities: Vec<Capability>,
 
     // shaders
@@ -579,6 +580,11 @@ impl GlesRenderer {
 
         context.make_current()?;
 
+        // TODO: check for angle as well?
+        let is_software = EGLDevice::device_for_display(context.display())
+            .map(|dev| dev.is_software())
+            .unwrap_or(false);
+
         let supported_capabilities = Self::supported_capabilities(&context)?;
         let requested_capabilities = capabilities.into_iter().collect::<Vec<_>>();
 
@@ -704,6 +710,7 @@ impl GlesRenderer {
             egl_reader: None,
 
             extensions: exts,
+            is_software,
             gl_version,
             capabilities,
 
@@ -796,6 +803,11 @@ impl GlesRenderer {
     /// Returns the supported [`Capabilities`](Capability) of this renderer.
     pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
+    }
+
+    /// Returns whether the underlying EGLContext is known to be a software renderer.
+    pub fn is_software(&self) -> bool {
+        self.is_software
     }
 
     fn export_sync_point(&self) -> Option<SyncPoint> {
