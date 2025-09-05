@@ -319,14 +319,6 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
-        if !surface
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Fullscreen)
-        {
-            return;
-        }
-
         let ret = surface.with_pending_state(|state| {
             state.states.unset(xdg_toplevel::State::Fullscreen);
             state.size = None;
@@ -341,7 +333,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             }
         }
 
-        surface.send_pending_configure();
+        // The protocol demands us to always reply with a configure,
+        // regardless of we fulfilled the request or not
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        } else {
+            // Will be sent during initial configure
+        }
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {
@@ -379,19 +377,18 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
     }
 
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
-        if !surface
-            .current_state()
-            .states
-            .contains(xdg_toplevel::State::Maximized)
-        {
-            return;
-        }
-
         surface.with_pending_state(|state| {
             state.states.unset(xdg_toplevel::State::Maximized);
             state.size = None;
         });
-        surface.send_pending_configure();
+
+        // The protocol demands us to always reply with a configure,
+        // regardless of we fulfilled the request or not
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        } else {
+            // Will be sent during initial configure
+        }
     }
 
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
