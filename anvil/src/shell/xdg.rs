@@ -20,8 +20,8 @@ use smithay::{
         compositor::{self, with_states},
         seat::WaylandFocus,
         shell::xdg::{
-            Configure, PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
-            XdgToplevelSurfaceData,
+            Configure, PopupSurface, PositionerState, ToplevelCachedState, ToplevelSurface, XdgShellHandler,
+            XdgShellState,
         },
     },
 };
@@ -221,14 +221,12 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 // will no longer have the resize state set
                 let is_resizing = with_states(&surface, |states| {
                     states
-                        .data_map
-                        .get::<XdgToplevelSurfaceData>()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .current
-                        .states
-                        .contains(xdg_toplevel::State::Resizing)
+                        .cached_state
+                        .get::<ToplevelCachedState>()
+                        .current()
+                        .last_acked
+                        .as_ref()
+                        .is_some_and(|c| c.state.states.contains(xdg_toplevel::State::Resizing))
                 });
 
                 if configure.serial >= serial && is_resizing {
