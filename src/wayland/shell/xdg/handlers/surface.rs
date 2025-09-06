@@ -5,9 +5,7 @@ use std::sync::Mutex;
 use indexmap::IndexSet;
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
-use crate::wayland::shell::xdg::{
-    Configure, PopupCachedState, ToplevelCachedState, XdgPopupSurfaceData, XdgToplevelSurfaceData,
-};
+use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
     utils::{Rectangle, Serial},
     wayland::{
@@ -126,9 +124,9 @@ where
                 });
 
                 if initial {
-                    compositor::add_post_commit_hook::<D, _>(
+                    compositor::add_pre_commit_hook::<D, _>(
                         surface,
-                        super::super::ToplevelSurface::commit_hook,
+                        super::super::ToplevelSurface::pre_commit_hook,
                     );
                 }
 
@@ -207,10 +205,6 @@ where
                     compositor::add_pre_commit_hook::<D, _>(
                         surface,
                         super::super::PopupSurface::pre_commit_hook,
-                    );
-                    compositor::add_post_commit_hook::<D, _>(
-                        surface,
-                        super::super::PopupSurface::post_commit_hook,
                     );
                 }
 
@@ -329,17 +323,6 @@ where
                         return;
                     }
                 };
-
-                compositor::with_states(surface, |states| match &configure {
-                    Configure::Toplevel(configure) => {
-                        let mut state = states.cached_state.get::<ToplevelCachedState>();
-                        state.pending().last_acked = Some(configure.clone());
-                    }
-                    Configure::Popup(configure) => {
-                        let mut state = states.cached_state.get::<PopupCachedState>();
-                        state.pending().last_acked = Some(*configure);
-                    }
-                });
 
                 XdgShellHandler::ack_configure(state, surface.clone(), configure);
             }

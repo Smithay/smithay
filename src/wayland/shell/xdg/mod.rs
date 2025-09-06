@@ -121,11 +121,12 @@
 use crate::utils::alive_tracker::IsAlive;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
 use crate::utils::{Serial, SERIAL_COUNTER};
-use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
+use crate::wayland::compositor::{self, BufferAssignment, SurfaceAttributes};
 use std::cmp::min;
 use std::{collections::HashSet, fmt::Debug, sync::Mutex};
 
+use tracing::{error, trace, trace_span};
 use wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use wayland_protocols::xdg::shell::server::xdg_positioner::{Anchor, ConstraintAdjustment, Gravity};
 use wayland_protocols::xdg::shell::server::xdg_surface;
@@ -181,11 +182,6 @@ macro_rules! xdg_role {
 
         $(#[$attributes_meta])*
         pub struct $attributes_name {
-                /// Defines if the surface has received at least one
-                /// xdg_surface.ack_configure from the client
-                pub configured: bool,
-                /// The serial of the last acked configure
-                pub configure_serial: Option<Serial>,
                 /// Holds the state if the surface has sent the initial
                 /// configure event to the client. It is expected that
                 /// during the first commit a initial
@@ -199,13 +195,10 @@ macro_rules! xdg_role {
                 pending_configures: Vec<$configure_name>,
                 /// Holds the pending state as set by the server.
                 pub server_pending: Option<$state>,
-                /// Holds the last server_pending state that has been acknowledged
-                /// by the client. This state should be cloned to the current
-                /// during a commit. Note that this state can be newer than the last acked state at
-                /// the time of the last commit.
-                pub last_acked: Option<$state>,
-                /// Does the surface have a buffer (updated on every commit)
-                has_buffer: bool,
+                /// Holds the last configure that has been acknowledged by the client. This state
+                /// should be cloned to the current during a commit. Note that this state can be
+                /// newer than the last acked state at the time of the last commit.
+                pub last_acked: Option<$configure_name>,
 
                 $(
                     $(#[$attributes_field_meta])*
@@ -226,14 +219,8 @@ macro_rules! xdg_role {
                     }
                 };
 
-                // Save the state as the last acked state
-                self.last_acked = Some(configure.state.clone());
-
-                // Set the xdg_surface to configured
-                self.configured = true;
-
-                // Save the last configure serial as a reference
-                self.configure_serial = Some(Serial::from(serial));
+                // Save the configure as the last acked configure
+                self.last_acked = Some(configure.clone());
 
                 // Clean old configures
                 self.pending_configures.retain(|c| c.serial > serial);
@@ -266,7 +253,7 @@ macro_rules! xdg_role {
                 self.pending_configures
                     .last()
                     .map(|c| &c.state)
-                    .or_else(|| self.last_acked.as_ref())
+                    .or_else(|| self.last_acked.as_ref().map(|c| &c.state))
                     .cloned()
                     .unwrap_or_default()
             }
@@ -293,13 +280,10 @@ macro_rules! xdg_role {
         impl Default for $attributes_name {
             fn default() -> Self {
                 Self {
-                    configured: false,
-                    configure_serial: None,
                     pending_configures: Vec::new(),
                     initial_configure_sent: false,
                     server_pending: None,
                     last_acked: None,
-                    has_buffer: false,
 
                     $(
                         $attributes_field_name: Default::default(),
@@ -442,6 +426,11 @@ xdg_role!(
     /// for the xdg_popup state to take effect.
     #[derive(Debug)]
     XdgPopupSurfaceRoleAttributes {
+        // FIXME: "parent" should move into PopupCachedState, and "committed" should be removed in
+        // favor of something like PopupCachedState::last_acked.is_some(). Along the way, popup
+        // grabs should be made to apply at commit time, rather than immediately upon
+        // xdg_popup.grab(). This is required to fix Qt layer-shell popup grabs for example.
+
         /// Holds the parent for the xdg_popup.
         ///
         /// The parent is allowed to remain unset as long
@@ -459,9 +448,7 @@ xdg_role!(
         /// This can be used to check for protocol errors, like
         /// checking if a popup requested a grab after it has been
         /// mapped.
-        pub committed: bool,
-
-        popup_handle: Option<xdg_popup::XdgPopup>
+        pub committed: bool
     },
     /// Represents the xdg_popup pending state
     #[derive(Debug, Default, Clone)]
@@ -1596,91 +1583,98 @@ impl ToplevelSurface {
         })
     }
 
-    /// A newly-unmapped toplevel surface has to perform the initial commit-configure sequence as if it was
-    /// a new toplevel.
-    ///
-    /// This method is used to mark a surface for reinitialization.
-    ///
-    /// NOTE: If you are using smithay's rendering abstractions you don't have to call this manually
-    ///
-    /// Calls [`compositor::with_states`] internally.
-    pub fn reset_initial_configure_sent(&self) {
-        compositor::with_states(&self.wl_surface, |states| {
-            let mut data = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-            data.initial_configure_sent = false;
-            data.initial_decoration_configure_sent = false;
-        });
-    }
-
-    /// Handles the role specific commit logic
+    /// Handles the role specific commit error checking
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook<D: 'static>(
-        _state: &mut D,
+    pub(crate) fn pre_commit_hook<D: XdgShellHandler + 'static>(
+        state: &mut D,
         _dh: &DisplayHandle,
         surface: &wl_surface::WlSurface,
     ) {
-        let has_buffer = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
-            state.buffer().is_some()
-        });
+        let _span = trace_span!("xdg-toplevel pre-commit", surface = %surface.id()).entered();
 
-        compositor::with_states(surface, |states| {
-            let mut guard = states
+        let error = compositor::with_states(surface, |states| {
+            let mut role = states
                 .data_map
                 .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
 
-            // This can be None if rendering utils are not used by the user
-            if let Some(has_buffer) = has_buffer {
-                // The surface was mapped in the past, and now got unmapped
-                if guard.has_buffer && !has_buffer {
-                    // After xdg surface unmaps it has to perform the initial commit-configure sequence again
-                    guard.initial_configure_sent = false;
-                    guard.initial_decoration_configure_sent = false;
-                }
+            let mut guard_toplevel = states.cached_state.get::<ToplevelCachedState>();
+            let pending = guard_toplevel.pending();
 
-                guard.has_buffer = has_buffer;
+            // The presence of last_acked always follows the buffer assignment because the
+            // surface is not allowed to attach a buffer without acking the initial configure.
+            let had_buffer_before = pending.last_acked.is_some();
+
+            let mut guard_surface = states.cached_state.get::<SurfaceAttributes>();
+            let has_buffer = match &guard_surface.pending().buffer {
+                Some(BufferAssignment::NewBuffer(_)) => true,
+                Some(BufferAssignment::Removed) => false,
+                None => had_buffer_before,
+            };
+            // Need to check had_buffer_before in case the client attaches a null buffer for the
+            // initial commit---we don't want to consider that as "got unmapped" and reset role.
+            let got_unmapped = had_buffer_before && !has_buffer;
+
+            if has_buffer {
+                let Some(last_acked) = role.last_acked.clone() else {
+                    return Some((
+                        xdg_surface::Error::UnconfiguredBuffer,
+                        "must ack the initial configure before attaching buffer",
+                    ));
+                };
+
+                // The surface remains, or became mapped, track the last acked state.
+                pending.last_acked = Some(last_acked);
+            } else {
+                // The surface remains, or became, unmapped, meaning that it's in the initial
+                // configure stage.
+                pending.last_acked = None;
             }
-        });
-    }
 
-    /// Make sure this surface was configured
-    ///
-    /// Returns `true` if it was, if not, returns `false` and raise
-    /// a protocol error to the associated client. Also returns `false`
-    /// if the surface is already destroyed.
-    ///
-    /// `xdg_shell` mandates that a client acks a configure before committing
-    /// anything.
-    pub fn ensure_configured(&self) -> bool {
-        let configured = compositor::with_states(&self.wl_surface, |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .configured
+            if got_unmapped {
+                trace!(
+                    "got unmapped; resetting role and cached state; have {} pending configures",
+                    role.pending_configures.len()
+                );
+
+                // All attributes are discarded when an xdg_surface is unmapped. Though, we keep
+                // the list of pending configures because there's no way for a surface to tell
+                // an in-flight configure apart from our next initial configure after unmapping.
+                //
+                // This can be reproduced with wleird-unmap if, say, and Activated configure is
+                // timed right.
+                let pending_configures = std::mem::take(&mut role.pending_configures);
+                *role = Default::default();
+                role.pending_configures = pending_configures;
+                *guard_toplevel.pending() = Default::default();
+
+                // Don't forget to prepare the default capabilities though.
+                let default_capabilities = &state.xdg_shell_state().default_capabilities;
+                role.server_pending = Some(Default::default());
+                let current_capabilties = &mut role.server_pending.as_mut().unwrap().capabilities;
+                current_capabilties.replace(default_capabilities.capabilities.iter().copied());
+            }
+
+            None
         });
-        if !configured {
-            let data = self
-                .shell_surface
-                .data::<self::handlers::XdgShellSurfaceUserData>()
-                .unwrap();
-            data.xdg_surface.post_error(
-                xdg_surface::Error::NotConstructed,
-                "Surface has not been configured yet.",
-            );
+
+        if let Some((error, msg)) = error {
+            // The surface attached a buffer without acking the initial configure.
+            let toplevels = &state.xdg_shell_state().known_toplevels;
+            if let Some(toplevel) = toplevels.iter().find(|handle| handle.wl_surface == *surface) {
+                let data = toplevel
+                    .shell_surface
+                    .data::<self::handlers::XdgShellSurfaceUserData>()
+                    .unwrap();
+                data.xdg_surface.post_error(error, msg);
+            } else {
+                error!("surface missing from known toplevels");
+            }
         }
-        configured
     }
 
     /// Send a "close" event to the client
@@ -1956,26 +1950,6 @@ impl PopupSurface {
         })
     }
 
-    /// A newly-unmapped popup surface has to perform the initial commit-configure sequence as if it was
-    /// a new popup.
-    ///
-    /// This method is used to mark a surface for reinitialization.
-    ///
-    /// NOTE: If you are using smithay's rendering abstractions you don't have to call this manually
-    ///
-    /// Calls [`compositor::with_states`] internally.
-    pub fn reset_initial_configure_sent(&self) {
-        compositor::with_states(&self.wl_surface, |states| {
-            let mut data = states
-                .data_map
-                .get::<XdgPopupSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-            data.initial_configure_sent = false;
-        });
-    }
-
     /// Send a configure event, including the `repositioned` event to the client
     /// in response to a `reposition` request.
     ///
@@ -1988,97 +1962,90 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn pre_commit_hook<D: 'static>(
-        _state: &mut D,
+    pub(crate) fn pre_commit_hook<D: XdgShellHandler + 'static>(
+        state: &mut D,
         _dh: &DisplayHandle,
         surface: &wl_surface::WlSurface,
     ) {
-        let send_error_to = compositor::with_states(surface, |states| {
-            let attributes = states
+        let _span = trace_span!("xdg-popup pre-commit", surface = %surface.id()).entered();
+
+        let error = compositor::with_states(surface, |states| {
+            let mut role = states
                 .data_map
                 .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
-            if attributes.parent.is_none() {
-                attributes.popup_handle.clone()
+            if role.parent.is_none() {
+                return Some((
+                    xdg_surface::Error::NotConstructed,
+                    "xdg_popup must have parent before mapping",
+                ));
+            }
+
+            let mut guard_popup = states.cached_state.get::<PopupCachedState>();
+            let pending = guard_popup.pending();
+
+            // The presence of last_acked always follows the buffer assignment because the
+            // surface is not allowed to attach a buffer without acking the initial configure.
+            let had_buffer_before = pending.last_acked.is_some();
+
+            let mut guard_surface = states.cached_state.get::<SurfaceAttributes>();
+            let has_buffer = match &guard_surface.pending().buffer {
+                Some(BufferAssignment::NewBuffer(_)) => true,
+                Some(BufferAssignment::Removed) => false,
+                None => had_buffer_before,
+            };
+            // Need to check had_buffer_before in case the client attaches a null buffer for the
+            // initial commit---we don't want to consider that as "got unmapped" and reset role.
+            let got_unmapped = had_buffer_before && !has_buffer;
+
+            if has_buffer {
+                let Some(last_acked) = role.last_acked else {
+                    return Some((
+                        xdg_surface::Error::UnconfiguredBuffer,
+                        "must ack the initial configure before attaching buffer",
+                    ));
+                };
+
+                // The surface remains, or became mapped, track the last acked state.
+                pending.last_acked = Some(last_acked);
             } else {
-                None
+                // The surface remains, or became, unmapped, meaning that it's in the initial
+                // configure stage.
+                pending.last_acked = None;
             }
-        });
-        if let Some(handle) = send_error_to {
-            let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
-            data.xdg_surface.post_error(
-                xdg_surface::Error::NotConstructed,
-                "Surface has not been configured yet.",
-            );
-        }
-    }
 
-    /// Handles the role specific commit state application
-    ///
-    /// This should be called when the underlying WlSurface
-    /// applies a wl_surface.commit state.
-    pub(crate) fn post_commit_hook<D: 'static>(
-        _state: &mut D,
-        _dh: &DisplayHandle,
-        surface: &wl_surface::WlSurface,
-    ) {
-        let has_buffer = crate::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
-            state.buffer().is_some()
-        });
+            if got_unmapped {
+                trace!(
+                    "got unmapped; resetting role and cached state; have {} pending configures",
+                    role.pending_configures.len()
+                );
 
-        compositor::with_states(surface, |states| {
-            let mut attributes = states
-                .data_map
-                .get::<XdgPopupSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-            attributes.committed = true;
-
-            // This can be None if rendering utils are not used by the user
-            if let Some(has_buffer) = has_buffer {
-                // The surface was mapped in the past, and now got unmapped
-                if attributes.has_buffer && !has_buffer {
-                    // After xdg surface unmaps it has to perform the initial commit-configure sequence again
-                    attributes.initial_configure_sent = false;
-                }
-
-                attributes.has_buffer = has_buffer;
+                // All attributes are discarded when an xdg_surface is unmapped. Though, we keep
+                // the list of pending configures because there's no way for a surface to tell
+                // an in-flight configure apart from our next initial configure after unmapping.
+                let pending_configures = std::mem::take(&mut role.pending_configures);
+                *role = Default::default();
+                role.pending_configures = pending_configures;
+                *guard_popup.pending() = Default::default();
             }
-        });
-    }
 
-    /// Make sure this surface was configured
-    ///
-    /// Returns `true` if it was, if not, returns `false` and raise
-    /// a protocol error to the associated client. Also returns `false`
-    /// if the surface is already destroyed.
-    ///
-    /// xdg_shell mandates that a client acks a configure before committing
-    /// anything.
-    pub fn ensure_configured(&self) -> bool {
-        let configured = compositor::with_states(&self.wl_surface, |states| {
-            states
-                .data_map
-                .get::<XdgPopupSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .configured
+            None
         });
-        if !configured {
-            let data = self
-                .shell_surface
-                .data::<self::handlers::XdgShellSurfaceUserData>()
-                .unwrap();
-            data.xdg_surface.post_error(
-                xdg_surface::Error::NotConstructed,
-                "Surface has not been configured yet.",
-            );
+
+        if let Some((error, msg)) = error {
+            let popups = &state.xdg_shell_state().known_popups;
+            if let Some(popup) = popups.iter().find(|handle| handle.wl_surface == *surface) {
+                let data = popup
+                    .shell_surface
+                    .data::<self::handlers::XdgShellSurfaceUserData>()
+                    .unwrap();
+                data.xdg_surface.post_error(error, msg);
+            } else {
+                error!("surface missing from known popups");
+            }
         }
-        configured
     }
 
     /// Send a `popup_done` event to the popup surface
