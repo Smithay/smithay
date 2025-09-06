@@ -107,23 +107,26 @@ where
 
                     // Initialize the toplevel capabilities from the default capabilities
                     let default_capabilities = &state.xdg_shell_state().default_capabilities;
-                    let current_capabilties = &mut states
+                    let mut attributes = states
                         .data_map
                         .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
                         .unwrap()
                         .lock()
-                        .unwrap()
-                        .current
-                        .capabilities;
+                        .unwrap();
+                    if attributes.server_pending.is_none() {
+                        let current = attributes.current_server_state();
+                        attributes.server_pending = Some(current);
+                    }
+                    let current_capabilties = &mut attributes.server_pending.as_mut().unwrap().capabilities;
                     current_capabilties.replace(default_capabilities.capabilities.iter().copied());
 
                     initial
                 });
 
                 if initial {
-                    compositor::add_post_commit_hook::<D, _>(
+                    compositor::add_pre_commit_hook::<D, _>(
                         surface,
-                        super::super::ToplevelSurface::commit_hook,
+                        super::super::ToplevelSurface::pre_commit_hook,
                     );
                 }
 
@@ -202,10 +205,6 @@ where
                     compositor::add_pre_commit_hook::<D, _>(
                         surface,
                         super::super::PopupSurface::pre_commit_hook,
-                    );
-                    compositor::add_post_commit_hook::<D, _>(
-                        surface,
-                        super::super::PopupSurface::post_commit_hook,
                     );
                 }
 
