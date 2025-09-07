@@ -60,6 +60,25 @@ where
             _ => unreachable!(),
         }
     }
+
+    fn destroyed(
+        _state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &ExtSessionLockSurfaceV1,
+        data: &ExtLockSurfaceUserData,
+    ) {
+        if let Ok(surface) = data.surface.upgrade() {
+            compositor::with_states(&surface, |states| {
+                let mut attributes = states
+                    .data_map
+                    .get::<Mutex<LockSurfaceAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+                attributes.reset();
+            });
+        }
+    }
 }
 
 /// Attributes for ext-session-lock surfaces.
@@ -112,6 +131,14 @@ impl LockSurfaceAttributes {
         self.configure_serial = Some(serial);
 
         Some(configure)
+    }
+
+    fn reset(&mut self) {
+        self.configure_serial = None;
+        self.server_pending = None;
+        self.pending_configures = Vec::new();
+        self.last_acked = None;
+        self.current = Default::default();
     }
 }
 
