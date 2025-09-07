@@ -24,6 +24,132 @@ enables accepting dmabufs originating from any node.
 All other methods have moved to this new type, allowing compositors to take the same lock across multiple
 operations.
 
+xdg_shell, layer_shell, and session_lock surfaces now track `last_acked` state for each commit.
+You can find it in the `last_acked` field of the corresponding `...CachedState` structs.
+
+The "current state" and "current serial" attribute fields were removed; use `last_acked` from the new `with_committed_state()` accessors instead (and verify that you didn't actually want `with_pending_state()` instead where you used the "current state").
+
+```diff
+-ToplevelSurface::current_state();
++ToplevelSurface::with_committed_state(|state| {
++    // ...
++});
+
+-PopupSurface::current_state();
++PopupSurface::with_committed_state(|state| {
++    // ...
++});
+
+-LayerSurface::current_state();
++LayerSurface::with_committed_state(|state| {
++    // ...
++});
+
+-LockSurface::current_state();
++LockSurface::with_committed_state(|state| {
++    // ...
++});
+
+struct XdgToplevelSurfaceRoleAttributes {
+-    configured: bool,
+-    configure_serial: Option<Serial>,
+-    current: ToplevelState,
+-    current_serial: Option<Serial>,
+-    last_acked: Option<ToplevelState>,
++    last_acked: Option<ToplevelConfigure>,
+    // ...
+}
+
+struct XdgPopupSurfaceRoleAttributes {
+-    configured: bool,
+-    configure_serial: Option<Serial>,
+-    current: PopupState,
+-    current_serial: Option<Serial>,
+-    last_acked: Option<PopupState>,
++    last_acked: Option<PopupConfigure>,
+    // ...
+}
+
+struct LayerSurfaceAttributes {
+-    configured: bool,
+-    configure_serial: Option<Serial>,
+-    current: LayerSurfaceState,
+-    last_acked: Option<LayerSurfaceState>,
++    last_acked: Option<LayerSurfaceConfigure>,
+    // ...
+}
+
+-impl Copy for LayerSurfaceCachedState;
+```
+
+The following methods are no longer needed as Smithay does them automatically now:
+```diff
+-ToplevelSurface::reset_initial_configure_sent();
+-PopupSurface::reset_initial_configure_sent();
+```
+
+You also no longer need to manually set `LayerSurfaceAttributes::initial_configure_sent`, Smithay handles it automatically.
+
+### Additions
+
+xdg_shell and layer_shell now enforce the client acking a configure before committing a buffer, as required by the protocols.
+
+```rs
+struct ToplevelCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<ToplevelConfigure>,
+}
+
+/// Provides access to the current committed cached state.
+fn ToplevelSurface::with_cached_state<T>(&self, f: impl FnOnce(&ToplevelCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn ToplevelSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&ToplevelState>) -> T) -> T;
+
+struct PopupCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<ToplevelConfigure>,
+}
+
+/// Provides access to the current committed cached state.
+fn PopupSurface::with_cached_state<T>(&self, f: impl FnOnce(&PopupCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn PopupSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&PopupState>) -> T) -> T;
+
+struct LayerSurfaceCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<LayerSurfaceConfigure>,
+    // ...
+}
+
+/// Provides access to the current committed cached state.
+fn LayerSurface::with_cached_state<T>(&self, f: impl FnOnce(&LayerSurfaceCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn LayerSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&LayerSurfaceState>) -> T) -> T;
+
+struct LockSurfaceCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<LockSurfaceConfigure>,
+}
+
+/// Provides access to the current committed cached state.
+fn LockSurface::with_cached_state<T>(&self, f: impl FnOnce(&LockSurfaceCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn LockSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&LockSurfaceState>) -> T) -> T;
+
+struct LockSurfaceAttributes {
+    server_pending: Option<LockSurfaceState>,
+    pending_configures: Vec<LockSurfaceConfigure>,
+    last_acked: Option<LockSurfaceConfigure>,
+}
+
+type LockSurfaceData = Mutex<LockSurfaceAttributes>;
+
+struct LockSurfaceConfigure {
+    state: LockSurfaceState,
+    serial: Serial,
+}
+```
+
 ## 0.7.0
 
 ### Breaking changes
