@@ -58,13 +58,14 @@ use wayland_server::protocol::wl_output::WlOutput;
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
-use crate::wayland::session_lock::surface::LockSurfaceConfigure;
-
 mod lock;
 mod surface;
 
 pub use lock::SessionLockState;
-pub use surface::{ExtLockSurfaceUserData, LockSurface, LockSurfaceState};
+pub use surface::{
+    ExtLockSurfaceUserData, LockSurface, LockSurfaceAttributes, LockSurfaceCachedState, LockSurfaceConfigure,
+    LockSurfaceData, LockSurfaceState,
+};
 
 const MANAGER_VERSION: u32 = 1;
 
