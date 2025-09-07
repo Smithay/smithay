@@ -496,6 +496,17 @@ impl LayerSurface {
         })
     }
 
+    /// Provides access to the current committed cached state.
+    pub fn with_cached_state<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&LayerSurfaceCachedState) -> T,
+    {
+        compositor::with_states(&self.wl_surface, |states| {
+            let mut guard = states.cached_state.get::<LayerSurfaceCachedState>();
+            f(guard.current())
+        })
+    }
+
     /// Access the underlying `zwlr_layer_surface_v1` of this layer surface
     ///
     pub fn shell_surface(&self) -> &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1 {
