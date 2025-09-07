@@ -297,9 +297,7 @@ impl LayerMap {
                     )
                 }
 
-                let data = with_states(surface, |states| {
-                    *states.cached_state.get::<LayerSurfaceCachedState>().current()
-                });
+                let data = layer.cached_state();
 
                 let mut source = match data.exclusive_zone {
                     ExclusiveZone::Exclusive(_) | ExclusiveZone::Neutral => zone,
@@ -551,37 +549,24 @@ impl LayerSurface {
         self.0.surface.wl_surface()
     }
 
-    /// Returns the cached protocol state
+    /// Returns a clone of the cached protocol state
     pub fn cached_state(&self) -> LayerSurfaceCachedState {
-        with_states(self.0.surface.wl_surface(), |states| {
-            *states.cached_state.get::<LayerSurfaceCachedState>().current()
-        })
+        self.0.surface.with_cached_state(Clone::clone)
     }
 
     /// Returns true, if the surface has indicated, that it is able to process keyboard events.
     pub fn can_receive_keyboard_focus(&self) -> bool {
-        with_states(self.0.surface.wl_surface(), |states| {
-            match states
-                .cached_state
-                .get::<LayerSurfaceCachedState>()
-                .current()
-                .keyboard_interactivity
-            {
+        self.0
+            .surface
+            .with_cached_state(|state| match state.keyboard_interactivity {
                 KeyboardInteractivity::Exclusive | KeyboardInteractivity::OnDemand => true,
                 KeyboardInteractivity::None => false,
-            }
-        })
+            })
     }
 
     /// Returns the layer this surface resides on, if any yet.
     pub fn layer(&self) -> WlrLayer {
-        with_states(self.0.surface.wl_surface(), |states| {
-            states
-                .cached_state
-                .get::<LayerSurfaceCachedState>()
-                .current()
-                .layer
-        })
+        self.0.surface.with_cached_state(|state| state.layer)
     }
 
     /// Returns the namespace of this surface
