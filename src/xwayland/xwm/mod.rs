@@ -1523,7 +1523,9 @@ where
                 (geo.x as i32, geo.y as i32).into(),
                 (geo.width as i32, geo.height as i32).into(),
             )
-            .to_logical(xwm.client_scale.load(Ordering::Acquire) as i32);
+            .to_f64()
+            .to_logical(xwm.client_scale.load(Ordering::Acquire))
+            .to_i32_round();
 
             let surface = X11Surface::new(
                 Some(xwm),
