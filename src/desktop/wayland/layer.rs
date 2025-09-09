@@ -272,7 +272,27 @@ impl LayerMap {
             );
             trace!("Arranging layers into {:?}", output_rect.size);
 
-            for layer in self.layers.iter() {
+            let exclusive_surfaces = self.layers.iter().filter(|l| {
+                matches!(
+                    with_states(l.wl_surface(), |states| states
+                        .cached_state
+                        .get::<LayerSurfaceCachedState>()
+                        .current()
+                        .exclusive_zone),
+                    ExclusiveZone::Exclusive(_)
+                )
+            });
+            let non_exclusive_surfaces = self.layers.iter().filter(|l| {
+                !matches!(
+                    with_states(l.wl_surface(), |states| states
+                        .cached_state
+                        .get::<LayerSurfaceCachedState>()
+                        .current()
+                        .exclusive_zone),
+                    ExclusiveZone::Exclusive(_)
+                )
+            });
+            for layer in exclusive_surfaces.chain(non_exclusive_surfaces) {
                 let surface = layer.wl_surface();
 
                 with_surface_tree_downward(
