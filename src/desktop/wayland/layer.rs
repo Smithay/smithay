@@ -272,7 +272,15 @@ impl LayerMap {
             );
             trace!("Arranging layers into {:?}", output_rect.size);
 
-            for layer in self.layers.iter() {
+            let exclusive_surfaces = self
+                .layers
+                .iter()
+                .filter(|l| matches!(l.effective_exclusive_zone(), ExclusiveZone::Exclusive(_)));
+            let non_exclusive_surfaces = self
+                .layers
+                .iter()
+                .filter(|l| !matches!(l.effective_exclusive_zone(), ExclusiveZone::Exclusive(_)));
+            for layer in exclusive_surfaces.chain(non_exclusive_surfaces) {
                 let surface = layer.wl_surface();
 
                 with_surface_tree_downward(
@@ -712,6 +720,22 @@ impl LayerSurface {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this surface.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.userdata
+    }
+
+    /// Returns the exclusive zone set for the layer; except if an exclusive zone is set
+    /// but the exclusive edge is not set and cannot be inferred, then return `Neutral`.
+    fn effective_exclusive_zone(&self) -> ExclusiveZone {
+        with_states(self.wl_surface(), |states| {
+            let mut cached_state = states.cached_state.get::<LayerSurfaceCachedState>();
+            let data = cached_state.current();
+            if matches!(data.exclusive_zone, ExclusiveZone::Exclusive(_))
+                && effective_exclusive_edge(data).is_none()
+            {
+                ExclusiveZone::Neutral
+            } else {
+                data.exclusive_zone
+            }
+        })
     }
 }
 
