@@ -151,7 +151,11 @@ impl PopupManager {
                 self.popup_trees.push(tree);
             } else {
                 let tree = states.data_map.get::<PopupTree>().unwrap();
-                trace!("Adding popup {:?} to existing PopupTree on root {:?}", popup, root);
+                trace!(
+                    "Adding popup {:?} to existing PopupTree on root {:?}",
+                    popup,
+                    root
+                );
                 tree.insert(popup);
 
                 if tree.set_registered(true) {
@@ -292,7 +296,7 @@ struct PopupTree(Arc<Mutex<PopupTreeInner>>);
 #[derive(Debug, Default, Clone)]
 struct PopupTreeInner {
     children: Vec<PopupNode>,
-    registered: bool
+    registered: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -342,7 +346,8 @@ impl PopupTree {
 
     fn cleanup_and_get_alive(&mut self) -> bool {
         let mut tree = self.0.lock().unwrap();
-        tree.children.retain_mut(|child| child.cleanup_and_get_alive(false));
+        tree.children
+            .retain_mut(|child| child.cleanup_and_get_alive(false));
         !tree.children.is_empty()
     }
 
@@ -428,13 +433,14 @@ impl PopupNode {
         let alive = self.surface.alive();
 
         if alive && parent_destroyed {
-            self.surface.wl_surface().post_error(xdg_wm_base::Error::NotTheTopmostPopup,
-                "xdg_popup was destroyed while it was not the topmost popup");
+            self.surface.wl_surface().post_error(
+                xdg_wm_base::Error::NotTheTopmostPopup,
+                "xdg_popup was destroyed while it was not the topmost popup",
+            );
         }
 
-        self.children.retain_mut(|child| {
-            child.cleanup_and_get_alive(!alive)
-        });
+        self.children
+            .retain_mut(|child| child.cleanup_and_get_alive(!alive));
 
         alive
     }
