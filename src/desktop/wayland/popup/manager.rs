@@ -290,6 +290,10 @@ impl PopupTree {
             .lock()
             .unwrap()
             .iter()
+            // A newly created xdg_popup is stacked on top of all previously created xdg_popups. We
+            // push new ones to the end of the vector, so we should iterate in reverse, from newest
+            // to oldest.
+            .rev()
             .filter(|node| node.surface.alive())
             .flat_map(|n| n.iter_popups_relative_to((0, 0)).map(|(p, l)| (p.clone(), l)))
             .collect::<Vec<_>>()
@@ -351,6 +355,10 @@ impl PopupNode {
         let relative_to = loc.into() + self.surface.location();
         self.children
             .iter()
+            // A newly created xdg_popup is stacked on top of all previously created xdg_popups. We
+            // push new ones to the end of the vector, so we should iterate in reverse, from newest
+            // to oldest.
+            .rev()
             .filter(|node| node.surface.alive())
             .flat_map(move |x| {
                 Box::new(x.iter_popups_relative_to(relative_to))
