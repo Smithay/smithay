@@ -426,11 +426,6 @@ xdg_role!(
     /// for the xdg_popup state to take effect.
     #[derive(Debug)]
     XdgPopupSurfaceRoleAttributes {
-        // FIXME: "parent" should move into PopupCachedState, and "committed" should be removed in
-        // favor of something like PopupCachedState::last_acked.is_some(). Along the way, popup
-        // grabs should be made to apply at commit time, rather than immediately upon
-        // xdg_popup.grab(). This is required to fix Qt layer-shell popup grabs for example.
-
         /// Holds the parent for the xdg_popup.
         ///
         /// The parent is allowed to remain unset as long
@@ -443,12 +438,8 @@ xdg_role!(
         /// the xdg_popup role when no parent is set.
         pub parent: Option<wl_surface::WlSurface>,
 
-        /// Defines if the surface has received at least one commit
-        ///
-        /// This can be used to check for protocol errors, like
-        /// checking if a popup requested a grab after it has been
-        /// mapped.
-        pub committed: bool
+        /// If the popup requested a grab, this is the seat and serial.
+        requested_grab: Option<(wl_seat::WlSeat, Serial)>
     },
     /// Represents the xdg_popup pending state
     #[derive(Debug, Default, Clone)]
@@ -1969,7 +1960,7 @@ impl PopupSurface {
     ) {
         let _span = trace_span!("xdg-popup pre-commit", surface = %surface.id()).entered();
 
-        let error = compositor::with_states(surface, |states| {
+        let res = compositor::with_states(surface, |states| {
             let mut role = states
                 .data_map
                 .get::<XdgPopupSurfaceData>()
@@ -1977,7 +1968,7 @@ impl PopupSurface {
                 .lock()
                 .unwrap();
             if role.parent.is_none() {
-                return Some((
+                return Err((
                     xdg_surface::Error::NotConstructed,
                     "xdg_popup must have parent before mapping",
                 ));
@@ -1989,6 +1980,19 @@ impl PopupSurface {
             // The presence of last_acked always follows the buffer assignment because the
             // surface is not allowed to attach a buffer without acking the initial configure.
             let had_buffer_before = pending.last_acked.is_some();
+
+            let grab = role.requested_grab.take();
+            if grab.is_some() && had_buffer_before {
+                let popups = &state.xdg_shell_state().known_popups;
+                if let Some(popup) = popups.iter().find(|handle| handle.wl_surface == *surface) {
+                    popup
+                        .shell_surface
+                        .post_error(xdg_popup::Error::InvalidGrab, "tried to grab after being mapped");
+                } else {
+                    error!("surface missing from known popups");
+                }
+                return Ok(None);
+            }
 
             let mut guard_surface = states.cached_state.get::<SurfaceAttributes>();
             let has_buffer = match &guard_surface.pending().buffer {
@@ -2002,7 +2006,7 @@ impl PopupSurface {
 
             if has_buffer {
                 let Some(last_acked) = role.last_acked else {
-                    return Some((
+                    return Err((
                         xdg_surface::Error::UnconfiguredBuffer,
                         "must ack the initial configure before attaching buffer",
                     ));
@@ -2031,19 +2035,31 @@ impl PopupSurface {
                 *guard_popup.pending() = Default::default();
             }
 
-            None
+            Ok(grab)
         });
 
-        if let Some((error, msg)) = error {
-            let popups = &state.xdg_shell_state().known_popups;
-            if let Some(popup) = popups.iter().find(|handle| handle.wl_surface == *surface) {
-                let data = popup
-                    .shell_surface
-                    .data::<self::handlers::XdgShellSurfaceUserData>()
-                    .unwrap();
-                data.xdg_surface.post_error(error, msg);
-            } else {
-                error!("surface missing from known popups");
+        match res {
+            Ok(Some((seat, serial))) => {
+                let popups = &state.xdg_shell_state().known_popups;
+                if let Some(popup) = popups.iter().find(|handle| handle.wl_surface == *surface) {
+                    let popup = popup.clone();
+                    XdgShellHandler::grab(state, popup, seat, serial);
+                } else {
+                    error!("surface missing from known popups");
+                }
+            }
+            Ok(None) => (),
+            Err((error, msg)) => {
+                let popups = &state.xdg_shell_state().known_popups;
+                if let Some(popup) = popups.iter().find(|handle| handle.wl_surface == *surface) {
+                    let data = popup
+                        .shell_surface
+                        .data::<self::handlers::XdgShellSurfaceUserData>()
+                        .unwrap();
+                    data.xdg_surface.post_error(error, msg);
+                } else {
+                    error!("surface missing from known popups");
+                }
             }
         }
     }

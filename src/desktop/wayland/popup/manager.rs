@@ -9,7 +9,7 @@ use crate::{
 };
 use std::sync::{Arc, Mutex};
 use tracing::trace;
-use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
+use wayland_protocols::xdg::shell::server::xdg_wm_base;
 use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
@@ -74,23 +74,7 @@ impl PopupManager {
         );
 
         match popup {
-            PopupKind::Xdg(ref xdg) => {
-                let surface = xdg.wl_surface();
-                let committed = with_states(surface, |states| {
-                    states
-                        .data_map
-                        .get::<XdgPopupSurfaceData>()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .committed
-                });
-
-                if committed {
-                    surface.post_error(xdg_popup::Error::InvalidGrab, "xdg_popup already is mapped");
-                    return Err(PopupGrabError::InvalidGrab);
-                }
-            }
+            PopupKind::Xdg(ref _xdg) => (),
             PopupKind::InputMethod(ref _input_method) => {
                 return Err(PopupGrabError::InvalidGrab);
             }
