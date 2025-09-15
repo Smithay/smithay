@@ -65,6 +65,7 @@ struct XdgPopupSurfaceRoleAttributes {
 -    configure_serial: Option<Serial>,
 -    current: PopupState,
 -    current_serial: Option<Serial>,
+-    committed: bool,
 -    last_acked: Option<PopupState>,
 +    last_acked: Option<PopupConfigure>,
     // ...
