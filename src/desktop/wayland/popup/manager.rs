@@ -130,15 +130,17 @@ impl PopupManager {
             if states.data_map.insert_if_missing_threadsafe(|| tree.clone()) {
                 trace!("Adding popup {:?} to new PopupTree on root {:?}", popup, root);
                 tree.insert(popup);
+
+                tree.set_registered(true);
                 self.popup_trees.push(tree);
             } else {
                 let tree = states.data_map.get::<PopupTree>().unwrap();
-                if !tree.alive() {
-                    // if it previously had no popups, we likely removed it from our list already
-                    self.popup_trees.push(tree.clone());
-                }
                 trace!("Adding popup {:?} to existing PopupTree on root {:?}", popup, root);
                 tree.insert(popup);
+
+                if tree.set_registered(true) {
+                    self.popup_trees.push(tree.clone());
+                }
             }
         });
 
@@ -194,7 +196,13 @@ impl PopupManager {
             grabs.cleanup();
             grabs.active()
         });
-        self.popup_trees.retain_mut(|tree| tree.cleanup_and_get_alive());
+        self.popup_trees.retain_mut(|tree| {
+            let alive = tree.cleanup_and_get_alive();
+            if !alive {
+                let _ = tree.set_registered(false);
+            }
+            alive
+        });
         self.unmapped_popups.retain(|surf| surf.alive());
     }
 }
@@ -261,7 +269,13 @@ pub fn get_popup_toplevel_coords(popup: &PopupKind) -> Point<i32, Logical> {
 }
 
 #[derive(Debug, Default, Clone)]
-struct PopupTree(Arc<Mutex<Vec<PopupNode>>>);
+struct PopupTree(Arc<Mutex<PopupTreeInner>>);
+
+#[derive(Debug, Default, Clone)]
+struct PopupTreeInner {
+    children: Vec<PopupNode>,
+    registered: bool
+}
 
 #[derive(Debug, Clone)]
 struct PopupNode {
@@ -274,6 +288,7 @@ impl PopupTree {
         self.0
             .lock()
             .unwrap()
+            .children
             .iter()
             // A newly created xdg_popup is stacked on top of all previously created xdg_popups. We
             // push new ones to the end of the vector, so we should iterate in reverse, from newest
@@ -286,24 +301,24 @@ impl PopupTree {
     }
 
     fn insert(&self, popup: PopupKind) {
-        let children = &mut *self.0.lock().unwrap();
-        for child in children.iter_mut() {
+        let tree = &mut *self.0.lock().unwrap();
+        for child in tree.children.iter_mut() {
             if child.insert(popup.clone()) {
                 return;
             }
         }
-        children.push(PopupNode::new(popup));
+        tree.children.push(PopupNode::new(popup));
     }
 
     fn dismiss_popup(&self, popup: &PopupKind) {
-        let mut children = self.0.lock().unwrap();
+        let mut tree = self.0.lock().unwrap();
 
         let mut i = 0;
-        while i < children.len() {
-            let child = &mut children[i];
+        while i < tree.children.len() {
+            let child = &mut tree.children[i];
 
             if child.dismiss_popup(popup) {
-                let _ = children.remove(i);
+                let _ = tree.children.remove(i);
                 break;
             } else {
                 i += 1;
@@ -312,14 +327,19 @@ impl PopupTree {
     }
 
     fn cleanup_and_get_alive(&mut self) -> bool {
-        let mut children = self.0.lock().unwrap();
-        children.retain_mut(|child| child.cleanup_and_get_alive(false));
-        !children.is_empty()
+        let mut tree = self.0.lock().unwrap();
+        tree.children.retain_mut(|child| child.cleanup_and_get_alive(false));
+        !tree.children.is_empty()
     }
 
-    #[inline]
-    fn alive(&self) -> bool {
-        !self.0.lock().unwrap().is_empty()
+    /// Marks whether this tree is registered in the PopupManager's popup_trees
+    ///
+    /// Returns true if the registration status changed
+    fn set_registered(&self, registered: bool) -> bool {
+        let mut tree = self.0.lock().unwrap();
+        let was_registered = tree.registered;
+        tree.registered = registered;
+        was_registered != registered
     }
 }
 
