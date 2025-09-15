@@ -317,7 +317,7 @@ impl PopupTree {
     fn insert(&self, popup: PopupKind) {
         let tree = &mut *self.0.lock().unwrap();
         for child in tree.children.iter_mut() {
-            if child.insert(popup.clone()) {
+            if child.try_insert(&popup) {
                 return;
             }
         }
@@ -380,14 +380,14 @@ impl PopupNode {
             .chain(std::iter::once((&self.surface, relative_to)))
     }
 
-    fn insert(&mut self, popup: PopupKind) -> bool {
+    fn try_insert(&mut self, popup: &PopupKind) -> bool {
         let parent = popup.parent().unwrap();
         if self.surface.wl_surface() == &parent {
-            self.children.push(PopupNode::new(popup));
+            self.children.push(PopupNode::new(popup.clone()));
             true
         } else {
             for child in &mut self.children {
-                if child.insert(popup.clone()) {
+                if child.try_insert(popup) {
                     return true;
                 }
             }
