@@ -190,11 +190,11 @@ impl PopupManager {
     /// Needs to be called periodically (but not necessarily frequently)
     /// to cleanup internal resources.
     pub fn cleanup(&mut self) {
-        // retain_mut is sadly still unstable
-        self.popup_grabs.iter_mut().for_each(|grabs| grabs.cleanup());
-        self.popup_grabs.retain(|grabs| grabs.active());
-        self.popup_trees.iter_mut().for_each(|tree| tree.cleanup());
-        self.popup_trees.retain(|tree| tree.alive());
+        self.popup_grabs.retain_mut(|grabs| {
+            grabs.cleanup();
+            grabs.active()
+        });
+        self.popup_trees.retain_mut(|tree| tree.cleanup_and_get_alive());
         self.unmapped_popups.retain(|surf| surf.alive());
     }
 }
@@ -311,12 +311,10 @@ impl PopupTree {
         }
     }
 
-    fn cleanup(&mut self) {
+    fn cleanup_and_get_alive(&mut self) -> bool {
         let mut children = self.0.lock().unwrap();
-        for child in children.iter_mut() {
-            child.cleanup();
-        }
-        children.retain(|n| n.surface.alive());
+        children.retain_mut(|child| child.cleanup_and_get_alive(false));
+        !children.is_empty()
     }
 
     #[inline]
@@ -396,19 +394,18 @@ impl PopupNode {
         false
     }
 
-    fn cleanup(&mut self) {
-        for child in &mut self.children {
-            child.cleanup();
+    fn cleanup_and_get_alive(&mut self, parent_destroyed: bool) -> bool {
+        let alive = self.surface.alive();
+
+        if alive && parent_destroyed {
+            self.surface.wl_surface().post_error(xdg_wm_base::Error::NotTheTopmostPopup,
+                "xdg_popup was destroyed while it was not the topmost popup");
         }
 
-        if !self.surface.alive() && !self.children.is_empty() {
-            // TODO: The client destroyed a popup before
-            // destroying all children, this is a protocol
-            // error. As the surface is no longer alive we
-            // can not retrieve the client here to send
-            // the error.
-        }
+        self.children.retain_mut(|child| {
+            child.cleanup_and_get_alive(!alive)
+        });
 
-        self.children.retain(|n| n.surface.alive());
+        alive
     }
 }
