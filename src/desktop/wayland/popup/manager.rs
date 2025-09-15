@@ -144,15 +144,18 @@ impl PopupManager {
         with_states(&root, |states| {
             let tree = PopupTree::default();
             if states.data_map.insert_if_missing_threadsafe(|| tree.clone()) {
+                trace!("Adding popup {:?} to new PopupTree on root {:?}", popup, root);
+                tree.insert(popup);
                 self.popup_trees.push(tree);
-            };
-            let tree = states.data_map.get::<PopupTree>().unwrap();
-            if !tree.alive() {
-                // if it previously had no popups, we likely removed it from our list already
-                self.popup_trees.push(tree.clone());
+            } else {
+                let tree = states.data_map.get::<PopupTree>().unwrap();
+                if !tree.alive() {
+                    // if it previously had no popups, we likely removed it from our list already
+                    self.popup_trees.push(tree.clone());
+                }
+                trace!("Adding popup {:?} to existing PopupTree on root {:?}", popup, root);
+                tree.insert(popup);
             }
-            trace!("Adding popup {:?} to root {:?}", popup, root);
-            tree.insert(popup);
         });
 
         Ok(())
