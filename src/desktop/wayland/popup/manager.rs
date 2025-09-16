@@ -429,18 +429,22 @@ impl PopupNode {
         false
     }
 
-    fn cleanup_and_get_alive(&mut self, parent_destroyed: bool) -> bool {
+    fn cleanup_and_get_alive(&mut self, xdg_parent_destroyed: bool) -> bool {
         let alive = self.surface.alive();
+        let mut xdg_destroyed = false;
 
-        if alive && parent_destroyed {
-            self.surface.wl_surface().post_error(
-                xdg_wm_base::Error::NotTheTopmostPopup,
-                "xdg_popup was destroyed while it was not the topmost popup",
-            );
+        if let PopupKind::Xdg(_) = self.surface {
+            if alive && xdg_parent_destroyed {
+                self.surface.wl_surface().post_error(
+                    xdg_wm_base::Error::NotTheTopmostPopup,
+                    "xdg_popup was destroyed while it was not the topmost popup",
+                );
+            }
+            xdg_destroyed = !alive;
         }
 
         self.children
-            .retain_mut(|child| child.cleanup_and_get_alive(!alive));
+            .retain_mut(|child| child.cleanup_and_get_alive(xdg_destroyed));
 
         alive
     }
