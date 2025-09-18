@@ -96,15 +96,6 @@ pub(super) enum WMProtocol {
     DeleteWindow,
 }
 
-/// https://x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#input_focus
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum InputMode {
-    None,
-    Passive,
-    LocallyActive,
-    GloballyActive,
-}
-
 impl PartialEq for X11Surface {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -156,6 +147,22 @@ pub enum WmWindowProperty {
     StartupId,
     Pid,
     Opacity,
+}
+
+/// https://x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#input_focus
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WmInputModel {
+    /// The client never expects keyboard input.
+    None,
+    /// The client expects keyboard input but never explicitly sets the input focus.
+    #[default]
+    Passive,
+    /// The client expects keyboard input and explicitly sets the input focus,
+    /// but it only does so when one of its windows already has the focus.
+    LocallyActive,
+    /// The client expects keyboard input and explicitly sets the input focus,
+    /// even when it is in windows the client does not own.
+    GloballyActive,
 }
 
 impl X11Surface {
@@ -640,16 +647,19 @@ impl X11Surface {
         Ok(())
     }
 
-    fn input_mode(&self) -> InputMode {
+    /// Input handling model requested by the underlying X11 window.
+    ///
+    /// See ICCCM §4.1.7 for details.
+    pub fn input_model(&self) -> WmInputModel {
         let state = self.state.lock().unwrap();
         match (
             state.hints.as_ref().and_then(|hints| hints.input).unwrap_or(true),
             state.protocols.contains(&WMProtocol::TakeFocus),
         ) {
-            (false, false) => InputMode::None,
-            (true, false) => InputMode::Passive, // the default
-            (true, true) => InputMode::LocallyActive,
-            (false, true) => InputMode::GloballyActive,
+            (false, false) => WmInputModel::None,
+            (true, false) => WmInputModel::Passive, // the default
+            (true, true) => WmInputModel::LocallyActive,
+            (false, true) => WmInputModel::GloballyActive,
         }
     }
 
@@ -1046,11 +1056,11 @@ impl IsAlive for X11Surface {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        let (set_input_focus, send_take_focus) = match self.input_mode() {
-            InputMode::None => return,
-            InputMode::Passive => (true, false),
-            InputMode::LocallyActive => (true, true),
-            InputMode::GloballyActive => (false, true),
+        let (set_input_focus, send_take_focus) = match self.input_model() {
+            WmInputModel::None => return,
+            WmInputModel::Passive => (true, false),
+            WmInputModel::LocallyActive => (true, true),
+            WmInputModel::GloballyActive => (false, true),
         };
 
         if let Some(conn) = self.conn.upgrade() {
@@ -1093,7 +1103,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     }
 
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        if self.input_mode() == InputMode::None {
+        if self.input_model() == WmInputModel::None {
             return;
         } else if let Some(conn) = self.conn.upgrade() {
             if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
@@ -1118,7 +1128,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         serial: Serial,
         time: u32,
     ) {
-        if self.input_mode() == InputMode::None {
+        if self.input_model() == WmInputModel::None {
             return;
         }
 
@@ -1137,7 +1147,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     }
 
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        if self.input_mode() == InputMode::None {
+        if self.input_model() == WmInputModel::None {
             return;
         }
 
