@@ -646,7 +646,7 @@ impl X11Surface {
 
         Ok(())
     }
-    
+
     /// Input handling model requested by the underlying X11 window.
     ///
     /// See ICCCM §4.1.7 for details.
