@@ -250,11 +250,11 @@ impl<D: XdgDialogHandler> Dispatch<XdgDialogV1, ToplevelSurface, D> for XdgDialo
 /// Dialog hint assigned to toplevels by the xdg-dialog-v1 protocol
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ToplevelDialogHint {
-    /// The toplevel hasn't been marked as a dialog by xdg-dialog-v1
+    /// The toplevel is not associated with an xdg_dialog_v1 object.
     #[default]
     Unknown,
     /// The toplevel is a "dialog" (e.g. a temporary window) relative
-    /// to its parent (see xdg_toplevel.set_parent)
+    /// to its parent (see xdg_toplevel.set_parent).
     Dialog,
     /// The toplevel is a dialog with "modal" behaviour. Modal dialogs
     /// typically require to be fully addressed by the user (i.e. closed)
