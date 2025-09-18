@@ -124,12 +124,14 @@ impl<D: SeatHandler + 'static> PointerConstraintRef<'_, D> {
     pub fn activate(&self) {
         match self.entry.get() {
             PointerConstraint::Confined(confined) => {
-                confined.handle.confined();
-                confined.active.store(true, Ordering::SeqCst);
+                if !confined.active.swap(true, Ordering::SeqCst) {
+                    confined.handle.confined();
+                }
             }
             PointerConstraint::Locked(locked) => {
-                locked.handle.locked();
-                locked.active.store(true, Ordering::SeqCst);
+                if !locked.active.swap(true, Ordering::SeqCst) {
+                    locked.handle.locked();
+                }
             }
         }
     }
@@ -141,18 +143,26 @@ impl<D: SeatHandler + 'static> PointerConstraintRef<'_, D> {
     /// This is sent automatically when the surface loses pointer focus, but
     /// may also be invoked while the surface is focused.
     pub fn deactivate(self) {
-        match self.entry.get() {
+        let deactivated = match self.entry.get() {
             PointerConstraint::Confined(confined) => {
-                confined.handle.unconfined();
-                confined.active.store(false, Ordering::SeqCst);
+                if confined.active.swap(false, Ordering::SeqCst) {
+                    confined.handle.unconfined();
+                    true
+                } else {
+                    false
+                }
             }
             PointerConstraint::Locked(locked) => {
-                locked.handle.unlocked();
-                locked.active.store(false, Ordering::SeqCst);
+                if locked.active.swap(false, Ordering::SeqCst) {
+                    locked.handle.unlocked();
+                    true
+                } else {
+                    false
+                }
             }
-        }
+        };
 
-        if self.lifetime() == WEnum::Value(Lifetime::Oneshot) {
+        if deactivated && self.lifetime() == WEnum::Value(Lifetime::Oneshot) {
             self.entry.remove_entry();
         }
     }
