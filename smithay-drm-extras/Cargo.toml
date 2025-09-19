@@ -6,7 +6,7 @@ license = "MIT"
 authors = ["Bartłomiej Maryńczak <marynczakbartlomiej@gmail.com>"]
 
 [dependencies]
-libdisplay-info = { version = "0.2.1", optional = true }
+libdisplay-info = { version = "0.3.0", optional = true }
 drm = { version = "0.14.0" }
 
 [features]
