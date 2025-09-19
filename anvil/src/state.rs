@@ -195,7 +195,10 @@ impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
 
 impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
     fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
-        self.dnd_icon = icon.map(|surface| DndIcon { surface, offset: (0, 0).into() });
+        self.dnd_icon = icon.map(|surface| DndIcon {
+            surface,
+            offset: (0, 0).into(),
+        });
     }
     fn dropped(&mut self, _target: Option<WlSurface>, _validated: bool, _seat: Seat<Self>) {
         self.dnd_icon = None;
