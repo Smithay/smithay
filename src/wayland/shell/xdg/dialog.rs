@@ -10,7 +10,7 @@
 //! # use smithay::utils::Serial;
 //! # use smithay::wayland::shell::xdg::{XdgShellState, PopupSurface, PositionerState};
 //! # use smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface};
-//! use smithay::wayland::shell::xdg::dialog::{XdgDialogState, XdgDialogHandler};
+//! use smithay::wayland::shell::xdg::dialog::{ToplevelDialogHint, XdgDialogState, XdgDialogHandler};
 //!
 //! # struct State { dialog_state: XdgDialogState, seat_state: SeatState<Self> }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
