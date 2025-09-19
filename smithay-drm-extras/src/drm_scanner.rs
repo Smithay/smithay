@@ -116,8 +116,7 @@ where
             })
             .collect();
 
-        self.crtc_mapper
-            .map(drm, self.connectors.connectors().iter().map(|(_, info)| info));
+        self.crtc_mapper.map(drm, self.connectors.connectors().values());
 
         let added = scan
             .connected
