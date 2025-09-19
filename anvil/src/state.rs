@@ -30,7 +30,7 @@ use smithay::{
     },
     input::{
         keyboard::{Keysym, LedState, XkbConfig},
-        pointer::{CursorImageStatus, CursorImageSurfaceData, PointerHandle},
+        pointer::{CursorImageStatus, PointerHandle},
         Seat, SeatHandler, SeatState,
     },
     output::Output,
@@ -195,21 +195,7 @@ impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
 
 impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
     fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
-        let offset = if let CursorImageStatus::Surface(ref surface) = self.cursor_status {
-            with_states(surface, |states| {
-                let hotspot = states
-                    .data_map
-                    .get::<CursorImageSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .hotspot;
-                Point::from((-hotspot.x, -hotspot.y))
-            })
-        } else {
-            (0, 0).into()
-        };
-        self.dnd_icon = icon.map(|surface| DndIcon { surface, offset });
+        self.dnd_icon = icon.map(|surface| DndIcon { surface, offset: (0, 0).into() });
     }
     fn dropped(&mut self, _target: Option<WlSurface>, _validated: bool, _seat: Seat<Self>) {
         self.dnd_icon = None;
