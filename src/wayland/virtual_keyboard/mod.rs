@@ -157,13 +157,11 @@ where
         match request {
             zwp_virtual_keyboard_manager_v1::Request::CreateVirtualKeyboard { seat, id } => {
                 let seat = Seat::<D>::from_resource(&seat).unwrap();
-                let user_data = seat.user_data();
-                user_data.insert_if_missing(VirtualKeyboardHandle::default);
-                let virtual_keyboard_handle = user_data.get::<VirtualKeyboardHandle>().unwrap();
+                let virtual_keyboard_handle = VirtualKeyboardHandle::default();
                 data_init.init(
                     id,
                     VirtualKeyboardUserData {
-                        handle: virtual_keyboard_handle.clone(),
+                        handle: virtual_keyboard_handle,
                         seat: seat.clone(),
                     },
                 );
