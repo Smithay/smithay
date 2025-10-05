@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0
+
 ### Breaking changes
 
 `GbmFramebufferExporter::new` now accepts a `NodeFilter` as import node, which
