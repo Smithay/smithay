@@ -7,8 +7,9 @@ pub use xkbcommon::xkb::Keycode;
 mod tablet;
 
 pub use tablet::{
-    ProximityState, TabletToolAxisEvent, TabletToolButtonEvent, TabletToolCapabilities, TabletToolDescriptor,
-    TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TabletToolType,
+    ProximityState, TabletPadButtonEvent, TabletToolAxisEvent, TabletToolButtonEvent, TabletToolCapabilities,
+    TabletToolDescriptor, TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+    TabletToolType,
 };
 
 #[cfg(feature = "wayland_frontend")]
@@ -671,6 +672,8 @@ pub trait InputBackend: Sized {
     type TabletToolTipEvent: TabletToolTipEvent<Self>;
     /// Type representing button events on tablet tool devices
     type TabletToolButtonEvent: TabletToolButtonEvent<Self>;
+    /// Type representing button events on tablet pad devices
+    type TabletPadButtonEvent: TabletPadButtonEvent<Self>;
     /// Type representing switch toggle events
     type SwitchToggleEvent: SwitchToggleEvent<Self>;
 
@@ -807,6 +810,12 @@ pub enum InputEvent<B: InputBackend> {
     TabletToolButton {
         /// The pointer button event
         event: B::TabletToolButtonEvent,
+    },
+
+    /// A tablet pad button was pressed or released
+    TabletPadButton {
+        /// The tablet pad button event
+        event: B::TabletPadButtonEvent,
     },
 
     /// A switch was toggled
