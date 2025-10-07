@@ -65,7 +65,7 @@ impl<const MIN_TILE_SIDE: i32> DamageShaper<MIN_TILE_SIDE> {
             in_damage
                 .iter()
                 .fold((i32::MAX, i32::MAX, i32::MIN, i32::MIN, i32::MIN), |acc, rect| {
-                    let area = rect.size.w * rect.size.h;
+                    let area = rect.size.w.saturating_mul(rect.size.h);
                     (
                         acc.0.min(rect.loc.x),
                         acc.1.min(rect.loc.y),
@@ -81,7 +81,7 @@ impl<const MIN_TILE_SIDE: i32> DamageShaper<MIN_TILE_SIDE> {
         let damage_bbox = Rectangle::<i32, Physical>::new((x_min, y_min).into(), (bbox_w, bbox_h).into());
 
         // Damage the current bounding box when there's a damage rect covering near all the area.
-        if max_damage_area as f32 / (damage_bbox.size.w * damage_bbox.size.h) as f32
+        if max_damage_area as f32 / (damage_bbox.size.w.saturating_mul(damage_bbox.size.h)) as f32
             > MAX_DAMAGE_TO_DAMAGE_BBOX_RATIO
         {
             self.out_damage.push(damage_bbox);
