@@ -16,7 +16,7 @@ use crate::backend::renderer::sync::SyncPoint;
 use crate::backend::SwapBuffersError;
 use crate::utils::{DevPath, Physical, Rectangle, Transform};
 
-use tracing::{debug, error, info_span, instrument, trace, warn};
+use tracing::{debug, info_span, instrument, trace, warn};
 
 use super::{PlaneConfig, PlaneDamageClips, PlaneState, VrrSupport};
 

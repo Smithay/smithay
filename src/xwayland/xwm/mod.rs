@@ -180,7 +180,7 @@ use std::{
     },
     sync::{atomic::Ordering, Arc},
 };
-use tracing::{debug, debug_span, error, info, trace, warn};
+use tracing::{debug, debug_span, info, trace, warn};
 use wayland_server::Resource;
 
 pub use x11rb::protocol::xproto::Window as X11Window;
