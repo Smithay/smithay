@@ -251,6 +251,18 @@ where
                     }
                 };
             }
+            zwlr_layer_surface_v1::Request::SetExclusiveEdge { edge } => {
+                match Anchor::try_from(edge) {
+                    Ok(edge) => {
+                        let _ = with_surface_pending_state(layer_surface, |data| {
+                            data.exclusive_edge = Some(edge);
+                        });
+                    }
+                    Err((err, msg)) => {
+                        layer_surface.post_error(err, msg);
+                    }
+                };
+            }
             zwlr_layer_surface_v1::Request::GetPopup { popup } => {
                 let Ok(parent_surface) = data.wl_surface.upgrade() else {
                     return;
