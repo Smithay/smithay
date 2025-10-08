@@ -358,7 +358,7 @@ impl LayerMap {
                 if let ExclusiveZone::Exclusive(amount) = data.exclusive_zone {
                     let amount = Saturating(amount as i32);
 
-                    match implied_exclusive_edge_for_anchor(data.anchor) {
+                    match effective_exclusive_edge(&data) {
                         Some(Anchor::TOP) => {
                             let sum = amount + Saturating(data.margin.top);
                             zone.loc.y += sum;
@@ -446,6 +446,11 @@ impl LayerMap {
     pub fn len(&self) -> usize {
         self.layers.len()
     }
+}
+
+fn effective_exclusive_edge(data: &LayerSurfaceCachedState) -> Option<Anchor> {
+    data.exclusive_edge
+        .or_else(|| implied_exclusive_edge_for_anchor(data.anchor))
 }
 
 fn implied_exclusive_edge_for_anchor(anchor: Anchor) -> Option<Anchor> {

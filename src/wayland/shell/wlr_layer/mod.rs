@@ -174,6 +174,8 @@ pub struct LayerSurfaceCachedState {
     pub anchor: Anchor,
     /// Descripton of exclusive zone
     pub exclusive_zone: ExclusiveZone,
+    /// Edge for exclusive zone
+    pub exclusive_edge: Option<Anchor>,
     /// Describes distance from the anchor point of the output
     pub margin: Margins,
     /// Describes how keyboard events are delivered to this surface
@@ -229,7 +231,7 @@ impl WlrLayerShellState {
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let shell_global = display.create_global::<D, ZwlrLayerShellV1, WlrLayerShellGlobalData>(
-            4,
+            5,
             WlrLayerShellGlobalData {
                 filter: Box::new(filter),
             },
@@ -496,6 +498,16 @@ impl LayerSurface {
                     "height 0 requested without setting top and bottom anchors",
                 );
                 return;
+            }
+
+            if let Some(edge) = pending.exclusive_edge {
+                if !pending.anchor.contains(edge) {
+                    role.surface.post_error(
+                        zwlr_layer_surface_v1::Error::InvalidExclusiveEdge,
+                        "exclusive edge is not an anchor",
+                    );
+                    return;
+                }
             }
 
             // The presence of last_acked always follows the buffer assignment because the
