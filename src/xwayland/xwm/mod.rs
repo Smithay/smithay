@@ -168,14 +168,13 @@ use crate::{
     },
 };
 use atomic_float::AtomicF64;
-use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
+use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction};
 use rustix::fs::OFlags;
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
-    fmt,
     os::unix::{
-        io::{AsFd, BorrowedFd, OwnedFd},
+        io::{AsFd, OwnedFd},
         net::UnixStream,
     },
     sync::{atomic::Ordering, Arc},
@@ -191,13 +190,12 @@ use x11rb::{
         composite::{ConnectionExt as _, Redirect},
         randr::{ConnectionExt, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
-        xfixes::{ConnectionExt as _, SelectionEventMask},
+        xfixes::ConnectionExt as _,
         xproto::{
-            Atom, AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent,
-            ConfigureWindowAux, ConnectionExt as _, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask,
-            FontWrapper, GcontextWrapper, GetPropertyReply, ImageFormat, PixmapWrapper, PropMode, Property,
-            QueryExtensionReply, Screen, SelectionNotifyEvent, SelectionRequestEvent, StackMode, WindowClass,
-            CONFIGURE_NOTIFY_EVENT, SELECTION_NOTIFY_EVENT,
+            AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux,
+            ConnectionExt as _, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper,
+            GcontextWrapper, ImageFormat, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
+            StackMode, WindowClass, CONFIGURE_NOTIFY_EVENT,
         },
         Event,
     },
@@ -208,12 +206,10 @@ use x11rb::{
 
 pub mod settings;
 use settings::{NameError, Value, XSettings};
+mod selection;
 mod surface;
+use self::selection::*;
 pub use self::surface::*;
-
-// copied from wlroots - docs say "maximum size can vary widely depending on the implementation"
-// and there is no way to query the maximum size, you just get a non-descriptive `Length` error...
-const INCR_CHUNK_SIZE: usize = 64 * 1024;
 
 #[allow(missing_docs)]
 mod atoms {
@@ -499,218 +495,6 @@ impl Drop for X11Wm {
         // TODO: Not really needed for Xwayland, but maybe cleanup set root properties?
         let _ = self.conn.destroy_window(self.wm_window);
         xwm_id::remove(self.id.0);
-    }
-}
-
-#[derive(Debug)]
-struct XWmSelection {
-    atom: Atom,
-    type_: SelectionTarget,
-
-    conn: Arc<RustConnection>,
-    window: X11Window,
-    owner: X11Window,
-    mime_types: Vec<String>,
-    timestamp: u32,
-
-    incoming: Vec<IncomingTransfer>,
-    outgoing: Vec<OutgoingTransfer>,
-}
-
-struct IncomingTransfer {
-    conn: Arc<RustConnection>,
-    token: Option<RegistrationToken>,
-    window: X11Window,
-
-    incr: bool,
-    source_data: Vec<u8>,
-    incr_done: bool,
-}
-
-impl fmt::Debug for IncomingTransfer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IncomingTransfer")
-            .field("conn", &"...")
-            .field("token", &self.token)
-            .field("window", &self.window)
-            .field("incr", &self.incr)
-            .field("source_data", &self.source_data)
-            .field("incr_done", &self.incr_done)
-            .finish()
-    }
-}
-
-impl IncomingTransfer {
-    fn read_selection_prop(&mut self, reply: GetPropertyReply) {
-        self.source_data.extend(&reply.value)
-    }
-
-    fn write_selection(&mut self, fd: BorrowedFd<'_>) -> std::io::Result<bool> {
-        if self.source_data.is_empty() {
-            return Ok(true);
-        }
-
-        let len = rustix::io::write(fd, &self.source_data)?;
-        self.source_data = self.source_data.split_off(len);
-
-        Ok(self.source_data.is_empty())
-    }
-
-    fn destroy<D>(mut self, handle: &LoopHandle<'_, D>) {
-        if let Some(token) = self.token.take() {
-            handle.remove(token);
-        }
-    }
-}
-
-impl Drop for IncomingTransfer {
-    fn drop(&mut self) {
-        let _ = self.conn.destroy_window(self.window);
-        if self.token.is_some() {
-            tracing::warn!(
-                ?self,
-                "IncomingTransfer freed before being removed from EventLoop"
-            );
-        }
-    }
-}
-
-struct OutgoingTransfer {
-    conn: Arc<RustConnection>,
-    token: Option<RegistrationToken>,
-
-    incr: bool,
-    source_data: Vec<u8>,
-    request: SelectionRequestEvent,
-
-    property_set: bool,
-    flush_property_on_delete: bool,
-    /// The final 0-byte data chunk has been sent, denoting the completion of this transfer
-    sent_finished: bool,
-}
-
-impl fmt::Debug for OutgoingTransfer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OutgoingTransfer")
-            .field("conn", &"...")
-            .field("token", &self.token)
-            .field("incr", &self.incr)
-            .field("source_data", &self.source_data)
-            .field("request", &self.request)
-            .field("property_set", &self.property_set)
-            .field("flush_property_on_delete", &self.flush_property_on_delete)
-            .finish()
-    }
-}
-
-impl OutgoingTransfer {
-    fn flush_data(&mut self) -> Result<usize, ReplyOrIdError> {
-        let len = std::cmp::min(self.source_data.len(), INCR_CHUNK_SIZE);
-
-        if len == 0 {
-            // This flush will complete the transfer
-            self.sent_finished = true;
-        }
-
-        let mut data = self.source_data.split_off(len);
-        std::mem::swap(&mut data, &mut self.source_data);
-
-        self.conn.change_property8(
-            PropMode::REPLACE,
-            self.request.requestor,
-            self.request.property,
-            self.request.target,
-            &data,
-        )?;
-        self.conn.flush()?;
-
-        let remaining = self.source_data.len();
-        self.property_set = true;
-        Ok(remaining)
-    }
-
-    fn destroy<D>(mut self, handle: &LoopHandle<'_, D>) {
-        if let Some(token) = self.token.take() {
-            handle.remove(token);
-        }
-    }
-}
-
-impl Drop for OutgoingTransfer {
-    fn drop(&mut self) {
-        if self.token.is_some() {
-            tracing::warn!(
-                ?self,
-                "OutgoingTransfer freed before being removed from EventLoop"
-            );
-        }
-    }
-}
-
-impl XWmSelection {
-    fn new(
-        conn: &Arc<RustConnection>,
-        screen: &Screen,
-        atoms: &Atoms,
-        atom: Atom,
-    ) -> Result<Self, ReplyOrIdError> {
-        let window = conn.generate_id()?;
-        conn.create_window(
-            screen.root_depth,
-            window,
-            screen.root,
-            0,
-            0,
-            10,
-            10,
-            0,
-            WindowClass::INPUT_OUTPUT,
-            screen.root_visual,
-            &CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE),
-        )?;
-
-        if atom == atoms.CLIPBOARD {
-            conn.set_selection_owner(window, atoms.CLIPBOARD_MANAGER, x11rb::CURRENT_TIME)?;
-        }
-        conn.xfixes_select_selection_input(
-            window,
-            atom,
-            SelectionEventMask::SET_SELECTION_OWNER
-                | SelectionEventMask::SELECTION_WINDOW_DESTROY
-                | SelectionEventMask::SELECTION_CLIENT_CLOSE,
-        )?;
-        conn.flush()?;
-
-        let selection = match atom {
-            x if x == atoms.CLIPBOARD => SelectionTarget::Clipboard,
-            x if x == atoms.PRIMARY => SelectionTarget::Primary,
-            _ => unreachable!(),
-        };
-
-        debug!(
-            selection_window = ?window,
-            ?selection,
-            ?atom,
-            "Selection init",
-        );
-
-        Ok(XWmSelection {
-            atom,
-            type_: selection,
-            conn: conn.clone(),
-            window,
-            owner: window,
-            mime_types: Vec::new(),
-            timestamp: x11rb::CURRENT_TIME,
-            incoming: Vec::new(),
-            outgoing: Vec::new(),
-        })
-    }
-}
-
-impl Drop for XWmSelection {
-    fn drop(&mut self) {
-        let _ = self.conn.destroy_window(self.window);
     }
 }
 
@@ -2530,152 +2314,6 @@ where
         }
         _ => {}
     }
-    conn.flush()?;
-    Ok(())
-}
-
-enum OutgoingAction {
-    Done,
-    DoneReading,
-    WaitForReadable,
-}
-
-fn read_selection_callback(
-    conn: &RustConnection,
-    atoms: &Atoms,
-    fd: BorrowedFd<'_>,
-    transfer: &mut OutgoingTransfer,
-) -> Result<OutgoingAction, ReplyOrIdError> {
-    let mut buf = [0; INCR_CHUNK_SIZE];
-    let Ok(len) = rustix::io::read(fd, &mut buf) else {
-        debug!(
-            requestor = transfer.request.requestor,
-            "File descriptor closed, aborting transfer."
-        );
-        send_selection_notify_resp(conn, &transfer.request, false)?;
-        return Ok(OutgoingAction::Done);
-    };
-    trace!(
-        requestor = transfer.request.requestor,
-        "Transfer became readable, read {} bytes",
-        len
-    );
-
-    transfer.source_data.extend_from_slice(&buf[..len]);
-    if transfer.source_data.len() >= INCR_CHUNK_SIZE {
-        if !transfer.incr {
-            // start incr transfer
-            trace!(
-                requestor = transfer.request.requestor,
-                "Transfer became incremental",
-            );
-            conn.change_property32(
-                PropMode::REPLACE,
-                transfer.request.requestor,
-                transfer.request.property,
-                atoms.INCR,
-                &[INCR_CHUNK_SIZE as u32],
-            )?;
-            conn.flush()?;
-            transfer.incr = true;
-            transfer.property_set = true;
-            transfer.flush_property_on_delete = true;
-            send_selection_notify_resp(conn, &transfer.request, true)?;
-        } else if transfer.property_set {
-            // got more bytes, waiting for property delete
-            transfer.flush_property_on_delete = true;
-        } else {
-            // got more bytes, property deleted
-            let len = transfer.flush_data()?;
-            trace!(
-                requestor = transfer.request.requestor,
-                "Send data chunk: {} bytes",
-                len
-            );
-        }
-    }
-
-    if len == 0 {
-        if transfer.incr {
-            debug!("Incr transfer completed");
-            if !transfer.property_set {
-                let len = transfer.flush_data()?;
-                trace!(
-                    requestor = transfer.request.requestor,
-                    "Send data chunk: {} bytes",
-                    len
-                );
-            }
-            transfer.flush_property_on_delete = true;
-            Ok(OutgoingAction::DoneReading)
-        } else {
-            let len = transfer.flush_data()?;
-            debug!("Non-Incr transfer completed with {} bytes", len);
-            send_selection_notify_resp(conn, &transfer.request, true)?;
-            Ok(OutgoingAction::Done)
-        }
-    } else {
-        Ok(OutgoingAction::WaitForReadable)
-    } // nothing to be done, buffered the bytes
-}
-
-enum IncomingAction {
-    Done,
-    WaitForProperty,
-    WaitForWritable,
-}
-
-fn write_selection_callback(
-    fd: BorrowedFd<'_>,
-    conn: &RustConnection,
-    atoms: &Atoms,
-    transfer: &mut IncomingTransfer,
-) -> Result<IncomingAction, ReplyOrIdError> {
-    match transfer.write_selection(fd) {
-        Ok(true) => {
-            if transfer.incr {
-                conn.delete_property(transfer.window, atoms._WL_SELECTION)?;
-                Ok(IncomingAction::WaitForProperty)
-            } else {
-                debug!(?transfer, "Non-Incr Transfer complete!");
-                Ok(IncomingAction::Done)
-            }
-        }
-        Ok(false) => Ok(IncomingAction::WaitForWritable),
-        Err(err) => {
-            warn!(?err, "Transfer errored");
-            if transfer.incr {
-                // even if it failed, we still need to drain the incr transfer
-                conn.delete_property(transfer.window, atoms._WL_SELECTION)?;
-            }
-            Ok(IncomingAction::Done)
-        }
-    }
-}
-
-fn send_selection_notify_resp(
-    conn: &RustConnection,
-    req: &SelectionRequestEvent,
-    success: bool,
-) -> Result<(), ReplyOrIdError> {
-    conn.send_event(
-        false,
-        req.requestor,
-        EventMask::NO_EVENT,
-        SelectionNotifyEvent {
-            response_type: SELECTION_NOTIFY_EVENT,
-            sequence: 0,
-            time: req.time,
-            requestor: req.requestor,
-            selection: req.selection,
-            target: req.target,
-            property: if success {
-                req.property
-            } else {
-                AtomEnum::NONE.into()
-            },
-        },
-    )?;
     conn.flush()?;
     Ok(())
 }
