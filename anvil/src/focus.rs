@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::X11Surface;
@@ -17,12 +17,16 @@ pub use smithay::{
 use smithay::{
     desktop::{Window, WindowSurface},
     input::{
+        dnd::{DndFocus, Source},
         pointer::{
             GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
             GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
         },
         touch::TouchTarget,
     },
+    reexports::wayland_server::DisplayHandle,
+    utils::{Logical, Point},
+    wayland::selection::data_device::WlOfferData,
 };
 
 use crate::{
@@ -364,6 +368,64 @@ impl WaylandFocus for KeyboardFocusTarget {
             KeyboardFocusTarget::Window(w) => w.wl_surface(),
             KeyboardFocusTarget::LayerSurface(l) => Some(Cow::Borrowed(l.wl_surface())),
             KeyboardFocusTarget::Popup(p) => Some(Cow::Borrowed(p.wl_surface())),
+        }
+    }
+}
+
+impl<BackendData: Backend> DndFocus<AnvilState<BackendData>> for PointerFocusTarget {
+    type OfferData<S>
+        = WlOfferData<S>
+    where
+        S: Source;
+
+    fn enter<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        dh: &DisplayHandle,
+        source: Arc<S>,
+        seat: &Seat<AnvilState<BackendData>>,
+        location: Point<f64, Logical>,
+        serial: &Serial,
+    ) -> Option<Self::OfferData<S>> {
+        if let PointerFocusTarget::WlSurface(surface) = self {
+            DndFocus::enter(surface, data, dh, source, seat, location, serial)
+        } else {
+            None
+        }
+    }
+
+    fn motion<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        offer: Option<&mut AnvilOfferData<S>>,
+        seat: &Seat<AnvilState<BackendData>>,
+        location: Point<f64, Logical>,
+        time: u32,
+    ) {
+        if let PointerFocusTarget::WlSurface(surface) = self {
+            DndFocus::motion(surface, data, offer, seat, location, time)
+        }
+    }
+
+    fn leave<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        offer: Option<&mut AnvilOfferData<S>>,
+        seat: &Seat<AnvilState<BackendData>>,
+    ) {
+        if let PointerFocusTarget::WlSurface(surface) = self {
+            DndFocus::leave(surface, data, offer, seat)
+        }
+    }
+
+    fn drop<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        offer: Option<&mut AnvilOfferData<S>>,
+        seat: &Seat<AnvilState<BackendData>>,
+    ) {
+        if let PointerFocusTarget::WlSurface(surface) = self {
+            DndFocus::drop(surface, data, offer, seat)
         }
     }
 }

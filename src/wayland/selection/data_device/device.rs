@@ -10,7 +10,11 @@ use wayland_server::{
 };
 
 use crate::{
-    input::{pointer::Focus, Seat, SeatHandler},
+    input::{
+        dnd::{DnDGrab, DndFocus},
+        pointer::Focus,
+        Seat, SeatHandler,
+    },
     utils::Serial,
     wayland::{
         compositor,
@@ -25,7 +29,7 @@ use crate::{
     },
 };
 
-use super::{dnd_grab, DataDeviceHandler, DataDeviceState};
+use super::{DataDeviceHandler, DataDeviceState};
 
 /// WlSurface role of drag and drop icon
 pub const DND_ICON_ROLE: &str = "dnd_icon";
@@ -41,8 +45,8 @@ where
     D: Dispatch<WlDataDevice, DataDeviceUserData>,
     D: DataDeviceHandler,
     D: SeatHandler,
-    <D as SeatHandler>::PointerFocus: WaylandFocus,
-    <D as SeatHandler>::TouchFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: DndFocus<D>,
+    <D as SeatHandler>::TouchFocus: DndFocus<D>,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
@@ -92,12 +96,23 @@ where
                         // The StartDrag is in response to a pointer implicit grab, all is good
                         handler.started(source.clone(), icon.clone(), seat.clone());
                         let start_data = pointer.grab_start_data().unwrap();
-                        pointer.set_grab(
-                            handler,
-                            dnd_grab::DnDGrab::new_pointer(dh, start_data, source, origin, seat, icon),
-                            serial,
-                            Focus::Clear,
-                        );
+
+                        if let Some(source) = source {
+                            pointer.set_grab(
+                                handler,
+                                DnDGrab::new_pointer(dh, start_data, source, seat, icon),
+                                serial,
+                                Focus::Clear,
+                            );
+                        } else {
+                            pointer.set_grab(
+                                handler,
+                                DnDGrab::new_pointer(dh, start_data, origin, seat, icon),
+                                serial,
+                                Focus::Clear,
+                            );
+                        }
+
                         return;
                     }
                 }
@@ -115,11 +130,19 @@ where
                         // The StartDrag is in response to a touch implicit grab, all is good
                         handler.started(source.clone(), icon.clone(), seat.clone());
                         let start_data = touch.grab_start_data().unwrap();
-                        touch.set_grab(
-                            handler,
-                            dnd_grab::DnDGrab::new_touch(dh, start_data, source, origin, seat, icon),
-                            serial,
-                        );
+                        if let Some(source) = source {
+                            touch.set_grab(
+                                handler,
+                                DnDGrab::new_touch(dh, start_data, source, seat, icon),
+                                serial,
+                            );
+                        } else {
+                            touch.set_grab(
+                                handler,
+                                DnDGrab::new_touch(dh, start_data, origin, seat, icon),
+                                serial,
+                            );
+                        }
                         return;
                     }
                 }

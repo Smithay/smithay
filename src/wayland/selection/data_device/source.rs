@@ -1,38 +1,25 @@
-use std::{cell::RefCell, sync::Mutex};
+use std::{cell::RefCell, os::unix::prelude::BorrowedFd, sync::Mutex};
 use tracing::error;
 
 use wayland_server::{
-    backend::ClientId,
-    protocol::wl_data_source::{self},
-    protocol::{wl_data_device_manager::DndAction, wl_data_source::WlDataSource},
+    backend::{ClientId, ObjectId},
+    protocol::{
+        wl_data_source::{self, WlDataSource},
+        wl_surface::WlSurface,
+    },
     Dispatch, DisplayHandle, Resource,
 };
 
-use crate::input::Seat;
+use crate::input::{
+    dnd::{DndAction, Source, SourceMetadata},
+    Seat,
+};
 use crate::utils::{alive_tracker::AliveTracker, IsAlive};
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;
 
 use super::{DataDeviceHandler, DataDeviceState};
-
-/// The metadata describing a data source
-#[derive(Debug, Clone)]
-pub struct SourceMetadata {
-    /// The MIME types supported by this source
-    pub mime_types: Vec<String>,
-    /// The Drag'n'Drop actions supported by this source
-    pub dnd_action: DndAction,
-}
-
-impl Default for SourceMetadata {
-    fn default() -> Self {
-        Self {
-            mime_types: Vec::new(),
-            dnd_action: DndAction::None,
-        }
-    }
-}
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -75,7 +62,7 @@ where
             }
             wl_data_source::Request::SetActions { dnd_actions } => match dnd_actions {
                 wayland_server::WEnum::Value(dnd_actions) => {
-                    data.dnd_action = dnd_actions;
+                    data.dnd_actions = DndAction::vec_from_wl(dnd_actions);
                 }
                 wayland_server::WEnum::Unknown(action) => {
                     error!("Unknown dnd_action: {:?}", action);
@@ -126,13 +113,64 @@ impl IsAlive for WlDataSource {
     }
 }
 
-/// Access the metadata of a data source
-pub fn with_source_metadata<T, F: FnOnce(&SourceMetadata) -> T>(
-    source: &WlDataSource,
-    f: F,
-) -> Result<T, crate::utils::UnmanagedResource> {
-    match source.data::<DataSourceUserData>() {
-        Some(data) => Ok(f(&data.inner.lock().unwrap())),
-        None => Err(crate::utils::UnmanagedResource),
+impl Source for WlDataSource {
+    fn is_client_local(&self, _id: &ObjectId) -> bool {
+        false
     }
+
+    fn metadata(&self) -> Option<SourceMetadata> {
+        match self.data::<DataSourceUserData>() {
+            Some(data) => Some(data.inner.lock().unwrap().clone()),
+            None => None,
+        }
+    }
+
+    fn choose_action(&self, action: DndAction) {
+        self.action(action.into());
+    }
+
+    fn send(&self, mime_type: &str, fd: BorrowedFd<'_>) {
+        self.send(mime_type.to_owned(), fd);
+    }
+
+    fn drop_performed(&self) {
+        if self.version() >= wl_data_source::EVT_DND_DROP_PERFORMED_SINCE {
+            self.dnd_drop_performed();
+        }
+    }
+
+    fn cancel(&self) {
+        if self.version() >= 3 {
+            self.cancelled();
+        }
+    }
+
+    fn finished(&self) {
+        if self.version() >= 3 {
+            self.dnd_finished();
+        }
+    }
+}
+
+impl Source for WlSurface {
+    fn is_client_local(&self, id: &ObjectId) -> bool {
+        self.id().same_client_as(id)
+    }
+
+    fn metadata(&self) -> Option<SourceMetadata> {
+        None
+    }
+
+    fn choose_action(&self, action: DndAction) {
+        let _ = action;
+    }
+
+    fn send(&self, mime_type: &str, fd: BorrowedFd<'_>) {
+        let _ = (mime_type, fd);
+        unreachable!("Local dnd drops can't send");
+    }
+
+    fn drop_performed(&self) {}
+    fn cancel(&self) {}
+    fn finished(&self) {}
 }
