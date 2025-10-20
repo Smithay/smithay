@@ -29,6 +29,7 @@ use smithay::{
         PopupKind, PopupManager, Space,
     },
     input::{
+        dnd::DndFocus,
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, CursorImageSurfaceData, PointerHandle},
         Seat, SeatHandler, SeatState,
@@ -66,10 +67,7 @@ use smithay::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
         selection::{
-            data_device::{
-                set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
-                ServerDndGrabHandler,
-            },
+            data_device::{set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState},
             primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
             wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
@@ -211,13 +209,8 @@ impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
         };
         self.dnd_icon = icon.map(|surface| DndIcon { surface, offset });
     }
-    fn dropped(&mut self, _target: Option<WlSurface>, _validated: bool, _seat: Seat<Self>) {
+    fn dropped<T: DndFocus<Self>>(&mut self, _target: Option<&T>, _validated: bool, _seat: Seat<Self>) {
         self.dnd_icon = None;
-    }
-}
-impl<BackendData: Backend> ServerDndGrabHandler for AnvilState<BackendData> {
-    fn send(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {
-        unreachable!("Anvil doesn't do server-side grabs");
     }
 }
 delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
