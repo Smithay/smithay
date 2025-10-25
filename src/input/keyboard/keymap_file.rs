@@ -15,6 +15,7 @@ impl KeymapFileId {
     fn for_keymap(keymap: &str) -> Self {
         // Use a hash, so `keymap` events aren't sent when keymap hasn't changed, particularly
         // with `virtual-keyboard-unstable-v1`.
+        #[allow(deprecated)]
         Self(Sha256::digest(keymap).as_slice().try_into().unwrap())
     }
 }
