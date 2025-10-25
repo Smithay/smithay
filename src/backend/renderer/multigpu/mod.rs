@@ -2146,7 +2146,15 @@ where
             // try them all
             let node = if let Some(imported) = render
                 .can_do_cross_device_imports()
-                .then(|| render.renderer_mut().import_dmabuf(dmabuf, damage).ok())
+                .then(|| {
+                    render
+                        .renderer_mut()
+                        .import_dmabuf(dmabuf, damage)
+                        .inspect_err(|err| {
+                            debug!(?err, "failed to import dmabuf on render node {0}", render.node())
+                        })
+                        .ok()
+                })
                 .flatten()
             {
                 texture.insert_texture::<R>(&render.renderer().context_id(), imported);
@@ -2154,7 +2162,15 @@ where
             } else if let Some(imported) = target.as_mut().and_then(|target| {
                 target
                     .can_do_cross_device_imports()
-                    .then(|| target.renderer_mut().import_dmabuf(dmabuf, damage).ok())
+                    .then(|| {
+                        target
+                            .renderer_mut()
+                            .import_dmabuf(dmabuf, damage)
+                            .inspect_err(|err| {
+                                debug!(?err, "failed to import dmabuf on target node {0}", target.node())
+                            })
+                            .ok()
+                    })
                     .flatten()
             }) {
                 let target = target.as_ref().unwrap();
@@ -2167,6 +2183,9 @@ where
                         other
                             .renderer_mut()
                             .import_dmabuf(dmabuf, damage)
+                            .inspect_err(|err| {
+                                debug!(?err, "failed to import dmabuf on other node {0}", other.node())
+                            })
                             .ok()
                             .map(|imported| (other, imported))
                     })
