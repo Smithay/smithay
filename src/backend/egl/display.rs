@@ -112,17 +112,57 @@ impl Drop for EGLDisplayHandle {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct EGLExtensions {
+    extensions: Vec<String>,
+
+    pub(super) has_fences: bool,
+    pub(super) has_native_fences: bool,
+    has_image_base: bool,
+    has_import_dmabuf: bool,
+    has_import_dmabuf_modifiers: bool,
+    has_export_dmabuf: bool,
+}
+
+impl EGLExtensions {
+    fn from_display(egl_version: (i32, i32), display: *const c_void) -> Result<Self, Error> {
+        let extensions = EGLDisplay::get_extensions(egl_version, display)?;
+
+        let has_fences = extensions.iter().any(|s| s == "EGL_KHR_fence_sync");
+        let has_native_fences = has_fences && extensions.iter().any(|s| s == "EGL_ANDROID_native_fence_sync");
+        let has_image_base = extensions.iter().any(|s| s == "EGL_KHR_image_base");
+        let has_import_dmabuf = extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import");
+        let has_import_dmabuf_modifiers = extensions
+            .iter()
+            .any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers");
+        let has_export_dmabuf = extensions.iter().any(|s| s == "EGL_MESA_image_dma_buf_export");
+
+        Ok(Self {
+            extensions,
+
+            has_fences,
+            has_native_fences,
+            has_image_base,
+            has_import_dmabuf,
+            has_import_dmabuf_modifiers,
+            has_export_dmabuf,
+        })
+    }
+
+    fn has_extension(&self, extension: &str) -> bool {
+        self.extensions.iter().any(|s| s == extension)
+    }
+}
+
 /// [`EGLDisplay`] represents an initialised EGL environment
 #[derive(Debug, Clone)]
 pub struct EGLDisplay {
     display: Arc<EGLDisplayHandle>,
     egl_version: (i32, i32),
-    extensions: Vec<String>,
+    pub(super) extensions: EGLExtensions,
     dmabuf_import_formats: FormatSet,
     dmabuf_render_formats: FormatSet,
     surface_type: ffi::EGLint,
-    pub(super) has_fences: bool,
-    pub(super) supports_native_fences: bool,
     pub(super) span: tracing::Span,
 }
 
@@ -260,7 +300,7 @@ impl EGLDisplay {
 
         // the list of extensions supported by the client once initialized is different from the
         // list of extensions obtained earlier
-        let extensions = EGLDisplay::get_extensions(egl_version, display.handle)?;
+        let extensions = EGLExtensions::from_display(egl_version, display.handle)?;
         info!("Supported EGL display extensions: {:?}", extensions);
 
         let (dmabuf_import_formats, dmabuf_render_formats) =
@@ -273,10 +313,6 @@ impl EGLDisplay {
         wrap_egl_call_bool(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
             .map_err(|source| Error::OpenGlesNotSupported(Some(source)))?;
 
-        let has_fences = extensions.iter().any(|s| s == "EGL_KHR_fence_sync");
-        let supports_native_fences =
-            has_fences && extensions.iter().any(|s| s == "EGL_ANDROID_native_fence_sync");
-
         Ok(EGLDisplay {
             display,
             surface_type,
@@ -284,8 +320,6 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
-            has_fences,
-            supports_native_fences,
             span,
         })
     }
@@ -334,7 +368,7 @@ impl EGLDisplay {
         };
         span.record("version", tracing::field::debug(egl_version));
 
-        let extensions = EGLDisplay::get_extensions(egl_version, display)?;
+        let extensions = EGLExtensions::from_display(egl_version, display)?;
         info!("Supported EGL display extensions: {:?}", extensions);
 
         let (dmabuf_import_formats, dmabuf_render_formats) =
@@ -360,9 +394,6 @@ impl EGLDisplay {
 
             surface_type.assume_init()
         };
-        let has_fences = extensions.iter().any(|s| s == "EGL_KHR_fence_sync");
-        let supports_native_fences =
-            has_fences && extensions.iter().any(|s| s == "EGL_ANDROID_native_fence_sync");
 
         Ok(EGLDisplay {
             display: Arc::new(EGLDisplayHandle {
@@ -375,8 +406,6 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
-            has_fences,
-            supports_native_fences,
             span,
         })
     }
@@ -586,7 +615,7 @@ impl EGLDisplay {
 
     /// Returns the supported extensions of this display
     pub fn extensions(&self) -> &[String] {
-        &self.extensions[..]
+        &self.extensions.extensions[..]
     }
 
     /// Returns a list of formats for dmabufs that can be rendered to.
@@ -606,23 +635,17 @@ impl EGLDisplay {
     }
 
     pub(super) fn supports_damage_impl(&self) -> DamageSupport {
-        if self.extensions.iter().any(|ext| ext == "EGL_EXT_buffer_age") {
-            if self
-                .extensions
-                .iter()
-                .any(|ext| ext == "EGL_KHR_swap_buffers_with_damage")
-            {
-                return DamageSupport::KHR;
-            } else if self
-                .extensions
-                .iter()
-                .any(|ext| ext == "EGL_EXT_swap_buffers_with_damage")
-            {
-                return DamageSupport::EXT;
-            }
-        }
+        if !self.extensions.has_extension("EGL_EXT_buffer_age") {
+            return DamageSupport::No;
+        };
 
-        DamageSupport::No
+        if self.extensions.has_extension("EGL_KHR_swap_buffers_with_damage") {
+            DamageSupport::KHR
+        } else if self.extensions.has_extension("EGL_EXT_swap_buffers_with_damage") {
+            DamageSupport::EXT
+        } else {
+            DamageSupport::No
+        }
     }
 
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
@@ -637,12 +660,7 @@ impl EGLDisplay {
     ) -> Result<Dmabuf, Error> {
         use crate::backend::allocator::dmabuf::DmabufFlags;
 
-        if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
-            && !self
-                .extensions
-                .iter()
-                .any(|s| s == "EGL_MESA_image_dma_buf_export")
-        {
+        if !self.extensions.has_image_base && !self.extensions.has_export_dmabuf {
             return Err(Error::EglExtensionNotSupported(&[
                 "EGL_KHR_image_base",
                 "EGL_MESA_image_dma_buf_export",
@@ -723,24 +741,14 @@ impl EGLDisplay {
     #[instrument(level = "trace", skip(self), parent = &self.span, err)]
     #[profiling::function]
     pub fn create_image_from_dmabuf(&self, dmabuf: &Dmabuf) -> Result<EGLImage, Error> {
-        if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
-            && !self
-                .extensions
-                .iter()
-                .any(|s| s == "EGL_EXT_image_dma_buf_import")
-        {
+        if !self.extensions.has_image_base && !self.extensions.has_import_dmabuf {
             return Err(Error::EglExtensionNotSupported(&[
                 "EGL_KHR_image_base",
                 "EGL_EXT_image_dma_buf_import",
             ]));
         }
 
-        if dmabuf.has_modifier()
-            && !self
-                .extensions
-                .iter()
-                .any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers")
-        {
+        if dmabuf.has_modifier() && !self.extensions.has_import_dmabuf_modifiers {
             return Err(Error::EglExtensionNotSupported(&[
                 "EGL_EXT_image_dma_buf_import_modifiers",
             ]));
@@ -846,7 +854,7 @@ impl EGLDisplay {
     #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
     pub fn bind_wl_display(&self, display: &DisplayHandle) -> Result<EGLBufferReader, Error> {
         let display_ptr = display.backend_handle().display_ptr();
-        if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
+        if !self.extensions.has_extension("EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
         wrap_egl_call_bool(|| unsafe {
@@ -867,9 +875,9 @@ impl EGLDisplay {
 
 fn get_dmabuf_formats(
     display: &ffi::egl::types::EGLDisplay,
-    extensions: &[String],
+    extensions: &EGLExtensions,
 ) -> Result<(FormatSet, FormatSet), EGLError> {
-    if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
+    if !extensions.has_import_dmabuf {
         warn!("Dmabuf import extension not available");
         return Ok((FormatSet::default(), FormatSet::default()));
     }
@@ -880,10 +888,7 @@ fn get_dmabuf_formats(
         // supported; it's the intended way to just try to create buffers.
         // Just a guess but better than not supporting dmabufs at all,
         // given that the modifiers extension isn't supported everywhere.
-        if !extensions
-            .iter()
-            .any(|s| s == "EGL_EXT_image_dma_buf_import_modifiers")
-        {
+        if !extensions.has_import_dmabuf_modifiers {
             vec![Fourcc::Argb8888, Fourcc::Xrgb8888]
         } else {
             let mut num = 0i32;

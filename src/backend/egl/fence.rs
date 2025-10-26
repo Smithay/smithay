@@ -33,7 +33,7 @@ pub struct EGLFence(Arc<InnerEGLFence>);
 impl EGLFence {
     /// Returns whether the display supports creating fences from native fences
     pub fn supports_importing(display: &EGLDisplay) -> bool {
-        display.supports_native_fences
+        display.extensions.has_native_fences
     }
 
     /// Import a native fence fd
@@ -41,7 +41,7 @@ impl EGLFence {
     pub fn import(display: &EGLDisplay, native: OwnedFd) -> Result<Self, Error> {
         // SAFETY: we do not have to test for EGL_KHR_fence_sync as EGL_ANDROID_native_fence_sync
         // requires it already
-        if !display.supports_native_fences {
+        if !display.extensions.has_native_fences {
             return Err(Error::EglExtensionNotSupported(&[
                 "EGL_ANDROID_native_fence_sync",
             ]));
@@ -91,11 +91,11 @@ impl EGLFence {
     /// fences. For OpenglES the `GL_OES_EGL_sync` extension indicates support for fences.
     #[profiling::function]
     pub fn create(display: &EGLDisplay) -> Result<Self, Error> {
-        if !display.has_fences {
+        if !display.extensions.has_fences {
             return Err(Error::EglExtensionNotSupported(&["EGL_KHR_fence_sync"]));
         }
 
-        let (type_, native) = if display.supports_native_fences {
+        let (type_, native) = if display.extensions.has_native_fences {
             (ffi::egl::SYNC_NATIVE_FENCE_ANDROID, true)
         } else {
             (ffi::egl::SYNC_FENCE, false)
