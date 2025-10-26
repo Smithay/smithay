@@ -754,6 +754,7 @@ impl EGLDisplay {
             ]));
         };
 
+        let format = dmabuf.format();
         let mut out: Vec<c_int> = Vec::with_capacity(50);
 
         out.extend([
@@ -762,7 +763,7 @@ impl EGLDisplay {
             ffi::egl::HEIGHT as i32,
             dmabuf.height() as i32,
             ffi::egl::LINUX_DRM_FOURCC_EXT as i32,
-            dmabuf.format().code as u32 as i32,
+            format.code as u32 as i32,
         ]);
 
         let names = [
@@ -810,12 +811,12 @@ impl EGLDisplay {
                 names[i][2] as i32,
                 stride as i32,
             ]);
-            if dmabuf.has_modifier() {
+            if format.modifier != Modifier::Invalid && self.extensions.has_import_dmabuf_modifiers {
                 out.extend([
                     names[i][3] as i32,
-                    (Into::<u64>::into(dmabuf.format().modifier) & 0xFFFFFFFF) as i32,
+                    (Into::<u64>::into(format.modifier) & 0xFFFFFFFF) as i32,
                     names[i][4] as i32,
-                    (Into::<u64>::into(dmabuf.format().modifier) >> 32) as i32,
+                    (Into::<u64>::into(format.modifier) >> 32) as i32,
                 ])
             }
         }
