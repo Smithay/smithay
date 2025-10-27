@@ -25,7 +25,7 @@ use crate::{
 };
 
 use thiserror::Error;
-
+use crate::input::pointer::Focus;
 use super::{PopupKind, PopupManager};
 
 /// Defines the possible errors that
@@ -608,6 +608,18 @@ where
         }
 
         handle.button(data, event);
+        if event.state == ButtonState::Pressed {
+            let grab = self.popup_grab.clone();
+            handle.set_grab(
+                self,
+                data,
+                event.serial,
+                Focus::Keep,
+                PopupPointerGrab {
+                    popup_grab: grab,
+                },
+            );
+        }
     }
 
     fn axis(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, details: AxisFrame) {
