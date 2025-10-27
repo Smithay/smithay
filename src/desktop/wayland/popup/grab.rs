@@ -322,7 +322,14 @@ where
     /// This will also return [`false`] if the root
     /// of the grab has been destroyed.
     pub fn has_ended(&self) -> bool {
-        !self.root.alive() || !self.toplevel_grab.active()
+        !self.root.alive()
+            || self
+                .toplevel_grab
+                .internal
+                .lock()
+                .unwrap()
+                .active_grabs
+                .is_empty()
     }
 
     /// Returns the current grabbed [`WlSurface`].
