@@ -24,13 +24,18 @@ pub(crate) struct TextInput {
 impl TextInput {
     fn with_focused_client_all_text_inputs<F>(&mut self, mut f: F)
     where
-        F: FnMut(&ZwpTextInputV3, &WlSurface, u32),
+        F: FnMut(&ZwpTextInputV3, &WlSurface, u32, &InputMethodHandle),
     {
         if let Some(surface) = self.focus.as_ref().filter(|surface| surface.is_alive()) {
             for text_input in self.instances.iter() {
                 let instance_id = text_input.instance.id();
                 if instance_id.same_client_as(&surface.id()) {
-                    f(&text_input.instance, surface, text_input.serial);
+                    f(
+                        &text_input.instance,
+                        surface,
+                        text_input.serial,
+                        &text_input.input_method_handle,
+                    );
                     break;
                 }
             }
@@ -39,7 +44,7 @@ impl TextInput {
 
     fn with_active_text_input<F>(&mut self, mut f: F)
     where
-        F: FnMut(&ZwpTextInputV3, &WlSurface, u32),
+        F: FnMut(&ZwpTextInputV3, &WlSurface, u32, &InputMethodHandle),
     {
         let active_id = match &self.active_text_input_id {
             Some(active_text_input_id) => active_text_input_id,
@@ -58,7 +63,12 @@ impl TextInput {
             .filter(|instance| instance.instance.id().same_client_as(&surface_id))
             .find(|instance| &instance.instance.id() == active_id)
         {
-            f(&text_input.instance, surface, text_input.serial);
+            f(
+                &text_input.instance,
+                surface,
+                text_input.serial,
+                &text_input.input_method_handle,
+            );
         }
     }
 }
@@ -70,12 +80,13 @@ pub struct TextInputHandle {
 }
 
 impl TextInputHandle {
-    pub(super) fn add_instance(&self, instance: &ZwpTextInputV3) {
+    pub(super) fn add_instance(&self, instance: &ZwpTextInputV3, input_method_handle: InputMethodHandle) {
         let mut inner = self.inner.lock().unwrap();
         inner.instances.push(Instance {
             instance: instance.clone(),
             serial: 0,
             pending_state: Default::default(),
+            input_method_handle,
         });
     }
 
@@ -90,6 +101,43 @@ impl TextInputHandle {
         {
             instance.serial += 1
         }
+    }
+
+    /// Set the input method handle for a specific text input instance.
+    /// Returns true if the instance was found and updated.
+    pub fn set_input_method(&self, text_input_id: ObjectId, input_method_handle: InputMethodHandle) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(instance) = inner
+            .instances
+            .iter_mut()
+            .find(|inst| inst.instance.id() == text_input_id)
+        {
+            instance.input_method_handle = input_method_handle;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get the input method handle for a specific text input instance.
+    pub fn get_input_method(&self, text_input_id: &ObjectId) -> Option<InputMethodHandle> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .instances
+            .iter()
+            .find(|inst| inst.instance.id() == *text_input_id)
+            .map(|inst| inst.input_method_handle.clone())
+    }
+
+    /// Get the input method handle for the currently active text input.
+    pub fn get_active_input_method(&self) -> Option<InputMethodHandle> {
+        let inner = self.inner.lock().unwrap();
+        let active_id = inner.active_text_input_id.as_ref()?;
+        inner
+            .instances
+            .iter()
+            .find(|inst| inst.instance.id() == *active_id)
+            .map(|inst| inst.input_method_handle.clone())
     }
 
     /// Return the currently focused surface.
@@ -111,7 +159,7 @@ impl TextInputHandle {
         // Leaving clears the active text input.
         inner.active_text_input_id = None;
         // NOTE: we implement it in a symmetrical way with `enter`.
-        inner.with_focused_client_all_text_inputs(|text_input, focus, _| {
+        inner.with_focused_client_all_text_inputs(|text_input, focus, _, _| {
             text_input.leave(focus);
         });
     }
@@ -122,7 +170,7 @@ impl TextInputHandle {
         let mut inner = self.inner.lock().unwrap();
         // NOTE: protocol states that if we have multiple text inputs enabled, `enter` must
         // be send for each of them.
-        inner.with_focused_client_all_text_inputs(|text_input, focus, _| {
+        inner.with_focused_client_all_text_inputs(|text_input, focus, _, _| {
             text_input.enter(focus);
         });
     }
@@ -131,7 +179,7 @@ impl TextInputHandle {
     /// the state should be discarded and wrong serial sent.
     pub fn done(&self, discard_state: bool) {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_active_text_input(|text_input, _, serial| {
+        inner.with_active_text_input(|text_input, _, serial, _| {
             if discard_state {
                 debug!("discarding text-input state due to serial");
                 // Discarding is done by sending non-matching serial.
@@ -148,7 +196,7 @@ impl TextInputHandle {
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_focused_client_all_text_inputs(|ti, surface, _| {
+        inner.with_focused_client_all_text_inputs(|ti, surface, _, _| {
             f(ti, surface);
         });
     }
@@ -159,7 +207,7 @@ impl TextInputHandle {
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_active_text_input(|ti, surface, _| {
+        inner.with_active_text_input(|ti, surface, _, _| {
             f(ti, surface);
         });
     }
@@ -172,7 +220,7 @@ impl TextInputHandle {
     {
         let mut inner = self.inner.lock().unwrap();
         let mut should_default = true;
-        inner.with_active_text_input(|_, _, serial| {
+        inner.with_active_text_input(|_, _, serial, _| {
             should_default = false;
             callback(serial);
         });
@@ -186,7 +234,6 @@ impl TextInputHandle {
 #[derive(Debug)]
 pub struct TextInputUserData {
     pub(super) handle: TextInputHandle,
-    pub(crate) input_method_handle: InputMethodHandle,
 }
 
 impl<D> Dispatch<ZwpTextInputV3, TextInputUserData, D> for TextInputManagerState
@@ -209,8 +256,18 @@ where
             data.handle.increment_serial(resource);
         }
 
-        // Discard requsets without any active input method instance.
-        if !data.input_method_handle.has_instance() {
+        // Check if there's an active input method for this text input
+        let has_active_im = {
+            let inner = data.handle.inner.lock().unwrap();
+            inner
+                .instances
+                .iter()
+                .find(|inst| inst.instance == *resource)
+                .map(|inst| inst.input_method_handle.has_instance())
+                .unwrap_or(false)
+        };
+
+        if !has_active_im {
             debug!("discarding text-input request without IME running");
             return;
         }
@@ -260,7 +317,14 @@ where
             }
             zwp_text_input_v3::Request::Commit => {
                 let mut new_state = mem::take(pending_state);
-                let _ = pending_state;
+
+                // Get input_method_handle
+                let input_method_handle = guard
+                    .instances
+                    .iter()
+                    .find(|inst| inst.instance == *resource)
+                    .map(|inst| inst.input_method_handle.clone());
+
                 let active_text_input_id = &mut guard.active_text_input_id;
 
                 if active_text_input_id.is_some() && *active_text_input_id != Some(resource.id()) {
@@ -273,13 +337,17 @@ where
                         *active_text_input_id = Some(resource.id());
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        data.input_method_handle.activate_input_method(state, &focus);
+                        if let Some(im_handle) = input_method_handle {
+                            im_handle.activate_input_method(state, &focus);
+                        }
                     }
                     Some(false) => {
                         *active_text_input_id = None;
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        data.input_method_handle.deactivate_input_method(state);
+                        if let Some(im_handle) = input_method_handle {
+                            im_handle.deactivate_input_method(state);
+                        }
                         return;
                     }
                     None => {
@@ -293,32 +361,44 @@ where
                     }
                 }
 
-                if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
-                        input_method.object.surrounding_text(text, cursor, anchor)
+                let input_method_handle = {
+                    let inner = data.handle.inner.lock().unwrap();
+                    inner
+                        .instances
+                        .iter()
+                        .find(|inst| inst.instance == *resource)
+                        .map(|inst| inst.input_method_handle.clone())
+                };
+
+                if let Some(im_handle) = input_method_handle {
+                    if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
+                        im_handle.with_instance(|input_method| {
+                            input_method
+                                .object
+                                .surrounding_text(text.to_string(), cursor, anchor)
+                        });
+                    }
+
+                    if let Some(cause) = new_state.text_change_cause.take() {
+                        im_handle.with_instance(|input_method| {
+                            input_method.object.text_change_cause(cause);
+                        });
+                    }
+
+                    if let Some((hint, purpose)) = new_state.content_type.take() {
+                        im_handle.with_instance(|input_method| {
+                            input_method.object.content_type(hint, purpose);
+                        });
+                    }
+
+                    if let Some(rect) = new_state.cursor_rectangle.take() {
+                        im_handle.set_text_input_rectangle::<D>(state, rect);
+                    }
+
+                    im_handle.with_instance(|input_method| {
+                        input_method.done();
                     });
                 }
-
-                if let Some(cause) = new_state.text_change_cause.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
-                        input_method.object.text_change_cause(cause);
-                    });
-                }
-
-                if let Some((hint, purpose)) = new_state.content_type.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
-                        input_method.object.content_type(hint, purpose);
-                    });
-                }
-
-                if let Some(rect) = new_state.cursor_rectangle.take() {
-                    data.input_method_handle
-                        .set_text_input_rectangle::<D>(state, rect);
-                }
-
-                data.input_method_handle.with_instance(|input_method| {
-                    input_method.done();
-                });
             }
             zwp_text_input_v3::Request::Destroy => {
                 // Nothing to do
@@ -329,8 +409,14 @@ where
 
     fn destroyed(state: &mut D, _client: ClientId, text_input: &ZwpTextInputV3, data: &TextInputUserData) {
         let destroyed_id = text_input.id();
-        let deactivate_im = {
+        let (deactivate_im, im_handle) = {
             let mut inner = data.handle.inner.lock().unwrap();
+            let im_handle = inner
+                .instances
+                .iter()
+                .find(|inst| inst.instance.id() == destroyed_id)
+                .map(|inst| inst.input_method_handle.clone());
+
             inner.instances.retain(|inst| inst.instance.id() != destroyed_id);
             let destroyed_focused = inner
                 .focus
@@ -340,15 +426,19 @@ where
 
             // Deactivate IM when we either lost focus entirely or destroyed text-input for the
             // currently focused client.
-            destroyed_focused
+            let should_deactivate = destroyed_focused
                 && !inner
                     .instances
                     .iter()
-                    .any(|inst| inst.instance.id().same_client_as(&destroyed_id))
+                    .any(|inst| inst.instance.id().same_client_as(&destroyed_id));
+
+            (should_deactivate, im_handle)
         };
 
         if deactivate_im {
-            data.input_method_handle.deactivate_input_method(state);
+            if let Some(im_handle) = im_handle {
+                im_handle.deactivate_input_method(state);
+            }
         }
     }
 }
@@ -358,6 +448,7 @@ struct Instance {
     instance: ZwpTextInputV3,
     serial: u32,
     pending_state: TextInputState,
+    input_method_handle: InputMethodHandle,
 }
 
 #[derive(Debug, Default)]
