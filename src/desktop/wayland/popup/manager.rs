@@ -89,7 +89,7 @@ impl PopupManager {
         // that it either is new and have never been
         // added to the popupmanager or that it has been
         // cleaned up.
-        if !toplevel_popups.active() {
+        if !toplevel_popups.has_any_grabs() {
             self.popup_grabs.push(toplevel_popups.clone());
         }
 
@@ -198,7 +198,7 @@ impl PopupManager {
     pub fn cleanup(&mut self) {
         self.popup_grabs.retain_mut(|grabs| {
             grabs.cleanup();
-            grabs.active()
+            grabs.has_any_grabs()
         });
         self.popup_trees.retain_mut(|tree| {
             let alive = tree.cleanup_and_get_alive();
