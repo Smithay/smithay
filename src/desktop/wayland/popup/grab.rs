@@ -64,8 +64,12 @@ struct PopupGrabInternal {
 }
 
 impl PopupGrabInternal {
-    fn active(&self) -> bool {
+    fn has_any_grabs(&self) -> bool {
         !self.active_grabs.is_empty() || !self.dismissed_grabs.is_empty()
+    }
+
+    fn has_active_grabs(&self) -> bool {
+        !self.active_grabs.is_empty()
     }
 
     fn current_grab(&self) -> Option<&WlSurface> {
@@ -105,9 +109,14 @@ pub(super) struct PopupGrabInner {
 }
 
 impl PopupGrabInner {
-    pub(super) fn active(&self) -> bool {
+    pub(super) fn has_any_grabs(&self) -> bool {
         let guard = self.internal.lock().unwrap();
-        guard.active()
+        guard.has_any_grabs()
+    }
+
+    pub(super) fn has_active_grabs(&self) -> bool {
+        let guard = self.internal.lock().unwrap();
+        guard.has_active_grabs()
     }
 
     fn current_grab(&self) -> Option<PopupKind> {
@@ -322,14 +331,7 @@ where
     /// This will also return [`false`] if the root
     /// of the grab has been destroyed.
     pub fn has_ended(&self) -> bool {
-        !self.root.alive()
-            || self
-                .toplevel_grab
-                .internal
-                .lock()
-                .unwrap()
-                .active_grabs
-                .is_empty()
+        !self.root.alive() || !self.toplevel_grab.has_active_grabs()
     }
 
     /// Returns the current grabbed [`WlSurface`].
