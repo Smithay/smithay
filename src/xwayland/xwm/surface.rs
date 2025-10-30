@@ -45,8 +45,8 @@ pub struct X11Surface {
     xwm: Option<XwmId>,
     client_scale: Option<Arc<AtomicF64>>,
     window: X11Window,
-    conn: Weak<RustConnection>,
-    atoms: super::Atoms,
+    pub(super) conn: Weak<RustConnection>,
+    pub(super) atoms: super::Atoms,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
     user_data: Arc<UserDataMap>,
 }
