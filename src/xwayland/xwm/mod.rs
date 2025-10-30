@@ -1900,7 +1900,9 @@ where
                                     requestor = transfer.request.requestor,
                                     "Destroying stale transfer",
                                 );
-                                send_selection_notify_resp(&transfer.conn, &transfer.request, false)?;
+                                if transfer.token.is_some() {
+                                    send_selection_notify_resp(&transfer.conn, &transfer.request, false)?;
+                                }
                                 selection.outgoing.remove(i).destroy(loop_handle);
                             } else {
                                 i += 1;
@@ -1918,22 +1920,31 @@ where
                                     SelectionTarget::Primary => &mut xwm.primary,
                                 };
 
-                                if let Some(transfer) = selection
+                                if let Some((i, transfer)) = selection
                                     .outgoing
                                     .iter_mut()
-                                    .find(|t| t.request.requestor == requestor)
+                                    .enumerate()
+                                    .find(|(_, t)| t.request.requestor == requestor)
                                 {
                                     match read_selection_callback(&xwm.conn, &xwm.atoms, fd.as_fd(), transfer)
                                     {
                                         Ok(OutgoingAction::WaitForReadable) => {
                                             return Ok(PostAction::Continue);
                                         } // transfer ongoing
-                                        Ok(_) => {}
+                                        Ok(OutgoingAction::Done) => {
+                                            let _ = transfer.token.take();
+                                            selection.outgoing.remove(i);
+                                        }
                                         Err(err) => {
                                             warn!(?err, "Transfer aborted");
+                                            let _ = transfer.token.take();
+                                            selection.outgoing.remove(i);
+                                        }
+                                        Ok(OutgoingAction::DoneReading) => {
+                                            let _ = transfer.token.take();
+                                            // Cleanup will happen on property delete for incremental transfers
                                         }
                                     };
-                                    let _ = transfer.token.take();
                                 }
 
                                 Ok(PostAction::Remove)
