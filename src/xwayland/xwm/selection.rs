@@ -26,9 +26,9 @@ pub const INCR_CHUNK_SIZE: usize = 64 * 1024;
 #[derive(Debug)]
 pub struct XWmSelection {
     pub atom: Atom,
-    pub type_: SelectionTarget,
 
     pub conn: Arc<RustConnection>,
+    pub atoms: Atoms,
     pub window: X11Window,
     pub owner: X11Window,
     pub mime_types: Vec<String>,
@@ -202,30 +202,31 @@ impl XWmSelection {
         )?;
         conn.flush()?;
 
-        let selection = match atom {
-            x if x == atoms.CLIPBOARD => SelectionTarget::Clipboard,
-            x if x == atoms.PRIMARY => SelectionTarget::Primary,
-            _ => unreachable!(),
-        };
-
         debug!(
             selection_window = ?window,
-            ?selection,
             ?atom,
             "Selection init",
         );
 
         Ok(XWmSelection {
             atom,
-            type_: selection,
             conn: conn.clone(),
+            atoms: atoms.clone(),
             window,
-            owner: window,
+            owner: x11rb::NONE,
             mime_types: Vec::new(),
             timestamp: x11rb::CURRENT_TIME,
             incoming: Vec::new(),
             outgoing: Vec::new(),
         })
+    }
+
+    pub fn type_(&self) -> Option<SelectionTarget> {
+        match self.atom {
+            x if x == self.atoms.CLIPBOARD => Some(SelectionTarget::Clipboard),
+            x if x == self.atoms.PRIMARY => Some(SelectionTarget::Primary),
+            _ => None,
+        }
     }
 }
 
