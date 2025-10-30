@@ -383,6 +383,7 @@ impl LayerMap {
                         Some(Anchor::RIGHT) => {
                             zone.size.w -= amount + Saturating(data.margin.right);
                         }
+                        // Exclusive edge is always exactly one edge
                         Some(_) => unreachable!(),
                         None => {}
                     }
