@@ -502,8 +502,8 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_FULLSCREEN)
     }
 
-    /// Returns if the window is in the minimized state
-    pub fn is_minimized(&self) -> bool {
+    /// Returns if the window is in the hidden state
+    pub fn is_hidden(&self) -> bool {
         self.state
             .lock()
             .unwrap()
@@ -565,10 +565,10 @@ impl X11Surface {
         Ok(())
     }
 
-    /// Sets the window as suspended/hidden or not.
+    /// Sets the window as hidden or not.
     ///
     /// Allows the client to e.g. stop rendering.
-    pub fn set_suspended(&self, suspended: bool) -> Result<(), ConnectionError> {
+    pub fn set_hidden(&self, suspended: bool) -> Result<(), ConnectionError> {
         if suspended {
             self.change_net_state(&[self.atoms._NET_WM_STATE_HIDDEN], &[])?;
         } else {
