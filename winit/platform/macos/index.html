@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="macOS / AppKit"><title>winit::platform::macos - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module macos</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module macos</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#macos--appkit" title="macOS / AppKit">macOS / AppKit</a><ul><li><a href="#window-initialization" title="Window initialization">Window initialization</a></li><li><a href="#custom-nsapplicationdelegate" title="Custom `NSApplicationDelegate`">Custom <code>NSApplicationDelegate</code></a></li></ul></li></ul><h3><a href="#enums">Module Items</a></h3><ul class="block"><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>platform</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">platform</a></div><h1>Module <span>macos</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/platform/macos.rs.html#1-531">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong><code>macos_platform</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="macos--appkit"><a class="doc-anchor" href="#macos--appkit">§</a>macOS / AppKit</h2>
+<p>Winit has an OS requirement of macOS 10.11 or higher (same as Rust
+itself), and is regularly tested on macOS 10.14.</p>
+<h3 id="window-initialization"><a class="doc-anchor" href="#window-initialization">§</a>Window initialization</h3>
+<p>A lot of functionality expects the application to be ready before you
+start doing anything; this includes creating windows, fetching monitors,
+drawing, and so on, see issues <a href="https://github.com/rust-windowing/winit/issues/2238">#2238</a>, <a href="https://github.com/rust-windowing/winit/issues/2051">#2051</a> and <a href="https://github.com/rust-windowing/winit/issues/2087">#2087</a>.</p>
+<p>If you encounter problems, you should try doing your initialization inside
+<a href="../../application/trait.ApplicationHandler.html#tymethod.resumed" title="method winit::application::ApplicationHandler::resumed"><code>ApplicationHandler::resumed</code></a>.</p>
+<h3 id="custom-nsapplicationdelegate"><a class="doc-anchor" href="#custom-nsapplicationdelegate">§</a>Custom <code>NSApplicationDelegate</code></h3>
+<p>Winit usually handles everything related to the lifecycle events of the application. Sometimes,
+though, you might want to do more niche stuff, such as <a href="https://developer.apple.com/documentation/appkit/nsapplicationdelegate/1428638-applicationshouldhandlereopen?language=objc">handle when the user re-activates the
+application</a>. Such functionality is not exposed directly in Winit, since it would
+increase the API surface by quite a lot.</p>
+<p>Instead, Winit guarantees that it will not register an application delegate, so the solution is
+to register your own application delegate, as outlined in the following example (see
+<code>objc2-app-kit</code> for more detailed information).</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>objc2::rc::Retained;
+<span class="kw">use </span>objc2::runtime::ProtocolObject;
+<span class="kw">use </span>objc2::{declare_class, msg_send_id, mutability, ClassType, DeclaredClass};
+<span class="kw">use </span>objc2_app_kit::{NSApplication, NSApplicationDelegate};
+<span class="kw">use </span>objc2_foundation::{NSArray, NSURL, MainThreadMarker, NSObject, NSObjectProtocol};
+<span class="kw">use </span>winit::event_loop::EventLoop;
+
+<span class="macro">declare_class!</span>(
+    <span class="kw">struct </span>AppDelegate;
+
+    <span class="kw">unsafe impl </span>ClassType <span class="kw">for </span>AppDelegate {
+        <span class="kw">type </span>Super = NSObject;
+        <span class="kw">type </span>Mutability = mutability::MainThreadOnly;
+        <span class="kw">const </span>NAME: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"MyAppDelegate"</span>;
+    }
+
+    <span class="kw">impl </span>DeclaredClass <span class="kw">for </span>AppDelegate {}
+
+    <span class="kw">unsafe impl </span>NSObjectProtocol <span class="kw">for </span>AppDelegate {}
+
+    <span class="kw">unsafe impl </span>NSApplicationDelegate <span class="kw">for </span>AppDelegate {
+        <span class="attr">#[method(application:openURLs:)]
+        </span><span class="kw">fn </span>application_openURLs(<span class="kw-2">&amp;</span><span class="self">self</span>, application: <span class="kw-2">&amp;</span>NSApplication, urls: <span class="kw-2">&amp;</span>NSArray&lt;NSURL&gt;) {
+            <span class="comment">// Note: To specifically get `application:openURLs:` to work, you _might_
+            // have to bundle your application. This is not done in this example.
+            </span><span class="macro">println!</span>(<span class="string">"open urls: {application:?}, {urls:?}"</span>);
+        }
+    }
+);
+
+<span class="kw">impl </span>AppDelegate {
+    <span class="kw">fn </span>new(mtm: MainThreadMarker) -&gt; Retained&lt;<span class="self">Self</span>&gt; {
+        <span class="kw">unsafe </span>{ <span class="macro">msg_send_id!</span>[<span class="kw">super</span>(mtm.alloc().set_ivars(())), init] }
+    }
+}
+
+<span class="kw">fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;(), Box&lt;<span class="kw">dyn </span>std::error::Error&gt;&gt; {
+    <span class="kw">let </span>event_loop = EventLoop::new()<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>mtm = MainThreadMarker::new().unwrap();
+    <span class="kw">let </span>delegate = AppDelegate::new(mtm);
+    <span class="comment">// Important: Call `sharedApplication` after `EventLoop::new`,
+    // doing it before is not yet supported.
+    </span><span class="kw">let </span>app = NSApplication::sharedApplication(mtm);
+    app.setDelegate(<span class="prelude-val">Some</span>(ProtocolObject::from_ref(<span class="kw-2">&amp;*</span>delegate)));
+
+    <span class="comment">// event_loop.run_app(&amp;mut my_app);
+    </span><span class="prelude-val">Ok</span>(())
+}</code></pre></div></div></details><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.ActivationPolicy.html" title="enum winit::platform::macos::ActivationPolicy">Activation<wbr>Policy</a></dt><dd>Corresponds to <code>NSApplicationActivationPolicy</code>.</dd><dt><a class="enum" href="enum.OptionAsAlt.html" title="enum winit::platform::macos::OptionAsAlt">Option<wbr>AsAlt</a></dt><dd>Option as alt behavior.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.ActiveEventLoopExtMacOS.html" title="trait winit::platform::macos::ActiveEventLoopExtMacOS">Active<wbr>Event<wbr>Loop<wbr>ExtMacOS</a></dt><dd>Additional methods on <a href="../../event_loop/struct.ActiveEventLoop.html" title="struct winit::event_loop::ActiveEventLoop"><code>ActiveEventLoop</code></a> that are specific to macOS.</dd><dt><a class="trait" href="trait.EventLoopBuilderExtMacOS.html" title="trait winit::platform::macos::EventLoopBuilderExtMacOS">Event<wbr>Loop<wbr>Builder<wbr>ExtMacOS</a></dt><dt><a class="trait" href="trait.MonitorHandleExtMacOS.html" title="trait winit::platform::macos::MonitorHandleExtMacOS">Monitor<wbr>Handle<wbr>ExtMacOS</a></dt><dd>Additional methods on <a href="../../monitor/struct.MonitorHandle.html" title="struct winit::monitor::MonitorHandle"><code>MonitorHandle</code></a> that are specific to MacOS.</dd><dt><a class="trait" href="trait.WindowAttributesExtMacOS.html" title="trait winit::platform::macos::WindowAttributesExtMacOS">Window<wbr>Attributes<wbr>ExtMacOS</a></dt><dd>Additional methods on <a href="../../window/struct.WindowAttributes.html" title="struct winit::window::WindowAttributes"><code>WindowAttributes</code></a> that are specific to MacOS.</dd><dt><a class="trait" href="trait.WindowExtMacOS.html" title="trait winit::platform::macos::WindowExtMacOS">Window<wbr>ExtMacOS</a></dt><dd>Additional methods on <a href="../../window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a> that are specific to MacOS.</dd></dl></section></div></main></body></html>

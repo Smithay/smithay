@@ -1,0 +1,303 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.29.15"><title>winit::changelog::v0_29 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_29</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_29</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#02915" title="0.29.15">0.29.15</a></li><li><a href="#02914" title="0.29.14">0.29.14</a></li><li><a href="#02913" title="0.29.13">0.29.13</a></li><li><a href="#02912" title="0.29.12">0.29.12</a></li><li><a href="#02911" title="0.29.11">0.29.11</a></li><li><a href="#02910" title="0.29.10">0.29.10</a></li><li><a href="#0299" title="0.29.9">0.29.9</a></li><li><a href="#0298" title="0.29.8">0.29.8</a></li><li><a href="#0297" title="0.29.7">0.29.7</a></li><li><a href="#0296" title="0.29.6">0.29.6</a></li><li><a href="#0295" title="0.29.5">0.29.5</a></li><li><a href="#0294" title="0.29.4">0.29.4</a></li><li><a href="#0293" title="0.29.3">0.29.3</a></li><li><a href="#0292" title="0.29.2">0.29.2</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_29</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#14">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="02915"><a class="doc-anchor" href="#02915">§</a>0.29.15</h3>
+<ul>
+<li>On X11, fix crash due to xsettings query on systems with incomplete xsettings.</li>
+</ul>
+<h3 id="02914"><a class="doc-anchor" href="#02914">§</a>0.29.14</h3>
+<ul>
+<li>On X11/Wayland, fix <code>text</code> and <code>text_with_all_modifiers</code> not being <code>None</code> during compose.</li>
+<li>On Wayland, don’t reapply cursor grab when unchanged.</li>
+<li>On X11, fix a bug where some mouse events would be unexpectedly filtered out.</li>
+</ul>
+<h3 id="02913"><a class="doc-anchor" href="#02913">§</a>0.29.13</h3>
+<ul>
+<li>On Web, fix possible crash with <code>ControlFlow::Wait</code> and <code>ControlFlow::WaitUntil</code>.</li>
+</ul>
+<h3 id="02912"><a class="doc-anchor" href="#02912">§</a>0.29.12</h3>
+<ul>
+<li>On X11, fix use after free during xinput2 handling.</li>
+<li>On X11, filter close to zero values in mouse device events</li>
+</ul>
+<h3 id="02911"><a class="doc-anchor" href="#02911">§</a>0.29.11</h3>
+<ul>
+<li>Fix compatibility with 32-bit platforms without 64-bit atomics.</li>
+<li>On macOS, fix incorrect IME cursor rect origin.</li>
+<li>On Windows, fixed a race condition when sending an event through the loop proxy.</li>
+<li>On X11, fix swapped instance and general class names.</li>
+<li>On X11, don’t require XIM to run.</li>
+<li>On X11, fix xkb state not being updated correctly sometimes leading to wrong input.</li>
+<li>On X11, reload dpi on <code>_XSETTINGS_SETTINGS</code> update.</li>
+<li>On X11, fix deadlock when adjusting DPI and resizing at the same time.</li>
+<li>On Wayland, disable <code>Occluded</code> event handling.</li>
+<li>On Wayland, fix DeviceEvent::Motion not being sent</li>
+<li>On Wayland, fix <code>Focused(false)</code> being send when other seats still have window focused.</li>
+<li>On Wayland, fix <code>Window::set_{min,max}_inner_size</code> not always applied.</li>
+<li>On Wayland, fix title in CSD not updated from <code>AboutToWait</code>.</li>
+<li>On Windows, fix inconsistent resizing behavior with multi-monitor setups when repositioning outside the event loop.</li>
+<li>On Wayland, fix <code>WAYLAND_SOCKET</code> not used when detecting platform.</li>
+<li>On Orbital, fix <code>logical_key</code> and <code>text</code> not reported in <code>KeyEvent</code>.</li>
+<li>On Orbital, implement <code>KeyEventExtModifierSupplement</code>.</li>
+<li>On Orbital, map keys to <code>NamedKey</code> when possible.</li>
+<li>On Orbital, implement <code>set_cursor_grab</code>.</li>
+<li>On Orbital, implement <code>set_cursor_visible</code>.</li>
+<li>On Orbital, implement <code>drag_window</code>.</li>
+<li>On Orbital, implement <code>drag_resize_window</code>.</li>
+<li>On Orbital, implement <code>set_transparent</code>.</li>
+<li>On Orbital, implement <code>set_visible</code>.</li>
+<li>On Orbital, implement <code>is_visible</code>.</li>
+<li>On Orbital, implement <code>set_resizable</code>.</li>
+<li>On Orbital, implement <code>is_resizable</code>.</li>
+<li>On Orbital, implement <code>set_maximized</code>.</li>
+<li>On Orbital, implement <code>is_maximized</code>.</li>
+<li>On Orbital, implement <code>set_decorations</code>.</li>
+<li>On Orbital, implement <code>is_decorated</code>.</li>
+<li>On Orbital, implement <code>set_window_level</code>.</li>
+<li>On Orbital, emit <code>DeviceEvent::MouseMotion</code>.</li>
+</ul>
+<h3 id="02910"><a class="doc-anchor" href="#02910">§</a>0.29.10</h3>
+<ul>
+<li>On Web, account for canvas being focused already before event loop starts.</li>
+<li>On Web, increase cursor position accuracy.</li>
+</ul>
+<h3 id="0299"><a class="doc-anchor" href="#0299">§</a>0.29.9</h3>
+<ul>
+<li>On X11, fix <code>NotSupported</code> error not propagated when creating event loop.</li>
+<li>On Wayland, fix resize not issued when scale changes</li>
+<li>On X11 and Wayland, fix arrow up on keypad reported as <code>ArrowLeft</code>.</li>
+<li>On macOS, report correct logical key when Ctrl or Cmd is pressed.</li>
+</ul>
+<h3 id="0298"><a class="doc-anchor" href="#0298">§</a>0.29.8</h3>
+<ul>
+<li>On X11, fix IME input lagging behind.</li>
+<li>On X11, fix <code>ModifiersChanged</code> not sent from xdotool-like input</li>
+<li>On X11, fix keymap not updated from xmodmap.</li>
+<li>On X11, reduce the amount of time spent fetching screen resources.</li>
+<li>On Wayland, fix <code>Window::request_inner_size</code> being overwritten by resize.</li>
+<li>On Wayland, fix <code>Window::inner_size</code> not using the correct rounding.</li>
+</ul>
+<h3 id="0297"><a class="doc-anchor" href="#0297">§</a>0.29.7</h3>
+<ul>
+<li>On X11, fix <code>Xft.dpi</code> reload during runtime.</li>
+<li>On X11, fix window minimize.</li>
+</ul>
+<h3 id="0296"><a class="doc-anchor" href="#0296">§</a>0.29.6</h3>
+<ul>
+<li>On Web, fix context menu not being disabled by <code>with_prevent_default(true)</code>.</li>
+<li>On Wayland, fix <code>WindowEvent::Destroyed</code> not being delivered after destroying window.</li>
+<li>Fix <code>EventLoopExtRunOnDemand::run_on_demand</code> not working for consequent invocation</li>
+</ul>
+<h3 id="0295"><a class="doc-anchor" href="#0295">§</a>0.29.5</h3>
+<ul>
+<li>On macOS, remove spurious error logging when handling <code>Fn</code>.</li>
+<li>On X11, fix an issue where floating point data from the server is
+misinterpreted during a drag and drop operation.</li>
+<li>On X11, fix a bug where focusing the window would panic.</li>
+<li>On macOS, fix <code>refresh_rate_millihertz</code>.</li>
+<li>On Wayland, disable Client Side Decorations when <code>wl_subcompositor</code> is not supported.</li>
+<li>On X11, fix <code>Xft.dpi</code> detection from Xresources.</li>
+<li>On Windows, fix consecutive calls to <code>window.set_fullscreen(Some(Fullscreen::Borderless(None)))</code> resulting in losing previous window state when eventually exiting fullscreen using <code>window.set_fullscreen(None)</code>.</li>
+<li>On Wayland, fix resize being sent on focus change.</li>
+<li>On Windows, fix <code>set_ime_cursor_area</code>.</li>
+</ul>
+<h3 id="0294"><a class="doc-anchor" href="#0294">§</a>0.29.4</h3>
+<ul>
+<li>Fix crash when running iOS app on macOS.</li>
+<li>On X11, check common alternative cursor names when loading cursor.</li>
+<li>On X11, reload the DPI after a property change event.</li>
+<li>On Windows, fix so <code>drag_window</code> and <code>drag_resize_window</code> can be called from another thread.</li>
+<li>On Windows, fix <code>set_control_flow</code> in <code>AboutToWait</code> not being taken in account.</li>
+<li>On macOS, send a <code>Resized</code> event after each <code>ScaleFactorChanged</code> event.</li>
+<li>On Wayland, fix <code>wl_surface</code> being destroyed before associated objects.</li>
+<li>On macOS, fix assertion when pressing <code>Fn</code> key.</li>
+<li>On Windows, add <code>WindowBuilderExtWindows::with_clip_children</code> to control <code>WS_CLIPCHILDREN</code> style.</li>
+</ul>
+<h3 id="0293"><a class="doc-anchor" href="#0293">§</a>0.29.3</h3>
+<ul>
+<li>On Wayland, apply correct scale to <code>PhysicalSize</code> passed in <code>WindowBuilder::with_inner_size</code> when possible.</li>
+<li>On Wayland, fix <code>RedrawRequested</code> being always sent without decorations and <code>sctk-adwaita</code> feature.</li>
+<li>On Wayland, ignore resize requests when the window is fully tiled.</li>
+<li>On Wayland, use <code>configure_bounds</code> to constrain <code>with_inner_size</code> when compositor wants users to pick size.</li>
+<li>On Windows, fix deadlock when accessing the state during <code>Cursor{Enter,Leave}</code>.</li>
+<li>On Windows, add support for <code>Window::set_transparent</code>.</li>
+<li>On macOS, fix deadlock when entering a nested event loop from an event handler.</li>
+<li>On macOS, add support for <code>Window::set_blur</code>.</li>
+</ul>
+<h3 id="0292"><a class="doc-anchor" href="#0292">§</a>0.29.2</h3>
+<ul>
+<li><strong>Breaking:</strong> Bump MSRV from <code>1.60</code> to <code>1.65</code>.</li>
+<li><strong>Breaking:</strong> Add <code>Event::MemoryWarning</code>; implemented on iOS/Android.</li>
+<li><strong>Breaking:</strong> Bump <code>ndk</code> version to <code>0.8.0</code>, ndk-sys to <code>0.5.0</code>, <code>android-activity</code> to <code>0.5.0</code>.</li>
+<li><strong>Breaking:</strong> Change default <code>ControlFlow</code> from <code>Poll</code> to <code>Wait</code>.</li>
+<li><strong>Breaking:</strong> Move <code>Event::RedrawRequested</code> to <code>WindowEvent::RedrawRequested</code>.</li>
+<li><strong>Breaking:</strong> Moved <code>ControlFlow::Exit</code> to <code>EventLoopWindowTarget::exit()</code> and <code>EventLoopWindowTarget::exiting()</code> and removed <code>ControlFlow::ExitWithCode(_)</code> entirely.</li>
+<li><strong>Breaking:</strong> Moved <code>ControlFlow</code> to <code>EventLoopWindowTarget::set_control_flow()</code> and <code>EventLoopWindowTarget::control_flow()</code>.</li>
+<li><strong>Breaking:</strong> <code>EventLoop::new</code> and <code>EventLoopBuilder::build</code> now return <code>Result&lt;Self, EventLoopError&gt;</code></li>
+<li><strong>Breaking:</strong> <code>WINIT_UNIX_BACKEND</code> was removed in favor of standard <code>WAYLAND_DISPLAY</code> and <code>DISPLAY</code> variables.</li>
+<li><strong>Breaking:</strong> on Wayland, dispatching user created Wayland queue won’t wake up the loop unless winit has event to send back.</li>
+<li><strong>Breaking:</strong> remove <code>DeviceEvent::Text</code>.</li>
+<li><strong>Breaking:</strong> Remove lifetime parameter from <code>Event</code> and <code>WindowEvent</code>.</li>
+<li><strong>Breaking:</strong> Rename <code>Window::set_inner_size</code> to <code>Window::request_inner_size</code> and indicate if the size was applied immediately.</li>
+<li><strong>Breaking:</strong> <code>ActivationTokenDone</code> event which could be requested with the new <code>startup_notify</code> module, see its docs for more.</li>
+<li><strong>Breaking:</strong> <code>ScaleFactorChanged</code> now contains a writer instead of a reference to update inner size.</li>
+<li><strong>Breaking</strong> <code>run() -&gt; !</code> has been replaced by <code>run() -&gt; Result&lt;(), EventLoopError&gt;</code> for returning errors without calling <code>std::process::exit()</code> (<a href="https://github.com/rust-windowing/winit/pull/2767">#2767</a>)</li>
+<li><strong>Breaking</strong> Removed <code>EventLoopExtRunReturn</code> / <code>run_return</code> in favor of <code>EventLoopExtPumpEvents</code> / <code>pump_events</code> and <code>EventLoopExtRunOnDemand</code> / <code>run_on_demand</code> (<a href="https://github.com/rust-windowing/winit/pull/2767">#2767</a>)</li>
+<li><code>RedrawRequested</code> is no longer guaranteed to be emitted after <code>MainEventsCleared</code>, it is now platform-specific when the event is emitted after being requested via <code>redraw_request()</code>.
+<ul>
+<li>On Windows, <code>RedrawRequested</code> is now driven by <code>WM_PAINT</code> messages which are requested via <code>redraw_request()</code></li>
+</ul>
+</li>
+<li><strong>Breaking</strong> <code>LoopDestroyed</code> renamed to <code>LoopExiting</code> (<a href="https://github.com/rust-windowing/winit/issues/2900">#2900</a>)</li>
+<li><strong>Breaking</strong> <code>RedrawEventsCleared</code> removed (<a href="https://github.com/rust-windowing/winit/issues/2900">#2900</a>)</li>
+<li><strong>Breaking</strong> <code>MainEventsCleared</code> removed (<a href="https://github.com/rust-windowing/winit/issues/2900">#2900</a>)</li>
+<li><strong>Breaking:</strong> Remove all deprecated <code>modifiers</code> fields.</li>
+<li><strong>Breaking:</strong> Rename <code>DeviceEventFilter</code> to <code>DeviceEvents</code> reversing the behavior of variants.</li>
+<li><strong>Breaking</strong> Add <code>AboutToWait</code> event which is emitted when the event loop is about to block and wait for new events (<a href="https://github.com/rust-windowing/winit/issues/2900">#2900</a>)</li>
+<li><strong>Breaking:</strong> Rename <code>EventLoopWindowTarget::set_device_event_filter</code> to <code>listen_device_events</code>.</li>
+<li><strong>Breaking:</strong> Rename <code>Window::set_ime_position</code> to <code>Window::set_ime_cursor_area</code> adding a way to set exclusive zone.</li>
+<li><strong>Breaking:</strong> <code>with_x11_visual</code> now takes the visual ID instead of the bare pointer.</li>
+<li><strong>Breaking</strong> <code>MouseButton</code> now supports <code>Back</code> and <code>Forward</code> variants, emitted from mouse events on Wayland, X11, Windows, macOS and Web.</li>
+<li><strong>Breaking:</strong> On Web, <code>instant</code> is now replaced by <code>web_time</code>.</li>
+<li><strong>Breaking:</strong> On Web, dropped support for Safari versions below 13.1.</li>
+<li><strong>Breaking:</strong> On Web, the canvas output bitmap size is no longer adjusted.</li>
+<li><strong>Breaking:</strong> On Web, the canvas size is not controlled by Winit anymore and external changes to the canvas size will be reported through <code>WindowEvent::Resized</code>.</li>
+<li><strong>Breaking:</strong> Updated <code>bitflags</code> crate version to <code>2</code>, which changes the API on exposed types.</li>
+<li><strong>Breaking:</strong> <code>CursorIcon::Arrow</code> was removed.</li>
+<li><strong>Breaking:</strong> <code>CursorIcon::Hand</code> is now named <code>CursorIcon::Pointer</code>.</li>
+<li><strong>Breaking:</strong> <code>CursorIcon</code> is now used from the <code>cursor-icon</code> crate.</li>
+<li><strong>Breaking:</strong> <code>WindowExtWebSys::canvas()</code> now returns an <code>Option</code>.</li>
+<li><strong>Breaking:</strong> Overhaul keyboard input handling.
+<ul>
+<li>Replace <code>KeyboardInput</code> with <code>KeyEvent</code> and <code>RawKeyEvent</code>.
+<ul>
+<li>Change <code>WindowEvent::KeyboardInput</code> to contain a <code>KeyEvent</code>.</li>
+<li>Change <code>Event::Key</code> to contain a <code>RawKeyEvent</code>.</li>
+</ul>
+</li>
+<li>Remove <code>Event::ReceivedCharacter</code>. In its place, you should use
+<code>KeyEvent.text</code> in combination with <code>WindowEvent::Ime</code>.</li>
+<li>Replace <code>VirtualKeyCode</code> with the <code>Key</code> enum.</li>
+<li>Replace <code>ScanCode</code> with the <code>KeyCode</code> enum.</li>
+<li>Rename <code>ModifiersState::LOGO</code> to <code>SUPER</code> and <code>ModifiersState::CTRL</code> to <code>CONTROL</code>.</li>
+<li>Add <code>PhysicalKey</code> wrapping <code>KeyCode</code> and <code>NativeKeyCode</code>.</li>
+<li>Add <code>KeyCode</code> to refer to keys (roughly) by their physical location.</li>
+<li>Add <code>NativeKeyCode</code> to represent raw <code>KeyCode</code>s which Winit doesn’t
+understand.</li>
+<li>Add <code>Key</code> to represent the keys after they’ve been interpreted by the
+active (software) keyboard layout.</li>
+<li>Add <code>NamedKey</code> to represent the categorized keys.</li>
+<li>Add <code>NativeKey</code> to represent raw <code>Key</code>s which Winit doesn’t understand.</li>
+<li>Add <code>KeyLocation</code> to tell apart <code>Key</code>s which usually “mean” the same thing,
+but can appear simultaneously in different spots on the same keyboard
+layout.</li>
+<li>Add <code>Window::reset_dead_keys</code> to enable application-controlled cancellation
+of dead key sequences.</li>
+<li>Add <code>KeyEventExtModifierSupplement</code> to expose additional (and less
+portable) interpretations of a given key-press.</li>
+<li>Add <code>PhysicalKeyExtScancode</code>, which lets you convert between scancodes and
+<code>PhysicalKey</code>.</li>
+<li><code>ModifiersChanged</code> now uses dedicated <code>Modifiers</code> struct.</li>
+</ul>
+</li>
+<li>Removed platform-specific extensions that should be retrieved through <code>raw-window-handle</code> trait implementations instead:
+<ul>
+<li><code>platform::windows::HINSTANCE</code>.</li>
+<li><code>WindowExtWindows::hinstance</code>.</li>
+<li><code>WindowExtWindows::hwnd</code>.</li>
+<li><code>WindowExtIOS::ui_window</code>.</li>
+<li><code>WindowExtIOS::ui_view_controller</code>.</li>
+<li><code>WindowExtIOS::ui_view</code>.</li>
+<li><code>WindowExtMacOS::ns_window</code>.</li>
+<li><code>WindowExtMacOS::ns_view</code>.</li>
+<li><code>EventLoopWindowTargetExtWayland::wayland_display</code>.</li>
+<li><code>WindowExtWayland::wayland_surface</code>.</li>
+<li><code>WindowExtWayland::wayland_display</code>.</li>
+<li><code>WindowExtX11::xlib_window</code>.</li>
+<li><code>WindowExtX11::xlib_display</code>.</li>
+<li><code>WindowExtX11::xlib_screen_id</code>.</li>
+<li><code>WindowExtX11::xcb_connection</code>.</li>
+</ul>
+</li>
+<li>Reexport <code>raw-window-handle</code> in <code>window</code> module.</li>
+<li>Add <code>ElementState::is_pressed</code>.</li>
+<li>Add <code>Window::pre_present_notify</code> to notify winit before presenting to the windowing system.</li>
+<li>Add <code>Window::set_blur</code> to request a blur behind the window; implemented on Wayland for now.</li>
+<li>Add <code>Window::show_window_menu</code> to request a titlebar/system menu; implemented on Wayland/Windows for now.</li>
+<li>Implement <code>AsFd</code>/<code>AsRawFd</code> for <code>EventLoop&lt;T&gt;</code> on X11 and Wayland.</li>
+<li>Implement <code>PartialOrd</code> and <code>Ord</code> for <code>MouseButton</code>.</li>
+<li>Implement <code>PartialOrd</code> and <code>Ord</code> on types in the <code>dpi</code> module.</li>
+<li>Make <code>WindowBuilder</code> <code>Send + Sync</code>.</li>
+<li>Make iOS <code>MonitorHandle</code> and <code>VideoMode</code> usable from other threads.</li>
+<li>Make iOS windows usable from other threads.</li>
+<li>On Android, add force data to touch events.</li>
+<li>On Android, added <code>EventLoopBuilderExtAndroid::handle_volume_keys</code> to indicate that the application will handle the volume keys manually.</li>
+<li>On Android, fix <code>DeviceId</code> to contain device id’s.</li>
+<li>On Orbital, fix <code>ModifiersChanged</code> not being sent.</li>
+<li>On Wayland, <code>Window::outer_size</code> now accounts for <strong>client side</strong> decorations.</li>
+<li>On Wayland, add <code>Window::drag_resize_window</code> method.</li>
+<li>On Wayland, remove <code>WINIT_WAYLAND_CSD_THEME</code> variable.</li>
+<li>On Wayland, fix <code>TouchPhase::Canceled</code> being sent for moved events.</li>
+<li>On Wayland, fix forward compatibility issues.</li>
+<li>On Wayland, fix initial window size not restored for maximized/fullscreened on startup window.</li>
+<li>On Wayland, fix maximized startup not taking full size on GNOME.</li>
+<li>On Wayland, fix maximized window creation and window geometry handling.</li>
+<li>On Wayland, fix window not checking that it actually got initial configure event.</li>
+<li>On Wayland, make double clicking and moving the CSD frame more reliable.</li>
+<li>On Wayland, support <code>Occluded</code> event with xdg-shell v6</li>
+<li>On Wayland, use frame callbacks to throttle <code>RedrawRequested</code> events so redraws will align with compositor.</li>
+<li>On Web, <code>ControlFlow::WaitUntil</code> now uses the Prioritized Task Scheduling API. <code>setTimeout()</code>, with a trick to circumvent throttling to 4ms, is used as a fallback.</li>
+<li>On Web, <code>EventLoopProxy</code> now implements <code>Send</code>.</li>
+<li>On Web, <code>Window</code> now implements <code>Send</code> and <code>Sync</code>.</li>
+<li>On Web, account for CSS <code>padding</code>, <code>border</code>, and <code>margin</code> when getting or setting the canvas position.</li>
+<li>On Web, add Fullscreen API compatibility for Safari.</li>
+<li>On Web, add <code>DeviceEvent::Motion</code>, <code>DeviceEvent::MouseWheel</code>, <code>DeviceEvent::Button</code> and <code>DeviceEvent::Key</code> support.</li>
+<li>On Web, add <code>EventLoopWindowTargetExtWebSys</code> and <code>PollStrategy</code>, which allows to set different strategies for <code>ControlFlow::Poll</code>. By default the Prioritized Task Scheduling API is used, but an option to use <code>Window.requestIdleCallback</code> is available as well. Both use <code>setTimeout()</code>, with a trick to circumvent throttling to 4ms, as a fallback.</li>
+<li>On Web, add <code>WindowBuilderExtWebSys::with_append()</code> to append the canvas element to the web page on creation.</li>
+<li>On Web, allow event loops to be recreated with <code>spawn</code>.</li>
+<li>On Web, enable event propagation.</li>
+<li>On Web, fix <code>ControlFlow::WaitUntil</code> to never wake up <strong>before</strong> the given time.</li>
+<li>On Web, fix <code>DeviceEvent::MouseMotion</code> only being emitted for each canvas instead of the whole window.</li>
+<li>On Web, fix <code>Window:::set_fullscreen</code> doing nothing when called outside the event loop but during transient activation.</li>
+<li>On Web, fix pen treated as mouse input.</li>
+<li>On Web, fix pointer button events not being processed when a buttons is already pressed.</li>
+<li>On Web, fix scale factor resize suggestion always overwriting the canvas size.</li>
+<li>On Web, fix some <code>WindowBuilder</code> methods doing nothing.</li>
+<li>On Web, fix some <code>Window</code> methods using incorrect HTML attributes instead of CSS properties.</li>
+<li>On Web, fix the bfcache by not using the <code>beforeunload</code> event and map bfcache loading/unloading to <code>Suspended</code>/<code>Resumed</code> events.</li>
+<li>On Web, fix touch input not gaining or losing focus.</li>
+<li>On Web, fix touch location to be as accurate as mouse position.</li>
+<li>On Web, handle coalesced pointer events, which increases the resolution of pointer inputs.</li>
+<li>On Web, implement <code>Window::focus_window()</code>.</li>
+<li>On Web, implement <code>Window::set_(min|max)_inner_size()</code>.</li>
+<li>On Web, implement <code>WindowEvent::Occluded</code>.</li>
+<li>On Web, never return a <code>MonitorHandle</code>.</li>
+<li>On Web, prevent clicks on the canvas to select text.</li>
+<li>On Web, remove any fullscreen requests from the queue when an external fullscreen activation was detected.</li>
+<li>On Web, remove unnecessary <code>Window::is_dark_mode()</code>, which was replaced with <code>Window::theme()</code>.</li>
+<li>On Web, respect <code>EventLoopWindowTarget::listen_device_events()</code> settings.</li>
+<li>On Web, scale factor and dark mode detection are now more robust.</li>
+<li>On Web, send mouse position on button release as well.</li>
+<li>On Web, take all transient activations on the canvas and window into account to queue a fullscreen request.</li>
+<li>On Web, use <code>Window.requestAnimationFrame()</code> to throttle <code>RedrawRequested</code> events.</li>
+<li>On Web, use the correct canvas size when calculating the new size during scale factor change, instead of using the output bitmap size.</li>
+<li>On Web: fix <code>Window::request_redraw</code> not waking the event loop when called from outside the loop.</li>
+<li>On Web: fix position of touch events to be relative to the canvas.</li>
+<li>On Windows, add <code>drag_resize_window</code> method support.</li>
+<li>On Windows, add horizontal MouseWheel <code>DeviceEvent</code>.</li>
+<li>On Windows, added <code>WindowBuilderExtWindows::with_class_name</code> to customize the internal class name.</li>
+<li>On Windows, fix IME APIs not working when from non event loop thread.</li>
+<li>On Windows, fix <code>CursorEnter/Left</code> not being sent when grabbing the mouse.</li>
+<li>On Windows, fix <code>RedrawRequested</code> not being delivered when calling <code>Window::request_redraw</code> from <code>RedrawRequested</code>.</li>
+<li>On Windows, port to <code>windows-sys</code> version 0.48.0.</li>
+<li>On X11, add a <code>with_embedded_parent_window</code> function to the window builder to allow embedding a window into another window.</li>
+<li>On X11, fix event loop not waking up on <code>ControlFlow::Poll</code> and <code>ControlFlow::WaitUntil</code>.</li>
+<li>On X11, fix false positive flagging of key repeats when pressing different keys with no release between presses.</li>
+<li>On X11, set <code>visual_id</code> in returned <code>raw-window-handle</code>.</li>
+<li>On iOS, add ability to change the status bar style.</li>
+<li>On iOS, add force data to touch events when using the Apple Pencil.</li>
+<li>On iOS, always wake the event loop when transitioning from <code>ControlFlow::Poll</code> to <code>ControlFlow::Poll</code>.</li>
+<li>On iOS, send events <code>WindowEvent::Occluded(false)</code>, <code>WindowEvent::Occluded(true)</code> when application enters/leaves foreground.</li>
+<li>On macOS, add tabbing APIs on <code>WindowExtMacOS</code> and <code>EventLoopWindowTargetExtMacOS</code>.</li>
+<li>On macOS, fix assertion when pressing <code>Globe</code> key.</li>
+<li>On macOS, fix crash in <code>window.set_minimized(false)</code>.</li>
+<li>On macOS, fix crash when dropping <code>Window</code>.</li>
+</ul>
+</div></details></section></div></main></body></html>
