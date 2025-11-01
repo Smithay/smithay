@@ -10,7 +10,7 @@
 //! # use smithay::utils::Serial;
 //! # use smithay::wayland::shell::xdg::{XdgShellState, PopupSurface, PositionerState};
 //! # use smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface};
-//! use smithay::wayland::shell::xdg::dialog::{XdgDialogState, XdgDialogHandler};
+//! use smithay::wayland::shell::xdg::dialog::{ToplevelDialogHint, XdgDialogState, XdgDialogHandler};
 //!
 //! # struct State { dialog_state: XdgDialogState, seat_state: SeatState<Self> }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -47,7 +47,7 @@
 //!     // ...
 //! }
 //! impl XdgDialogHandler for State {
-//!     fn modal_changed(&mut self, toplevel: ToplevelSurface, is_modal: bool) { /* ... */ }
+//!     fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, hint: ToplevelDialogHint) { /* ... */ }
 //! }
 //!
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
@@ -120,10 +120,10 @@ pub trait XdgDialogHandler:
     + Dispatch<XdgWmDialogV1, ()>
     + Dispatch<XdgDialogV1, ToplevelSurface>
 {
-    /// Does client want to be presented as a modal dialog
-    fn modal_changed(&mut self, toplevel: ToplevelSurface, is_modal: bool) {
+    /// The client has changed the dialog hint associated with the toplevel
+    fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, hint: ToplevelDialogHint) {
         let _ = toplevel;
-        let _ = is_modal;
+        let _ = hint;
     }
 }
 
@@ -192,6 +192,10 @@ impl<D: XdgDialogHandler> Dispatch<XdgWmDialogV1, (), D> for XdgDialogState {
 
                 *dialog_guard = Some(toplevel_dialog);
                 drop(dialog_guard);
+
+                if set_dialog_hint(toplevel.wl_surface(), ToplevelDialogHint::Dialog) {
+                    state.dialog_hint_changed(toplevel, ToplevelDialogHint::Dialog);
+                }
             }
 
             Request::Destroy => {}
@@ -217,20 +221,20 @@ impl<D: XdgDialogHandler> Dispatch<XdgDialogV1, ToplevelSurface, D> for XdgDialo
 
         match request {
             Request::SetModal => {
-                if set_modal(toplevel.wl_surface()) {
-                    state.modal_changed(toplevel.clone(), true);
+                if set_dialog_hint(toplevel.wl_surface(), ToplevelDialogHint::Modal) {
+                    state.dialog_hint_changed(toplevel.clone(), ToplevelDialogHint::Modal);
                 }
             }
 
             Request::UnsetModal => {
-                if unset_modal(toplevel.wl_surface()) {
-                    state.modal_changed(toplevel.clone(), false);
+                if set_dialog_hint(toplevel.wl_surface(), ToplevelDialogHint::Dialog) {
+                    state.dialog_hint_changed(toplevel.clone(), ToplevelDialogHint::Dialog);
                 }
             }
 
             Request::Destroy => {
-                if unset_modal(toplevel.wl_surface()) {
-                    state.modal_changed(toplevel.clone(), false);
+                if set_dialog_hint(toplevel.wl_surface(), ToplevelDialogHint::Unknown) {
+                    state.dialog_hint_changed(toplevel.clone(), ToplevelDialogHint::Unknown);
                 }
 
                 if let Some(data) = toplevel.xdg_toplevel().data::<XdgShellSurfaceUserData>() {
@@ -243,27 +247,24 @@ impl<D: XdgDialogHandler> Dispatch<XdgDialogV1, ToplevelSurface, D> for XdgDialo
     }
 }
 
-/// Returns true if changed
-fn set_modal(wl_surface: &WlSurface) -> bool {
-    compositor::with_states(wl_surface, |states| {
-        let role = &mut states
-            .data_map
-            .get::<XdgToplevelSurfaceData>()
-            .unwrap()
-            .lock()
-            .unwrap();
-
-        if role.modal {
-            false
-        } else {
-            role.modal = true;
-            true
-        }
-    })
+/// Dialog hint assigned to toplevels by the xdg-dialog-v1 protocol
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ToplevelDialogHint {
+    /// The toplevel is not associated with an xdg_dialog_v1 object.
+    #[default]
+    Unknown,
+    /// The toplevel is a "dialog" (e.g. a temporary window) relative
+    /// to its parent (see xdg_toplevel.set_parent).
+    Dialog,
+    /// The toplevel is a dialog with "modal" behaviour. Modal dialogs
+    /// typically require to be fully addressed by the user (i.e. closed)
+    /// before resuming interaction with the parent toplevel,
+    /// and may require a distinct presentation.
+    Modal,
 }
 
 /// Returns true if changed
-fn unset_modal(wl_surface: &WlSurface) -> bool {
+fn set_dialog_hint(wl_surface: &WlSurface, hint: ToplevelDialogHint) -> bool {
     compositor::with_states(wl_surface, |states| {
         let role = &mut states
             .data_map
@@ -272,8 +273,8 @@ fn unset_modal(wl_surface: &WlSurface) -> bool {
             .lock()
             .unwrap();
 
-        if role.modal {
-            role.modal = false;
+        if role.dialog_hint != hint {
+            role.dialog_hint = hint;
             true
         } else {
             false
