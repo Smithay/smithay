@@ -118,7 +118,7 @@ impl TabletTool {
             }
         }
 
-        self.is_down = false; 
+        self.is_down = false;
     }
 
     fn motion(
