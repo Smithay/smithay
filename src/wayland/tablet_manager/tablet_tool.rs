@@ -72,6 +72,7 @@ impl TabletTool {
 
             if let Some(wl_tool) = wl_tool.and_then(|tool| tool.upgrade().ok()) {
                 if self.is_down {
+                    wl_tool.pressure(0);
                     wl_tool.up();
                     self.is_down = false;
                 }
@@ -110,13 +111,14 @@ impl TabletTool {
                 .and_then(|tool| tool.upgrade().ok())
             {
                 if self.is_down {
+                    wl_tool.pressure(0);
                     wl_tool.up();
                     wl_tool.frame(time);
                 }
             }
         }
 
-        self.is_down = false;
+        self.is_down = false; 
     }
 
     fn motion(
