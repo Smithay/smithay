@@ -24,18 +24,13 @@ pub(crate) struct TextInput {
 impl TextInput {
     fn with_focused_client_all_text_inputs<F>(&mut self, mut f: F)
     where
-        F: FnMut(&ZwpTextInputV3, &WlSurface, u32, &InputMethodHandle),
+        F: FnMut(&ZwpTextInputV3, &WlSurface, u32),
     {
         if let Some(surface) = self.focus.as_ref().filter(|surface| surface.is_alive()) {
             for text_input in self.instances.iter() {
                 let instance_id = text_input.instance.id();
                 if instance_id.same_client_as(&surface.id()) {
-                    f(
-                        &text_input.instance,
-                        surface,
-                        text_input.serial,
-                        &text_input.input_method_handle,
-                    );
+                    f(&text_input.instance, surface, text_input.serial);
                     break;
                 }
             }
@@ -44,7 +39,7 @@ impl TextInput {
 
     fn with_active_text_input<F>(&mut self, mut f: F)
     where
-        F: FnMut(&ZwpTextInputV3, &WlSurface, u32, &InputMethodHandle),
+        F: FnMut(&ZwpTextInputV3, &WlSurface, u32),
     {
         let active_id = match &self.active_text_input_id {
             Some(active_text_input_id) => active_text_input_id,
@@ -63,12 +58,7 @@ impl TextInput {
             .filter(|instance| instance.instance.id().same_client_as(&surface_id))
             .find(|instance| &instance.instance.id() == active_id)
         {
-            f(
-                &text_input.instance,
-                surface,
-                text_input.serial,
-                &text_input.input_method_handle,
-            );
+            f(&text_input.instance, surface, text_input.serial);
         }
     }
 }
@@ -119,25 +109,12 @@ impl TextInputHandle {
         }
     }
 
-    /// Get the input method handle for a specific text input instance.
-    pub fn get_input_method(&self, text_input_id: &ObjectId) -> Option<InputMethodHandle> {
-        let inner = self.inner.lock().unwrap();
-        inner
-            .instances
-            .iter()
-            .find(|inst| inst.instance.id() == *text_input_id)
-            .map(|inst| inst.input_method_handle.clone())
-    }
-
-    /// Get the input method handle for the currently active text input.
-    pub fn get_active_input_method(&self) -> Option<InputMethodHandle> {
-        let inner = self.inner.lock().unwrap();
-        let active_id = inner.active_text_input_id.as_ref()?;
-        inner
-            .instances
-            .iter()
-            .find(|inst| inst.instance.id() == *active_id)
-            .map(|inst| inst.input_method_handle.clone())
+    /// Assign the given input method handle to all text inputs (global mode).
+    pub fn set_input_method_globally(&self, input_method_handle: InputMethodHandle) {
+        let mut inner = self.inner.lock().unwrap();
+        for instance in inner.instances.iter_mut() {
+            instance.input_method_handle = input_method_handle.clone();
+        }
     }
 
     /// Return the currently focused surface.
@@ -159,7 +136,7 @@ impl TextInputHandle {
         // Leaving clears the active text input.
         inner.active_text_input_id = None;
         // NOTE: we implement it in a symmetrical way with `enter`.
-        inner.with_focused_client_all_text_inputs(|text_input, focus, _, _| {
+        inner.with_focused_client_all_text_inputs(|text_input, focus, _| {
             text_input.leave(focus);
         });
     }
@@ -170,7 +147,7 @@ impl TextInputHandle {
         let mut inner = self.inner.lock().unwrap();
         // NOTE: protocol states that if we have multiple text inputs enabled, `enter` must
         // be send for each of them.
-        inner.with_focused_client_all_text_inputs(|text_input, focus, _, _| {
+        inner.with_focused_client_all_text_inputs(|text_input, focus, _| {
             text_input.enter(focus);
         });
     }
@@ -179,7 +156,7 @@ impl TextInputHandle {
     /// the state should be discarded and wrong serial sent.
     pub fn done(&self, discard_state: bool) {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_active_text_input(|text_input, _, serial, _| {
+        inner.with_active_text_input(|text_input, _, serial| {
             if discard_state {
                 debug!("discarding text-input state due to serial");
                 // Discarding is done by sending non-matching serial.
@@ -196,7 +173,7 @@ impl TextInputHandle {
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_focused_client_all_text_inputs(|ti, surface, _, _| {
+        inner.with_focused_client_all_text_inputs(|ti, surface, _| {
             f(ti, surface);
         });
     }
@@ -207,7 +184,7 @@ impl TextInputHandle {
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
         let mut inner = self.inner.lock().unwrap();
-        inner.with_active_text_input(|ti, surface, _, _| {
+        inner.with_active_text_input(|ti, surface, _| {
             f(ti, surface);
         });
     }
@@ -220,7 +197,7 @@ impl TextInputHandle {
     {
         let mut inner = self.inner.lock().unwrap();
         let mut should_default = true;
-        inner.with_active_text_input(|_, _, serial, _| {
+        inner.with_active_text_input(|_, _, serial| {
             should_default = false;
             callback(serial);
         });
