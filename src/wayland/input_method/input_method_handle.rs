@@ -112,22 +112,6 @@ impl InputMethodHandle {
         true
     }
 
-    /// Get the ObjectId of the currently active input method instance.
-    pub fn get_active_instance(&self) -> Option<ObjectId> {
-        self.inner.lock().unwrap().active_input_method_id.clone()
-    }
-
-    /// Get all input method instance IDs.
-    pub fn get_all_instances(&self) -> Vec<ObjectId> {
-        self.inner
-            .lock()
-            .unwrap()
-            .instances
-            .iter()
-            .map(|i| i.object.id())
-            .collect()
-    }
-
     /// Indicates that an input method has grabbed a keyboard
     pub fn keyboard_grabbed(&self) -> bool {
         let inner = self.inner.lock().unwrap();
