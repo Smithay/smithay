@@ -148,10 +148,10 @@ where
                 let seat = Seat::<D>::from_resource(&seat).unwrap();
 
                 let user_data = seat.user_data();
+                user_data.insert_if_missing(TextInputHandle::default);
                 user_data.insert_if_missing(InputMethodHandle::default);
-                let input_method_handle = user_data.get::<InputMethodHandle>().unwrap();
-                user_data.insert_if_missing(|| TextInputHandle::new(input_method_handle.clone()));
                 let handle = user_data.get::<TextInputHandle>().unwrap();
+                let input_method_handle = user_data.get::<InputMethodHandle>().unwrap();
                 let instance = data_init.init(
                     id,
                     TextInputUserData {
