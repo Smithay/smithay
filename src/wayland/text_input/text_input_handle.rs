@@ -64,12 +64,29 @@ impl TextInput {
 }
 
 /// Handle to text input instances
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct TextInputHandle {
     pub(crate) inner: Arc<Mutex<TextInput>>,
+    input_method_handle: InputMethodHandle,
+}
+
+impl Default for TextInputHandle {
+    fn default() -> Self {
+        Self {
+            inner: Arc::default(),
+            input_method_handle: InputMethodHandle::default(),
+        }
+    }
 }
 
 impl TextInputHandle {
+    pub(super) fn new(input_method_handle: InputMethodHandle) -> Self {
+        Self {
+            inner: Arc::default(),
+            input_method_handle,
+        }
+    }
+
     pub(super) fn add_instance(&self, instance: &ZwpTextInputV3) {
         let mut inner = self.inner.lock().unwrap();
         inner.instances.push(Instance {
@@ -95,10 +112,10 @@ impl TextInputHandle {
 
     /// Set the input method for the currently focused text input by app_id.
     /// Returns true if an input method with the given app_id was found and assigned.
-    pub fn set_input_method(&self, app_id: &str, input_method_handle: &InputMethodHandle) -> bool {
+    pub fn set_input_method(&self, app_id: &str) -> bool {
         // Find the input method instance with this app_id
         let im_object_id = {
-            let im_inner = input_method_handle.inner.lock().unwrap();
+            let im_inner = self.input_method_handle.inner.lock().unwrap();
             let instance = im_inner.instances.iter().find(|i| i.app_id == app_id);
             let Some(im_instance) = instance else {
                 return false;
@@ -124,10 +141,10 @@ impl TextInputHandle {
 
     /// Assign the given input method to all text inputs by app_id (global mode).
     /// Returns true if an input method with the given app_id was found.
-    pub fn set_input_method_globally(&self, app_id: &str, input_method_handle: &InputMethodHandle) -> bool {
+    pub fn set_input_method_globally(&self, app_id: &str) -> bool {
         // Find the input method instance with this app_id
         let im_object_id = {
-            let im_inner = input_method_handle.inner.lock().unwrap();
+            let im_inner = self.input_method_handle.inner.lock().unwrap();
             let instance = im_inner.instances.iter().find(|i| i.app_id == app_id);
             let Some(im_instance) = instance else {
                 return false;
