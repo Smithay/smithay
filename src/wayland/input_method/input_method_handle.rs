@@ -1,5 +1,5 @@
 use std::{
-    fmt,
+    fmt, fs,
     sync::{Arc, Mutex},
 };
 
@@ -42,6 +42,7 @@ pub(crate) struct InputMethod {
 pub(crate) struct Instance {
     pub object: ZwpInputMethodV2,
     pub serial: u32,
+    pub app_id: String,
 }
 
 impl Instance {
@@ -52,6 +53,32 @@ impl Instance {
     }
 }
 
+/// Extract app_id from a client's PID by reading /proc/<pid>/comm
+fn get_app_id_from_pid(pid: i32) -> String {
+    // Try to read the process name from /proc/<pid>/comm
+    let comm_path = format!("/proc/{}/comm", pid);
+    if let Ok(comm) = fs::read_to_string(&comm_path) {
+        return comm.trim().to_string();
+    }
+
+    // Fallback: try to get the executable name from /proc/<pid>/cmdline
+    let cmdline_path = format!("/proc/{}/cmdline", pid);
+    if let Ok(cmdline) = fs::read_to_string(&cmdline_path) {
+        // cmdline is null-separated, take the first argument (the executable)
+        if let Some(exe) = cmdline.split('\0').next() {
+            // Extract just the filename from the path
+            if let Some(name) = exe.rsplit('/').next() {
+                if !name.is_empty() {
+                    return name.to_string();
+                }
+            }
+        }
+    }
+
+    // Final fallback: use the PID as identifier
+    format!("unknown-{}", pid)
+}
+
 /// Handle to an input method instance
 #[derive(Default, Debug, Clone)]
 pub struct InputMethodHandle {
@@ -59,11 +86,18 @@ pub struct InputMethodHandle {
 }
 
 impl InputMethodHandle {
-    pub(super) fn add_instance(&self, instance: &ZwpInputMethodV2) {
+    pub(super) fn add_instance(&self, instance: &ZwpInputMethodV2, client: &Client, dh: &DisplayHandle) {
+        let app_id = client
+            .get_credentials(dh)
+            .ok()
+            .map(|creds| get_app_id_from_pid(creds.pid))
+            .unwrap_or_else(|| format!("unknown-client-{:?}", client.id()));
+
         let mut inner = self.inner.lock().unwrap();
         inner.instances.push(Instance {
             object: instance.clone(),
             serial: 0,
+            app_id,
         });
         if inner.active_input_method_id.is_none() {
             inner.active_input_method_id = Some(instance.id());
@@ -100,16 +134,16 @@ impl InputMethodHandle {
         f(&mut inner);
     }
 
-    /// Set which input method instance should be active.
-    /// Returns true if the instance was found and set as active.
-    pub fn set_active_instance(&self, instance_id: ObjectId) -> bool {
+    /// Set which input method instance should be active by app_id.
+    /// Returns true if an instance with the given app_id was found and set as active.
+    pub fn set_active_instance(&self, app_id: &str) -> bool {
         let mut inner = self.inner.lock().unwrap();
-        let exists = inner.instances.iter().any(|i| i.object.id() == instance_id);
-        if !exists {
-            return false;
+        if let Some(instance) = inner.instances.iter().find(|i| i.app_id == app_id) {
+            inner.active_input_method_id = Some(instance.object.id());
+            true
+        } else {
+            false
         }
-        inner.active_input_method_id = Some(instance_id);
-        true
     }
 
     /// Indicates that an input method has grabbed a keyboard

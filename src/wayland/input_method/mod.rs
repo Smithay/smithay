@@ -195,11 +195,11 @@ where
 {
     fn request(
         _state: &mut D,
-        _client: &Client,
+        client: &Client,
         _: &ZwpInputMethodManagerV2,
         request: zwp_input_method_manager_v2::Request,
         _: &(),
-        _dh: &DisplayHandle,
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -227,7 +227,7 @@ where
                         dismiss_popup: D::dismiss_popup,
                     },
                 );
-                handle.add_instance(&instance);
+                handle.add_instance(&instance, client, dh);
             }
             zwp_input_method_manager_v2::Request::Destroy => {
                 // Nothing to do
