@@ -70,13 +70,20 @@ pub struct TextInputHandle {
 }
 
 impl TextInputHandle {
-    pub(super) fn add_instance(&self, instance: &ZwpTextInputV3) {
+    pub(super) fn add_instance(&self, instance: &ZwpTextInputV3, input_method_handle: &InputMethodHandle) {
         let mut inner = self.inner.lock().unwrap();
+        // Get the currently active input method id (if any) to set as default
+        let active_im_id = input_method_handle
+            .inner
+            .lock()
+            .unwrap()
+            .active_input_method_id
+            .clone();
         inner.instances.push(Instance {
             instance: instance.clone(),
             serial: 0,
             pending_state: Default::default(),
-            input_method_id: None,
+            input_method_id: active_im_id,
         });
     }
 
