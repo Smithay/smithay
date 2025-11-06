@@ -1,4 +1,9 @@
-use std::{fmt, os::fd::BorrowedFd, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt,
+    os::fd::{BorrowedFd, OwnedFd},
+    sync::{Arc, Mutex},
+};
 
 use calloop::{LoopHandle, RegistrationToken};
 use tracing::{debug, trace, warn};
@@ -37,8 +42,9 @@ pub struct XWmSelection {
     pub mime_types: Vec<String>,
     pub timestamp: u32,
 
-    pub incoming: Vec<IncomingTransfer>,
-    pub outgoing: Vec<OutgoingTransfer>,
+    pub pending_transfers: Arc<Mutex<HashMap<X11Window, (OwnedX11Window, OwnedFd)>>>,
+    pub incoming: HashMap<X11Window, IncomingTransfer>,
+    pub outgoing: HashMap<X11Window, OutgoingTransfer>,
 }
 
 pub struct IncomingTransfer {
@@ -216,9 +222,28 @@ impl XWmSelection {
             owner: x11rb::NONE,
             mime_types: Vec::new(),
             timestamp: x11rb::CURRENT_TIME,
-            incoming: Vec::new(),
-            outgoing: Vec::new(),
+            pending_transfers: Arc::new(Mutex::new(HashMap::new())),
+            incoming: HashMap::new(),
+            outgoing: HashMap::new(),
         })
+    }
+
+    pub fn window_destroyed<D>(&mut self, window: &X11Window, loop_handle: &LoopHandle<'_, D>) -> bool {
+        (if let Some(transfer) = self.incoming.remove(window) {
+            transfer.destroy(loop_handle);
+            true
+        } else {
+            false
+        }) || (if let Some(transfer) = self.outgoing.remove(window) {
+            transfer.destroy(loop_handle);
+            true
+        } else {
+            false
+        }) || self.pending_transfers.lock().unwrap().remove(window).is_some()
+    }
+
+    pub fn has_window(&self, window: &X11Window) -> bool {
+        self.incoming.contains_key(window) || self.pending_transfers.lock().unwrap().contains_key(window)
     }
 
     pub fn type_(&self) -> Option<SelectionTarget> {

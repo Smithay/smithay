@@ -189,12 +189,12 @@ use x11rb::{
     errors::{ReplyError, ReplyOrIdError},
     protocol::{
         composite::{ConnectionExt as _, Redirect},
-        randr::{ConnectionExt, Notify, NotifyMask},
+        randr::{ConnectionExt as _, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
         xfixes::ConnectionExt as _,
         xproto::{
             AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux,
-            ConnectionExt as _, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper,
+            ConnectionExt, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper,
             GcontextWrapper, ImageFormat, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
             StackMode, WindowClass, CONFIGURE_NOTIFY_EVENT,
         },
@@ -1088,17 +1088,12 @@ impl X11Wm {
     }
 
     /// Request to transfer the active `selection` for the provided `mime_type` to the provided file descriptor.
-    pub fn send_selection<D>(
+    pub fn send_selection(
         &mut self,
         selection_type: SelectionTarget,
         mime_type: String,
         fd: OwnedFd,
-        loop_handle: LoopHandle<'_, D>,
-    ) -> Result<(), SelectionError>
-    where
-        D: XwmHandler + 'static,
-    {
-        let xwm_id = self.id();
+    ) -> Result<(), SelectionError> {
         let selection = match selection_type {
             SelectionTarget::Clipboard => &mut self.clipboard,
             SelectionTarget::Primary => &mut self.primary,
@@ -1110,38 +1105,37 @@ impl X11Wm {
             "Send request from XWayland",
         );
 
-        let atom = match &*mime_type {
-            "text/plain;charset=utf-8" => self.atoms.UTF8_STRING,
-            "text/plain" => self.atoms.TEXT,
-            x => {
-                let prop = self
-                    .conn
-                    .get_property(true, selection.window, self.atoms.TARGETS, AtomEnum::ANY, 0, 4096)?
-                    .reply_unchecked()?
-                    .ok_or(SelectionError::UnableToDetermineAtom)?;
-                if prop.type_ != AtomEnum::ATOM.into() {
-                    return Err(SelectionError::UnableToDetermineAtom);
-                }
-                let values = prop.value32().ok_or(SelectionError::UnableToDetermineAtom)?;
+        let atom = atom_from_mime(&mime_type, &self.conn, &self.atoms)?
+            .ok_or(SelectionError::UnableToDetermineAtom)?;
 
-                let Some(atom) = values
-                    .filter_map(|atom| {
-                        let cookie = self.conn.get_atom_name(atom).ok()?;
-                        let reply = cookie.reply_unchecked().ok()?;
-                        std::str::from_utf8(&reply?.name)
-                            .ok()
-                            .map(|name| (atom, name.to_string()))
-                    })
-                    .find_map(|(atom, name)| if name == x { Some(atom) } else { None })
-                else {
-                    return Err(SelectionError::UnableToDetermineAtom);
-                };
-
-                atom
-            }
-        };
+        let prop = self
+            .conn
+            .get_property(
+                true,
+                *selection.window,
+                self.atoms.TARGETS,
+                AtomEnum::ANY,
+                0,
+                4096,
+            )?
+            .reply_unchecked()?
+            .ok_or(SelectionError::UnableToDetermineAtom)?;
+        if prop.type_ != AtomEnum::ATOM.into() {
+            return Err(SelectionError::UnableToDetermineAtom);
+        }
+        if !prop
+            .value32()
+            .ok_or(SelectionError::UnableToDetermineAtom)?
+            .any(|target| target == atom)
+        {
+            return Err(SelectionError::UnableToDetermineAtom);
+        }
 
         debug!("Mime-type {:?} / Atom {:?}", mime_type, atom);
+
+        if let Err(err) = rustix::fs::fcntl_setfl(&fd, OFlags::WRONLY | OFlags::NONBLOCK) {
+            warn!(?err, "Failed to restrict wl file descriptor");
+        }
 
         let incoming_window = self.conn.generate_id()?;
         self.conn.create_window(
@@ -1164,61 +1158,12 @@ impl X11Wm {
             self.atoms._WL_SELECTION,
             x11rb::CURRENT_TIME,
         )?;
-
-        if let Err(err) = rustix::fs::fcntl_setfl(&fd, OFlags::WRONLY | OFlags::NONBLOCK) {
-            warn!(?err, "Failed to restrict wl file descriptor");
-        }
-
-        let loop_handle_clone = loop_handle.clone();
-        let token = loop_handle
-            .insert_source(
-                Generic::new(fd, Interest::WRITE, Mode::Level),
-                move |_, fd, data| {
-                    let xwm = data.xwm_state(xwm_id);
-                    let conn = &xwm.conn;
-                    let atoms = &xwm.atoms;
-                    let selection = match selection_type {
-                        SelectionTarget::Clipboard => &mut xwm.clipboard,
-                        SelectionTarget::Primary => &mut xwm.primary,
-                    };
-                    if let Some(transfer) = selection
-                        .incoming
-                        .iter_mut()
-                        .find(|t| t.window == incoming_window)
-                    {
-                        match write_selection_callback(fd.as_fd(), conn, atoms, transfer) {
-                            Ok(IncomingAction::WaitForWritable) => return Ok(PostAction::Continue),
-                            Ok(IncomingAction::WaitForProperty) if !transfer.incr_done => {
-                                return Ok(PostAction::Disable)
-                            }
-                            Ok(_) | Err(_) => {
-                                if let Some(pos) = selection
-                                    .incoming
-                                    .iter()
-                                    .position(|t| t.window == incoming_window)
-                                {
-                                    selection.incoming.remove(pos).destroy(&loop_handle_clone);
-                                }
-                            }
-                        };
-                    }
-                    Ok(PostAction::Remove)
-                },
-            )
-            .map_err(|err| err.error)?;
-        loop_handle.disable(&token)?;
-
-        let transfer = IncomingTransfer {
-            conn: self.conn.clone(),
-            token: Some(token),
-            window: incoming_window,
-            incr: false,
-            source_data: Vec::new(),
-            incr_done: false,
-        };
-        selection.incoming.push(transfer);
-
         self.conn.flush()?;
+
+        selection.pending_transfers.lock().unwrap().insert(
+            incoming_window,
+            (OwnedX11Window::new(incoming_window, &self.conn), fd),
+        );
         Ok(())
     }
 
@@ -1352,12 +1297,14 @@ where
 
     match event {
         Event::CreateNotify(n) => {
-            if n.window == xwm.wm_window
-                || n.window == xwm.xsettings.window
-                || n.window == xwm.clipboard.window
-                || xwm.clipboard.incoming.iter().any(|i| n.window == i.window)
-                || n.window == xwm.primary.window
-                || xwm.primary.incoming.iter().any(|i| n.window == i.window)
+            if n.window == *xwm.wm_window
+                || n.window == *xwm.xsettings.window
+                || n.window == *xwm.clipboard.window
+                || xwm.clipboard.has_window(&n.window)
+                || n.window == *xwm.primary.window
+                || xwm.primary.has_window(&n.window)
+                || n.window == *xwm.dnd.selection.window
+                || xwm.dnd.selection.has_window(&n.window)
             {
                 return Ok(());
             }
@@ -1646,41 +1593,9 @@ where
             }
         }
         Event::DestroyNotify(n) => {
-            if let Some(selection) = if xwm.clipboard.incoming.iter().any(|t| t.window == n.window)
-                || xwm
-                    .clipboard
-                    .outgoing
-                    .iter()
-                    .any(|t| t.request.requestor == n.window)
-            {
-                Some(&mut xwm.clipboard)
-            } else if xwm.primary.incoming.iter().any(|t| t.window == n.window)
-                || xwm
-                    .primary
-                    .outgoing
-                    .iter()
-                    .any(|t| t.request.requestor == n.window)
-            {
-                Some(&mut xwm.primary)
-            } else {
-                None
-            } {
-                // TODO: drain_filter
-                let mut i = 0;
-                while i < selection.incoming.len() {
-                    if selection.incoming[i].window == n.window {
-                        selection.incoming.remove(i).destroy(loop_handle);
-                    } else {
-                        i += 1;
-                    }
-                }
-                let mut i = 0;
-                while i < selection.outgoing.len() {
-                    if selection.outgoing[i].request.requestor == n.window {
-                        selection.outgoing.remove(i).destroy(loop_handle);
-                    } else {
-                        i += 1;
-                    }
+            if !xwm.clipboard.window_destroyed(&n.window, loop_handle) {
+                if !xwm.primary.window_destroyed(&n.window, loop_handle) {
+                    xwm.dnd.selection.window_destroyed(&n.window, loop_handle);
                 }
             }
 
@@ -1748,48 +1663,15 @@ where
                         if prop.type_ == AtomEnum::ATOM.into() {
                             if let Some(values) = prop.value32() {
                                 let mime_types = values
-                                    .filter_map(|val| {
-                                        match val {
-                                            val if val == xwm.atoms.UTF8_STRING => {
-                                                Some(Ok(String::from("text/plain;charset=utf-8")))
-                                            }
-                                            val if val == xwm.atoms.TEXT => {
-                                                Some(Ok(String::from("text/plain")))
-                                            }
-                                            val if val == xwm.atoms.TARGETS || val == xwm.atoms.TIMESTAMP => {
-                                                None
-                                            }
-                                            val => {
-                                                let cookie = match conn.get_atom_name(val) {
-                                                    Ok(cookie) => cookie,
-                                                    Err(err) => return Some(Err(err)),
-                                                };
-                                                let reply = match cookie.reply_unchecked() {
-                                                    Ok(reply) => reply,
-                                                    Err(err) => return Some(Err(err)),
-                                                };
-                                                if let Some(reply) = reply {
-                                                    if let Ok(name) = std::str::from_utf8(&reply.name) {
-                                                        if name.contains('/') {
-                                                            // hopefully a mime-type
-                                                            Some(Ok(String::from(name)))
-                                                        } else {
-                                                            None
-                                                        }
-                                                    } else {
-                                                        None
-                                                    }
-                                                } else {
-                                                    None
-                                                }
-                                            }
-                                        }
+                                    .filter_map(|val| match val {
+                                        val if val == xwm.atoms.TARGETS || val == xwm.atoms.TIMESTAMP => None,
+                                        val => mime_from_atom(val, &conn, &xwm.atoms).transpose(),
                                     })
                                     .collect::<Result<Vec<String>, _>>()?;
 
                                 if let Some(selection) = selection.type_() {
                                     drop(_guard);
-                                    state.new_selection(xwm_id, selection, mime_types);
+                                    XwmHandler::new_selection(state, xwm_id, selection, mime_types);
                                 }
                             }
                         }
@@ -1797,14 +1679,74 @@ where
                 }
                 x if x == AtomEnum::NONE.into() => {
                     // transfer failed
-                    if let Some(pos) = selection.incoming.iter().position(|t| t.window == n.requestor) {
-                        selection.incoming.remove(pos).destroy(loop_handle);
+                    if let Some(transfer) = selection.incoming.remove(&n.requestor) {
+                        transfer.destroy(loop_handle);
                     }
                 }
                 _ => {
-                    let Some(transfer) = selection.incoming.iter_mut().find(|t| t.window == n.requestor)
-                    else {
-                        return Ok(());
+                    let transfer = if let Some(transfer) = selection.incoming.get_mut(&n.requestor) {
+                        transfer
+                    } else {
+                        // create incoming transfer
+                        let Some((window, fd)) =
+                            selection.pending_transfers.lock().unwrap().remove(&n.requestor)
+                        else {
+                            // no file descriptor for incoming transfer
+                            warn!(
+                                "No file descriptor for incoming transfer to {}. Dropping...",
+                                n.requestor
+                            );
+                            return Ok(());
+                        };
+
+                        let loop_handle_clone = loop_handle.clone();
+                        let incoming_window = *window;
+                        let atom = n.selection;
+                        let token = loop_handle
+                            .insert_source(
+                                Generic::new(fd, Interest::WRITE, Mode::Level),
+                                move |_, fd, data| {
+                                    let xwm = data.xwm_state(xwm_id);
+                                    let conn = &xwm.conn;
+                                    let atoms = &xwm.atoms;
+                                    let selection = match atom {
+                                        x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
+                                        x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
+                                        x if x == xwm.atoms.XdndSelection => &mut xwm.dnd.selection,
+                                        _ => unreachable!(),
+                                    };
+                                    if let Some(transfer) = selection.incoming.get_mut(&incoming_window) {
+                                        match write_selection_callback(fd.as_fd(), conn, atoms, transfer) {
+                                            Ok(IncomingAction::WaitForWritable) => {
+                                                return Ok(PostAction::Continue)
+                                            }
+                                            Ok(IncomingAction::WaitForProperty) if !transfer.incr_done => {
+                                                return Ok(PostAction::Disable)
+                                            }
+                                            Ok(_) | Err(_) => {
+                                                selection
+                                                    .incoming
+                                                    .remove(&incoming_window)
+                                                    .unwrap()
+                                                    .destroy(&loop_handle_clone);
+                                            }
+                                        };
+                                    }
+                                    Ok(PostAction::Remove)
+                                },
+                            )
+                            .map_err(|err| err.error)?;
+                        loop_handle.disable(&token)?;
+
+                        let transfer = IncomingTransfer {
+                            token: Some(token),
+                            window,
+                            incr: false,
+                            source_data: Vec::new(),
+                            incr_done: false,
+                        };
+                        selection.incoming.insert(incoming_window, transfer);
+                        selection.incoming.get_mut(&incoming_window).unwrap()
                     };
 
                     if let Some(prop) = conn
@@ -1825,10 +1767,8 @@ where
                             return Ok(());
                         } else if let Some(token) = transfer.token.as_ref() {
                             let _ = loop_handle.enable(token);
-                        } else if let Some(pos) =
-                            selection.incoming.iter().position(|t| t.window == n.requestor)
-                        {
-                            selection.incoming.remove(pos);
+                        } else {
+                            selection.incoming.remove(&n.requestor);
                         }
                     }
                 }
@@ -1895,19 +1835,12 @@ where
                         let targets = [xwm.atoms.TARGETS, xwm.atoms.TIMESTAMP]
                             .iter()
                             .copied()
-                            .chain(selection.mime_types.iter().filter_map(|mime| {
-                                Some(match &**mime {
-                                    "text/plain" => xwm.atoms.TEXT,
-                                    "text/plain;charset=utf-8" => xwm.atoms.UTF8_STRING,
-                                    mime => {
-                                        conn.intern_atom(false, mime.as_bytes())
-                                            .ok()?
-                                            .reply_unchecked()
-                                            .ok()??
-                                            .atom
-                                    }
-                                })
-                            }))
+                            .chain(
+                                selection
+                                    .mime_types
+                                    .iter()
+                                    .filter_map(|mime| atom_from_mime(mime, &conn, &xwm.atoms).ok()?),
+                            )
                             .collect::<Vec<u32>>();
                         trace!(requstor = n.requestor, ?targets, "Sending TARGETS");
                         conn.change_property32(
@@ -1938,29 +1871,17 @@ where
                         send_selection_notify_resp(&conn, &n, true)?;
                     }
                     target => {
-                        let mime_type = match target {
-                            x if x == xwm.atoms.TEXT => "text/plain".to_string(),
-                            x if x == xwm.atoms.UTF8_STRING => "text/plain;charset=utf-8".to_string(),
-                            x => {
-                                let Some(mime) = conn
-                                    .get_atom_name(x)?
-                                    .reply_unchecked()?
-                                    .and_then(|reply| String::from_utf8(reply.name).ok())
-                                else {
-                                    debug!("Unable to determine mime type from atom: {}", x);
-                                    send_selection_notify_resp(&conn, &n, false)?;
-                                    return Ok(());
-                                };
-
-                                if !selection.mime_types.contains(&mime) {
-                                    warn!(mime, "Mime type requested by X client not offered",);
-                                    send_selection_notify_resp(&conn, &n, false)?;
-                                    return Ok(());
-                                }
-
-                                mime
-                            }
+                        let Some(mime_type) = mime_from_atom(target, &conn, &xwm.atoms)? else {
+                            debug!("Unable to determine mime type from atom: {}", target);
+                            send_selection_notify_resp(&conn, &n, false)?;
+                            return Ok(());
                         };
+
+                        if !selection.mime_types.contains(&mime_type) {
+                            warn!(mime_type, "Mime type requested by X client not offered",);
+                            send_selection_notify_resp(&conn, &n, false)?;
+                            return Ok(());
+                        }
 
                         let (recv_fd, send_fd) = rustix::pipe::pipe_with(
                             rustix::pipe::PipeFlags::CLOEXEC | rustix::pipe::PipeFlags::NONBLOCK,
@@ -1972,21 +1893,14 @@ where
                         // from it. It appears to only ever read from the latest, so purge stale
                         // transfers to prevent clipboard hangs.
 
-                        // TODO: Drain filter
-                        let mut i = 0;
-                        while i < selection.outgoing.len() {
-                            let transfer = &mut selection.outgoing[i];
-                            if transfer.request.requestor == n.requestor {
-                                debug!(
-                                    requestor = transfer.request.requestor,
-                                    "Destroying stale transfer",
-                                );
-                                if transfer.token.is_some() {
-                                    send_selection_notify_resp(&transfer.conn, &transfer.request, false)?;
-                                }
-                                selection.outgoing.remove(i).destroy(loop_handle);
-                            } else {
-                                i += 1;
+                        if let Some(transfer) = selection.outgoing.remove(&n.requestor) {
+                            debug!(
+                                requestor = transfer.request.requestor,
+                                "Destroying stale transfer",
+                            );
+                            if transfer.token.is_some() {
+                                send_selection_notify_resp(&transfer.conn, &transfer.request, false)?;
+                                transfer.destroy(loop_handle);
                             }
                         }
 
@@ -2004,12 +1918,7 @@ where
                                     _ => unreachable!(),
                                 };
 
-                                if let Some((i, transfer)) = selection
-                                    .outgoing
-                                    .iter_mut()
-                                    .enumerate()
-                                    .find(|(_, t)| t.request.requestor == requestor)
-                                {
+                                if let Some(transfer) = selection.outgoing.get_mut(&requestor) {
                                     match read_selection_callback(&xwm.conn, &xwm.atoms, fd.as_fd(), transfer)
                                     {
                                         Ok(OutgoingAction::WaitForReadable) => {
@@ -2017,12 +1926,12 @@ where
                                         } // transfer ongoing
                                         Ok(OutgoingAction::Done) => {
                                             let _ = transfer.token.take();
-                                            selection.outgoing.remove(i);
+                                            selection.outgoing.remove(&requestor);
                                         }
                                         Err(err) => {
                                             warn!(?err, "Transfer aborted");
                                             let _ = transfer.token.take();
-                                            selection.outgoing.remove(i);
+                                            selection.outgoing.remove(&requestor);
                                         }
                                         Ok(OutgoingAction::DoneReading) => {
                                             let _ = transfer.token.take();
@@ -2059,13 +1968,13 @@ where
                             flush_property_on_delete: false,
                             sent_finished: false,
                         };
-                        selection.outgoing.push(transfer);
+                        selection.outgoing.insert(n.requestor, transfer);
 
                         let selection_type = selection.type_();
                         drop(_guard);
 
                         if let Some(selection_type) = selection_type {
-                            state.send_selection(xwm_id, selection_type, mime_type, send_fd);
+                            XwmHandler::send_selection(state, xwm_id, selection_type, mime_type, send_fd);
                         } else {
                             xwm.dnd.transfer(&mime_type, send_fd);
                         }
@@ -2078,23 +1987,21 @@ where
         }
         Event::PropertyNotify(n) => {
             if n.state == Property::NEW_VALUE && n.atom == xwm.atoms._WL_SELECTION {
-                if let Some(selection) = if xwm.clipboard.incoming.iter().any(|t| t.window == n.window) {
+                if let Some(selection) = if xwm.clipboard.incoming.contains_key(&n.window) {
                     Some(&mut xwm.clipboard)
-                } else if xwm.primary.incoming.iter().any(|t| t.window == n.window) {
+                } else if xwm.primary.incoming.contains_key(&n.window) {
                     Some(&mut xwm.primary)
+                } else if xwm.dnd.selection.incoming.contains_key(&n.window) {
+                    Some(&mut xwm.dnd.selection)
                 } else {
                     None
                 } {
-                    let transfer = selection
-                        .incoming
-                        .iter_mut()
-                        .find(|t| t.window == n.window)
-                        .unwrap();
+                    let transfer = selection.incoming.get_mut(&n.window).unwrap();
                     if transfer.incr {
                         if let Some(prop) = conn
                             .get_property(
                                 true,
-                                transfer.window,
+                                *transfer.window,
                                 xwm.atoms._WL_SELECTION,
                                 AtomEnum::ANY,
                                 0,
@@ -2105,11 +2012,7 @@ where
                             if prop.value_len == 0 {
                                 debug!(?transfer, "Incr Transfer complete!");
                                 if transfer.source_data.is_empty() {
-                                    if let Some(pos) =
-                                        selection.incoming.iter().position(|t| t.window == n.window)
-                                    {
-                                        selection.incoming.remove(pos).destroy(loop_handle);
-                                    }
+                                    selection.incoming.remove(&n.window).unwrap().destroy(loop_handle);
                                 } else {
                                     transfer.incr_done = true;
                                 }
@@ -2117,10 +2020,8 @@ where
                                 transfer.read_selection_prop(prop);
                                 if let Some(token) = transfer.token.as_ref() {
                                     let _ = loop_handle.enable(token);
-                                } else if let Some(pos) =
-                                    selection.incoming.iter().position(|t| t.window == n.window)
-                                {
-                                    selection.incoming.remove(pos);
+                                } else {
+                                    selection.incoming.remove(&n.window);
                                 }
                             }
                         }
@@ -2132,33 +2033,29 @@ where
                 if let Some(selection) = if xwm
                     .clipboard
                     .outgoing
-                    .iter()
-                    .any(|t| t.incr && t.request.requestor == n.window && t.request.property == n.atom)
+                    .get(&n.window)
+                    .is_some_and(|t| t.incr && t.request.property == n.atom)
                 {
                     Some(&mut xwm.clipboard)
                 } else if xwm
                     .primary
                     .outgoing
-                    .iter()
-                    .any(|t| t.incr && t.request.requestor == n.window && t.request.property == n.atom)
+                    .get(&n.window)
+                    .is_some_and(|t| t.incr && t.request.property == n.atom)
                 {
                     Some(&mut xwm.primary)
                 } else if xwm
                     .dnd
                     .selection
                     .outgoing
-                    .iter()
-                    .any(|t| t.incr && t.request.requestor == n.window && t.request.property == n.atom)
+                    .get(&n.window)
+                    .is_some_and(|t| t.incr && t.request.property == n.atom)
                 {
                     Some(&mut xwm.dnd.selection)
                 } else {
                     None
                 } {
-                    let transfer = selection
-                        .outgoing
-                        .iter_mut()
-                        .find(|t| t.incr && t.request.requestor == n.window && t.request.property == n.atom)
-                        .unwrap();
+                    let transfer = selection.outgoing.get_mut(&n.window).unwrap();
 
                     transfer.property_set = false;
                     if transfer.flush_property_on_delete {
@@ -2173,13 +2070,9 @@ where
                                 // all bytes have been transferred but the final 0-byte data chunk
                                 // hasn't been sent yet
                                 transfer.flush_property_on_delete = true;
-                            } else if let Some(pos) = selection
-                                .outgoing
-                                .iter()
-                                .position(|t| t.request.requestor == requestor)
-                            {
+                            } else {
                                 // done
-                                selection.outgoing.remove(pos);
+                                selection.outgoing.remove(&requestor);
                             }
                         }
                     }
@@ -2465,4 +2358,34 @@ fn send_configure_notify(
     )?;
     conn.flush()?;
     Ok(())
+}
+
+fn mime_from_atom(
+    atom: u32,
+    conn: &impl ConnectionExt,
+    atoms: &Atoms,
+) -> Result<Option<String>, ConnectionError> {
+    Ok(match atom {
+        x if x == atoms.TEXT => Some("text/plain".to_string()),
+        x if x == atoms.UTF8_STRING => Some("text/plain;charset=utf-8".to_string()),
+        x => conn
+            .get_atom_name(x)?
+            .reply_unchecked()?
+            .and_then(|reply| String::from_utf8(reply.name).ok()),
+    })
+}
+
+fn atom_from_mime(
+    mime: &(impl AsRef<str> + ?Sized),
+    conn: &impl ConnectionExt,
+    atoms: &Atoms,
+) -> Result<Option<u32>, ConnectionError> {
+    Ok(match mime.as_ref() {
+        "text/plain" => Some(atoms.TEXT),
+        "text/plain;charset=utf-8" => Some(atoms.UTF8_STRING),
+        mime => conn
+            .intern_atom(false, mime.as_bytes())?
+            .reply_unchecked()?
+            .map(|reply| reply.atom),
+    })
 }
