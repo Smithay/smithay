@@ -1,8 +1,13 @@
-use std::{cell::RefCell, os::unix::prelude::BorrowedFd, sync::Mutex};
+use std::{
+    any::Any,
+    cell::RefCell,
+    os::fd::BorrowedFd,
+    sync::Mutex,
+};
 use tracing::error;
 
 use wayland_server::{
-    backend::{ClientId, ObjectId},
+    backend::ClientId,
     protocol::{
         wl_data_source::{self, WlDataSource},
         wl_surface::WlSurface,
@@ -114,10 +119,6 @@ impl IsAlive for WlDataSource {
 }
 
 impl Source for WlDataSource {
-    fn is_client_local(&self, _id: &ObjectId) -> bool {
-        false
-    }
-
     fn metadata(&self) -> Option<SourceMetadata> {
         match self.data::<DataSourceUserData>() {
             Some(data) => Some(data.inner.lock().unwrap().clone()),
@@ -153,8 +154,10 @@ impl Source for WlDataSource {
 }
 
 impl Source for WlSurface {
-    fn is_client_local(&self, id: &ObjectId) -> bool {
-        self.id().same_client_as(id)
+    fn is_client_local(&self, target: &dyn Any) -> bool {
+        target
+            .downcast_ref::<WlSurface>()
+            .is_some_and(|target| target.id().same_client_as(&self.id()))
     }
 
     fn metadata(&self) -> Option<SourceMetadata> {
