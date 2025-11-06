@@ -254,16 +254,18 @@ where
             zwlr_layer_surface_v1::Request::SetExclusiveEdge { edge } => {
                 match Anchor::try_from(edge) {
                     Ok(edge) => {
-                        if edge.bits().count_ones() == 1 {
-                            let _ = with_surface_pending_state(layer_surface, |data| {
+                        let _ = with_surface_pending_state(layer_surface, |data| {
+                            if edge.is_empty() {
+                                data.exclusive_edge = None;
+                            } else if edge.bits().count_ones() == 1 {
                                 data.exclusive_edge = Some(edge);
-                            });
-                        } else {
-                            layer_surface.post_error(
-                                zwlr_layer_surface_v1::Error::InvalidExclusiveEdge,
-                                "exclusive edge cannot have multiple edges",
-                            );
-                        }
+                            } else {
+                                layer_surface.post_error(
+                                    zwlr_layer_surface_v1::Error::InvalidExclusiveEdge,
+                                    "exclusive edge cannot have multiple edges",
+                                );
+                            }
+                        });
                     }
                     Err((err, msg)) => {
                         layer_surface.post_error(err, msg);
