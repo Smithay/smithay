@@ -1,10 +1,10 @@
 use std::{
     any::Any,
     cell::RefCell,
-    os::fd::BorrowedFd,
+    os::fd::{AsFd, OwnedFd},
     sync::Mutex,
 };
-use tracing::error;
+use tracing::{debug, error};
 
 use wayland_server::{
     backend::ClientId,
@@ -130,8 +130,9 @@ impl Source for WlDataSource {
         self.action(action.into());
     }
 
-    fn send(&self, mime_type: &str, fd: BorrowedFd<'_>) {
-        self.send(mime_type.to_owned(), fd);
+    fn send(&self, mime_type: &str, fd: OwnedFd) {
+        debug!(?mime_type, "DnD transfer request");
+        self.send(mime_type.to_owned(), fd.as_fd());
     }
 
     fn drop_performed(&self) {
@@ -168,7 +169,7 @@ impl Source for WlSurface {
         let _ = action;
     }
 
-    fn send(&self, mime_type: &str, fd: BorrowedFd<'_>) {
+    fn send(&self, mime_type: &str, fd: OwnedFd) {
         let _ = (mime_type, fd);
         unreachable!("Local dnd drops can't send");
     }

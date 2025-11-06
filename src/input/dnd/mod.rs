@@ -2,7 +2,7 @@
 
 mod grab;
 
-use std::{any::Any, os::fd::BorrowedFd, sync::Arc};
+use std::{any::Any, os::fd::OwnedFd, sync::Arc};
 
 use smallvec::SmallVec;
 use wayland_server::DisplayHandle;
@@ -63,7 +63,7 @@ pub trait Source: IsAlive + Send + Sync + 'static {
     /// An action was selected by the target
     fn choose_action(&self, action: DndAction);
     /// The target requests data to be transferred to the given file descriptor for the given mime-type
-    fn send(&self, mime_type: &str, fd: BorrowedFd<'_>);
+    fn send(&self, mime_type: &str, fd: OwnedFd);
     /// A drop was performed
     fn drop_performed(&self);
     /// The source is cancelled

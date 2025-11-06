@@ -71,7 +71,7 @@
 use std::{
     cell::{Ref, RefCell},
     collections::HashMap,
-    os::{fd::AsFd, unix::io::OwnedFd},
+    os::unix::io::OwnedFd,
     sync::{Arc, Mutex},
 };
 
@@ -272,7 +272,7 @@ fn handle_dnd<D, S>(
                 && source.alive()
                 && data.active;
             if valid {
-                source.send(&mime_type, fd.as_fd());
+                source.send(&mime_type, fd);
             }
         }
         Request::Destroy => {
