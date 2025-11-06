@@ -124,10 +124,10 @@ where
         serial: Serial,
         time: u32,
     ) {
-        if focus
+        if self
+            .current_focus
             .as_ref()
-            .zip(self.current_focus.as_ref())
-            .is_some_and(|((f, _), current)| f != current)
+            .is_some_and(|current| focus.as_ref().is_none_or(|(f, _)| f != current))
         {
             // focus changed, we need to make a leave if appropriate
             if let Some(focus) = self.current_focus.take() {
