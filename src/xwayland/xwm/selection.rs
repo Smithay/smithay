@@ -17,7 +17,10 @@ use x11rb::{
     wrapper::ConnectionExt as _,
 };
 
-use crate::{wayland::selection::SelectionTarget, xwayland::xwm::Atoms};
+use crate::{
+    wayland::selection::SelectionTarget,
+    xwayland::xwm::{Atoms, OwnedX11Window},
+};
 
 // copied from wlroots - docs say "maximum size can vary widely depending on the implementation"
 // and there is no way to query the maximum size, you just get a non-descriptive `Length` error...
@@ -29,7 +32,7 @@ pub struct XWmSelection {
 
     pub conn: Arc<RustConnection>,
     pub atoms: Atoms,
-    pub window: X11Window,
+    pub window: OwnedX11Window,
     pub owner: X11Window,
     pub mime_types: Vec<String>,
     pub timestamp: u32,
@@ -39,9 +42,8 @@ pub struct XWmSelection {
 }
 
 pub struct IncomingTransfer {
-    pub conn: Arc<RustConnection>,
     pub token: Option<RegistrationToken>,
-    pub window: X11Window,
+    pub window: OwnedX11Window,
 
     pub incr: bool,
     pub source_data: Vec<u8>,
@@ -51,7 +53,6 @@ pub struct IncomingTransfer {
 impl fmt::Debug for IncomingTransfer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IncomingTransfer")
-            .field("conn", &"...")
             .field("token", &self.token)
             .field("window", &self.window)
             .field("incr", &self.incr)
@@ -86,7 +87,6 @@ impl IncomingTransfer {
 
 impl Drop for IncomingTransfer {
     fn drop(&mut self) {
-        let _ = self.conn.destroy_window(self.window);
         if self.token.is_some() {
             tracing::warn!(
                 ?self,
@@ -212,7 +212,7 @@ impl XWmSelection {
             atom,
             conn: conn.clone(),
             atoms: atoms.clone(),
-            window,
+            window: OwnedX11Window::new(window, conn),
             owner: x11rb::NONE,
             mime_types: Vec::new(),
             timestamp: x11rb::CURRENT_TIME,
@@ -227,12 +227,6 @@ impl XWmSelection {
             x if x == self.atoms.PRIMARY => Some(SelectionTarget::Primary),
             _ => None,
         }
-    }
-}
-
-impl Drop for XWmSelection {
-    fn drop(&mut self) {
-        let _ = self.conn.destroy_window(self.window);
     }
 }
 
@@ -336,7 +330,7 @@ pub fn write_selection_callback(
     match transfer.write_selection(fd) {
         Ok(true) => {
             if transfer.incr {
-                conn.delete_property(transfer.window, atoms._WL_SELECTION)?;
+                conn.delete_property(*transfer.window, atoms._WL_SELECTION)?;
                 Ok(IncomingAction::WaitForProperty)
             } else {
                 debug!(?transfer, "Non-Incr Transfer complete!");
@@ -348,7 +342,7 @@ pub fn write_selection_callback(
             warn!(?err, "Transfer errored");
             if transfer.incr {
                 // even if it failed, we still need to drain the incr transfer
-                conn.delete_property(transfer.window, atoms._WL_SELECTION)?;
+                conn.delete_property(*transfer.window, atoms._WL_SELECTION)?;
             }
             Ok(IncomingAction::Done)
         }
