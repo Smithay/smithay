@@ -1345,6 +1345,7 @@ where
                 Arc::downgrade(&conn),
                 xwm.atoms,
                 geometry,
+                xwm.dnd.xdnd_active.clone(),
             );
             surface.update_properties()?;
             xwm.windows.push(surface.clone());
