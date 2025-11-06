@@ -2,10 +2,10 @@
 
 mod grab;
 
-use std::{os::fd::BorrowedFd, sync::Arc};
+use std::{any::Any, os::fd::BorrowedFd, sync::Arc};
 
 use smallvec::SmallVec;
-use wayland_server::{backend::ObjectId, DisplayHandle};
+use wayland_server::DisplayHandle;
 
 use crate::{
     input::{Seat, SeatHandler},
@@ -51,8 +51,8 @@ pub trait Source: IsAlive + Send + Sync + 'static {
     /// Method specifically for implementing drag'n'drop operations,
     /// which are only visible to a particular client with data
     /// being transferred out-of-band.
-    fn is_client_local(&self, id: &ObjectId) -> bool {
-        let _ = id;
+    fn is_client_local(&self, target: &dyn Any) -> bool {
+        let _ = target;
         false
     }
 

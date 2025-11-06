@@ -404,7 +404,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             chosen_action: DndAction::empty(),
         }));
 
-        if source.is_client_local(&self.id()) {
+        if source.is_client_local(self) {
             for device in seat_data
                 .known_data_devices()
                 .filter(|d| d.id().same_client_as(&self.id()))
