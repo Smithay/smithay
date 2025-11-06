@@ -13,11 +13,20 @@ use crate::{
     utils::{user_data::UserDataMap, Client, IsAlive, Logical, Rectangle, Serial, Size},
     wayland::{compositor, seat::keyboard::enter_internal},
 };
+#[cfg(feature = "desktop")]
+use crate::{
+    desktop::{utils::under_from_surface_tree, WindowSurfaceType},
+    utils::Point,
+};
+
 use atomic_float::AtomicF64;
 use encoding_rs::WINDOWS_1252;
 use std::{
     collections::HashSet,
-    sync::{atomic::Ordering, Arc, Mutex, Weak},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, Weak,
+    },
 };
 use tracing::warn;
 use wayland_server::protocol::wl_surface::WlSurface;
@@ -48,6 +57,8 @@ pub struct X11Surface {
     pub(super) conn: Weak<RustConnection>,
     pub(super) atoms: super::Atoms,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
+    pub(super) xdnd_active: Arc<AtomicBool>,
     user_data: Arc<UserDataMap>,
 }
 
@@ -182,6 +193,7 @@ impl X11Surface {
         conn: Weak<RustConnection>,
         atoms: super::Atoms,
         geometry: Rectangle<i32, Logical>,
+        xdnd_active: Arc<AtomicBool>,
     ) -> X11Surface {
         X11Surface {
             xwm: xwm.map(|wm| wm.id),
@@ -212,6 +224,7 @@ impl X11Surface {
                 opacity: None,
                 pending_enter: None,
             })),
+            xdnd_active,
             user_data: Arc::new(UserDataMap::new()),
         }
     }
@@ -1017,6 +1030,33 @@ impl X11Surface {
             }
         }
         Ok(0)
+    }
+
+    /// Returns the topmost (sub-)surface under a given position of the surface.
+    ///
+    /// In case the window is not mapped or is unmanaged while an XDND operation is ongoing [`None`] is returned.
+    ///
+    /// - `point` has to be the position to query, relative to (0, 0) of the given surface + `location`.
+    /// - `location` can be used to offset the returned point.
+    /// - `surface_type` can be used to filter the underlying surface tree
+    #[cfg(feature = "desktop")]
+    pub fn surface_under(
+        &self,
+        point: Point<f64, Logical>,
+        location: impl Into<Point<i32, Logical>>,
+        surface_type: WindowSurfaceType,
+    ) -> Option<(WlSurface, Point<i32, Logical>)> {
+        if !surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+            return None;
+        }
+        if self.xdnd_active.load(Ordering::Acquire) && self.is_override_redirect() {
+            return None;
+        }
+        if let Some(surface) = X11Surface::wl_surface(self).as_ref() {
+            return under_from_surface_tree(surface, point, location, surface_type);
+        }
+
+        return None;
     }
 }
 

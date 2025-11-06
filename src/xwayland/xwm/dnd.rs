@@ -4,7 +4,10 @@ use std::{
     collections::HashMap,
     fmt,
     os::fd::OwnedFd,
-    sync::{atomic::Ordering, Arc, Mutex, Weak},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, Weak,
+    },
 };
 
 use atomic_float::AtomicF64;
@@ -52,6 +55,7 @@ pub struct XWmDnd {
     pub selection: XWmSelection,
     pub active_offer: Option<XwmActiveOffer>,
     pub active_drag: Option<XwmActiveDrag>,
+    pub xdnd_active: Arc<AtomicBool>,
 }
 
 impl XWmDnd {
@@ -71,6 +75,7 @@ impl XWmDnd {
             selection,
             active_offer: None,
             active_drag: None,
+            xdnd_active: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -131,12 +136,14 @@ impl XWmDnd {
 
                 let active_drag = xwm.dnd.active_drag.take().unwrap();
                 active_drag.state.lock().unwrap().x11 = X11State::Finished;
+                xwm.dnd.xdnd_active.store(false, Ordering::Release);
             }
         }
 
         if event.owner == x11rb::NONE {
             trace!("XDND selection went away");
             xwm.dnd.active_drag.take();
+            xwm.dnd.xdnd_active.store(false, Ordering::Release);
             return Ok(());
         }
 
@@ -228,6 +235,7 @@ impl XWmDnd {
             state,
             pending_transfers: xwm.dnd.selection.pending_transfers.clone(),
         });
+        xwm.dnd.xdnd_active.store(true, Ordering::Release);
 
         // create the DndGrab
         match (ptr_grab, touch_grab) {
@@ -518,6 +526,7 @@ impl XWmDnd {
             if matches!(&state.wayland, &WlState::Cancelled | &WlState::Finished) {
                 std::mem::drop(state);
                 self.active_drag.take();
+                self.xdnd_active.store(false, Ordering::Release);
             }
         }
         Ok(())
@@ -1085,6 +1094,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
             // the x11 source was presumably dropped on an x11 window, so we are done here.
             if let Some(active_drag) = xwm.dnd.active_drag.take() {
                 active_drag.state.lock().unwrap().x11 = X11State::Finished;
+                xwm.dnd.xdnd_active.store(false, Ordering::Release);
             }
             return;
         };
