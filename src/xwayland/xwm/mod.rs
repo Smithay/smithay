@@ -173,11 +173,12 @@ use rustix::fs::OFlags;
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
+    ops::Deref,
     os::unix::{
         io::{AsFd, OwnedFd},
         net::UnixStream,
     },
-    sync::{atomic::Ordering, Arc},
+    sync::{atomic::Ordering, Arc, Weak},
 };
 use tracing::{debug, debug_span, info, trace, warn};
 use wayland_server::Resource;
@@ -487,7 +488,7 @@ pub struct X11Wm {
     conn: Arc<RustConnection>,
     client_scale: Arc<AtomicF64>,
     screen: Screen,
-    wm_window: X11Window,
+    wm_window: OwnedX11Window,
     atoms: Atoms,
     xsettings: XSettings,
     randr_primary: u32,
@@ -512,8 +513,6 @@ pub struct X11Wm {
 
 impl Drop for X11Wm {
     fn drop(&mut self) {
-        // TODO: Not really needed for Xwayland, but maybe cleanup set root properties?
-        let _ = self.conn.destroy_window(self.wm_window);
         xwm_id::remove(self.id.0);
     }
 }
@@ -586,6 +585,54 @@ pub enum PrimaryOutputError {
 impl From<ConnectionError> for PrimaryOutputError {
     fn from(value: ConnectionError) -> Self {
         PrimaryOutputError::X11Error(value.into())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OwnedX11Window {
+    conn: Weak<RustConnection>,
+    window: Arc<X11Window>,
+}
+
+impl OwnedX11Window {
+    fn new(window: X11Window, conn: &Arc<RustConnection>) -> Self {
+        OwnedX11Window {
+            conn: Arc::downgrade(conn),
+            window: Arc::new(window),
+        }
+    }
+}
+
+impl PartialEq for OwnedX11Window {
+    fn eq(&self, other: &Self) -> bool {
+        *self.window == *other.window
+    }
+}
+
+impl PartialEq<X11Window> for OwnedX11Window {
+    fn eq(&self, other: &X11Window) -> bool {
+        *self.window == *other
+    }
+}
+
+impl Deref for OwnedX11Window {
+    type Target = X11Window;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.window
+    }
+}
+
+impl Drop for OwnedX11Window {
+    fn drop(&mut self) {
+        if let Some(window) = Arc::get_mut(&mut self.window) {
+            if let Some(conn) = self.conn.upgrade() {
+                if let Err(err) = conn.destroy_window(*window) {
+                    warn!("Failed to destroy window: {}", err);
+                }
+                let _ = conn.flush();
+            }
+        }
     }
 }
 
@@ -736,10 +783,11 @@ impl X11Wm {
             "Smithay X WM".as_bytes(),
         )?;
         debug!(window = win, "Created WM Window");
+
+        let conn = Arc::new(conn);
         let xsettings = XSettings::new(&conn, screen.root_depth, screen.root, &atoms)?;
         conn.flush()?;
 
-        let conn = Arc::new(conn);
         let source = X11Source::new(Arc::clone(&conn), win, atoms._SMITHAY_CLOSE_CONNECTION);
 
         let client_data = client.get_data::<XWaylandClientData>().unwrap();
@@ -760,6 +808,7 @@ impl X11Wm {
         let clipboard = XWmSelection::new(&conn, &screen, &atoms, atoms.CLIPBOARD)?;
         let primary = XWmSelection::new(&conn, &screen, &atoms, atoms.PRIMARY)?;
         let dnd = XWmDnd::new(&conn, &screen, &atoms)?;
+        let wm_window = OwnedX11Window::new(win, &conn);
 
         drop(_guard);
         let wm = Self {
@@ -770,7 +819,7 @@ impl X11Wm {
             atoms,
             xsettings,
             randr_primary,
-            wm_window: win,
+            wm_window,
             _xfixes_data,
             clipboard,
             primary,
@@ -1028,8 +1077,8 @@ impl X11Wm {
         if let Some(mime_types) = mime_types {
             selection.mime_types = mime_types;
             self.conn
-                .set_selection_owner(selection.window, selection.atom, x11rb::CURRENT_TIME)?;
-        } else if selection.owner == selection.window {
+                .set_selection_owner(*selection.window, selection.atom, x11rb::CURRENT_TIME)?;
+        } else if selection.owner == *selection.window {
             selection.mime_types = Vec::new();
             self.conn
                 .set_selection_owner(x11rb::NONE, selection.atom, selection.timestamp)?;
@@ -1653,12 +1702,12 @@ where
             };
 
             selection.owner = n.owner;
-            if selection.owner == selection.window {
+            if selection.owner == *selection.window {
                 selection.timestamp = n.timestamp;
                 return Ok(());
             }
 
-            if n.owner == x11rb::NONE && selection.owner != selection.window {
+            if n.owner == x11rb::NONE && selection.owner != *selection.window {
                 // A real X clients selection went away, not our proxy
                 let selection = selection.type_().unwrap();
                 drop(_guard);
@@ -1668,7 +1717,7 @@ where
 
             // Actually query the new selection, which will give us a SelectionNotify event
             conn.convert_selection(
-                selection.window,
+                *selection.window,
                 selection.atom,
                 xwm.atoms.TARGETS,
                 xwm.atoms._WL_SELECTION,
@@ -1688,7 +1737,7 @@ where
                     if let Some(prop) = conn
                         .get_property(
                             true,
-                            selection.window,
+                            *selection.window,
                             xwm.atoms._WL_SELECTION,
                             AtomEnum::ANY,
                             0,
@@ -1761,7 +1810,7 @@ where
                     if let Some(prop) = conn
                         .get_property(
                             true,
-                            transfer.window,
+                            *transfer.window,
                             xwm.atoms._WL_SELECTION,
                             AtomEnum::ANY,
                             0,
@@ -1815,7 +1864,7 @@ where
             };
 
             let _guard = xwm.span.enter();
-            if n.requestor == selection.window {
+            if n.requestor == *selection.window {
                 warn!("Got SelectionRequest from our own selection window.");
                 send_selection_notify_resp(&conn, &n, false)?;
                 return Ok(());
