@@ -1,13 +1,16 @@
 use std::{
     any::Any,
+    cmp,
+    collections::HashMap,
     fmt,
-    os::fd::AsFd,
-    sync::{atomic::Ordering, Arc, Mutex},
+    os::fd::OwnedFd,
+    sync::{atomic::Ordering, Arc, Mutex, Weak},
 };
 
 use atomic_float::AtomicF64;
+use rustix::fs::OFlags;
 use smallvec::SmallVec;
-use tracing::warn;
+use tracing::{debug, trace, warn};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::DisplayHandle;
 use x11rb::{
@@ -16,8 +19,8 @@ use x11rb::{
     protocol::{
         xfixes::SelectionNotifyEvent,
         xproto::{
-            Atom, AtomEnum, ClientMessageData, ClientMessageEvent, ConnectionExt as _, EventMask, PropMode,
-            Screen, Window as X11Window,
+            Atom, AtomEnum, ClientMessageData, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _,
+            CreateWindowAux, EventMask, PropMode, Screen, StackMode, Window as X11Window, WindowClass,
         },
     },
     rust_connection::RustConnection,
@@ -27,16 +30,20 @@ use x11rb::{
 
 use crate::{
     input::{
-        dnd::{DndAction, DndFocus, OfferData, Source},
+        dnd::{DnDGrab, DndAction, DndFocus, OfferData, Source, SourceMetadata},
+        pointer::Focus,
         Seat, SeatHandler,
     },
-    utils::{Logical, Point, Serial},
+    utils::{IsAlive, Logical, Point, Serial},
+    wayland::selection::data_device::DataDeviceHandler,
     xwayland::{
-        xwm::{selection::XWmSelection, Atoms},
+        xwm::{atom_from_mime, mime_from_atom, selection::XWmSelection, Atoms, OwnedX11Window, XwmId},
         X11Surface, XwmHandler,
     },
 };
 
+// TODO: We should have a central source for this
+const BTN_LEFT: u32 = 0x110;
 const DND_VERSION: u32 = 5;
 const MIN_DND_VERSION: u32 = 2;
 
@@ -44,6 +51,7 @@ const MIN_DND_VERSION: u32 = 2;
 pub struct XWmDnd {
     pub selection: XWmSelection,
     pub active_offer: Option<XwmActiveOffer>,
+    pub active_drag: Option<XwmActiveDrag>,
 }
 
 impl XWmDnd {
@@ -52,7 +60,7 @@ impl XWmDnd {
 
         conn.change_property32(
             PropMode::REPLACE,
-            selection.window,
+            *selection.window,
             atoms.XdndAware,
             AtomEnum::ATOM,
             &[DND_VERSION],
@@ -62,42 +70,186 @@ impl XWmDnd {
         Ok(XWmDnd {
             selection,
             active_offer: None,
+            active_drag: None,
         })
     }
 
-    pub fn update_screen(&self, _screen: &Screen) -> Result<(), ReplyOrIdError> {
-        // TODO: Update drop-in incoming windows
-        /*
-        self.conn.configure_window(
-            self.selection.window,
-            &ConfigureWindowAux::new()
-                .width(screen.width_in_pixels as u32)
-                .height(screen.height_in_pixels as u32),
-        )?;
-        */
+    pub fn update_screen(&self, screen: &Screen) -> Result<(), ReplyOrIdError> {
+        if let Some(active_drag) = self.active_drag.as_ref() {
+            let mut drag_state = active_drag.state.lock().unwrap();
+
+            if drag_state.mapped {
+                self.selection.conn.configure_window(
+                    *active_drag.target,
+                    &ConfigureWindowAux::new()
+                        .width(screen.width_in_pixels as u32)
+                        .height(screen.height_in_pixels as u32),
+                )?;
+            } else {
+                drag_state.pending_configure = Some((screen.width_in_pixels, screen.height_in_pixels));
+            }
+        }
 
         Ok(())
     }
 
-    pub fn xfixes_selection_notify(
-        &mut self,
-        conn: &RustConnection,
-        atoms: &Atoms,
+    pub fn xfixes_selection_notify<D>(
+        dh: &DisplayHandle,
+        data: &mut D,
+        id: XwmId,
         event: SelectionNotifyEvent,
-    ) -> Result<(), ReplyOrIdError> {
-        self.selection.owner = event.owner;
-        if self.selection.owner == self.selection.window {
-            self.selection.timestamp = event.timestamp;
+    ) -> Result<(), ReplyOrIdError>
+    where
+        D: XwmHandler + SeatHandler + DataDeviceHandler + 'static,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
+    {
+        let xwm = data.xwm_state(id);
+
+        xwm.dnd.selection.owner = event.owner;
+        if xwm.dnd.selection.owner == *xwm.dnd.selection.window {
+            xwm.dnd.selection.timestamp = event.timestamp;
             return Ok(());
         }
 
-        if self.active_offer.is_some() {
+        if xwm.dnd.active_offer.is_some() {
             // rough X11 client tries to take over the selection, take it back.
-            conn.set_selection_owner(self.selection.window, atoms.XdndSelection, CURRENT_TIME)?;
+            xwm.conn
+                .set_selection_owner(*xwm.dnd.selection.window, xwm.atoms.XdndSelection, CURRENT_TIME)?;
             return Ok(());
         }
 
-        // TODO: start DndGrab for X -> WL Drag
+        if let Some(active_drag) = xwm.dnd.active_drag.as_ref() {
+            if active_drag.source == xwm.dnd.selection.owner
+                && active_drag.state.lock().unwrap().x11 != X11State::Finished
+            {
+                warn!("Got another selection notify for an already active grab. Ignoring...");
+                return Ok(());
+            } else {
+                // new drag, ours is presumably outdated/stale now
+                debug!("Dropping stale Xwm drag");
+
+                let active_drag = xwm.dnd.active_drag.take().unwrap();
+                active_drag.state.lock().unwrap().x11 = X11State::Finished;
+            }
+        }
+
+        if event.owner == x11rb::NONE {
+            trace!("XDND selection went away");
+            xwm.dnd.active_drag.take();
+            return Ok(());
+        }
+
+        trace!("New XDND selection from {}", event.owner);
+        // figure out, if we have a grab
+        let ptr_grab = data
+            .seat_state()
+            .seats
+            .iter()
+            .flat_map(|seat| {
+                seat.get_pointer().and_then(|ptr| {
+                    ptr.with_grab(|serial, grab| (seat.clone(), serial, grab.start_data().clone()))
+                        .filter(|(_, _, start_data)| start_data.button == BTN_LEFT)
+                })
+            })
+            .max_by(|(_, s1, _), (_, s2, _)| s1.partial_cmp(s2).unwrap_or(cmp::Ordering::Equal));
+
+        let touch_grab = data
+            .seat_state()
+            .seats
+            .iter()
+            .flat_map(|seat| {
+                seat.get_touch().and_then(|touch| {
+                    touch.with_grab(|serial, grab| (seat.clone(), serial, grab.start_data().clone()))
+                })
+            })
+            .max_by(|(_, s1, _), (_, s2, _)| s1.partial_cmp(s2).unwrap_or(cmp::Ordering::Equal));
+
+        if ptr_grab.is_none() && touch_grab.is_none() {
+            return Ok(());
+        }
+
+        // create our drop proxy
+        let xwm = data.xwm_state(id);
+        let window = xwm.conn.generate_id()?;
+        xwm.conn.create_window(
+            xwm.screen.root_depth,
+            window,
+            xwm.screen.root,
+            0,
+            0,
+            xwm.screen.width_in_pixels,
+            xwm.screen.height_in_pixels,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            xwm.screen.root_visual,
+            &CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+        )?;
+        xwm.conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            xwm.atoms.XdndAware,
+            AtomEnum::ATOM,
+            &[DND_VERSION],
+        )?;
+        xwm.conn.map_window(window)?;
+        xwm.conn
+            .configure_window(window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
+        xwm.conn.flush()?;
+
+        let window = OwnedX11Window::new(window, &xwm.conn);
+
+        // create our dnd source
+        let state = Arc::new(Mutex::new(XwmSourceState {
+            mapped: true,
+            x11: X11State::Active,
+            wayland: WlState::Active,
+            pending_configure: None,
+            metadata: SourceMetadata {
+                mime_types: vec![],
+                dnd_actions: SmallVec::new_const(),
+            },
+            active_action: DndAction::None,
+            last_timestamp: None,
+            version: 0,
+        }));
+        let source = XwmDndSource {
+            xwm: id,
+            conn: Arc::downgrade(&xwm.conn),
+            atoms: xwm.atoms.clone(),
+            target: window.clone(),
+            source: xwm.dnd.selection.owner,
+            state: state.clone(),
+            pending_transfers: xwm.dnd.selection.pending_transfers.clone(),
+        };
+        xwm.dnd.active_drag = Some(XwmActiveDrag {
+            target: window,
+            source: xwm.dnd.selection.owner,
+            state,
+            pending_transfers: xwm.dnd.selection.pending_transfers.clone(),
+        });
+
+        // create the DndGrab
+        match (ptr_grab, touch_grab) {
+            (Some((seat, s1, start_data)), Some((_, s2, _))) if s1 >= s2 => {
+                // pointer_grab
+                let grab = DnDGrab::new_pointer(dh, start_data, source, seat.clone(), None);
+                seat.get_pointer().unwrap().set_grab(data, grab, s1, Focus::Keep);
+            }
+            (Some((seat, serial, start_data)), None) => {
+                // pointer grab
+                let grab = DnDGrab::new_pointer(dh, start_data, source, seat.clone(), None);
+                seat.get_pointer()
+                    .unwrap()
+                    .set_grab(data, grab, serial, Focus::Keep);
+            }
+            (_, Some((seat, serial, start_data))) => {
+                // touch_grab
+                let grab = DnDGrab::new_touch(dh, start_data, source, seat.clone(), None);
+                seat.get_touch().unwrap().set_grab(data, grab, serial);
+            }
+            (None, None) => unreachable!(),
+        };
 
         Ok(())
     }
@@ -146,15 +298,14 @@ impl XWmDnd {
                         .to_client_precise_round::<_, i32>(client_scale.load(Ordering::Acquire));
 
                     let data = [
-                        self.selection.window,
+                        *self.selection.window,
                         0,
                         ((location.x << 16) | location.y) as u32,
                         CURRENT_TIME,
                         offer_state.preferred_action.to_x(atoms),
                     ];
-                    let conn = window.conn.upgrade().unwrap();
 
-                    if let Err(err) = conn.send_event(
+                    if let Err(err) = self.selection.conn.send_event(
                         false,
                         window.window_id(),
                         EventMask::NO_EVENT,
@@ -162,16 +313,15 @@ impl XWmDnd {
                     ) {
                         warn!("Failed to send DND_POSITION event: {:?}", err);
                     }
-                    let _ = conn.flush();
+                    let _ = self.selection.conn.flush();
                     offer_state.pos_pending = true;
                 } else if offer_state.dropped {
                     // finish drop
 
                     offer.source.drop_performed();
 
-                    let data = [self.selection.window, 0, CURRENT_TIME, 0, 0];
-                    let conn = window.conn.upgrade().unwrap();
-                    if let Err(err) = conn.send_event(
+                    let data = [*self.selection.window, 0, CURRENT_TIME, 0, 0];
+                    if let Err(err) = self.selection.conn.send_event(
                         false,
                         window.window_id(),
                         EventMask::NO_EVENT,
@@ -179,7 +329,7 @@ impl XWmDnd {
                     ) {
                         warn!("Failed to send DND_DROP event: {:?}", err);
                     }
-                    let _ = conn.flush();
+                    let _ = self.selection.conn.flush();
                 }
             }
         }
@@ -189,6 +339,7 @@ impl XWmDnd {
         if let Some(offer) = self.active_offer.as_ref() {
             let offer_state = offer.state.lock().unwrap();
             let data = status_msg.as_data32();
+            trace!("Got XDND finished msg: {:?}", data);
 
             if data[0] != offer_state.target {
                 return;
@@ -204,10 +355,249 @@ impl XWmDnd {
         }
     }
 
-    pub fn transfer(&mut self, mime_type: impl AsRef<str>, send_fd: impl AsFd) {
+    pub fn transfer(&mut self, mime_type: impl AsRef<str>, send_fd: OwnedFd) {
         if let Some(offer) = self.active_offer.as_ref() {
-            offer.source.send(mime_type.as_ref(), send_fd.as_fd());
+            offer.source.send(mime_type.as_ref(), send_fd);
         }
+    }
+
+    pub fn handle_enter(&mut self, enter_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
+        if let Some(drag) = self.active_drag.as_ref() {
+            let data = enter_msg.as_data32();
+            trace!("Got XDND enter msg: {:?}", data);
+            if data[0] != drag.source {
+                debug!(
+                    "Received XdndEnter from unknown source (got: {}, expected: {}), ignoring..",
+                    data[0], drag.source
+                );
+                return Ok(());
+            }
+
+            let version = data[1] >> 24;
+            if version > DND_VERSION {
+                warn!("New unsupported XDND version: {}", data[1]);
+                return Ok(());
+            }
+
+            // get types
+            let mimes = if (data[1] & 1) == 0 {
+                (2..5)
+                    .flat_map(|i| {
+                        mime_from_atom(data[i], &self.selection.conn, &self.selection.atoms).transpose()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                let reply = self
+                    .selection
+                    .conn
+                    .get_property(
+                        false,
+                        drag.source,
+                        self.selection.atoms.XdndTypeList,
+                        AtomEnum::ANY,
+                        0,
+                        0x1fffffff,
+                    )?
+                    .reply()?;
+                let Some(values) = reply.value32() else {
+                    return Ok(());
+                };
+
+                values
+                    .flat_map(|atom| {
+                        mime_from_atom(atom, &self.selection.conn, &self.selection.atoms).transpose()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+
+            let mut drag_state = drag.state.lock().unwrap();
+            drag_state.x11 = X11State::Active;
+            drag_state.metadata.mime_types = mimes;
+            drag_state.version = version;
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_position(&mut self, pos_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
+        if let Some(drag) = self.active_drag.as_ref() {
+            let data = pos_msg.as_data32();
+            if data[0] != drag.source {
+                debug!(
+                    "Received XdndPosition from unknown source (got: {}, expected: {}), ignoring..",
+                    data[0], drag.source
+                );
+                return Ok(());
+            }
+
+            let mut drag_state = drag.state.lock().unwrap();
+
+            let mut actions = SmallVec::from_elem(DndAction::Copy, 1); // copy is always supported on XDND
+            if drag_state.version > 1 {
+                match DndAction::from_x(data[4], &self.selection.atoms) {
+                    DndAction::Move => actions.push(DndAction::Move),
+                    _ => {} // We don't support Ask or Private atm
+                }
+            }
+
+            drag_state.last_timestamp = Some(data[3]);
+            drag_state.metadata.dnd_actions = actions;
+
+            let mut flags = 1 << 1;
+            if !matches!(&drag_state.wayland, WlState::Cancelled)
+                && drag_state.active_action != DndAction::None
+            {
+                flags |= 1 << 0;
+            }
+            let data = [
+                *drag.target,
+                flags,
+                0,
+                0,
+                drag_state.active_action.to_x(&self.selection.atoms),
+            ];
+            self.selection.conn.send_event(
+                false,
+                drag.source,
+                EventMask::NO_EVENT,
+                ClientMessageEvent::new(32, drag.source, self.selection.atoms.XdndStatus, data),
+            )?;
+            self.selection.conn.flush()?;
+
+            if matches!(&drag_state.wayland, &WlState::GotFd(_, _)) {
+                let mut wl_state = WlState::Active;
+                std::mem::swap(&mut drag_state.wayland, &mut wl_state);
+
+                let WlState::GotFd(mime_type, fd) = wl_state else {
+                    unreachable!()
+                };
+
+                let Some(atom) = atom_from_mime(&mime_type, &self.selection.conn, &self.selection.atoms)?
+                else {
+                    warn!("Unable to determine atom for mime_type ({})", mime_type);
+                    return Ok(());
+                };
+
+                drag.pending_transfers
+                    .lock()
+                    .unwrap()
+                    .insert(*drag.target, (drag.target.clone(), fd));
+
+                self.selection.conn.convert_selection(
+                    drag.source,
+                    self.selection.atoms.XdndSelection,
+                    atom,
+                    self.selection.atoms._WL_SELECTION,
+                    drag_state.last_timestamp.unwrap(),
+                )?;
+                self.selection.conn.flush()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn handle_leave(&mut self, leave_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
+        if let Some(drag) = self.active_drag.as_ref() {
+            let data = leave_msg.as_data32();
+            trace!("Got XDND leave msg: {:?}", data);
+
+            if drag.source != data[0] {
+                debug!(
+                    "Received XdndLeave from unknown source (got: {}, expected: {}), ignoring..",
+                    data[0], drag.source
+                );
+                return Ok(());
+            }
+
+            let mut state = drag.state.lock().unwrap();
+            state.x11 = X11State::Left;
+
+            if matches!(&state.wayland, &WlState::GotFd(_, _) | &WlState::Dropped) {
+                state.wayland = WlState::Finished;
+            }
+            if matches!(&state.wayland, &WlState::Cancelled | &WlState::Finished) {
+                std::mem::drop(state);
+                self.active_drag.take();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn handle_drop(&mut self, drop_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
+        if let Some(drag) = self.active_drag.take() {
+            let data = drop_msg.as_data32();
+            trace!("Got XDND drop msg: {:?}", data);
+
+            if drag.source != data[0] {
+                debug!(
+                    "Received XdndDrop from unknown source (got: {}, expected: {}), ignoring..",
+                    data[0], drag.source
+                );
+                return Ok(());
+            }
+
+            let mut state = drag.state.lock().unwrap();
+            let conn = &self.selection.conn;
+            let atoms = &self.selection.atoms;
+
+            let failed = || -> Result<(), ReplyOrIdError> {
+                drag.pending_transfers.lock().unwrap().remove(&drag.target);
+
+                let data = [drag.source, 0, 0, 0, 0];
+                conn.send_event(
+                    false,
+                    drag.source,
+                    EventMask::NO_EVENT,
+                    ClientMessageEvent::new(32, drag.source, atoms.XdndFinished, data),
+                )?;
+                conn.flush()?;
+
+                Ok(())
+            };
+
+            if matches!(&state.wayland, &WlState::Cancelled | &WlState::Finished) {
+                failed()?;
+                return Ok(());
+            }
+
+            if state.version >= 1 {
+                state.last_timestamp = Some(data[2]);
+            }
+
+            if matches!(&state.wayland, &WlState::GotFd(_, _)) {
+                let mut wl_state = WlState::Dropped;
+                std::mem::swap(&mut state.wayland, &mut wl_state);
+
+                let WlState::GotFd(mime_type, fd) = wl_state else {
+                    unreachable!()
+                };
+
+                drag.pending_transfers
+                    .lock()
+                    .unwrap()
+                    .insert(*drag.target, (drag.target.clone(), fd));
+
+                let Some(atom) = atom_from_mime(&mime_type, &self.selection.conn, &self.selection.atoms)?
+                else {
+                    warn!("Unable to determine atom for mime_type ({})", mime_type);
+
+                    failed()?;
+                    return Ok(());
+                };
+
+                conn.convert_selection(
+                    drag.source,
+                    atoms.XdndSelection,
+                    atom,
+                    atoms._WL_SELECTION,
+                    state.last_timestamp.unwrap_or(x11rb::CURRENT_TIME),
+                )?;
+                conn.flush()?;
+            }
+
+            state.x11 = X11State::Dropped;
+        }
+        Ok(())
     }
 }
 
@@ -228,6 +618,189 @@ impl DndAction {
             DndAction::Ask => atoms.XdndActionAsk,
             DndAction::None => AtomEnum::NONE.into(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum X11State {
+    Active,
+    Left,
+    Dropped,
+    Finished,
+}
+
+#[derive(Debug)]
+enum WlState {
+    Active,
+    Cancelled,
+    Dropped,
+    GotFd(String, OwnedFd),
+    Finished,
+}
+
+#[derive(Debug)]
+struct XwmSourceState {
+    x11: X11State,
+    wayland: WlState,
+
+    mapped: bool,
+    pending_configure: Option<(u16, u16)>,
+
+    active_action: DndAction,
+    last_timestamp: Option<u32>,
+    version: u32,
+
+    metadata: SourceMetadata,
+}
+
+#[derive(Debug)]
+pub struct XwmActiveDrag {
+    target: OwnedX11Window,
+    source: X11Window,
+
+    state: Arc<Mutex<XwmSourceState>>,
+    pending_transfers: Arc<Mutex<HashMap<X11Window, (OwnedX11Window, OwnedFd)>>>,
+}
+
+#[derive(Debug)]
+pub struct XwmDndSource {
+    xwm: XwmId,
+    conn: Weak<RustConnection>,
+    atoms: Atoms,
+
+    target: OwnedX11Window,
+    source: X11Window,
+
+    state: Arc<Mutex<XwmSourceState>>,
+    pending_transfers: Arc<Mutex<HashMap<X11Window, (OwnedX11Window, OwnedFd)>>>,
+}
+
+impl Drop for XwmDndSource {
+    fn drop(&mut self) {
+        if let Some(conn) = self.conn.upgrade() {
+            let mut state = self.state.lock().unwrap();
+            state.wayland = WlState::Finished;
+            if state.mapped {
+                let _ = conn.unmap_window(*self.target);
+                let _ = conn.flush();
+            }
+        }
+    }
+}
+
+impl IsAlive for XwmDndSource {
+    fn alive(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        !matches!(&state.wayland, &WlState::Cancelled)
+            && !(matches!(&state.wayland, &WlState::Finished) && state.x11 == X11State::Finished)
+    }
+}
+
+impl Source for XwmDndSource {
+    fn metadata(&self) -> Option<crate::input::dnd::SourceMetadata> {
+        Some(self.state.lock().unwrap().metadata.clone())
+    }
+
+    fn choose_action(&self, action: DndAction) {
+        self.state.lock().unwrap().active_action = action;
+    }
+
+    fn send(&self, mime_type: &str, fd: OwnedFd) {
+        let mut state = self.state.lock().unwrap();
+        if !state.metadata.mime_types.iter().any(|m| m == mime_type) {
+            return;
+        }
+
+        if let Err(err) = rustix::fs::fcntl_setfl(&fd, OFlags::WRONLY | OFlags::NONBLOCK) {
+            warn!(?err, "Failed to restrict file descriptor");
+        }
+
+        if let Some(conn) = self.conn.upgrade() {
+            trace!("XDND Transfer from xwayland -> wayland");
+
+            if let Some(timestamp) = state.last_timestamp {
+                let Ok(Some(atom)) = atom_from_mime(mime_type, &conn, &self.atoms) else {
+                    warn!("Unable to determine atom for mime_type ({})", mime_type);
+                    return;
+                };
+
+                self.pending_transfers
+                    .lock()
+                    .unwrap()
+                    .insert(*self.target, (self.target.clone(), fd));
+
+                if let Err(err) = conn.convert_selection(
+                    *self.target,
+                    self.atoms.XdndSelection,
+                    atom,
+                    self.atoms._WL_SELECTION,
+                    timestamp,
+                ) {
+                    warn!("Failed to request selection for Dnd drop: {:?}", err);
+                    self.pending_transfers.lock().unwrap().remove(&self.target);
+                    return;
+                }
+            } else {
+                state.wayland = WlState::GotFd(mime_type.to_string(), fd);
+            }
+
+            let _ = conn.flush();
+        }
+    }
+
+    fn drop_performed(&self) {
+        self.state.lock().unwrap().wayland = WlState::Dropped;
+    }
+
+    fn cancel(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.wayland = WlState::Cancelled;
+
+        if state.x11 == X11State::Dropped {
+            if let Some(conn) = self.conn.upgrade() {
+                trace!("XDND cancelled, but already dropped, sending XDNDFinished");
+
+                let data = [self.source, 0, 0, 0, 0];
+                if let Err(err) = conn.send_event(
+                    false,
+                    self.source,
+                    EventMask::NO_EVENT,
+                    ClientMessageEvent::new(32, self.source, self.atoms.XdndFinished, data),
+                ) {
+                    warn!("Failed to send XdndFinished: {:?}", err);
+                }
+                let _ = conn.flush();
+            }
+            state.x11 = X11State::Finished;
+        }
+    }
+
+    fn finished(&self) {
+        let mut state = self.state.lock().unwrap();
+
+        if state.x11 == X11State::Dropped {
+            if let Some(conn) = self.conn.upgrade() {
+                trace!("XDND done, sending XDNDFinished");
+
+                let data = [self.source, (1 << 0), state.active_action.to_x(&self.atoms), 0, 0];
+                if let Err(err) = conn.send_event(
+                    false,
+                    self.source,
+                    EventMask::NO_EVENT,
+                    ClientMessageEvent::new(32, self.source, self.atoms.XdndFinished, data),
+                ) {
+                    warn!("Failed to send XdndFinished: {:?}", err);
+                }
+                let _ = conn.flush();
+            }
+            state.x11 = X11State::Finished;
+        }
+
+        state.wayland = WlState::Finished;
+    }
+
+    fn is_client_local(&self, target: &dyn Any) -> bool {
+        target.downcast_ref::<XwmId>().is_some_and(|id| *id == self.xwm)
     }
 }
 
@@ -282,118 +855,129 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
         location: Point<f64, Logical>,
         _serial: &Serial,
     ) -> Option<Self::OfferData<S>> {
-        let xwm = data.xwm_state(self.xwm_id()?);
-        if xwm.dnd.selection.owner != xwm.dnd.selection.window {
-            xwm.conn
-                .set_selection_owner(xwm.dnd.selection.window, xwm.atoms.XdndSelection, CURRENT_TIME)
-                .inspect_err(|err| warn!("Failed to take X11 DND_SELECTION: {:?}", err))
-                .ok()?;
-        }
+        let xwm_id = self.xwm_id()?;
+        let xwm = data.xwm_state(xwm_id);
 
-        let prop = xwm
-            .conn
-            .get_property(false, self.window_id(), self.atoms.XdndAware, AtomEnum::ANY, 0, 1)
-            .ok()?
-            .reply()
-            .ok()?;
-        if prop.type_ != AtomEnum::ATOM.into() {
-            return None;
-        }
-        let client_ver = prop.value32()?.next()?;
-        if client_ver < MIN_DND_VERSION {
-            return None;
-        }
-        let version = client_ver.min(DND_VERSION);
+        if source.is_client_local(&xwm_id) {
+            if let Some(active_drag) = xwm.dnd.active_drag.as_mut() {
+                trace!("XDND grab entered X11Surface, unmapping proxy");
+                let mut drag_state = active_drag.state.lock().unwrap();
+                if drag_state.mapped {
+                    xwm.conn
+                        .unmap_window(*active_drag.target)
+                        .inspect_err(|err| warn!("Unable to unmap proxy dnd window: {}", err))
+                        .ok()?;
+                    let _ = xwm.conn.flush();
+                    drag_state.last_timestamp = None;
+                    drag_state.mapped = false;
+                }
+            }
 
-        let metadata = source.metadata()?;
-        let mime_types = metadata
-            .mime_types
-            .iter()
-            .filter_map(|mime| {
-                Some(match &**mime {
-                    "text/plain" => xwm.atoms.TEXT,
-                    "text/plain;charset=utf-8" => xwm.atoms.UTF8_STRING,
-                    mime => {
-                        xwm.conn
-                            .intern_atom(false, mime.as_bytes())
-                            .ok()?
-                            .reply_unchecked()
-                            .ok()??
-                            .atom
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let mut enter_data = [
-            xwm.dnd.selection.window,
-            version << 24,
-            AtomEnum::NONE.into(),
-            AtomEnum::NONE.into(),
-            AtomEnum::NONE.into(),
-        ];
-        for (i, mime_type) in mime_types.iter().take(3).enumerate() {
-            enter_data[i + 2] = *mime_type;
-        }
-
-        if mime_types.len() > 3 {
-            enter_data[1] |= 1;
-            xwm.conn
-                .change_property32(
-                    PropMode::REPLACE,
-                    xwm.dnd.selection.window,
-                    self.atoms.XdndTypeList,
-                    AtomEnum::ATOM,
-                    &mime_types,
-                )
-                .inspect_err(|err| warn!("Failed to update DND_TYPE_LIST: {:?}", err))
-                .ok()?;
+            None
         } else {
-            xwm.conn
-                .delete_property(xwm.dnd.selection.window, self.atoms.XdndTypeList)
-                .inspect_err(|err| warn!("Failed to update DND_TYPE_LIST: {:?}", err))
+            trace!("Wayland dnd grab entered Xwayland surface, taking over XDND_SELECTION");
+            if xwm.dnd.selection.owner != *xwm.dnd.selection.window {
+                xwm.conn
+                    .set_selection_owner(*xwm.dnd.selection.window, xwm.atoms.XdndSelection, CURRENT_TIME)
+                    .inspect_err(|err| warn!("Failed to take X11 DND_SELECTION: {:?}", err))
+                    .ok()?;
+            }
+
+            let prop = xwm
+                .conn
+                .get_property(false, self.window_id(), self.atoms.XdndAware, AtomEnum::ANY, 0, 1)
+                .ok()?
+                .reply()
                 .ok()?;
+            if prop.type_ != AtomEnum::ATOM.into() {
+                return None;
+            }
+            let client_ver = prop.value32()?.next()?;
+            if client_ver < MIN_DND_VERSION {
+                return None;
+            }
+            let version = client_ver.min(DND_VERSION);
+
+            let metadata = source.metadata()?;
+            let mime_types = metadata
+                .mime_types
+                .iter()
+                .filter_map(|mime| atom_from_mime(mime, &xwm.conn, &xwm.atoms).transpose())
+                .collect::<Result<Vec<_>, _>>()
+                .inspect_err(|err| warn!("Failed to convert mime types: {:?}", err))
+                .ok()?;
+
+            let mut enter_data = [
+                *xwm.dnd.selection.window,
+                version << 24,
+                AtomEnum::NONE.into(),
+                AtomEnum::NONE.into(),
+                AtomEnum::NONE.into(),
+            ];
+            for (i, mime_type) in mime_types.iter().take(3).enumerate() {
+                enter_data[i + 2] = *mime_type;
+            }
+
+            if mime_types.len() > 3 {
+                enter_data[1] |= 1;
+                xwm.conn
+                    .change_property32(
+                        PropMode::REPLACE,
+                        *xwm.dnd.selection.window,
+                        self.atoms.XdndTypeList,
+                        AtomEnum::ATOM,
+                        &mime_types,
+                    )
+                    .inspect_err(|err| warn!("Failed to update DND_TYPE_LIST: {:?}", err))
+                    .ok()?;
+            } else {
+                xwm.conn
+                    .delete_property(*xwm.dnd.selection.window, self.atoms.XdndTypeList)
+                    .inspect_err(|err| warn!("Failed to update DND_TYPE_LIST: {:?}", err))
+                    .ok()?;
+            }
+            xwm.dnd.selection.mime_types = metadata.mime_types;
+
+            trace!("Sending XdndEnter: {:?}", enter_data);
+            xwm.conn
+                .send_event(
+                    false,
+                    self.window_id(),
+                    EventMask::NO_EVENT,
+                    ClientMessageEvent::new(32, self.window_id(), self.atoms.XdndEnter, enter_data),
+                )
+                .inspect_err(|err| warn!("Failed to send DND_ENTER event: {:?}", err))
+                .ok()?;
+
+            let mut offer = XwmOfferData {
+                state: Arc::new(Mutex::new(XwmOfferState {
+                    target: self.window_id(),
+
+                    preferred_action: if metadata.dnd_actions.contains(&DndAction::Copy) {
+                        DndAction::Copy
+                    } else {
+                        DndAction::None
+                    },
+                    supported_actions: metadata.dnd_actions,
+
+                    last_pos: location,
+                    pos_pending: false,
+                    pos_cached: None,
+
+                    client_accepts: false,
+                    active: true,
+                    dropped: false,
+                })),
+                source,
+            };
+            xwm.dnd.active_offer = Some(XwmActiveOffer {
+                state: offer.state.clone(),
+                source: offer.source.clone(),
+            });
+
+            DndFocus::motion(self, data, Some(&mut offer), seat, location, 0);
+            Some(offer)
         }
-        xwm.dnd.selection.mime_types = metadata.mime_types;
-
-        xwm.conn
-            .send_event(
-                false,
-                self.window_id(),
-                EventMask::NO_EVENT,
-                ClientMessageEvent::new(32, self.window_id(), self.atoms.XdndEnter, enter_data),
-            )
-            .inspect_err(|err| warn!("Failed to send DND_ENTER event: {:?}", err))
-            .ok()?;
-
-        let mut offer = XwmOfferData {
-            state: Arc::new(Mutex::new(XwmOfferState {
-                target: self.window_id(),
-
-                preferred_action: if metadata.dnd_actions.contains(&DndAction::Copy) {
-                    DndAction::Copy
-                } else {
-                    DndAction::None
-                },
-                supported_actions: metadata.dnd_actions,
-
-                last_pos: location,
-                pos_pending: false,
-                pos_cached: None,
-
-                client_accepts: false,
-                active: true,
-                dropped: false,
-            })),
-            source,
-        };
-        xwm.dnd.active_offer = Some(XwmActiveOffer {
-            state: offer.state.clone(),
-            source: offer.source.clone(),
-        });
-
-        DndFocus::motion(self, data, Some(&mut offer), seat, location, 0);
-        Some(offer)
     }
 
     fn motion<S: Source>(
@@ -425,7 +1009,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
             .to_client_precise_round::<_, i32>(xwm.client_scale.load(Ordering::Acquire));
 
         let data = [
-            xwm.dnd.selection.window,
+            *xwm.dnd.selection.window,
             0,
             ((location.x << 16) | location.y) as u32,
             CURRENT_TIME,
@@ -445,11 +1029,38 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
 
     fn leave<S: Source>(&self, data: &mut D, offer: Option<&mut XwmOfferData<S>>, _seat: &Seat<D>) {
         let Some(xwm_id) = self.xwm_id() else { return };
-        let Some(offer) = offer else { return };
+        let Some(offer) = offer else {
+            // remap the proxy
+            trace!("XDND grab left X11Surface, remapping proxy");
+
+            let xwm = data.xwm_state(xwm_id);
+            if let Some(active_drag) = xwm.dnd.active_drag.as_mut() {
+                let mut drag_state = active_drag.state.lock().unwrap();
+                if !drag_state.mapped {
+                    if let Err(err) = xwm.conn.map_window(*active_drag.target) {
+                        warn!("Unable to map proxy dnd window: {}", err);
+                        return;
+                    }
+
+                    let mut configure = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
+                    if let Some((w, h)) = drag_state.pending_configure.take() {
+                        configure = configure.width(Some(w as u32)).height(Some(h as u32));
+                    }
+                    if let Err(err) = xwm.conn.configure_window(*active_drag.target, &configure) {
+                        warn!("Unable to configure proxy dnd window: {}", err);
+                        return;
+                    }
+                    drag_state.mapped = true;
+                }
+            }
+
+            return;
+        };
 
         if !offer.state.lock().unwrap().dropped {
             let xwm = data.xwm_state(xwm_id);
-            let data = [xwm.dnd.selection.window, 0, 0, 0, 0];
+            let data = [*xwm.dnd.selection.window, 0, 0, 0, 0];
+            trace!("Sending XdndLeave: {:?}", data);
 
             if let Err(err) = xwm.conn.send_event(
                 false,
@@ -468,8 +1079,15 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
 
     fn drop<S: Source>(&self, data: &mut D, offer: Option<&mut XwmOfferData<S>>, _seat: &Seat<D>) {
         let Some(xwm_id) = self.xwm_id() else { return };
-        let Some(offer) = offer else { return };
         let xwm = data.xwm_state(xwm_id);
+
+        let Some(offer) = offer else {
+            // the x11 source was presumably dropped on an x11 window, so we are done here.
+            if let Some(active_drag) = xwm.dnd.active_drag.take() {
+                active_drag.state.lock().unwrap().x11 = X11State::Finished;
+            }
+            return;
+        };
 
         let mut offer_state = offer.state.lock().unwrap();
         offer_state.dropped = true;
@@ -479,7 +1097,8 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
 
         offer.source.drop_performed();
 
-        let data = [xwm.dnd.selection.window, 0, CURRENT_TIME, 0, 0];
+        let data = [*xwm.dnd.selection.window, 0, CURRENT_TIME, 0, 0];
+        trace!("Sending XdndDrop: {:?}", data);
         if let Err(err) = xwm.conn.send_event(
             false,
             self.window_id(),

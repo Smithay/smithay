@@ -146,6 +146,7 @@
 //!     } => {
 //!         let wm = X11Wm::start_wm(
 //!             handle.clone(),
+//!             &dh,
 //!             x11_socket,
 //!             client.clone(),
 //!         )
@@ -159,11 +160,11 @@
 //! ```
 
 use crate::{
-    input::SeatHandler,
+    input::{dnd::DndFocus, SeatHandler},
     output::Output,
     utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
     wayland::{
-        selection::SelectionTarget,
+        selection::{data_device::DataDeviceHandler, SelectionTarget},
         xwayland_shell::{self, XWaylandShellHandler},
     },
 };
@@ -181,7 +182,7 @@ use std::{
     sync::{atomic::Ordering, Arc, Weak},
 };
 use tracing::{debug, debug_span, info, trace, warn};
-use wayland_server::Resource;
+use wayland_server::{DisplayHandle, Resource};
 
 pub use x11rb::protocol::xproto::Window as X11Window;
 use x11rb::{
@@ -646,6 +647,7 @@ impl X11Wm {
     /// - `client` is the wayland client instance of the Xwayland instance
     pub fn start_wm<D>(
         handle: LoopHandle<'static, D>,
+        dh: &DisplayHandle,
         connection: UnixStream,
         client: wayland_server::Client,
     ) -> Result<Self, Box<dyn std::error::Error>>
@@ -653,6 +655,9 @@ impl X11Wm {
         D: XwmHandler,
         D: xwayland_shell::XWaylandShellHandler,
         D: SeatHandler,
+        D: DataDeviceHandler,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
         D: 'static,
     {
         let id = XwmId(xwm_id::next());
@@ -833,9 +838,10 @@ impl X11Wm {
         };
 
         let event_handle = handle.clone();
+        let dh = dh.clone();
         handle.insert_source(source, move |event, _, data| match event {
             calloop::channel::Event::Msg(event) => {
-                if let Err(err) = handle_event(&event_handle, data, id, event) {
+                if let Err(err) = handle_event(&event_handle, &dh, data, id, event) {
                     warn!(id = id.0, err = ?err, "Failed to handle X11 event");
                 }
             }
@@ -1255,14 +1261,18 @@ impl X11Wm {
 
 fn handle_event<D>(
     loop_handle: &LoopHandle<'_, D>,
+    dh: &DisplayHandle,
     state: &mut D,
     xwm_id: XwmId,
     event: Event,
-) -> Result<(), ReplyOrIdError>
+) -> Result<(), Box<dyn std::error::Error>>
 where
     D: XwmHandler,
     D: xwayland_shell::XWaylandShellHandler,
     D: SeatHandler,
+    D: DataDeviceHandler,
+    <D as SeatHandler>::PointerFocus: DndFocus<D>,
+    <D as SeatHandler>::TouchFocus: DndFocus<D>,
     D: 'static,
 {
     let xwm = state.xwm_state(xwm_id);
@@ -1286,7 +1296,7 @@ where
         }
     }
 
-    debug!(
+    trace!(
         event = ?event,
         should_ignore = should_ignore,
         "Got X11 event",
@@ -1611,7 +1621,9 @@ where
                 x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
                 x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
                 x if x == xwm.atoms.XdndSelection => {
-                    return xwm.dnd.xfixes_selection_notify(&xwm.conn, &xwm.atoms, n);
+                    let id = xwm.id();
+                    drop(_guard);
+                    return XWmDnd::xfixes_selection_notify(dh, state, id, n).map_err(Into::into);
                 }
                 _ => return Ok(()),
             };
@@ -1643,7 +1655,7 @@ where
             let selection = match n.selection {
                 x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
                 x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
-                //x if x == xwm.atoms.DND_SELECTION => &mut xwm.dnd.selection, // TODO: incoming
+                x if x == xwm.atoms.XdndSelection => &mut xwm.dnd.selection,
                 _ => return Ok(()),
             };
 
@@ -2106,7 +2118,7 @@ where
         }
         Event::ClientMessage(msg) => {
             if let Some(reply) = conn.get_atom_name(msg.type_)?.reply_unchecked()? {
-                debug!(
+                trace!(
                     event = std::str::from_utf8(&reply.name).unwrap(),
                     message = ?msg,
                     "got X11 client event message",
@@ -2281,6 +2293,7 @@ where
                         }
                     }
                 }
+                // Dnd events incoming
                 x if x == xwm.atoms.XdndStatus => {
                     let window_id = msg.data.as_data32()[0];
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == window_id) {
@@ -2290,6 +2303,19 @@ where
                 }
                 x if x == xwm.atoms.XdndFinished => {
                     xwm.dnd.handle_finished(msg.data);
+                }
+                // Dnd events incoming
+                x if x == xwm.atoms.XdndEnter => {
+                    xwm.dnd.handle_enter(msg.data)?;
+                }
+                x if x == xwm.atoms.XdndPosition => {
+                    xwm.dnd.handle_position(msg.data)?;
+                }
+                x if x == xwm.atoms.XdndLeave => {
+                    xwm.dnd.handle_leave(msg.data)?;
+                }
+                x if x == xwm.atoms.XdndDrop => {
+                    xwm.dnd.handle_drop(msg.data)?;
                 }
                 x => {
                     debug!(
