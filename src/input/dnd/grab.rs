@@ -9,10 +9,13 @@ use crate::{
         pointer::{
             AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
             GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
-            GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerInnerHandle, RelativeMotionEvent,
+            GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData,
+            MotionEvent as PointerMotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
         },
-        touch::{GrabStartData as TouchGrabStartData, TouchGrab},
+        touch::{
+            DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, TouchGrab,
+            TouchInnerHandle, UpEvent,
+        },
         Seat, SeatHandler,
     },
     utils::{Logical, Point, Serial, SERIAL_COUNTER},
@@ -213,10 +216,14 @@ where
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
-        event: &MotionEvent,
+        event: &PointerMotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
-        handle.motion(data, None, event);
+        handle.motion(
+            data,
+            self.pointer_start_data.as_ref().unwrap().focus.clone(),
+            event,
+        );
 
         self.update_focus(data, focus, event.location, event.serial, event.time);
     }
@@ -225,13 +232,19 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
+        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
-        handle.relative_motion(data, focus, event);
+        handle.relative_motion(
+            data,
+            self.pointer_start_data.as_ref().unwrap().focus.clone(),
+            event,
+        );
     }
 
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
+        handle.button(data, event);
+
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
             handle.unset_grab(self, data, event.serial, event.time, true);
@@ -339,21 +352,15 @@ where
     fn down(
         &mut self,
         _data: &mut D,
-        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _handle: &mut TouchInnerHandle<'_, D>,
         _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
-        _event: &crate::input::touch::DownEvent,
-        _seq: crate::utils::Serial,
+        _event: &DownEvent,
+        _seq: Serial,
     ) {
         // Ignore
     }
 
-    fn up(
-        &mut self,
-        data: &mut D,
-        handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
-        event: &crate::input::touch::UpEvent,
-        _seq: crate::utils::Serial,
-    ) {
+    fn up(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &UpEvent, _seq: Serial) {
         if event.slot != self.start_data().slot {
             return;
         }
@@ -364,10 +371,10 @@ where
     fn motion(
         &mut self,
         data: &mut D,
-        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        handle: &mut TouchInnerHandle<'_, D>,
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
-        event: &crate::input::touch::MotionEvent,
-        _seq: crate::utils::Serial,
+        event: &TouchMotionEvent,
+        seq: Serial,
     ) {
         if event.slot != self.start_data().slot {
             return;
@@ -380,22 +387,20 @@ where
             SERIAL_COUNTER.next_serial(),
             event.time,
         );
+
+        handle.motion(
+            data,
+            self.touch_start_data.as_ref().unwrap().focus.clone(),
+            event,
+            seq,
+        );
     }
 
-    fn frame(
-        &mut self,
-        _data: &mut D,
-        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
-        _seq: crate::utils::Serial,
-    ) {
+    fn frame(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, seq: Serial) {
+        handle.frame(data, seq);
     }
 
-    fn cancel(
-        &mut self,
-        data: &mut D,
-        handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
-        _seq: crate::utils::Serial,
-    ) {
+    fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, _seq: Serial) {
         // TODO: should we cancel something here?
         handle.unset_grab(self, data);
     }
@@ -403,7 +408,7 @@ where
     fn shape(
         &mut self,
         _data: &mut D,
-        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _handle: &mut TouchInnerHandle<'_, D>,
         _event: &crate::input::touch::ShapeEvent,
         _seq: Serial,
     ) {
@@ -412,7 +417,7 @@ where
     fn orientation(
         &mut self,
         _data: &mut D,
-        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _handle: &mut TouchInnerHandle<'_, D>,
         _event: &crate::input::touch::OrientationEvent,
         _seq: Serial,
     ) {
