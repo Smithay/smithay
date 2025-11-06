@@ -80,7 +80,7 @@ use tracing::instrument;
 use wayland_server::{
     backend::{protocol::Message, ClientId, GlobalId, Handle, ObjectData, ObjectId},
     protocol::{
-        wl_data_device_manager::{DndAction, WlDataDeviceManager},
+        wl_data_device_manager::{DndAction as WlDndAction, WlDataDeviceManager},
         wl_data_offer::{self, WlDataOffer},
         wl_data_source::WlDataSource,
         wl_seat::WlSeat,
@@ -91,7 +91,7 @@ use wayland_server::{
 
 use crate::{
     input::{
-        dnd::{DndFocus, OfferData, Source},
+        dnd::{DndAction, DndFocus, OfferData, Source},
         Seat, SeatHandler,
     },
     utils::{Logical, Point, Serial},
@@ -115,7 +115,7 @@ pub trait DataDeviceHandler: Sized + SelectionHandler + ClientDndGrabHandler {
     fn data_device_state(&mut self) -> &mut DataDeviceState;
 
     /// Action chooser for DnD negociation
-    fn action_choice(&mut self, available: DndAction, preferred: DndAction) -> DndAction {
+    fn action_choice(&mut self, available: WlDndAction, preferred: WlDndAction) -> WlDndAction {
         default_action_chooser(available, preferred)
     }
 }
@@ -146,7 +146,7 @@ pub trait ClientDndGrabHandler: SeatHandler + Sized {
     fn dropped<T: DndFocus<Self>>(&mut self, target: Option<&T>, validated: bool, seat: Seat<Self>) {}
 }
 
-impl crate::input::dnd::DndAction {
+impl DndAction {
     fn unwrap_single(slice: &[Self]) -> Option<Self> {
         if slice.is_empty() {
             Some(Self::None)
@@ -157,22 +157,22 @@ impl crate::input::dnd::DndAction {
         }
     }
 
-    fn vec_from_wl(value: DndAction) -> SmallVec<[Self; 3]> {
+    fn vec_from_wl(value: WlDndAction) -> SmallVec<[Self; 3]> {
         let mut vec = SmallVec::new();
-        if value.contains(DndAction::Ask) {
+        if value.contains(WlDndAction::Ask) {
             vec.push(Self::Ask);
         }
-        if value.contains(DndAction::Copy) {
+        if value.contains(WlDndAction::Copy) {
             vec.push(Self::Copy);
         }
-        if value.contains(DndAction::Move) {
+        if value.contains(WlDndAction::Move) {
             vec.push(Self::Move);
         }
         vec
     }
 
-    fn convert_slice(value: &[Self]) -> DndAction {
-        let mut result = DndAction::None;
+    fn convert_slice(value: &[Self]) -> WlDndAction {
+        let mut result = WlDndAction::None;
         for action in value.iter().copied() {
             result |= action.into();
         }
@@ -180,13 +180,13 @@ impl crate::input::dnd::DndAction {
     }
 }
 
-impl From<crate::input::dnd::DndAction> for DndAction {
-    fn from(value: crate::input::dnd::DndAction) -> Self {
+impl From<DndAction> for WlDndAction {
+    fn from(value: DndAction) -> Self {
         match value {
-            crate::input::dnd::DndAction::Ask => DndAction::Ask,
-            crate::input::dnd::DndAction::Copy => DndAction::Copy,
-            crate::input::dnd::DndAction::Move => DndAction::Move,
-            _ => DndAction::None,
+            DndAction::Ask => WlDndAction::Ask,
+            DndAction::Copy => WlDndAction::Copy,
+            DndAction::Move => WlDndAction::Move,
+            _ => WlDndAction::None,
         }
     }
 }
@@ -197,7 +197,7 @@ struct WlOfferState {
     dropped: bool,
     accepted: bool,
     finished: bool,
-    chosen_action: DndAction,
+    chosen_action: WlDndAction,
 }
 
 struct WlDndDataOffer<S: Source> {
@@ -317,12 +317,17 @@ fn handle_dnd<D, S>(
             dnd_actions,
             preferred_action,
         } => {
-            let dnd_actions = dnd_actions.into_result().unwrap_or(DndAction::None);
-            let preferred_action = preferred_action.into_result().unwrap_or(DndAction::None);
+            let dnd_actions = dnd_actions.into_result().unwrap_or(WlDndAction::None);
+            let preferred_action = preferred_action.into_result().unwrap_or(WlDndAction::None);
 
             // preferred_action must only contain one bitflag at the same time
-            if ![DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
-                .contains(&preferred_action)
+            if ![
+                WlDndAction::None,
+                WlDndAction::Move,
+                WlDndAction::Copy,
+                WlDndAction::Ask,
+            ]
+            .contains(&preferred_action)
             {
                 offer.post_error(wl_data_offer::Error::InvalidAction, "Invalid preferred action.");
                 return;
@@ -330,23 +335,27 @@ fn handle_dnd<D, S>(
 
             let source_actions = source
                 .metadata()
-                .map(|meta| crate::input::dnd::DndAction::convert_slice(&*meta.dnd_actions))
-                .unwrap_or_else(|| DndAction::empty());
+                .map(|meta| DndAction::convert_slice(&*meta.dnd_actions))
+                .unwrap_or_else(|| WlDndAction::empty());
             let possible_actions = source_actions & dnd_actions;
             let chosen_action = handler.action_choice(possible_actions, preferred_action);
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
-                [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&chosen_action),
+                [
+                    WlDndAction::None,
+                    WlDndAction::Move,
+                    WlDndAction::Copy,
+                    WlDndAction::Ask
+                ]
+                .contains(&chosen_action),
                 "Only one precise action should be chosen"
             );
             if chosen_action != data.chosen_action {
                 data.chosen_action = chosen_action;
                 offer.action(chosen_action);
                 source.choose_action(
-                    crate::input::dnd::DndAction::unwrap_single(&*crate::input::dnd::DndAction::vec_from_wl(
-                        chosen_action,
-                    ))
-                    .expect("We have selected a single value at this point."),
+                    DndAction::unwrap_single(&*DndAction::vec_from_wl(chosen_action))
+                        .expect("We have selected a single value at this point."),
                 );
             }
         }
@@ -358,7 +367,7 @@ fn handle_dnd<D, S>(
 #[derive(Debug)]
 pub struct WlOfferData<S: Source> {
     state: Arc<Mutex<WlOfferState>>,
-    _source: Arc<S>,
+    source: Arc<S>,
     #[allow(dead_code)]
     wl_offers: Vec<wl_data_offer::WlDataOffer>,
 }
@@ -366,6 +375,7 @@ pub struct WlOfferData<S: Source> {
 impl<S: Source> OfferData for WlOfferData<S> {
     fn disable(&self) {
         self.state.lock().unwrap().active = false;
+        self.source.choose_action(DndAction::None);
     }
 
     fn drop(&self) {
@@ -401,7 +411,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             dropped: false,
             accepted: true,
             finished: false,
-            chosen_action: DndAction::empty(),
+            chosen_action: WlDndAction::empty(),
         }));
 
         if source.is_client_local(self) {
@@ -439,9 +449,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
                 for mime_type in metadata.mime_types.iter().cloned() {
                     offer.offer(mime_type);
                 }
-                offer.source_actions(crate::input::dnd::DndAction::convert_slice(
-                    &*metadata.dnd_actions,
-                ));
+                offer.source_actions(DndAction::convert_slice(&*metadata.dnd_actions));
 
                 device.enter((*serial).into(), self, location.x, location.y, Some(&offer));
                 offers.push(offer);
@@ -452,7 +460,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
 
         Some(WlOfferData {
             state: offer_state,
-            _source: source,
+            source,
             wl_offers: offers,
         })
     }
@@ -477,7 +485,12 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
         }
     }
 
-    fn leave<S: Source>(&self, _data: &mut D, _offer: Option<&mut WlOfferData<S>>, seat: &Seat<D>) {
+    fn leave<S: Source>(&self, _data: &mut D, offer: Option<&mut WlOfferData<S>>, seat: &Seat<D>) {
+        if let Some(offer) = offer {
+            if offer.state.lock().unwrap().dropped {
+                return;
+            }
+        }
         let seat_data = seat
             .user_data()
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
@@ -540,21 +553,21 @@ impl DataDeviceState {
 ///
 /// If the preferred action is available, it'll pick it. Otherwise, it'll pick the first
 /// available in the following order: Ask, Copy, Move.
-pub fn default_action_chooser(available: DndAction, preferred: DndAction) -> DndAction {
+pub fn default_action_chooser(available: WlDndAction, preferred: WlDndAction) -> WlDndAction {
     // if the preferred action is valid (a single action) and in the available actions, use it
     // otherwise, follow a fallback stategy
-    if [DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&preferred)
+    if [WlDndAction::Move, WlDndAction::Copy, WlDndAction::Ask].contains(&preferred)
         && available.contains(preferred)
     {
         preferred
-    } else if available.contains(DndAction::Ask) {
-        DndAction::Ask
-    } else if available.contains(DndAction::Copy) {
-        DndAction::Copy
-    } else if available.contains(DndAction::Move) {
-        DndAction::Move
+    } else if available.contains(WlDndAction::Ask) {
+        WlDndAction::Ask
+    } else if available.contains(WlDndAction::Copy) {
+        WlDndAction::Copy
+    } else if available.contains(WlDndAction::Move) {
+        WlDndAction::Move
     } else {
-        DndAction::empty()
+        WlDndAction::empty()
     }
 }
 
