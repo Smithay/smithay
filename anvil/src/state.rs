@@ -718,6 +718,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         )
         .expect("failed to start XWayland");
 
+        let display_handle = self.display_handle.clone();
         let ret = self
             .handle
             .insert_source(xwayland, move |event, _, data| match event {
@@ -731,8 +732,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                         .unwrap_or(1.);
                     data.client_compositor_state(&client)
                         .set_client_scale(xwayland_scale);
-                    let mut wm = X11Wm::start_wm(data.handle.clone(), x11_socket, client.clone())
-                        .expect("Failed to attach X11 Window Manager");
+                    let mut wm =
+                        X11Wm::start_wm(data.handle.clone(), &display_handle, x11_socket, client.clone())
+                            .expect("Failed to attach X11 Window Manager");
 
                     let cursor = Cursor::load();
                     let image = cursor.get_image(1, Duration::ZERO);
