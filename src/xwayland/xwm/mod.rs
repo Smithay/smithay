@@ -1606,7 +1606,7 @@ where
         Event::DestroyNotify(n) => {
             if !xwm.clipboard.window_destroyed(&n.window, loop_handle) {
                 if !xwm.primary.window_destroyed(&n.window, loop_handle) {
-                    xwm.dnd.selection.window_destroyed(&n.window, loop_handle);
+                    xwm.dnd.window_destroyed(&n.window, loop_handle);
                 }
             }
 
