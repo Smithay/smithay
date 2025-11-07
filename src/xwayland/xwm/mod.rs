@@ -620,7 +620,7 @@ impl Deref for OwnedX11Window {
     type Target = X11Window;
 
     fn deref(&self) -> &Self::Target {
-        &*self.window
+        &self.window
     }
 }
 
@@ -1604,11 +1604,9 @@ where
             }
         }
         Event::DestroyNotify(n) => {
-            if !xwm.clipboard.window_destroyed(&n.window, loop_handle) {
-                if !xwm.primary.window_destroyed(&n.window, loop_handle) {
-                    xwm.dnd.window_destroyed(&n.window, loop_handle);
-                }
-            }
+            xwm.clipboard.window_destroyed(&n.window, loop_handle);
+            xwm.primary.window_destroyed(&n.window, loop_handle);
+            xwm.dnd.window_destroyed(&n.window, loop_handle);
 
             if let Some(pos) = xwm.windows.iter().position(|x| x.window_id() == n.window) {
                 let surface = xwm.windows.remove(pos);

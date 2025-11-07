@@ -217,7 +217,7 @@ impl XWmSelection {
         Ok(XWmSelection {
             atom,
             conn: conn.clone(),
-            atoms: atoms.clone(),
+            atoms: *atoms,
             window: OwnedX11Window::new(window, conn),
             owner: x11rb::NONE,
             mime_types: Vec::new(),
