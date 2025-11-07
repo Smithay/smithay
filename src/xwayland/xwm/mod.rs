@@ -1081,29 +1081,6 @@ impl X11Wm {
         let atom = atom_from_mime(&mime_type, &self.conn, &self.atoms)?
             .ok_or(SelectionError::UnableToDetermineAtom)?;
 
-        let prop = self
-            .conn
-            .get_property(
-                true,
-                *selection.window,
-                self.atoms.TARGETS,
-                AtomEnum::ANY,
-                0,
-                4096,
-            )?
-            .reply_unchecked()?
-            .ok_or(SelectionError::UnableToDetermineAtom)?;
-        if prop.type_ != AtomEnum::ATOM.into() {
-            return Err(SelectionError::UnableToDetermineAtom);
-        }
-        if !prop
-            .value32()
-            .ok_or(SelectionError::UnableToDetermineAtom)?
-            .any(|target| target == atom)
-        {
-            return Err(SelectionError::UnableToDetermineAtom);
-        }
-
         debug!("Mime-type {:?} / Atom {:?}", mime_type, atom);
 
         if let Err(err) = rustix::fs::fcntl_setfl(&fd, OFlags::WRONLY | OFlags::NONBLOCK) {
