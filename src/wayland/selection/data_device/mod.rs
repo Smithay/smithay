@@ -16,8 +16,6 @@
 //!
 //! - the freestanding function [`set_data_device_selection`]
 //!   allows you to set the contents of the selection for your clients
-//! - the freestanding function [`start_dnd`] allows you to initiate a drag'n'drop event from the compositor
-//!   itself and receive interactions of clients with it via an other dedicated callback.
 //!
 //! The module defines the role `"dnd_icon"` that is assigned to surfaces used as drag'n'drop icons.
 //!
@@ -368,7 +366,7 @@ fn handle_dnd<D, S>(
     }
 }
 
-/// Type implementing [`OfferData`](crate::input::dnd::OfferData) for wl_data_offer based DnD sources
+/// Type implementing [`OfferData`] for wl_data_offer based DnD sources
 #[derive(Debug)]
 pub struct WlOfferData<S: Source> {
     state: Arc<Mutex<WlOfferState>>,
