@@ -19,11 +19,11 @@ use tracing::{debug, trace, warn};
 use wayland_server::DisplayHandle;
 use x11rb::{
     connection::Connection as _,
-    errors::ReplyOrIdError,
+    errors::{ConnectionError, ReplyOrIdError},
     protocol::{
         xfixes::SelectionNotifyEvent,
         xproto::{
-            Atom, AtomEnum, ClientMessageData, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _,
+            Atom, AtomEnum, ClientMessageData, ClientMessageEvent, ConfigureWindowAux, ConnectionExt,
             CreateWindowAux, EventMask, PropMode, Screen, StackMode, Window as X11Window, WindowClass,
         },
     },
@@ -829,6 +829,7 @@ impl Source for XwmDndSource {
 #[derive(Debug)]
 struct XwmOfferState {
     target: X11Window,
+    proxy: Option<X11Window>,
 
     preferred_action: DndAction,
     supported_actions: SmallVec<[DndAction; 3]>,
@@ -860,6 +861,32 @@ impl fmt::Debug for XwmActiveOffer {
 pub struct XwmOfferData<S: Source> {
     state: Arc<Mutex<XwmOfferState>>,
     source: Arc<S>,
+}
+
+fn get_proxy_window(
+    window: X11Window,
+    conn: &impl ConnectionExt,
+    atoms: &Atoms,
+) -> Result<Option<X11Window>, ConnectionError> {
+    if let Some(prop) = conn
+        .get_property(false, window, atoms.XdndProxy, AtomEnum::WINDOW, 0, 1)?
+        .reply_unchecked()?
+    {
+        if let Some(proxy) = prop.value32().and_then(|mut val| val.next()) {
+            if let Some(prop) = conn
+                .get_property(false, proxy, atoms.XdndProxy, AtomEnum::WINDOW, 0, 1)?
+                .reply_unchecked()?
+            {
+                if let Some(verify) = prop.value32().and_then(|mut val| val.next()) {
+                    if proxy == verify {
+                        return Ok(Some(proxy));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
@@ -905,9 +932,12 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
                     .ok()?;
             }
 
+            let proxy = get_proxy_window(self.window_id(), &xwm.conn, &self.atoms).ok()?;
+            let proxy_or_window = proxy.unwrap_or(self.window_id());
+
             let prop = xwm
                 .conn
-                .get_property(false, self.window_id(), self.atoms.XdndAware, AtomEnum::ANY, 0, 1)
+                .get_property(false, proxy_or_window, self.atoms.XdndAware, AtomEnum::ANY, 0, 1)
                 .ok()?
                 .reply()
                 .ok()?;
@@ -964,7 +994,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
             xwm.conn
                 .send_event(
                     false,
-                    self.window_id(),
+                    proxy_or_window,
                     EventMask::NO_EVENT,
                     ClientMessageEvent::new(32, self.window_id(), self.atoms.XdndEnter, enter_data),
                 )
@@ -974,6 +1004,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
             let mut offer = XwmOfferData {
                 state: Arc::new(Mutex::new(XwmOfferState {
                     target: self.window_id(),
+                    proxy,
 
                     preferred_action: if metadata.dnd_actions.contains(&DndAction::Copy) {
                         DndAction::Copy
@@ -1011,12 +1042,12 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
         _time: u32,
     ) {
         let Some(offer) = offer else { return };
-        if offer.state.lock().unwrap().dropped {
+        let mut state = offer.state.lock().unwrap();
+        if state.dropped {
             return;
         }
 
         let preferred = {
-            let mut state = offer.state.lock().unwrap();
             if state.pos_pending {
                 state.pos_cached = Some(location);
                 return;
@@ -1040,7 +1071,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
 
         if let Err(err) = xwm.conn.send_event(
             false,
-            self.window_id(),
+            state.proxy.unwrap_or(self.window_id()),
             EventMask::NO_EVENT,
             ClientMessageEvent::new(32, self.window_id(), self.atoms.XdndPosition, data),
         ) {
@@ -1079,14 +1110,15 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
             return;
         };
 
-        if !offer.state.lock().unwrap().dropped {
+        let state = offer.state.lock().unwrap();
+        if !state.dropped {
             let xwm = data.xwm_state(xwm_id);
             let data = [*xwm.dnd.selection.window, 0, 0, 0, 0];
             trace!("Sending XdndLeave: {:?}", data);
 
             if let Err(err) = xwm.conn.send_event(
                 false,
-                self.window_id(),
+                state.proxy.unwrap_or(self.window_id()),
                 EventMask::NO_EVENT,
                 ClientMessageEvent::new(32, self.window_id(), self.atoms.XdndLeave, data),
             ) {
@@ -1112,9 +1144,9 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
             return;
         };
 
-        let mut offer_state = offer.state.lock().unwrap();
-        offer_state.dropped = true;
-        if offer_state.pos_pending {
+        let mut state = offer.state.lock().unwrap();
+        state.dropped = true;
+        if state.pos_pending {
             return;
         }
 
@@ -1124,7 +1156,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
         trace!("Sending XdndDrop: {:?}", data);
         if let Err(err) = xwm.conn.send_event(
             false,
-            self.window_id(),
+            state.proxy.unwrap_or(self.window_id()),
             EventMask::NO_EVENT,
             ClientMessageEvent::new(32, self.window_id(), self.atoms.XdndDrop, data),
         ) {
