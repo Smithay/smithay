@@ -388,7 +388,7 @@ impl<S: Source> OfferData for WlOfferData<S> {
 
     fn validated(&self) -> bool {
         let data = self.state.lock().unwrap();
-        data.accepted && (!data.chosen_action.is_empty())
+        data.accepted
     }
 }
 
@@ -523,13 +523,18 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
         }
     }
 
-    fn drop<S: Source>(&self, _data: &mut D, _offer: Option<&mut WlOfferData<S>>, seat: &Seat<D>) {
+    fn drop<S: Source>(&self, _data: &mut D, offer: Option<&mut WlOfferData<S>>, seat: &Seat<D>) {
         let seat_data = seat
             .user_data()
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
             .unwrap()
             .borrow();
         for device in seat_data.known_data_devices() {
+            if let Some(ref offer) = offer {
+                if device.version() >= 3 && offer.state.lock().unwrap().chosen_action.is_empty() {
+                    continue;
+                }
+            }
             if device.id().same_client_as(&self.id()) {
                 device.drop();
             }
