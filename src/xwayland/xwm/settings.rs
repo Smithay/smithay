@@ -187,7 +187,7 @@ impl XSettings {
             data.push(0u8);
             data.extend(&(name.len() as u16).to_ne_bytes());
             data.extend(name);
-            data.extend(std::iter::repeat(0u8).take(pad(name.len())));
+            data.extend(std::iter::repeat_n(0u8, pad(name.len())));
             data.extend(&setting.last_changed_serial.to_ne_bytes());
 
             setting.val.serialize(&mut data);
@@ -228,7 +228,7 @@ impl Value {
                 let val = val.as_bytes();
                 data.extend(&(val.len() as u32).to_ne_bytes());
                 data.extend(val);
-                data.extend(std::iter::repeat(0u8).take(pad(val.len())));
+                data.extend(std::iter::repeat_n(0u8, pad(val.len())));
             }
             Value::Color(val) => {
                 for component in val {

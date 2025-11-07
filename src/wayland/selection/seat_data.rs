@@ -142,7 +142,7 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
         for device in self
             .known_devices
             .iter()
-            .filter(|&device| restrict_to.is_none() || restrict_to == Some(device))
+            .filter(|&device| restrict_to.is_none_or(|r| r == device))
             .filter(|&device| match device {
                 // NOTE: filter by actual type here to not get a missmpatches when using selections
                 // later on.
