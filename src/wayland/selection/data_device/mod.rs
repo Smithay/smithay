@@ -371,6 +371,7 @@ fn handle_dnd<D, S>(
 pub struct WlOfferData<S: Source> {
     state: Arc<Mutex<WlOfferState>>,
     source: Arc<S>,
+    last_source_actions: SmallVec<[DndAction; 3]>,
     #[allow(dead_code)]
     wl_offers: Vec<wl_data_offer::WlDataOffer>,
 }
@@ -424,7 +425,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             {
                 device.enter((*serial).into(), self, location.x, location.y, None);
             }
-            return None;
+            None
         } else if let Some(metadata) = source.metadata() {
             let handle = dh.backend_handle();
             let client = handle.get_client(self.id()).ok()?;
@@ -449,29 +450,32 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
 
                 // advertize the offer to the client
                 device.data_offer(&offer);
+
                 for mime_type in metadata.mime_types.iter().cloned() {
                     offer.offer(mime_type);
                 }
                 offer.source_actions(DndAction::convert_slice(&metadata.dnd_actions));
 
                 device.enter((*serial).into(), self, location.x, location.y, Some(&offer));
+
                 offers.push(offer);
             }
-        } else {
-            return None;
-        }
 
-        Some(WlOfferData {
-            state: offer_state,
-            source,
-            wl_offers: offers,
-        })
+            Some(WlOfferData {
+                state: offer_state,
+                source,
+                wl_offers: offers,
+                last_source_actions: metadata.dnd_actions,
+            })
+        } else {
+            None
+        }
     }
 
     fn motion<S: Source>(
         &self,
         _data: &mut D,
-        _offer: Option<&mut WlOfferData<S>>,
+        offer: Option<&mut WlOfferData<S>>,
         seat: &Seat<D>,
         location: Point<f64, Logical>,
         time: u32,
@@ -481,6 +485,19 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
             .unwrap()
             .borrow();
+
+        if let Some(offer) = offer {
+            if let Some(new_metadata) = offer.source.metadata() {
+                if offer.last_source_actions != new_metadata.dnd_actions {
+                    for wl_offer in &offer.wl_offers {
+                        wl_offer.source_actions(DndAction::convert_slice(&new_metadata.dnd_actions));
+                    }
+
+                    offer.last_source_actions = new_metadata.dnd_actions;
+                }
+            };
+        }
+
         for device in seat_data.known_data_devices() {
             if device.id().same_client_as(&self.id()) {
                 device.motion(time, location.x, location.y);
