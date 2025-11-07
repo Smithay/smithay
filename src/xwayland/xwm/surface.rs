@@ -1056,7 +1056,7 @@ impl X11Surface {
             return under_from_surface_tree(surface, point, location, surface_type);
         }
 
-        return None;
+        None
     }
 }
 

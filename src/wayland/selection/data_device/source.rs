@@ -120,10 +120,8 @@ impl IsAlive for WlDataSource {
 
 impl Source for WlDataSource {
     fn metadata(&self) -> Option<SourceMetadata> {
-        match self.data::<DataSourceUserData>() {
-            Some(data) => Some(data.inner.lock().unwrap().clone()),
-            None => None,
-        }
+        self.data::<DataSourceUserData>()
+            .map(|data| data.inner.lock().unwrap().clone())
     }
 
     fn choose_action(&self, action: DndAction) {

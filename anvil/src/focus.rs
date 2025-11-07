@@ -55,6 +55,7 @@ impl IsAlive for KeyboardFocusTarget {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum PointerFocusTarget {
     WlSurface(WlSurface),
     #[cfg(feature = "xwayland")]
