@@ -1,6 +1,7 @@
+#[cfg(feature = "xwayland")]
+use std::os::unix::io::OwnedFd;
 use std::{
     collections::HashMap,
-    os::unix::io::OwnedFd,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
