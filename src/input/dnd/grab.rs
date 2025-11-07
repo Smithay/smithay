@@ -164,6 +164,15 @@ where
 
             let (x, y) = (location - surface_location).into();
             if self.current_focus.is_none() {
+                if self
+                    .data_source
+                    .metadata()
+                    .is_some_and(|metadata| metadata.mime_types.is_empty())
+                {
+                    // delay until they have materialized
+                    return;
+                }
+
                 // We entered a new surface, send the data offer if appropriate
                 self.offer_data = focus.enter(
                     data,
