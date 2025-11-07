@@ -5,6 +5,7 @@ mod grab;
 use std::{any::Any, os::fd::OwnedFd, sync::Arc};
 
 use smallvec::SmallVec;
+#[cfg(feature = "wayland_frontend")]
 use wayland_server::DisplayHandle;
 
 use crate::{

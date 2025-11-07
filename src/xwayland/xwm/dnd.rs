@@ -34,12 +34,11 @@ use x11rb::{
 
 use crate::{
     input::{
-        dnd::{DnDGrab, DndAction, DndFocus, OfferData, Source, SourceMetadata},
+        dnd::{DnDGrab, DndAction, DndFocus, DndGrabHandler, OfferData, Source, SourceMetadata},
         pointer::Focus,
         Seat, SeatHandler,
     },
     utils::{IsAlive, Logical, Point, Serial},
-    wayland::selection::data_device::DataDeviceHandler,
     xwayland::{
         xwm::{atom_from_mime, mime_from_atom, selection::XWmSelection, Atoms, OwnedX11Window, XwmId},
         X11Surface, XwmHandler,
@@ -118,7 +117,7 @@ impl XWmDnd {
         event: SelectionNotifyEvent,
     ) -> Result<(), ReplyOrIdError>
     where
-        D: XwmHandler + SeatHandler + DataDeviceHandler + 'static,
+        D: XwmHandler + SeatHandler + DndGrabHandler + 'static,
         <D as SeatHandler>::PointerFocus: DndFocus<D>,
         <D as SeatHandler>::TouchFocus: DndFocus<D>,
     {
@@ -254,19 +253,19 @@ impl XWmDnd {
         match (ptr_grab, touch_grab) {
             (Some((seat, s1, start_data)), Some((_, s2, _))) if s1 >= s2 => {
                 // pointer_grab
-                let grab = DnDGrab::new_pointer(dh, start_data, source, seat.clone(), None);
+                let grab = DnDGrab::new_pointer(dh, start_data, source, seat.clone());
                 seat.get_pointer().unwrap().set_grab(data, grab, s1, Focus::Keep);
             }
             (Some((seat, serial, start_data)), None) => {
                 // pointer grab
-                let grab = DnDGrab::new_pointer(dh, start_data, source, seat.clone(), None);
+                let grab = DnDGrab::new_pointer(dh, start_data, source, seat.clone());
                 seat.get_pointer()
                     .unwrap()
                     .set_grab(data, grab, serial, Focus::Keep);
             }
             (_, Some((seat, serial, start_data))) => {
                 // touch_grab
-                let grab = DnDGrab::new_touch(dh, start_data, source, seat.clone(), None);
+                let grab = DnDGrab::new_touch(dh, start_data, source, seat.clone());
                 seat.get_touch().unwrap().set_grab(data, grab, serial);
             }
             (None, None) => unreachable!(),

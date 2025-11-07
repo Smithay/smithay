@@ -1,7 +1,7 @@
 use std::{fmt, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::DisplayHandle;
 
 use crate::{
     input::{
@@ -19,7 +19,6 @@ use crate::{
         Seat, SeatHandler,
     },
     utils::{Logical, Point, Serial, SERIAL_COUNTER},
-    wayland::selection::data_device::{ClientDndGrabHandler, DataDeviceHandler},
 };
 
 use super::{DndFocus, Source};
@@ -33,8 +32,6 @@ pub struct DnDGrab<D: SeatHandler, S: Source, F: DndFocus<D> + 'static> {
     data_source: Arc<S>,
     current_focus: Option<F>,
     offer_data: Option<F::OfferData<S>>,
-    #[cfg(feature = "wayland_frontend")]
-    icon: Option<WlSurface>,
     seat: Seat<D>,
 }
 
@@ -46,14 +43,18 @@ where
     F::OfferData<S>: fmt::Debug + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DnDGrab")
-            .field("dh", &self.dh)
-            .field("pointer_start_data", &self.pointer_start_data)
+        let mut f = f.debug_struct("DnDGrab");
+
+        #[cfg(feature = "wayland_frontend")]
+        {
+            f.field("dh", &self.dh);
+        }
+
+        f.field("pointer_start_data", &self.pointer_start_data)
             .field("touch_start_data", &self.touch_start_data)
             .field("data_source", &self.data_source)
             .field("current_focus", &self.current_focus)
             .field("offer_data", &self.offer_data)
-            .field("icon", &self.icon)
             .field("seat", &self.seat)
             .finish()
     }
@@ -63,12 +64,12 @@ impl<D: SeatHandler, S: Source> DnDGrab<D, S, D::PointerFocus>
 where
     D::PointerFocus: DndFocus<D>,
 {
-    pub(crate) fn new_pointer(
+    /// Create a new DnDGrab from an implicit pointer grab for a given source
+    pub fn new_pointer(
         #[cfg(feature = "wayland_frontend")] dh: &DisplayHandle,
         start_data: PointerGrabStartData<D>,
         source: S,
         seat: Seat<D>,
-        #[cfg(feature = "wayland_frontend")] icon: Option<WlSurface>,
     ) -> Self {
         Self {
             #[cfg(feature = "wayland_frontend")]
@@ -78,8 +79,6 @@ where
             data_source: Arc::new(source),
             current_focus: None,
             offer_data: None,
-            #[cfg(feature = "wayland_frontend")]
-            icon,
             seat,
         }
     }
@@ -89,12 +88,12 @@ impl<D: SeatHandler, S: Source> DnDGrab<D, S, D::TouchFocus>
 where
     D::TouchFocus: DndFocus<D>,
 {
-    pub(crate) fn new_touch(
+    /// Create a new DnDGrab from an implicit touch grab for a given source
+    pub fn new_touch(
         #[cfg(feature = "wayland_frontend")] dh: &DisplayHandle,
         start_data: TouchGrabStartData<D>,
         source: S,
         seat: Seat<D>,
-        #[cfg(feature = "wayland_frontend")] icon: Option<WlSurface>,
     ) -> Self {
         Self {
             #[cfg(feature = "wayland_frontend")]
@@ -104,16 +103,29 @@ where
             data_source: Arc::new(source),
             current_focus: None,
             offer_data: None,
-            #[cfg(feature = "wayland_frontend")]
-            icon,
             seat,
         }
     }
 }
 
+/// Events that are generated during drag'n'drop
+pub trait DndGrabHandler: SeatHandler + Sized {
+    /// The drag'n'drop action was finished by the user releasing the buttons/touch inputs
+    ///
+    /// At this point, any icon should be removed.
+    ///
+    /// * `target` - The target that the contents were dropped on.
+    /// * `validated` - Whether the drop offer was negotiated and accepted. If `false`, the drop
+    ///   was cancelled or otherwise not successful.
+    /// * `seat` - The seat on which the DnD action was finished.
+    fn dropped<T: DndFocus<Self>>(&mut self, target: Option<&T>, validated: bool, seat: Seat<Self>) {
+        let _ = (target, validated, seat);
+    }
+}
+
 impl<D, S, F> DnDGrab<D, S, F>
 where
-    D: DataDeviceHandler,
+    D: DndGrabHandler,
     D: SeatHandler,
     D: 'static,
     S: Source,
@@ -193,8 +205,7 @@ where
             self.data_source.drop_performed();
         }
 
-        ClientDndGrabHandler::dropped(data, self.current_focus.as_ref(), validated, self.seat.clone());
-        self.icon = None;
+        DndGrabHandler::dropped(data, self.current_focus.as_ref(), validated, self.seat.clone());
         // in all cases abandon the drop
         // no more buttons are pressed, release the grab
         if let Some(ref focus) = self.current_focus {
@@ -205,7 +216,7 @@ where
 
 impl<D, S> PointerGrab<D> for DnDGrab<D, S, D::PointerFocus>
 where
-    D: DataDeviceHandler,
+    D: DndGrabHandler,
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: DndFocus<D> + 'static,
     D: 'static,
@@ -343,7 +354,7 @@ where
 
 impl<D, S> TouchGrab<D> for DnDGrab<D, S, D::TouchFocus>
 where
-    D: DataDeviceHandler,
+    D: DndGrabHandler,
     D: SeatHandler,
     <D as SeatHandler>::TouchFocus: DndFocus<D> + 'static,
     D: 'static,

@@ -28,7 +28,7 @@
 //!
 //! ```no_run
 //! #  use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
-//! #  use smithay::wayland::selection::SelectionTarget;
+//! #  use smithay::wayland::selection::{SelectionTarget, SelectionHandler, data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler}};
 //! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
 //! #  use smithay::utils::{Rectangle, Logical};
 //! #  use std::os::unix::io::OwnedFd;
@@ -41,7 +41,7 @@
 //! #     }
 //! # }
 //! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-//! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus, dnd::DndGrabHandler};
 //! # use smithay::backend::input::KeyState;
 //! # use smithay::input::{
 //! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
@@ -53,51 +53,7 @@
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
 //! #
-//! # #[derive(Debug, Clone, PartialEq)]
-//! # struct Target;
-//! # impl IsAlive for Target {
-//! #   fn alive(&self) -> bool { true }
-//! # }
-//! # impl PointerTarget<State> for Target {
-//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
-//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
-//! #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
-//! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
-//! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
-//! #   fn frame(&self, seat: &Seat<State>, data: &mut State) {}
-//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
-//! #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
-//! #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
-//! #   fn gesture_swipe_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeEndEvent) {}
-//! #   fn gesture_pinch_begin(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchBeginEvent) {}
-//! #   fn gesture_pinch_update(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchUpdateEvent) {}
-//! #   fn gesture_pinch_end(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchEndEvent) {}
-//! #   fn gesture_hold_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldBeginEvent) {}
-//! #   fn gesture_hold_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldEndEvent) {}
-//! # }
-//! # impl KeyboardTarget<State> for Target {
-//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
-//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
-//! #   fn key(
-//! #       &self,
-//! #       seat: &Seat<State>,
-//! #       data: &mut State,
-//! #       key: KeysymHandle<'_>,
-//! #       state: KeyState,
-//! #       serial: Serial,
-//! #       time: u32,
-//! #   ) {}
-//! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
-//! # }
-//! # impl TouchTarget<State> for Target {
-//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
-//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
-//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
-//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
-//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
-//! # }
+//! # type Target = WlSurface;
 //! # impl SeatHandler for State {
 //! #     type KeyboardFocus = Target;
 //! #     type PointerFocus = Target;
@@ -106,6 +62,14 @@
 //! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) {}
 //! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {}
 //! # }
+//! # impl DndGrabHandler for State {}
+//! # impl DataDeviceHandler for State {
+//! #     fn data_device_state(&mut self) -> &mut DataDeviceState { unreachable!() }
+//! # }
+//! # impl SelectionHandler for State {
+//! #     type SelectionUserData = ();
+//! # }
+//! # impl WaylandDndGrabHandler for State {}
 //!
 //! impl XwmHandler for State {
 //!     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm {
@@ -160,11 +124,14 @@
 //! ```
 
 use crate::{
-    input::{dnd::DndFocus, SeatHandler},
+    input::{
+        dnd::{DndFocus, DndGrabHandler},
+        SeatHandler,
+    },
     output::Output,
     utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
     wayland::{
-        selection::{data_device::DataDeviceHandler, SelectionTarget},
+        selection::SelectionTarget,
         xwayland_shell::{self, XWaylandShellHandler},
     },
 };
@@ -655,7 +622,7 @@ impl X11Wm {
         D: XwmHandler,
         D: xwayland_shell::XWaylandShellHandler,
         D: SeatHandler,
-        D: DataDeviceHandler,
+        D: DndGrabHandler,
         <D as SeatHandler>::PointerFocus: DndFocus<D>,
         <D as SeatHandler>::TouchFocus: DndFocus<D>,
         D: 'static,
@@ -1270,7 +1237,7 @@ where
     D: XwmHandler,
     D: xwayland_shell::XWaylandShellHandler,
     D: SeatHandler,
-    D: DataDeviceHandler,
+    D: DndGrabHandler,
     <D as SeatHandler>::PointerFocus: DndFocus<D>,
     <D as SeatHandler>::TouchFocus: DndFocus<D>,
     D: 'static,
