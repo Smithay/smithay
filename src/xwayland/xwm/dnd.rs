@@ -236,7 +236,7 @@ impl XWmDnd {
         let source = XwmDndSource {
             xwm: id,
             conn: Arc::downgrade(&xwm.conn),
-            atoms: xwm.atoms.clone(),
+            atoms: xwm.atoms,
             target: window.clone(),
             source: xwm.dnd.selection.owner,
             state: state.clone(),
@@ -455,9 +455,10 @@ impl XWmDnd {
 
             let mut actions = SmallVec::from_elem(DndAction::Copy, 1); // copy is always supported on XDND
             if drag_state.version > 1 {
+                #[allow(clippy::single_match)]
                 match DndAction::from_x(data[4], &self.selection.atoms) {
                     DndAction::Move => actions.push(DndAction::Move),
-                    _ => {} // We don't support Ask or Private atm
+                    _ => {} // We don't support Ask or Private atm,
                 }
             }
 
@@ -633,7 +634,7 @@ impl DndAction {
         }
     }
 
-    fn to_x(&self, atoms: &Atoms) -> Atom {
+    fn to_x(self, atoms: &Atoms) -> Atom {
         match self {
             DndAction::Copy => atoms.XdndActionCopy,
             DndAction::Move => atoms.XdndActionMove,
@@ -714,7 +715,7 @@ impl IsAlive for XwmDndSource {
     fn alive(&self) -> bool {
         let state = self.state.lock().unwrap();
         !matches!(&state.wayland, &WlState::Cancelled)
-            && !(matches!(&state.wayland, &WlState::Finished) && state.x11 == X11State::Finished)
+            || (matches!(&state.wayland, &WlState::Finished) && state.x11 != X11State::Finished)
     }
 }
 

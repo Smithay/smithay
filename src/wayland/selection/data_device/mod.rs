@@ -252,14 +252,9 @@ fn handle_dnd<D, S>(
     match request {
         Request::Accept { mime_type, .. } => {
             if let Some(mtype) = mime_type {
-                if source
+                data.accepted = source
                     .metadata()
-                    .is_some_and(|meta| meta.mime_types.contains(&mtype))
-                {
-                    data.accepted = true;
-                } else {
-                    data.accepted = false;
-                }
+                    .is_some_and(|meta| meta.mime_types.contains(&mtype));
             } else {
                 data.accepted = false;
             }
@@ -335,8 +330,8 @@ fn handle_dnd<D, S>(
 
             let source_actions = source
                 .metadata()
-                .map(|meta| DndAction::convert_slice(&*meta.dnd_actions))
-                .unwrap_or_else(|| WlDndAction::empty());
+                .map(|meta| DndAction::convert_slice(&meta.dnd_actions))
+                .unwrap_or_else(WlDndAction::empty);
             let possible_actions = source_actions & dnd_actions;
             let chosen_action = handler.action_choice(possible_actions, preferred_action);
             // check that the user provided callback respects that one precise action should be chosen
@@ -354,7 +349,7 @@ fn handle_dnd<D, S>(
                 data.chosen_action = chosen_action;
                 offer.action(chosen_action);
                 source.choose_action(
-                    DndAction::unwrap_single(&*DndAction::vec_from_wl(chosen_action))
+                    DndAction::unwrap_single(&DndAction::vec_from_wl(chosen_action))
                         .expect("We have selected a single value at this point."),
                 );
             }
@@ -449,7 +444,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
                 for mime_type in metadata.mime_types.iter().cloned() {
                     offer.offer(mime_type);
                 }
-                offer.source_actions(DndAction::convert_slice(&*metadata.dnd_actions));
+                offer.source_actions(DndAction::convert_slice(&metadata.dnd_actions));
 
                 device.enter((*serial).into(), self, location.x, location.y, Some(&offer));
                 offers.push(offer);
