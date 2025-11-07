@@ -368,8 +368,10 @@ pub fn write_selection_callback(
             if transfer.incr {
                 // even if it failed, we still need to drain the incr transfer
                 conn.delete_property(*transfer.window, atoms._WL_SELECTION)?;
+                Ok(IncomingAction::WaitForProperty)
+            } else {
+                Ok(IncomingAction::Done)
             }
-            Ok(IncomingAction::Done)
         }
     }
 }
