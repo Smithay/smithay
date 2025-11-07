@@ -11,6 +11,7 @@ use std::{
 };
 
 use atomic_float::AtomicF64;
+use calloop::LoopHandle;
 use rustix::fs::OFlags;
 use smallvec::SmallVec;
 use tracing::{debug, trace, warn};
@@ -96,6 +97,18 @@ impl XWmDnd {
         }
 
         Ok(())
+    }
+
+    pub fn window_destroyed<D>(&mut self, window: &X11Window, loop_handle: &LoopHandle<'_, D>) -> bool {
+        let mut res = self.selection.window_destroyed(window, loop_handle);
+        if let Some(active_drag) = self.active_drag.as_ref() {
+            if active_drag.source == *window {
+                self.active_drag.take();
+                self.xdnd_active.store(false, Ordering::Release);
+                res = true;
+            }
+        }
+        res
     }
 
     pub fn xfixes_selection_notify<D>(
