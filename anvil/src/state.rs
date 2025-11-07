@@ -29,9 +29,9 @@ use smithay::{
         PopupKind, PopupManager, Space,
     },
     input::{
-        dnd::DndFocus,
+        dnd::{DnDGrab, DndFocus, DndGrabHandler, Source},
         keyboard::{Keysym, LedState, XkbConfig},
-        pointer::{CursorImageStatus, PointerHandle},
+        pointer::{CursorImageStatus, Focus, PointerHandle},
         Seat, SeatHandler, SeatState,
     },
     output::Output,
@@ -42,11 +42,11 @@ use smithay::{
         },
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
-            protocol::{wl_data_source::WlDataSource, wl_surface::WlSurface},
+            protocol::wl_surface::WlSurface,
             Client, Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point, Rectangle, Time},
+    utils::{Clock, Logical, Monotonic, Point, Rectangle, Serial, Time},
     wayland::{
         commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState},
         compositor::{get_parent, with_states, CompositorClientState, CompositorHandler, CompositorState},
@@ -67,7 +67,9 @@ use smithay::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
         selection::{
-            data_device::{set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState},
+            data_device::{
+                set_data_device_focus, DataDeviceHandler, DataDeviceState, GrabType, WaylandDndGrabHandler,
+            },
             primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
             wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
@@ -191,13 +193,45 @@ impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     }
 }
 
-impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
-    fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
+impl<BackendData: Backend> WaylandDndGrabHandler for AnvilState<BackendData> {
+    fn dnd_requested<S: Source>(
+        &mut self,
+        source: S,
+        icon: Option<WlSurface>,
+        seat: Seat<Self>,
+        serial: Serial,
+        type_: GrabType,
+    ) {
         self.dnd_icon = icon.map(|surface| DndIcon {
             surface,
             offset: (0, 0).into(),
         });
+
+        match type_ {
+            GrabType::Pointer => {
+                let pointer = seat.get_pointer().unwrap();
+                let start_data = pointer.grab_start_data().unwrap();
+                pointer.set_grab(
+                    self,
+                    DnDGrab::new_pointer(&self.display_handle, start_data, source, seat),
+                    serial,
+                    Focus::Clear,
+                );
+            }
+            GrabType::Touch => {
+                let touch = seat.get_touch().unwrap();
+                let start_data = touch.grab_start_data().unwrap();
+                touch.set_grab(
+                    self,
+                    DnDGrab::new_touch(&self.display_handle, start_data, source, seat),
+                    serial,
+                );
+            }
+        }
     }
+}
+
+impl<BackendData: Backend> DndGrabHandler for AnvilState<BackendData> {
     fn dropped<T: DndFocus<Self>>(&mut self, _target: Option<&T>, _validated: bool, _seat: Seat<Self>) {
         self.dnd_icon = None;
     }
