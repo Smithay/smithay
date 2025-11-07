@@ -358,6 +358,7 @@ impl Window {
                     return under_from_surface_tree(surface, point, (0, 0), surface_type);
                 }
             }
+            #[cfg(feature = "xwayland")]
             WindowSurface::X11(surface) => {
                 if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
                     return surface.surface_under(point, (0, 0), surface_type);
