@@ -30,7 +30,7 @@ pub enum DndAction {
 }
 
 /// The metadata describing a data source
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SourceMetadata {
     /// The MIME types supported by this source
     pub mime_types: Vec<String>,
