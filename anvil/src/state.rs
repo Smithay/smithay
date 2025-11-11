@@ -30,7 +30,7 @@ use smithay::{
         PopupKind, PopupManager, Space,
     },
     input::{
-        dnd::{DnDGrab, DndFocus, DndGrabHandler, Source},
+        dnd::{DnDGrab, DndFocus, DndGrabHandler, GrabType, Source},
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, Focus, PointerHandle},
         Seat, SeatHandler, SeatState,
@@ -68,9 +68,7 @@ use smithay::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
         selection::{
-            data_device::{
-                set_data_device_focus, DataDeviceHandler, DataDeviceState, GrabType, WaylandDndGrabHandler,
-            },
+            data_device::{set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
             primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
             wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
@@ -233,7 +231,14 @@ impl<BackendData: Backend> WaylandDndGrabHandler for AnvilState<BackendData> {
 }
 
 impl<BackendData: Backend> DndGrabHandler for AnvilState<BackendData> {
-    fn dropped<T: DndFocus<Self>>(&mut self, _target: Option<&T>, _validated: bool, _seat: Seat<Self>) {
+    fn dropped<T: DndFocus<Self>>(
+        &mut self,
+        _target: Option<&T>,
+        _validated: bool,
+        _seat: Seat<Self>,
+        _type: GrabType,
+        _location: Point<f64, Logical>,
+    ) {
         self.dnd_icon = None;
     }
 }
