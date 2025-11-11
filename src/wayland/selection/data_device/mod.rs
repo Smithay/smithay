@@ -90,7 +90,7 @@ use wayland_server::{
 
 use crate::{
     input::{
-        dnd::{DndAction, DndFocus, OfferData, Source},
+        dnd::{DndAction, DndFocus, GrabType, OfferData, Source},
         Seat, SeatHandler,
     },
     utils::{Logical, Point, Serial},
@@ -117,15 +117,6 @@ pub trait DataDeviceHandler: Sized + SelectionHandler + WaylandDndGrabHandler {
     fn action_choice(&mut self, available: WlDndAction, preferred: WlDndAction) -> WlDndAction {
         default_action_chooser(available, preferred)
     }
-}
-
-/// Type of interaction that started a DnD grab
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GrabType {
-    /// Pointer input was validated for the requested grab
-    Pointer,
-    /// Touch input was validated for the requested grab
-    Touch,
 }
 
 /// Handler for wayland client initiated drag'n'drop

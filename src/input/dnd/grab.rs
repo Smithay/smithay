@@ -23,12 +23,22 @@ use crate::{
 
 use super::{DndFocus, Source};
 
+/// Type of interaction that started a DnD grab
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GrabType {
+    /// Pointer input was validated for the requested grab
+    Pointer,
+    /// Touch input was validated for the requested grab
+    Touch,
+}
+
 /// Grab during a client-initiated DnD operation.
 pub struct DnDGrab<D: SeatHandler, S: Source, F: DndFocus<D> + 'static> {
     #[cfg(feature = "wayland_frontend")]
     dh: DisplayHandle,
     pointer_start_data: Option<PointerGrabStartData<D>>,
     touch_start_data: Option<TouchGrabStartData<D>>,
+    last_position: Point<f64, Logical>,
     data_source: Arc<S>,
     current_focus: Option<F>,
     offer_data: Option<F::OfferData<S>>,
@@ -52,6 +62,7 @@ where
 
         f.field("pointer_start_data", &self.pointer_start_data)
             .field("touch_start_data", &self.touch_start_data)
+            .field("last_position", &self.last_position)
             .field("data_source", &self.data_source)
             .field("current_focus", &self.current_focus)
             .field("offer_data", &self.offer_data)
@@ -71,11 +82,13 @@ where
         source: S,
         seat: Seat<D>,
     ) -> Self {
+        let last_position = start_data.location;
         Self {
             #[cfg(feature = "wayland_frontend")]
             dh: dh.clone(),
             pointer_start_data: Some(start_data),
             touch_start_data: None,
+            last_position,
             data_source: Arc::new(source),
             current_focus: None,
             offer_data: None,
@@ -95,11 +108,13 @@ where
         source: S,
         seat: Seat<D>,
     ) -> Self {
+        let last_position = start_data.location;
         Self {
             #[cfg(feature = "wayland_frontend")]
             dh: dh.clone(),
             pointer_start_data: None,
             touch_start_data: Some(start_data),
+            last_position,
             data_source: Arc::new(source),
             current_focus: None,
             offer_data: None,
@@ -118,8 +133,17 @@ pub trait DndGrabHandler: SeatHandler + Sized {
     /// * `validated` - Whether the drop offer was negotiated and accepted. If `false`, the drop
     ///   was cancelled or otherwise not successful.
     /// * `seat` - The seat on which the DnD action was finished.
-    fn dropped<T: DndFocus<Self>>(&mut self, target: Option<&T>, validated: bool, seat: Seat<Self>) {
-        let _ = (target, validated, seat);
+    /// * `type_` - Type of grab that initiated the DnD operation
+    /// * `location` - The location the drop was finished at
+    fn dropped<T: DndFocus<Self>>(
+        &mut self,
+        target: Option<&T>,
+        validated: bool,
+        seat: Seat<Self>,
+        type_: GrabType,
+        location: Point<f64, Logical>,
+    ) {
+        let _ = (target, validated, seat, type_, location);
     }
 }
 
@@ -214,7 +238,18 @@ where
             self.data_source.drop_performed();
         }
 
-        DndGrabHandler::dropped(data, self.current_focus.as_ref(), validated, self.seat.clone());
+        DndGrabHandler::dropped(
+            data,
+            self.current_focus.as_ref(),
+            validated,
+            self.seat.clone(),
+            if self.pointer_start_data.is_some() {
+                GrabType::Pointer
+            } else {
+                GrabType::Touch
+            },
+            self.last_position,
+        );
         // in all cases abandon the drop
         // no more buttons are pressed, release the grab
         if let Some(ref focus) = self.current_focus {
@@ -244,6 +279,8 @@ where
             self.pointer_start_data.as_ref().unwrap().focus.clone(),
             event,
         );
+
+        self.last_position = event.location;
 
         self.update_focus(data, focus, event.location, event.serial, event.time);
     }
@@ -399,6 +436,8 @@ where
         if event.slot != self.start_data().slot {
             return;
         }
+
+        self.last_position = event.location;
 
         self.update_focus(
             data,
