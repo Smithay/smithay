@@ -624,15 +624,9 @@ impl AtomicDrmSurface {
         if pending.vrr == value {
             return Ok(());
         }
+        let prop_mapping = self.prop_mapping.read().unwrap();
 
-        if value
-            && self
-                .prop_mapping
-                .read()
-                .unwrap()
-                .crtc_prop_handle(self.crtc, "VRR_ENABLED")
-                .is_err()
-        {
+        if value && prop_mapping.crtc_prop_handle(self.crtc, "VRR_ENABLED").is_err() {
             return Err(Error::UnknownProperty {
                 handle: self.crtc.into(),
                 name: "VRR_ENABLED",
@@ -655,20 +649,37 @@ impl AtomicDrmSurface {
             }),
         };
 
+        let req = AtomicRequest::build_request(
+            &prop_mapping,
+            self.crtc,
+            Some(pending.blob),
+            value,
+            &pending.connectors,
+            &[],
+            [&plane_config],
+        )?;
+
         if *current == *pending {
             // Try a non modesetting commit
             if self
-                .test_state_internal([plane_config.clone()], false, &current, &pending)
+                .fd
+                .atomic_commit(AtomicCommitFlags::TEST_ONLY, req.build()?)
                 .is_ok()
             {
-                current.vrr = value;
                 pending.vrr = value;
+                current.vrr = value;
                 return Ok(());
             }
         }
 
         // Try a modeset commit
-        self.test_state_internal([plane_config], true, &current, &pending)?;
+        self.fd
+            .atomic_commit(
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
+                req.build()?,
+            )
+            .map_err(|_| Error::TestFailed(self.crtc))?;
+
         pending.vrr = value;
         Ok(())
     }
