@@ -17,6 +17,7 @@ features = ["test_all_features", "libseat/docs_rs"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
+resolver = "3"
 members = [
     "smithay-drm-extras",
     "smallvil",
