@@ -1,4 +1,4 @@
-use std::{os::unix::io::OwnedFd, sync::Arc};
+use std::sync::Arc;
 
 use ::winit::platform::pump_events::PumpStatus;
 use smithay::{
@@ -26,7 +26,7 @@ use smithay::{
             SurfaceAttributes, TraversalAction,
         },
         selection::{
-            data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
+            data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
             SelectionHandler,
         },
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
@@ -82,10 +82,7 @@ impl DataDeviceHandler for App {
     }
 }
 
-impl ClientDndGrabHandler for App {}
-impl ServerDndGrabHandler for App {
-    fn send(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {}
-}
+impl WaylandDndGrabHandler for App {}
 
 impl CompositorHandler for App {
     fn compositor_state(&mut self) -> &mut CompositorState {
