@@ -1524,7 +1524,7 @@ where
                         AtomEnum::WINDOW,
                         &xwm.client_list_stacking,
                     )?;
-                    {
+                    if !surface.is_override_redirect() {
                         let mut state = surface.state.lock().unwrap();
                         conn.reparent_window(
                             n.window,
