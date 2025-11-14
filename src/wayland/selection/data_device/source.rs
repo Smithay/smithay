@@ -140,13 +140,11 @@ impl Source for WlDataSource {
     }
 
     fn cancel(&self) {
-        if self.version() >= 3 {
-            self.cancelled();
-        }
+        self.cancelled();
     }
 
     fn finished(&self) {
-        if self.version() >= 3 {
+        if self.version() >= wl_data_source::EVT_DND_FINISHED_SINCE {
             self.dnd_finished();
         }
     }
