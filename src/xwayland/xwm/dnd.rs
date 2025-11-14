@@ -557,6 +557,7 @@ impl XWmDnd {
 
     pub fn handle_drop(&mut self, drop_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
         if let Some(drag) = self.active_drag.take() {
+            self.xdnd_active.store(false, Ordering::Release);
             let data = drop_msg.as_data32();
             trace!("Got XDND drop msg: {:?}", data);
 
