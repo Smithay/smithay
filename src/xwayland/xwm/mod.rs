@@ -1253,12 +1253,9 @@ where
         Event::CreateNotify(n) => {
             if n.window == *xwm.wm_window
                 || n.window == *xwm.xsettings.window
-                || n.window == *xwm.clipboard.window
                 || xwm.clipboard.has_window(&n.window)
-                || n.window == *xwm.primary.window
                 || xwm.primary.has_window(&n.window)
-                || n.window == *xwm.dnd.selection.window
-                || xwm.dnd.selection.has_window(&n.window)
+                || xwm.dnd.has_window(&n.window)
             {
                 return Ok(());
             }
