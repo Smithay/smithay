@@ -110,6 +110,16 @@ impl XWmDnd {
         res
     }
 
+    pub fn has_window(&self, window: &X11Window) -> bool {
+        if let Some(drag) = self.active_drag.as_ref() {
+            if drag.target == *window {
+                return true;
+            }
+        }
+
+        self.selection.has_window(window)
+    }
+
     pub fn xfixes_selection_notify<D>(
         dh: &DisplayHandle,
         data: &mut D,

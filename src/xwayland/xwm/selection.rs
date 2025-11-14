@@ -243,7 +243,9 @@ impl XWmSelection {
     }
 
     pub fn has_window(&self, window: &X11Window) -> bool {
-        self.incoming.contains_key(window) || self.pending_transfers.lock().unwrap().contains_key(window)
+        self.window == *window
+            || self.incoming.contains_key(window)
+            || self.pending_transfers.lock().unwrap().contains_key(window)
     }
 
     pub fn type_(&self) -> Option<SelectionTarget> {
