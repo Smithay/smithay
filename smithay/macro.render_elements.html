@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Aggregate multiple types implementing `RenderElement` into a single enum type"><title>render_elements in smithay - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc macro"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">render_elements</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="index.html">smithay</a></div><h1>Macro <span class="macro">render_<wbr>elements</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/smithay/backend/renderer/element/mod.rs.html#1394-1457">Source</a> </span></div><pre class="rust item-decl"><code>macro_rules! render_elements {
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;=$lt:lifetime, $renderer:ty, $custom:ident&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;=$lt:lifetime, $renderer:ty, $($custom:ident),+&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;=$lt:lifetime, $renderer:ty&gt;; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;=$renderer:ty, $custom:ident&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;=$renderer:ty, $($custom:ident),+&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;=$renderer:ty&gt;; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;$lt:lifetime, $renderer:ident, $custom:ident&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;$lt:lifetime, $renderer:ident, $($custom:ident),+&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;$lt:lifetime, $renderer:ident&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;$renderer:ident, $custom:ident&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;$renderer:ident, $($custom:ident),+&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident&lt;$renderer:ident&gt; $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) =&gt; { ... };
+    ($(#[$attr:meta])* $vis:vis $name:ident; $($tail:tt)*) =&gt; { ... };
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Aggregate multiple types implementing <a href="backend/renderer/element/trait.RenderElement.html" title="trait smithay::backend::renderer::element::RenderElement"><code>RenderElement</code></a> into a single enum type</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::backend::renderer::element::render_elements;
+
+<span class="macro">render_elements!</span> {
+    MyRenderElements;
+    First=MyRenderElement1,
+    Second=MyRenderElement2,
+}</code></pre></div>
+<p>If the <a href="backend/renderer/element/trait.RenderElement.html" title="trait smithay::backend::renderer::element::RenderElement"><code>RenderElement</code></a> has special requirements on the <a href="backend/renderer/trait.Renderer.html" title="trait smithay::backend::renderer::Renderer"><code>Renderer</code></a> you can
+express them with a syntax similar to HRTBs.</p>
+<p>For example the <a href="backend/renderer/element/memory/struct.MemoryRenderBufferRenderElement.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement"><code>MemoryRenderBufferRenderElement</code></a> requires
+the <a href="backend/renderer/trait.Renderer.html" title="trait smithay::backend::renderer::Renderer"><code>Renderer</code></a> to implement the <a href="backend/renderer/trait.ImportMem.html" title="trait smithay::backend::renderer::ImportMem"><code>ImportMem</code></a> trait.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::backend::renderer::{
+    element::{memory::MemoryRenderBufferRenderElement, render_elements},
+    ImportMem,
+};
+
+<span class="macro">render_elements!</span> {
+    MyRenderElements&lt;R&gt; <span class="kw">where </span>R: ImportMem;
+    Memory=MemoryRenderBufferRenderElement&lt;R&gt;,
+}</code></pre></div>
+<p>In case you want to use a reference or an element with an explicit lifetime the macro
+additionally takes a lifetime on the defined enum.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::backend::renderer::{
+    element::{memory::MemoryRenderBufferRenderElement, render_elements},
+    ImportMem,
+};
+
+<span class="macro">render_elements!</span> {
+    MyRenderElements&lt;<span class="lifetime">'a</span>, R&gt; <span class="kw">where </span>R: ImportMem;
+    Memory=<span class="kw-2">&amp;</span><span class="lifetime">'a </span>MemoryRenderBufferRenderElement&lt;R&gt;,
+}</code></pre></div>
+<p>Additionally the macro can be used to define generic enums</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::backend::renderer::{
+    element::{memory::MemoryRenderBufferRenderElement, render_elements},
+    ImportMem,
+};
+
+<span class="macro">render_elements!</span> {
+    MyRenderElements&lt;<span class="lifetime">'a</span>, R, A, B&gt; <span class="kw">where </span>R: ImportMem;
+    Memory=<span class="kw-2">&amp;</span><span class="lifetime">'a </span>MemoryRenderBufferRenderElement&lt;R&gt;,
+    Owned=A,
+    Borrowed=<span class="kw-2">&amp;</span><span class="lifetime">'a </span>B,
+}</code></pre></div>
+<p>If your elements require a specific <a href="backend/renderer/trait.Renderer.html" title="trait smithay::backend::renderer::Renderer"><code>Renderer</code></a> instead of being
+generic over it you can specify the type like in the following example.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::backend::renderer::element::{render_elements, texture::TextureRenderElement};
+
+<span class="macro">render_elements!</span> {
+    MyRenderElements&lt;=GlesRenderer&gt;;
+    Texture=TextureRenderElement&lt;GlesTexture&gt;,
+}</code></pre></div></div></details></section></div></main></body></html>

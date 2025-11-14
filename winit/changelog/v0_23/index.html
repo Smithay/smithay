@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.23.0"><title>winit::changelog::v0_23 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_23</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_23</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#0230" title="0.23.0">0.23.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_23</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#32">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="0230"><a class="doc-anchor" href="#0230">§</a>0.23.0</h3>
+<ul>
+<li>On iOS, fixed support for the “Debug View Hierarchy” feature in Xcode.</li>
+<li>On all platforms, <code>available_monitors</code> and <code>primary_monitor</code> are now on <code>EventLoopWindowTarget</code> rather than <code>EventLoop</code> to list monitors event in the event loop.</li>
+<li>On Unix, X11 and Wayland are now optional features (enabled by default)</li>
+<li>On X11, fix deadlock when calling <code>set_fullscreen_inner</code>.</li>
+<li>On Web, prevent the webpage from scrolling when the user is focused on a winit canvas</li>
+<li>On Web, calling <code>window.set_cursor_icon</code> no longer breaks HiDPI scaling</li>
+<li>On Windows, drag and drop is now optional (enabled by default) and can be disabled with <code>WindowBuilderExtWindows::with_drag_and_drop(false)</code>.</li>
+<li>On Wayland, fix deadlock when calling to <code>set_inner_size</code> from a callback.</li>
+<li>On macOS, add <code>hide__other_applications</code> to <code>EventLoopWindowTarget</code> via existing <code>EventLoopWindowTargetExtMacOS</code> trait. <code>hide_other_applications</code> will hide other applications by calling <code>-[NSApplication hideOtherApplications: nil]</code>.</li>
+<li>On android added support for <code>run_return</code>.</li>
+<li>On MacOS, Fixed fullscreen and dialog support for <code>run_return</code>.</li>
+<li>On Windows, fix bug where we’d try to emit <code>MainEventsCleared</code> events during nested win32 event loops.</li>
+<li>On Web, use mouse events if pointer events aren’t supported. This affects Safari.</li>
+<li>On Windows, <code>set_ime_position</code> is now a no-op instead of a runtime crash.</li>
+<li>On Android, <code>set_fullscreen</code> is now a no-op instead of a runtime crash.</li>
+<li>On iOS and Android, <code>set_inner_size</code> is now a no-op instead of a runtime crash.</li>
+<li>On Android, fix <code>ControlFlow::Poll</code> not polling the Android event queue.</li>
+<li>On macOS, add <code>NSWindow.hasShadow</code> support.</li>
+<li>On Web, fix vertical mouse wheel scrolling being inverted.</li>
+<li>On Web, implement mouse capturing for click-dragging out of the canvas.</li>
+<li>On Web, fix <code>ControlFlow::Exit</code> not properly handled.</li>
+<li>On Web (web-sys only), send <code>WindowEvent::ScaleFactorChanged</code> event when <code>window.devicePixelRatio</code> is changed.</li>
+<li><strong>Breaking:</strong> On Web, <code>set_cursor_position</code> and <code>set_cursor_grab</code> will now always return an error.</li>
+<li><strong>Breaking:</strong> <code>PixelDelta</code> scroll events now return a <code>PhysicalPosition</code>.</li>
+<li>On NetBSD, fixed crash due to incorrect detection of the main thread.</li>
+<li><strong>Breaking:</strong> On X11, <code>-</code> key is mapped to the <code>Minus</code> virtual key code, instead of <code>Subtract</code>.</li>
+<li>On macOS, fix inverted horizontal scroll.</li>
+<li><strong>Breaking:</strong> <code>current_monitor</code> now returns <code>Option&lt;MonitorHandle&gt;</code>.</li>
+<li><strong>Breaking:</strong> <code>primary_monitor</code> now returns <code>Option&lt;MonitorHandle&gt;</code>.</li>
+<li>On macOS, updated core-* dependencies and cocoa.</li>
+<li>Bump <code>parking_lot</code> to 0.11</li>
+<li>On Android, bump <code>ndk</code>, <code>ndk-sys</code> and <code>ndk-glue</code> to 0.2. Checkout the new ndk-glue main proc attribute.</li>
+<li>On iOS, fixed starting the app in landscape where the view still had portrait dimensions.</li>
+<li>Deprecate the stdweb backend, to be removed in a future release</li>
+<li><strong>Breaking:</strong> Prefixed virtual key codes <code>Add</code>, <code>Multiply</code>, <code>Divide</code>, <code>Decimal</code>, and <code>Subtract</code> with <code>Numpad</code>.</li>
+<li>Added <code>Asterisk</code> and <code>Plus</code> virtual key codes.</li>
+<li>On Web (web-sys only), the <code>Event::LoopDestroyed</code> event is correctly emitted when leaving the page.</li>
+<li>On Web, the <code>WindowEvent::Destroyed</code> event now gets emitted when a <code>Window</code> is dropped.</li>
+<li>On Web (web-sys only), the event listeners are now removed when a <code>Window</code> is dropped or when the event loop is destroyed.</li>
+<li>On Web, the event handler closure passed to <code>EventLoop::run</code> now gets dropped after the event loop is destroyed.</li>
+<li><strong>Breaking:</strong> On Web, the canvas element associated to a <code>Window</code> is no longer removed from the DOM when the <code>Window</code> is dropped.</li>
+<li>On Web, <code>WindowEvent::Resized</code> is now emitted when <code>Window::set_inner_size</code> is called.</li>
+<li><strong>Breaking:</strong> <code>Fullscreen</code> enum now uses <code>Borderless(Option&lt;MonitorHandle&gt;)</code> instead of <code>Borderless(MonitorHandle)</code> to allow picking the current monitor.</li>
+<li>On MacOS, fix <code>WindowEvent::Moved</code> ignoring the scale factor.</li>
+<li>On Wayland, add missing virtual keycodes.</li>
+<li>On Wayland, implement proper <code>set_cursor_grab</code>.</li>
+<li>On Wayland, the cursor will use similar icons if the requested one isn’t available.</li>
+<li>On Wayland, right clicking on client side decorations will request application menu.</li>
+<li>On Wayland, fix tracking of window size after state changes.</li>
+<li>On Wayland, fix client side decorations not being hidden properly in fullscreen.</li>
+<li>On Wayland, fix incorrect size event when entering fullscreen with client side decorations.</li>
+<li>On Wayland, fix <code>resizable</code> attribute not being applied properly on startup.</li>
+<li>On Wayland, fix disabled repeat rate not being handled.</li>
+<li>On Wayland, fix decoration buttons not working after tty switch.</li>
+<li>On Wayland, fix scaling not being applied on output re-enable.</li>
+<li>On Wayland, fix crash when <code>XCURSOR_SIZE</code> is <code>0</code>.</li>
+<li>On Wayland, fix pointer getting created in some cases without pointer capability.</li>
+<li>On Wayland, on kwin, fix space between window and decorations on startup.</li>
+<li><strong>Breaking:</strong> On Wayland, <code>Theme</code> trait was reworked.</li>
+<li>On Wayland, disable maximize button for non-resizable window.</li>
+<li>On Wayland, added support for <code>set_ime_position</code>.</li>
+<li>On Wayland, fix crash on startup since GNOME 3.37.90.</li>
+<li>On X11, fix incorrect modifiers state on startup.</li>
+</ul>
+</div></details></section></div></main></body></html>

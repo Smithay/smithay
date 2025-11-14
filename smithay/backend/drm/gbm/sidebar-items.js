@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Error"],"fn":["framebuffer_from_bo","framebuffer_from_dmabuf","framebuffer_from_wayland_buffer"],"struct":["GbmFramebuffer"]};
