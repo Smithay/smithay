@@ -552,7 +552,9 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             .borrow();
         for device in seat_data.known_data_devices() {
             if let Some(ref offer) = offer {
-                if device.version() >= 3 && offer.state.lock().unwrap().chosen_action.is_empty() {
+                if device.version() >= wl_data_offer::REQ_SET_ACTIONS_SINCE
+                    && offer.state.lock().unwrap().chosen_action.is_empty()
+                {
                     continue;
                 }
             }
