@@ -11,6 +11,7 @@ use smithay::{
             damage::OutputDamageTracker,
             element::AsRenderElements,
             test::{DummyFramebuffer, DummyRenderer},
+            DebugFlags,
         },
     },
     input::pointer::{
@@ -46,6 +47,10 @@ impl Backend for TestState {
     fn reset_buffers(&mut self, _output: &Output) {}
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
     fn update_led_state(&mut self, _led_state: smithay::input::keyboard::LedState) {}
+    fn debug_flags(&self) -> DebugFlags {
+        DebugFlags::empty()
+    }
+    fn set_debug_flags(&mut self, _flags: DebugFlags) {}
 }
 
 pub fn run(channel: Channel<WlcsEvent>) {
