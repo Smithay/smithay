@@ -576,7 +576,7 @@ impl XWmDnd {
             let failed = || -> Result<(), ReplyOrIdError> {
                 drag.pending_transfers.lock().unwrap().remove(&drag.target);
 
-                let data = [drag.source, 0, 0, 0, 0];
+                let data = [*drag.target, 0, 0, 0, 0];
                 conn.send_event(
                     false,
                     drag.source,
@@ -793,7 +793,7 @@ impl Source for XwmDndSource {
             if let Some(conn) = self.conn.upgrade() {
                 trace!("XDND cancelled, but already dropped, sending XDNDFinished");
 
-                let data = [self.source, 0, 0, 0, 0];
+                let data = [*self.target, 0, 0, 0, 0];
                 if let Err(err) = conn.send_event(
                     false,
                     self.source,
@@ -815,7 +815,13 @@ impl Source for XwmDndSource {
             if let Some(conn) = self.conn.upgrade() {
                 trace!("XDND done, sending XDNDFinished");
 
-                let data = [self.source, (1 << 0), state.active_action.to_x(&self.atoms), 0, 0];
+                let data = [
+                    *self.target,
+                    (1 << 0),
+                    state.active_action.to_x(&self.atoms),
+                    0,
+                    0,
+                ];
                 if let Err(err) = conn.send_event(
                     false,
                     self.source,
