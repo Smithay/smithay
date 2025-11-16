@@ -158,26 +158,32 @@ impl BackgroundEffectState {
 #[macro_export]
 macro_rules! delegate_background_effect {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ExtBackgroundEffectManagerV1 =
-            $crate::reexports::wayland_protocols::ext::background_effect::v1::server::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
-        type __ExtBackgroundEffectSurfaceV1 =
-            $crate::reexports::wayland_protocols::ext::background_effect::v1::server::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::ext::background_effect::v1::server::{
+                        ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1,
+                        ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::background_effect::{BackgroundEffectState, BackgroundEffectSurfaceUserData},
+            };
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtBackgroundEffectManagerV1: ()
-            ] => $crate::wayland::background_effect::BackgroundEffectState
-        );
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtBackgroundEffectManagerV1: ()] => BackgroundEffectState
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtBackgroundEffectManagerV1: ()
-            ] => $crate::wayland::background_effect::BackgroundEffectState
-        );
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtBackgroundEffectSurfaceV1: $crate::wayland::background_effect::BackgroundEffectSurfaceUserData
-            ] => $crate::wayland::background_effect::BackgroundEffectState
-        );
-    }
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtBackgroundEffectManagerV1: ()] => BackgroundEffectState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtBackgroundEffectSurfaceV1: BackgroundEffectSurfaceUserData] => BackgroundEffectState
+            );
+        };
+    };
 }
