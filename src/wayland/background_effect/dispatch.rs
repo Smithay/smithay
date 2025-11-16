@@ -1,11 +1,14 @@
-use crate::wayland::background_effect::{BackgroundEffectState, BackgroundEffectSurfaceData};
+use crate::wayland::background_effect::{
+    BackgroundEffectState, BackgroundEffectSurfaceData, ExtBackgroundEffectHandler,
+};
+use crate::wayland::compositor;
 use crate::wayland::{
     background_effect::{BackgroundEffectSurfaceCachedState, BackgroundEffectSurfaceUserData},
     compositor::with_states,
 };
 use wayland_protocols::ext::background_effect::v1::server::{
     ext_background_effect_manager_v1::{
-        Capability, Error as ManagerError, ExtBackgroundEffectManagerV1, Request as ManagerRequest,
+        Error as ManagerError, ExtBackgroundEffectManagerV1, Request as ManagerRequest,
     },
     ext_background_effect_surface_v1::{
         Error as SurfaceError, ExtBackgroundEffectSurfaceV1, Request as SurfaceRequest,
@@ -13,16 +16,11 @@ use wayland_protocols::ext::background_effect::v1::server::{
 };
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
 
-// GlobalDispatch for ext_background_effect_manager_v1
-impl<D> GlobalDispatch<ExtBackgroundEffectManagerV1, (), D> for BackgroundEffectState
-where
-    D: GlobalDispatch<ExtBackgroundEffectManagerV1, ()>,
-    D: Dispatch<ExtBackgroundEffectManagerV1, ()>,
-    D: Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData>,
-    D: 'static,
+impl<D: ExtBackgroundEffectHandler> GlobalDispatch<ExtBackgroundEffectManagerV1, (), D>
+    for BackgroundEffectState
 {
     fn bind(
-        _state: &mut D,
+        state: &mut D,
         _handle: &DisplayHandle,
         _client: &Client,
         resource: New<ExtBackgroundEffectManagerV1>,
@@ -30,18 +28,11 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         let manager = data_init.init(resource, ());
-        // For now, always advertise blur capability
-        manager.capabilities(Capability::Blur);
+        manager.capabilities(state.capabilities());
     }
 }
 
-// Dispatch for ext_background_effect_manager_v1
-impl<D> Dispatch<ExtBackgroundEffectManagerV1, (), D> for BackgroundEffectState
-where
-    D: Dispatch<ExtBackgroundEffectManagerV1, ()>,
-    D: Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData>,
-    D: 'static,
-{
+impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectManagerV1, (), D> for BackgroundEffectState {
     fn request(
         _state: &mut D,
         _client: &Client,
@@ -80,10 +71,8 @@ where
     }
 }
 
-// Dispatch for ext_background_effect_surface_v1
-impl<D> Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData, D> for BackgroundEffectState
-where
-    D: Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData>,
+impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData, D>
+    for BackgroundEffectState
 {
     fn request(
         _state: &mut D,
@@ -104,8 +93,7 @@ where
                 with_states(&surface, |states| {
                     let mut cached = states.cached_state.get::<BackgroundEffectSurfaceCachedState>();
                     let pending = cached.pending();
-                    pending.blur_region =
-                        region.map(|r| crate::wayland::compositor::get_region_attributes(&r));
+                    pending.blur_region = region.map(|r| compositor::get_region_attributes(&r));
                 });
             }
             SurfaceRequest::Destroy => {
