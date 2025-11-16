@@ -283,14 +283,32 @@ where
 #[macro_export]
 macro_rules! delegate_relative_pointer {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1: ()
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1: ()
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1: $crate::wayland::relative_pointer::RelativePointerUserData<Self>
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::relative_pointer::zv1::server::{
+                        zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+                        zwp_relative_pointer_v1::ZwpRelativePointerV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::relative_pointer::{RelativePointerManagerState, RelativePointerUserData},
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpRelativePointerManagerV1: ()] => RelativePointerManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpRelativePointerManagerV1: ()] => RelativePointerManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpRelativePointerV1: RelativePointerUserData<Self>] => RelativePointerManagerState
+            );
+        };
     };
 }

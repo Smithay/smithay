@@ -255,17 +255,41 @@ mod handlers {
 #[macro_export]
 macro_rules! delegate_data_control {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1: $crate::wayland::selection::wlr_data_control::DataControlManagerGlobalData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1: $crate::wayland::selection::wlr_data_control::DataControlManagerUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1: $crate::wayland::selection::wlr_data_control::DataControlDeviceUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1: $crate::wayland::selection::wlr_data_control::DataControlSourceUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols_wlr::data_control::v1::server::{
+                        zwlr_data_control_device_v1::ZwlrDataControlDeviceV1,
+                        zwlr_data_control_manager_v1::ZwlrDataControlManagerV1,
+                        zwlr_data_control_source_v1::ZwlrDataControlSourceV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::selection::wlr_data_control::{
+                    DataControlDeviceUserData, DataControlManagerGlobalData, DataControlManagerUserData,
+                    DataControlSourceUserData, DataControlState,
+                },
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwlrDataControlManagerV1: DataControlManagerGlobalData] => DataControlState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwlrDataControlManagerV1: DataControlManagerUserData] => DataControlState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwlrDataControlDeviceV1: DataControlDeviceUserData] => DataControlState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwlrDataControlSourceV1: DataControlSourceUserData] => DataControlState
+            );
+        };
     };
 }

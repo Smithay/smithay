@@ -178,27 +178,32 @@ impl ContentTypeState {
 #[macro_export]
 macro_rules! delegate_content_type {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __WpContentTypeManagerV1 =
-            $crate::reexports::wayland_protocols::wp::content_type::v1::server::wp_content_type_manager_v1::WpContentTypeManagerV1;
-        type __WpContentTypeV1 =
-            $crate::reexports::wayland_protocols::wp::content_type::v1::server::wp_content_type_v1::WpContentTypeV1;
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::content_type::v1::server::{
+                        wp_content_type_manager_v1::WpContentTypeManagerV1,
+                        wp_content_type_v1::WpContentTypeV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::content_type::{ContentTypeState, ContentTypeUserData},
+            };
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeManagerV1: ()
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpContentTypeManagerV1: ()] => ContentTypeState
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeManagerV1: ()
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpContentTypeManagerV1: ()] => ContentTypeState
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeV1: $crate::wayland::content_type::ContentTypeUserData
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpContentTypeV1: ContentTypeUserData] => ContentTypeState
+            );
+        };
     };
 }
