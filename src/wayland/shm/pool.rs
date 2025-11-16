@@ -108,6 +108,13 @@ impl InnerPool {
 
         let pool_guard = self.map.read().unwrap();
 
+        // This should not happen, but in case a pool resize failed (which result in a protocol error
+        // and will kill the client) and the buffer got cached somewhere it is possible that we try to access
+        // a dead pool.
+        if pool_guard.ptr.is_null() {
+            return Err(());
+        }
+
         trace!(fd = ?self.fd, "Buffer access on shm pool");
 
         // Prepare the access
@@ -143,6 +150,13 @@ impl InnerPool {
         // This is actually a write access.
         #[allow(clippy::readonly_write_lock)]
         let pool_guard = self.map.write().unwrap();
+
+        // This should not happen, but in case a pool resize failed (which result in a protocol error
+        // and will kill the client) and the buffer got cached somewhere it is possible that we try to access
+        // a dead pool.
+        if pool_guard.ptr.is_null() {
+            return Err(());
+        }
 
         trace!(fd = ?self.fd, "Mutable buffer access on shm pool");
 
