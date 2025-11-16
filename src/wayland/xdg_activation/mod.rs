@@ -285,23 +285,32 @@ pub struct ActivationTokenData {
 #[macro_export]
 macro_rules! delegate_xdg_activation {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __XdgActivationV1 =
-            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_v1::XdgActivationV1;
-        type __XdgActivationTokenV1 =
-            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_token_v1::XdgActivationTokenV1;
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xdg::activation::v1::server::{
+                        xdg_activation_token_v1::XdgActivationTokenV1, xdg_activation_v1::XdgActivationV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::xdg_activation::{ActivationTokenData, XdgActivationState},
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __XdgActivationV1: ()
-        ] => $crate::wayland::xdg_activation::XdgActivationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __XdgActivationTokenV1: $crate::wayland::xdg_activation::ActivationTokenData
-        ] => $crate::wayland::xdg_activation::XdgActivationState);
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgActivationV1: ()] => XdgActivationState
+            );
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __XdgActivationV1: ()
-            ] => $crate::wayland::xdg_activation::XdgActivationState
-        );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgActivationTokenV1: ActivationTokenData] => XdgActivationState
+            );
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgActivationV1: ()] => XdgActivationState
+            );
+        };
     };
 }
 

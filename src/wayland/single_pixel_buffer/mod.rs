@@ -147,15 +147,30 @@ pub fn get_single_pixel_buffer(buffer: &WlBuffer) -> Result<&SinglePixelBufferUs
 #[macro_export]
 macro_rules! delegate_single_pixel_buffer {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1: ()
-        ] => $crate::wayland::single_pixel_buffer::SinglePixelBufferState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                    wayland_server::protocol::wl_buffer::WlBuffer,
+                    wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1,
+                },
+                wayland::single_pixel_buffer::{SinglePixelBufferState, SinglePixelBufferUserData},
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1: ()
-        ] => $crate::wayland::single_pixel_buffer::SinglePixelBufferState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::wayland::single_pixel_buffer::SinglePixelBufferUserData
-        ] => $crate::wayland::single_pixel_buffer::SinglePixelBufferState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpSinglePixelBufferManagerV1: ()] => SinglePixelBufferState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpSinglePixelBufferManagerV1: ()] => SinglePixelBufferState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlBuffer: SinglePixelBufferUserData] => SinglePixelBufferState
+            );
+        };
     };
 }

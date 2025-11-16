@@ -404,18 +404,41 @@ mod handlers {
 #[macro_export]
 macro_rules! delegate_primary_selection {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: $crate::wayland::selection::primary_selection::PrimaryDeviceManagerGlobalData
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::primary_selection::zv1::server::{
+                        zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1,
+                        zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1,
+                        zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::selection::primary_selection::{
+                    PrimaryDeviceManagerGlobalData, PrimaryDeviceUserData, PrimarySelectionState,
+                    PrimarySourceUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: ()
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1: $crate::wayland::selection::primary_selection::PrimaryDeviceUserData
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1: $crate::wayland::selection::primary_selection::PrimarySourceUserData
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPrimarySelectionDeviceManagerV1: PrimaryDeviceManagerGlobalData] => PrimarySelectionState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPrimarySelectionDeviceManagerV1: ()] => PrimarySelectionState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPrimarySelectionDeviceV1: PrimaryDeviceUserData] => PrimarySelectionState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPrimarySelectionSourceV1: PrimarySourceUserData] => PrimarySelectionState
+            );
+        };
     };
 }

@@ -182,12 +182,24 @@ impl<D: XdgToplevelTagHandler> Dispatch<XdgToplevelTagManagerV1, (), D> for XdgT
 #[macro_export]
 macro_rules! delegate_xdg_toplevel_tag {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::toplevel_tag::v1::server::xdg_toplevel_tag_manager_v1::XdgToplevelTagManagerV1: ()
-        ] => $crate::wayland::xdg_toplevel_tag::XdgToplevelTagManager);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xdg::toplevel_tag::v1::server::xdg_toplevel_tag_manager_v1::XdgToplevelTagManagerV1,
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::xdg_toplevel_tag::XdgToplevelTagManager,
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::toplevel_tag::v1::server::xdg_toplevel_tag_manager_v1::XdgToplevelTagManagerV1: ()
-        ] => $crate::wayland::xdg_toplevel_tag::XdgToplevelTagManager);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgToplevelTagManagerV1: ()] => XdgToplevelTagManager
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgToplevelTagManagerV1: ()] => XdgToplevelTagManager
+            );
+        };
     };
 }

@@ -389,15 +389,34 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, XdgToplevelIconUserD
 #[macro_export]
 macro_rules! delegate_xdg_toplevel_icon {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::toplevel_icon::v1::server::xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1: $crate::wayland::xdg_toplevel_icon::XdgToplevelIconManagerUserData
-        ] => $crate::wayland::xdg_toplevel_icon::XdgToplevelIconManager);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xdg::toplevel_icon::v1::server::{
+                        xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1,
+                        xdg_toplevel_icon_v1::XdgToplevelIconV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::xdg_toplevel_icon::{
+                    XdgToplevelIconManager, XdgToplevelIconManagerUserData, XdgToplevelIconUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::toplevel_icon::v1::server::xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1: ()
-        ] => $crate::wayland::xdg_toplevel_icon::XdgToplevelIconManager);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::toplevel_icon::v1::server::xdg_toplevel_icon_v1::XdgToplevelIconV1: $crate::wayland::xdg_toplevel_icon::XdgToplevelIconUserData
-        ] => $crate::wayland::xdg_toplevel_icon::XdgToplevelIconManager);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgToplevelIconManagerV1: XdgToplevelIconManagerUserData] => XdgToplevelIconManager
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgToplevelIconManagerV1: ()] => XdgToplevelIconManager
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgToplevelIconV1: XdgToplevelIconUserData] => XdgToplevelIconManager
+            );
+        };
     };
 }

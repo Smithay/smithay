@@ -506,14 +506,32 @@ impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelHandleV1, Foreign
 #[macro_export]
 macro_rules! delegate_foreign_toplevel_list {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1: $crate::wayland::foreign_toplevel_list::ForeignToplevelListGlobalData
-        ] => $crate::wayland::foreign_toplevel_list::ForeignToplevelListState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1: ()
-        ] => $crate::wayland::foreign_toplevel_list::ForeignToplevelListState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1: $crate::wayland::foreign_toplevel_list::ForeignToplevelHandle
-        ] => $crate::wayland::foreign_toplevel_list::ForeignToplevelListState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::ext::foreign_toplevel_list::v1::server::{
+                        ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
+                        ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::foreign_toplevel_list::{
+                    ForeignToplevelHandle, ForeignToplevelListGlobalData, ForeignToplevelListState,
+                },
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtForeignToplevelListV1: ForeignToplevelListGlobalData] => ForeignToplevelListState
+            );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtForeignToplevelListV1: ()] => ForeignToplevelListState
+            );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtForeignToplevelHandleV1: ForeignToplevelHandle] => ForeignToplevelListState
+            );
+        };
     };
 }

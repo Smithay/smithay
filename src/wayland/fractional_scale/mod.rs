@@ -267,15 +267,34 @@ where
 #[macro_export]
 macro_rules! delegate_fractional_scale {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1: ()
-        ] => $crate::wayland::fractional_scale::FractionalScaleManagerState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::fractional_scale::v1::server::{
+                        wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+                        wp_fractional_scale_v1::WpFractionalScaleV1,
+                    },
+                    wayland_server::{
+                        delegate_dispatch, delegate_global_dispatch, protocol::wl_surface::WlSurface, Weak,
+                    },
+                },
+                wayland::fractional_scale::FractionalScaleManagerState,
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1: ()
-        ] => $crate::wayland::fractional_scale::FractionalScaleManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_v1::WpFractionalScaleV1: $crate::reexports::wayland_server::Weak<$crate::reexports::wayland_server::protocol::wl_surface::WlSurface>
-        ] => $crate::wayland::fractional_scale::FractionalScaleManagerState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpFractionalScaleManagerV1: ()] => FractionalScaleManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpFractionalScaleManagerV1: ()] => FractionalScaleManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpFractionalScaleV1: Weak<WlSurface>] => FractionalScaleManagerState
+            );
+        };
     };
 }

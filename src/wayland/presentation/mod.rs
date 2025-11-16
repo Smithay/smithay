@@ -351,15 +351,31 @@ impl Drop for PresentationFeedbackCachedState {
 #[macro_export]
 macro_rules! delegate_presentation {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation::WpPresentation: u32
-        ] => $crate::wayland::presentation::PresentationState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::presentation_time::server::{
+                        wp_presentation::WpPresentation, wp_presentation_feedback::WpPresentationFeedback,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::presentation::{PresentationFeedbackState, PresentationState},
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation::WpPresentation: u32
-        ] => $crate::wayland::presentation::PresentationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback::WpPresentationFeedback: ()
-        ] => $crate::wayland::presentation::PresentationFeedbackState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpPresentation: u32] => PresentationState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpPresentation: u32] => PresentationState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpPresentationFeedback: ()] => PresentationFeedbackState
+            );
+        };
     };
 }

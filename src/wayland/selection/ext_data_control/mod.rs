@@ -251,17 +251,41 @@ mod handlers {
 #[macro_export]
 macro_rules! delegate_ext_data_control {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::data_control::v1::server::ext_data_control_manager_v1::ExtDataControlManagerV1: $crate::wayland::selection::ext_data_control::ExtDataControlManagerGlobalData
-        ] => $crate::wayland::selection::ext_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::data_control::v1::server::ext_data_control_manager_v1::ExtDataControlManagerV1: $crate::wayland::selection::ext_data_control::ExtDataControlManagerUserData
-        ] => $crate::wayland::selection::ext_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::data_control::v1::server::ext_data_control_device_v1::ExtDataControlDeviceV1: $crate::wayland::selection::ext_data_control::ExtDataControlDeviceUserData
-        ] => $crate::wayland::selection::ext_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1::ExtDataControlSourceV1: $crate::wayland::selection::ext_data_control::ExtDataControlSourceUserData
-        ] => $crate::wayland::selection::ext_data_control::DataControlState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::ext::data_control::v1::server::{
+                        ext_data_control_device_v1::ExtDataControlDeviceV1,
+                        ext_data_control_manager_v1::ExtDataControlManagerV1,
+                        ext_data_control_source_v1::ExtDataControlSourceV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::selection::ext_data_control::{
+                    DataControlState, ExtDataControlDeviceUserData, ExtDataControlManagerGlobalData,
+                    ExtDataControlManagerUserData, ExtDataControlSourceUserData,
+                },
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtDataControlManagerV1: ExtDataControlManagerGlobalData] => DataControlState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtDataControlManagerV1: ExtDataControlManagerUserData] => DataControlState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtDataControlDeviceV1: ExtDataControlDeviceUserData] => DataControlState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtDataControlSourceV1: ExtDataControlSourceUserData] => DataControlState
+            );
+        };
     };
 }
