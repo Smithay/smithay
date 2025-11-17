@@ -93,6 +93,8 @@ You also no longer need to manually set `LayerSurfaceAttributes::initial_configu
 
 ### Additions
 
+- ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
+
 xdg_shell and layer_shell now enforce the client acking a configure before committing a buffer, as required by the protocols.
 
 ```rs
