@@ -1,0 +1,54 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="iOS / UIKit"><title>winit::platform::ios - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module ios</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module ios</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#ios--uikit" title="iOS / UIKit">iOS / UIKit</a><ul><li><a href="#window-initialization" title="Window initialization">Window initialization</a></li><li><a href="#building-app" title="Building app">Building app</a></li><li><a href="#app-lifecycle-and-events" title="App lifecycle and events">App lifecycle and events</a></li><li><a href="#custom-uiapplicationdelegate" title="Custom `UIApplicationDelegate`">Custom <code>UIApplicationDelegate</code></a></li></ul></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>platform</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">platform</a></div><h1>Module <span>ios</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/platform/ios.rs.html#1-435">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong><code>ios_platform</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="ios--uikit"><a class="doc-anchor" href="#ios--uikit">§</a>iOS / UIKit</h2>
+<p>Winit has an OS requirement of iOS 8 or higher, and is regularly tested on
+iOS 9.3.</p>
+<h3 id="window-initialization"><a class="doc-anchor" href="#window-initialization">§</a>Window initialization</h3>
+<p>iOS’s main <code>UIApplicationMain</code> does some init work that’s required by all
+UI-related code (see issue <a href="https://github.com/rust-windowing/winit/issues/1705">#1705</a>). It is best to create your windows
+inside <a href="../../application/trait.ApplicationHandler.html#tymethod.resumed" title="method winit::application::ApplicationHandler::resumed"><code>ApplicationHandler::resumed</code></a>.</p>
+<h3 id="building-app"><a class="doc-anchor" href="#building-app">§</a>Building app</h3>
+<p>To build ios app you will need rustc built for this targets:</p>
+<ul>
+<li>armv7-apple-ios</li>
+<li>armv7s-apple-ios</li>
+<li>i386-apple-ios</li>
+<li>aarch64-apple-ios</li>
+<li>x86_64-apple-ios</li>
+</ul>
+<p>Then</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>cargo build --target=...</code></pre></div>
+<p>The simplest way to integrate your app into xcode environment is to build it
+as a static library. Wrap your main function and export it.</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="attr">#[no_mangle]
+</span><span class="kw">pub extern fn </span>start_winit_app() {
+    start_inner()
+}
+
+<span class="kw">fn </span>start_inner() {
+   ...
+}</code></pre></div>
+<p>Compile project and then drag resulting .a into Xcode project. Add winit.h to xcode.</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code>void start_winit_app();</code></pre></div>
+<p>Use start_winit_app inside your xcode’s main function.</p>
+<h3 id="app-lifecycle-and-events"><a class="doc-anchor" href="#app-lifecycle-and-events">§</a>App lifecycle and events</h3>
+<p>iOS environment is very different from other platforms and you must be very
+careful with it’s events. Familiarize yourself with
+<a href="https://developer.apple.com/library/ios/documentation/UIKit/Reference/UIApplicationDelegate_Protocol/">app lifecycle</a>.</p>
+<p>This is how those event are represented in winit:</p>
+<ul>
+<li>applicationDidBecomeActive is Resumed</li>
+<li>applicationWillResignActive is Suspended</li>
+<li>applicationWillTerminate is LoopExiting</li>
+</ul>
+<p>Keep in mind that after LoopExiting event is received every attempt to draw with
+opengl will result in segfault.</p>
+<p>Also note that app may not receive the LoopExiting event if suspended; it might be SIGKILL’ed.</p>
+<h3 id="custom-uiapplicationdelegate"><a class="doc-anchor" href="#custom-uiapplicationdelegate">§</a>Custom <code>UIApplicationDelegate</code></h3>
+<p>Winit usually handles everything related to the lifecycle events of the application. Sometimes,
+though, you might want to access some of the more niche stuff that <a href="https://developer.apple.com/documentation/uikit/uiapplicationdelegate?language=objc">the application
+delegate</a> provides. This functionality is not exposed directly in Winit, since it
+would increase the API surface by quite a lot. Instead, Winit guarantees that it will not
+register an application delegate, so you can set up a custom one in a nib file instead.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.ScreenEdge.html" title="struct winit::platform::ios::ScreenEdge">Screen<wbr>Edge</a></dt><dd>The <a href="https://developer.apple.com/documentation/uikit/uirectedge?language=objc">edges</a> of a screen.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Idiom.html" title="enum winit::platform::ios::Idiom">Idiom</a></dt><dd>The device <a href="https://developer.apple.com/documentation/uikit/uidevice/1620037-userinterfaceidiom?language=objc">idiom</a>.</dd><dt><a class="enum" href="enum.StatusBarStyle.html" title="enum winit::platform::ios::StatusBarStyle">Status<wbr>BarStyle</a></dt><dt><a class="enum" href="enum.ValidOrientations.html" title="enum winit::platform::ios::ValidOrientations">Valid<wbr>Orientations</a></dt><dd>Valid orientations for a particular <a href="../../window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a>.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.EventLoopExtIOS.html" title="trait winit::platform::ios::EventLoopExtIOS">Event<wbr>Loop<wbr>ExtIOS</a></dt><dd>Additional methods on <a href="../../event_loop/struct.EventLoop.html" title="struct winit::event_loop::EventLoop"><code>EventLoop</code></a> that are specific to iOS.</dd><dt><a class="trait" href="trait.MonitorHandleExtIOS.html" title="trait winit::platform::ios::MonitorHandleExtIOS">Monitor<wbr>Handle<wbr>ExtIOS</a></dt><dd>Additional methods on <a href="../../monitor/struct.MonitorHandle.html" title="struct winit::monitor::MonitorHandle"><code>MonitorHandle</code></a> that are specific to iOS.</dd><dt><a class="trait" href="trait.WindowAttributesExtIOS.html" title="trait winit::platform::ios::WindowAttributesExtIOS">Window<wbr>Attributes<wbr>ExtIOS</a></dt><dd>Additional methods on <a href="../../window/struct.WindowAttributes.html" title="struct winit::window::WindowAttributes"><code>WindowAttributes</code></a> that are specific to iOS.</dd><dt><a class="trait" href="trait.WindowExtIOS.html" title="trait winit::platform::ios::WindowExtIOS">Window<wbr>ExtIOS</a></dt><dd>Additional methods on <a href="../../window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a> that are specific to iOS.</dd></dl></section></div></main></body></html>
