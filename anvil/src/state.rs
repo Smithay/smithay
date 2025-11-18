@@ -214,7 +214,7 @@ impl<BackendData: Backend> WaylandDndGrabHandler for AnvilState<BackendData> {
                     self,
                     DnDGrab::new_pointer(&self.display_handle, start_data, source, seat),
                     serial,
-                    Focus::Clear,
+                    Focus::Keep,
                 );
             }
             GrabType::Touch => {
