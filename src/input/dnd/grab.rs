@@ -353,6 +353,15 @@ where
         handle.button(data, event);
 
         if handle.current_pressed().is_empty() {
+            handle.motion(
+                data,
+                None,
+                &PointerMotionEvent {
+                    location: self.last_position,
+                    serial: event.serial,
+                    time: event.time,
+                },
+            );
             // the user dropped, proceed to the drop
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
