@@ -125,8 +125,6 @@ pub trait WaylandDndGrabHandler: SeatHandler + Sized {
     /// A client requested a drag'n'drop as response to a user pointer action
     ///
     /// * `source` - The data source provided by the client.
-    ///   If it is `None`, this means the DnD is restricted to surfaces of the
-    ///   same client and the client will manage data transfer by itself.
     /// * `icon` - The icon the client requested to be used to be associated with the cursor icon
     ///   during the drag'n'drop.
     /// * `seat` - The seat on which the DnD operation was started
