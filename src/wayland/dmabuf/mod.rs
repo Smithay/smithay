@@ -863,7 +863,7 @@ pub struct ImportNotifier {
 #[derive(Debug)]
 enum Import {
     /// The import can fail or create a WlBuffer.
-    Falliable,
+    Fallible,
 
     /// A WlBuffer object has already been created. Failure causes client death.
     Infallible(WlBuffer),
