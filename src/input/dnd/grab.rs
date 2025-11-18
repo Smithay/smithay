@@ -124,12 +124,24 @@ where
 }
 
 /// Enum over DndFocus candidates receiving a drop from `DnDGrab`
-#[derive(Debug, Clone)]
 pub enum DndTarget<'a, D: SeatHandler> {
     /// A Pointer-based DnDGrab ended on a `D::PointerFocus`
     Pointer(&'a D::PointerFocus),
     /// A Touch-based DnDGrab ended on a `D::TouchFocus`
     Touch(&'a D::TouchFocus),
+}
+
+impl<D: SeatHandler> fmt::Debug for DndTarget<'_, D>
+where
+    D::PointerFocus: fmt::Debug,
+    D::TouchFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pointer(p) => f.debug_tuple("DndTarget::Pointer").field(p).finish(),
+            Self::Touch(t) => f.debug_tuple("DndTarget::Touch").field(t).finish(),
+        }
+    }
 }
 
 impl<'a, D: SeatHandler> DndTarget<'a, D> {
@@ -160,7 +172,7 @@ impl<'a, D: SeatHandler> DndTarget<'a, D> {
 
 impl<'a, F, D: SeatHandler<PointerFocus = F, TouchFocus = F>> DndTarget<'a, D> {
     /// Returns the contained value consuming `self`.
-    pub fn unwrap(self) -> &'a F {
+    pub fn into_inner(self) -> &'a F {
         match self {
             DndTarget::Pointer(p) => p,
             DndTarget::Touch(t) => t,
