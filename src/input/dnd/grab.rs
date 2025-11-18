@@ -123,9 +123,54 @@ where
     }
 }
 
+/// Enum over DndFocus candidates receiving a drop from `DnDGrab`
+#[derive(Debug, Clone)]
+pub enum DndTarget<'a, D: SeatHandler> {
+    /// A Pointer-based DnDGrab ended on a `D::PointerFocus`
+    Pointer(&'a D::PointerFocus),
+    /// A Touch-based DnDGrab ended on a `D::TouchFocus`
+    Touch(&'a D::TouchFocus),
+}
+
+impl<'a, D: SeatHandler> DndTarget<'a, D> {
+    /// Returns the contained `Pointer`-value, consuming `self``.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the self value equals `Touch`.
+    pub fn unwrap_pointer(self) -> &'a D::PointerFocus {
+        match self {
+            DndTarget::Pointer(p) => p,
+            DndTarget::Touch(_) => panic!("unwrap_pointer on touch-based dnd grab target"),
+        }
+    }
+
+    /// Returns the contained `Touch`-value, consuming `self``.
+    ///
+    /// ## Panics
+    ///
+    /// Panics if the self value equals `Pointer`.
+    pub fn unwrap_touch(self) -> &'a D::TouchFocus {
+        match self {
+            DndTarget::Pointer(_) => panic!("unwrap_pointer on pointer-based dnd grab target"),
+            DndTarget::Touch(t) => t,
+        }
+    }
+}
+
+impl<'a, F, D: SeatHandler<PointerFocus = F, TouchFocus = F>> DndTarget<'a, D> {
+    /// Returns the contained value consuming `self`.
+    pub fn unwrap(self) -> &'a F {
+        match self {
+            DndTarget::Pointer(p) => p,
+            DndTarget::Touch(t) => t,
+        }
+    }
+}
+
 /// Events that are generated during drag'n'drop
 pub trait DndGrabHandler: SeatHandler + Sized {
-    /// The drag'n'drop action was finished by the user releasing the buttons/touch inputs
+    /// The drag'n'drop action was finished by the user releasing the pointer button / touch inputs.
     ///
     /// At this point, any icon should be removed.
     ///
@@ -133,17 +178,15 @@ pub trait DndGrabHandler: SeatHandler + Sized {
     /// * `validated` - Whether the drop offer was negotiated and accepted. If `false`, the drop
     ///   was cancelled or otherwise not successful.
     /// * `seat` - The seat on which the DnD action was finished.
-    /// * `type_` - Type of grab that initiated the DnD operation
     /// * `location` - The location the drop was finished at
-    fn dropped<T: DndFocus<Self>>(
+    fn dropped(
         &mut self,
-        target: Option<&T>,
+        target: Option<DndTarget<'_, Self>>,
         validated: bool,
         seat: Seat<Self>,
-        type_: GrabType,
         location: Point<f64, Logical>,
     ) {
-        let _ = (target, validated, seat, type_, location);
+        let _ = (target, validated, seat, location);
     }
 }
 
@@ -215,7 +258,7 @@ where
         }
     }
 
-    fn drop(&mut self, data: &mut D) {
+    fn drop<'a>(&'a mut self, data: &mut D, into_target: impl Fn(&'a F) -> DndTarget<'a, D>) {
         // the user dropped, proceed to the drop
         let validated = self.offer_data.as_ref().is_none_or(|data| data.validated());
         if let Some(ref focus) = self.current_focus {
@@ -240,14 +283,9 @@ where
 
         DndGrabHandler::dropped(
             data,
-            self.current_focus.as_ref(),
+            self.current_focus.as_ref().map(into_target),
             validated,
             self.seat.clone(),
-            if self.pointer_start_data.is_some() {
-                GrabType::Pointer
-            } else {
-                GrabType::Touch
-            },
             self.last_position,
         );
         // in all cases abandon the drop
@@ -273,7 +311,7 @@ where
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &PointerMotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus
+        // While the grab is active, we still honor the implicit grab target
         handle.motion(
             data,
             self.pointer_start_data.as_ref().unwrap().focus.clone(),
@@ -394,7 +432,7 @@ where
     }
 
     fn unset(&mut self, data: &mut D) {
-        self.drop(data);
+        self.drop(data, DndTarget::Pointer);
     }
 }
 
@@ -487,6 +525,6 @@ where
     }
 
     fn unset(&mut self, data: &mut D) {
-        self.drop(data);
+        self.drop(data, DndTarget::Touch);
     }
 }

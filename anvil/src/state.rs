@@ -30,7 +30,7 @@ use smithay::{
         PopupKind, PopupManager, Space,
     },
     input::{
-        dnd::{DnDGrab, DndFocus, DndGrabHandler, GrabType, Source},
+        dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source},
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, Focus, PointerHandle},
         Seat, SeatHandler, SeatState,
@@ -231,12 +231,11 @@ impl<BackendData: Backend> WaylandDndGrabHandler for AnvilState<BackendData> {
 }
 
 impl<BackendData: Backend> DndGrabHandler for AnvilState<BackendData> {
-    fn dropped<T: DndFocus<Self>>(
+    fn dropped(
         &mut self,
-        _target: Option<&T>,
+        _target: Option<DndTarget<'_, Self>>,
         _validated: bool,
         _seat: Seat<Self>,
-        _type: GrabType,
         _location: Point<f64, Logical>,
     ) {
         self.dnd_icon = None;
