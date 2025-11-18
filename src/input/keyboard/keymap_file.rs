@@ -86,6 +86,12 @@ impl KeymapFile {
         Ok(())
     }
 
+    #[cfg(feature = "wayland_frontend")]
+    /// Send keymap string for processing
+    pub fn keymap_string(&self) -> String {
+        self.keymap.clone()
+    }
+
     /// Send the keymap contained within to a WlKeyboard
     pub fn send(
         &self,
