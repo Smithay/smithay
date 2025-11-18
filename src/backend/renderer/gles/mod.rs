@@ -1283,6 +1283,81 @@ impl ImportDma for GlesRenderer {
 impl ImportDmaWl for GlesRenderer {}
 
 impl GlesRenderer {
+
+    /**
+     * Import vulkun buffer into opengl context
+     */
+    pub fn import_vulkan_fd(
+        &mut self,
+        mem_fd: i32,
+        mem_size:u64,
+        width:i32,
+        height:i32,
+        format:Fourcc
+    ) -> Result<GlesTexture, GlesError>  {
+
+        if !self.extensions.iter().any(|ext| ext == "GL_EXT_memory_object") {
+            return Err(GlesError::GLExtensionNotSupported(&["GL_EXT_memory_object"]));
+        }
+
+        if !self.extensions.iter().any(|ext| ext == "GL_EXT_memory_object_fd") {
+            return Err(GlesError::GLExtensionNotSupported(&["GL_EXT_memory_object_fd"]));
+        }
+
+        let mut memory_object = 0;
+        let mut texture = 0;
+
+
+        let format_gl = fourcc_to_gl_formats(format)
+                .map(|(internal, _, _)| internal)
+                .unwrap_or(ffi::RGBA8);
+
+        unsafe {
+
+            self.egl.make_current()?;
+
+            self.gl.CreateMemoryObjectsEXT(1, &mut memory_object);
+            self.gl.MemoryObjectParameterivEXT(memory_object, ffi::DEDICATED_MEMORY_OBJECT_EXT, &1);
+
+
+            self.gl.ImportMemoryFdEXT(
+                memory_object,
+                mem_size,
+                ffi::HANDLE_TYPE_OPAQUE_FD_EXT,
+                mem_fd,
+            );
+
+
+            self.gl.GenTextures(1, &mut texture);
+
+            self.gl.BindTexture(ffi::TEXTURE_2D, texture);
+            self.gl.TextureStorageMem2DEXT(
+                texture,
+                1,
+                ffi::RGBA8,
+                width,
+                height,
+                memory_object,
+                0,
+            );
+
+            let has_alpha = has_alpha(format);
+            let texture = GlesTexture(Arc::new(GlesTextureInternal {
+                texture: texture,
+                sync: RwLock::default(),
+                format: Some(format_gl),
+                has_alpha,
+                is_external:false,
+                y_inverted: false,
+                size: Size::new(width, height),
+                egl_images: None,
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
+            }));
+
+            Ok(texture)
+        }
+    }
+
     #[profiling::function]
     fn existing_dmabuf_texture(&self, buffer: &Dmabuf) -> Result<Option<GlesTexture>, GlesError> {
         let Some(texture) = self.dmabuf_cache.get(&buffer.weak()) else {
