@@ -1,7 +1,3 @@
-use std::borrow::Cow;
-
-use wayland_server::protocol::wl_surface::WlSurface;
-
 use crate::{
     backend::renderer::{
         element::{
@@ -12,18 +8,10 @@ use crate::{
     },
     desktop::{space::SpaceElement, WindowSurfaceType},
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::seat::WaylandFocus,
     xwayland::X11Surface,
 };
 
 use super::{output_update, WindowOutputUserData};
-
-impl WaylandFocus for X11Surface {
-    #[inline]
-    fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
-        X11Surface::wl_surface(self).map(Cow::Owned)
-    }
-}
 
 impl SpaceElement for X11Surface {
     fn bbox(&self) -> Rectangle<i32, Logical> {

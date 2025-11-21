@@ -11,7 +11,10 @@ use crate::{
         Seat, SeatHandler,
     },
     utils::{user_data::UserDataMap, Client, IsAlive, Logical, Rectangle, Serial, Size},
-    wayland::{compositor, seat::keyboard::enter_internal},
+    wayland::{
+        compositor,
+        seat::{keyboard::enter_internal, WaylandFocus},
+    },
 };
 #[cfg(feature = "desktop")]
 use crate::{
@@ -22,6 +25,7 @@ use crate::{
 use atomic_float::AtomicF64;
 use encoding_rs::WINDOWS_1252;
 use std::{
+    borrow::Cow,
     collections::HashSet,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -1340,5 +1344,11 @@ impl<D: SeatHandler + 'static> TouchTarget<D> for X11Surface {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             TouchTarget::orientation(surface, seat, data, event, seq)
         }
+    }
+}
+
+impl WaylandFocus for X11Surface {
+    fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
+        X11Surface::wl_surface(self).map(Cow::Owned)
     }
 }

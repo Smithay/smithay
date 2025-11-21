@@ -8,6 +8,8 @@ use smallvec::SmallVec;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::DisplayHandle;
 
+#[cfg(feature = "xwayland")]
+use crate::wayland::seat::WaylandFocus;
 use crate::{
     input::{Seat, SeatHandler},
     utils::{IsAlive, Logical, Point, Serial},
@@ -83,6 +85,47 @@ pub trait OfferData: Send + 'static {
     fn validated(&self) -> bool;
 }
 
+// We sadly have to duplicate this whole trait for code in `DnDGrab`,
+// because conditional trait bounds are not a thing (yet? rust-lang/rust#115590)
+#[cfg(feature = "xwayland")]
+/// A potential Drag'n'Drop target
+pub trait DndFocus<D: SeatHandler>: WaylandFocus + IsAlive + PartialEq {
+    /// OfferData implementation returned by this target
+    type OfferData<S>: OfferData
+    where
+        S: Source;
+
+    /// An active Drag'n'Drop operation has entered the client
+    fn enter<S: Source>(
+        &self,
+        data: &mut D,
+        #[cfg(feature = "wayland_frontend")] dh: &DisplayHandle,
+        source: Arc<S>,
+        seat: &Seat<D>,
+        location: Point<f64, Logical>,
+        serial: &Serial,
+    ) -> Option<Self::OfferData<S>>;
+
+    /// An active Drag'n'Drop operation, which has previously
+    /// entered the client, has been moved
+    fn motion<S: Source>(
+        &self,
+        data: &mut D,
+        offer: Option<&mut Self::OfferData<S>>,
+        seat: &Seat<D>,
+        location: Point<f64, Logical>,
+        time: u32,
+    );
+
+    /// An active Drag'n'Drop operation, which has previously
+    /// entered the client, left again.
+    fn leave<S: Source>(&self, data: &mut D, offer: Option<&mut Self::OfferData<S>>, seat: &Seat<D>);
+
+    /// An active Drag'n'Drop operation, which has previously
+    /// entered the client, has been dropped.
+    fn drop<S: Source>(&self, data: &mut D, offer: Option<&mut Self::OfferData<S>>, seat: &Seat<D>);
+}
+#[cfg(not(feature = "xwayland"))]
 /// A potential Drag'n'Drop target
 pub trait DndFocus<D: SeatHandler>: IsAlive + PartialEq {
     /// OfferData implementation returned by this target

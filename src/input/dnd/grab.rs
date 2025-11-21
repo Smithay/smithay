@@ -3,6 +3,11 @@ use std::{fmt, sync::Arc};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::DisplayHandle;
 
+#[cfg(feature = "xwayland")]
+use crate::{wayland::seat::WaylandFocus, xwayland::XWaylandClientData};
+#[cfg(feature = "xwayland")]
+use wayland_server::Resource;
+
 use crate::{
     input::{
         dnd::OfferData,
@@ -323,12 +328,7 @@ where
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &PointerMotionEvent,
     ) {
-        // While the grab is active, we still honor the implicit grab target
-        handle.motion(
-            data,
-            self.pointer_start_data.as_ref().unwrap().focus.clone(),
-            event,
-        );
+        handle.motion(data, self.ptr_focus(), event);
 
         self.last_position = event.location;
 
@@ -342,26 +342,13 @@ where
         _focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
-        handle.relative_motion(
-            data,
-            self.pointer_start_data.as_ref().unwrap().focus.clone(),
-            event,
-        );
+        handle.relative_motion(data, self.ptr_focus(), event);
     }
 
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         handle.button(data, event);
 
         if handle.current_pressed().is_empty() {
-            handle.motion(
-                data,
-                None,
-                &PointerMotionEvent {
-                    location: self.last_position,
-                    serial: event.serial,
-                    time: event.time,
-                },
-            );
             // the user dropped, proceed to the drop
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
@@ -496,6 +483,8 @@ where
             return;
         }
 
+        handle.motion(data, self.touch_focus(), event, seq);
+
         self.last_position = event.location;
 
         self.update_focus(
@@ -504,13 +493,6 @@ where
             event.location,
             SERIAL_COUNTER.next_serial(),
             event.time,
-        );
-
-        handle.motion(
-            data,
-            self.touch_start_data.as_ref().unwrap().focus.clone(),
-            event,
-            seq,
         );
     }
 
@@ -547,5 +529,81 @@ where
 
     fn unset(&mut self, data: &mut D) {
         self.drop(data, DndTarget::Touch);
+    }
+}
+
+#[cfg(not(feature = "xwayland"))]
+impl<D, S> DnDGrab<D, S, D::PointerFocus>
+where
+    D: DndGrabHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: DndFocus<D> + 'static,
+    D: 'static,
+    S: Source,
+{
+    fn ptr_focus(&self) -> Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)> {
+        None
+    }
+}
+
+#[cfg(not(feature = "xwayland"))]
+impl<D, S> DnDGrab<D, S, D::TouchFocus>
+where
+    D: DndGrabHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::TouchFocus: DndFocus<D> + 'static,
+    D: 'static,
+    S: Source,
+{
+    fn touch_focus(&self) -> Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)> {
+        None
+    }
+}
+
+#[cfg(feature = "xwayland")]
+impl<D, S> DnDGrab<D, S, D::PointerFocus>
+where
+    D: DndGrabHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: DndFocus<D> + 'static,
+    D: 'static,
+    S: Source,
+{
+    fn ptr_focus(&self) -> Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)> {
+        // While the grab is active, we don't want any focus except for xwayland
+        self.pointer_start_data
+            .as_ref()?
+            .focus
+            .clone()
+            .filter(|(focus, _)| {
+                focus.wl_surface().is_some_and(|s| {
+                    s.client()
+                        .is_some_and(|c| c.get_data::<XWaylandClientData>().is_some())
+                })
+            })
+    }
+}
+
+#[cfg(feature = "xwayland")]
+impl<D, S> DnDGrab<D, S, D::TouchFocus>
+where
+    D: DndGrabHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::TouchFocus: DndFocus<D> + 'static,
+    D: 'static,
+    S: Source,
+{
+    fn touch_focus(&self) -> Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)> {
+        // While the grab is active, we don't want any focus except for xwayland
+        self.touch_start_data
+            .as_ref()?
+            .focus
+            .clone()
+            .filter(|(focus, _)| {
+                focus.wl_surface().is_some_and(|s| {
+                    s.client()
+                        .is_some_and(|c| c.get_data::<XWaylandClientData>().is_some())
+                })
+            })
     }
 }
