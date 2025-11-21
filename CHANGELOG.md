@@ -4,6 +4,18 @@
 
 ### Breaking changes
 
+`crate::wayland::selection::data_device::start_dnd` was removed in favor of exposing the
+underlying `DnDGrab` and associated types to make it possible to write external Drag&Drop sources
+and targets (e.g. for other shell implementations). See the `Additions`-section for more info.
+
+This also means the `ServerDndGrabHandler` was removed. The `ClientDndGrabHandler` was split into
+a generic `DndGrabHandler` and a specific `WaylandDndGrabHandler`. `WaylandDndGrabHandler::started` needs to
+be implemented and explicitly start a `DnDGrab` for wayland DnD-operations to work.
+
+`X11WM::start_wm` now needs a `DisplayHandle`-reference and adds requirements for the State type to
+implement `DndGrabHandler` and the `SeatHandler`s `PointerFocus` and `TouchFocus`-types to implement
+the new `DndFocus` trait.
+
 `GbmFramebufferExporter::new` now accepts a `NodeFilter` as import node, which
 enables accepting dmabufs originating from any node.
 
@@ -92,6 +104,20 @@ The following methods are no longer needed as Smithay does them automatically no
 You also no longer need to manually set `LayerSurfaceAttributes::initial_configure_sent`, Smithay handles it automatically.
 
 ### Additions
+
+`crate::input::dnd` was introduced to enable implementation of Drag&Drop operations on custom types.
+Internally the same types and traits are used to implement `wayland::data_device` dnd-operations and XDND
+operations (see below).
+
+`DnDGrab` is the new entry-point for DnD operations. It requires `SeatHandler::PointerFocus` or 
+`SeatHandler::TouchFocus` respectively to implement `DndFocus`, which is used to send events to
+types, which can be targets of DnD operations. `Source` is a new trait for types that represent
+sources of data for DnD operations.
+
+The Xwayland WM can now handle XDND operations and bridge them over to the new generic DnD interface
+allowing DnD operations between X11 and Wayland clients (both directions).
+
+`X11Surface` now has a new `surface_under`-method, which is also internally used by `SpaceElement::is_in_input_region` and `crate::desktop::Window::surface_under`. Any direct usage of `under_from_surface_tree` on the underlying `wl_surface` of an `X11Surface` should be replaced with this method for XDND to work correctly.
 
 xdg_shell and layer_shell now enforce the client acking a configure before committing a buffer, as required by the protocols.
 
