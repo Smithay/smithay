@@ -1143,7 +1143,6 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
             }
             let _ = xwm.conn.flush();
 
-            offer.source.cancel();
             xwm.dnd.active_offer = None;
         }
     }
