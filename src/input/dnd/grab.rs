@@ -277,11 +277,9 @@ where
 
     fn drop<'a>(&'a mut self, data: &mut D, into_target: impl Fn(&'a F) -> DndTarget<'a, D>) {
         // the user dropped, proceed to the drop
-        let validated = self.offer_data.as_ref().is_none_or(|data| data.validated());
+        let validated = self.offer_data.as_ref().is_some_and(|data| data.validated());
         if let Some(ref focus) = self.current_focus {
-            if validated {
-                focus.drop(data, self.offer_data.as_mut(), &self.seat);
-            }
+            focus.drop(data, self.offer_data.as_mut(), &self.seat);
         }
 
         if let Some(ref offer_data) = self.offer_data {
