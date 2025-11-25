@@ -418,6 +418,20 @@ pub trait XwmHandler {
     /// The window will be holding a grab on the mouse button provided.
     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32);
 
+    /// Window requests to be set as active window.
+    ///
+    /// A client may include a `currently_active_window` in the request to
+    /// indicate this is a focus change from another window by the same client.
+    fn active_window_request(
+        &mut self,
+        xwm: XwmId,
+        window: X11Surface,
+        timestamp: u32,
+        currently_active_window: Option<X11Surface>,
+    ) {
+        let _ = (xwm, window, timestamp, currently_active_window);
+    }
+
     /// Window requests access to the given selection.
     fn allow_selection_access(&mut self, xwm: XwmId, selection: SelectionTarget) -> bool {
         let _ = (xwm, selection);
@@ -2231,6 +2245,16 @@ where
                             8 => state.move_request(xwm_id, surface, data[3]),
                             _ => {} // ignore keyboard moves/resizes for now
                         }
+                    }
+                }
+                x if x == xwm.atoms._NET_ACTIVE_WINDOW => {
+                    let data = msg.data.as_data32();
+                    let timestamp = data[1];
+                    let currently_active_window =
+                        xwm.windows.iter().find(|x| x.window_id() == data[2]).cloned();
+                    if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
+                        state.active_window_request(xwm_id, surface, timestamp, currently_active_window);
                     }
                 }
                 // Dnd events incoming
