@@ -221,6 +221,13 @@ impl XWmDnd {
             AtomEnum::ATOM,
             &[DND_VERSION],
         )?;
+        xwm.conn.change_property8(
+            PropMode::REPLACE,
+            window,
+            xwm.atoms.WM_NAME,
+            xwm.atoms.UTF8_STRING,
+            "Smithay XDND proxy".as_bytes(),
+        )?;
         xwm.conn.map_window(window)?;
         xwm.conn
             .configure_window(window, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;

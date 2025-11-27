@@ -201,6 +201,7 @@ mod atoms {
             TEXT,
 
             // client -> server
+            WM_NAME,
             WM_HINTS,
             WM_PROTOCOLS,
             WM_TAKE_FOCUS,
