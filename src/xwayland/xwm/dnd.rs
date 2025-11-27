@@ -101,7 +101,7 @@ impl XWmDnd {
     pub fn window_destroyed<D>(&mut self, window: &X11Window, loop_handle: &LoopHandle<'_, D>) -> bool {
         let mut res = self.selection.window_destroyed(window, loop_handle);
         if let Some(active_drag) = self.active_drag.as_ref() {
-            if active_drag.source == *window {
+            if active_drag.owner == *window || active_drag.source.as_ref().is_some_and(|w| w == window) {
                 self.active_drag.take();
                 self.xdnd_active.store(false, Ordering::Release);
                 res = true;
@@ -147,7 +147,7 @@ impl XWmDnd {
         }
 
         if let Some(active_drag) = xwm.dnd.active_drag.as_ref() {
-            if active_drag.source == xwm.dnd.selection.owner
+            if active_drag.owner == xwm.dnd.selection.owner
                 && active_drag.state.lock().unwrap().x11 != X11State::Finished
             {
                 warn!("Got another selection notify for an already active grab. Ignoring...");
@@ -260,7 +260,8 @@ impl XWmDnd {
         };
         xwm.dnd.active_drag = Some(XwmActiveDrag {
             target: window,
-            source: xwm.dnd.selection.owner,
+            source: None,
+            owner: xwm.dnd.selection.owner,
             state,
             pending_transfers: xwm.dnd.selection.pending_transfers.clone(),
         });
@@ -399,16 +400,18 @@ impl XWmDnd {
     }
 
     pub fn handle_enter(&mut self, enter_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
-        if let Some(drag) = self.active_drag.as_ref() {
+        if let Some(drag) = self.active_drag.as_mut() {
             let data = enter_msg.as_data32();
             trace!("Got XDND enter msg: {:?}", data);
-            if data[0] != drag.source {
+            if drag.source.is_some_and(|w| w != data[0]) {
                 debug!(
-                    "Received XdndEnter from unknown source (got: {}, expected: {}), ignoring..",
+                    "Received XdndEnter from unknown source (got: {}, state: {:?}), ignoring..",
                     data[0], drag.source
                 );
                 return Ok(());
             }
+            drag.source = Some(data[0]);
+            let source = data[0];
 
             let version = data[1] >> 24;
             if version > DND_VERSION {
@@ -429,7 +432,7 @@ impl XWmDnd {
                     .conn
                     .get_property(
                         false,
-                        drag.source,
+                        source,
                         self.selection.atoms.XdndTypeList,
                         AtomEnum::ANY,
                         0,
@@ -459,13 +462,14 @@ impl XWmDnd {
     pub fn handle_position(&mut self, pos_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
         if let Some(drag) = self.active_drag.as_ref() {
             let data = pos_msg.as_data32();
-            if data[0] != drag.source {
+            if drag.source.is_none_or(|w| w != data[0]) {
                 debug!(
-                    "Received XdndPosition from unknown source (got: {}, expected: {}), ignoring..",
+                    "Received XdndPosition from unknown source (got: {}, expected: {:?}), ignoring..",
                     data[0], drag.source
                 );
                 return Ok(());
             }
+            let source = data[0];
 
             let mut drag_state = drag.state.lock().unwrap();
 
@@ -496,9 +500,9 @@ impl XWmDnd {
             ];
             self.selection.conn.send_event(
                 false,
-                drag.source,
+                source,
                 EventMask::NO_EVENT,
-                ClientMessageEvent::new(32, drag.source, self.selection.atoms.XdndStatus, data),
+                ClientMessageEvent::new(32, source, self.selection.atoms.XdndStatus, data),
             )?;
             self.selection.conn.flush()?;
 
@@ -522,7 +526,7 @@ impl XWmDnd {
                     .insert(*drag.target, (drag.target.clone(), fd));
 
                 self.selection.conn.convert_selection(
-                    drag.source,
+                    drag.owner,
                     self.selection.atoms.XdndSelection,
                     atom,
                     self.selection.atoms._WL_SELECTION,
@@ -535,17 +539,18 @@ impl XWmDnd {
     }
 
     pub fn handle_leave(&mut self, leave_msg: ClientMessageData) -> Result<(), ReplyOrIdError> {
-        if let Some(drag) = self.active_drag.as_ref() {
+        if let Some(drag) = self.active_drag.as_mut() {
             let data = leave_msg.as_data32();
             trace!("Got XDND leave msg: {:?}", data);
 
-            if drag.source != data[0] {
+            if drag.source.is_none_or(|w| w != data[0]) {
                 debug!(
-                    "Received XdndLeave from unknown source (got: {}, expected: {}), ignoring..",
+                    "Received XdndLeave from unknown source (got: {}, expected: {:?}), ignoring..",
                     data[0], drag.source
                 );
                 return Ok(());
             }
+            let _ = drag.source.take();
 
             let mut state = drag.state.lock().unwrap();
             state.x11 = X11State::Left;
@@ -568,13 +573,14 @@ impl XWmDnd {
             let data = drop_msg.as_data32();
             trace!("Got XDND drop msg: {:?}", data);
 
-            if drag.source != data[0] {
+            if drag.source.is_none_or(|w| w != data[0]) {
                 debug!(
-                    "Received XdndDrop from unknown source (got: {}, expected: {}), ignoring..",
+                    "Received XdndDrop from unknown source (got: {}, expected: {:?}), ignoring..",
                     data[0], drag.source
                 );
                 return Ok(());
             }
+            let source = data[0];
 
             let mut state = drag.state.lock().unwrap();
             let conn = &self.selection.conn;
@@ -586,9 +592,9 @@ impl XWmDnd {
                 let data = [*drag.target, 0, 0, 0, 0];
                 conn.send_event(
                     false,
-                    drag.source,
+                    source,
                     EventMask::NO_EVENT,
-                    ClientMessageEvent::new(32, drag.source, atoms.XdndFinished, data),
+                    ClientMessageEvent::new(32, source, atoms.XdndFinished, data),
                 )?;
                 conn.flush()?;
 
@@ -626,7 +632,7 @@ impl XWmDnd {
                 };
 
                 conn.convert_selection(
-                    drag.source,
+                    drag.owner,
                     atoms.XdndSelection,
                     atom,
                     atoms._WL_SELECTION,
@@ -696,7 +702,8 @@ struct XwmSourceState {
 #[derive(Debug)]
 pub struct XwmActiveDrag {
     target: OwnedX11Window,
-    source: X11Window,
+    owner: X11Window,
+    source: Option<X11Window>,
 
     state: Arc<Mutex<XwmSourceState>>,
     pending_transfers: Arc<Mutex<HashMap<X11Window, (OwnedX11Window, OwnedFd)>>>,
