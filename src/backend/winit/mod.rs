@@ -18,6 +18,7 @@
 //! The other types in this module are the instances of the associated types of these
 //! two traits for the winit backend.
 
+use std::borrow::BorrowMut;
 use std::io::Error as IoError;
 use std::sync::Arc;
 use std::time::Duration;
@@ -251,7 +252,7 @@ pub struct WinitGraphicsBackend<R> {
 
 impl<R> WinitGraphicsBackend<R>
 where
-    R: Bind<EGLSurface>,
+    R: Bind<EGLSurface> + BorrowMut<GlesRenderer>,
     crate::backend::SwapBuffersError: From<R::Error>,
 {
     /// Window size of the underlying window
@@ -304,15 +305,24 @@ where
 
     /// Retrieve the buffer age of the current backbuffer of the window.
     ///
-    /// This will only return a meaningful value, if this `WinitGraphicsBackend`
-    /// is currently bound (by previously calling [`WinitGraphicsBackend::bind`]).
-    ///
-    /// Otherwise and on error this function returns `None`.
+    /// On error this function returns `None`.
     /// If you are using this value actively e.g. for damage-tracking you should
     /// likely interpret an error just as if "0" was returned.
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    pub fn buffer_age(&self) -> Option<usize> {
+    pub fn buffer_age(&mut self) -> Option<usize> {
         if self.damage_tracking {
+            {
+                let window_size = self.window_size();
+                if Some(window_size) != self.bind_size {
+                    self.egl_surface.resize(window_size.w, window_size.h, 0, 0);
+                }
+                self.bind_size = Some(window_size);
+
+                let gles = self.renderer.borrow_mut();
+                let fb = gles.bind(&mut self.egl_surface).ok()?;
+                gles.with_context_bound_fb(&fb, |_| {}).ok()?;
+                // We know the gles renderer doesn't unbind the framebuffer from dropping
+            }
             self.egl_surface.buffer_age().map(|x| x as usize)
         } else {
             Some(0)
