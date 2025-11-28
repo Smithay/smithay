@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Helper for effective output damage tracking"><title>smithay::backend::renderer::damage - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module damage</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module damage</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#why-use-this-implementation" title="Why use this implementation">Why use this implementation</a></li><li><a href="#how-to-use-it" title="How to use it">How to use it</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>backend::<wbr>renderer</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">smithay</a>::<wbr><a href="../../index.html">backend</a>::<wbr><a href="../index.html">renderer</a></div><h1>Module <span>damage</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/smithay/backend/renderer/damage/mod.rs.html#1-788">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Helper for effective output damage tracking</p>
+<h2 id="why-use-this-implementation"><a class="doc-anchor" href="#why-use-this-implementation">§</a>Why use this implementation</h2>
+<p>The <a href="struct.OutputDamageTracker.html" title="struct smithay::backend::renderer::damage::OutputDamageTracker"><code>OutputDamageTracker</code></a> in combination with the <a href="../element/trait.RenderElement.html" title="trait smithay::backend::renderer::element::RenderElement"><code>RenderElement</code></a> trait
+can help you to reduce resource consumption by tracking what elements have
+been damaged and only redraw the damaged parts on an output.</p>
+<p>It does so by keeping track of the last used <a href="../utils/struct.CommitCounter.html" title="struct smithay::backend::renderer::utils::CommitCounter"><code>CommitCounter</code></a> for all provided
+<a href="../element/trait.RenderElement.html" title="trait smithay::backend::renderer::element::RenderElement"><code>RenderElement</code></a>s and queries the element for new damage on each call to <a href="struct.OutputDamageTracker.html#method.render_output" title="method smithay::backend::renderer::damage::OutputDamageTracker::render_output"><code>render_output</code></a> or <a href="struct.OutputDamageTracker.html#method.damage_output" title="method smithay::backend::renderer::damage::OutputDamageTracker::damage_output"><code>damage_output</code></a>.</p>
+<p>Additionally the damage tracker will automatically generate damage in the following situations:</p>
+<ul>
+<li>Current geometry for elements entering the output</li>
+<li>Current and last known geometry for moved elements (includes z-index changes)</li>
+<li>Last known geometry for elements no longer present</li>
+</ul>
+<p>Elements fully occluded by opaque regions as defined by elements higher in the stack are skipped.
+The actual action taken by the damage tracker can be inspected from the returned <a href="../element/struct.RenderElementStates.html" title="struct smithay::backend::renderer::element::RenderElementStates"><code>RenderElementStates</code></a>.</p>
+<p>You can initialize it with a static output by using <a href="struct.OutputDamageTracker.html#method.new" title="associated function smithay::backend::renderer::damage::OutputDamageTracker::new"><code>OutputDamageTracker::new</code></a> or
+allow it to track a specific <a href="../../../output/struct.Output.html" title="struct smithay::output::Output"><code>Output</code></a> with <a href="struct.OutputDamageTracker.html#method.from_output" title="associated function smithay::backend::renderer::damage::OutputDamageTracker::from_output"><code>OutputDamageTracker::from_output</code></a>.</p>
+<p>See the <a href="../element/index.html" title="mod smithay::backend::renderer::element"><code>renderer::element</code></a> module for more information
+about how to use <a href="../element/trait.RenderElement.html" title="trait smithay::backend::renderer::element::RenderElement"><code>RenderElement</code></a>.</p>
+<h2 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{
+    backend::{
+        allocator::Fourcc,
+        renderer::{
+            damage::OutputDamageTracker,
+            element::{
+                Kind,
+                memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+            }
+        },
+    },
+    utils::{Point, Transform},
+};
+<span class="kw">use </span>std::time::{Duration, Instant};
+
+<span class="kw">const </span>WIDTH: i32 = <span class="number">10</span>;
+<span class="kw">const </span>HEIGHT: i32 = <span class="number">10</span>;
+
+<span class="comment">// Initialize a new damage tracker for a static output
+</span><span class="kw">let </span><span class="kw-2">mut </span>damage_tracker = OutputDamageTracker::new((<span class="number">800</span>, <span class="number">600</span>), <span class="number">1.0</span>, Transform::Normal);
+
+<span class="comment">// Initialize a buffer to render
+</span><span class="kw">let </span><span class="kw-2">mut </span>memory_buffer = MemoryRenderBuffer::new(Fourcc::Argb8888, (WIDTH, HEIGHT), <span class="number">1</span>, Transform::Normal, <span class="prelude-val">None</span>);
+
+<span class="kw">let </span><span class="kw-2">mut </span>last_update = Instant::now();
+
+<span class="kw">loop </span>{
+    <span class="kw">let </span>now = Instant::now();
+    <span class="kw">if </span>now.duration_since(last_update) &gt;= Duration::from_secs(<span class="number">3</span>) {
+        <span class="kw">let </span><span class="kw-2">mut </span>render_context = memory_buffer.render();
+
+        render_context.draw(|_buffer| {
+            <span class="comment">// Update the changed parts of the buffer
+
+            // Return the updated parts
+            </span><span class="prelude-ty">Result</span>::&lt;<span class="kw">_</span>, ()&gt;::Ok(<span class="macro">vec!</span>[Rectangle::from_size((WIDTH, HEIGHT).into())])
+        });
+
+        last_update = now;
+    }
+
+    <span class="comment">// Create a render element from the buffer
+    </span><span class="kw">let </span>location = Point::from((<span class="number">100.0</span>, <span class="number">100.0</span>));
+    <span class="kw">let </span>render_element =
+        MemoryRenderBufferRenderElement::from_buffer(<span class="kw-2">&amp;mut </span>renderer, location, <span class="kw-2">&amp;</span>memory_buffer, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, Kind::Unspecified)
+        .expect(<span class="string">"Failed to upload memory to gpu"</span>);
+
+    <span class="comment">// Render the output
+    </span>damage_tracker
+        .render_output(
+            <span class="kw-2">&amp;mut </span>renderer,
+            <span class="kw-2">&amp;mut </span>framebuffer,
+            buffer_age,
+            <span class="kw-2">&amp;</span>[render_element],
+            [<span class="number">0.8</span>, <span class="number">0.8</span>, <span class="number">0.9</span>, <span class="number">1.0</span>],
+        )
+        .expect(<span class="string">"failed to render the output"</span>);
+}</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.OutputDamageTracker.html" title="struct smithay::backend::renderer::damage::OutputDamageTracker">Output<wbr>Damage<wbr>Tracker</a></dt><dd>Damage tracker for a single output</dd><dt><a class="struct" href="struct.RenderOutputResult.html" title="struct smithay::backend::renderer::damage::RenderOutputResult">Render<wbr>Output<wbr>Result</a></dt><dd>Represents the result from rendering the output</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Error.html" title="enum smithay::backend::renderer::damage::Error">Error</a></dt><dd>Errors thrown by <a href="struct.OutputDamageTracker.html#method.render_output" title="method smithay::backend::renderer::damage::OutputDamageTracker::render_output"><code>OutputDamageTracker::render_output</code></a></dd></dl></section></div></main></body></html>

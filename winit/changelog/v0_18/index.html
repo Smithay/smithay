@@ -1,0 +1,54 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.18.1"><title>winit::changelog::v0_18 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_18</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_18</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#0181" title="0.18.1">0.18.1</a></li><li><a href="#0180" title="0.18.0">0.18.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_18</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#47">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="0181"><a class="doc-anchor" href="#0181">§</a>0.18.1</h3>
+<ul>
+<li>On macOS, fix <code>Yen</code> (JIS) so applications receive the event.</li>
+<li>On X11 with a tiling WM, fixed high CPU usage when moving windows across monitors.</li>
+<li>On X11, fixed panic caused by dropping the window before running the event loop.</li>
+<li>on macOS, added <code>WindowExt::set_simple_fullscreen</code> which does not require a separate space</li>
+<li>Introduce <code>WindowBuilderExt::with_app_id</code> to allow setting the application ID on Wayland.</li>
+<li>On Windows, catch panics in event loop child thread and forward them to the parent thread. This prevents an invocation of undefined behavior due to unwinding into foreign code.</li>
+<li>On Windows, fix issue where resizing or moving window combined with grabbing the cursor would freeze program.</li>
+<li>On Windows, fix issue where resizing or moving window would eat <code>Awakened</code> events.</li>
+<li>On Windows, exiting fullscreen after entering fullscreen with disabled decorations no longer shrinks window.</li>
+<li>On X11, fixed a segfault when using virtual monitors with XRandR.</li>
+<li>Derive <code>Ord</code> and <code>PartialOrd</code> for <code>VirtualKeyCode</code> enum.</li>
+<li>On Windows, fix issue where hovering or dropping a non file item would create a panic.</li>
+<li>On Wayland, fix resizing and DPI calculation when a <code>wl_output</code> is removed without sending a <code>leave</code> event to the <code>wl_surface</code>, such as disconnecting a monitor from a laptop.</li>
+<li>On Wayland, DPI calculation is handled by smithay-client-toolkit.</li>
+<li>On X11, <code>WindowBuilder::with_min_dimensions</code> and <code>WindowBuilder::with_max_dimensions</code> now correctly account for DPI.</li>
+<li>Added support for generating dummy <code>DeviceId</code>s and <code>WindowId</code>s to better support unit testing.</li>
+<li>On macOS, fixed unsoundness in drag-and-drop that could result in drops being rejected.</li>
+<li>On macOS, implemented <code>WindowEvent::Refresh</code>.</li>
+<li>On macOS, all <code>MouseCursor</code> variants are now implemented and the cursor will no longer reset after unfocusing.</li>
+<li>Removed minimum supported Rust version guarantee.</li>
+</ul>
+<h3 id="0180"><a class="doc-anchor" href="#0180">§</a>0.18.0</h3>
+<ul>
+<li><strong>Breaking:</strong> <code>image</code> crate upgraded to 0.20. This is exposed as part of the <code>icon_loading</code> API.</li>
+<li>On Wayland, pointer events will now provide the current modifiers state.</li>
+<li>On Wayland, titles will now be displayed in the window header decoration.</li>
+<li>On Wayland, key repetition is now ended when keyboard loses focus.</li>
+<li>On Wayland, windows will now use more stylish and modern client side decorations.</li>
+<li>On Wayland, windows will use server-side decorations when available.</li>
+<li><strong>Breaking:</strong> Added support for F16-F24 keys (variants were added to the <code>VirtualKeyCode</code> enum).</li>
+<li>Fixed graphical glitches when resizing on Wayland.</li>
+<li>On Windows, fix freezes when performing certain actions after a window resize has been triggered. Reintroduces some visual artifacts when resizing.</li>
+<li>Updated window manager hints under X11 to v1.5 of <a href="https://specifications.freedesktop.org/wm-spec/wm-spec-1.5.html#idm140200472629520">Extended Window Manager Hints</a>.</li>
+<li>Added <code>WindowBuilderExt::with_gtk_theme_variant</code> to X11-specific <code>WindowBuilder</code> functions.</li>
+<li>Fixed UTF8 handling bug in X11 <code>set_title</code> function.</li>
+<li>On Windows, <code>Window::set_cursor</code> now applies immediately instead of requiring specific events to occur first.</li>
+<li>On Windows, the <code>HoveredFile</code> and <code>HoveredFileCancelled</code> events are now implemented.</li>
+<li>On Windows, fix <code>Window::set_maximized</code>.</li>
+<li>On Windows 10, fix transparency (#260).</li>
+<li>On macOS, fix modifiers during key repeat.</li>
+<li>Implemented the <code>Debug</code> trait for <code>Window</code>, <code>EventsLoop</code>, <code>EventsLoopProxy</code> and <code>WindowBuilder</code>.</li>
+<li>On X11, now a <code>Resized</code> event will always be generated after a DPI change to ensure the window’s logical size is consistent with the new DPI.</li>
+<li>Added further clarifications to the DPI docs.</li>
+<li>On Linux, if neither X11 nor Wayland manage to initialize, the corresponding panic now consists of a single line only.</li>
+<li>Add optional <code>serde</code> feature with implementations of <code>Serialize</code>/<code>Deserialize</code> for DPI types and various event types.</li>
+<li>Add <code>PartialEq</code>, <code>Eq</code>, and <code>Hash</code> implementations on public types that could have them but were missing them.</li>
+<li>On X11, drag-and-drop receiving an unsupported drop type can no longer cause the WM to freeze.</li>
+<li>Fix issue whereby the OpenGL context would not appear at startup on macOS Mojave (#1069).</li>
+<li><strong>Breaking:</strong> Removed <code>From&lt;NSApplicationActivationPolicy&gt;</code> impl from <code>ActivationPolicy</code> on macOS.</li>
+<li>On macOS, the application can request the user’s attention with <code>WindowExt::request_user_attention</code>.</li>
+</ul>
+</div></details></section></div></main></body></html>
