@@ -129,13 +129,12 @@ use crate::{
         SeatHandler,
     },
     output::Output,
-    utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
+    utils::{x11rb::X11Source, AtomicFScale, Client, Logical, Point, Rectangle, Size},
     wayland::{
         selection::SelectionTarget,
         xwayland_shell::{self, XWaylandShellHandler},
     },
 };
-use atomic_float::AtomicF64;
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction};
 use rustix::fs::OFlags;
 use std::{
@@ -469,7 +468,7 @@ pub trait XwmHandler {
 pub struct X11Wm {
     id: XwmId,
     conn: Arc<RustConnection>,
-    client_scale: Arc<AtomicF64>,
+    client_scale: Arc<AtomicFScale>,
     screen: Screen,
     wm_window: OwnedX11Window,
     atoms: Atoms,
