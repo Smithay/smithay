@@ -10,7 +10,6 @@ use std::{
     },
 };
 
-use atomic_float::AtomicF64;
 use calloop::LoopHandle;
 use rustix::fs::OFlags;
 use smallvec::SmallVec;
@@ -38,7 +37,7 @@ use crate::{
         pointer::Focus,
         Seat, SeatHandler,
     },
-    utils::{IsAlive, Logical, Point, Serial},
+    utils::{AtomicFScale, IsAlive, Logical, Point, Serial},
     xwayland::{
         xwm::{atom_from_mime, mime_from_atom, selection::XWmSelection, Atoms, OwnedX11Window, XwmId},
         X11Surface, XwmHandler,
@@ -297,7 +296,7 @@ impl XWmDnd {
         window: &X11Surface,
         status_msg: ClientMessageData,
         atoms: &Atoms,
-        client_scale: Arc<AtomicF64>,
+        client_scale: Arc<AtomicFScale>,
     ) {
         if let Some(offer) = self.active_offer.as_ref() {
             let data = status_msg.as_data32();

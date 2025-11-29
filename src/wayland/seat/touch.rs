@@ -1,6 +1,5 @@
 use std::sync::{atomic::Ordering, Arc};
 
-use atomic_float::AtomicF64;
 use wayland_server::{
     backend::ClientId,
     protocol::wl_touch::{self, WlTouch},
@@ -14,7 +13,10 @@ use crate::input::{
     Seat,
 };
 use crate::{input::touch::DownEvent, wayland::seat::wl_surface::WlSurface};
-use crate::{input::touch::TouchHandle, utils::Serial};
+use crate::{
+    input::touch::TouchHandle,
+    utils::{AtomicFScale, Serial},
+};
 
 impl<D: SeatHandler> TouchHandle<D> {
     pub(crate) fn new_touch(&self, touch: WlTouch) {
@@ -132,7 +134,7 @@ where
 #[derive(Debug)]
 pub struct TouchUserData<D: SeatHandler> {
     pub(crate) handle: Option<TouchHandle<D>>,
-    pub(crate) client_scale: Arc<AtomicF64>,
+    pub(crate) client_scale: Arc<AtomicFScale>,
 }
 
 impl<D> Dispatch<WlTouch, TouchUserData<D>, D> for SeatState<D>

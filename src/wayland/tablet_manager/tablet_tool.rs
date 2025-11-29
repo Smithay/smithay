@@ -7,7 +7,6 @@ use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
 use crate::utils::{Client as ClientCoords, Logical, Point};
 use crate::wayland::compositor::CompositorHandler;
 use crate::wayland::seat::CURSOR_IMAGE_ROLE;
-use atomic_float::AtomicF64;
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
@@ -16,7 +15,7 @@ use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::Weak;
 use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
 
-use crate::{utils::Serial, wayland::compositor};
+use crate::{utils::{Serial, AtomicFScale}, wayland::compositor};
 
 use super::tablet::TabletHandle;
 use super::tablet_seat::TabletSeatHandler;
@@ -455,7 +454,7 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
 pub struct TabletToolUserData {
     pub(crate) handle: TabletToolHandle,
     pub(crate) desc: TabletToolDescriptor,
-    client_scale: Arc<AtomicF64>,
+    client_scale: Arc<AtomicFScale>,
 }
 
 impl fmt::Debug for TabletToolUserData {

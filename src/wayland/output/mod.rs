@@ -82,7 +82,6 @@ use crate::{
     utils::iter::new_locked_obj_iter,
 };
 
-use atomic_float::AtomicF64;
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_server::{
@@ -94,7 +93,7 @@ use wayland_server::{
     Client, DisplayHandle, GlobalDispatch, Resource,
 };
 
-use crate::utils::{Logical, Point};
+use crate::utils::{Logical, Point, AtomicFScale};
 
 pub use self::handlers::XdgOutputUserData;
 
@@ -148,15 +147,15 @@ impl OutputManagerState {
 #[derive(Debug)]
 pub struct OutputUserData {
     pub(crate) output: WeakOutput,
-    last_client_scale: AtomicF64,
-    client_scale: Arc<AtomicF64>,
+    last_client_scale: AtomicFScale,
+    client_scale: Arc<AtomicFScale>,
 }
 
 impl Clone for OutputUserData {
     fn clone(&self) -> Self {
         OutputUserData {
             output: self.output.clone(),
-            last_client_scale: AtomicF64::new(self.last_client_scale.load(Ordering::Acquire)),
+            last_client_scale: AtomicFScale::new(self.last_client_scale.load(Ordering::Acquire)),
             client_scale: self.client_scale.clone(),
         }
     }
