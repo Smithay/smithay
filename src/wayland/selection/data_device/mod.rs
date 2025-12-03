@@ -399,6 +399,14 @@ impl<S: Source> OfferData for WlOfferData<S> {
     fn disable(&self) {
         self.state.lock().unwrap().active = false;
         self.source.choose_action(DndAction::None);
+        for offer in &self.wl_offers {
+            if let Some(data) = offer
+                .object_data()
+                .and_then(|arc| arc.downcast_ref::<WlDndDataOffer<S>>())
+            {
+                data.source.lock().unwrap().take();
+            }
+        }
     }
 
     fn drop(&self) {
