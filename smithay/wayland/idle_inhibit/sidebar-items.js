@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["inhibitor"],"struct":["IdleInhibitManagerState"],"trait":["IdleInhibitHandler"]};

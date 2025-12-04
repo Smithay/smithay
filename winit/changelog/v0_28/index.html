@@ -1,0 +1,102 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.28.7"><title>winit::changelog::v0_28 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_28</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_28</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#0287" title="0.28.7">0.28.7</a></li><li><a href="#0286" title="0.28.6">0.28.6</a></li><li><a href="#0285" title="0.28.5">0.28.5</a></li><li><a href="#0284" title="0.28.4">0.28.4</a></li><li><a href="#0283" title="0.28.3">0.28.3</a></li><li><a href="#0282" title="0.28.2">0.28.2</a></li><li><a href="#0281" title="0.28.1">0.28.1</a></li><li><a href="#0280" title="0.28.0">0.28.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_28</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#17">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="0287"><a class="doc-anchor" href="#0287">§</a>0.28.7</h3>
+<ul>
+<li>Fix window size sometimes being invalid when resizing on macOS 14 Sonoma.</li>
+</ul>
+<h3 id="0286"><a class="doc-anchor" href="#0286">§</a>0.28.6</h3>
+<ul>
+<li>On macOS, fixed memory leak when getting monitor handle.</li>
+<li>On macOS, fix <code>Backspace</code> being emitted when clearing preedit with it.</li>
+</ul>
+<h3 id="0285"><a class="doc-anchor" href="#0285">§</a>0.28.5</h3>
+<ul>
+<li>On macOS, fix <code>key_up</code> being ignored when <code>Ime</code> is disabled.</li>
+</ul>
+<h3 id="0284"><a class="doc-anchor" href="#0284">§</a>0.28.4</h3>
+<ul>
+<li>On macOS, fix empty marked text blocking regular input.</li>
+<li>On macOS, fix potential panic when getting refresh rate.</li>
+<li>On macOS, fix crash when calling <code>Window::set_ime_position</code> from another thread.</li>
+</ul>
+<h3 id="0283"><a class="doc-anchor" href="#0283">§</a>0.28.3</h3>
+<ul>
+<li>Fix macOS memory leaks.</li>
+</ul>
+<h3 id="0282"><a class="doc-anchor" href="#0282">§</a>0.28.2</h3>
+<ul>
+<li>Implement <code>HasRawDisplayHandle</code> for <code>EventLoop</code>.</li>
+<li>On macOS, set resize increments only for live resizes.</li>
+<li>On Wayland, fix rare crash on DPI change</li>
+<li>Web: Added support for <code>Window::theme</code>.</li>
+<li>On Wayland, fix rounding issues when doing resize.</li>
+<li>On macOS, fix wrong focused state on startup.</li>
+<li>On Windows, fix crash on setting taskbar when using Visual Studio debugger.</li>
+<li>On macOS, resize simple fullscreen windows on windowDidChangeScreen events.</li>
+</ul>
+<h3 id="0281"><a class="doc-anchor" href="#0281">§</a>0.28.1</h3>
+<ul>
+<li>On Wayland, fix crash when dropping a window in multi-window setup.</li>
+</ul>
+<h3 id="0280"><a class="doc-anchor" href="#0280">§</a>0.28.0</h3>
+<ul>
+<li>On macOS, fixed <code>Ime::Commit</code> persisting for all input after interacting with <code>Ime</code>.</li>
+<li>On macOS, added <code>WindowExtMacOS::option_as_alt</code> and <code>WindowExtMacOS::set_option_as_alt</code>.</li>
+<li>On Windows, fix window size for maximized, undecorated windows.</li>
+<li>On Windows and macOS, add <code>WindowBuilder::with_active</code>.</li>
+<li>Add <code>Window::is_minimized</code>.</li>
+<li>On X11, fix errors handled during <code>register_xlib_error_hook</code> invocation bleeding into winit.</li>
+<li>Add <code>Window::has_focus</code>.</li>
+<li>On Windows, fix <code>Window::set_minimized(false)</code> not working for windows minimized by <code>Win + D</code> hotkey.</li>
+<li><strong>Breaking:</strong> On Web, touch input no longer fires <code>WindowEvent::Cursor*</code>, <code>WindowEvent::MouseInput</code>, or <code>DeviceEvent::MouseMotion</code> like other platforms, but instead it fires <code>WindowEvent::Touch</code>.</li>
+<li><strong>Breaking:</strong> Removed platform specific <code>WindowBuilder::with_parent</code> API in favor of <code>WindowBuilder::with_parent_window</code>.</li>
+<li>On Windows, retain <code>WS_MAXIMIZE</code> window style when un-minimizing a maximized window.</li>
+<li>On Windows, fix left mouse button release event not being sent after <code>Window::drag_window</code>.</li>
+<li>On macOS, run most actions on the main thread, which is strictly more correct, but might make multithreaded applications block slightly more.</li>
+<li>On macOS, fix panic when getting current monitor without any monitor attached.</li>
+<li>On Windows and MacOS, add API to enable/disable window buttons (close, minimize, …etc).</li>
+<li>On Windows, macOS, X11 and Wayland, add <code>Window::set_theme</code>.</li>
+<li><strong>Breaking:</strong> Remove <code>WindowExtWayland::wayland_set_csd_theme</code> and <code>WindowBuilderExtX11::with_gtk_theme_variant</code>.</li>
+<li>On Windows, revert window background to an empty brush to avoid white flashes when changing scaling.</li>
+<li><strong>Breaking:</strong> Removed <code>Window::set_always_on_top</code> and related APIs in favor of <code>Window::set_window_level</code>.</li>
+<li>On Windows, MacOS and X11, add always on bottom APIs.</li>
+<li>On Windows, fix the value in <code>MouseButton::Other</code>.</li>
+<li>On macOS, add <code>WindowExtMacOS::is_document_edited</code> and <code>WindowExtMacOS::set_document_edited</code> APIs.</li>
+<li><strong>Breaking:</strong> Removed <code>WindowBuilderExtIOS::with_root_view_class</code>; instead, you should use <code>[[view layer] addSublayer: ...]</code> to add an instance of the desired layer class (e.g. <code>CAEAGLLayer</code> or <code>CAMetalLayer</code>). See <code>vulkano-win</code> or <code>wgpu</code> for examples of this.</li>
+<li>On MacOS and Windows, add <code>Window::set_content_protected</code>.</li>
+<li>On MacOS, add <code>EventLoopBuilderExtMacOS::with_activate_ignoring_other_apps</code>.</li>
+<li>On Windows, fix icons specified on <code>WindowBuilder</code> not taking effect for windows created after the first one.</li>
+<li>On Windows and macOS, add <code>Window::title</code> to query the current window title.</li>
+<li>On Windows, fix focusing menubar when pressing <code>Alt</code>.</li>
+<li>On MacOS, made <code>accepts_first_mouse</code> configurable.</li>
+<li>Migrated <code>WindowBuilderExtUnix::with_resize_increments</code> to <code>WindowBuilder</code>.</li>
+<li>Added <code>Window::resize_increments</code>/<code>Window::set_resize_increments</code> to update resize increments at runtime for X11/macOS.</li>
+<li>macOS/iOS: Use <code>objc2</code> instead of <code>objc</code> internally.</li>
+<li><strong>Breaking:</strong> Bump MSRV from <code>1.57</code> to <code>1.60</code>.</li>
+<li><strong>Breaking:</strong> Split the <code>platform::unix</code> module into <code>platform::x11</code> and <code>platform::wayland</code>. The extension types are similarly renamed.</li>
+<li><strong>Breaking:</strong>: Removed deprecated method <code>platform::unix::WindowExtUnix::is_ready</code>.</li>
+<li>Removed <code>parking_lot</code> dependency.</li>
+<li><strong>Breaking:</strong> On macOS, add support for two-finger touchpad magnification and rotation gestures with new events <code>WindowEvent::TouchpadMagnify</code> and <code>WindowEvent::TouchpadRotate</code>. Also add support for touchpad smart-magnification gesture with a new event <code>WindowEvent::SmartMagnify</code>.</li>
+<li><strong>Breaking:</strong> On web, the <code>WindowBuilderExtWebSys::with_prevent_default</code> setting (enabled by default), now additionally prevents scrolling of the webpage in mobile browsers, previously it only disabled scrolling on desktop.</li>
+<li>On Wayland, <code>wayland-csd-adwaita</code> now uses <code>ab_glyph</code> instead of <code>crossfont</code> to render the title for decorations.</li>
+<li>On Wayland, a new <code>wayland-csd-adwaita-crossfont</code> feature was added to use <code>crossfont</code> instead of <code>ab_glyph</code> for decorations.</li>
+<li>On Wayland, if not otherwise specified use upstream automatic CSD theme selection.</li>
+<li>On X11, added <code>WindowExtX11::with_parent</code> to create child windows.</li>
+<li>Added support for <code>WindowBuilder::with_theme</code> and <code>Window::theme</code> to support per-window dark/light/system theme configuration on macos, windows and wayland.</li>
+<li>On macOS, added support for <code>WindowEvent::ThemeChanged</code>.</li>
+<li><strong>Breaking:</strong> Removed <code>WindowBuilderExtWindows::with_theme</code> and <code>WindowBuilderExtWayland::with_wayland_csd_theme</code> in favour of <code>WindowBuilder::with_theme</code>.</li>
+<li><strong>Breaking:</strong> Removed <code>WindowExtWindows::theme</code> in favour of <code>Window::theme</code>.</li>
+<li>Enabled <code>doc_auto_cfg</code> when generating docs on docs.rs for feature labels.</li>
+<li><strong>Breaking:</strong> On Android, switched to using <a href="https://github.com/rib/android-activity"><code>android-activity</code></a> crate as a glue layer instead of <a href="https://github.com/rust-windowing/android-ndk-rs/tree/master/ndk-glue"><code>ndk-glue</code></a>. See <a href="https://github.com/rust-windowing/winit#Android">README.md#Android</a> for more details. (<a href="https://github.com/rust-windowing/winit/pull/2444">#2444</a>)</li>
+<li><strong>Breaking:</strong> Removed support for <code>raw-window-handle</code> version <code>0.4</code></li>
+<li>On Wayland, <code>RedrawRequested</code> not emitted during resize.</li>
+<li>Add a <code>set_wait_timeout</code> function to <code>ControlFlow</code> to allow waiting for a <code>Duration</code>.</li>
+<li><strong>Breaking:</strong> Remove the unstable <code>xlib_xconnection()</code> function from the private interface.</li>
+<li>Added Orbital support for Redox OS</li>
+<li>On X11, added <code>drag_resize_window</code> method.</li>
+<li>Added <code>Window::set_transparent</code> to provide a hint about transparency of the window on Wayland and macOS.</li>
+<li>On macOS, fix the mouse buttons other than left/right/middle being reported as middle.</li>
+<li>On Wayland, support fractional scaling via the wp-fractional-scale protocol.</li>
+<li>On web, fix removal of mouse event listeners from the global object upon window destruction.</li>
+<li>Add WindowAttributes getter to WindowBuilder to allow introspection of default values.</li>
+<li>Added <code>Window::set_ime_purpose</code> for setting the IME purpose, currently implemented on Wayland only.</li>
+</ul>
+</div></details></section></div></main></body></html>

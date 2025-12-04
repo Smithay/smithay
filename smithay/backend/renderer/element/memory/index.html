@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Element to render from RGBA memory"><title>smithay::backend::renderer::element::memory - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module memory</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module memory</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#why-use-this-implementation" title="Why use this implementation">Why use this implementation</a></li><li><a href="#why-not-to-use-this-implementation" title="Why not to use this implementation">Why not to use this implementation</a></li><li><a href="#how-to-use-it" title="How to use it">How to use it</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>backend::<wbr>renderer::<wbr>element</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../../index.html">smithay</a>::<wbr><a href="../../../index.html">backend</a>::<wbr><a href="../../index.html">renderer</a>::<wbr><a href="../index.html">element</a></div><h1>Module <span>memory</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../../src/smithay/backend/renderer/element/memory.rs.html#1-661">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Element to render from RGBA memory</p>
+<h2 id="why-use-this-implementation"><a class="doc-anchor" href="#why-use-this-implementation">§</a>Why use this implementation</h2>
+<p>The <a href="struct.MemoryRenderBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBuffer"><code>MemoryRenderBuffer</code></a> allows for easy integration of software-rendered elements
+in the smithay rendering pipeline. As software-rendered elements eventually have to
+upload to the GPU for rendering damage tracking is a crucial part. The <a href="struct.MemoryRenderBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBuffer"><code>MemoryRenderBuffer</code></a>
+allows for efficient damage tracking by providing a <a href="struct.RenderContext.html" title="struct smithay::backend::renderer::element::memory::RenderContext"><code>RenderContext</code></a> which accumulates the
+software-rendering damage. It automatically uploads the damaged parts to a <a href="../../trait.RendererSuper.html#associatedtype.TextureId" title="associated type smithay::backend::renderer::RendererSuper::TextureId"><code>RendererSuper::TextureId</code></a>
+during rendering.</p>
+<h2 id="why-not-to-use-this-implementation"><a class="doc-anchor" href="#why-not-to-use-this-implementation">§</a>Why <strong>not</strong> to use this implementation</h2>
+<p>As described earlier the <a href="struct.MemoryRenderBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBuffer"><code>MemoryRenderBuffer</code></a> is targeted at software rendering, if you have
+some static content you may want to take a look at <a href="../texture/struct.TextureBuffer.html" title="struct smithay::backend::renderer::element::texture::TextureBuffer"><code>TextureBuffer</code></a>
+or <a href="../texture/struct.TextureRenderBuffer.html" title="struct smithay::backend::renderer::element::texture::TextureRenderBuffer"><code>TextureRenderBuffer</code></a> for hardware accelerated rendering.</p>
+<h2 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h2>
+<p>The <a href="struct.MemoryRenderBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBuffer"><code>MemoryRenderBuffer</code></a> represents a buffer of your data and holds the damage as reported by the <a href="struct.RenderContext.html" title="struct smithay::backend::renderer::element::memory::RenderContext"><code>RenderContext</code></a>.
+To render the buffer you have to create a <a href="struct.MemoryRenderBufferRenderElement.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement"><code>MemoryRenderBufferRenderElement</code></a> in your render loop as
+shown in the example.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::time::{Duration, Instant};
+
+<span class="kw">use </span>smithay::{
+    backend::{
+        allocator::Fourcc,
+        renderer::{
+            damage::OutputDamageTracker,
+            element::{
+                Kind,
+                memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+            },
+        },
+    },
+    utils::{Point, Rectangle, Size, Transform},
+};
+
+<span class="kw">const </span>WIDTH: i32 = <span class="number">10</span>;
+<span class="kw">const </span>HEIGHT: i32 = <span class="number">10</span>;
+
+<span class="comment">// Initialize a empty render buffer
+</span><span class="kw">let </span><span class="kw-2">mut </span>buffer = MemoryRenderBuffer::new(Fourcc::Argb8888, (WIDTH, HEIGHT), <span class="number">1</span>, Transform::Normal, <span class="prelude-val">None</span>);
+
+<span class="comment">// Create a rendering context
+</span><span class="kw">let </span><span class="kw-2">mut </span>render_context = buffer.render();
+
+<span class="comment">// Draw to the buffer
+</span>render_context.draw(|buffer| {
+    buffer.chunks_exact_mut(<span class="number">4</span>).for_each(|chunk| {
+        chunk.copy_from_slice(<span class="kw-2">&amp;</span>[<span class="number">255</span>, <span class="number">231</span>, <span class="number">199</span>, <span class="number">255</span>]);
+    });
+
+    <span class="comment">// Return the whole buffer as damage
+    </span><span class="prelude-ty">Result</span>::&lt;<span class="kw">_</span>, ()&gt;::Ok(<span class="macro">vec!</span>[Rectangle::from_size((WIDTH, HEIGHT).into())])
+});
+
+<span class="comment">// Optionally update the opaque regions
+</span>render_context.update_opaque_regions(<span class="prelude-val">Some</span>(<span class="macro">vec!</span>[Rectangle::from_size(
+    Size::from((WIDTH, HEIGHT)),
+)]));
+
+<span class="comment">// We explicitly drop the context here to make the borrow checker happy
+</span>std::mem::drop(render_context);
+
+<span class="comment">// Initialize a static damage tracker
+</span><span class="kw">let </span><span class="kw-2">mut </span>damage_tracker = OutputDamageTracker::new((<span class="number">800</span>, <span class="number">600</span>), <span class="number">1.0</span>, Transform::Normal);
+
+<span class="kw">let </span><span class="kw-2">mut </span>last_update = Instant::now();
+
+<span class="kw">loop </span>{
+    <span class="kw">let </span>now = Instant::now();
+    <span class="kw">if </span>now.duration_since(last_update) &gt;= Duration::from_secs(<span class="number">3</span>) {
+        <span class="kw">let </span><span class="kw-2">mut </span>render_context = buffer.render();
+
+        render_context.draw(|_buffer| {
+            <span class="comment">// Update the changed parts of the buffer
+
+            // Return the updated parts
+            </span><span class="prelude-ty">Result</span>::&lt;<span class="kw">_</span>, ()&gt;::Ok(<span class="macro">vec!</span>[Rectangle::from_size((WIDTH, HEIGHT).into())])
+        });
+
+        last_update = now;
+    }
+
+    <span class="comment">// Create a render element from the buffer
+    </span><span class="kw">let </span>location = Point::from((<span class="number">100.0</span>, <span class="number">100.0</span>));
+    <span class="kw">let </span>render_element = MemoryRenderBufferRenderElement::from_buffer(<span class="kw-2">&amp;mut </span>renderer, location, <span class="kw-2">&amp;</span>buffer, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, Kind::Unspecified)
+        .expect(<span class="string">"Failed to upload from memory to gpu"</span>);
+
+    <span class="comment">// Render the element(s)
+    </span>damage_tracker
+        .render_output(<span class="kw-2">&amp;mut </span>renderer, <span class="kw-2">&amp;mut </span>framebuffer, <span class="number">0</span>, <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>render_element], [<span class="number">0.8</span>, <span class="number">0.8</span>, <span class="number">0.9</span>, <span class="number">1.0</span>])
+        .expect(<span class="string">"failed to render output"</span>);
+}</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.MemoryBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryBuffer">Memory<wbr>Buffer</a></dt><dd>A buffer storing pixel data backed by system memory</dd><dt><a class="struct" href="struct.MemoryRenderBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBuffer">Memory<wbr>Render<wbr>Buffer</a></dt><dd>A memory backed render buffer</dd><dt><a class="struct" href="struct.MemoryRenderBufferRenderElement.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement">Memory<wbr>Render<wbr>Buffer<wbr>Render<wbr>Element</a></dt><dd>A render element for <a href="struct.MemoryRenderBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBuffer"><code>MemoryRenderBuffer</code></a></dd><dt><a class="struct" href="struct.RenderContext.html" title="struct smithay::backend::renderer::element::memory::RenderContext">Render<wbr>Context</a></dt><dd>A render context for <a href="struct.MemoryRenderBuffer.html" title="struct smithay::backend::renderer::element::memory::MemoryRenderBuffer"><code>MemoryRenderBuffer</code></a></dd></dl></section></div></main></body></html>

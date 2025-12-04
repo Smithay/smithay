@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Utilities for input method support"><title>smithay::wayland::input_method - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module input_method</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module input_<wbr>method</a></h2><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#constants" title="Constants">Constants</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>input_<wbr>method</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/input_method/mod.rs.html#1-287">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Utilities for input method support</p>
+<p>This module provides you with utilities to handle input methods,
+it must be used in conjunction with the text input module to work.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{
+    delegate_seat, delegate_input_method_manager, delegate_text_input_manager,
+};
+<span class="kw">use </span>smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+<span class="kw">use </span>smithay::wayland::input_method::{InputMethodManagerState, InputMethodHandler, PopupSurface};
+<span class="kw">use </span>smithay::wayland::text_input::TextInputManagerState;
+<span class="kw">use </span>smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+<span class="kw">use </span>smithay::utils::{Rectangle, Logical};
+
+
+<span class="macro">delegate_seat!</span>(State);
+
+<span class="kw">impl </span>InputMethodHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>new_popup(<span class="kw-2">&amp;mut </span><span class="self">self</span>, surface: PopupSurface) {}
+    <span class="kw">fn </span>dismiss_popup(<span class="kw-2">&amp;mut </span><span class="self">self</span>, surface: PopupSurface) {}
+    <span class="kw">fn </span>popup_repositioned(<span class="kw-2">&amp;mut </span><span class="self">self</span>, surface: PopupSurface) {}
+    <span class="kw">fn </span>parent_geometry(<span class="kw-2">&amp;</span><span class="self">self</span>, parent: <span class="kw-2">&amp;</span>WlSurface) -&gt; Rectangle&lt;i32, Logical&gt; {
+        Rectangle::default()
+    }
+}
+
+<span class="comment">// Delegate input method handling for State to InputMethodManagerState.
+</span><span class="macro">delegate_input_method_manager!</span>(State);
+
+<span class="macro">delegate_text_input_manager!</span>(State);
+
+
+<span class="kw">let </span><span class="kw-2">mut </span>seat_state = SeatState::&lt;State&gt;::new();
+
+<span class="comment">// implement the required traits
+</span><span class="kw">impl </span>SeatHandler <span class="kw">for </span>State {
+    <span class="kw">type </span>KeyboardFocus = WlSurface;
+    <span class="kw">type </span>PointerFocus = WlSurface;
+    <span class="kw">type </span>TouchFocus = WlSurface;
+    <span class="kw">fn </span>seat_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>SeatState&lt;<span class="self">Self</span>&gt; {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.seat_state
+    }
+    <span class="kw">fn </span>focus_changed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, focused: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>WlSurface&gt;) { <span class="macro">unimplemented!</span>() }
+    <span class="kw">fn </span>cursor_image(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, image: CursorImageStatus) { <span class="macro">unimplemented!</span>() }
+}
+
+
+<span class="comment">// Add the seat state to your state and create manager globals
+</span>InputMethodManagerState::new::&lt;State, <span class="kw">_</span>&gt;(<span class="kw-2">&amp;</span>display_handle, |_client| <span class="bool-val">true</span>);
+<span class="comment">// Add text input capabilities, needed for the input method to work
+</span>TextInputManagerState::new::&lt;State&gt;(<span class="kw-2">&amp;</span>display_handle);
+</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.InputMethodHandle.html" title="struct smithay::wayland::input_method::InputMethodHandle">Input<wbr>Method<wbr>Handle</a></dt><dd>Handle to an input method instance</dd><dt><a class="struct" href="struct.InputMethodKeyboardGrab.html" title="struct smithay::wayland::input_method::InputMethodKeyboardGrab">Input<wbr>Method<wbr>Keyboard<wbr>Grab</a></dt><dd>Handle to an input method instance</dd><dt><a class="struct" href="struct.InputMethodKeyboardUserData.html" title="struct smithay::wayland::input_method::InputMethodKeyboardUserData">Input<wbr>Method<wbr>Keyboard<wbr>User<wbr>Data</a></dt><dd>User data of ZwpInputKeyboardGrabV2 object</dd><dt><a class="struct" href="struct.InputMethodManagerGlobalData.html" title="struct smithay::wayland::input_method::InputMethodManagerGlobalData">Input<wbr>Method<wbr>Manager<wbr>Global<wbr>Data</a></dt><dd>Data associated with a InputMethodManager global.</dd><dt><a class="struct" href="struct.InputMethodManagerState.html" title="struct smithay::wayland::input_method::InputMethodManagerState">Input<wbr>Method<wbr>Manager<wbr>State</a></dt><dd>State of wp misc input method protocol</dd><dt><a class="struct" href="struct.InputMethodPopupSurfaceUserData.html" title="struct smithay::wayland::input_method::InputMethodPopupSurfaceUserData">Input<wbr>Method<wbr>Popup<wbr>Surface<wbr>User<wbr>Data</a></dt><dd>User data of ZwpInputPopupSurfaceV2 object</dd><dt><a class="struct" href="struct.InputMethodUserData.html" title="struct smithay::wayland::input_method::InputMethodUserData">Input<wbr>Method<wbr>User<wbr>Data</a></dt><dd>User data of ZwpInputMethodV2 object</dd><dt><a class="struct" href="struct.PopupParent.html" title="struct smithay::wayland::input_method::PopupParent">Popup<wbr>Parent</a></dt><dd>Parent surface and location for the IME popup.</dd><dt><a class="struct" href="struct.PopupSurface.html" title="struct smithay::wayland::input_method::PopupSurface">Popup<wbr>Surface</a></dt><dd>A handle to an input method popup surface</dd></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.INPUT_POPUP_SURFACE_ROLE.html" title="constant smithay::wayland::input_method::INPUT_POPUP_SURFACE_ROLE">INPUT_<wbr>POPUP_<wbr>SURFACE_<wbr>ROLE</a></dt><dd>The role of the input method popup.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.InputMethodHandler.html" title="trait smithay::wayland::input_method::InputMethodHandler">Input<wbr>Method<wbr>Handler</a></dt><dd>Adds input method popup to compositor state</dd><dt><a class="trait" href="trait.InputMethodSeat.html" title="trait smithay::wayland::input_method::InputMethodSeat">Input<wbr>Method<wbr>Seat</a></dt><dd>Extends <a href="../../input/struct.Seat.html" title="struct smithay::input::Seat">Seat</a> with input method functionality</dd></dl></section></div></main></body></html>

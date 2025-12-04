@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_PLANES"],"enum":["DmabufMappingFailed","DmabufSyncFailed"],"struct":["AlreadyReady","AnyError","Dmabuf","DmabufAllocator","DmabufBlocker","DmabufBuilder","DmabufFlags","DmabufMapping","DmabufMappingMode","DmabufSource","DmabufSyncFlags","WeakDmabuf"],"trait":["AsDmabuf"]};
