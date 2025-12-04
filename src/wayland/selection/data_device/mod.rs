@@ -374,7 +374,7 @@ fn handle_dnd<D, S>(
                             .expect("We have selected a single value at this point."),
                     );
                 }
-            } else {
+            } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
                     "SetActions request after Finish.",
