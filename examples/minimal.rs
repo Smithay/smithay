@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ::winit::platform::pump_events::PumpStatus;
+use ::winit::event_loop::pump_events::PumpStatus;
 use smithay::{
     backend::{
         input::{InputEvent, KeyboardKeyEvent},

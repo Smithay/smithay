@@ -33,7 +33,7 @@ use smithay::{
         calloop::EventLoop,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{Display, protocol::wl_surface},
-        winit::platform::pump_events::PumpStatus,
+        winit::event_loop::pump_events::PumpStatus,
     },
     utils::{IsAlive, Scale, Transform},
     wayland::{
