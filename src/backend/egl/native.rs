@@ -160,7 +160,7 @@ impl<A: AsFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
 }
 
 #[cfg(feature = "backend_winit")]
-impl EGLNativeDisplay for Arc<WinitWindow> {
+impl EGLNativeDisplay for Arc<dyn WinitWindow> {
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
         use winit::raw_window_handle::{self, HasDisplayHandle};
 

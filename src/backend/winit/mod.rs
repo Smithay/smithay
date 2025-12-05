@@ -26,15 +26,16 @@ use calloop::generic::Generic;
 use calloop::{EventSource, Interest, PostAction, Readiness, Token};
 use tracing::{debug, info, info_span, instrument, trace, warn};
 use wayland_egl as wegl;
-use winit::platform::pump_events::PumpStatus;
 use winit::platform::scancode::PhysicalKeyExtScancode;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
-    event::{ElementState, Touch, TouchPhase, WindowEvent},
-    event_loop::{ActiveEventLoop, EventLoop},
-    platform::pump_events::EventLoopExtPumpEvents,
+    event::{ButtonSource, ElementState, WindowEvent},
+    event_loop::{
+        pump_events::{EventLoopExtPumpEvents, PumpStatus},
+        ActiveEventLoop, EventLoop,
+    },
     window::{Window as WinitWindow, WindowAttributes, WindowId},
 };
 
@@ -66,8 +67,8 @@ where
     crate::backend::SwapBuffersError: From<R::Error>,
 {
     init_from_attributes(
-        WinitWindow::default_attributes()
-            .with_inner_size(LogicalSize::new(1280.0, 800.0))
+        WindowAttributes::default()
+            .with_surface_size(LogicalSize::new(1280.0, 800.0))
             .with_title("Smithay")
             .with_visible(true),
     )
@@ -112,9 +113,11 @@ where
 
     let mut event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
 
-    let window = Arc::new(InitApp::init(&mut event_loop, attributes).map_err(Error::WindowCreation)?);
+    let window = Arc::<dyn WinitWindow>::from(
+        InitApp::init(&mut event_loop, attributes).map_err(Error::WindowCreation)?,
+    );
 
-    span.record("window", Into::<u64>::into(window.id()));
+    span.record("window", window.id().into_raw());
     debug!("Window created");
 
     let (display, context, surface, is_x11) = {
@@ -129,7 +132,7 @@ where
         let (surface, is_x11) = match window.window_handle().map(|handle| handle.as_raw()) {
             Ok(RawWindowHandle::Wayland(handle)) => {
                 debug!("Winit backend: Wayland");
-                let size = window.inner_size();
+                let size = window.surface_size();
                 let surface = unsafe {
                     wegl::WlEglSurface::new_from_raw(
                         handle.surface.as_ptr() as *mut _,
@@ -215,7 +218,7 @@ pub enum Error {
     EventLoopCreation(#[from] winit::error::EventLoopError),
     /// Failed to initialize a window.
     #[error("Failed to initialize a window")]
-    WindowCreation(#[from] winit::error::OsError),
+    WindowCreation(#[from] winit::error::RequestError),
     #[error("Failed to create a surface for the window")]
     /// Surface creation error.
     Surface(Box<dyn std::error::Error>),
@@ -237,7 +240,7 @@ pub struct WinitGraphicsBackend<R> {
     // The display isn't used past this point but must be kept alive.
     _display: EGLDisplay,
     egl_surface: EGLSurface,
-    window: Arc<WinitWindow>,
+    window: Arc<dyn WinitWindow>,
     damage_tracking: bool,
     bind_size: Option<Size<i32, Physical>>,
     span: tracing::Span,
@@ -250,7 +253,7 @@ where
 {
     /// Window size of the underlying window
     pub fn window_size(&self) -> Size<i32, Physical> {
-        let (w, h): (i32, i32) = self.window.inner_size().into();
+        let (w, h): (i32, i32) = self.window.surface_size().into();
         (w, h).into()
     }
 
@@ -260,8 +263,8 @@ where
     }
 
     /// Reference to the underlying window
-    pub fn window(&self) -> &WinitWindow {
-        &self.window
+    pub fn window(&self) -> &dyn WinitWindow {
+        &*self.window
     }
 
     /// Access the underlying renderer
@@ -349,7 +352,7 @@ where
 
 #[derive(Debug)]
 struct WinitEventLoopInner {
-    window: Arc<WinitWindow>,
+    window: Arc<dyn WinitWindow>,
     clock: Clock<Monotonic>,
     key_counter: u32,
     is_x11: bool,
@@ -366,7 +369,7 @@ pub struct WinitEventLoop {
     inner: WinitEventLoopInner,
     fake_token: Option<Token>,
     pending_events: Vec<WinitEvent>,
-    event_loop: Generic<EventLoop<()>>,
+    event_loop: Generic<EventLoop>,
     span: tracing::Span,
 }
 
@@ -413,15 +416,17 @@ impl<F: FnMut(WinitEvent)> WinitEventLoopApp<'_, F> {
 }
 
 impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+    fn can_create_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {}
+
+    fn resumed(&mut self, _event_loop: &dyn ActiveEventLoop) {
         (self.callback)(WinitEvent::Input(InputEvent::DeviceAdded {
             device: WinitVirtualDevice,
         }));
     }
 
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, _event_loop: &dyn ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::Resized(size) => {
+            WindowEvent::SurfaceResized(size) => {
                 trace!("Resizing window to {size:?}");
                 let (w, h): (i32, i32) = size.into();
 
@@ -436,7 +441,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
             } => {
                 trace!("Scale factor changed to {new_scale_factor}");
                 self.inner.scale_factor = new_scale_factor;
-                let (w, h): (i32, i32) = self.inner.window.inner_size().into();
+                let (w, h): (i32, i32) = self.inner.window.surface_size().into();
                 (self.callback)(WinitEvent::Resized {
                     size: (w, h).into(),
                     scale_factor: self.inner.scale_factor,
@@ -472,8 +477,8 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 };
                 (self.callback)(WinitEvent::Input(event));
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                let size = self.inner.window.inner_size();
+            WindowEvent::PointerMoved { position, .. } => {
+                let size = self.inner.window.surface_size();
                 let x = position.x / size.width as f64;
                 let y = position.y / size.height as f64;
                 let event = InputEvent::PointerMotionAbsolute {
@@ -494,24 +499,31 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 };
                 (self.callback)(WinitEvent::Input(event));
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                let event = InputEvent::PointerButton {
-                    event: WinitMouseInputEvent {
-                        time: self.timestamp(),
-                        button,
-                        state,
-                        is_x11: self.inner.is_x11,
-                    },
-                };
-                (self.callback)(WinitEvent::Input(event));
+            WindowEvent::PointerButton { state, button, .. } => {
+                match button {
+                    ButtonSource::Mouse(button) => {
+                        let event = InputEvent::PointerButton {
+                            event: WinitMouseInputEvent {
+                                time: self.timestamp(),
+                                button,
+                                state,
+                                is_x11: self.inner.is_x11,
+                            },
+                        };
+                        (self.callback)(WinitEvent::Input(event));
+                    }
+                    // TODO: touch
+                    _ => {}
+                }
             }
+            /*
             WindowEvent::Touch(Touch {
                 phase: TouchPhase::Started,
                 location,
                 id,
                 ..
             }) => {
-                let size = self.inner.window.inner_size();
+                let size = self.inner.window.surface_size();
                 let x = location.x / size.width as f64;
                 let y = location.y / size.width as f64;
                 let event = InputEvent::TouchDown {
@@ -531,7 +543,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 id,
                 ..
             }) => {
-                let size = self.inner.window.inner_size();
+                let size = self.inner.window.surface_size();
                 let x = location.x / size.width as f64;
                 let y = location.y / size.width as f64;
                 let event = InputEvent::TouchMotion {
@@ -552,7 +564,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 id,
                 ..
             }) => {
-                let size = self.inner.window.inner_size();
+                let size = self.inner.window.surface_size();
                 let x = location.x / size.width as f64;
                 let y = location.y / size.width as f64;
                 let event = InputEvent::TouchMotion {
@@ -588,15 +600,16 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 };
                 (self.callback)(WinitEvent::Input(event));
             }
-            WindowEvent::DroppedFile(_)
+            */
+            WindowEvent::DragDropped { .. }
             | WindowEvent::Destroyed
-            | WindowEvent::CursorEntered { .. }
-            | WindowEvent::AxisMotion { .. }
-            | WindowEvent::CursorLeft { .. }
+            | WindowEvent::PointerEntered { .. }
+            | WindowEvent::PointerLeft { .. }
             | WindowEvent::ModifiersChanged(_)
             | WindowEvent::KeyboardInput { .. }
-            | WindowEvent::HoveredFile(_)
-            | WindowEvent::HoveredFileCancelled
+            | WindowEvent::DragEntered { .. }
+            | WindowEvent::DragLeft { .. }
+            | WindowEvent::DragMoved { .. }
             | WindowEvent::Ime(_)
             | WindowEvent::Moved(_)
             | WindowEvent::Occluded(_)
@@ -613,14 +626,14 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
 
 struct InitApp {
     attributes: WindowAttributes,
-    window: Option<Result<WinitWindow, winit::error::OsError>>,
+    window: Option<Result<Box<dyn WinitWindow>, winit::error::RequestError>>,
 }
 
 impl InitApp {
     fn init(
-        event_loop: &mut EventLoop<()>,
+        event_loop: &mut EventLoop,
         attributes: WindowAttributes,
-    ) -> Result<WinitWindow, winit::error::OsError> {
+    ) -> Result<Box<dyn WinitWindow>, winit::error::RequestError> {
         let mut app = Self {
             attributes,
             window: None,
@@ -633,12 +646,13 @@ impl InitApp {
 }
 
 impl ApplicationHandler for InitApp {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.window = Some(event_loop.create_window(self.attributes.clone()));
     }
 
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, _event: WindowEvent) {
-        unreachable!()
+    fn window_event(&mut self, _event_loop: &dyn ActiveEventLoop, _window_id: WindowId, _event: WindowEvent) {
+        // TODO is event here needed, and not handled by main ApplicationHandler?
+        //unreachable!()
     }
 }
 
