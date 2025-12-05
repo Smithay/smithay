@@ -110,15 +110,9 @@ where
     let _guard = span.enter();
     info!("Initializing a winit backend");
 
-    let event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
+    let mut event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
 
-    // TODO: Create window in `resumed`?
-    #[allow(deprecated)]
-    let window = Arc::new(
-        event_loop
-            .create_window(attributes)
-            .map_err(Error::WindowCreation)?,
-    );
+    let window = Arc::new(InitApp::init(&mut event_loop, attributes).map_err(Error::WindowCreation)?);
 
     span.record("window", Into::<u64>::into(window.id()));
     debug!("Window created");
@@ -614,6 +608,37 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
             | WindowEvent::PanGesture { .. }
             | WindowEvent::ActivationTokenDone { .. } => (),
         }
+    }
+}
+
+struct InitApp {
+    attributes: WindowAttributes,
+    window: Option<Result<WinitWindow, winit::error::OsError>>,
+}
+
+impl InitApp {
+    fn init(
+        event_loop: &mut EventLoop<()>,
+        attributes: WindowAttributes,
+    ) -> Result<WinitWindow, winit::error::OsError> {
+        let mut app = Self {
+            attributes,
+            window: None,
+        };
+        while app.window.is_none() {
+            event_loop.pump_app_events(None, &mut app);
+        }
+        app.window.unwrap()
+    }
+}
+
+impl ApplicationHandler for InitApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.window = Some(event_loop.create_window(self.attributes.clone()));
+    }
+
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, _event: WindowEvent) {
+        unreachable!()
     }
 }
 
