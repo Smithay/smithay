@@ -16,11 +16,12 @@ use smithay::{
         },
     },
     delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale,
-    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_layer_shell,
-    delegate_output, delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_security_context,
-    delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_input_method_manager, delegate_input_method_manager_v3, delegate_keyboard_shortcuts_inhibit,
+    delegate_layer_shell, delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
+    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
     desktop::{
         space::SpaceElement,
         utils::{
@@ -55,6 +56,10 @@ use smithay::{
         fifo::{FifoBarrierCachedState, FifoManagerState},
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
         input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
+        input_method_v3::{
+            self, InputMethodHandler as InputMethodHandlerV3,
+            InputMethodManagerState as InputMethodManagerStateV3, PopupSurface as PopupSurfaceV3,
+        },
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
@@ -360,6 +365,64 @@ impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
 
 delegate_input_method_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+impl<BackendData: Backend> InputMethodHandlerV3 for AnvilState<BackendData> {
+    fn new_popup(&mut self, surface: PopupSurfaceV3) {
+        if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
+            warn!("Failed to track popup: {}", err);
+        }
+    }
+
+    fn popup_repositioned(&mut self, _: PopupSurfaceV3) {}
+
+    fn dismiss_popup(&mut self, surface: PopupSurfaceV3) {
+        let parent = surface.get_parent().surface.clone();
+        let _ = PopupManager::dismiss_popup(&parent, &PopupKind::from(surface));
+    }
+
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
+        self.space
+            .elements()
+            .find_map(|window| (window.wl_surface().as_deref() == Some(parent)).then(|| window.geometry()))
+            .unwrap_or_default()
+    }
+
+    fn popup_geometry(
+        &self,
+        parent: &WlSurface,
+        cursor: &Rectangle<i32, Logical>,
+        positioner: &input_method_v3::PositionerState,
+    ) -> Rectangle<i32, Logical> {
+        let Some(window) = self.window_for_surface(parent) else {
+            panic!("Input method popup without parent window");
+        };
+
+        let mut outputs_for_window = self.space.outputs_for_element(&window);
+        if outputs_for_window.is_empty() {
+            return Default::default();
+        }
+
+        // Get a union of all outputs' geometries.
+        let mut outputs_geo = self
+            .space
+            .output_geometry(&outputs_for_window.pop().unwrap())
+            .unwrap();
+        for output in outputs_for_window {
+            outputs_geo = outputs_geo.merge(self.space.output_geometry(&output).unwrap());
+        }
+
+        let window_geo = self.space.element_geometry(&window).unwrap();
+
+        // The target geometry for the positioner should be relative to its parent's geometry, so
+        // we will compute that here.
+        let mut target = outputs_geo;
+        target.loc -= window_geo.loc;
+
+        positioner.get_geometry_from_anchor(*cursor, target)
+    }
+}
+
+delegate_input_method_manager_v3!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
     fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
         &mut self.keyboard_shortcuts_inhibit_state
@@ -661,6 +724,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let commit_timing_manager_state = CommitTimingManagerState::new::<Self>(&dh);
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self, _>(&dh, |_client| true);
+        InputMethodManagerStateV3::new::<Self, _>(&dh, |_client| true);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
         // Expose global only if backend supports relative motion events
         if BackendData::HAS_RELATIVE_MOTION {
