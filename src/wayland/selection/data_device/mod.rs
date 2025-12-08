@@ -532,12 +532,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
         }
     }
 
-    fn leave<S: Source>(&self, _data: &mut D, offer: Option<&mut WlOfferData<S>>, seat: &Seat<D>) {
-        if let Some(offer) = offer {
-            if offer.state.lock().unwrap().dropped {
-                return;
-            }
-        }
+    fn leave<S: Source>(&self, _data: &mut D, _offer: Option<&mut WlOfferData<S>>, seat: &Seat<D>) {
         let seat_data = seat
             .user_data()
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
