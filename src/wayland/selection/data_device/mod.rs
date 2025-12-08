@@ -256,7 +256,7 @@ fn handle_dnd<D, S>(
                 } else {
                     data.accepted = false;
                 }
-            } else {
+            } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
                     "Accept request after Finish.",
@@ -274,7 +274,7 @@ fn handle_dnd<D, S>(
                 if valid {
                     source.send(&mime_type, fd);
                 }
-            } else {
+            } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
                     "Receive request after Finish.",
@@ -317,16 +317,16 @@ fn handle_dnd<D, S>(
                 );
                 return;
             }
-            data.active = false;
-            data.finished = true;
             if let Some(source) = source.take() {
                 source.finished();
-            } else {
+            } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer, which was finished already.",
                 );
             }
+            data.active = false;
+            data.finished = true;
         }
         Request::SetActions {
             dnd_actions,
