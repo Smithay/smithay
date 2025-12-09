@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_WARP_POINTER_OPCODE","REQ_WARP_POINTER_SINCE"],"enum":["Event","Request"],"struct":["WpPointerWarpV1"]};

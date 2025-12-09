@@ -1,0 +1,63 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Backend (rendering/input) helpers"><title>smithay::backend - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module backend</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module backend</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#module-structure" title="Module structure">Module structure</a><ul><li><a href="#session-management" title="Session management">Session management</a></li><li><a href="#input-handling" title="Input handling">Input handling</a></li><li><a href="#graphics" title="Graphics">Graphics</a></li></ul></li><li><a href="#x11-backend" title="X11 backend">X11 backend</a></li><li><a href="#winit-backend" title="Winit backend">Winit backend</a></li></ul><h3><a href="#modules">Module Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#enums" title="Enums">Enums</a></li></ul></section><div id="rustdoc-modnav"><h2 class="in-crate"><a href="../index.html">In crate smithay</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">smithay</a></div><h1>Module <span>backend</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/smithay/backend/mod.rs.html#2-138">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Backend (rendering/input) helpers</p>
+<p>This module provides helpers for interaction with the operating system.</p>
+<h3 id="module-structure"><a class="doc-anchor" href="#module-structure">§</a>Module structure</h3>
+<p>The module is largely structured around three main aspects of interaction with the OS:
+session management, input handling, and graphics.</p>
+<h4 id="session-management"><a class="doc-anchor" href="#session-management">§</a>Session management</h4>
+<p>Session management relates to mechanisms allowing the compositor to access the resources
+it needs to function. It contains interaction with the login manager if any ((e)logind or
+seatd), as well as releasing those resources when TTY-switching. It is handled by the
+<a href="session/index.html" title="mod smithay::backend::session"><code>session</code></a> module, gated by the <code>backend_session</code> cargo feature. You will generally need
+it to run your compositor directly on a TTY.</p>
+<p>This module is tightly coupled with the <a href="udev/index.html" title="mod smithay::backend::udev"><code>udev</code></a> module (gated by the <code>backend_udev</code> cargo
+feature), which allows the discovery of usable graphics and input devices on the system, using
+the udev system daemon.</p>
+<h4 id="input-handling"><a class="doc-anchor" href="#input-handling">§</a>Input handling</h4>
+<p>Input handling consists in discovering the various available input devices, and receiving
+all inputs events from it. Smithay is build to support different possible sources for
+that input data, with a generic API provided by the traits and types defined in the
+<a href="input/index.html" title="mod smithay::backend::input"><code>input</code></a> module. An input provider following this API based on <code>libinput</code> is given in the
+<a href="libinput/index.html" title="mod smithay::backend::libinput"><code>libinput</code></a> module, gated by the <code>backend_libinput</code> cargo feature. The winit backend
+(see below) also provides an input provider.</p>
+<h4 id="graphics"><a class="doc-anchor" href="#graphics">§</a>Graphics</h4>
+<p>Combining content from the clients and displaying it on the screen is the central role of
+a wayland compositor, and also one of its most complex tasks; several backend modules are
+dedicated to this task.</p>
+<p>Smithay provides a rendering infrastructure built around graphics buffers: you retrieve buffers
+for your client, you composite them into a new buffer holding the contents of your desktop,
+that you will then submit to the hardware for display. The backbone of this infrastructure is
+structured around two modules:</p>
+<ul>
+<li><a href="allocator/index.html" title="mod smithay::backend::allocator"><code>allocator</code></a> contains generic traits representing the capability to
+allocate and convert graphical buffers, as well as an implementation of this
+capability using GBM (see its module-level docs for details).</li>
+<li><a href="renderer/index.html" title="mod smithay::backend::renderer"><code>renderer</code></a> provides traits representing the capability of graphics
+rendering using those buffers, as well as an implementation of this
+capability using GLes2 (see its module-level docs for details).</li>
+</ul>
+<p>Alongside this backbone capability, Smithay also provides the <a href="drm/index.html" title="mod smithay::backend::drm"><code>drm</code></a> module, which handles
+direct interaction with the graphical physical devices to setup the display pipeline and
+submit rendered buffers to the monitors for display. This module is gated by the
+<code>backend_drm</code> cargo feature.</p>
+<p>The <a href="egl/index.html" title="mod smithay::backend::egl"><code>egl</code></a> module provides the logic to setup an OpenGL context. It is used by the Gles2
+renderer (which is based on OpenGL), and also provides the capability for clients to use
+the <code>wl_drm</code>-based hardware-acceleration provided by Mesa, a precursor to the
+<a href="../wayland/dmabuf/index.html" title="mod smithay::wayland::dmabuf"><code>linux_dmabuf</code></a> Wayland protocol extension. Note that, at the
+moment, even clients using dma-buf still require that the <code>wl_drm</code> infrastructure is
+initialized to have hardware-acceleration.</p>
+<h3 id="x11-backend"><a class="doc-anchor" href="#x11-backend">§</a>X11 backend</h3>
+<p>Alongside this infrastructure, Smithay also provides an alternative backend based on
+<a href="https://crates.io/crates/x11rb">x11rb</a>, which makes it possible to run your compositor as
+an X11 client. This is generally quite helpful for development and debugging.</p>
+<p>The X11 backend does not concern itself with what renderer is in use, allowing presentation to
+the window assuming you can provide it with a <a href="allocator/dmabuf/struct.Dmabuf.html" title="struct smithay::backend::allocator::dmabuf::Dmabuf"><code>Dmabuf</code></a>.
+The X11 backend is also an input provider, and is accessible in the <a href="x11/index.html" title="mod smithay::backend::x11"><code>x11</code></a> module, gated by
+the <code>backend_x11</code> cargo feature.</p>
+<h3 id="winit-backend"><a class="doc-anchor" href="#winit-backend">§</a>Winit backend</h3>
+<p>Alongside this infrastructure, Smithay also provides an alternative backend based on
+<a href="https://crates.io/crates/winit">winit</a>, which makes it possible to run your compositor as
+a Wayland or X11 client. You are encouraged to use the X11 backend where possible since winit
+does not integrate into calloop too well. This backend is generally quite helpful for
+development and debugging. That backend is both a renderer and an input provider, and is
+accessible in the <a href="winit/index.html" title="mod smithay::backend::winit"><code>winit</code></a> module, gated by the <code>backend_winit</code> cargo feature.</p>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="allocator/index.html" title="mod smithay::backend::allocator">allocator</a></dt><dd>Buffer allocation and management.</dd><dt><a class="mod" href="drm/index.html" title="mod smithay::backend::drm">drm</a><wbr><span class="stab portability" title="Available on crate feature `backend_drm` only"><code>backend_drm</code></span></dt><dd>This module represents abstraction on top the linux direct rendering manager api (drm).</dd><dt><a class="mod" href="egl/index.html" title="mod smithay::backend::egl">egl</a><wbr><span class="stab portability" title="Available on crate feature `backend_egl` only"><code>backend_egl</code></span></dt><dd>Common traits and types for egl rendering</dd><dt><a class="mod" href="input/index.html" title="mod smithay::backend::input">input</a></dt><dd>Common traits for input backends to receive input from.</dd><dt><a class="mod" href="libinput/index.html" title="mod smithay::backend::libinput">libinput</a><wbr><span class="stab portability" title="Available on crate feature `backend_libinput` only"><code>backend_libinput</code></span></dt><dd>Implementation of input backend trait for types provided by <code>libinput</code></dd><dt><a class="mod" href="renderer/index.html" title="mod smithay::backend::renderer">renderer</a></dt><dd>Rendering functionality and abstractions</dd><dt><a class="mod" href="session/index.html" title="mod smithay::backend::session">session</a><wbr><span class="stab portability" title="Available on crate feature `backend_session` only"><code>backend_session</code></span></dt><dd>Abstraction of different session APIs.</dd><dt><a class="mod" href="udev/index.html" title="mod smithay::backend::udev">udev</a><wbr><span class="stab portability" title="Available on crate feature `backend_udev` only"><code>backend_udev</code></span></dt><dd><code>udev</code> related functionality for automated device scanning</dd><dt><a class="mod" href="vulkan/index.html" title="mod smithay::backend::vulkan">vulkan</a><wbr><span class="stab portability" title="Available on crate feature `backend_vulkan` only"><code>backend_vulkan</code></span></dt><dd>Types to initialize and use Vulkan.</dd><dt><a class="mod" href="winit/index.html" title="mod smithay::backend::winit">winit</a><wbr><span class="stab portability" title="Available on crate feature `backend_winit` only"><code>backend_winit</code></span></dt><dd>Implementation of backend traits for types provided by <code>winit</code></dd><dt><a class="mod" href="x11/index.html" title="mod smithay::backend::x11">x11</a><wbr><span class="stab portability" title="Available on crate feature `backend_x11` only"><code>backend_x11</code></span></dt><dd>Implementation of the backend types using X11.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.SwapBuffersError.html" title="enum smithay::backend::SwapBuffersError">Swap<wbr>Buffers<wbr>Error</a></dt><dd>Error that can happen when swapping buffers.</dd></dl></section></div></main></body></html>

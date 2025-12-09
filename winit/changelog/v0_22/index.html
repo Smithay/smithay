@@ -1,0 +1,39 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.22.2"><title>winit::changelog::v0_22 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_22</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_22</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#0222" title="0.22.2">0.22.2</a></li><li><a href="#0221" title="0.22.1">0.22.1</a></li><li><a href="#0220" title="0.22.0">0.22.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_22</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#35">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="0222"><a class="doc-anchor" href="#0222">§</a>0.22.2</h3>
+<ul>
+<li>Added Clone implementation for ’static events.</li>
+<li>On Windows, fix window intermittently hanging when <code>ControlFlow</code> was set to <code>Poll</code>.</li>
+<li>On Windows, fix <code>WindowBuilder::with_maximized</code> being ignored.</li>
+<li>On Android, minimal platform support.</li>
+<li>On iOS, touch positions are now properly converted to physical pixels.</li>
+<li>On macOS, updated core-* dependencies and cocoa</li>
+</ul>
+<h3 id="0221"><a class="doc-anchor" href="#0221">§</a>0.22.1</h3>
+<ul>
+<li>On X11, fix <code>ResumeTimeReached</code> being fired too early.</li>
+<li>On Web, replaced zero timeout for <code>ControlFlow::Poll</code> with <code>requestAnimationFrame</code></li>
+<li>On Web, fix a possible panic during event handling</li>
+<li>On macOS, fix <code>EventLoopProxy</code> leaking memory for every instance.</li>
+</ul>
+<h3 id="0220"><a class="doc-anchor" href="#0220">§</a>0.22.0</h3>
+<ul>
+<li>On Windows, fix minor timing issue in wait_until_time_or_msg</li>
+<li>On Windows, rework handling of request_redraw() to address panics.</li>
+<li>On macOS, fix <code>set_simple_screen</code> to remember frame excluding title bar.</li>
+<li>On Wayland, fix coordinates in touch events when scale factor isn’t 1.</li>
+<li>On Wayland, fix color from <code>close_button_icon_color</code> not applying.</li>
+<li>Ignore locale if unsupported by X11 backend</li>
+<li>On Wayland, Add HiDPI cursor support</li>
+<li>On Web, add the ability to query “Light” or “Dark” system theme send <code>ThemeChanged</code> on change.</li>
+<li>Fix <code>Event::to_static</code> returning <code>None</code> for user events.</li>
+<li>On Wayland, Hide CSD for fullscreen windows.</li>
+<li>On Windows, ignore spurious mouse move messages.</li>
+<li><strong>Breaking:</strong> Move <code>ModifiersChanged</code> variant from <code>DeviceEvent</code> to <code>WindowEvent</code>.</li>
+<li>On Windows, add <code>IconExtWindows</code> trait which exposes creating an <code>Icon</code> from an external file or embedded resource</li>
+<li>Add <code>BadIcon::OsError</code> variant for when OS icon functionality fails</li>
+<li>On Windows, fix crash at startup on systems that do not properly support Windows’ Dark Mode</li>
+<li>Revert On macOS, fix not sending ReceivedCharacter event for specific keys combinations.</li>
+<li>on macOS, fix incorrect ReceivedCharacter events for some key combinations.</li>
+<li><strong>Breaking:</strong> Use <code>i32</code> instead of <code>u32</code> for position type in <code>WindowEvent::Moved</code>.</li>
+<li>On macOS, a mouse motion event is now generated before every mouse click.</li>
+</ul>
+</div></details></section></div></main></body></html>

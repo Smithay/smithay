@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Element to render a solid color"><title>smithay::backend::renderer::element::solid - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module solid</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module solid</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#how-to-use-it" title="How to use it">How to use it</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>backend::<wbr>renderer::<wbr>element</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../../index.html">smithay</a>::<wbr><a href="../../../index.html">backend</a>::<wbr><a href="../../index.html">renderer</a>::<wbr><a href="../index.html">element</a></div><h1>Module <span>solid</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../../src/smithay/backend/renderer/element/solid.rs.html#1-254">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Element to render a solid color</p>
+<h2 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{
+    backend::renderer::{
+        damage::OutputDamageTracker,
+        element::{
+            Kind,
+            solid::{SolidColorBuffer, SolidColorRenderElement},
+        },
+    },
+    utils::{Point, Size},
+};
+
+<span class="kw">const </span>WIDTH: i32 = <span class="number">10</span>;
+<span class="kw">const </span>HEIGHT: i32 = <span class="number">10</span>;
+<span class="kw">const </span>COLOR: [f32; <span class="number">4</span>] = [<span class="number">1f32</span>, <span class="number">0.9f32</span>, <span class="number">0.78f32</span>, <span class="number">1f32</span>];
+
+<span class="comment">// Initialize the solid color buffer
+</span><span class="kw">let </span>buffer = SolidColorBuffer::new((WIDTH, HEIGHT), COLOR);
+
+<span class="comment">// Initialize a static damage tracked renderer
+</span><span class="kw">let </span><span class="kw-2">mut </span>damage_tracker = OutputDamageTracker::new((<span class="number">800</span>, <span class="number">600</span>), <span class="number">1.0</span>, Transform::Normal);
+
+<span class="kw">loop </span>{
+    <span class="comment">// Create a render element from the buffer
+    </span><span class="kw">let </span>location = Point::from((<span class="number">100</span>, <span class="number">100</span>));
+    <span class="kw">let </span>render_element = SolidColorRenderElement::from_buffer(<span class="kw-2">&amp;</span>buffer, location, <span class="number">1f64</span>, <span class="number">1.0</span>, Kind::Unspecified);
+
+    <span class="comment">// Render the element(s)
+    </span>damage_tracker
+        .render_output(<span class="kw-2">&amp;mut </span>renderer, <span class="kw-2">&amp;mut </span>framebuffer, <span class="number">0</span>, <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>render_element], [<span class="number">0.8</span>, <span class="number">0.8</span>, <span class="number">0.9</span>, <span class="number">1.0</span>])
+        .expect(<span class="string">"failed to render output"</span>);
+}</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.SolidColorBuffer.html" title="struct smithay::backend::renderer::element::solid::SolidColorBuffer">Solid<wbr>Color<wbr>Buffer</a></dt><dd>A single color buffer</dd><dt><a class="struct" href="struct.SolidColorRenderElement.html" title="struct smithay::backend::renderer::element::solid::SolidColorRenderElement">Solid<wbr>Color<wbr>Render<wbr>Element</a></dt><dd><a href="../trait.Element.html" title="trait smithay::backend::renderer::element::Element"><code>Element</code></a> to render a solid color</dd></dl></section></div></main></body></html>

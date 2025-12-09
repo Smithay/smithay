@@ -1,0 +1,104 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="X11 rust bindings."><title>x11rb - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate x11rb</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#getting-started-with-x11" title="Getting started with X11">Getting started with X11</a></li><li><a href="#getting-started-with-x11rb" title="Getting started with x11rb">Getting started with x11rb</a><ul><li><a href="#feature-flags" title="Feature flags">Feature flags</a></li></ul></li><li><a href="#integrating-x11rb-with-an-event-loop" title="Integrating x11rb with an Event Loop">Integrating x11rb with an Event Loop</a></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#macros" title="Macros">Macros</a></li><li><a href="#constants" title="Constants">Constants</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>x11rb</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/x11rb/lib.rs.html#1-215">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>X11 rust bindings.</p>
+<p>This library allows to interact with an X11 server from rust code. A connection to an X11
+server is represented by an implementation of the <code>Connection</code> trait.</p>
+<p>The client can interact with the server by sending requests. The server can answer requests and
+can also generate events.</p>
+<p>The examples that come with this library might be a good starting point for new users.</p>
+<h2 id="getting-started-with-x11"><a class="doc-anchor" href="#getting-started-with-x11">§</a>Getting started with X11</h2>
+<p>X11 is a big protocol. I would claim that most of it is not actually that complicated, but it
+is still difficult to get into it. A good starting point might be some <a href="https://www.x.org/releases/X11R7.7/doc/libxcb/tutorial/index.html">libxcb
+tutorial</a>. This tutorial
+was adapted in this crate <a href="https://github.com/psychon/x11rb/blob/master/x11rb/examples/tutorial.rs">as an
+example</a>. A more in-depth
+look at the X11 protocol can be gained from the <a href="https://www.x.org/releases/X11R7.6/doc/xproto/x11protocol.html">protocol reference
+manual</a>, but this requires some
+existing basic understanding of X11. If you want to figure out what some specific request does,
+be sure to look it up in the specification!</p>
+<p>Most extensions can be understood by reading their specification. Most of them can be found
+<a href="https://www.x.org/releases/current/doc/index.html#protocol">here</a>. For example, <a href="https://www.x.org/releases/X11R7.5/doc/compositeproto/compositeproto.txt">the
+specification of Composite
+0.4</a> consists of
+about six pages of text.</p>
+<p>The notable exception is the X keyboard extension, which is documented in a <a href="https://www.x.org/releases/current/doc/kbproto/xkbproto.pdf">PDF file with 168
+pages</a> which I am never going to
+read completely.</p>
+<h2 id="getting-started-with-x11rb"><a class="doc-anchor" href="#getting-started-with-x11rb">§</a>Getting started with x11rb</h2>
+<p>Most code in this code is automatically generated from an XML description of the protocol. This
+is the same approach as taken by <a href="https://xcb.freedesktop.org/">libxcb</a> (and in fact this uses
+the same XML description). This means that if you know your way around X11, most things should
+be obvious to you.</p>
+<p>For example, here is how to create a new window with x11rb:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>x11rb::connection::Connection;
+<span class="kw">use </span>x11rb::errors::ReplyOrIdError;
+<span class="kw">use </span>x11rb::protocol::xproto::<span class="kw-2">*</span>;
+<span class="kw">use </span>x11rb::COPY_DEPTH_FROM_PARENT;
+
+<span class="kw">fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;(), Box&lt;<span class="kw">dyn </span>std::error::Error&gt;&gt; {
+    <span class="kw">let </span>(conn, screen_num) = x11rb::connect(<span class="prelude-val">None</span>).unwrap();
+    <span class="kw">let </span>screen = <span class="kw-2">&amp;</span>conn.setup().roots[screen_num];
+    <span class="kw">let </span>win_id = conn.generate_id()<span class="question-mark">?</span>;
+    conn.create_window(
+        COPY_DEPTH_FROM_PARENT,
+        win_id,
+        screen.root,
+        <span class="number">0</span>,
+        <span class="number">0</span>,
+        <span class="number">100</span>,
+        <span class="number">100</span>,
+        <span class="number">0</span>,
+        WindowClass::INPUT_OUTPUT,
+        <span class="number">0</span>,
+        <span class="kw-2">&amp;</span>CreateWindowAux::new().background_pixel(screen.white_pixel),
+    )<span class="question-mark">?</span>;
+    conn.map_window(win_id)<span class="question-mark">?</span>;
+    conn.flush();
+    <span class="kw">loop </span>{
+        <span class="macro">println!</span>(<span class="string">"Event: {:?}"</span>, conn.wait_for_event()<span class="question-mark">?</span>);
+    }
+}</code></pre></div>
+<p>More examples can be found in the
+<a href="https://github.com/psychon/x11rb/tree/master/x11rb/examples">examples</a> directory.</p>
+<h3 id="feature-flags"><a class="doc-anchor" href="#feature-flags">§</a>Feature flags</h3>
+<p>This crate uses <a href="https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-section">feature
+flags</a> to reduce
+the amount of compiled code. There are two kinds of feature flags available:</p>
+<ul>
+<li>Feature flags for specific X11 extensions</li>
+<li>Feature flags for additional functionality</li>
+</ul>
+<h4 id="feature-flags-for-specific-x11-extensions"><a class="doc-anchor" href="#feature-flags-for-specific-x11-extensions">§</a>Feature flags for specific X11 extensions</h4>
+<p>By default, only the core X11 protocol and X11 extensions that are needed internally are
+enabled. These are the <code>bigreq</code>, <code>ge</code> and <code>xc_misc</code> extensions. Further extensions need to be
+explicitly enabled via their feature flag:</p>
+<p><code>composite</code>, <code>damage</code>, <code>dpms</code>, <code>dri2</code>, <code>dri3</code>, <code>glx</code>, <code>present</code>, <code>randr</code>, <code>record</code>, <code>render</code>,
+<code>res</code>, <code>screensaver</code>, <code>shape</code>, <code>shm</code>, <code>sync</code>, <code>xevie</code>, <code>xf86dri</code>, <code>xf86vidmode</code>, <code>xfixes</code>,
+<code>xinerama</code>, <code>xinput</code>, <code>xkb</code>, <code>xprint</code>, <code>xselinux</code>, <code>xtest</code>, <code>xv</code>, <code>xvmc</code>.</p>
+<p>If you want to take the “I do not want to think about this”-approach, you can enable the
+<code>all-extensions</code> feature to just enable, well, all extensions.</p>
+<h4 id="feature-flags-for-additional-functionality"><a class="doc-anchor" href="#feature-flags-for-additional-functionality">§</a>Feature flags for additional functionality</h4>
+<p>Additionally, the following flags exist:</p>
+<ul>
+<li><code>allow-unsafe-code</code>: Enable features that require <code>unsafe</code>. Without this flag,
+<a href="xcb_ffi/struct.XCBConnection.html" title="struct x11rb::xcb_ffi::XCBConnection"><code>xcb_ffi::XCBConnection</code></a> and some support code for it are unavailable.</li>
+<li><code>cursor</code>: Enable the code in [cursor] for loading cursor files.</li>
+<li><code>resource_manager</code>: Enable the code in <a href="resource_manager/index.html" title="mod x11rb::resource_manager">resource_manager</a> for loading and querying the
+X11 resource database.</li>
+<li><code>image</code>: Enable the code in [image] for working with pixel image data.</li>
+<li><code>dl-libxcb</code>: Enabling this feature will prevent from libxcb being linked to the
+resulting executable. Instead libxcb will be dynamically loaded at runtime.
+This feature adds the <a href="xcb_ffi/fn.load_libxcb.html" title="fn x11rb::xcb_ffi::load_libxcb"><code>xcb_ffi::load_libxcb</code></a> function, that allows to load
+libxcb and check for success or failure.</li>
+<li><code>extra-traits</code>: Enable some additional traits for generated code, like <code>Eq</code>, <code>Ord</code> and
+<code>Hash</code>. This is not needed by default and adds a large amount of code that bloats codegen
+time</li>
+<li><code>request-parsing</code>: Add the ability to parse X11 requests. Not normally needed.</li>
+<li><code>extra-traits</code>: Implement extra traits for X11 types. This improves the output of the <code>Debug</code>
+impl and adds <code>PartialEq</code>, <code>Eq</code>, <code>PartialOrd</code>, <code>Ord</code>, and <code>Hash</code> where possible.</li>
+</ul>
+<h2 id="integrating-x11rb-with-an-event-loop"><a class="doc-anchor" href="#integrating-x11rb-with-an-event-loop">§</a>Integrating x11rb with an Event Loop</h2>
+<p>The <a href="event_loop_integration/index.html">event_loop_integration</a> module contains some hints for
+integrating x11rb with an event loop as doc comments.</p>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="connection/index.html" title="mod x11rb::connection">connection</a></dt><dd>Generic connection-related types and definitions.</dd><dt><a class="mod" href="cookie/index.html" title="mod x11rb::cookie">cookie</a></dt><dd>Cookies are handles to future replies or errors from the X11 server.</dd><dt><a class="mod" href="errors/index.html" title="mod x11rb::errors">errors</a></dt><dd>This module contains the current mess that is error handling.</dd><dt><a class="mod" href="event_loop_integration/index.html" title="mod x11rb::event_loop_integration">event_<wbr>loop_<wbr>integration</a></dt><dd>Integrating x11rb with an Event Loop</dd><dt><a class="mod" href="extension_manager/index.html" title="mod x11rb::extension_manager">extension_<wbr>manager</a></dt><dd>Helper for implementing <code>RequestConnection::extension_information()</code>.</dd><dt><a class="mod" href="properties/index.html" title="mod x11rb::properties">properties</a></dt><dd>Utility functions for working with X11 properties</dd><dt><a class="mod" href="protocol/index.html" title="mod x11rb::protocol">protocol</a></dt><dd>Bindings to the X11 protocol.</dd><dt><a class="mod" href="reexports/index.html" title="mod x11rb::reexports">reexports</a></dt><dd>Reexports of dependencies</dd><dt><a class="mod" href="resource_manager/index.html" title="mod x11rb::resource_manager">resource_<wbr>manager</a></dt><dd>X11 resource manager library.</dd><dt><a class="mod" href="rust_connection/index.html" title="mod x11rb::rust_connection">rust_<wbr>connection</a></dt><dd>A pure-rust implementation of a connection to an X11 server.</dd><dt><a class="mod" href="utils/index.html" title="mod x11rb::utils">utils</a></dt><dd>Utility functions that are not specific to X11.</dd><dt><a class="mod" href="wrapper/index.html" title="mod x11rb::wrapper">wrapper</a></dt><dd>Some wrappers around the generated code to simplify use.</dd><dt><a class="mod" href="x11_utils/index.html" title="mod x11rb::x11_utils">x11_<wbr>utils</a></dt><dd>Some utilities for working with X11.</dd><dt><a class="mod" href="xcb_ffi/index.html" title="mod x11rb::xcb_ffi">xcb_ffi</a></dt><dd>A FFI-based connection to an X11 server, using libxcb.</dd></dl><h2 id="macros" class="section-header">Macros<a href="#macros" class="anchor">§</a></h2><dl class="item-table"><dt><a class="macro" href="macro.atom_manager.html" title="macro x11rb::atom_manager">atom_<wbr>manager</a></dt><dd>A helper macro for managing atoms</dd></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.COPY_CLASS_FROM_PARENT.html" title="constant x11rb::COPY_CLASS_FROM_PARENT">COPY_<wbr>CLASS_<wbr>FROM_<wbr>PARENT</a></dt><dd>This constant can be used for the class parameter in <code>create_window</code>. It indicates to use the
+parent window’s class.</dd><dt><a class="constant" href="constant.COPY_DEPTH_FROM_PARENT.html" title="constant x11rb::COPY_DEPTH_FROM_PARENT">COPY_<wbr>DEPTH_<wbr>FROM_<wbr>PARENT</a></dt><dd>This constant can be used for the depth parameter in <code>create_window</code>. It indicates to use the
+parent window’s depth.</dd><dt><a class="constant" href="constant.COPY_FROM_PARENT.html" title="constant x11rb::COPY_FROM_PARENT">COPY_<wbr>FROM_<wbr>PARENT</a></dt><dd>This constant can be used for many parameters in <code>create_window</code></dd><dt><a class="constant" href="constant.CURRENT_TIME.html" title="constant x11rb::CURRENT_TIME">CURRENT_<wbr>TIME</a></dt><dd>This constant can be used in most request that take a timestamp argument</dd><dt><a class="constant" href="constant.NONE.html" title="constant x11rb::NONE">NONE</a></dt><dd>The universal null resource or null atom parameter value for many core X requests</dd><dt><a class="constant" href="constant.NO_SYMBOL.html" title="constant x11rb::NO_SYMBOL">NO_<wbr>SYMBOL</a></dt><dd>This constant can be used to fill unused entries in <code>Keysym</code> tables</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.connect.html" title="fn x11rb::connect">connect</a></dt><dd>Establish a new connection to an X11 server.</dd></dl><script type="text/json" id="notable-traits-data">{"Vec<u8>":"<h3>Notable traits for <code><a class=\"struct\" href=\"https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html\" title=\"struct alloc::vec::Vec\">Vec</a>&lt;<a class=\"primitive\" href=\"https://doc.rust-lang.org/nightly/std/primitive.u8.html\">u8</a>, A&gt;</code></h3><pre><code><div class=\"where\">impl&lt;A&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/std/io/trait.Write.html\" title=\"trait std::io::Write\">Write</a> for <a class=\"struct\" href=\"https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html\" title=\"struct alloc::vec::Vec\">Vec</a>&lt;<a class=\"primitive\" href=\"https://doc.rust-lang.org/nightly/std/primitive.u8.html\">u8</a>, A&gt;<div class=\"where\">where\n    A: <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/alloc/trait.Allocator.html\" title=\"trait core::alloc::Allocator\">Allocator</a>,</div></div>"}</script></section></div></main></body></html>

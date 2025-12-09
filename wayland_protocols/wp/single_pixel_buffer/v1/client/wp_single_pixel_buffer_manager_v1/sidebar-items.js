@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_CREATE_U32_RGBA_BUFFER_OPCODE","REQ_CREATE_U32_RGBA_BUFFER_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE"],"enum":["Event","Request"],"struct":["WpSinglePixelBufferManagerV1"]};
