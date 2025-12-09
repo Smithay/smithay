@@ -252,6 +252,14 @@ where
                     );
                 }
 
+                if width <= 0 || height <= 0 {
+                    xdg_surface.post_error(
+                        xdg_surface::Error::InvalidSize,
+                        "width and height of the window geometry must be greater than zero.",
+                    );
+                    return;
+                }
+
                 compositor::with_states(surface, |states| {
                     states.cached_state.get::<SurfaceCachedState>().pending().geometry =
                         Some(Rectangle::new((x, y).into(), (width, height).into()));
