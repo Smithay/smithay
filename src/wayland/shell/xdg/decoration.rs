@@ -241,6 +241,14 @@ where
             Request::GetToplevelDecoration { id, toplevel } => {
                 let data = toplevel.data::<XdgShellSurfaceUserData>().unwrap();
 
+                if !data.alive_tracker.alive() {
+                    resource.post_error(
+                        zxdg_toplevel_decoration_v1::Error::Orphaned,
+                        "toplevel is already destroyed",
+                    );
+                    return;
+                }
+
                 let mut decoration_guard = data.decoration.lock().unwrap();
 
                 if decoration_guard.is_some() {
