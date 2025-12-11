@@ -350,14 +350,12 @@ impl EventSource for EiInput {
                 Ok(EisRequestSourceEvent::Connected) => {
                     let seat = connection.add_seat(
                         Some("default"),
-                        &[
-                            DeviceCapability::Pointer,
-                            DeviceCapability::PointerAbsolute,
-                            DeviceCapability::Keyboard,
-                            DeviceCapability::Touch,
-                            DeviceCapability::Scroll,
-                            DeviceCapability::Button,
-                        ],
+                        DeviceCapability::Pointer
+                            | DeviceCapability::PointerAbsolute
+                            | DeviceCapability::Keyboard
+                            | DeviceCapability::Touch
+                            | DeviceCapability::Scroll
+                            | DeviceCapability::Button,
                     );
 
                     self.seat = Some(seat);
@@ -368,21 +366,12 @@ impl EventSource for EiInput {
                 Ok(EisRequestSourceEvent::Request(EisRequest::Bind(request))) => {
                     let capabilities = request.capabilities;
 
-                    // TODO Handle in converter
-                    if capabilities & 0x7e != capabilities {
-                        return disconnected(
-                            connection,
-                            eis::connection::DisconnectReason::Value,
-                            "Invalid capabilities",
-                        );
-                    }
-
                     let seat = self.seat.as_ref().unwrap();
 
                     // TODO: Don't add devices that already exist. remove devices?
 
                     if connection.has_interface("ei_keyboard")
-                        && capabilities & 2 << DeviceCapability::Keyboard as u64 != 0
+                        && capabilities.contains(DeviceCapability::Keyboard)
                     {
                         // XXX use seat keymap
                         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
@@ -397,7 +386,7 @@ impl EventSource for EiInput {
                         let device = seat.add_device(
                             Some("keyboard"),
                             DeviceType::Virtual,
-                            &[DeviceCapability::Keyboard],
+                            DeviceCapability::Keyboard.into(),
                             |device| {
                                 let keyboard = device.interface::<eis::Keyboard>().unwrap();
                                 keyboard.keymap(
@@ -411,34 +400,34 @@ impl EventSource for EiInput {
 
                     // XXX button/etc should be on same object
                     if connection.has_interface("ei_pointer")
-                        && capabilities & 2 << DeviceCapability::Pointer as u64 != 0
+                        && capabilities.contains(DeviceCapability::Pointer)
                     {
                         seat.add_device(
                             Some("pointer"),
                             DeviceType::Virtual,
-                            &[DeviceCapability::Pointer],
+                            DeviceCapability::Pointer.into(),
                             |_| {},
                         );
                     }
 
                     if connection.has_interface("ei_touchscreen")
-                        && capabilities & 2 << DeviceCapability::Touch as u64 != 0
+                        && capabilities.contains(DeviceCapability::Touch)
                     {
                         seat.add_device(
                             Some("touch"),
                             DeviceType::Virtual,
-                            &[DeviceCapability::Touch],
+                            DeviceCapability::Touch.into(),
                             |_| {},
                         );
                     }
 
                     if connection.has_interface("ei_pointer_absolute")
-                        && capabilities & 2 << DeviceCapability::PointerAbsolute as u64 != 0
+                        && capabilities.contains(DeviceCapability::PointerAbsolute)
                     {
                         seat.add_device(
                             Some("pointer-abs"),
                             DeviceType::Virtual,
-                            &[DeviceCapability::PointerAbsolute],
+                            DeviceCapability::PointerAbsolute.into(),
                             |_| {},
                         );
                     }
