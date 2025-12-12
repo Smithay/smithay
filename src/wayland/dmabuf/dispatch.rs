@@ -109,18 +109,25 @@ where
                     },
                 );
 
+                let is_empty = compositor::with_states(&surface, |states| {
+                    states
+                        .data_map
+                        .insert_if_missing_threadsafe(SurfaceDmabufFeedbackState::default);
+                    let feedback_state = states.data_map.get::<SurfaceDmabufFeedbackState>().unwrap();
+                    feedback_state.is_empty()
+                });
+
+                let new_feedback = is_empty
+                    .then(|| state.new_surface_feedback(&surface, &DmabufGlobal { id: data.id }))
+                    .flatten()
+                    .unwrap_or_else(|| data.default_feedback.as_ref().unwrap().lock().unwrap().clone());
+
                 let surface_feedback = compositor::with_states(&surface, |states| {
                     states
                         .data_map
                         .insert_if_missing_threadsafe(SurfaceDmabufFeedbackState::default);
                     let feedback_state = states.data_map.get::<SurfaceDmabufFeedbackState>().unwrap();
-                    feedback_state.add_instance(&feedback, || {
-                        state
-                            .new_surface_feedback(&surface, &DmabufGlobal { id: data.id })
-                            .unwrap_or_else(|| {
-                                data.default_feedback.as_ref().unwrap().lock().unwrap().clone()
-                            })
-                    })
+                    feedback_state.add_instance(&feedback, move || new_feedback)
                 });
 
                 surface_feedback.send(&feedback);
