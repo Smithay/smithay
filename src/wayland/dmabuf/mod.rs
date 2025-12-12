@@ -555,15 +555,8 @@ impl SurfaceDmabufFeedbackState {
     fn remove_instance(&self, instance: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1) {
         let mut guard = self.inner.lock().unwrap();
 
-        // check if this was the last instance, in that case we can drop the feedback
-        let reset = if let Some(inner) = guard.as_mut() {
+        if let Some(inner) = guard.as_mut() {
             inner.known_instances.retain(|i| i != instance);
-            inner.known_instances.is_empty()
-        } else {
-            false
-        };
-        if reset {
-            *guard = None;
         }
     }
 }
