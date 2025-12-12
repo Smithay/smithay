@@ -506,6 +506,10 @@ impl SurfaceDmabufFeedbackState {
         states.data_map.get::<SurfaceDmabufFeedbackState>()
     }
 
+    fn is_empty(&self) -> bool {
+        self.inner.lock().unwrap().is_none()
+    }
+
     /// Set the feedback for this surface
     ///
     /// Note: If the surface did not request feedback or the feedback equals
