@@ -493,9 +493,9 @@ struct SurfaceDmabufFeedbackStateInner {
 }
 
 /// Feedback state for a surface
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SurfaceDmabufFeedbackState {
-    inner: Arc<Mutex<Option<SurfaceDmabufFeedbackStateInner>>>,
+    inner: Arc<Mutex<SurfaceDmabufFeedbackStateInner>>,
 }
 
 impl SurfaceDmabufFeedbackState {
@@ -508,59 +508,35 @@ impl SurfaceDmabufFeedbackState {
 
     /// Set the feedback for this surface
     ///
-    /// Note: If the surface did not request feedback or the feedback equals
-    /// the current feedback this function does nothing
+    /// Note: If the feedback equals the current feedback this function does nothing
     pub fn set_feedback(&self, feedback: &DmabufFeedback) {
         let mut guard = self.inner.lock().unwrap();
-        if let Some(inner) = guard.as_mut() {
-            if &inner.feedback == feedback {
-                return;
-            }
-
-            for instance in inner.known_instances.iter().filter_map(|i| i.upgrade().ok()) {
-                feedback.send(&instance);
-            }
-
-            inner.feedback = feedback.clone();
+        if &guard.feedback == feedback {
+            return;
         }
+
+        for instance in guard.known_instances.iter().filter_map(|i| i.upgrade().ok()) {
+            feedback.send(&instance);
+        }
+
+        guard.feedback = feedback.clone();
     }
 
-    fn add_instance<F>(
+    fn add_instance(
         &self,
         instance: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1,
-        feedback_factory: F,
-    ) -> DmabufFeedback
-    where
-        F: FnOnce() -> DmabufFeedback,
-    {
+    ) -> DmabufFeedback {
         let mut guard = self.inner.lock().unwrap();
-        if let Some(inner) = guard.as_mut() {
-            inner.known_instances.push(instance.downgrade());
-            inner.feedback.clone()
-        } else {
-            let feedback = feedback_factory();
-            let inner = SurfaceDmabufFeedbackStateInner {
-                feedback: feedback.clone(),
-                known_instances: vec![instance.downgrade()],
-            };
-            *guard = Some(inner);
-            feedback
-        }
+        guard.known_instances.push(instance.downgrade());
+        guard.feedback.clone()
     }
 
     fn remove_instance(&self, instance: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1) {
-        let mut guard = self.inner.lock().unwrap();
-
-        // check if this was the last instance, in that case we can drop the feedback
-        let reset = if let Some(inner) = guard.as_mut() {
-            inner.known_instances.retain(|i| i != instance);
-            inner.known_instances.is_empty()
-        } else {
-            false
-        };
-        if reset {
-            *guard = None;
-        }
+        self.inner
+            .lock()
+            .unwrap()
+            .known_instances
+            .retain(|i| i != instance);
     }
 }
 
@@ -1003,9 +979,7 @@ pub trait DmabufHandler: BufferHandler {
 
     /// This function allows to override the default [`DmabufFeedback`] for a surface
     ///
-    /// Note: This will only be called if there is no alive surface feedback for the surface.
-    /// Normally this will be the first time a surface requests feedback, but can also occur
-    /// if all instances have been destroyed and a new surface request is sent by the client.
+    /// Note: This will only be called if this will be the first time a surface requests feedback.
     ///
     /// Returning `None` will use the default [`DmabufFeedback`] from the global
     fn new_surface_feedback(
