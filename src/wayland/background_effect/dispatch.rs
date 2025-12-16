@@ -45,10 +45,9 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectManagerV1, (), D
         match request {
             ManagerRequest::GetBackgroundEffect { id, surface } => {
                 let already_taken = with_states(&surface, |states| {
-                    states
+                    let data = states
                         .data_map
-                        .insert_if_missing_threadsafe(BackgroundEffectSurfaceData::new);
-                    let data = states.data_map.get::<BackgroundEffectSurfaceData>().unwrap();
+                        .get_or_insert_threadsafe(BackgroundEffectSurfaceData::new);
                     let already = data.is_resource_attached();
                     if !already {
                         data.set_is_resource_attached(true);
