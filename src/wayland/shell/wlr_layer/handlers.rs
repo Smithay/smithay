@@ -122,49 +122,10 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(&wl_surface, |_state, _dh, surface| {
-                        compositor::with_states(surface, |states| {
-                            let guard = states
-                                .data_map
-                                .get::<Mutex<LayerSurfaceAttributes>>()
-                                .unwrap()
-                                .lock()
-                                .unwrap();
-
-                            let mut cached_guard = states.cached_state.get::<LayerSurfaceCachedState>();
-                            let pending = cached_guard.pending();
-
-                            if pending.size.w == 0 && !pending.anchor.anchored_horizontally() {
-                                guard.surface.post_error(
-                                    zwlr_layer_surface_v1::Error::InvalidSize,
-                                    "width 0 requested without setting left and right anchors",
-                                );
-                                return;
-                            }
-
-                            if pending.size.h == 0 && !pending.anchor.anchored_vertically() {
-                                guard.surface.post_error(
-                                    zwlr_layer_surface_v1::Error::InvalidSize,
-                                    "height 0 requested without setting top and bottom anchors",
-                                );
-                            }
-                        });
-                    });
-
-                    compositor::add_post_commit_hook::<D, _>(&wl_surface, |_state, _dh, surface| {
-                        compositor::with_states(surface, |states| {
-                            let mut guard = states
-                                .data_map
-                                .get::<Mutex<LayerSurfaceAttributes>>()
-                                .unwrap()
-                                .lock()
-                                .unwrap();
-
-                            if let Some(state) = guard.last_acked.clone() {
-                                guard.current = state;
-                            }
-                        });
-                    });
+                    compositor::add_pre_commit_hook::<D, _>(
+                        &wl_surface,
+                        super::LayerSurface::pre_commit_hook,
+                    );
                 }
 
                 let handle = super::LayerSurface {
@@ -283,6 +244,27 @@ where
                     Ok(layer) => {
                         let _ = with_surface_pending_state(layer_surface, |data| {
                             data.layer = layer;
+                        });
+                    }
+                    Err((err, msg)) => {
+                        layer_surface.post_error(err, msg);
+                    }
+                };
+            }
+            zwlr_layer_surface_v1::Request::SetExclusiveEdge { edge } => {
+                match Anchor::try_from(edge) {
+                    Ok(edge) => {
+                        let _ = with_surface_pending_state(layer_surface, |data| {
+                            if edge.is_empty() {
+                                data.exclusive_edge = None;
+                            } else if edge.bits().count_ones() == 1 {
+                                data.exclusive_edge = Some(edge);
+                            } else {
+                                layer_surface.post_error(
+                                    zwlr_layer_surface_v1::Error::InvalidExclusiveEdge,
+                                    "exclusive edge cannot have multiple edges",
+                                );
+                            }
                         });
                     }
                     Err((err, msg)) => {

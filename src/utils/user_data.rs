@@ -326,6 +326,12 @@ mod list {
         }
     }
 
+    impl<T> Default for AppendList<T> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     #[derive(Debug)]
     pub struct AppendListIterator<'a, T>(&'a AtomicPtr<Node<T>>);
 

@@ -24,10 +24,9 @@ use smithay::{
     },
     utils::{Logical, Point, Serial, Transform, SERIAL_COUNTER as SCOUNTER},
     wayland::{
-        compositor::with_states,
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
-        shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
+        shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer},
     },
 };
 
@@ -146,12 +145,11 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let keyboard = self.seat.get_keyboard().unwrap();
 
         for layer in self.layer_shell_state.layer_surfaces().rev() {
-            let data = with_states(layer.wl_surface(), |states| {
-                *states.cached_state.get::<LayerSurfaceCachedState>().current()
+            let exclusive = layer.with_cached_state(|data| {
+                data.keyboard_interactivity == KeyboardInteractivity::Exclusive
+                    && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
             });
-            if data.keyboard_interactivity == KeyboardInteractivity::Exclusive
-                && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
-            {
+            if exclusive {
                 let surface = self.space.outputs().find_map(|o| {
                     let map = layer_map_for_output(o);
                     let cloned = map.layers().find(|l| l.layer_surface() == &layer).cloned();
@@ -796,9 +794,10 @@ impl AnvilState<UdevData> {
             with_pointer_constraint(&surface, &pointer, |constraint| match constraint {
                 Some(constraint) if constraint.is_active() => {
                     // Constraint does not apply if not within region
-                    if !constraint.region().map_or(true, |x| {
-                        x.contains((pointer_location - *surface_loc).to_i32_round())
-                    }) {
+                    if !constraint
+                        .region()
+                        .is_none_or(|x| x.contains((pointer_location - *surface_loc).to_i32_round()))
+                    {
                         return;
                     }
                     match &*constraint {
@@ -874,7 +873,7 @@ impl AnvilState<UdevData> {
             with_pointer_constraint(&under, &pointer, |constraint| match constraint {
                 Some(constraint) if !constraint.is_active() => {
                     let point = (pointer_location - surface_location).to_i32_round();
-                    if constraint.region().map_or(true, |region| region.contains(point)) {
+                    if constraint.region().is_none_or(|region| region.contains(point)) {
                         constraint.activate();
                     }
                 }

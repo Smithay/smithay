@@ -432,15 +432,31 @@ impl Cacheable for ViewportCachedState {
 #[macro_export]
 macro_rules! delegate_viewporter {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
-        ] => $crate::wayland::viewporter::ViewporterState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::viewporter::server::{
+                        wp_viewport::WpViewport, wp_viewporter::WpViewporter,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::viewporter::{ViewportState, ViewporterState},
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
-        ] => $crate::wayland::viewporter::ViewporterState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewport::WpViewport: $crate::wayland::viewporter::ViewportState
-        ] => $crate::wayland::viewporter::ViewportState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpViewporter: ()] => ViewporterState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpViewporter: ()] => ViewporterState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpViewport: ViewportState] => ViewportState
+            );
+        };
     };
 }

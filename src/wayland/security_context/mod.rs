@@ -232,14 +232,34 @@ where
 #[macro_export]
 macro_rules! delegate_security_context {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_manager_v1::WpSecurityContextManagerV1: $crate::wayland::security_context::SecurityContextGlobalData
-        ] => $crate::wayland::security_context::SecurityContextState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_manager_v1::WpSecurityContextManagerV1: ()
-        ] => $crate::wayland::security_context::SecurityContextState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_v1::WpSecurityContextV1: $crate::wayland::security_context::SecurityContextUserData
-        ] => $crate::wayland::security_context::SecurityContextState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::security_context::v1::server::{
+                        wp_security_context_manager_v1::WpSecurityContextManagerV1,
+                        wp_security_context_v1::WpSecurityContextV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::security_context::{
+                    SecurityContextGlobalData, SecurityContextState, SecurityContextUserData,
+                },
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpSecurityContextManagerV1: SecurityContextGlobalData] => SecurityContextState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpSecurityContextManagerV1: ()] => SecurityContextState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpSecurityContextV1: SecurityContextUserData] => SecurityContextState
+            );
+        };
     };
 }

@@ -4,11 +4,17 @@ use crate::{
     utils::Serial,
     wayland::{
         compositor,
-        shell::{is_valid_parent, xdg::XdgToplevelSurfaceData},
+        shell::{
+            is_valid_parent,
+            xdg::{ToplevelCachedState, XdgToplevelSurfaceData},
+        },
     },
 };
 
-use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
+use wayland_protocols::xdg::{
+    decoration::zv1::server::zxdg_toplevel_decoration_v1,
+    shell::server::xdg_toplevel::{self, XdgToplevel},
+};
 
 use wayland_server::{
     backend::ClientId, protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, WEnum,
@@ -38,6 +44,13 @@ where
             xdg_toplevel::Request::Destroy => {
                 if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
                     surface_data.has_active_role.store(false, Ordering::Release);
+                }
+
+                if let Some(decoration) = data.decoration.lock().unwrap().clone() {
+                    decoration.post_error(
+                        zxdg_toplevel_decoration_v1::Error::Orphaned,
+                        "The xdg_toplevel_decoration object must be destroyed before its xdg_toplevel.",
+                    );
                 }
             }
             xdg_toplevel::Request::SetParent { parent } => {
@@ -180,6 +193,10 @@ where
                     .unwrap() = Default::default();
 
                 let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
+
+                let mut guard = states.cached_state.get::<ToplevelCachedState>();
                 *guard.pending() = Default::default();
                 *guard.current() = Default::default();
             })

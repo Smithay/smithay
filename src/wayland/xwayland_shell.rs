@@ -377,14 +377,31 @@ fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + SeatHandler + 'stat
 #[macro_export]
 macro_rules! delegate_xwayland_shell {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::shell::v1::server::xwayland_shell_v1::XwaylandShellV1: ()
-        ] => $crate::wayland::xwayland_shell::XWaylandShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::shell::v1::server::xwayland_shell_v1::XwaylandShellV1: ()
-        ] => $crate::wayland::xwayland_shell::XWaylandShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::shell::v1::server::xwayland_surface_v1::XwaylandSurfaceV1: $crate::wayland::xwayland_shell::XWaylandSurfaceUserData
-        ] => $crate::wayland::xwayland_shell::XWaylandShellState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xwayland::shell::v1::server::{
+                        xwayland_shell_v1::XwaylandShellV1, xwayland_surface_v1::XwaylandSurfaceV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::xwayland_shell::{XWaylandShellState, XWaylandSurfaceUserData},
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XwaylandShellV1: ()] => XWaylandShellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XwaylandShellV1: ()] => XWaylandShellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XwaylandSurfaceV1: XWaylandSurfaceUserData] => XWaylandShellState
+            );
+        };
     };
 }

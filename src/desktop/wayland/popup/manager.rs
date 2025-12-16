@@ -4,12 +4,12 @@ use crate::{
     wayland::{
         compositor::{get_role, with_states},
         seat::WaylandFocus,
-        shell::xdg::{XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
+        shell::xdg::{PopupCachedState, XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
     },
 };
 use std::sync::{Arc, Mutex};
 use tracing::trace;
-use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
+use wayland_protocols::xdg::shell::server::xdg_wm_base;
 use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
@@ -74,23 +74,7 @@ impl PopupManager {
         );
 
         match popup {
-            PopupKind::Xdg(ref xdg) => {
-                let surface = xdg.wl_surface();
-                let committed = with_states(surface, |states| {
-                    states
-                        .data_map
-                        .get::<XdgPopupSurfaceData>()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .committed
-                });
-
-                if committed {
-                    surface.post_error(xdg_popup::Error::InvalidGrab, "xdg_popup already is mapped");
-                    return Err(PopupGrabError::InvalidGrab);
-                }
-            }
+            PopupKind::Xdg(ref _xdg) => (),
             PopupKind::InputMethod(ref _input_method) => {
                 return Err(PopupGrabError::InvalidGrab);
             }
@@ -105,7 +89,7 @@ impl PopupManager {
         // that it either is new and have never been
         // added to the popupmanager or that it has been
         // cleaned up.
-        if !toplevel_popups.active() {
+        if !toplevel_popups.has_any_grabs() {
             self.popup_grabs.push(toplevel_popups.clone());
         }
 
@@ -144,15 +128,24 @@ impl PopupManager {
         with_states(&root, |states| {
             let tree = PopupTree::default();
             if states.data_map.insert_if_missing_threadsafe(|| tree.clone()) {
+                trace!("Adding popup {:?} to new PopupTree on root {:?}", popup, root);
+                tree.insert(popup);
+
+                tree.set_registered(true);
                 self.popup_trees.push(tree);
-            };
-            let tree = states.data_map.get::<PopupTree>().unwrap();
-            if !tree.alive() {
-                // if it previously had no popups, we likely removed it from our list already
-                self.popup_trees.push(tree.clone());
+            } else {
+                let tree = states.data_map.get::<PopupTree>().unwrap();
+                trace!(
+                    "Adding popup {:?} to existing PopupTree on root {:?}",
+                    popup,
+                    root
+                );
+                tree.insert(popup);
+
+                if tree.set_registered(true) {
+                    self.popup_trees.push(tree.clone());
+                }
             }
-            trace!("Adding popup {:?} to root {:?}", popup, root);
-            tree.insert(popup);
         });
 
         Ok(())
@@ -203,11 +196,17 @@ impl PopupManager {
     /// Needs to be called periodically (but not necessarily frequently)
     /// to cleanup internal resources.
     pub fn cleanup(&mut self) {
-        // retain_mut is sadly still unstable
-        self.popup_grabs.iter_mut().for_each(|grabs| grabs.cleanup());
-        self.popup_grabs.retain(|grabs| grabs.active());
-        self.popup_trees.iter_mut().for_each(|tree| tree.cleanup());
-        self.popup_trees.retain(|tree| tree.alive());
+        self.popup_grabs.retain_mut(|grabs| {
+            grabs.cleanup();
+            grabs.has_any_grabs()
+        });
+        self.popup_trees.retain_mut(|tree| {
+            let alive = tree.cleanup_and_get_alive();
+            if !alive {
+                let _ = tree.set_registered(false);
+            }
+            alive
+        });
         self.unmapped_popups.retain(|surf| surf.alive());
     }
 }
@@ -249,14 +248,12 @@ pub fn get_popup_toplevel_coords(popup: &PopupKind) -> Point<i32, Logical> {
     while get_role(&parent) == Some(XDG_POPUP_ROLE) {
         offset += with_states(&parent, |states| {
             states
-                .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .current
-                .geometry
-                .loc
+                .cached_state
+                .get::<PopupCachedState>()
+                .current()
+                .last_acked
+                .map(|c| c.state.geometry.loc)
+                .unwrap_or_default()
         });
         parent = with_states(&parent, |states| {
             states
@@ -276,7 +273,13 @@ pub fn get_popup_toplevel_coords(popup: &PopupKind) -> Point<i32, Logical> {
 }
 
 #[derive(Debug, Default, Clone)]
-struct PopupTree(Arc<Mutex<Vec<PopupNode>>>);
+struct PopupTree(Arc<Mutex<PopupTreeInner>>);
+
+#[derive(Debug, Default, Clone)]
+struct PopupTreeInner {
+    children: Vec<PopupNode>,
+    registered: bool,
+}
 
 #[derive(Debug, Clone)]
 struct PopupNode {
@@ -289,7 +292,12 @@ impl PopupTree {
         self.0
             .lock()
             .unwrap()
+            .children
             .iter()
+            // A newly created xdg_popup is stacked on top of all previously created xdg_popups. We
+            // push new ones to the end of the vector, so we should iterate in reverse, from newest
+            // to oldest.
+            .rev()
             .filter(|node| node.surface.alive())
             .flat_map(|n| n.iter_popups_relative_to((0, 0)).map(|(p, l)| (p.clone(), l)))
             .collect::<Vec<_>>()
@@ -297,24 +305,24 @@ impl PopupTree {
     }
 
     fn insert(&self, popup: PopupKind) {
-        let children = &mut *self.0.lock().unwrap();
-        for child in children.iter_mut() {
-            if child.insert(popup.clone()) {
+        let tree = &mut *self.0.lock().unwrap();
+        for child in tree.children.iter_mut() {
+            if child.try_insert(&popup) {
                 return;
             }
         }
-        children.push(PopupNode::new(popup));
+        tree.children.push(PopupNode::new(popup));
     }
 
     fn dismiss_popup(&self, popup: &PopupKind) {
-        let mut children = self.0.lock().unwrap();
+        let mut tree = self.0.lock().unwrap();
 
         let mut i = 0;
-        while i < children.len() {
-            let child = &mut children[i];
+        while i < tree.children.len() {
+            let child = &mut tree.children[i];
 
             if child.dismiss_popup(popup) {
-                let _ = children.remove(i);
+                let _ = tree.children.remove(i);
                 break;
             } else {
                 i += 1;
@@ -322,17 +330,21 @@ impl PopupTree {
         }
     }
 
-    fn cleanup(&mut self) {
-        let mut children = self.0.lock().unwrap();
-        for child in children.iter_mut() {
-            child.cleanup();
-        }
-        children.retain(|n| n.surface.alive());
+    fn cleanup_and_get_alive(&mut self) -> bool {
+        let mut tree = self.0.lock().unwrap();
+        tree.children
+            .retain_mut(|child| child.cleanup_and_get_alive(false));
+        !tree.children.is_empty()
     }
 
-    #[inline]
-    fn alive(&self) -> bool {
-        !self.0.lock().unwrap().is_empty()
+    /// Marks whether this tree is registered in the PopupManager's popup_trees
+    ///
+    /// Returns true if the registration status changed
+    fn set_registered(&self, registered: bool) -> bool {
+        let mut tree = self.0.lock().unwrap();
+        let was_registered = tree.registered;
+        tree.registered = registered;
+        was_registered != registered
     }
 }
 
@@ -351,6 +363,10 @@ impl PopupNode {
         let relative_to = loc.into() + self.surface.location();
         self.children
             .iter()
+            // A newly created xdg_popup is stacked on top of all previously created xdg_popups. We
+            // push new ones to the end of the vector, so we should iterate in reverse, from newest
+            // to oldest.
+            .rev()
             .filter(|node| node.surface.alive())
             .flat_map(move |x| {
                 Box::new(x.iter_popups_relative_to(relative_to))
@@ -359,14 +375,14 @@ impl PopupNode {
             .chain(std::iter::once((&self.surface, relative_to)))
     }
 
-    fn insert(&mut self, popup: PopupKind) -> bool {
+    fn try_insert(&mut self, popup: &PopupKind) -> bool {
         let parent = popup.parent().unwrap();
         if self.surface.wl_surface() == &parent {
-            self.children.push(PopupNode::new(popup));
+            self.children.push(PopupNode::new(popup.clone()));
             true
         } else {
             for child in &mut self.children {
-                if child.insert(popup.clone()) {
+                if child.try_insert(popup) {
                     return true;
                 }
             }
@@ -403,19 +419,23 @@ impl PopupNode {
         false
     }
 
-    fn cleanup(&mut self) {
-        for child in &mut self.children {
-            child.cleanup();
+    fn cleanup_and_get_alive(&mut self, xdg_parent_destroyed: bool) -> bool {
+        let alive = self.surface.alive();
+        let mut xdg_destroyed = false;
+
+        if let PopupKind::Xdg(_) = self.surface {
+            if alive && xdg_parent_destroyed {
+                self.surface.wl_surface().post_error(
+                    xdg_wm_base::Error::NotTheTopmostPopup,
+                    "xdg_popup was destroyed while it was not the topmost popup",
+                );
+            }
+            xdg_destroyed = !alive;
         }
 
-        if !self.surface.alive() && !self.children.is_empty() {
-            // TODO: The client destroyed a popup before
-            // destroying all children, this is a protocol
-            // error. As the surface is no longer alive we
-            // can not retrieve the client here to send
-            // the error.
-        }
+        self.children
+            .retain_mut(|child| child.cleanup_and_get_alive(xdg_destroyed));
 
-        self.children.retain(|n| n.surface.alive());
+        alive
     }
 }

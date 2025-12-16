@@ -164,6 +164,7 @@ impl Id {
     ///
     /// Note: The id will be re-used once all instances of this [`Id`]
     /// are dropped.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Id(InnerId::External(Arc::new(ExternalId::new())))
     }

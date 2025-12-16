@@ -25,7 +25,7 @@ use calloop::{
 
 use crate::backend::session::{AsErrno, Event as SessionEvent, Session};
 
-use tracing::{debug, error, info_span, instrument};
+use tracing::{debug, info_span, instrument};
 
 #[derive(Debug)]
 struct LibSeatSessionImpl {

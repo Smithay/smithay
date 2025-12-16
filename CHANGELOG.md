@@ -4,6 +4,18 @@
 
 ### Breaking changes
 
+`crate::wayland::selection::data_device::start_dnd` was removed in favor of exposing the
+underlying `DnDGrab` and associated types to make it possible to write external Drag&Drop sources
+and targets (e.g. for other shell implementations). See the `Additions`-section for more info.
+
+This also means the `ServerDndGrabHandler` was removed. The `ClientDndGrabHandler` was split into
+a generic `DndGrabHandler` and a specific `WaylandDndGrabHandler`. `WaylandDndGrabHandler::started` needs to
+be implemented and explicitly start a `DnDGrab` for wayland DnD-operations to work.
+
+`X11WM::start_wm` now needs a `DisplayHandle`-reference and adds requirements for the State type to
+implement `DndGrabHandler` and the `SeatHandler`s `PointerFocus` and `TouchFocus`-types to implement
+the new `DndFocus` trait.
+
 `GbmFramebufferExporter::new` now accepts a `NodeFilter` as import node, which
 enables accepting dmabufs originating from any node.
 
@@ -23,6 +35,147 @@ enables accepting dmabufs originating from any node.
 `DrmOutputManager` does now provide an explicit `lock`-method returning a [`LockedDrmOutputManager`].
 All other methods have moved to this new type, allowing compositors to take the same lock across multiple
 operations.
+
+xdg_shell, layer_shell, and session_lock surfaces now track `last_acked` state for each commit.
+You can find it in the `last_acked` field of the corresponding `...CachedState` structs.
+
+The "current state" and "current serial" attribute fields were removed; use `last_acked` from the new `with_committed_state()` accessors instead (and verify that you didn't actually want `with_pending_state()` instead where you used the "current state").
+
+```diff
+-ToplevelSurface::current_state();
++ToplevelSurface::with_committed_state(|state| {
++    // ...
++});
+
+-PopupSurface::current_state();
++PopupSurface::with_committed_state(|state| {
++    // ...
++});
+
+-LayerSurface::current_state();
++LayerSurface::with_committed_state(|state| {
++    // ...
++});
+
+-LockSurface::current_state();
++LockSurface::with_committed_state(|state| {
++    // ...
++});
+
+struct XdgToplevelSurfaceRoleAttributes {
+-    configured: bool,
+-    configure_serial: Option<Serial>,
+-    current: ToplevelState,
+-    current_serial: Option<Serial>,
+-    last_acked: Option<ToplevelState>,
++    last_acked: Option<ToplevelConfigure>,
+    // ...
+}
+
+struct XdgPopupSurfaceRoleAttributes {
+-    configured: bool,
+-    configure_serial: Option<Serial>,
+-    current: PopupState,
+-    current_serial: Option<Serial>,
+-    committed: bool,
+-    last_acked: Option<PopupState>,
++    last_acked: Option<PopupConfigure>,
+    // ...
+}
+
+struct LayerSurfaceAttributes {
+-    configured: bool,
+-    configure_serial: Option<Serial>,
+-    current: LayerSurfaceState,
+-    last_acked: Option<LayerSurfaceState>,
++    last_acked: Option<LayerSurfaceConfigure>,
+    // ...
+}
+
+-impl Copy for LayerSurfaceCachedState;
+```
+
+The following methods are no longer needed as Smithay does them automatically now:
+```diff
+-ToplevelSurface::reset_initial_configure_sent();
+-PopupSurface::reset_initial_configure_sent();
+```
+
+You also no longer need to manually set `LayerSurfaceAttributes::initial_configure_sent`, Smithay handles it automatically.
+
+### Additions
+
+`crate::input::dnd` was introduced to enable implementation of Drag&Drop operations on custom types.
+Internally the same types and traits are used to implement `wayland::data_device` dnd-operations and XDND
+operations (see below).
+
+`DnDGrab` is the new entry-point for DnD operations. It requires `SeatHandler::PointerFocus` or 
+`SeatHandler::TouchFocus` respectively to implement `DndFocus`, which is used to send events to
+types, which can be targets of DnD operations. `Source` is a new trait for types that represent
+sources of data for DnD operations.
+
+The Xwayland WM can now handle XDND operations and bridge them over to the new generic DnD interface
+allowing DnD operations between X11 and Wayland clients (both directions).
+
+`X11Surface` now has a new `surface_under`-method, which is also internally used by `SpaceElement::is_in_input_region` and `crate::desktop::Window::surface_under`. Any direct usage of `under_from_surface_tree` on the underlying `wl_surface` of an `X11Surface` should be replaced with this method for XDND to work correctly.
+
+xdg_shell and layer_shell now enforce the client acking a configure before committing a buffer, as required by the protocols.
+
+```rs
+struct ToplevelCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<ToplevelConfigure>,
+}
+
+/// Provides access to the current committed cached state.
+fn ToplevelSurface::with_cached_state<T>(&self, f: impl FnOnce(&ToplevelCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn ToplevelSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&ToplevelState>) -> T) -> T;
+
+struct PopupCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<ToplevelConfigure>,
+}
+
+/// Provides access to the current committed cached state.
+fn PopupSurface::with_cached_state<T>(&self, f: impl FnOnce(&PopupCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn PopupSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&PopupState>) -> T) -> T;
+
+struct LayerSurfaceCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<LayerSurfaceConfigure>,
+    // ...
+}
+
+/// Provides access to the current committed cached state.
+fn LayerSurface::with_cached_state<T>(&self, f: impl FnOnce(&LayerSurfaceCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn LayerSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&LayerSurfaceState>) -> T) -> T;
+
+struct LockSurfaceCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    last_acked: Option<LockSurfaceConfigure>,
+}
+
+/// Provides access to the current committed cached state.
+fn LockSurface::with_cached_state<T>(&self, f: impl FnOnce(&LockSurfaceCachedState) -> T) -> T;
+/// Provides access to the current committed state.
+fn LockSurface::with_committed_state<T>(&self, f: impl FnOnce(Option<&LockSurfaceState>) -> T) -> T;
+
+struct LockSurfaceAttributes {
+    server_pending: Option<LockSurfaceState>,
+    pending_configures: Vec<LockSurfaceConfigure>,
+    last_acked: Option<LockSurfaceConfigure>,
+}
+
+type LockSurfaceData = Mutex<LockSurfaceAttributes>;
+
+struct LockSurfaceConfigure {
+    state: LockSurfaceState,
+    serial: Serial,
+}
+```
 
 ## 0.7.0
 

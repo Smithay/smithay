@@ -499,17 +499,41 @@ impl<D: DrmSyncobjHandler> Dispatch<WpLinuxDrmSyncobjTimelineV1, DrmSyncobjTimel
 #[macro_export]
 macro_rules! delegate_drm_syncobj {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::linux_drm_syncobj::v1::server::wp_linux_drm_syncobj_manager_v1::WpLinuxDrmSyncobjManagerV1: $crate::wayland::drm_syncobj::DrmSyncobjGlobalData
-        ] => $crate::wayland::drm_syncobj::DrmSyncobjState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::linux_drm_syncobj::v1::server::wp_linux_drm_syncobj_manager_v1::WpLinuxDrmSyncobjManagerV1: ()
-        ] => $crate::wayland::drm_syncobj::DrmSyncobjState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::linux_drm_syncobj::v1::server::wp_linux_drm_syncobj_surface_v1::WpLinuxDrmSyncobjSurfaceV1: $crate::wayland::drm_syncobj::DrmSyncobjSurfaceData
-        ] => $crate::wayland::drm_syncobj::DrmSyncobjState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::linux_drm_syncobj::v1::server::wp_linux_drm_syncobj_timeline_v1::WpLinuxDrmSyncobjTimelineV1: $crate::wayland::drm_syncobj::DrmSyncobjTimelineData
-        ] => $crate::wayland::drm_syncobj::DrmSyncobjState);
-    }
+        const _: () = {
+            use $crate::{
+                backend::drm::DrmNode,
+                reexports::{
+                    wayland_protocols::wp::linux_drm_syncobj::v1::server::{
+                        wp_linux_drm_syncobj_manager_v1::WpLinuxDrmSyncobjManagerV1,
+                        wp_linux_drm_syncobj_surface_v1::WpLinuxDrmSyncobjSurfaceV1,
+                        wp_linux_drm_syncobj_timeline_v1::WpLinuxDrmSyncobjTimelineV1,
+                    },
+                    wayland_server::{
+                        delegate_dispatch, delegate_global_dispatch, protocol::wl_buffer::WlBuffer,
+                    },
+                },
+                wayland::drm_syncobj::{
+                    DrmSyncobjGlobalData, DrmSyncobjState, DrmSyncobjSurfaceData, DrmSyncobjTimelineData,
+                },
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpLinuxDrmSyncobjManagerV1: DrmSyncobjGlobalData] => DrmSyncobjState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpLinuxDrmSyncobjManagerV1: ()] => DrmSyncobjState
+            );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpLinuxDrmSyncobjSurfaceV1: DrmSyncobjSurfaceData] => DrmSyncobjState
+            );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpLinuxDrmSyncobjTimelineV1: DrmSyncobjTimelineData] => DrmSyncobjState
+            );
+        };
+    };
 }

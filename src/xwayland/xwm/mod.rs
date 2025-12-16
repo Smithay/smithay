@@ -28,7 +28,7 @@
 //!
 //! ```no_run
 //! #  use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
-//! #  use smithay::wayland::selection::SelectionTarget;
+//! #  use smithay::wayland::selection::{SelectionTarget, SelectionHandler, data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler}};
 //! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
 //! #  use smithay::utils::{Rectangle, Logical};
 //! #  use std::os::unix::io::OwnedFd;
@@ -41,7 +41,7 @@
 //! #     }
 //! # }
 //! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-//! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus, dnd::DndGrabHandler};
 //! # use smithay::backend::input::KeyState;
 //! # use smithay::input::{
 //! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
@@ -53,51 +53,7 @@
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
 //! #
-//! # #[derive(Debug, Clone, PartialEq)]
-//! # struct Target;
-//! # impl IsAlive for Target {
-//! #   fn alive(&self) -> bool { true }
-//! # }
-//! # impl PointerTarget<State> for Target {
-//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
-//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
-//! #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
-//! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
-//! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
-//! #   fn frame(&self, seat: &Seat<State>, data: &mut State) {}
-//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
-//! #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
-//! #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
-//! #   fn gesture_swipe_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeEndEvent) {}
-//! #   fn gesture_pinch_begin(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchBeginEvent) {}
-//! #   fn gesture_pinch_update(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchUpdateEvent) {}
-//! #   fn gesture_pinch_end(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchEndEvent) {}
-//! #   fn gesture_hold_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldBeginEvent) {}
-//! #   fn gesture_hold_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldEndEvent) {}
-//! # }
-//! # impl KeyboardTarget<State> for Target {
-//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
-//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
-//! #   fn key(
-//! #       &self,
-//! #       seat: &Seat<State>,
-//! #       data: &mut State,
-//! #       key: KeysymHandle<'_>,
-//! #       state: KeyState,
-//! #       serial: Serial,
-//! #       time: u32,
-//! #   ) {}
-//! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
-//! # }
-//! # impl TouchTarget<State> for Target {
-//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
-//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
-//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
-//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
-//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
-//! # }
+//! # type Target = WlSurface;
 //! # impl SeatHandler for State {
 //! #     type KeyboardFocus = Target;
 //! #     type PointerFocus = Target;
@@ -106,6 +62,14 @@
 //! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) {}
 //! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {}
 //! # }
+//! # impl DndGrabHandler for State {}
+//! # impl DataDeviceHandler for State {
+//! #     fn data_device_state(&mut self) -> &mut DataDeviceState { unreachable!() }
+//! # }
+//! # impl SelectionHandler for State {
+//! #     type SelectionUserData = ();
+//! # }
+//! # impl WaylandDndGrabHandler for State {}
 //!
 //! impl XwmHandler for State {
 //!     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm {
@@ -146,6 +110,7 @@
 //!     } => {
 //!         let wm = X11Wm::start_wm(
 //!             handle.clone(),
+//!             &dh,
 //!             x11_socket,
 //!             client.clone(),
 //!         )
@@ -159,7 +124,10 @@
 //! ```
 
 use crate::{
-    input::SeatHandler,
+    input::{
+        dnd::{DndFocus, DndGrabHandler},
+        SeatHandler,
+    },
     output::Output,
     utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
     wayland::{
@@ -168,20 +136,20 @@ use crate::{
     },
 };
 use atomic_float::AtomicF64;
-use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
+use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction};
 use rustix::fs::OFlags;
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
-    fmt,
+    ops::Deref,
     os::unix::{
-        io::{AsFd, BorrowedFd, OwnedFd},
+        io::{AsFd, OwnedFd},
         net::UnixStream,
     },
-    sync::{atomic::Ordering, Arc},
+    sync::{atomic::Ordering, Arc, Weak},
 };
-use tracing::{debug, debug_span, error, info, trace, warn};
-use wayland_server::Resource;
+use tracing::{debug, debug_span, info, trace, warn};
+use wayland_server::{DisplayHandle, Resource};
 
 pub use x11rb::protocol::xproto::Window as X11Window;
 use x11rb::{
@@ -189,15 +157,14 @@ use x11rb::{
     errors::{ReplyError, ReplyOrIdError},
     protocol::{
         composite::{ConnectionExt as _, Redirect},
-        randr::{ConnectionExt, Notify, NotifyMask},
+        randr::{ConnectionExt as _, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
-        xfixes::{ConnectionExt as _, SelectionEventMask},
+        xfixes::ConnectionExt as _,
         xproto::{
-            Atom, AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent,
-            ConfigureWindowAux, ConnectionExt as _, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask,
-            FontWrapper, GcontextWrapper, GetPropertyReply, ImageFormat, PixmapWrapper, PropMode, Property,
-            QueryExtensionReply, Screen, SelectionNotifyEvent, SelectionRequestEvent, StackMode, WindowClass,
-            CONFIGURE_NOTIFY_EVENT, SELECTION_NOTIFY_EVENT,
+            AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux,
+            ConnectionExt, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper,
+            GcontextWrapper, ImageFormat, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
+            StackMode, WindowClass, CONFIGURE_NOTIFY_EVENT,
         },
         Event,
     },
@@ -206,14 +173,15 @@ use x11rb::{
     COPY_DEPTH_FROM_PARENT,
 };
 
+mod dnd;
 pub mod settings;
 use settings::{NameError, Value, XSettings};
+mod selection;
 mod surface;
+use self::dnd::XWmDnd;
+pub use self::dnd::XwmOfferData;
+use self::selection::*;
 pub use self::surface::*;
-
-// copied from wlroots - docs say "maximum size can vary widely depending on the implementation"
-// and there is no way to query the maximum size, you just get a non-descriptive `Length` error...
-const INCR_CHUNK_SIZE: usize = 64 * 1024;
 
 #[allow(missing_docs)]
 mod atoms {
@@ -233,6 +201,7 @@ mod atoms {
             TEXT,
 
             // client -> server
+            WM_NAME,
             WM_HINTS,
             WM_PROTOCOLS,
             WM_TAKE_FOCUS,
@@ -285,6 +254,22 @@ mod atoms {
             INCR,
             DELETE,
             _XSETTINGS_S0,
+
+            // dnd
+            XdndSelection,
+            XdndAware,
+            XdndStatus,
+            XdndPosition,
+            XdndEnter,
+            XdndLeave,
+            XdndDrop,
+            XdndFinished,
+            XdndProxy,
+            XdndTypeList,
+            XdndActionMove,
+            XdndActionCopy,
+            XdndActionAsk,
+            XdndActionPrivate,
         }
     }
 }
@@ -434,6 +419,20 @@ pub trait XwmHandler {
     /// The window will be holding a grab on the mouse button provided.
     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32);
 
+    /// Window requests to be set as active window.
+    ///
+    /// A client may include a `currently_active_window` in the request to
+    /// indicate this is a focus change from another window by the same client.
+    fn active_window_request(
+        &mut self,
+        xwm: XwmId,
+        window: X11Surface,
+        timestamp: u32,
+        currently_active_window: Option<X11Surface>,
+    ) {
+        let _ = (xwm, window, timestamp, currently_active_window);
+    }
+
     /// Window requests access to the given selection.
     fn allow_selection_access(&mut self, xwm: XwmId, selection: SelectionTarget) -> bool {
         let _ = (xwm, selection);
@@ -472,7 +471,7 @@ pub struct X11Wm {
     conn: Arc<RustConnection>,
     client_scale: Arc<AtomicF64>,
     screen: Screen,
-    wm_window: X11Window,
+    wm_window: OwnedX11Window,
     atoms: Atoms,
     xsettings: XSettings,
     randr_primary: u32,
@@ -484,6 +483,7 @@ pub struct X11Wm {
     _xfixes_data: QueryExtensionReply,
     clipboard: XWmSelection,
     primary: XWmSelection,
+    dnd: XWmDnd,
 
     pub(crate) windows: Vec<X11Surface>,
     // oldest mapped -> newest
@@ -496,221 +496,7 @@ pub struct X11Wm {
 
 impl Drop for X11Wm {
     fn drop(&mut self) {
-        // TODO: Not really needed for Xwayland, but maybe cleanup set root properties?
-        let _ = self.conn.destroy_window(self.wm_window);
         xwm_id::remove(self.id.0);
-    }
-}
-
-#[derive(Debug)]
-struct XWmSelection {
-    atom: Atom,
-    type_: SelectionTarget,
-
-    conn: Arc<RustConnection>,
-    window: X11Window,
-    owner: X11Window,
-    mime_types: Vec<String>,
-    timestamp: u32,
-
-    incoming: Vec<IncomingTransfer>,
-    outgoing: Vec<OutgoingTransfer>,
-}
-
-struct IncomingTransfer {
-    conn: Arc<RustConnection>,
-    token: Option<RegistrationToken>,
-    window: X11Window,
-
-    incr: bool,
-    source_data: Vec<u8>,
-    incr_done: bool,
-}
-
-impl fmt::Debug for IncomingTransfer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IncomingTransfer")
-            .field("conn", &"...")
-            .field("token", &self.token)
-            .field("window", &self.window)
-            .field("incr", &self.incr)
-            .field("source_data", &self.source_data)
-            .field("incr_done", &self.incr_done)
-            .finish()
-    }
-}
-
-impl IncomingTransfer {
-    fn read_selection_prop(&mut self, reply: GetPropertyReply) {
-        self.source_data.extend(&reply.value)
-    }
-
-    fn write_selection(&mut self, fd: BorrowedFd<'_>) -> std::io::Result<bool> {
-        if self.source_data.is_empty() {
-            return Ok(true);
-        }
-
-        let len = rustix::io::write(fd, &self.source_data)?;
-        self.source_data = self.source_data.split_off(len);
-
-        Ok(self.source_data.is_empty())
-    }
-
-    fn destroy<D>(mut self, handle: &LoopHandle<'_, D>) {
-        if let Some(token) = self.token.take() {
-            handle.remove(token);
-        }
-    }
-}
-
-impl Drop for IncomingTransfer {
-    fn drop(&mut self) {
-        let _ = self.conn.destroy_window(self.window);
-        if self.token.is_some() {
-            tracing::warn!(
-                ?self,
-                "IncomingTransfer freed before being removed from EventLoop"
-            );
-        }
-    }
-}
-
-struct OutgoingTransfer {
-    conn: Arc<RustConnection>,
-    token: Option<RegistrationToken>,
-
-    incr: bool,
-    source_data: Vec<u8>,
-    request: SelectionRequestEvent,
-
-    property_set: bool,
-    flush_property_on_delete: bool,
-    /// The final 0-byte data chunk has been sent, denoting the completion of this transfer
-    sent_finished: bool,
-}
-
-impl fmt::Debug for OutgoingTransfer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OutgoingTransfer")
-            .field("conn", &"...")
-            .field("token", &self.token)
-            .field("incr", &self.incr)
-            .field("source_data", &self.source_data)
-            .field("request", &self.request)
-            .field("property_set", &self.property_set)
-            .field("flush_property_on_delete", &self.flush_property_on_delete)
-            .finish()
-    }
-}
-
-impl OutgoingTransfer {
-    fn flush_data(&mut self) -> Result<usize, ReplyOrIdError> {
-        let len = std::cmp::min(self.source_data.len(), INCR_CHUNK_SIZE);
-
-        if len == 0 {
-            // This flush will complete the transfer
-            self.sent_finished = true;
-        }
-
-        let mut data = self.source_data.split_off(len);
-        std::mem::swap(&mut data, &mut self.source_data);
-
-        self.conn.change_property8(
-            PropMode::REPLACE,
-            self.request.requestor,
-            self.request.property,
-            self.request.target,
-            &data,
-        )?;
-        self.conn.flush()?;
-
-        let remaining = self.source_data.len();
-        self.property_set = true;
-        Ok(remaining)
-    }
-
-    fn destroy<D>(mut self, handle: &LoopHandle<'_, D>) {
-        if let Some(token) = self.token.take() {
-            handle.remove(token);
-        }
-    }
-}
-
-impl Drop for OutgoingTransfer {
-    fn drop(&mut self) {
-        if self.token.is_some() {
-            tracing::warn!(
-                ?self,
-                "OutgoingTransfer freed before being removed from EventLoop"
-            );
-        }
-    }
-}
-
-impl XWmSelection {
-    fn new(
-        conn: &Arc<RustConnection>,
-        screen: &Screen,
-        atoms: &Atoms,
-        atom: Atom,
-    ) -> Result<Self, ReplyOrIdError> {
-        let window = conn.generate_id()?;
-        conn.create_window(
-            screen.root_depth,
-            window,
-            screen.root,
-            0,
-            0,
-            10,
-            10,
-            0,
-            WindowClass::INPUT_OUTPUT,
-            screen.root_visual,
-            &CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE),
-        )?;
-
-        if atom == atoms.CLIPBOARD {
-            conn.set_selection_owner(window, atoms.CLIPBOARD_MANAGER, x11rb::CURRENT_TIME)?;
-        }
-        conn.xfixes_select_selection_input(
-            window,
-            atom,
-            SelectionEventMask::SET_SELECTION_OWNER
-                | SelectionEventMask::SELECTION_WINDOW_DESTROY
-                | SelectionEventMask::SELECTION_CLIENT_CLOSE,
-        )?;
-        conn.flush()?;
-
-        let selection = match atom {
-            x if x == atoms.CLIPBOARD => SelectionTarget::Clipboard,
-            x if x == atoms.PRIMARY => SelectionTarget::Primary,
-            _ => unreachable!(),
-        };
-
-        debug!(
-            selection_window = ?window,
-            ?selection,
-            ?atom,
-            "Selection init",
-        );
-
-        Ok(XWmSelection {
-            atom,
-            type_: selection,
-            conn: conn.clone(),
-            window,
-            owner: window,
-            mime_types: Vec::new(),
-            timestamp: x11rb::CURRENT_TIME,
-            incoming: Vec::new(),
-            outgoing: Vec::new(),
-        })
-    }
-}
-
-impl Drop for XWmSelection {
-    fn drop(&mut self) {
-        let _ = self.conn.destroy_window(self.window);
     }
 }
 
@@ -785,6 +571,54 @@ impl From<ConnectionError> for PrimaryOutputError {
     }
 }
 
+#[derive(Debug, Clone)]
+struct OwnedX11Window {
+    conn: Weak<RustConnection>,
+    window: Arc<X11Window>,
+}
+
+impl OwnedX11Window {
+    fn new(window: X11Window, conn: &Arc<RustConnection>) -> Self {
+        OwnedX11Window {
+            conn: Arc::downgrade(conn),
+            window: Arc::new(window),
+        }
+    }
+}
+
+impl PartialEq for OwnedX11Window {
+    fn eq(&self, other: &Self) -> bool {
+        *self.window == *other.window
+    }
+}
+
+impl PartialEq<X11Window> for OwnedX11Window {
+    fn eq(&self, other: &X11Window) -> bool {
+        *self.window == *other
+    }
+}
+
+impl Deref for OwnedX11Window {
+    type Target = X11Window;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window
+    }
+}
+
+impl Drop for OwnedX11Window {
+    fn drop(&mut self) {
+        if let Some(window) = Arc::get_mut(&mut self.window) {
+            if let Some(conn) = self.conn.upgrade() {
+                if let Err(err) = conn.destroy_window(*window) {
+                    warn!("Failed to destroy window: {}", err);
+                }
+                let _ = conn.flush();
+            }
+        }
+    }
+}
+
 impl X11Wm {
     /// Start a new window manager for a given Xwayland connection
     ///
@@ -795,6 +629,7 @@ impl X11Wm {
     /// - `client` is the wayland client instance of the Xwayland instance
     pub fn start_wm<D>(
         handle: LoopHandle<'static, D>,
+        dh: &DisplayHandle,
         connection: UnixStream,
         client: wayland_server::Client,
     ) -> Result<Self, Box<dyn std::error::Error>>
@@ -802,6 +637,9 @@ impl X11Wm {
         D: XwmHandler,
         D: xwayland_shell::XWaylandShellHandler,
         D: SeatHandler,
+        D: DndGrabHandler,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
         D: 'static,
     {
         let id = XwmId(xwm_id::next());
@@ -846,7 +684,7 @@ impl X11Wm {
                     .cursor(cursor.cursor()),
             )?;
             // Watch for primary output changes
-            conn.randr_select_input(screen.root, NotifyMask::OUTPUT_CHANGE)?;
+            conn.randr_select_input(screen.root, NotifyMask::OUTPUT_CHANGE | NotifyMask::SCREEN_CHANGE)?;
         }
 
         // Tell XWayland that we are the WM by acquiring the WM_S0 selection. No X11 clients are accepted before this.
@@ -932,10 +770,11 @@ impl X11Wm {
             "Smithay X WM".as_bytes(),
         )?;
         debug!(window = win, "Created WM Window");
+
+        let conn = Arc::new(conn);
         let xsettings = XSettings::new(&conn, screen.root_depth, screen.root, &atoms)?;
         conn.flush()?;
 
-        let conn = Arc::new(conn);
         let source = X11Source::new(Arc::clone(&conn), win, atoms._SMITHAY_CLOSE_CONNECTION);
 
         let client_data = client.get_data::<XWaylandClientData>().unwrap();
@@ -955,6 +794,8 @@ impl X11Wm {
 
         let clipboard = XWmSelection::new(&conn, &screen, &atoms, atoms.CLIPBOARD)?;
         let primary = XWmSelection::new(&conn, &screen, &atoms, atoms.PRIMARY)?;
+        let dnd = XWmDnd::new(&conn, &screen, &atoms)?;
+        let wm_window = OwnedX11Window::new(win, &conn);
 
         drop(_guard);
         let wm = Self {
@@ -965,10 +806,11 @@ impl X11Wm {
             atoms,
             xsettings,
             randr_primary,
-            wm_window: win,
+            wm_window,
             _xfixes_data,
             clipboard,
             primary,
+            dnd,
             unpaired_surfaces: Default::default(),
             sequences_to_ignore: Default::default(),
             windows: Vec::new(),
@@ -978,9 +820,10 @@ impl X11Wm {
         };
 
         let event_handle = handle.clone();
+        let dh = dh.clone();
         handle.insert_source(source, move |event, _, data| match event {
             calloop::channel::Event::Msg(event) => {
-                if let Err(err) = handle_event(&event_handle, data, id, event) {
+                if let Err(err) = handle_event(&event_handle, &dh, data, id, event) {
                     warn!(id = id.0, err = ?err, "Failed to handle X11 event");
                 }
             }
@@ -1222,8 +1065,8 @@ impl X11Wm {
         if let Some(mime_types) = mime_types {
             selection.mime_types = mime_types;
             self.conn
-                .set_selection_owner(selection.window, selection.atom, x11rb::CURRENT_TIME)?;
-        } else if selection.owner == selection.window {
+                .set_selection_owner(*selection.window, selection.atom, x11rb::CURRENT_TIME)?;
+        } else if selection.owner == *selection.window {
             selection.mime_types = Vec::new();
             self.conn
                 .set_selection_owner(x11rb::NONE, selection.atom, selection.timestamp)?;
@@ -1233,60 +1076,31 @@ impl X11Wm {
     }
 
     /// Request to transfer the active `selection` for the provided `mime_type` to the provided file descriptor.
-    pub fn send_selection<D>(
+    pub fn send_selection(
         &mut self,
-        selection: SelectionTarget,
+        selection_type: SelectionTarget,
         mime_type: String,
         fd: OwnedFd,
-        loop_handle: LoopHandle<'_, D>,
-    ) -> Result<(), SelectionError>
-    where
-        D: XwmHandler + 'static,
-    {
-        let xwm_id = self.id();
-        let selection = match selection {
+    ) -> Result<(), SelectionError> {
+        let selection = match selection_type {
             SelectionTarget::Clipboard => &mut self.clipboard,
             SelectionTarget::Primary => &mut self.primary,
         };
 
         info!(
-            selection = ?selection.type_,
+            selection = ?selection_type,
             ?mime_type,
             "Send request from XWayland",
         );
 
-        let atom = match &*mime_type {
-            "text/plain;charset=utf-8" => self.atoms.UTF8_STRING,
-            "text/plain" => self.atoms.TEXT,
-            x => {
-                let prop = self
-                    .conn
-                    .get_property(true, selection.window, self.atoms.TARGETS, AtomEnum::ANY, 0, 4096)?
-                    .reply_unchecked()?
-                    .ok_or(SelectionError::UnableToDetermineAtom)?;
-                if prop.type_ != AtomEnum::ATOM.into() {
-                    return Err(SelectionError::UnableToDetermineAtom);
-                }
-                let values = prop.value32().ok_or(SelectionError::UnableToDetermineAtom)?;
-
-                let Some(atom) = values
-                    .filter_map(|atom| {
-                        let cookie = self.conn.get_atom_name(atom).ok()?;
-                        let reply = cookie.reply_unchecked().ok()?;
-                        std::str::from_utf8(&reply?.name)
-                            .ok()
-                            .map(|name| (atom, name.to_string()))
-                    })
-                    .find_map(|(atom, name)| if name == x { Some(atom) } else { None })
-                else {
-                    return Err(SelectionError::UnableToDetermineAtom);
-                };
-
-                atom
-            }
-        };
+        let atom = atom_from_mime(&mime_type, &self.conn, &self.atoms)?
+            .ok_or(SelectionError::UnableToDetermineAtom)?;
 
         debug!("Mime-type {:?} / Atom {:?}", mime_type, atom);
+
+        if let Err(err) = rustix::fs::fcntl_setfl(&fd, OFlags::WRONLY | OFlags::NONBLOCK) {
+            warn!(?err, "Failed to restrict wl file descriptor");
+        }
 
         let incoming_window = self.conn.generate_id()?;
         self.conn.create_window(
@@ -1309,62 +1123,12 @@ impl X11Wm {
             self.atoms._WL_SELECTION,
             x11rb::CURRENT_TIME,
         )?;
-
-        if let Err(err) = rustix::fs::fcntl_setfl(&fd, OFlags::WRONLY | OFlags::NONBLOCK) {
-            warn!(?err, "Failed to restrict wl file descriptor");
-        }
-
-        let selection_type = selection.type_;
-        let loop_handle_clone = loop_handle.clone();
-        let token = loop_handle
-            .insert_source(
-                Generic::new(fd, Interest::WRITE, Mode::Level),
-                move |_, fd, data| {
-                    let xwm = data.xwm_state(xwm_id);
-                    let conn = &xwm.conn;
-                    let atoms = &xwm.atoms;
-                    let selection = match selection_type {
-                        SelectionTarget::Clipboard => &mut xwm.clipboard,
-                        SelectionTarget::Primary => &mut xwm.primary,
-                    };
-                    if let Some(transfer) = selection
-                        .incoming
-                        .iter_mut()
-                        .find(|t| t.window == incoming_window)
-                    {
-                        match write_selection_callback(fd.as_fd(), conn, atoms, transfer) {
-                            Ok(IncomingAction::WaitForWritable) => return Ok(PostAction::Continue),
-                            Ok(IncomingAction::WaitForProperty) if !transfer.incr_done => {
-                                return Ok(PostAction::Disable)
-                            }
-                            Ok(_) | Err(_) => {
-                                if let Some(pos) = selection
-                                    .incoming
-                                    .iter()
-                                    .position(|t| t.window == incoming_window)
-                                {
-                                    selection.incoming.remove(pos).destroy(&loop_handle_clone);
-                                }
-                            }
-                        };
-                    }
-                    Ok(PostAction::Remove)
-                },
-            )
-            .map_err(|err| err.error)?;
-        loop_handle.disable(&token)?;
-
-        let transfer = IncomingTransfer {
-            conn: self.conn.clone(),
-            token: Some(token),
-            window: incoming_window,
-            incr: false,
-            source_data: Vec::new(),
-            incr_done: false,
-        };
-        selection.incoming.push(transfer);
-
         self.conn.flush()?;
+
+        selection.pending_transfers.lock().unwrap().insert(
+            incoming_window,
+            (OwnedX11Window::new(incoming_window, &self.conn), fd),
+        );
         Ok(())
     }
 
@@ -1456,14 +1220,18 @@ impl X11Wm {
 
 fn handle_event<D>(
     loop_handle: &LoopHandle<'_, D>,
+    dh: &DisplayHandle,
     state: &mut D,
     xwm_id: XwmId,
     event: Event,
-) -> Result<(), ReplyOrIdError>
+) -> Result<(), Box<dyn std::error::Error>>
 where
     D: XwmHandler,
     D: xwayland_shell::XWaylandShellHandler,
     D: SeatHandler,
+    D: DndGrabHandler,
+    <D as SeatHandler>::PointerFocus: DndFocus<D>,
+    <D as SeatHandler>::TouchFocus: DndFocus<D>,
     D: 'static,
 {
     let xwm = state.xwm_state(xwm_id);
@@ -1487,7 +1255,7 @@ where
         }
     }
 
-    debug!(
+    trace!(
         event = ?event,
         should_ignore = should_ignore,
         "Got X11 event",
@@ -1498,12 +1266,11 @@ where
 
     match event {
         Event::CreateNotify(n) => {
-            if n.window == xwm.wm_window
-                || n.window == xwm.xsettings.window
-                || n.window == xwm.clipboard.window
-                || xwm.clipboard.incoming.iter().any(|i| n.window == i.window)
-                || n.window == xwm.primary.window
-                || xwm.primary.incoming.iter().any(|i| n.window == i.window)
+            if n.window == *xwm.wm_window
+                || n.window == *xwm.xsettings.window
+                || xwm.clipboard.has_window(&n.window)
+                || xwm.primary.has_window(&n.window)
+                || xwm.dnd.has_window(&n.window)
             {
                 return Ok(());
             }
@@ -1534,6 +1301,7 @@ where
                 Arc::downgrade(&conn),
                 xwm.atoms,
                 geometry,
+                xwm.dnd.xdnd_active.clone(),
             );
             surface.update_properties()?;
             xwm.windows.push(surface.clone());
@@ -1771,7 +1539,7 @@ where
                         AtomEnum::WINDOW,
                         &xwm.client_list_stacking,
                     )?;
-                    {
+                    if !surface.is_override_redirect() {
                         let mut state = surface.state.lock().unwrap();
                         conn.reparent_window(
                             n.window,
@@ -1792,43 +1560,9 @@ where
             }
         }
         Event::DestroyNotify(n) => {
-            if let Some(selection) = if xwm.clipboard.incoming.iter().any(|t| t.window == n.window)
-                || xwm
-                    .clipboard
-                    .outgoing
-                    .iter()
-                    .any(|t| t.request.requestor == n.window)
-            {
-                Some(&mut xwm.clipboard)
-            } else if xwm.primary.incoming.iter().any(|t| t.window == n.window)
-                || xwm
-                    .primary
-                    .outgoing
-                    .iter()
-                    .any(|t| t.request.requestor == n.window)
-            {
-                Some(&mut xwm.primary)
-            } else {
-                None
-            } {
-                // TODO: drain_filter
-                let mut i = 0;
-                while i < selection.incoming.len() {
-                    if selection.incoming[i].window == n.window {
-                        selection.incoming.remove(i).destroy(loop_handle);
-                    } else {
-                        i += 1;
-                    }
-                }
-                let mut i = 0;
-                while i < selection.outgoing.len() {
-                    if selection.outgoing[i].request.requestor == n.window {
-                        selection.outgoing.remove(i).destroy(loop_handle);
-                    } else {
-                        i += 1;
-                    }
-                }
-            }
+            xwm.clipboard.window_destroyed(&n.window, loop_handle);
+            xwm.primary.window_destroyed(&n.window, loop_handle);
+            xwm.dnd.window_destroyed(&n.window, loop_handle);
 
             if let Some(pos) = xwm.windows.iter().position(|x| x.window_id() == n.window) {
                 let surface = xwm.windows.remove(pos);
@@ -1841,26 +1575,31 @@ where
             let selection = match n.selection {
                 x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
                 x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
+                x if x == xwm.atoms.XdndSelection => {
+                    let id = xwm.id();
+                    drop(_guard);
+                    return XWmDnd::xfixes_selection_notify(dh, state, id, n).map_err(Into::into);
+                }
                 _ => return Ok(()),
             };
 
             selection.owner = n.owner;
-            if selection.owner == selection.window {
+            if selection.owner == *selection.window {
                 selection.timestamp = n.timestamp;
                 return Ok(());
             }
 
-            if n.owner == x11rb::NONE && selection.owner != selection.window {
+            if n.owner == x11rb::NONE && selection.owner != *selection.window {
                 // A real X clients selection went away, not our proxy
-                let selection = selection.type_;
+                let selection = selection.type_().unwrap();
                 drop(_guard);
                 state.cleared_selection(xwm_id, selection);
                 return Ok(());
             }
 
-            // Actually query the new selection, which will give us a SelectioNotify event
+            // Actually query the new selection, which will give us a SelectionNotify event
             conn.convert_selection(
-                selection.window,
+                *selection.window,
                 selection.atom,
                 xwm.atoms.TARGETS,
                 xwm.atoms._WL_SELECTION,
@@ -1871,6 +1610,7 @@ where
             let selection = match n.selection {
                 x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
                 x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
+                x if x == xwm.atoms.XdndSelection => &mut xwm.dnd.selection,
                 _ => return Ok(()),
             };
 
@@ -1879,7 +1619,7 @@ where
                     if let Some(prop) = conn
                         .get_property(
                             true,
-                            selection.window,
+                            *selection.window,
                             xwm.atoms._WL_SELECTION,
                             AtomEnum::ANY,
                             0,
@@ -1890,68 +1630,96 @@ where
                         if prop.type_ == AtomEnum::ATOM.into() {
                             if let Some(values) = prop.value32() {
                                 let mime_types = values
-                                    .filter_map(|val| {
-                                        match val {
-                                            val if val == xwm.atoms.UTF8_STRING => {
-                                                Some(Ok(String::from("text/plain;charset=utf-8")))
-                                            }
-                                            val if val == xwm.atoms.TEXT => {
-                                                Some(Ok(String::from("text/plain")))
-                                            }
-                                            val if val == xwm.atoms.TARGETS || val == xwm.atoms.TIMESTAMP => {
-                                                None
-                                            }
-                                            val => {
-                                                let cookie = match conn.get_atom_name(val) {
-                                                    Ok(cookie) => cookie,
-                                                    Err(err) => return Some(Err(err)),
-                                                };
-                                                let reply = match cookie.reply_unchecked() {
-                                                    Ok(reply) => reply,
-                                                    Err(err) => return Some(Err(err)),
-                                                };
-                                                if let Some(reply) = reply {
-                                                    if let Ok(name) = std::str::from_utf8(&reply.name) {
-                                                        if name.contains('/') {
-                                                            // hopefully a mime-type
-                                                            Some(Ok(String::from(name)))
-                                                        } else {
-                                                            None
-                                                        }
-                                                    } else {
-                                                        None
-                                                    }
-                                                } else {
-                                                    None
-                                                }
-                                            }
-                                        }
+                                    .filter_map(|val| match val {
+                                        val if val == xwm.atoms.TARGETS || val == xwm.atoms.TIMESTAMP => None,
+                                        val => mime_from_atom(val, &conn, &xwm.atoms).transpose(),
                                     })
                                     .collect::<Result<Vec<String>, _>>()?;
 
-                                let selection = selection.type_;
-                                drop(_guard);
-                                state.new_selection(xwm_id, selection, mime_types);
+                                if let Some(selection) = selection.type_() {
+                                    drop(_guard);
+                                    XwmHandler::new_selection(state, xwm_id, selection, mime_types);
+                                }
                             }
                         }
                     }
                 }
                 x if x == AtomEnum::NONE.into() => {
                     // transfer failed
-                    if let Some(pos) = selection.incoming.iter().position(|t| t.window == n.requestor) {
-                        selection.incoming.remove(pos).destroy(loop_handle);
+                    if let Some(transfer) = selection.incoming.remove(&n.requestor) {
+                        transfer.destroy(loop_handle);
                     }
                 }
                 _ => {
-                    let Some(transfer) = selection.incoming.iter_mut().find(|t| t.window == n.requestor)
-                    else {
-                        return Ok(());
+                    let transfer = if let Some(transfer) = selection.incoming.get_mut(&n.requestor) {
+                        transfer
+                    } else {
+                        // create incoming transfer
+                        let Some((window, fd)) =
+                            selection.pending_transfers.lock().unwrap().remove(&n.requestor)
+                        else {
+                            // no file descriptor for incoming transfer
+                            warn!(
+                                "No file descriptor for incoming transfer to {}. Dropping...",
+                                n.requestor
+                            );
+                            return Ok(());
+                        };
+
+                        let loop_handle_clone = loop_handle.clone();
+                        let incoming_window = *window;
+                        let atom = n.selection;
+                        let token = loop_handle
+                            .insert_source(
+                                Generic::new(fd, Interest::WRITE, Mode::Level),
+                                move |_, fd, data| {
+                                    let xwm = data.xwm_state(xwm_id);
+                                    let conn = &xwm.conn;
+                                    let atoms = &xwm.atoms;
+                                    let selection = match atom {
+                                        x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
+                                        x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
+                                        x if x == xwm.atoms.XdndSelection => &mut xwm.dnd.selection,
+                                        _ => unreachable!(),
+                                    };
+                                    if let Some(transfer) = selection.incoming.get_mut(&incoming_window) {
+                                        match write_selection_callback(fd.as_fd(), conn, atoms, transfer) {
+                                            Ok(IncomingAction::WaitForWritable) => {
+                                                return Ok(PostAction::Continue)
+                                            }
+                                            Ok(IncomingAction::WaitForProperty) if !transfer.incr_done => {
+                                                return Ok(PostAction::Disable)
+                                            }
+                                            Ok(_) | Err(_) => {
+                                                selection
+                                                    .incoming
+                                                    .remove(&incoming_window)
+                                                    .unwrap()
+                                                    .destroy(&loop_handle_clone);
+                                            }
+                                        };
+                                    }
+                                    Ok(PostAction::Remove)
+                                },
+                            )
+                            .map_err(|err| err.error)?;
+                        loop_handle.disable(&token)?;
+
+                        let transfer = IncomingTransfer {
+                            token: Some(token),
+                            window,
+                            incr: false,
+                            source_data: Vec::new(),
+                            incr_done: false,
+                        };
+                        selection.incoming.insert(incoming_window, transfer);
+                        selection.incoming.get_mut(&incoming_window).unwrap()
                     };
 
                     if let Some(prop) = conn
                         .get_property(
                             true,
-                            transfer.window,
+                            *transfer.window,
                             xwm.atoms._WL_SELECTION,
                             AtomEnum::ANY,
                             0,
@@ -1966,10 +1734,8 @@ where
                             return Ok(());
                         } else if let Some(token) = transfer.token.as_ref() {
                             let _ = loop_handle.enable(token);
-                        } else if let Some(pos) =
-                            selection.incoming.iter().position(|t| t.window == n.requestor)
-                        {
-                            selection.incoming.remove(pos);
+                        } else {
+                            selection.incoming.remove(&n.requestor);
                         }
                     }
                 }
@@ -1977,8 +1743,9 @@ where
         }
         Event::SelectionRequest(n) => {
             let selection_type = match n.selection {
-                x if x == xwm.atoms.CLIPBOARD => xwm.clipboard.type_,
-                x if x == xwm.atoms.PRIMARY => xwm.primary.type_,
+                x if x == xwm.atoms.CLIPBOARD => xwm.clipboard.type_(),
+                x if x == xwm.atoms.PRIMARY => xwm.primary.type_(),
+                x if x == xwm.atoms.XdndSelection => xwm.dnd.selection.type_(),
                 _ => {
                     warn!(
                         target = ?n.selection,
@@ -1991,15 +1758,20 @@ where
 
             // work around borrowing
             drop(_guard);
-            let allow_access = state.allow_selection_access(xwm_id, selection_type);
+            let allow_access = selection_type
+                .map(|type_| state.allow_selection_access(xwm_id, type_))
+                .unwrap_or(true);
+
             let xwm = state.xwm_state(xwm_id);
-            let selection = match selection_type {
-                SelectionTarget::Clipboard => &mut xwm.clipboard,
-                SelectionTarget::Primary => &mut xwm.primary,
+            let selection = match n.selection {
+                x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
+                x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
+                x if x == xwm.atoms.XdndSelection => &mut xwm.dnd.selection,
+                _ => unreachable!(),
             };
 
             let _guard = xwm.span.enter();
-            if n.requestor == selection.window {
+            if n.requestor == *selection.window {
                 warn!("Got SelectionRequest from our own selection window.");
                 send_selection_notify_resp(&conn, &n, false)?;
                 return Ok(());
@@ -2030,19 +1802,12 @@ where
                         let targets = [xwm.atoms.TARGETS, xwm.atoms.TIMESTAMP]
                             .iter()
                             .copied()
-                            .chain(selection.mime_types.iter().filter_map(|mime| {
-                                Some(match &**mime {
-                                    "text/plain" => xwm.atoms.TEXT,
-                                    "text/plain;charset=utf-8" => xwm.atoms.UTF8_STRING,
-                                    mime => {
-                                        conn.intern_atom(false, mime.as_bytes())
-                                            .ok()?
-                                            .reply_unchecked()
-                                            .ok()??
-                                            .atom
-                                    }
-                                })
-                            }))
+                            .chain(
+                                selection
+                                    .mime_types
+                                    .iter()
+                                    .filter_map(|mime| atom_from_mime(mime, &conn, &xwm.atoms).ok()?),
+                            )
                             .collect::<Vec<u32>>();
                         trace!(requstor = n.requestor, ?targets, "Sending TARGETS");
                         conn.change_property32(
@@ -2073,29 +1838,17 @@ where
                         send_selection_notify_resp(&conn, &n, true)?;
                     }
                     target => {
-                        let mime_type = match target {
-                            x if x == xwm.atoms.TEXT => "text/plain".to_string(),
-                            x if x == xwm.atoms.UTF8_STRING => "text/plain;charset=utf-8".to_string(),
-                            x => {
-                                let Some(mime) = conn
-                                    .get_atom_name(x)?
-                                    .reply_unchecked()?
-                                    .and_then(|reply| String::from_utf8(reply.name).ok())
-                                else {
-                                    debug!("Unable to determine mime type from atom: {}", x);
-                                    send_selection_notify_resp(&conn, &n, false)?;
-                                    return Ok(());
-                                };
-
-                                if !selection.mime_types.contains(&mime) {
-                                    warn!(mime, "Mime type requested by X client not offered",);
-                                    send_selection_notify_resp(&conn, &n, false)?;
-                                    return Ok(());
-                                }
-
-                                mime
-                            }
+                        let Some(mime_type) = mime_from_atom(target, &conn, &xwm.atoms)? else {
+                            debug!("Unable to determine mime type from atom: {}", target);
+                            send_selection_notify_resp(&conn, &n, false)?;
+                            return Ok(());
                         };
+
+                        if !selection.mime_types.contains(&mime_type) {
+                            warn!(mime_type, "Mime type requested by X client not offered",);
+                            send_selection_notify_resp(&conn, &n, false)?;
+                            return Ok(());
+                        }
 
                         let (recv_fd, send_fd) = rustix::pipe::pipe_with(
                             rustix::pipe::PipeFlags::CLOEXEC | rustix::pipe::PipeFlags::NONBLOCK,
@@ -2107,49 +1860,51 @@ where
                         // from it. It appears to only ever read from the latest, so purge stale
                         // transfers to prevent clipboard hangs.
 
-                        // TODO: Drain filter
-                        let mut i = 0;
-                        while i < selection.outgoing.len() {
-                            let transfer = &mut selection.outgoing[i];
-                            if transfer.request.requestor == n.requestor {
-                                debug!(
-                                    requestor = transfer.request.requestor,
-                                    "Destroying stale transfer",
-                                );
+                        if let Some(transfer) = selection.outgoing.remove(&n.requestor) {
+                            debug!(
+                                requestor = transfer.request.requestor,
+                                "Destroying stale transfer",
+                            );
+                            if transfer.token.is_some() {
                                 send_selection_notify_resp(&transfer.conn, &transfer.request, false)?;
-                                selection.outgoing.remove(i).destroy(loop_handle);
-                            } else {
-                                i += 1;
+                                transfer.destroy(loop_handle);
                             }
                         }
 
                         let requestor = n.requestor;
+                        let atom = selection.atom;
 
                         let token = loop_handle.insert_source(
                             Generic::new(recv_fd, Interest::READ, Mode::Level),
                             move |_, fd, data| {
                                 let xwm = data.xwm_state(xwm_id);
-                                let selection = match selection_type {
-                                    SelectionTarget::Clipboard => &mut xwm.clipboard,
-                                    SelectionTarget::Primary => &mut xwm.primary,
+                                let selection = match atom {
+                                    x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
+                                    x if x == xwm.atoms.PRIMARY => &mut xwm.primary,
+                                    x if x == xwm.atoms.XdndSelection => &mut xwm.dnd.selection,
+                                    _ => unreachable!(),
                                 };
 
-                                if let Some(transfer) = selection
-                                    .outgoing
-                                    .iter_mut()
-                                    .find(|t| t.request.requestor == requestor)
-                                {
+                                if let Some(transfer) = selection.outgoing.get_mut(&requestor) {
                                     match read_selection_callback(&xwm.conn, &xwm.atoms, fd.as_fd(), transfer)
                                     {
                                         Ok(OutgoingAction::WaitForReadable) => {
                                             return Ok(PostAction::Continue);
                                         } // transfer ongoing
-                                        Ok(_) => {}
+                                        Ok(OutgoingAction::Done) => {
+                                            let _ = transfer.token.take();
+                                            selection.outgoing.remove(&requestor);
+                                        }
                                         Err(err) => {
                                             warn!(?err, "Transfer aborted");
+                                            let _ = transfer.token.take();
+                                            selection.outgoing.remove(&requestor);
+                                        }
+                                        Ok(OutgoingAction::DoneReading) => {
+                                            let _ = transfer.token.take();
+                                            // Cleanup will happen on property delete for incremental transfers
                                         }
                                     };
-                                    let _ = transfer.token.take();
                                 }
 
                                 Ok(PostAction::Remove)
@@ -2169,12 +1924,7 @@ where
                             }
                         };
 
-                        debug!(
-                            selection = ?selection.type_,
-                            requestor = n.requestor,
-                            ?mime_type,
-                            "Created outgoing transfer",
-                        );
+                        debug!(requestor = n.requestor, ?mime_type, "Created outgoing transfer",);
                         let transfer = OutgoingTransfer {
                             conn: conn.clone(),
                             incr: false,
@@ -2185,11 +1935,16 @@ where
                             flush_property_on_delete: false,
                             sent_finished: false,
                         };
-                        selection.outgoing.push(transfer);
+                        selection.outgoing.insert(n.requestor, transfer);
 
-                        let selection_type = selection.type_;
+                        let selection_type = selection.type_();
                         drop(_guard);
-                        state.send_selection(xwm_id, selection_type, mime_type, send_fd);
+
+                        if let Some(selection_type) = selection_type {
+                            XwmHandler::send_selection(state, xwm_id, selection_type, mime_type, send_fd);
+                        } else {
+                            xwm.dnd.transfer(&mime_type, send_fd);
+                        }
                     }
                 }
             } else {
@@ -2199,23 +1954,21 @@ where
         }
         Event::PropertyNotify(n) => {
             if n.state == Property::NEW_VALUE && n.atom == xwm.atoms._WL_SELECTION {
-                if let Some(selection) = if xwm.clipboard.incoming.iter().any(|t| t.window == n.window) {
+                if let Some(selection) = if xwm.clipboard.incoming.contains_key(&n.window) {
                     Some(&mut xwm.clipboard)
-                } else if xwm.primary.incoming.iter().any(|t| t.window == n.window) {
+                } else if xwm.primary.incoming.contains_key(&n.window) {
                     Some(&mut xwm.primary)
+                } else if xwm.dnd.selection.incoming.contains_key(&n.window) {
+                    Some(&mut xwm.dnd.selection)
                 } else {
                     None
                 } {
-                    let transfer = selection
-                        .incoming
-                        .iter_mut()
-                        .find(|t| t.window == n.window)
-                        .unwrap();
+                    let transfer = selection.incoming.get_mut(&n.window).unwrap();
                     if transfer.incr {
                         if let Some(prop) = conn
                             .get_property(
                                 true,
-                                transfer.window,
+                                *transfer.window,
                                 xwm.atoms._WL_SELECTION,
                                 AtomEnum::ANY,
                                 0,
@@ -2226,11 +1979,7 @@ where
                             if prop.value_len == 0 {
                                 debug!(?transfer, "Incr Transfer complete!");
                                 if transfer.source_data.is_empty() {
-                                    if let Some(pos) =
-                                        selection.incoming.iter().position(|t| t.window == n.window)
-                                    {
-                                        selection.incoming.remove(pos).destroy(loop_handle);
-                                    }
+                                    selection.incoming.remove(&n.window).unwrap().destroy(loop_handle);
                                 } else {
                                     transfer.incr_done = true;
                                 }
@@ -2238,10 +1987,8 @@ where
                                 transfer.read_selection_prop(prop);
                                 if let Some(token) = transfer.token.as_ref() {
                                     let _ = loop_handle.enable(token);
-                                } else if let Some(pos) =
-                                    selection.incoming.iter().position(|t| t.window == n.window)
-                                {
-                                    selection.incoming.remove(pos);
+                                } else {
+                                    selection.incoming.remove(&n.window);
                                 }
                             }
                         }
@@ -2253,25 +2000,29 @@ where
                 if let Some(selection) = if xwm
                     .clipboard
                     .outgoing
-                    .iter()
-                    .any(|t| t.incr && t.request.requestor == n.window && t.request.property == n.atom)
+                    .get(&n.window)
+                    .is_some_and(|t| t.incr && t.request.property == n.atom)
                 {
                     Some(&mut xwm.clipboard)
                 } else if xwm
                     .primary
                     .outgoing
-                    .iter()
-                    .any(|t| t.incr && t.request.requestor == n.window && t.request.property == n.atom)
+                    .get(&n.window)
+                    .is_some_and(|t| t.incr && t.request.property == n.atom)
                 {
                     Some(&mut xwm.primary)
+                } else if xwm
+                    .dnd
+                    .selection
+                    .outgoing
+                    .get(&n.window)
+                    .is_some_and(|t| t.incr && t.request.property == n.atom)
+                {
+                    Some(&mut xwm.dnd.selection)
                 } else {
                     None
                 } {
-                    let transfer = selection
-                        .outgoing
-                        .iter_mut()
-                        .find(|t| t.incr && t.request.requestor == n.window && t.request.property == n.atom)
-                        .unwrap();
+                    let transfer = selection.outgoing.get_mut(&n.window).unwrap();
 
                     transfer.property_set = false;
                     if transfer.flush_property_on_delete {
@@ -2286,13 +2037,9 @@ where
                                 // all bytes have been transferred but the final 0-byte data chunk
                                 // hasn't been sent yet
                                 transfer.flush_property_on_delete = true;
-                            } else if let Some(pos) = selection
-                                .outgoing
-                                .iter()
-                                .position(|t| t.request.requestor == requestor)
-                            {
+                            } else {
                                 // done
-                                selection.outgoing.remove(pos);
+                                selection.outgoing.remove(&requestor);
                             }
                         }
                     }
@@ -2326,7 +2073,7 @@ where
         }
         Event::ClientMessage(msg) => {
             if let Some(reply) = conn.get_atom_name(msg.type_)?.reply_unchecked()? {
-                debug!(
+                trace!(
                     event = std::str::from_utf8(&reply.name).unwrap(),
                     message = ?msg,
                     "got X11 client event message",
@@ -2501,6 +2248,40 @@ where
                         }
                     }
                 }
+                x if x == xwm.atoms._NET_ACTIVE_WINDOW => {
+                    let data = msg.data.as_data32();
+                    let timestamp = data[1];
+                    let currently_active_window =
+                        xwm.windows.iter().find(|x| x.window_id() == data[2]).cloned();
+                    if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
+                        state.active_window_request(xwm_id, surface, timestamp, currently_active_window);
+                    }
+                }
+                // Dnd events incoming
+                x if x == xwm.atoms.XdndStatus => {
+                    let window_id = msg.data.as_data32()[0];
+                    if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == window_id) {
+                        xwm.dnd
+                            .handle_status(surface, msg.data, &xwm.atoms, xwm.client_scale.clone());
+                    }
+                }
+                x if x == xwm.atoms.XdndFinished => {
+                    xwm.dnd.handle_finished(msg.data);
+                }
+                // Dnd events incoming
+                x if x == xwm.atoms.XdndEnter => {
+                    xwm.dnd.handle_enter(msg.data)?;
+                }
+                x if x == xwm.atoms.XdndPosition => {
+                    xwm.dnd.handle_position(msg.data)?;
+                }
+                x if x == xwm.atoms.XdndLeave => {
+                    xwm.dnd.handle_leave(msg.data)?;
+                }
+                x if x == xwm.atoms.XdndDrop => {
+                    xwm.dnd.handle_drop(msg.data)?;
+                }
                 x => {
                     debug!(
                         "Unhandled client msg of type {:?}",
@@ -2525,157 +2306,19 @@ where
                 }
             }
         }
+        Event::RandrScreenChangeNotify(n) => {
+            xwm.screen.width_in_pixels = n.width;
+            xwm.screen.height_in_pixels = n.height;
+            xwm.screen.width_in_millimeters = n.mwidth;
+            xwm.screen.height_in_millimeters = n.mheight;
+
+            xwm.dnd.update_screen(&xwm.screen)?;
+        }
         Event::Error(err) => {
             info!(?err, "Got X11 Error");
         }
         _ => {}
     }
-    conn.flush()?;
-    Ok(())
-}
-
-enum OutgoingAction {
-    Done,
-    DoneReading,
-    WaitForReadable,
-}
-
-fn read_selection_callback(
-    conn: &RustConnection,
-    atoms: &Atoms,
-    fd: BorrowedFd<'_>,
-    transfer: &mut OutgoingTransfer,
-) -> Result<OutgoingAction, ReplyOrIdError> {
-    let mut buf = [0; INCR_CHUNK_SIZE];
-    let Ok(len) = rustix::io::read(fd, &mut buf) else {
-        debug!(
-            requestor = transfer.request.requestor,
-            "File descriptor closed, aborting transfer."
-        );
-        send_selection_notify_resp(conn, &transfer.request, false)?;
-        return Ok(OutgoingAction::Done);
-    };
-    trace!(
-        requestor = transfer.request.requestor,
-        "Transfer became readable, read {} bytes",
-        len
-    );
-
-    transfer.source_data.extend_from_slice(&buf[..len]);
-    if transfer.source_data.len() >= INCR_CHUNK_SIZE {
-        if !transfer.incr {
-            // start incr transfer
-            trace!(
-                requestor = transfer.request.requestor,
-                "Transfer became incremental",
-            );
-            conn.change_property32(
-                PropMode::REPLACE,
-                transfer.request.requestor,
-                transfer.request.property,
-                atoms.INCR,
-                &[INCR_CHUNK_SIZE as u32],
-            )?;
-            conn.flush()?;
-            transfer.incr = true;
-            transfer.property_set = true;
-            transfer.flush_property_on_delete = true;
-            send_selection_notify_resp(conn, &transfer.request, true)?;
-        } else if transfer.property_set {
-            // got more bytes, waiting for property delete
-            transfer.flush_property_on_delete = true;
-        } else {
-            // got more bytes, property deleted
-            let len = transfer.flush_data()?;
-            trace!(
-                requestor = transfer.request.requestor,
-                "Send data chunk: {} bytes",
-                len
-            );
-        }
-    }
-
-    if len == 0 {
-        if transfer.incr {
-            debug!("Incr transfer completed");
-            if !transfer.property_set {
-                let len = transfer.flush_data()?;
-                trace!(
-                    requestor = transfer.request.requestor,
-                    "Send data chunk: {} bytes",
-                    len
-                );
-            }
-            transfer.flush_property_on_delete = true;
-            Ok(OutgoingAction::DoneReading)
-        } else {
-            let len = transfer.flush_data()?;
-            debug!("Non-Incr transfer completed with {} bytes", len);
-            send_selection_notify_resp(conn, &transfer.request, true)?;
-            Ok(OutgoingAction::Done)
-        }
-    } else {
-        Ok(OutgoingAction::WaitForReadable)
-    } // nothing to be done, buffered the bytes
-}
-
-enum IncomingAction {
-    Done,
-    WaitForProperty,
-    WaitForWritable,
-}
-
-fn write_selection_callback(
-    fd: BorrowedFd<'_>,
-    conn: &RustConnection,
-    atoms: &Atoms,
-    transfer: &mut IncomingTransfer,
-) -> Result<IncomingAction, ReplyOrIdError> {
-    match transfer.write_selection(fd) {
-        Ok(true) => {
-            if transfer.incr {
-                conn.delete_property(transfer.window, atoms._WL_SELECTION)?;
-                Ok(IncomingAction::WaitForProperty)
-            } else {
-                debug!(?transfer, "Non-Incr Transfer complete!");
-                Ok(IncomingAction::Done)
-            }
-        }
-        Ok(false) => Ok(IncomingAction::WaitForWritable),
-        Err(err) => {
-            warn!(?err, "Transfer errored");
-            if transfer.incr {
-                // even if it failed, we still need to drain the incr transfer
-                conn.delete_property(transfer.window, atoms._WL_SELECTION)?;
-            }
-            Ok(IncomingAction::Done)
-        }
-    }
-}
-
-fn send_selection_notify_resp(
-    conn: &RustConnection,
-    req: &SelectionRequestEvent,
-    success: bool,
-) -> Result<(), ReplyOrIdError> {
-    conn.send_event(
-        false,
-        req.requestor,
-        EventMask::NO_EVENT,
-        SelectionNotifyEvent {
-            response_type: SELECTION_NOTIFY_EVENT,
-            sequence: 0,
-            time: req.time,
-            requestor: req.requestor,
-            selection: req.selection,
-            target: req.target,
-            property: if success {
-                req.property
-            } else {
-                AtomEnum::NONE.into()
-            },
-        },
-    )?;
     conn.flush()?;
     Ok(())
 }
@@ -2706,4 +2349,34 @@ fn send_configure_notify(
     )?;
     conn.flush()?;
     Ok(())
+}
+
+fn mime_from_atom(
+    atom: u32,
+    conn: &impl ConnectionExt,
+    atoms: &Atoms,
+) -> Result<Option<String>, ConnectionError> {
+    Ok(match atom {
+        x if x == atoms.TEXT => Some("text/plain".to_string()),
+        x if x == atoms.UTF8_STRING => Some("text/plain;charset=utf-8".to_string()),
+        x => conn
+            .get_atom_name(x)?
+            .reply_unchecked()?
+            .and_then(|reply| String::from_utf8(reply.name).ok()),
+    })
+}
+
+fn atom_from_mime(
+    mime: &(impl AsRef<str> + ?Sized),
+    conn: &impl ConnectionExt,
+    atoms: &Atoms,
+) -> Result<Option<u32>, ConnectionError> {
+    Ok(match mime.as_ref() {
+        "text/plain" => Some(atoms.TEXT),
+        "text/plain;charset=utf-8" => Some(atoms.UTF8_STRING),
+        mime => conn
+            .intern_atom(false, mime.as_bytes())?
+            .reply_unchecked()?
+            .map(|reply| reply.atom),
+    })
 }

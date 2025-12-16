@@ -339,20 +339,30 @@ impl Window {
         surface_type: WindowSurfaceType,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let point = point.into();
-        if let Some(surface) = self.wl_surface() {
-            if surface_type.contains(WindowSurfaceType::POPUP) {
-                for (popup, location) in PopupManager::popups_for_surface(&surface) {
-                    let offset = self.geometry().loc + location - popup.geometry().loc;
-                    if let Some(result) =
-                        under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
-                    {
-                        return Some(result);
+
+        match &self.0.surface {
+            WindowSurface::Wayland(surface) => {
+                let surface = surface.wl_surface();
+                if surface_type.contains(WindowSurfaceType::POPUP) {
+                    for (popup, location) in PopupManager::popups_for_surface(surface) {
+                        let offset = self.geometry().loc + location - popup.geometry().loc;
+                        if let Some(result) =
+                            under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
+                        {
+                            return Some(result);
+                        }
                     }
                 }
-            }
 
-            if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
-                return under_from_surface_tree(&surface, point, (0, 0), surface_type);
+                if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+                    return under_from_surface_tree(surface, point, (0, 0), surface_type);
+                }
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(surface) => {
+                if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+                    return surface.surface_under(point, (0, 0), surface_type);
+                }
             }
         }
 

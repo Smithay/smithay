@@ -2,9 +2,12 @@
 
 use std::sync::Mutex;
 
+use crate::backend::renderer::buffer_dimensions;
 use crate::utils::{IsAlive, Logical, Serial, Size, SERIAL_COUNTER};
-use crate::wayland::compositor;
+use crate::wayland::compositor::{self, BufferAssignment, Cacheable, SurfaceAttributes};
+use crate::wayland::viewporter::{ViewportCachedState, ViewporterSurfaceState};
 use _session_lock::ext_session_lock_surface_v1::{Error, ExtSessionLockSurfaceV1, Request};
+use tracing::trace_span;
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
@@ -60,15 +63,48 @@ where
             _ => unreachable!(),
         }
     }
+
+    fn destroyed(
+        _state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &ExtSessionLockSurfaceV1,
+        data: &ExtLockSurfaceUserData,
+    ) {
+        if let Ok(surface) = data.surface.upgrade() {
+            compositor::with_states(&surface, |states| {
+                let mut attributes = states
+                    .data_map
+                    .get::<Mutex<LockSurfaceAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+                attributes.reset();
+
+                let mut guard = states.cached_state.get::<LockSurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
+            });
+        }
+    }
 }
+
+/// Data associated with session lock surface
+///
+/// ```no_run
+/// use smithay::wayland::compositor;
+/// use smithay::wayland::session_lock::LockSurfaceData;
+///
+/// # let wl_surface = todo!();
+/// compositor::with_states(&wl_surface, |states| {
+///     states.data_map.get::<LockSurfaceData>();
+/// });
+/// ```
+pub type LockSurfaceData = Mutex<LockSurfaceAttributes>;
 
 /// Attributes for ext-session-lock surfaces.
 #[derive(Debug)]
 pub struct LockSurfaceAttributes {
     pub(crate) surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
-
-    /// The serial of the last acked configure
-    pub configure_serial: Option<Serial>,
 
     /// Holds the pending state as set by the server.
     pub server_pending: Option<LockSurfaceState>,
@@ -79,23 +115,19 @@ pub struct LockSurfaceAttributes {
     /// layer_surface.ack_configure.
     pub pending_configures: Vec<LockSurfaceConfigure>,
 
-    /// Holds the last server_pending state that has been acknowledged by the
-    /// client. This state should be cloned to the current during a commit.
-    pub last_acked: Option<LockSurfaceState>,
-
-    /// Holds the current state of the layer after a successful commit.
-    pub current: LockSurfaceState,
+    /// Holds the last configure that has been acknowledged by the client. This state should be
+    /// cloned to the current during a commit. Note that this state can be newer than the last
+    /// acked state at the time of the last commit.
+    pub last_acked: Option<LockSurfaceConfigure>,
 }
 
 impl LockSurfaceAttributes {
     pub(crate) fn new(surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1) -> Self {
         Self {
             surface,
-            configure_serial: None,
             server_pending: None,
             pending_configures: vec![],
             last_acked: None,
-            current: Default::default(),
         }
     }
 
@@ -108,10 +140,22 @@ impl LockSurfaceAttributes {
 
         self.pending_configures
             .retain(|configure| configure.serial > serial);
-        self.last_acked = Some(configure.state);
-        self.configure_serial = Some(serial);
+        self.last_acked = Some(configure);
 
         Some(configure)
+    }
+
+    fn reset(&mut self) {
+        self.server_pending = None;
+        self.pending_configures = Vec::new();
+        self.last_acked = None;
+    }
+
+    fn current_server_state(&self) -> Option<&LockSurfaceState> {
+        self.pending_configures
+            .last()
+            .map(|c| &c.state)
+            .or(self.last_acked.as_ref().map(|c| &c.state))
     }
 }
 
@@ -147,12 +191,8 @@ impl LockSurface {
     pub fn get_pending_state(&self, attributes: &mut LockSurfaceAttributes) -> Option<LockSurfaceState> {
         let server_pending = attributes.server_pending.take()?;
 
-        // Get the last pending state.
-        let pending = attributes.pending_configures.last();
-        let last_state = pending.map(|c| &c.state).or(attributes.last_acked.as_ref());
-
         // Check if last state matches pending state.
-        match last_state {
+        match attributes.current_server_state() {
             Some(state) if state == &server_pending => None,
             _ => Some(server_pending),
         }
@@ -203,25 +243,118 @@ impl LockSurface {
             let mut attributes = attributes.unwrap().lock().unwrap();
 
             // Ensure pending state is initialized.
-            let current = attributes.current;
-            let server_pending = attributes.server_pending.get_or_insert(current);
+            if attributes.server_pending.is_none() {
+                attributes.server_pending =
+                    Some(attributes.current_server_state().cloned().unwrap_or_default());
+            }
 
+            let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
         })
     }
 
-    /// Get the current pending state.
-    #[allow(unused)]
-    pub fn current_state(&self) -> LockSurfaceState {
+    /// Provides access to the current committed cached state.
+    pub fn with_cached_state<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&LockSurfaceCachedState) -> T,
+    {
         compositor::with_states(&self.surface, |states| {
-            states
-                .data_map
-                .get::<Mutex<LockSurfaceAttributes>>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .current
+            let mut guard = states.cached_state.get::<LockSurfaceCachedState>();
+            f(guard.current())
         })
+    }
+
+    /// Provides access to the current committed state.
+    ///
+    /// This is the state that the client last acked before making the current commit.
+    pub fn with_committed_state<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(Option<&LockSurfaceState>) -> T,
+    {
+        self.with_cached_state(move |state| f(state.last_acked.as_ref().map(|c| &c.state)))
+    }
+
+    /// Handles the role specific commit error checking
+    ///
+    /// This should be called when the underlying WlSurface
+    /// handles a wl_surface.commit request.
+    pub(crate) fn pre_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface: &WlSurface) {
+        let _span = trace_span!("session-lock-surface pre-commit", surface = %surface.id()).entered();
+
+        compositor::with_states(surface, |states| {
+            let role = states.data_map.get::<LockSurfaceData>().unwrap().lock().unwrap();
+
+            let Some(last_acked) = role.last_acked else {
+                role.surface.post_error(
+                    ext_session_lock_surface_v1::Error::CommitBeforeFirstAck,
+                    "Committed before the first ack_configure.",
+                );
+                return;
+            };
+            let LockSurfaceConfigure { state, serial: _ } = &last_acked;
+
+            let mut guard_layer = states.cached_state.get::<LockSurfaceCachedState>();
+            let pending = guard_layer.pending();
+
+            // The presence of last_acked always follows the buffer assignment because the
+            // surface is not allowed to attach a buffer without acking the initial configure.
+            let had_buffer_before = pending.last_acked.is_some();
+
+            let mut guard_surface = states.cached_state.get::<SurfaceAttributes>();
+            let surface_attrs = guard_surface.pending();
+            let has_buffer = match &surface_attrs.buffer {
+                Some(BufferAssignment::NewBuffer(buffer)) => {
+                    // Verify buffer size.
+                    if let Some(buf_size) = buffer_dimensions(buffer) {
+                        let viewport = states
+                            .data_map
+                            .get::<ViewporterSurfaceState>()
+                            .map(|v| v.lock().unwrap());
+                        let surface_size = if let Some(dest) = viewport.as_ref().and_then(|_| {
+                            let mut guard = states.cached_state.get::<ViewportCachedState>();
+                            let viewport_state = guard.pending();
+                            viewport_state.dst
+                        }) {
+                            Size::from((dest.w as u32, dest.h as u32))
+                        } else {
+                            let scale = surface_attrs.buffer_scale;
+                            let transform = surface_attrs.buffer_transform.into();
+                            let surface_size = buf_size.to_logical(scale, transform);
+
+                            Size::from((surface_size.w as u32, surface_size.h as u32))
+                        };
+
+                        if Some(surface_size) != state.size {
+                            role.surface.post_error(
+                                ext_session_lock_surface_v1::Error::DimensionsMismatch,
+                                "Surface dimensions do not match acked configure.",
+                            );
+                            return;
+                        }
+                    }
+
+                    true
+                }
+                Some(BufferAssignment::Removed) => {
+                    role.surface.post_error(
+                        ext_session_lock_surface_v1::Error::NullBuffer,
+                        "Surface attached a NULL buffer.",
+                    );
+                    return;
+                }
+                None => had_buffer_before,
+            };
+
+            if has_buffer {
+                // The surface remains, or became mapped, track the last acked state.
+                pending.last_acked = Some(last_acked);
+            } else {
+                // The surface remains unmapped, meaning that it's in the initial configure stage.
+                pending.last_acked = None;
+            }
+
+            // Lock surfaces aren't allowed to attach a null buffer, and therefore to unmap.
+        });
     }
 }
 
@@ -248,5 +381,23 @@ impl LockSurfaceConfigure {
             serial: SERIAL_COUNTER.next_serial(),
             state,
         }
+    }
+}
+
+/// Represents the client pending state
+#[derive(Debug, Default, Copy, Clone)]
+pub struct LockSurfaceCachedState {
+    /// Configure last acknowledged by the client at the time of the commit.
+    ///
+    /// Reset to `None` when the surface unmaps.
+    pub last_acked: Option<LockSurfaceConfigure>,
+}
+
+impl Cacheable for LockSurfaceCachedState {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
+        *self
+    }
+    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
+        *into = self;
     }
 }

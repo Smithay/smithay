@@ -137,6 +137,7 @@ use self::{
 };
 use crate::utils::{user_data::UserDataMap, Serial};
 
+pub mod dnd;
 pub mod keyboard;
 pub mod pointer;
 pub mod touch;

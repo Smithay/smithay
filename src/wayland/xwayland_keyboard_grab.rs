@@ -248,14 +248,32 @@ where
 #[macro_export]
 macro_rules! delegate_xwayland_keyboard_grab {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_v1::ZwpXwaylandKeyboardGrabV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xwayland::keyboard_grab::zv1::server::{
+                        zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1,
+                        zwp_xwayland_keyboard_grab_v1::ZwpXwaylandKeyboardGrabV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState,
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpXwaylandKeyboardGrabManagerV1: ()] => XWaylandKeyboardGrabState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpXwaylandKeyboardGrabManagerV1: ()] => XWaylandKeyboardGrabState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpXwaylandKeyboardGrabV1: ()] => XWaylandKeyboardGrabState
+            );
+        };
     };
 }

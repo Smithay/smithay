@@ -107,23 +107,26 @@ where
 
                     // Initialize the toplevel capabilities from the default capabilities
                     let default_capabilities = &state.xdg_shell_state().default_capabilities;
-                    let current_capabilties = &mut states
+                    let mut attributes = states
                         .data_map
                         .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
                         .unwrap()
                         .lock()
-                        .unwrap()
-                        .current
-                        .capabilities;
+                        .unwrap();
+                    if attributes.server_pending.is_none() {
+                        let current = attributes.current_server_state();
+                        attributes.server_pending = Some(current);
+                    }
+                    let current_capabilties = &mut attributes.server_pending.as_mut().unwrap().capabilities;
                     current_capabilties.replace(default_capabilities.capabilities.iter().copied());
 
                     initial
                 });
 
                 if initial {
-                    compositor::add_post_commit_hook::<D, _>(
+                    compositor::add_pre_commit_hook::<D, _>(
                         surface,
-                        super::super::ToplevelSurface::commit_hook,
+                        super::super::ToplevelSurface::pre_commit_hook,
                     );
                 }
 
@@ -203,10 +206,6 @@ where
                         surface,
                         super::super::PopupSurface::pre_commit_hook,
                     );
-                    compositor::add_post_commit_hook::<D, _>(
-                        surface,
-                        super::super::PopupSurface::post_commit_hook,
-                    );
                 }
 
                 let popup = data_init.init(
@@ -251,6 +250,14 @@ where
                         xdg_wm_base::Error::Role,
                         "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                     );
+                }
+
+                if width <= 0 || height <= 0 {
+                    xdg_surface.post_error(
+                        xdg_surface::Error::InvalidSize,
+                        "width and height of the window geometry must be greater than zero.",
+                    );
+                    return;
                 }
 
                 compositor::with_states(surface, |states| {

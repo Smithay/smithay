@@ -4,8 +4,8 @@ use crate::{
     input::SeatHandler,
     utils::Serial,
     wayland::{
-        compositor,
-        shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
+        compositor::{self, with_states},
+        shell::xdg::{PopupCachedState, SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
     },
 };
 
@@ -45,7 +45,15 @@ where
 
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::grab(state, handle, seat, serial);
+                with_states(handle.wl_surface(), |states| {
+                    states
+                        .data_map
+                        .get::<XdgPopupSurfaceData>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .requested_grab = Some((seat, serial));
+                });
             }
             xdg_popup::Request::Reposition { positioner, token } => {
                 let handle = crate::wayland::shell::xdg::PopupSurface {
@@ -88,6 +96,10 @@ where
                     .unwrap() = Default::default();
 
                 let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                *guard.pending() = Default::default();
+                *guard.current() = Default::default();
+
+                let mut guard = states.cached_state.get::<PopupCachedState>();
                 *guard.pending() = Default::default();
                 *guard.current() = Default::default();
             })

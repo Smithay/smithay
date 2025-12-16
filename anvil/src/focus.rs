@@ -1,5 +1,7 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
+#[cfg(feature = "xwayland")]
+use smithay::xwayland::xwm::XwmOfferData;
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::X11Surface;
 pub use smithay::{
@@ -17,12 +19,16 @@ pub use smithay::{
 use smithay::{
     desktop::{Window, WindowSurface},
     input::{
+        dnd::{DndFocus, OfferData, Source},
         pointer::{
             GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
             GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
         },
         touch::TouchTarget,
     },
+    reexports::wayland_server::DisplayHandle,
+    utils::{Logical, Point},
+    wayland::selection::data_device::WlOfferData,
 };
 
 use crate::{
@@ -50,6 +56,7 @@ impl IsAlive for KeyboardFocusTarget {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum PointerFocusTarget {
     WlSurface(WlSurface),
     #[cfg(feature = "xwayland")]
@@ -364,6 +371,154 @@ impl WaylandFocus for KeyboardFocusTarget {
             KeyboardFocusTarget::Window(w) => w.wl_surface(),
             KeyboardFocusTarget::LayerSurface(l) => Some(Cow::Borrowed(l.wl_surface())),
             KeyboardFocusTarget::Popup(p) => Some(Cow::Borrowed(p.wl_surface())),
+        }
+    }
+}
+
+pub enum AnvilOfferData<S: Source> {
+    Wayland(WlOfferData<S>),
+    #[cfg(feature = "xwayland")]
+    X11(XwmOfferData<S>),
+}
+
+impl<S: Source> OfferData for AnvilOfferData<S> {
+    fn disable(&self) {
+        match self {
+            AnvilOfferData::Wayland(data) => data.disable(),
+            #[cfg(feature = "xwayland")]
+            AnvilOfferData::X11(data) => data.disable(),
+        }
+    }
+
+    fn drop(&self) {
+        match self {
+            AnvilOfferData::Wayland(data) => data.drop(),
+            #[cfg(feature = "xwayland")]
+            AnvilOfferData::X11(data) => data.drop(),
+        }
+    }
+
+    fn validated(&self) -> bool {
+        match self {
+            AnvilOfferData::Wayland(data) => data.validated(),
+            #[cfg(feature = "xwayland")]
+            AnvilOfferData::X11(data) => data.validated(),
+        }
+    }
+}
+
+#[allow(unreachable_patterns)]
+impl<BackendData: Backend> DndFocus<AnvilState<BackendData>> for PointerFocusTarget {
+    type OfferData<S>
+        = AnvilOfferData<S>
+    where
+        S: Source;
+
+    fn enter<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        dh: &DisplayHandle,
+        source: Arc<S>,
+        seat: &Seat<AnvilState<BackendData>>,
+        location: Point<f64, Logical>,
+        serial: &Serial,
+    ) -> Option<AnvilOfferData<S>> {
+        match self {
+            PointerFocusTarget::WlSurface(surface) => {
+                DndFocus::enter(surface, data, dh, source, seat, location, serial)
+                    .map(AnvilOfferData::Wayland)
+            }
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(surface) => {
+                DndFocus::enter(surface, data, dh, source, seat, location, serial).map(AnvilOfferData::X11)
+            }
+            _ => None,
+        }
+    }
+
+    fn motion<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        offer: Option<&mut AnvilOfferData<S>>,
+        seat: &Seat<AnvilState<BackendData>>,
+        location: Point<f64, Logical>,
+        time: u32,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(surface) => {
+                let offer = match offer {
+                    Some(AnvilOfferData::Wayland(ref mut offer)) => Some(offer),
+                    None => None,
+                    _ => return,
+                };
+                DndFocus::motion(surface, data, offer, seat, location, time)
+            }
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(surface) => {
+                let offer = match offer {
+                    Some(AnvilOfferData::X11(ref mut offer)) => Some(offer),
+                    None => None,
+                    _ => return,
+                };
+                DndFocus::motion(surface, data, offer, seat, location, time)
+            }
+            _ => {}
+        }
+    }
+
+    fn leave<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        offer: Option<&mut AnvilOfferData<S>>,
+        seat: &Seat<AnvilState<BackendData>>,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(surface) => {
+                let offer = match offer {
+                    Some(AnvilOfferData::Wayland(ref mut offer)) => Some(offer),
+                    None => None,
+                    _ => return,
+                };
+                DndFocus::leave(surface, data, offer, seat)
+            }
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(surface) => {
+                let offer = match offer {
+                    Some(AnvilOfferData::X11(ref mut offer)) => Some(offer),
+                    None => None,
+                    _ => return,
+                };
+                DndFocus::leave(surface, data, offer, seat)
+            }
+            _ => {}
+        }
+    }
+
+    fn drop<S: Source>(
+        &self,
+        data: &mut AnvilState<BackendData>,
+        offer: Option<&mut AnvilOfferData<S>>,
+        seat: &Seat<AnvilState<BackendData>>,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(surface) => {
+                let offer = match offer {
+                    Some(AnvilOfferData::Wayland(ref mut offer)) => Some(offer),
+                    None => None,
+                    _ => return,
+                };
+                DndFocus::drop(surface, data, offer, seat)
+            }
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(surface) => {
+                let offer = match offer {
+                    Some(AnvilOfferData::X11(ref mut offer)) => Some(offer),
+                    None => None,
+                    _ => return,
+                };
+                DndFocus::drop(surface, data, offer, seat)
+            }
+            _ => {}
         }
     }
 }

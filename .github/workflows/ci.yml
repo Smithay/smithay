@@ -83,7 +83,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
       - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@1.80.1
+        uses: dtolnay/rust-toolchain@1.85.1
       - name: Get date for registry cache
         id: date
         run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
@@ -129,7 +129,9 @@ jobs:
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
       - name: Downgrade to minimal dependencies
-        run: cargo update -Z minimal-versions
+        run: cargo -Z minimal-versions generate-lockfile
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@1.85.1
       - name: Check
         run: cargo check --features "test_all_features"
 
@@ -403,7 +405,9 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-09-26
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
