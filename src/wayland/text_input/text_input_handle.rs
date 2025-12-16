@@ -206,6 +206,11 @@ impl TextInputHandle {
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
         let mut inner = self.inner.lock().unwrap();
+        tracing::debug!(
+            "TextInputHandle::with_focused_text_input - focus: {:?}, active_id: {:?}",
+            inner.focus.as_ref().map(|s| s.id()),
+            inner.active_text_input_id
+        );
         inner.with_focused_client_all_text_inputs(|ti, surface, _| {
             f(ti, surface);
         });
@@ -220,6 +225,19 @@ impl TextInputHandle {
         inner.with_active_text_input(|ti, surface, _| {
             f(ti, surface);
         });
+    }
+
+    /// Check if there's an active text input with focus.
+    pub fn has_active_text_input(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        let has_active = inner.focus.is_some() && inner.active_text_input_id.is_some();
+        tracing::debug!(
+            "TextInputHandle::has_active_text_input - focus: {:?}, active_id: {:?}, result: {}",
+            inner.focus.as_ref().map(|s| s.id()),
+            inner.active_text_input_id,
+            has_active
+        );
+        has_active
     }
 
     /// Call the callback with the serial of the active text_input or with the passed

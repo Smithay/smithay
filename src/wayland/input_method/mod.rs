@@ -109,6 +109,10 @@ pub trait InputMethodHandler {
 
     /// Sets the parent location so the popup surface can be placed correctly
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical>;
+
+    /// Called when a new input method instance is added.
+    /// The app_id identifies the input method application.
+    fn new_input_method(&mut self, _app_id: &str) {}
 }
 
 /// Extends [Seat] with input method functionality
@@ -173,7 +177,7 @@ where
     fn bind(
         _: &mut D,
         _: &DisplayHandle,
-        _: &Client,
+        _client: &Client,
         resource: New<ZwpInputMethodManagerV2>,
         _: &InputMethodManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
@@ -194,7 +198,7 @@ where
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         client: &Client,
         _: &ZwpInputMethodManagerV2,
         request: zwp_input_method_manager_v2::Request,
@@ -204,9 +208,9 @@ where
     ) {
         match request {
             zwp_input_method_manager_v2::Request::GetInputMethod { seat, input_method } => {
-                let seat = Seat::<D>::from_resource(&seat).unwrap();
+                let seat_clone = Seat::<D>::from_resource(&seat).unwrap();
 
-                let user_data = seat.user_data();
+                let user_data = seat_clone.user_data();
                 user_data.insert_if_missing(TextInputHandle::default);
                 user_data.insert_if_missing(InputMethodHandle::default);
                 let handle = user_data.get::<InputMethodHandle>().unwrap();
@@ -214,7 +218,7 @@ where
                 text_input_handle.with_focused_text_input(|ti, surface| {
                     ti.enter(surface);
                 });
-                let keyboard_handle = seat.get_keyboard().unwrap();
+                let keyboard_handle = seat_clone.get_keyboard().unwrap();
                 let instance = data_init.init(
                     input_method,
                     InputMethodUserData {
@@ -227,11 +231,14 @@ where
                         dismiss_popup: D::dismiss_popup,
                     },
                 );
-                handle.add_instance(&instance, client, dh);
+
+                // Add instance and get its app_id
+                let app_id = handle.add_instance(&instance, client, dh);
+
+                // Notify compositor about new input method
+                state.new_input_method(&app_id);
             }
-            zwp_input_method_manager_v2::Request::Destroy => {
-                // Nothing to do
-            }
+            zwp_input_method_manager_v2::Request::Destroy => {}
             _ => unreachable!(),
         }
     }
