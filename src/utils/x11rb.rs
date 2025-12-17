@@ -19,7 +19,7 @@ use x11rb::{
 };
 
 use calloop::{
-    channel::{sync_channel, Channel, ChannelError, Event as ChannelEvent, SyncSender},
+    channel::{channel, Channel, ChannelError, Event as ChannelEvent, Sender},
     EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
 };
 
@@ -50,7 +50,7 @@ impl X11Source {
     /// created by us. Thus, the event reading thread will wake up and check an internal exit flag,
     /// then exit.
     pub fn new(connection: Arc<RustConnection>, close_window: Window, close_type: Atom) -> Self {
-        let (sender, channel) = sync_channel(5);
+        let (sender, channel) = channel();
         let conn = Arc::clone(&connection);
         let event_thread = Some(spawn(move || {
             run_event_thread(conn, sender);
@@ -154,7 +154,7 @@ impl EventSource for X11Source {
 /// This thread will call wait_for_event(). RustConnection then ensures internally to wake us up
 /// when an event arrives. So far, this seems to be the only safe way to integrate x11rb with
 /// calloop.
-fn run_event_thread(connection: Arc<RustConnection>, sender: SyncSender<Event>) {
+fn run_event_thread(connection: Arc<RustConnection>, sender: Sender<Event>) {
     loop {
         let event = match connection.wait_for_event() {
             Ok(event) => event,
