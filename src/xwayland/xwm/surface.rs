@@ -1094,7 +1094,7 @@ impl X11Relatable for WlSurface {
 impl IsAlive for X11Surface {
     #[inline]
     fn alive(&self) -> bool {
-        self.state.lock().unwrap().alive
+        X11Surface::alive(self)
     }
 }
 
