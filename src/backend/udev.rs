@@ -37,6 +37,8 @@
 //! See also `anvil/src/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
+#[cfg(feature = "backend_drm")]
+use drm::node::{DrmNode, NodeType};
 use libc::dev_t;
 use rustix::fs::stat;
 use std::{
@@ -46,7 +48,7 @@ use std::{
     os::unix::io::{AsFd, BorrowedFd},
     path::{Path, PathBuf},
 };
-use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
+use udev::{Device, Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
@@ -235,33 +237,37 @@ pub enum UdevEvent {
 /// Might be used for filtering of [`UdevEvent::Added`] or for manual
 /// [`DrmDevice`](crate::backend::drm::DrmDevice) initialization.
 pub fn primary_gpu<S: AsRef<str>>(seat: S) -> io::Result<Option<PathBuf>> {
-    let mut enumerator = Enumerator::new()?;
-    enumerator.match_subsystem("drm")?;
-    enumerator.match_sysname("card[0-9]*")?;
+    let gpus = all_gpus(seat)?;
 
-    if let Some(path) = enumerator
-        .scan_devices()?
-        .filter(|device| {
-            let seat_name = device
-                .property_value("ID_SEAT")
-                .map(|x| x.to_os_string())
-                .unwrap_or_else(|| OsString::from("seat0"));
-            if seat_name == *seat.as_ref() {
-                if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
-                    if let Some(id) = pci.attribute_value("boot_vga") {
-                        return id == "1";
-                    }
+    fn has_boot_vga(device_path: &Path) -> bool {
+        if let Ok(device) = Device::from_syspath(device_path) {
+            if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
+                if let Some(id) = pci.attribute_value("boot_vga") {
+                    return id == "1";
                 }
             }
-            false
-        })
-        .flat_map(|device| device.devnode().map(PathBuf::from))
-        .next()
-    {
-        Ok(Some(path))
-    } else {
-        all_gpus(seat).map(|all| all.into_iter().next())
+        }
+        false
     }
+
+    // 1st priority: GPU with boot_vga=1
+    if let Some(path) = gpus.iter().find(|path| has_boot_vga(path)) {
+        return Ok(Some(path.to_path_buf()));
+    }
+
+    // 2nd priority: GPU with a render node
+    #[cfg(feature = "backend_drm")]
+    if let Some(path) = gpus.iter().find(|path| {
+        DrmNode::from_path(path)
+            .ok()
+            .and_then(|node| node.node_with_type(NodeType::Render))
+            .is_some_and(|res| res.is_ok())
+    }) {
+        return Ok(Some(path.to_path_buf()));
+    }
+
+    // 3rd priority: first GPU in alphabetical order
+    Ok(gpus.first().map(|path| path.to_path_buf()))
 }
 
 /// Returns the paths of all available GPU devices
