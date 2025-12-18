@@ -237,37 +237,49 @@ pub enum UdevEvent {
 /// Might be used for filtering of [`UdevEvent::Added`] or for manual
 /// [`DrmDevice`](crate::backend::drm::DrmDevice) initialization.
 pub fn primary_gpu<S: AsRef<str>>(seat: S) -> io::Result<Option<PathBuf>> {
-    let gpus = all_gpus(seat)?;
+    let gpu_devices = gpus_for_seat(seat)?;
 
-    fn has_boot_vga(device_path: &Path) -> bool {
-        if let Ok(device) = Device::from_syspath(device_path) {
-            if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
-                if let Some(id) = pci.attribute_value("boot_vga") {
-                    return id == "1";
-                }
+    fn has_boot_vga(device: &Device) -> bool {
+        if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
+            if let Some(id) = pci.attribute_value("boot_vga") {
+                return id == "1";
             }
         }
         false
     }
 
     // 1st priority: GPU with boot_vga=1
-    if let Some(path) = gpus.iter().find(|path| has_boot_vga(path)) {
-        return Ok(Some(path.to_path_buf()));
+    if let Some(path) = gpu_devices
+        .iter()
+        .filter(|device| has_boot_vga(device))
+        .flat_map(|device| device.devnode().map(PathBuf::from))
+        .next()
+    {
+        return Ok(Some(path));
     }
+
+    let gpu_paths = {
+        let mut gpu_paths = gpu_devices
+            .into_iter()
+            .flat_map(|device| device.devnode().map(PathBuf::from))
+            .collect::<Vec<_>>();
+        gpu_paths.sort();
+        gpu_paths
+    };
 
     // 2nd priority: GPU with a render node
     #[cfg(feature = "backend_drm")]
-    if let Some(path) = gpus.iter().find(|path| {
+    if let Some(path) = gpu_paths.iter().find(|path| {
         DrmNode::from_path(path)
             .ok()
             .and_then(|node| node.node_with_type(NodeType::Render))
             .is_some_and(|res| res.is_ok())
     }) {
-        return Ok(Some(path.to_path_buf()));
+        return Ok(Some(path.clone()));
     }
 
     // 3rd priority: first GPU in alphabetical order
-    Ok(gpus.first().map(|path| path.to_path_buf()))
+    Ok(gpu_paths.first().cloned())
 }
 
 /// Returns the paths of all available GPU devices
@@ -275,10 +287,19 @@ pub fn primary_gpu<S: AsRef<str>>(seat: S) -> io::Result<Option<PathBuf>> {
 /// Might be used for manual  [`DrmDevice`](crate::backend::drm::DrmDevice)
 /// initialization.
 pub fn all_gpus<S: AsRef<str>>(seat: S) -> io::Result<Vec<PathBuf>> {
+    let mut gpus = gpus_for_seat(seat)?
+        .into_iter()
+        .flat_map(|device| device.devnode().map(PathBuf::from))
+        .collect::<Vec<_>>();
+    gpus.sort();
+    Ok(gpus)
+}
+
+fn gpus_for_seat<S: AsRef<str>>(seat: S) -> io::Result<Vec<Device>> {
     let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;
     enumerator.match_sysname("card[0-9]*")?;
-    let mut gpus = enumerator
+    let gpus = enumerator
         .scan_devices()?
         .filter(|device| {
             device
@@ -287,9 +308,7 @@ pub fn all_gpus<S: AsRef<str>>(seat: S) -> io::Result<Vec<PathBuf>> {
                 .unwrap_or_else(|| OsString::from("seat0"))
                 == *seat.as_ref()
         })
-        .flat_map(|device| device.devnode().map(PathBuf::from))
         .collect::<Vec<_>>();
-    gpus.sort();
     Ok(gpus)
 }
 
