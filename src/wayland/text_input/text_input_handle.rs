@@ -31,7 +31,6 @@ impl TextInput {
                 let instance_id = text_input.instance.id();
                 if instance_id.same_client_as(&surface.id()) {
                     f(&text_input.instance, surface, text_input.serial);
-                    break;
                 }
             }
         };
@@ -142,7 +141,7 @@ impl TextInputHandle {
         });
     }
 
-    /// Access the text-input instance for the currently focused surface.
+    /// Access the text-input instances for the currently focused surface.
     pub fn with_focused_text_input<F>(&self, mut f: F)
     where
         F: FnMut(&ZwpTextInputV3, &WlSurface),
