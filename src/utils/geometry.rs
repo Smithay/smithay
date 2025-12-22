@@ -1466,7 +1466,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
                 };
 
                 // We now know that we have to subtract the other rect
-                let item = rects.remove(index);
+                let item = rects.swap_remove(index);
 
                 // If we are completely contained then nothing is left
                 if other.contains_rect(item) {
