@@ -2228,10 +2228,7 @@ where
 
     let format = src_texture.format().unwrap_or(Fourcc::Abgr8888);
 
-    let ((shadow_buffer, _, existing_sync_point), is_new_buffer) = if slot
-        .as_ref()
-        .is_some_and(|(buffer, _, _)| buffer.format().code == format)
-    {
+    let ((shadow_buffer, _, existing_sync_point), is_new_buffer) = if slot.is_some() {
         (slot.as_mut().unwrap(), false)
     } else {
         let read_formats = if let Some(target) = target.as_ref() {
