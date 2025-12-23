@@ -2308,7 +2308,7 @@ where
                     .map_err(Error::Render)?,
             ) as Box<dyn Any + 'static>
         };
-        (slot.get_or_insert((shadow_buffer, target_texture, None)), true)
+        (slot.insert((shadow_buffer, target_texture, None)), true)
     };
 
     let src_renderer = src.renderer_mut();
