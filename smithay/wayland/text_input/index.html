@@ -1,0 +1,35 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Utilities for text input support"><title>smithay::wayland::text_input - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module text_input</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module text_<wbr>input</a></h2><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>text_<wbr>input</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/text_input/mod.rs.html#1-206">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Utilities for text input support</p>
+<p>This module provides you with utilities to handle text input surfaces,
+it is usually used in conjunction with the input method module.</p>
+<p>Text input focus is automatically set to the same surface that has keyboard focus.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{
+    delegate_seat, delegate_text_input_manager,
+};
+<span class="kw">use </span>smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+<span class="kw">use </span>smithay::wayland::text_input::TextInputManagerState;
+<span class="kw">use </span>smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+
+
+<span class="macro">delegate_seat!</span>(State);
+<span class="comment">// Delegate text input handling for State to TextInputManagerState.
+</span><span class="macro">delegate_text_input_manager!</span>(State);
+
+
+<span class="kw">let </span>seat_state = SeatState::&lt;State&gt;::new();
+
+<span class="comment">// implement the required traits
+</span><span class="kw">impl </span>SeatHandler <span class="kw">for </span>State {
+    <span class="kw">type </span>KeyboardFocus = WlSurface;
+    <span class="kw">type </span>PointerFocus = WlSurface;
+    <span class="kw">type </span>TouchFocus = WlSurface;
+    <span class="kw">fn </span>seat_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>SeatState&lt;<span class="self">Self</span>&gt; {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.seat_state
+    }
+    <span class="kw">fn </span>focus_changed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, focused: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>WlSurface&gt;) { <span class="macro">unimplemented!</span>() }
+    <span class="kw">fn </span>cursor_image(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, image: CursorImageStatus) { <span class="macro">unimplemented!</span>() }
+}
+
+<span class="comment">// Add the seat state to your state and create manager global
+</span>TextInputManagerState::new::&lt;State&gt;(<span class="kw-2">&amp;</span>display_handle);
+</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.TextInputHandle.html" title="struct smithay::wayland::text_input::TextInputHandle">Text<wbr>Input<wbr>Handle</a></dt><dd>Handle to text input instances</dd><dt><a class="struct" href="struct.TextInputManagerState.html" title="struct smithay::wayland::text_input::TextInputManagerState">Text<wbr>Input<wbr>Manager<wbr>State</a></dt><dd>State of wp text input protocol</dd><dt><a class="struct" href="struct.TextInputUserData.html" title="struct smithay::wayland::text_input::TextInputUserData">Text<wbr>Input<wbr>User<wbr>Data</a></dt><dd>User data of ZwpTextInputV3 object</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.TextInputSeat.html" title="trait smithay::wayland::text_input::TextInputSeat">Text<wbr>Input<wbr>Seat</a></dt><dd>Extends <a href="../../input/struct.Seat.html" title="struct smithay::input::Seat">Seat</a> with text input functionality</dd></dl></section></div></main></body></html>

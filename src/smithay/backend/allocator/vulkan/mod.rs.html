@@ -1,0 +1,814 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/backend/allocator/vulkan/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">smithay/backend/allocator/vulkan/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Module for Buffers created using Vulkan.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! The [`VulkanAllocator`] type implements the [`Allocator`] trait and [`VulkanImage`] implements [`Buffer`].
+<a href=#4 id=4 data-nosnippet>4</a>//! A [`VulkanImage`] may be exported as a [dmabuf](super::dmabuf).
+<a href=#5 id=5 data-nosnippet>5</a>//!
+<a href=#6 id=6 data-nosnippet>6</a>//! The Vulkan allocator supports up to Vulkan 1.3.
+<a href=#7 id=7 data-nosnippet>7</a>//!
+<a href=#8 id=8 data-nosnippet>8</a>//! The Vulkan allocator requires the following device extensions (and their dependencies):
+<a href=#9 id=9 data-nosnippet>9</a>//! - `VK_EXT_image_drm_format_modifier`
+<a href=#10 id=10 data-nosnippet>10</a>//! - `VK_EXT_external_memory_dmabuf`
+<a href=#11 id=11 data-nosnippet>11</a>//! - `VK_KHR_external_memory_fd`
+<a href=#12 id=12 data-nosnippet>12</a>//!
+<a href=#13 id=13 data-nosnippet>13</a>//! Additionally the Vulkan allocator may enable the following extensions if available:
+<a href=#14 id=14 data-nosnippet>14</a>//! - `VK_EXT_4444_formats`
+<a href=#15 id=15 data-nosnippet>15</a>//!
+<a href=#16 id=16 data-nosnippet>16</a>//! To get the required extensions a device must support to use the Vulkan allocator, use
+<a href=#17 id=17 data-nosnippet>17</a>//! [`VulkanAllocator::required_extensions`].
+<a href=#18 id=18 data-nosnippet>18</a>
+<a href=#19 id=19 data-nosnippet>19</a></span><span class="attr">#![forbid(unsafe_op_in_unsafe_fn)]
+<a href=#20 id=20 data-nosnippet>20</a>
+<a href=#21 id=21 data-nosnippet>21</a></span><span class="kw">pub mod </span>format;
+<a href=#22 id=22 data-nosnippet>22</a>
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span>std::{
+<a href=#24 id=24 data-nosnippet>24</a>    ffi::CStr,
+<a href=#25 id=25 data-nosnippet>25</a>    fmt,
+<a href=#26 id=26 data-nosnippet>26</a>    os::unix::io::{FromRawFd, OwnedFd},
+<a href=#27 id=27 data-nosnippet>27</a>    sync::{mpsc, Arc, Weak},
+<a href=#28 id=28 data-nosnippet>28</a>};
+<a href=#29 id=29 data-nosnippet>29</a>
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">use </span>ash::{ext, khr, vk};
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span>bitflags::bitflags;
+<a href=#32 id=32 data-nosnippet>32</a><span class="kw">use </span>drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
+<a href=#33 id=33 data-nosnippet>33</a><span class="kw">use </span>tracing::instrument;
+<a href=#34 id=34 data-nosnippet>34</a>
+<a href=#35 id=35 data-nosnippet>35</a><span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#36 id=36 data-nosnippet>36</a></span><span class="kw">use </span><span class="kw">crate</span>::backend::drm::DrmNode;
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">use crate</span>::{
+<a href=#38 id=38 data-nosnippet>38</a>    backend::{
+<a href=#39 id=39 data-nosnippet>39</a>        allocator::dmabuf::DmabufFlags,
+<a href=#40 id=40 data-nosnippet>40</a>        vulkan::{version::Version, PhysicalDevice},
+<a href=#41 id=41 data-nosnippet>41</a>    },
+<a href=#42 id=42 data-nosnippet>42</a>    utils::{Buffer <span class="kw">as </span>BufferCoord, Size},
+<a href=#43 id=43 data-nosnippet>43</a>};
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a><span class="kw">use super</span>::{
+<a href=#46 id=46 data-nosnippet>46</a>    dmabuf::{AsDmabuf, Dmabuf, MAX_PLANES},
+<a href=#47 id=47 data-nosnippet>47</a>    Allocator, Buffer,
+<a href=#48 id=48 data-nosnippet>48</a>};
+<a href=#49 id=49 data-nosnippet>49</a>
+<a href=#50 id=50 data-nosnippet>50</a><span class="macro">bitflags!</span> {
+<a href=#51 id=51 data-nosnippet>51</a>    <span class="doccomment">/// Flags to indicate the intended usage for a buffer.
+<a href=#52 id=52 data-nosnippet>52</a>    ///
+<a href=#53 id=53 data-nosnippet>53</a>    /// The usage flags may influence whether a buffer with a specific format and modifier combination may
+<a href=#54 id=54 data-nosnippet>54</a>    /// successfully be imported by a graphics api when it is exported as a [`Dmabuf`].
+<a href=#55 id=55 data-nosnippet>55</a>    ///
+<a href=#56 id=56 data-nosnippet>56</a>    /// For example, if a [`Buffer`] is used for scan-out, it is only necessary to specify the color
+<a href=#57 id=57 data-nosnippet>57</a>    /// attachment usage. However, if the exported buffer is used by a client and intended to be rendered to,
+<a href=#58 id=58 data-nosnippet>58</a>    /// then it is possible that the import will fail because the buffer was not allocated with right usage
+<a href=#59 id=59 data-nosnippet>59</a>    /// for the format and modifier combination.
+<a href=#60 id=60 data-nosnippet>60</a>    ///
+<a href=#61 id=61 data-nosnippet>61</a>    /// The default usage set when creating a [`VulkanAllocator`] guarantees that an exported buffer may be
+<a href=#62 id=62 data-nosnippet>62</a>    /// imported successfully with the same usage.
+<a href=#63 id=63 data-nosnippet>63</a>    ///
+<a href=#64 id=64 data-nosnippet>64</a>    /// If you need to allocate buffers with different usages dynamically, then you may use
+<a href=#65 id=65 data-nosnippet>65</a>    /// [`VulkanAllocator::create_buffer_with_usage`].
+<a href=#66 id=66 data-nosnippet>66</a>    ///
+<a href=#67 id=67 data-nosnippet>67</a>    /// [`VulkanAllocator::is_format_supported`] can check if the combination of format, modifier and usage
+<a href=#68 id=68 data-nosnippet>68</a>    /// flags are supported.
+<a href=#69 id=69 data-nosnippet>69</a>    </span><span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+<a href=#70 id=70 data-nosnippet>70</a>    </span><span class="kw">pub struct </span>ImageUsageFlags: vk::Flags {
+<a href=#71 id=71 data-nosnippet>71</a>        <span class="doccomment">/// The image may be the source of a transfer command.
+<a href=#72 id=72 data-nosnippet>72</a>        ///
+<a href=#73 id=73 data-nosnippet>73</a>        /// This allows the content of the exported buffer to be downloaded from the GPU.
+<a href=#74 id=74 data-nosnippet>74</a>        </span><span class="kw">const </span>TRANSFER_SRC = vk::ImageUsageFlags::TRANSFER_SRC.as_raw();
+<a href=#75 id=75 data-nosnippet>75</a>
+<a href=#76 id=76 data-nosnippet>76</a>        <span class="doccomment">/// The image may be the destination of a transfer command.
+<a href=#77 id=77 data-nosnippet>77</a>        ///
+<a href=#78 id=78 data-nosnippet>78</a>        /// This allows the content of the exported buffer to be modified by a memory upload to the GPU.
+<a href=#79 id=79 data-nosnippet>79</a>        </span><span class="kw">const </span>TRANSFER_DST = vk::ImageUsageFlags::TRANSFER_DST.as_raw();
+<a href=#80 id=80 data-nosnippet>80</a>
+<a href=#81 id=81 data-nosnippet>81</a>        <span class="doccomment">/// Image may be sampled in a shader.
+<a href=#82 id=82 data-nosnippet>82</a>        ///
+<a href=#83 id=83 data-nosnippet>83</a>        /// This should be used if the exported buffer will be used as a texture.
+<a href=#84 id=84 data-nosnippet>84</a>        </span><span class="kw">const </span>SAMPLED = vk::ImageUsageFlags::SAMPLED.as_raw();
+<a href=#85 id=85 data-nosnippet>85</a>
+<a href=#86 id=86 data-nosnippet>86</a>        <span class="doccomment">/// The image may be used in a color attachment.
+<a href=#87 id=87 data-nosnippet>87</a>        ///
+<a href=#88 id=88 data-nosnippet>88</a>        /// This should be used if the exported buffer will be rendered to.
+<a href=#89 id=89 data-nosnippet>89</a>        </span><span class="kw">const </span>COLOR_ATTACHMENT = vk::ImageUsageFlags::COLOR_ATTACHMENT.as_raw();
+<a href=#90 id=90 data-nosnippet>90</a>    }
+<a href=#91 id=91 data-nosnippet>91</a>}
+<a href=#92 id=92 data-nosnippet>92</a>
+<a href=#93 id=93 data-nosnippet>93</a><span class="doccomment">/// Error type for [`VulkanAllocator`].
+<a href=#94 id=94 data-nosnippet>94</a></span><span class="attr">#[derive(Debug, thiserror::Error)]
+<a href=#95 id=95 data-nosnippet>95</a></span><span class="kw">pub enum </span>Error {
+<a href=#96 id=96 data-nosnippet>96</a>    <span class="doccomment">/// The allocator could not be created.
+<a href=#97 id=97 data-nosnippet>97</a>    ///
+<a href=#98 id=98 data-nosnippet>98</a>    /// This can occur for a few reasons:
+<a href=#99 id=99 data-nosnippet>99</a>    /// - No suitable queue family was found.
+<a href=#100 id=100 data-nosnippet>100</a>    </span><span class="attr">#[error(<span class="string">"could not create allocator"</span>)]
+<a href=#101 id=101 data-nosnippet>101</a>    </span>Setup,
+<a href=#102 id=102 data-nosnippet>102</a>
+<a href=#103 id=103 data-nosnippet>103</a>    <span class="doccomment">/// The size specified to create the buffer was too small.
+<a href=#104 id=104 data-nosnippet>104</a>    ///
+<a href=#105 id=105 data-nosnippet>105</a>    /// The size must be greater than `0 x 0` pixels.
+<a href=#106 id=106 data-nosnippet>106</a>    </span><span class="attr">#[error(<span class="string">"invalid buffer size"</span>)]
+<a href=#107 id=107 data-nosnippet>107</a>    </span>InvalidSize,
+<a href=#108 id=108 data-nosnippet>108</a>
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="doccomment">/// The specified format is not supported.
+<a href=#110 id=110 data-nosnippet>110</a>    ///
+<a href=#111 id=111 data-nosnippet>111</a>    /// This error may occur for a few reasons:
+<a href=#112 id=112 data-nosnippet>112</a>    /// 1. There is no equivalent Vulkan format for the specified format code.
+<a href=#113 id=113 data-nosnippet>113</a>    /// 2. The driver does not support any of the specified modifiers for the format code.
+<a href=#114 id=114 data-nosnippet>114</a>    /// 3. The driver does support some of the format, but the size of the buffer requested is too large.
+<a href=#115 id=115 data-nosnippet>115</a>    /// 4. The usage is empty
+<a href=#116 id=116 data-nosnippet>116</a>    </span><span class="attr">#[error(<span class="string">"format is not supported"</span>)]
+<a href=#117 id=117 data-nosnippet>117</a>    </span>UnsupportedFormat,
+<a href=#118 id=118 data-nosnippet>118</a>
+<a href=#119 id=119 data-nosnippet>119</a>    <span class="doccomment">/// Some error from the Vulkan driver.
+<a href=#120 id=120 data-nosnippet>120</a>    </span><span class="attr">#[error(transparent)]
+<a href=#121 id=121 data-nosnippet>121</a>    </span>Vk(<span class="attr">#[from] </span>vk::Result),
+<a href=#122 id=122 data-nosnippet>122</a>}
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a><span class="doccomment">/// An allocator which uses Vulkan to create buffers.
+<a href=#125 id=125 data-nosnippet>125</a></span><span class="kw">pub struct </span>VulkanAllocator {
+<a href=#126 id=126 data-nosnippet>126</a>    formats: Vec&lt;FormatEntry&gt;,
+<a href=#127 id=127 data-nosnippet>127</a>    images: Vec&lt;ImageInner&gt;,
+<a href=#128 id=128 data-nosnippet>128</a>    default_usage: ImageUsageFlags,
+<a href=#129 id=129 data-nosnippet>129</a>    remaining_allocations: u32,
+<a href=#130 id=130 data-nosnippet>130</a>    extension_fns: ExtensionFns,
+<a href=#131 id=131 data-nosnippet>131</a>    dropped_recv: mpsc::Receiver&lt;ImageInner&gt;,
+<a href=#132 id=132 data-nosnippet>132</a>    dropped_sender: mpsc::Sender&lt;ImageInner&gt;,
+<a href=#133 id=133 data-nosnippet>133</a>    phd: PhysicalDevice,
+<a href=#134 id=134 data-nosnippet>134</a>    <span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#135 id=135 data-nosnippet>135</a>    </span>node: <span class="prelude-ty">Option</span>&lt;DrmNode&gt;,
+<a href=#136 id=136 data-nosnippet>136</a>    device: Arc&lt;ash::Device&gt;,
+<a href=#137 id=137 data-nosnippet>137</a>}
+<a href=#138 id=138 data-nosnippet>138</a>
+<a href=#139 id=139 data-nosnippet>139</a><span class="kw">impl </span>fmt::Debug <span class="kw">for </span>VulkanAllocator {
+<a href=#140 id=140 data-nosnippet>140</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+<a href=#141 id=141 data-nosnippet>141</a>        f.debug_struct(<span class="string">"VulkanAllocator"</span>)
+<a href=#142 id=142 data-nosnippet>142</a>            .field(<span class="string">"formats"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.formats)
+<a href=#143 id=143 data-nosnippet>143</a>            .field(<span class="string">"images"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.images)
+<a href=#144 id=144 data-nosnippet>144</a>            .field(<span class="string">"default_usage"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.default_usage)
+<a href=#145 id=145 data-nosnippet>145</a>            .field(<span class="string">"remaining_allocations"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.remaining_allocations)
+<a href=#146 id=146 data-nosnippet>146</a>            .field(<span class="string">"dropped_recv"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.dropped_recv)
+<a href=#147 id=147 data-nosnippet>147</a>            .field(<span class="string">"dropped_sender"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.dropped_sender)
+<a href=#148 id=148 data-nosnippet>148</a>            .field(<span class="string">"phd"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.phd)
+<a href=#149 id=149 data-nosnippet>149</a>            .finish()
+<a href=#150 id=150 data-nosnippet>150</a>    }
+<a href=#151 id=151 data-nosnippet>151</a>}
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a><span class="kw">impl </span>VulkanAllocator {
+<a href=#154 id=154 data-nosnippet>154</a>    <span class="doccomment">/// Maximum supported version instance version that may be used with the allocator.
+<a href=#155 id=155 data-nosnippet>155</a>    </span><span class="kw">pub const </span>MAX_INSTANCE_VERSION: Version = Version::VERSION_1_3;
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="doccomment">/// Returns the list of device extensions required by the Vulkan allocator.
+<a href=#158 id=158 data-nosnippet>158</a>    ///
+<a href=#159 id=159 data-nosnippet>159</a>    /// This function may return a different list for each [`PhysicalDevice`], meaning each device should be
+<a href=#160 id=160 data-nosnippet>160</a>    /// filtered using it's own call to this function.
+<a href=#161 id=161 data-nosnippet>161</a>    </span><span class="kw">pub fn </span>required_extensions(phd: <span class="kw-2">&amp;</span>PhysicalDevice) -&gt; Vec&lt;<span class="kw-2">&amp;</span><span class="lifetime">'static </span>CStr&gt; {
+<a href=#162 id=162 data-nosnippet>162</a>        <span class="comment">// Always required extensions
+<a href=#163 id=163 data-nosnippet>163</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>extensions = <span class="macro">vec!</span>[
+<a href=#164 id=164 data-nosnippet>164</a>            ext::image_drm_format_modifier::NAME,
+<a href=#165 id=165 data-nosnippet>165</a>            ext::external_memory_dma_buf::NAME,
+<a href=#166 id=166 data-nosnippet>166</a>            khr::external_memory_fd::NAME,
+<a href=#167 id=167 data-nosnippet>167</a>        ];
+<a href=#168 id=168 data-nosnippet>168</a>
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="kw">if </span>phd.api_version() &lt; Version::VERSION_1_2 {
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="comment">// VK_EXT_image_drm_format_modifier requires VK_KHR_image_format_list.
+<a href=#171 id=171 data-nosnippet>171</a>            // VK_KHR_image_format_list is part of the core API in Vulkan 1.2
+<a href=#172 id=172 data-nosnippet>172</a>            </span>extensions.push(khr::image_format_list::NAME);
+<a href=#173 id=173 data-nosnippet>173</a>        }
+<a href=#174 id=174 data-nosnippet>174</a>
+<a href=#175 id=175 data-nosnippet>175</a>        <span class="comment">// Optional extensions:
+<a href=#176 id=176 data-nosnippet>176</a>
+<a href=#177 id=177 data-nosnippet>177</a>        // VK_EXT_4444_formats is part of the core API in Vulkan 1.3. Although not always supported
+<a href=#178 id=178 data-nosnippet>178</a>        // (see the 1.3 features to enable)
+<a href=#179 id=179 data-nosnippet>179</a>        </span><span class="kw">if </span>phd.api_version() &lt; Version::VERSION_1_3 {
+<a href=#180 id=180 data-nosnippet>180</a>            <span class="comment">// In 1.2 and below, the device must support the extension to use it.
+<a href=#181 id=181 data-nosnippet>181</a>            </span><span class="kw">if </span>phd.has_device_extension(ext::_4444_formats::NAME) {
+<a href=#182 id=182 data-nosnippet>182</a>                extensions.push(ext::_4444_formats::NAME);
+<a href=#183 id=183 data-nosnippet>183</a>            }
+<a href=#184 id=184 data-nosnippet>184</a>        }
+<a href=#185 id=185 data-nosnippet>185</a>
+<a href=#186 id=186 data-nosnippet>186</a>        extensions
+<a href=#187 id=187 data-nosnippet>187</a>    }
+<a href=#188 id=188 data-nosnippet>188</a>
+<a href=#189 id=189 data-nosnippet>189</a>    <span class="doccomment">/// Creates a [`VulkanAllocator`].
+<a href=#190 id=190 data-nosnippet>190</a>    ///
+<a href=#191 id=191 data-nosnippet>191</a>    /// # Panics
+<a href=#192 id=192 data-nosnippet>192</a>    ///
+<a href=#193 id=193 data-nosnippet>193</a>    /// - If the version of instance which created the [`PhysicalDevice`] is higher than [`VulkanAllocator::MAX_INSTANCE_VERSION`].
+<a href=#194 id=194 data-nosnippet>194</a>    /// - If the default [`ImageUsageFlags`] are empty.
+<a href=#195 id=195 data-nosnippet>195</a>    </span><span class="attr">#[instrument(err, skip(phd), fields(physical_device = phd.name()))]
+<a href=#196 id=196 data-nosnippet>196</a>    </span><span class="kw">pub fn </span>new(phd: <span class="kw-2">&amp;</span>PhysicalDevice, default_usage: ImageUsageFlags) -&gt; <span class="prelude-ty">Result</span>&lt;VulkanAllocator, Error&gt; {
+<a href=#197 id=197 data-nosnippet>197</a>        <span class="comment">// Panic if the instance version is too high
+<a href=#198 id=198 data-nosnippet>198</a>        </span><span class="kw">if </span>phd.instance().api_version() &gt; <span class="self">Self</span>::MAX_INSTANCE_VERSION {
+<a href=#199 id=199 data-nosnippet>199</a>            <span class="macro">panic!</span>(<span class="string">"Exceeded maximum instance api version for VulkanAllocator (1.3 max)"</span>)
+<a href=#200 id=200 data-nosnippet>200</a>        }
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a>        <span class="comment">// VUID-VkPhysicalDeviceImageFormatInfo2-usage-requiredbitmask
+<a href=#203 id=203 data-nosnippet>203</a>        // At least one image usage flag must be specified.
+<a href=#204 id=204 data-nosnippet>204</a>        </span><span class="kw">if </span>default_usage.is_empty() {
+<a href=#205 id=205 data-nosnippet>205</a>            <span class="macro">panic!</span>(<span class="string">"Default usage flags for allocator are empty"</span>)
+<a href=#206 id=206 data-nosnippet>206</a>        }
+<a href=#207 id=207 data-nosnippet>207</a>
+<a href=#208 id=208 data-nosnippet>208</a>        <span class="comment">// Get required extensions
+<a href=#209 id=209 data-nosnippet>209</a>        </span><span class="kw">let </span>extensions = <span class="self">Self</span>::required_extensions(phd);
+<a href=#210 id=210 data-nosnippet>210</a>        <span class="kw">let </span>extension_pointers = extensions.iter().copied().map(CStr::as_ptr).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+<a href=#211 id=211 data-nosnippet>211</a>
+<a href=#212 id=212 data-nosnippet>212</a>        <span class="comment">// We don't actually submit any commands to the queue, but Vulkan requires that we create devices with
+<a href=#213 id=213 data-nosnippet>213</a>        // at least one queue (VUID-VkDeviceCreateInfo-queueCreateInfoCount-arraylength).
+<a href=#214 id=214 data-nosnippet>214</a>        </span><span class="kw">let </span>queue_families = <span class="kw">unsafe </span>{
+<a href=#215 id=215 data-nosnippet>215</a>            phd.instance()
+<a href=#216 id=216 data-nosnippet>216</a>                .handle()
+<a href=#217 id=217 data-nosnippet>217</a>                .get_physical_device_queue_family_properties(phd.handle())
+<a href=#218 id=218 data-nosnippet>218</a>        };
+<a href=#219 id=219 data-nosnippet>219</a>
+<a href=#220 id=220 data-nosnippet>220</a>        <span class="kw">let </span>queue_family_index = queue_families
+<a href=#221 id=221 data-nosnippet>221</a>            .iter()
+<a href=#222 id=222 data-nosnippet>222</a>            <span class="comment">// Find a queue with transfer
+<a href=#223 id=223 data-nosnippet>223</a>            </span>.position(|properties| properties.queue_flags.contains(vk::QueueFlags::TRANSFER))
+<a href=#224 id=224 data-nosnippet>224</a>            <span class="comment">// If there is no transfer queue family, then try graphics (which must support transfer)
+<a href=#225 id=225 data-nosnippet>225</a>            </span>.or_else(|| {
+<a href=#226 id=226 data-nosnippet>226</a>                queue_families
+<a href=#227 id=227 data-nosnippet>227</a>                    .iter()
+<a href=#228 id=228 data-nosnippet>228</a>                    .position(|properties| properties.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+<a href=#229 id=229 data-nosnippet>229</a>            })
+<a href=#230 id=230 data-nosnippet>230</a>            .ok_or(Error::Setup)<span class="question-mark">?</span>;
+<a href=#231 id=231 data-nosnippet>231</a>
+<a href=#232 id=232 data-nosnippet>232</a>        <span class="comment">// TODO: Enable 4444 formats features
+<a href=#233 id=233 data-nosnippet>233</a>        </span><span class="kw">let </span>queue_create_info = [vk::DeviceQueueCreateInfo::default()
+<a href=#234 id=234 data-nosnippet>234</a>            .queue_family_index(queue_family_index <span class="kw">as </span>u32)
+<a href=#235 id=235 data-nosnippet>235</a>            .queue_priorities(<span class="kw-2">&amp;</span>[<span class="number">0.0</span>])];
+<a href=#236 id=236 data-nosnippet>236</a>        <span class="kw">let </span>create_info = vk::DeviceCreateInfo::default()
+<a href=#237 id=237 data-nosnippet>237</a>            .enabled_extension_names(<span class="kw-2">&amp;</span>extension_pointers)
+<a href=#238 id=238 data-nosnippet>238</a>            .queue_create_infos(<span class="kw-2">&amp;</span>queue_create_info);
+<a href=#239 id=239 data-nosnippet>239</a>
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw">let </span>instance = phd.instance().handle();
+<a href=#241 id=241 data-nosnippet>241</a>        <span class="kw">let </span>device = <span class="kw">unsafe </span>{ instance.create_device(phd.handle(), <span class="kw-2">&amp;</span>create_info, <span class="prelude-val">None</span>) }<span class="question-mark">?</span>;
+<a href=#242 id=242 data-nosnippet>242</a>
+<a href=#243 id=243 data-nosnippet>243</a>        <span class="comment">// Load extension functions
+<a href=#244 id=244 data-nosnippet>244</a>        </span><span class="kw">let </span>extension_fns = ExtensionFns {
+<a href=#245 id=245 data-nosnippet>245</a>            ext_image_format_modifier: ext::image_drm_format_modifier::Device::new(instance, <span class="kw-2">&amp;</span>device),
+<a href=#246 id=246 data-nosnippet>246</a>            khr_external_memory_fd: khr::external_memory_fd::Device::new(instance, <span class="kw-2">&amp;</span>device),
+<a href=#247 id=247 data-nosnippet>247</a>        };
+<a href=#248 id=248 data-nosnippet>248</a>
+<a href=#249 id=249 data-nosnippet>249</a>        <span class="kw">let </span>(dropped_sender, dropped_recv) = mpsc::channel();
+<a href=#250 id=250 data-nosnippet>250</a>
+<a href=#251 id=251 data-nosnippet>251</a>        <span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#252 id=252 data-nosnippet>252</a>        </span><span class="kw">let </span>node = phd
+<a href=#253 id=253 data-nosnippet>253</a>            .render_node()
+<a href=#254 id=254 data-nosnippet>254</a>            .ok()
+<a href=#255 id=255 data-nosnippet>255</a>            .flatten()
+<a href=#256 id=256 data-nosnippet>256</a>            .or_else(|| phd.primary_node().ok().flatten());
+<a href=#257 id=257 data-nosnippet>257</a>
+<a href=#258 id=258 data-nosnippet>258</a>        <span class="kw">let </span><span class="kw-2">mut </span>allocator = VulkanAllocator {
+<a href=#259 id=259 data-nosnippet>259</a>            formats: Vec::new(),
+<a href=#260 id=260 data-nosnippet>260</a>            images: Vec::new(),
+<a href=#261 id=261 data-nosnippet>261</a>            default_usage,
+<a href=#262 id=262 data-nosnippet>262</a>            remaining_allocations: phd.limits().max_memory_allocation_count,
+<a href=#263 id=263 data-nosnippet>263</a>            extension_fns,
+<a href=#264 id=264 data-nosnippet>264</a>            dropped_recv,
+<a href=#265 id=265 data-nosnippet>265</a>            dropped_sender,
+<a href=#266 id=266 data-nosnippet>266</a>            phd: phd.clone(),
+<a href=#267 id=267 data-nosnippet>267</a>            <span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#268 id=268 data-nosnippet>268</a>            </span>node,
+<a href=#269 id=269 data-nosnippet>269</a>            device: Arc::new(device),
+<a href=#270 id=270 data-nosnippet>270</a>        };
+<a href=#271 id=271 data-nosnippet>271</a>
+<a href=#272 id=272 data-nosnippet>272</a>        allocator.init_formats();
+<a href=#273 id=273 data-nosnippet>273</a>
+<a href=#274 id=274 data-nosnippet>274</a>        <span class="prelude-val">Ok</span>(allocator)
+<a href=#275 id=275 data-nosnippet>275</a>    }
+<a href=#276 id=276 data-nosnippet>276</a>
+<a href=#277 id=277 data-nosnippet>277</a>    <span class="doccomment">/// Returns whether this allocator supports the specified format with the usage flags.
+<a href=#278 id=278 data-nosnippet>278</a>    </span><span class="kw">pub fn </span>is_format_supported(<span class="kw-2">&amp;</span><span class="self">self</span>, format: DrmFormat, usage: ImageUsageFlags) -&gt; bool {
+<a href=#279 id=279 data-nosnippet>279</a>        <span class="comment">// VUID-VkPhysicalDeviceImageFormatInfo2-usage-requiredbitmask
+<a href=#280 id=280 data-nosnippet>280</a>        // At least one image usage flag must be specified.
+<a href=#281 id=281 data-nosnippet>281</a>        </span><span class="kw">if </span>usage.is_empty() {
+<a href=#282 id=282 data-nosnippet>282</a>            <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#283 id=283 data-nosnippet>283</a>        }
+<a href=#284 id=284 data-nosnippet>284</a>
+<a href=#285 id=285 data-nosnippet>285</a>        <span class="comment">// TODO: Check if the extents are also valid?
+<a href=#286 id=286 data-nosnippet>286</a>        // Vulkan states a maximum extent size for images.
+<a href=#287 id=287 data-nosnippet>287</a>        // This may also be useful as a function on Allocator.
+<a href=#288 id=288 data-nosnippet>288</a>        </span><span class="kw">unsafe </span>{ <span class="self">self</span>.get_format_info(format, vk::ImageUsageFlags::from_raw(usage.bits())) }
+<a href=#289 id=289 data-nosnippet>289</a>            .ok()
+<a href=#290 id=290 data-nosnippet>290</a>            .is_some()
+<a href=#291 id=291 data-nosnippet>291</a>    }
+<a href=#292 id=292 data-nosnippet>292</a>
+<a href=#293 id=293 data-nosnippet>293</a>    <span class="doccomment">/// Try to create a buffer with the given dimensions, pixel format and usage flags.
+<a href=#294 id=294 data-nosnippet>294</a>    ///
+<a href=#295 id=295 data-nosnippet>295</a>    /// This may return [`Err`] for one of the following reasons:
+<a href=#296 id=296 data-nosnippet>296</a>    /// - The `usage` is empty.
+<a href=#297 id=297 data-nosnippet>297</a>    /// - The `fourcc` format is not supported.
+<a href=#298 id=298 data-nosnippet>298</a>    /// - All of the allowed `modifiers` are not supported.
+<a href=#299 id=299 data-nosnippet>299</a>    /// - The size of the buffer is too large for the `usage`, `fourcc` format or `modifiers`.
+<a href=#300 id=300 data-nosnippet>300</a>    /// - The `fourcc` format and `modifiers` do not support the specified usage.
+<a href=#301 id=301 data-nosnippet>301</a>    </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, err)]
+<a href=#302 id=302 data-nosnippet>302</a>    #[profiling::function]
+<a href=#303 id=303 data-nosnippet>303</a>    </span><span class="kw">pub fn </span>create_buffer_with_usage(
+<a href=#304 id=304 data-nosnippet>304</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#305 id=305 data-nosnippet>305</a>        width: u32,
+<a href=#306 id=306 data-nosnippet>306</a>        height: u32,
+<a href=#307 id=307 data-nosnippet>307</a>        fourcc: DrmFourcc,
+<a href=#308 id=308 data-nosnippet>308</a>        modifiers: <span class="kw-2">&amp;</span>[DrmModifier],
+<a href=#309 id=309 data-nosnippet>309</a>        usage: ImageUsageFlags,
+<a href=#310 id=310 data-nosnippet>310</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;VulkanImage, Error&gt; {
+<a href=#311 id=311 data-nosnippet>311</a>        <span class="self">self</span>.cleanup();
+<a href=#312 id=312 data-nosnippet>312</a>
+<a href=#313 id=313 data-nosnippet>313</a>        <span class="kw">let </span>vk_format = format::get_vk_format(fourcc).ok_or(Error::UnsupportedFormat)<span class="question-mark">?</span>;
+<a href=#314 id=314 data-nosnippet>314</a>        <span class="kw">let </span>vk_usage = vk::ImageUsageFlags::from_raw(usage.bits());
+<a href=#315 id=315 data-nosnippet>315</a>
+<a href=#316 id=316 data-nosnippet>316</a>        <span class="comment">// VUID-VkImageCreateInfo-extent-00944, VUID-VkImageCreateInfo-extent-00945
+<a href=#317 id=317 data-nosnippet>317</a>        </span><span class="kw">if </span>width == <span class="number">0 </span>|| height == <span class="number">0 </span>{
+<a href=#318 id=318 data-nosnippet>318</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(Error::InvalidSize);
+<a href=#319 id=319 data-nosnippet>319</a>        }
+<a href=#320 id=320 data-nosnippet>320</a>
+<a href=#321 id=321 data-nosnippet>321</a>        <span class="comment">// VUID-VkPhysicalDeviceImageFormatInfo2-usage-requiredbitmask
+<a href=#322 id=322 data-nosnippet>322</a>        // At least one image usage flag must be specified.
+<a href=#323 id=323 data-nosnippet>323</a>        </span><span class="kw">if </span>usage.is_empty() {
+<a href=#324 id=324 data-nosnippet>324</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(Error::UnsupportedFormat);
+<a href=#325 id=325 data-nosnippet>325</a>        }
+<a href=#326 id=326 data-nosnippet>326</a>
+<a href=#327 id=327 data-nosnippet>327</a>        <span class="comment">// VUID-VkImageCreateInfo-usage-00964, VUID-VkImageCreateInfo-usage-00965
+<a href=#328 id=328 data-nosnippet>328</a>        </span><span class="kw">if </span>usage.contains(ImageUsageFlags::COLOR_ATTACHMENT) {
+<a href=#329 id=329 data-nosnippet>329</a>            <span class="kw">let </span>limits = <span class="self">self</span>.phd.limits();
+<a href=#330 id=330 data-nosnippet>330</a>
+<a href=#331 id=331 data-nosnippet>331</a>            <span class="kw">if </span>width &gt; limits.max_framebuffer_width || height &gt; limits.max_framebuffer_height {
+<a href=#332 id=332 data-nosnippet>332</a>                <span class="kw">return </span><span class="prelude-val">Err</span>(Error::InvalidSize);
+<a href=#333 id=333 data-nosnippet>333</a>            }
+<a href=#334 id=334 data-nosnippet>334</a>        }
+<a href=#335 id=335 data-nosnippet>335</a>
+<a href=#336 id=336 data-nosnippet>336</a>        <span class="comment">// Filter out any format + modifier combinations that are not supported
+<a href=#337 id=337 data-nosnippet>337</a>        </span><span class="kw">let </span>modifiers = <span class="self">self</span>.filter_modifiers(width, height, vk_usage, fourcc, modifiers);
+<a href=#338 id=338 data-nosnippet>338</a>
+<a href=#339 id=339 data-nosnippet>339</a>        <span class="comment">// VUID-VkImageDrmFormatModifierListCreateInfoEXT-drmFormatModifierCount-arraylength
+<a href=#340 id=340 data-nosnippet>340</a>        </span><span class="kw">if </span>modifiers.is_empty() {
+<a href=#341 id=341 data-nosnippet>341</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(Error::UnsupportedFormat);
+<a href=#342 id=342 data-nosnippet>342</a>        }
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a>        <span class="prelude-val">Ok</span>(<span class="kw">unsafe </span>{ <span class="self">self</span>.create_image(width, height, vk_format, vk_usage, fourcc, <span class="kw-2">&amp;</span>modifiers[..]) }<span class="question-mark">?</span>)
+<a href=#345 id=345 data-nosnippet>345</a>    }
+<a href=#346 id=346 data-nosnippet>346</a>
+<a href=#347 id=347 data-nosnippet>347</a>    <span class="doccomment">/// Returns the [`PhysicalDevice`] this allocator was created with.
+<a href=#348 id=348 data-nosnippet>348</a>    </span><span class="kw">pub fn </span>physical_device(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>PhysicalDevice {
+<a href=#349 id=349 data-nosnippet>349</a>        <span class="kw-2">&amp;</span><span class="self">self</span>.phd
+<a href=#350 id=350 data-nosnippet>350</a>    }
+<a href=#351 id=351 data-nosnippet>351</a>}
+<a href=#352 id=352 data-nosnippet>352</a>
+<a href=#353 id=353 data-nosnippet>353</a><span class="kw">impl </span>Allocator <span class="kw">for </span>VulkanAllocator {
+<a href=#354 id=354 data-nosnippet>354</a>    <span class="kw">type </span>Buffer = VulkanImage;
+<a href=#355 id=355 data-nosnippet>355</a>    <span class="kw">type </span>Error = Error;
+<a href=#356 id=356 data-nosnippet>356</a>
+<a href=#357 id=357 data-nosnippet>357</a>    <span class="kw">fn </span>create_buffer(
+<a href=#358 id=358 data-nosnippet>358</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#359 id=359 data-nosnippet>359</a>        width: u32,
+<a href=#360 id=360 data-nosnippet>360</a>        height: u32,
+<a href=#361 id=361 data-nosnippet>361</a>        fourcc: DrmFourcc,
+<a href=#362 id=362 data-nosnippet>362</a>        modifiers: <span class="kw-2">&amp;</span>[DrmModifier],
+<a href=#363 id=363 data-nosnippet>363</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;VulkanImage, <span class="self">Self</span>::Error&gt; {
+<a href=#364 id=364 data-nosnippet>364</a>        <span class="self">self</span>.create_buffer_with_usage(width, height, fourcc, modifiers, <span class="self">self</span>.default_usage)
+<a href=#365 id=365 data-nosnippet>365</a>    }
+<a href=#366 id=366 data-nosnippet>366</a>}
+<a href=#367 id=367 data-nosnippet>367</a>
+<a href=#368 id=368 data-nosnippet>368</a><span class="kw">impl </span>Drop <span class="kw">for </span>VulkanAllocator {
+<a href=#369 id=369 data-nosnippet>369</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#370 id=370 data-nosnippet>370</a>        <span class="kw">unsafe </span>{
+<a href=#371 id=371 data-nosnippet>371</a>            <span class="kw">for </span>image <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.images {
+<a href=#372 id=372 data-nosnippet>372</a>                <span class="self">self</span>.device.destroy_image(image.image, <span class="prelude-val">None</span>);
+<a href=#373 id=373 data-nosnippet>373</a>                <span class="self">self</span>.device.free_memory(image.memory, <span class="prelude-val">None</span>);
+<a href=#374 id=374 data-nosnippet>374</a>            }
+<a href=#375 id=375 data-nosnippet>375</a>
+<a href=#376 id=376 data-nosnippet>376</a>            <span class="self">self</span>.device.destroy_device(<span class="prelude-val">None</span>);
+<a href=#377 id=377 data-nosnippet>377</a>        }
+<a href=#378 id=378 data-nosnippet>378</a>    }
+<a href=#379 id=379 data-nosnippet>379</a>}
+<a href=#380 id=380 data-nosnippet>380</a>
+<a href=#381 id=381 data-nosnippet>381</a><span class="doccomment">/// Vulkan image object.
+<a href=#382 id=382 data-nosnippet>382</a>///
+<a href=#383 id=383 data-nosnippet>383</a>/// This type implements [`Buffer`] and the underlying image may be exported as a dmabuf.
+<a href=#384 id=384 data-nosnippet>384</a></span><span class="kw">pub struct </span>VulkanImage {
+<a href=#385 id=385 data-nosnippet>385</a>    inner: ImageInner,
+<a href=#386 id=386 data-nosnippet>386</a>    width: u32,
+<a href=#387 id=387 data-nosnippet>387</a>    height: u32,
+<a href=#388 id=388 data-nosnippet>388</a>    format: DrmFormat,
+<a href=#389 id=389 data-nosnippet>389</a>    <span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#390 id=390 data-nosnippet>390</a>    </span>node: <span class="prelude-ty">Option</span>&lt;DrmNode&gt;,
+<a href=#391 id=391 data-nosnippet>391</a>    <span class="doccomment">/// The number of planes the image has for dmabuf export.
+<a href=#392 id=392 data-nosnippet>392</a>    </span>format_plane_count: u32,
+<a href=#393 id=393 data-nosnippet>393</a>    khr_external_memory_fd: khr::external_memory_fd::Device,
+<a href=#394 id=394 data-nosnippet>394</a>    dropped_sender: mpsc::Sender&lt;ImageInner&gt;,
+<a href=#395 id=395 data-nosnippet>395</a>    device: Weak&lt;ash::Device&gt;,
+<a href=#396 id=396 data-nosnippet>396</a>}
+<a href=#397 id=397 data-nosnippet>397</a>
+<a href=#398 id=398 data-nosnippet>398</a><span class="kw">impl </span>fmt::Debug <span class="kw">for </span>VulkanImage {
+<a href=#399 id=399 data-nosnippet>399</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+<a href=#400 id=400 data-nosnippet>400</a>        f.debug_struct(<span class="string">"VulkanImage"</span>)
+<a href=#401 id=401 data-nosnippet>401</a>            .field(<span class="string">"width"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.width)
+<a href=#402 id=402 data-nosnippet>402</a>            .field(<span class="string">"height"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.height)
+<a href=#403 id=403 data-nosnippet>403</a>            .field(<span class="string">"format"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.format)
+<a href=#404 id=404 data-nosnippet>404</a>            .field(<span class="string">"inner"</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.inner)
+<a href=#405 id=405 data-nosnippet>405</a>            .finish()
+<a href=#406 id=406 data-nosnippet>406</a>    }
+<a href=#407 id=407 data-nosnippet>407</a>}
+<a href=#408 id=408 data-nosnippet>408</a>
+<a href=#409 id=409 data-nosnippet>409</a><span class="kw">impl </span>Buffer <span class="kw">for </span>VulkanImage {
+<a href=#410 id=410 data-nosnippet>410</a>    <span class="kw">fn </span>width(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; u32 {
+<a href=#411 id=411 data-nosnippet>411</a>        <span class="self">self</span>.width
+<a href=#412 id=412 data-nosnippet>412</a>    }
+<a href=#413 id=413 data-nosnippet>413</a>
+<a href=#414 id=414 data-nosnippet>414</a>    <span class="kw">fn </span>height(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; u32 {
+<a href=#415 id=415 data-nosnippet>415</a>        <span class="self">self</span>.height
+<a href=#416 id=416 data-nosnippet>416</a>    }
+<a href=#417 id=417 data-nosnippet>417</a>
+<a href=#418 id=418 data-nosnippet>418</a>    <span class="kw">fn </span>size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Size&lt;i32, BufferCoord&gt; {
+<a href=#419 id=419 data-nosnippet>419</a>        (<span class="self">self</span>.width <span class="kw">as </span>i32, <span class="self">self</span>.height <span class="kw">as </span>i32).into()
+<a href=#420 id=420 data-nosnippet>420</a>    }
+<a href=#421 id=421 data-nosnippet>421</a>
+<a href=#422 id=422 data-nosnippet>422</a>    <span class="kw">fn </span>format(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; DrmFormat {
+<a href=#423 id=423 data-nosnippet>423</a>        <span class="self">self</span>.format
+<a href=#424 id=424 data-nosnippet>424</a>    }
+<a href=#425 id=425 data-nosnippet>425</a>}
+<a href=#426 id=426 data-nosnippet>426</a>
+<a href=#427 id=427 data-nosnippet>427</a><span class="kw">impl </span>AsDmabuf <span class="kw">for </span>VulkanImage {
+<a href=#428 id=428 data-nosnippet>428</a>    <span class="kw">type </span>Error = ExportError;
+<a href=#429 id=429 data-nosnippet>429</a>
+<a href=#430 id=430 data-nosnippet>430</a>    <span class="attr">#[profiling::function]
+<a href=#431 id=431 data-nosnippet>431</a>    </span><span class="kw">fn </span>export(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Dmabuf, <span class="self">Self</span>::Error&gt; {
+<a href=#432 id=432 data-nosnippet>432</a>        <span class="kw">let </span>device = <span class="self">self</span>.device.upgrade().ok_or(ExportError::AllocatorDestroyed)<span class="question-mark">?</span>;
+<a href=#433 id=433 data-nosnippet>433</a>
+<a href=#434 id=434 data-nosnippet>434</a>        <span class="comment">// Implementation may be broken if the plane count is wrong.
+<a href=#435 id=435 data-nosnippet>435</a>        </span><span class="kw">if </span><span class="self">self</span>.format_plane_count == <span class="number">0 </span>{
+<a href=#436 id=436 data-nosnippet>436</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(ExportError::Failed);
+<a href=#437 id=437 data-nosnippet>437</a>        }
+<a href=#438 id=438 data-nosnippet>438</a>
+<a href=#439 id=439 data-nosnippet>439</a>        <span class="macro">assert!</span>(
+<a href=#440 id=440 data-nosnippet>440</a>            <span class="self">self</span>.format_plane_count <span class="kw">as </span>usize &lt;= MAX_PLANES,
+<a href=#441 id=441 data-nosnippet>441</a>            <span class="string">"Vulkan implementation reported too many planes"
+<a href=#442 id=442 data-nosnippet>442</a>        </span>);
+<a href=#443 id=443 data-nosnippet>443</a>
+<a href=#444 id=444 data-nosnippet>444</a>        <span class="kw">let </span>create_info = vk::MemoryGetFdInfoKHR::default()
+<a href=#445 id=445 data-nosnippet>445</a>            .handle_type(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT)
+<a href=#446 id=446 data-nosnippet>446</a>            <span class="comment">// VUID-VkMemoryGetFdInfoKHR-handleType-00671: Memory was allocated with DMA_BUF_EXT
+<a href=#447 id=447 data-nosnippet>447</a>            </span>.memory(<span class="self">self</span>.inner.memory);
+<a href=#448 id=448 data-nosnippet>448</a>
+<a href=#449 id=449 data-nosnippet>449</a>        <span class="kw">let </span>fd = <span class="kw">unsafe </span>{ <span class="self">self</span>.khr_external_memory_fd.get_memory_fd(<span class="kw-2">&amp;</span>create_info) }<span class="question-mark">?</span>;
+<a href=#450 id=450 data-nosnippet>450</a>        <span class="comment">// SAFETY: `vkGetMemoryFdKHR` creates a new file descriptor owned by the caller.
+<a href=#451 id=451 data-nosnippet>451</a>        </span><span class="kw">let </span>fd = <span class="kw">unsafe </span>{ OwnedFd::from_raw_fd(fd) };
+<a href=#452 id=452 data-nosnippet>452</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder = Dmabuf::builder(
+<a href=#453 id=453 data-nosnippet>453</a>            <span class="self">self</span>.size(),
+<a href=#454 id=454 data-nosnippet>454</a>            <span class="self">self</span>.format().code,
+<a href=#455 id=455 data-nosnippet>455</a>            <span class="self">self</span>.format().modifier,
+<a href=#456 id=456 data-nosnippet>456</a>            DmabufFlags::empty(),
+<a href=#457 id=457 data-nosnippet>457</a>        );
+<a href=#458 id=458 data-nosnippet>458</a>
+<a href=#459 id=459 data-nosnippet>459</a>        <span class="kw">for </span>idx <span class="kw">in </span><span class="number">0</span>..<span class="self">self</span>.format_plane_count {
+<a href=#460 id=460 data-nosnippet>460</a>            <span class="comment">// get_image_subresource_layout only gets the layout of one memory plane. This mask specifies
+<a href=#461 id=461 data-nosnippet>461</a>            // which plane should the layout be obtained for.
+<a href=#462 id=462 data-nosnippet>462</a>            </span><span class="kw">let </span>aspect_mask = <span class="kw">match </span>idx {
+<a href=#463 id=463 data-nosnippet>463</a>                <span class="number">0 </span>=&gt; vk::ImageAspectFlags::MEMORY_PLANE_0_EXT,
+<a href=#464 id=464 data-nosnippet>464</a>                <span class="number">1 </span>=&gt; vk::ImageAspectFlags::MEMORY_PLANE_1_EXT,
+<a href=#465 id=465 data-nosnippet>465</a>                <span class="number">2 </span>=&gt; vk::ImageAspectFlags::MEMORY_PLANE_2_EXT,
+<a href=#466 id=466 data-nosnippet>466</a>                <span class="number">3 </span>=&gt; vk::ImageAspectFlags::MEMORY_PLANE_3_EXT,
+<a href=#467 id=467 data-nosnippet>467</a>                <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#468 id=468 data-nosnippet>468</a>            };
+<a href=#469 id=469 data-nosnippet>469</a>
+<a href=#470 id=470 data-nosnippet>470</a>            <span class="comment">// VUID-vkGetImageSubresourceLayout-image-02270: All allocate images are created with drm tiling
+<a href=#471 id=471 data-nosnippet>471</a>            </span><span class="kw">let </span>subresource = vk::ImageSubresource::default().aspect_mask(aspect_mask);
+<a href=#472 id=472 data-nosnippet>472</a>            <span class="kw">let </span>layout = <span class="kw">unsafe </span>{ device.get_image_subresource_layout(<span class="self">self</span>.inner.image, subresource) };
+<a href=#473 id=473 data-nosnippet>473</a>            builder.add_plane(
+<a href=#474 id=474 data-nosnippet>474</a>                fd.try_clone().or(<span class="prelude-val">Err</span>(ExportError::Failed))<span class="question-mark">?</span>,
+<a href=#475 id=475 data-nosnippet>475</a>                idx,
+<a href=#476 id=476 data-nosnippet>476</a>                layout.offset <span class="kw">as </span>u32,
+<a href=#477 id=477 data-nosnippet>477</a>                layout.row_pitch <span class="kw">as </span>u32,
+<a href=#478 id=478 data-nosnippet>478</a>            );
+<a href=#479 id=479 data-nosnippet>479</a>        }
+<a href=#480 id=480 data-nosnippet>480</a>
+<a href=#481 id=481 data-nosnippet>481</a>        <span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#482 id=482 data-nosnippet>482</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(node) = <span class="self">self</span>.node {
+<a href=#483 id=483 data-nosnippet>483</a>            builder.set_node(node);
+<a href=#484 id=484 data-nosnippet>484</a>        }
+<a href=#485 id=485 data-nosnippet>485</a>
+<a href=#486 id=486 data-nosnippet>486</a>        <span class="prelude-val">Ok</span>(builder.build().unwrap())
+<a href=#487 id=487 data-nosnippet>487</a>    }
+<a href=#488 id=488 data-nosnippet>488</a>}
+<a href=#489 id=489 data-nosnippet>489</a>
+<a href=#490 id=490 data-nosnippet>490</a><span class="kw">impl </span>Drop <span class="kw">for </span>VulkanImage {
+<a href=#491 id=491 data-nosnippet>491</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#492 id=492 data-nosnippet>492</a>        <span class="kw">let _ </span>= <span class="self">self</span>.dropped_sender.send(<span class="self">self</span>.inner);
+<a href=#493 id=493 data-nosnippet>493</a>    }
+<a href=#494 id=494 data-nosnippet>494</a>}
+<a href=#495 id=495 data-nosnippet>495</a>
+<a href=#496 id=496 data-nosnippet>496</a><span class="doccomment">/// The error type for exporting a [`VulkanImage`] as a [`Dmabuf`].
+<a href=#497 id=497 data-nosnippet>497</a></span><span class="attr">#[derive(Debug, thiserror::Error)]
+<a href=#498 id=498 data-nosnippet>498</a></span><span class="kw">pub enum </span>ExportError {
+<a href=#499 id=499 data-nosnippet>499</a>    <span class="doccomment">/// The image could not export a dmabuf since the allocator has been destroyed.
+<a href=#500 id=500 data-nosnippet>500</a>    </span><span class="attr">#[error(<span class="string">"allocator has been destroyed"</span>)]
+<a href=#501 id=501 data-nosnippet>501</a>    </span>AllocatorDestroyed,
+<a href=#502 id=502 data-nosnippet>502</a>
+<a href=#503 id=503 data-nosnippet>503</a>    <span class="doccomment">/// The allocator could not export a dmabuf for an implementation dependent reason.
+<a href=#504 id=504 data-nosnippet>504</a>    </span><span class="attr">#[error(<span class="string">"could not export a dmabuf"</span>)]
+<a href=#505 id=505 data-nosnippet>505</a>    </span>Failed,
+<a href=#506 id=506 data-nosnippet>506</a>
+<a href=#507 id=507 data-nosnippet>507</a>    <span class="doccomment">/// Vulkan API error.
+<a href=#508 id=508 data-nosnippet>508</a>    </span><span class="attr">#[error(transparent)]
+<a href=#509 id=509 data-nosnippet>509</a>    </span>Vk(<span class="attr">#[from] </span>vk::Result),
+<a href=#510 id=510 data-nosnippet>510</a>}
+<a href=#511 id=511 data-nosnippet>511</a>
+<a href=#512 id=512 data-nosnippet>512</a><span class="attr">#[derive(Debug, Clone, Copy, PartialEq)]
+<a href=#513 id=513 data-nosnippet>513</a></span><span class="kw">struct </span>ImageInner {
+<a href=#514 id=514 data-nosnippet>514</a>    <span class="comment">// TODO: image usage?
+<a href=#515 id=515 data-nosnippet>515</a>    </span>image: vk::Image,
+<a href=#516 id=516 data-nosnippet>516</a>    <span class="doccomment">/// The first entry will always have a non-null device memory handle.
+<a href=#517 id=517 data-nosnippet>517</a>    ///
+<a href=#518 id=518 data-nosnippet>518</a>    /// The other three entries may be a null handle or valid device memory (the latter with disjoint dmabufs).
+<a href=#519 id=519 data-nosnippet>519</a>    </span>memory: vk::DeviceMemory,
+<a href=#520 id=520 data-nosnippet>520</a>}
+<a href=#521 id=521 data-nosnippet>521</a>
+<a href=#522 id=522 data-nosnippet>522</a><span class="attr">#[derive(Debug)]
+<a href=#523 id=523 data-nosnippet>523</a></span><span class="kw">struct </span>FormatEntry {
+<a href=#524 id=524 data-nosnippet>524</a>    format: DrmFormat,
+<a href=#525 id=525 data-nosnippet>525</a>    modifier_properties: vk::DrmFormatModifierPropertiesEXT,
+<a href=#526 id=526 data-nosnippet>526</a>}
+<a href=#527 id=527 data-nosnippet>527</a>
+<a href=#528 id=528 data-nosnippet>528</a><span class="kw">struct </span>ExtensionFns {
+<a href=#529 id=529 data-nosnippet>529</a>    <span class="doccomment">/// Functions to get DRM format information.
+<a href=#530 id=530 data-nosnippet>530</a>    ///
+<a href=#531 id=531 data-nosnippet>531</a>    /// These are required, and therefore you may assume this functionality is available.
+<a href=#532 id=532 data-nosnippet>532</a>    </span>ext_image_format_modifier: ext::image_drm_format_modifier::Device,
+<a href=#533 id=533 data-nosnippet>533</a>    <span class="doccomment">/// Functions used for dmabuf import and export.
+<a href=#534 id=534 data-nosnippet>534</a>    ///
+<a href=#535 id=535 data-nosnippet>535</a>    /// If this is [`Some`], then the allocator will support dmabuf import and export operations.
+<a href=#536 id=536 data-nosnippet>536</a>    </span>khr_external_memory_fd: khr::external_memory_fd::Device,
+<a href=#537 id=537 data-nosnippet>537</a>}
+<a href=#538 id=538 data-nosnippet>538</a>
+<a href=#539 id=539 data-nosnippet>539</a><span class="kw">impl </span>VulkanAllocator {
+<a href=#540 id=540 data-nosnippet>540</a>    <span class="kw">fn </span>init_formats(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#541 id=541 data-nosnippet>541</a>        <span class="kw">for </span><span class="kw-2">&amp;</span>fourcc <span class="kw">in </span>format::known_formats() {
+<a href=#542 id=542 data-nosnippet>542</a>            <span class="kw">let </span>vk_format = format::get_vk_format(fourcc).unwrap();
+<a href=#543 id=543 data-nosnippet>543</a>            <span class="kw">let </span>modifier_properties = <span class="self">self
+<a href=#544 id=544 data-nosnippet>544</a>                </span>.phd
+<a href=#545 id=545 data-nosnippet>545</a>                .get_format_modifier_properties(vk_format)
+<a href=#546 id=546 data-nosnippet>546</a>                .expect(<span class="string">"The Vulkan allocator requires VK_EXT_image_drm_format_modifier"</span>);
+<a href=#547 id=547 data-nosnippet>547</a>
+<a href=#548 id=548 data-nosnippet>548</a>            <span class="kw">for </span>modifier_properties <span class="kw">in </span>modifier_properties {
+<a href=#549 id=549 data-nosnippet>549</a>                <span class="self">self</span>.formats.push(FormatEntry {
+<a href=#550 id=550 data-nosnippet>550</a>                    format: DrmFormat {
+<a href=#551 id=551 data-nosnippet>551</a>                        code: fourcc,
+<a href=#552 id=552 data-nosnippet>552</a>                        modifier: DrmModifier::from(modifier_properties.drm_format_modifier),
+<a href=#553 id=553 data-nosnippet>553</a>                    },
+<a href=#554 id=554 data-nosnippet>554</a>                    modifier_properties,
+<a href=#555 id=555 data-nosnippet>555</a>                });
+<a href=#556 id=556 data-nosnippet>556</a>            }
+<a href=#557 id=557 data-nosnippet>557</a>        }
+<a href=#558 id=558 data-nosnippet>558</a>    }
+<a href=#559 id=559 data-nosnippet>559</a>
+<a href=#560 id=560 data-nosnippet>560</a>    <span class="doccomment">/// Returns whether the format + modifier combination and the usage flags are supported.
+<a href=#561 id=561 data-nosnippet>561</a>    </span><span class="kw">unsafe fn </span>get_format_info(
+<a href=#562 id=562 data-nosnippet>562</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#563 id=563 data-nosnippet>563</a>        format: DrmFormat,
+<a href=#564 id=564 data-nosnippet>564</a>        usage: vk::ImageUsageFlags,
+<a href=#565 id=565 data-nosnippet>565</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;vk::ImageFormatProperties&gt;, vk::Result&gt; {
+<a href=#566 id=566 data-nosnippet>566</a>        <span class="kw">let </span>vk_format = format::get_vk_format(format.code);
+<a href=#567 id=567 data-nosnippet>567</a>
+<a href=#568 id=568 data-nosnippet>568</a>        <span class="kw">match </span>vk_format {
+<a href=#569 id=569 data-nosnippet>569</a>            <span class="prelude-val">Some</span>(vk_format) =&gt; {
+<a href=#570 id=570 data-nosnippet>570</a>                <span class="kw">let </span><span class="kw-2">mut </span>image_drm_format_info = vk::PhysicalDeviceImageDrmFormatModifierInfoEXT::default()
+<a href=#571 id=571 data-nosnippet>571</a>                    .drm_format_modifier(format.modifier.into())
+<a href=#572 id=572 data-nosnippet>572</a>                    .sharing_mode(vk::SharingMode::EXCLUSIVE);
+<a href=#573 id=573 data-nosnippet>573</a>                <span class="kw">let </span>format_info = vk::PhysicalDeviceImageFormatInfo2::default()
+<a href=#574 id=574 data-nosnippet>574</a>                    .format(vk_format)
+<a href=#575 id=575 data-nosnippet>575</a>                    .ty(vk::ImageType::TYPE_2D)
+<a href=#576 id=576 data-nosnippet>576</a>                    .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
+<a href=#577 id=577 data-nosnippet>577</a>                    .usage(usage)
+<a href=#578 id=578 data-nosnippet>578</a>                    .flags(vk::ImageCreateFlags::empty())
+<a href=#579 id=579 data-nosnippet>579</a>                    <span class="comment">// VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02249
+<a href=#580 id=580 data-nosnippet>580</a>                    </span>.push_next(<span class="kw-2">&amp;mut </span>image_drm_format_info);
+<a href=#581 id=581 data-nosnippet>581</a>                <span class="kw">let </span><span class="kw-2">mut </span>image_format_properties = vk::ImageFormatProperties2::default();
+<a href=#582 id=582 data-nosnippet>582</a>
+<a href=#583 id=583 data-nosnippet>583</a>                <span class="comment">// VUID-vkGetPhysicalDeviceImageFormatProperties-tiling-02248: Must use vkGetPhysicalDeviceImageFormatProperties2
+<a href=#584 id=584 data-nosnippet>584</a>                </span><span class="kw">let </span>result = <span class="kw">unsafe </span>{
+<a href=#585 id=585 data-nosnippet>585</a>                    <span class="self">self</span>.phd
+<a href=#586 id=586 data-nosnippet>586</a>                        .instance()
+<a href=#587 id=587 data-nosnippet>587</a>                        .handle()
+<a href=#588 id=588 data-nosnippet>588</a>                        .get_physical_device_image_format_properties2(
+<a href=#589 id=589 data-nosnippet>589</a>                            <span class="self">self</span>.phd.handle(),
+<a href=#590 id=590 data-nosnippet>590</a>                            <span class="kw-2">&amp;</span>format_info,
+<a href=#591 id=591 data-nosnippet>591</a>                            <span class="kw-2">&amp;mut </span>image_format_properties,
+<a href=#592 id=592 data-nosnippet>592</a>                        )
+<a href=#593 id=593 data-nosnippet>593</a>                };
+<a href=#594 id=594 data-nosnippet>594</a>
+<a href=#595 id=595 data-nosnippet>595</a>                result
+<a href=#596 id=596 data-nosnippet>596</a>                    .map(|<span class="kw">_</span>| <span class="prelude-val">Some</span>(image_format_properties.image_format_properties))
+<a href=#597 id=597 data-nosnippet>597</a>                    .or_else(|result| {
+<a href=#598 id=598 data-nosnippet>598</a>                        <span class="comment">// Unsupported format + usage combination
+<a href=#599 id=599 data-nosnippet>599</a>                        </span><span class="kw">if </span>result == vk::Result::ERROR_FORMAT_NOT_SUPPORTED {
+<a href=#600 id=600 data-nosnippet>600</a>                            <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
+<a href=#601 id=601 data-nosnippet>601</a>                        } <span class="kw">else </span>{
+<a href=#602 id=602 data-nosnippet>602</a>                            <span class="prelude-val">Err</span>(result)
+<a href=#603 id=603 data-nosnippet>603</a>                        }
+<a href=#604 id=604 data-nosnippet>604</a>                    })
+<a href=#605 id=605 data-nosnippet>605</a>            }
+<a href=#606 id=606 data-nosnippet>606</a>
+<a href=#607 id=607 data-nosnippet>607</a>            <span class="prelude-val">None </span>=&gt; <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
+<a href=#608 id=608 data-nosnippet>608</a>        }
+<a href=#609 id=609 data-nosnippet>609</a>    }
+<a href=#610 id=610 data-nosnippet>610</a>
+<a href=#611 id=611 data-nosnippet>611</a>    <span class="kw">fn </span>filter_modifiers(
+<a href=#612 id=612 data-nosnippet>612</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#613 id=613 data-nosnippet>613</a>        width: u32,
+<a href=#614 id=614 data-nosnippet>614</a>        height: u32,
+<a href=#615 id=615 data-nosnippet>615</a>        vk_usage: vk::ImageUsageFlags,
+<a href=#616 id=616 data-nosnippet>616</a>        fourcc: DrmFourcc,
+<a href=#617 id=617 data-nosnippet>617</a>        modifiers: <span class="kw-2">&amp;</span>[DrmModifier],
+<a href=#618 id=618 data-nosnippet>618</a>    ) -&gt; Vec&lt;u64&gt; {
+<a href=#619 id=619 data-nosnippet>619</a>        modifiers
+<a href=#620 id=620 data-nosnippet>620</a>            .iter()
+<a href=#621 id=621 data-nosnippet>621</a>            .copied()
+<a href=#622 id=622 data-nosnippet>622</a>            .filter_map(<span class="kw">move </span>|modifier| {
+<a href=#623 id=623 data-nosnippet>623</a>                <span class="kw">let </span>info = <span class="kw">unsafe </span>{
+<a href=#624 id=624 data-nosnippet>624</a>                    <span class="self">self</span>.get_format_info(
+<a href=#625 id=625 data-nosnippet>625</a>                        DrmFormat {
+<a href=#626 id=626 data-nosnippet>626</a>                            code: fourcc,
+<a href=#627 id=627 data-nosnippet>627</a>                            modifier,
+<a href=#628 id=628 data-nosnippet>628</a>                        },
+<a href=#629 id=629 data-nosnippet>629</a>                        vk_usage,
+<a href=#630 id=630 data-nosnippet>630</a>                    )
+<a href=#631 id=631 data-nosnippet>631</a>                }
+<a href=#632 id=632 data-nosnippet>632</a>                .ok()
+<a href=#633 id=633 data-nosnippet>633</a>                .flatten()<span class="question-mark">?</span>;
+<a href=#634 id=634 data-nosnippet>634</a>
+<a href=#635 id=635 data-nosnippet>635</a>                <span class="prelude-val">Some</span>((modifier, info))
+<a href=#636 id=636 data-nosnippet>636</a>            })
+<a href=#637 id=637 data-nosnippet>637</a>            <span class="comment">// Filter modifiers where the required image creation limits are not met
+<a href=#638 id=638 data-nosnippet>638</a>            </span>.filter(<span class="kw">move </span>|(<span class="kw">_</span>, properties)| {
+<a href=#639 id=639 data-nosnippet>639</a>                <span class="kw">let </span>max_extent = properties.max_extent;
+<a href=#640 id=640 data-nosnippet>640</a>
+<a href=#641 id=641 data-nosnippet>641</a>                <span class="comment">// VUID-VkImageCreateInfo-extent-02252
+<a href=#642 id=642 data-nosnippet>642</a>                </span>max_extent.width &gt;= width
+<a href=#643 id=643 data-nosnippet>643</a>                <span class="comment">// VUID-VkImageCreateInfo-extent-02253
+<a href=#644 id=644 data-nosnippet>644</a>                </span>&amp;&amp; max_extent.height &gt;= height
+<a href=#645 id=645 data-nosnippet>645</a>                <span class="comment">// VUID-VkImageCreateInfo-extent-02254
+<a href=#646 id=646 data-nosnippet>646</a>                // VUID-VkImageCreateInfo-extent-00946
+<a href=#647 id=647 data-nosnippet>647</a>                // VUID-VkImageCreateInfo-imageType-00957
+<a href=#648 id=648 data-nosnippet>648</a>                </span>&amp;&amp; max_extent.depth &gt;= <span class="number">1
+<a href=#649 id=649 data-nosnippet>649</a>                </span><span class="comment">// VUID-VkImageCreateInfo-samples-02258
+<a href=#650 id=650 data-nosnippet>650</a>                </span>&amp;&amp; properties.sample_counts.contains(vk::SampleCountFlags::TYPE_1)
+<a href=#651 id=651 data-nosnippet>651</a>            })
+<a href=#652 id=652 data-nosnippet>652</a>            .map(|(modifier, <span class="kw">_</span>)| modifier)
+<a href=#653 id=653 data-nosnippet>653</a>            .map(Into::&lt;u64&gt;::into)
+<a href=#654 id=654 data-nosnippet>654</a>            <span class="comment">// TODO: Could use a smallvec or tinyvec to reduce number allocations
+<a href=#655 id=655 data-nosnippet>655</a>            </span>.collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;()
+<a href=#656 id=656 data-nosnippet>656</a>    }
+<a href=#657 id=657 data-nosnippet>657</a>
+<a href=#658 id=658 data-nosnippet>658</a>    <span class="doccomment">/// # Safety
+<a href=#659 id=659 data-nosnippet>659</a>    ///
+<a href=#660 id=660 data-nosnippet>660</a>    /// * The list of modifiers must be supported for the given format and image usage flags.
+<a href=#661 id=661 data-nosnippet>661</a>    /// * The extent of the image must be within the maximum extents Vulkan tells.
+<a href=#662 id=662 data-nosnippet>662</a>    </span><span class="kw">unsafe fn </span>create_image(
+<a href=#663 id=663 data-nosnippet>663</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#664 id=664 data-nosnippet>664</a>        width: u32,
+<a href=#665 id=665 data-nosnippet>665</a>        height: u32,
+<a href=#666 id=666 data-nosnippet>666</a>        vk_format: vk::Format,
+<a href=#667 id=667 data-nosnippet>667</a>        vk_usage: vk::ImageUsageFlags,
+<a href=#668 id=668 data-nosnippet>668</a>        fourcc: DrmFourcc,
+<a href=#669 id=669 data-nosnippet>669</a>        modifiers: <span class="kw-2">&amp;</span>[u64],
+<a href=#670 id=670 data-nosnippet>670</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;VulkanImage, vk::Result&gt; {
+<a href=#671 id=671 data-nosnippet>671</a>        <span class="macro">assert!</span>(width &gt; <span class="number">0</span>);
+<a href=#672 id=672 data-nosnippet>672</a>        <span class="macro">assert!</span>(height &gt; <span class="number">0</span>);
+<a href=#673 id=673 data-nosnippet>673</a>
+<a href=#674 id=674 data-nosnippet>674</a>        <span class="comment">// Ensure maximum allocations are not exceeded.
+<a href=#675 id=675 data-nosnippet>675</a>        </span><span class="kw">if </span><span class="self">self</span>.remaining_allocations == <span class="number">0 </span>{
+<a href=#676 id=676 data-nosnippet>676</a>            <span class="macro">todo!</span>()
+<a href=#677 id=677 data-nosnippet>677</a>        }
+<a href=#678 id=678 data-nosnippet>678</a>
+<a href=#679 id=679 data-nosnippet>679</a>        <span class="comment">// Now that the list of valid modifiers is known, create an image using one of the modifiers.
+<a href=#680 id=680 data-nosnippet>680</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>modifier_list =
+<a href=#681 id=681 data-nosnippet>681</a>            vk::ImageDrmFormatModifierListCreateInfoEXT::default().drm_format_modifiers(modifiers);
+<a href=#682 id=682 data-nosnippet>682</a>        <span class="kw">let </span><span class="kw-2">mut </span>external_memory_image_create_info = vk::ExternalMemoryImageCreateInfo::default()
+<a href=#683 id=683 data-nosnippet>683</a>            .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
+<a href=#684 id=684 data-nosnippet>684</a>
+<a href=#685 id=685 data-nosnippet>685</a>        <span class="kw">let </span>image_create_info = vk::ImageCreateInfo::default()
+<a href=#686 id=686 data-nosnippet>686</a>            .image_type(vk::ImageType::TYPE_2D)
+<a href=#687 id=687 data-nosnippet>687</a>            .format(vk_format)
+<a href=#688 id=688 data-nosnippet>688</a>            .extent(vk::Extent3D {
+<a href=#689 id=689 data-nosnippet>689</a>                width,
+<a href=#690 id=690 data-nosnippet>690</a>                height,
+<a href=#691 id=691 data-nosnippet>691</a>                <span class="comment">// VUID-VkImageCreateInfo-extent-00946
+<a href=#692 id=692 data-nosnippet>692</a>                // VUID-VkImageCreateInfo-imageType-00957
+<a href=#693 id=693 data-nosnippet>693</a>                </span>depth: <span class="number">1</span>,
+<a href=#694 id=694 data-nosnippet>694</a>            })
+<a href=#695 id=695 data-nosnippet>695</a>            <span class="comment">// VUID-VkImageCreateInfo-samples-parameter
+<a href=#696 id=696 data-nosnippet>696</a>            </span>.samples(vk::SampleCountFlags::TYPE_1)
+<a href=#697 id=697 data-nosnippet>697</a>            <span class="comment">// VUID-VkImageCreateInfo-mipLevels-00947
+<a href=#698 id=698 data-nosnippet>698</a>            </span>.mip_levels(<span class="number">1</span>)
+<a href=#699 id=699 data-nosnippet>699</a>            <span class="comment">// VUID-VkImageCreateInfo-arrayLayers-00948
+<a href=#700 id=700 data-nosnippet>700</a>            </span>.array_layers(<span class="number">1</span>)
+<a href=#701 id=701 data-nosnippet>701</a>            <span class="comment">// VUID-VkImageCreateInfo-pNext-02262
+<a href=#702 id=702 data-nosnippet>702</a>            </span>.tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
+<a href=#703 id=703 data-nosnippet>703</a>            <span class="comment">// VUID-VkImageCreateInfo-usage-requiredbitmask
+<a href=#704 id=704 data-nosnippet>704</a>            // FIXME: We don't assert any usage flags are set
+<a href=#705 id=705 data-nosnippet>705</a>            </span>.usage(vk_usage)
+<a href=#706 id=706 data-nosnippet>706</a>            <span class="comment">// VUID-VkImageCreateInfo-initialLayout-00993
+<a href=#707 id=707 data-nosnippet>707</a>            </span>.initial_layout(vk::ImageLayout::UNDEFINED)
+<a href=#708 id=708 data-nosnippet>708</a>            <span class="comment">// VUID-VkImageCreateInfo-tiling-02261
+<a href=#709 id=709 data-nosnippet>709</a>            </span>.push_next(<span class="kw-2">&amp;mut </span>modifier_list)
+<a href=#710 id=710 data-nosnippet>710</a>            <span class="comment">// TODO: VUID-VkImageCreateInfo-pNext-00990
+<a href=#711 id=711 data-nosnippet>711</a>            </span>.push_next(<span class="kw-2">&amp;mut </span>external_memory_image_create_info);
+<a href=#712 id=712 data-nosnippet>712</a>
+<a href=#713 id=713 data-nosnippet>713</a>        <span class="comment">// The image is placed in a scope guard to safely handle future allocation failures.
+<a href=#714 id=714 data-nosnippet>714</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>guard = scopeguard::guard(
+<a href=#715 id=715 data-nosnippet>715</a>            ImageInner {
+<a href=#716 id=716 data-nosnippet>716</a>                <span class="comment">// This is the only spot where ? may be used to detect and error since no previous handles have been created.
+<a href=#717 id=717 data-nosnippet>717</a>                </span>image: <span class="kw">unsafe </span>{ <span class="self">self</span>.device.create_image(<span class="kw-2">&amp;</span>image_create_info, <span class="prelude-val">None</span>) }<span class="question-mark">?</span>,
+<a href=#718 id=718 data-nosnippet>718</a>                memory: vk::DeviceMemory::null(),
+<a href=#719 id=719 data-nosnippet>719</a>            },
+<a href=#720 id=720 data-nosnippet>720</a>            |inner| <span class="kw">unsafe </span>{ <span class="self">self</span>.device.destroy_image(inner.image, <span class="prelude-val">None</span>) },
+<a href=#721 id=721 data-nosnippet>721</a>        );
+<a href=#722 id=722 data-nosnippet>722</a>
+<a href=#723 id=723 data-nosnippet>723</a>        <span class="comment">// Get the modifier Vulkan created the image using.
+<a href=#724 id=724 data-nosnippet>724</a>        </span><span class="kw">let </span>format = {
+<a href=#725 id=725 data-nosnippet>725</a>            <span class="kw">let </span><span class="kw-2">mut </span>image_modifier_properties = vk::ImageDrmFormatModifierPropertiesEXT::default();
+<a href=#726 id=726 data-nosnippet>726</a>
+<a href=#727 id=727 data-nosnippet>727</a>            <span class="kw">unsafe </span>{
+<a href=#728 id=728 data-nosnippet>728</a>                <span class="self">self</span>.extension_fns
+<a href=#729 id=729 data-nosnippet>729</a>                    .ext_image_format_modifier
+<a href=#730 id=730 data-nosnippet>730</a>                    .get_image_drm_format_modifier_properties(guard.image, <span class="kw-2">&amp;mut </span>image_modifier_properties)
+<a href=#731 id=731 data-nosnippet>731</a>            }<span class="question-mark">?</span>;
+<a href=#732 id=732 data-nosnippet>732</a>
+<a href=#733 id=733 data-nosnippet>733</a>            DrmFormat {
+<a href=#734 id=734 data-nosnippet>734</a>                code: fourcc,
+<a href=#735 id=735 data-nosnippet>735</a>                modifier: DrmModifier::from(image_modifier_properties.drm_format_modifier),
+<a href=#736 id=736 data-nosnippet>736</a>            }
+<a href=#737 id=737 data-nosnippet>737</a>        };
+<a href=#738 id=738 data-nosnippet>738</a>
+<a href=#739 id=739 data-nosnippet>739</a>        <span class="comment">// Now that we know the plane count, get the number of planes for the format + modifier
+<a href=#740 id=740 data-nosnippet>740</a>        </span><span class="kw">let </span>format_plane_count = <span class="self">self
+<a href=#741 id=741 data-nosnippet>741</a>            </span>.formats
+<a href=#742 id=742 data-nosnippet>742</a>            .iter()
+<a href=#743 id=743 data-nosnippet>743</a>            .find(|entry| entry.format == format)
+<a href=#744 id=744 data-nosnippet>744</a>            .unwrap()
+<a href=#745 id=745 data-nosnippet>745</a>            .modifier_properties
+<a href=#746 id=746 data-nosnippet>746</a>            .drm_format_modifier_plane_count;
+<a href=#747 id=747 data-nosnippet>747</a>
+<a href=#748 id=748 data-nosnippet>748</a>        <span class="comment">// Allocate image memory
+<a href=#749 id=749 data-nosnippet>749</a>        </span><span class="kw">let </span>memory_reqs = <span class="kw">unsafe </span>{ <span class="self">self</span>.device.get_image_memory_requirements(guard.image) };
+<a href=#750 id=750 data-nosnippet>750</a>        <span class="comment">// TODO: Memory type index
+<a href=#751 id=751 data-nosnippet>751</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>export_memory_allocate_info = vk::ExportMemoryAllocateInfo::default()
+<a href=#752 id=752 data-nosnippet>752</a>            .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
+<a href=#753 id=753 data-nosnippet>753</a>        <span class="kw">let </span>alloc_create_info = vk::MemoryAllocateInfo::default()
+<a href=#754 id=754 data-nosnippet>754</a>            .allocation_size(memory_reqs.size)
+<a href=#755 id=755 data-nosnippet>755</a>            .push_next(<span class="kw-2">&amp;mut </span>export_memory_allocate_info);
+<a href=#756 id=756 data-nosnippet>756</a>
+<a href=#757 id=757 data-nosnippet>757</a>        <span class="kw">unsafe </span>{
+<a href=#758 id=758 data-nosnippet>758</a>            <span class="comment">// Allocate memory for the image.
+<a href=#759 id=759 data-nosnippet>759</a>            </span>guard.memory = <span class="self">self</span>.device.allocate_memory(<span class="kw-2">&amp;</span>alloc_create_info, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+<a href=#760 id=760 data-nosnippet>760</a>            <span class="comment">// Finally bind the memory to the image
+<a href=#761 id=761 data-nosnippet>761</a>            </span><span class="self">self</span>.device.bind_image_memory(guard.image, guard.memory, <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#762 id=762 data-nosnippet>762</a>        }
+<a href=#763 id=763 data-nosnippet>763</a>
+<a href=#764 id=764 data-nosnippet>764</a>        <span class="comment">// Initialization is complete, prevent the scope guard from running it's dropfn.
+<a href=#765 id=765 data-nosnippet>765</a>        </span><span class="kw">let </span>inner = scopeguard::ScopeGuard::into_inner(guard);
+<a href=#766 id=766 data-nosnippet>766</a>
+<a href=#767 id=767 data-nosnippet>767</a>        <span class="comment">// Track the image for destruction.
+<a href=#768 id=768 data-nosnippet>768</a>        </span><span class="self">self</span>.images.push(inner);
+<a href=#769 id=769 data-nosnippet>769</a>
+<a href=#770 id=770 data-nosnippet>770</a>        <span class="self">self</span>.remaining_allocations -= <span class="number">1</span>;
+<a href=#771 id=771 data-nosnippet>771</a>
+<a href=#772 id=772 data-nosnippet>772</a>        <span class="prelude-val">Ok</span>(VulkanImage {
+<a href=#773 id=773 data-nosnippet>773</a>            inner,
+<a href=#774 id=774 data-nosnippet>774</a>            width,
+<a href=#775 id=775 data-nosnippet>775</a>            height,
+<a href=#776 id=776 data-nosnippet>776</a>            format,
+<a href=#777 id=777 data-nosnippet>777</a>            format_plane_count,
+<a href=#778 id=778 data-nosnippet>778</a>            khr_external_memory_fd: <span class="self">self</span>.extension_fns.khr_external_memory_fd.clone(),
+<a href=#779 id=779 data-nosnippet>779</a>            dropped_sender: <span class="self">self</span>.dropped_sender.clone(),
+<a href=#780 id=780 data-nosnippet>780</a>            device: Arc::downgrade(<span class="kw-2">&amp;</span><span class="self">self</span>.device),
+<a href=#781 id=781 data-nosnippet>781</a>            <span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#782 id=782 data-nosnippet>782</a>            </span>node: <span class="self">self</span>.node,
+<a href=#783 id=783 data-nosnippet>783</a>        })
+<a href=#784 id=784 data-nosnippet>784</a>    }
+<a href=#785 id=785 data-nosnippet>785</a>
+<a href=#786 id=786 data-nosnippet>786</a>    <span class="kw">fn </span>cleanup(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#787 id=787 data-nosnippet>787</a>        <span class="kw">let </span>dropped = <span class="self">self</span>.dropped_recv.try_iter().collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+<a href=#788 id=788 data-nosnippet>788</a>
+<a href=#789 id=789 data-nosnippet>789</a>        <span class="self">self</span>.images.retain(|image| {
+<a href=#790 id=790 data-nosnippet>790</a>            <span class="comment">// Only drop if the
+<a href=#791 id=791 data-nosnippet>791</a>            </span><span class="kw">let </span>drop = dropped.contains(image);
+<a href=#792 id=792 data-nosnippet>792</a>
+<a href=#793 id=793 data-nosnippet>793</a>            <span class="kw">if </span>drop {
+<a href=#794 id=794 data-nosnippet>794</a>                <span class="comment">// Destroy the underlying image resource
+<a href=#795 id=795 data-nosnippet>795</a>                </span><span class="kw">unsafe </span>{
+<a href=#796 id=796 data-nosnippet>796</a>                    <span class="self">self</span>.device.destroy_image(image.image, <span class="prelude-val">None</span>);
+<a href=#797 id=797 data-nosnippet>797</a>                    <span class="self">self</span>.device.free_memory(image.memory, <span class="prelude-val">None</span>);
+<a href=#798 id=798 data-nosnippet>798</a>                }
+<a href=#799 id=799 data-nosnippet>799</a>
+<a href=#800 id=800 data-nosnippet>800</a>                <span class="self">self</span>.remaining_allocations = <span class="self">self
+<a href=#801 id=801 data-nosnippet>801</a>                    </span>.remaining_allocations
+<a href=#802 id=802 data-nosnippet>802</a>                    .checked_add(<span class="number">1</span>)
+<a href=#803 id=803 data-nosnippet>803</a>                    .expect(<span class="string">"Remaining allocations overflowed"</span>);
+<a href=#804 id=804 data-nosnippet>804</a>                <span class="macro">debug_assert!</span>(
+<a href=#805 id=805 data-nosnippet>805</a>                    <span class="self">self</span>.phd.limits().max_memory_allocation_count &gt;= <span class="self">self</span>.remaining_allocations,
+<a href=#806 id=806 data-nosnippet>806</a>                    <span class="string">"Too many allocations released"</span>,
+<a href=#807 id=807 data-nosnippet>807</a>                );
+<a href=#808 id=808 data-nosnippet>808</a>            }
+<a href=#809 id=809 data-nosnippet>809</a>
+<a href=#810 id=810 data-nosnippet>810</a>            <span class="comment">// If the image was dropped, return false
+<a href=#811 id=811 data-nosnippet>811</a>            </span>!drop
+<a href=#812 id=812 data-nosnippet>812</a>        })
+<a href=#813 id=813 data-nosnippet>813</a>    }
+<a href=#814 id=814 data-nosnippet>814</a>}</code></pre></div></section></main></body></html>
