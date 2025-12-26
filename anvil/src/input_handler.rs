@@ -7,6 +7,12 @@ use crate::udev::UdevData;
 #[cfg(feature = "udev")]
 use smithay::backend::renderer::DebugFlags;
 
+#[cfg(any(feature = "winit", feature = "x11", feature = "udev"))]
+use smithay::backend::input::AbsolutePositionEvent;
+use smithay::input::keyboard::KeyboardHandle;
+use smithay::input::keyboard::Keycode;
+use smithay::utils::SERIAL_COUNTER;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardHandler;
 use smithay::{
     backend::input::{
         self, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
@@ -29,9 +35,6 @@ use smithay::{
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer},
     },
 };
-
-#[cfg(any(feature = "winit", feature = "x11", feature = "udev"))]
-use smithay::backend::input::AbsolutePositionEvent;
 
 #[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::output::Output;
@@ -1326,5 +1329,28 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
         Some(KeyAction::ToggleDecorations)
     } else {
         None
+    }
+}
+
+impl<BackendData: Backend> VirtualKeyboardHandler for AnvilState<BackendData> {
+    fn on_keyboard_event(
+        &mut self,
+        keycode: Keycode,
+        state: KeyState,
+        time: u32,
+        keyboard: KeyboardHandle<Self>,
+    ) {
+        let serial = SERIAL_COUNTER.next_serial();
+        keyboard.input(self, keycode, state, serial, time, |_, _, _| {
+            FilterResult::Forward::<bool>
+        });
+    }
+    pub fn on_keyboard_modifiers(
+        &mut self,
+        depressed_mods: ModMask,
+        latched_mods: ModMask,
+        locked_mods: ModMask,
+        keyboard: KeyboardHandle<Self>,
+    ) {
     }
 }

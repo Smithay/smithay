@@ -710,11 +710,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         focus: &Option<&mut <D as SeatHandler>::KeyboardFocus>,
         keymap: &xkb::Keymap,
         mods: ModifiersState,
-    ) {
+    ) -> bool {
         let mut keymap_file = self.arc.keymap.lock().unwrap();
         keymap_file.change_keymap(keymap);
 
-        self.send_keymap(data, focus, &keymap_file, mods);
+        return self.send_keymap(data, focus, &keymap_file, mods);
     }
 
     /// Send a new wl_keyboard keymap, without updating the internal keymap.
