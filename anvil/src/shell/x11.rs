@@ -315,6 +315,10 @@ impl<BackendData: Backend> XwmHandler for AnvilState<BackendData> {
             }
         }
     }
+
+    fn disconnected(&mut self, _xwm: XwmId) {
+        self.xwm = None;
+    }
 }
 
 impl<BackendData: Backend> AnvilState<BackendData> {
