@@ -146,9 +146,6 @@ impl GpuProfiler {
 
         let query = self.pool.next(gl);
         self.context.end_span(query.0 as u16);
-
-        // Flush right away so GL knows about our exit query.
-        unsafe { gl.Flush() };
     }
 
     pub fn scope<'a, 'b>(
