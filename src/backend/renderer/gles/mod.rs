@@ -22,6 +22,7 @@ use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan
 pub mod element;
 mod error;
 pub mod format;
+mod profiler;
 mod shaders;
 mod texture;
 mod uniform;
@@ -399,6 +400,9 @@ pub struct GlesRenderer {
     // debug
     span: tracing::Span,
     gl_debug_span: Option<*mut tracing::Span>,
+
+    // profiling
+    profiler: profiler::GpuProfiler,
 }
 
 /// Handle to the currently rendered frame during [`GlesRenderer::render`](Renderer::render).
@@ -418,6 +422,8 @@ pub struct GlesFrame<'frame, 'buffer> {
     finished: AtomicBool,
 
     span: EnteredSpan,
+
+    gpu_span: Option<profiler::EnteredGpuTracepoint>,
 }
 
 impl fmt::Debug for GlesFrame<'_, '_> {
@@ -703,6 +709,8 @@ impl GlesRenderer {
 
         drop(_guard);
 
+        let profiler = profiler::GpuProfiler::new(&gl);
+
         let renderer = GlesRenderer {
             gl,
             egl: context,
@@ -730,6 +738,8 @@ impl GlesRenderer {
             _not_send: PhantomData,
             span,
             gl_debug_span,
+
+            profiler,
         };
         renderer.egl.unbind()?;
         Ok(renderer)
@@ -2125,6 +2135,13 @@ impl Renderer for GlesRenderer {
     {
         target.0.make_current(&self.gl, &self.egl)?;
 
+        // Collect last frame's timestamps.
+        self.profiler.collect(&self.gl);
+
+        let gpu_span = self
+            .profiler
+            .enter(tracy_client::span_location!("render"), &self.gl);
+
         unsafe {
             self.gl.Viewport(0, 0, output_size.w, output_size.h);
 
@@ -2174,6 +2191,8 @@ impl Renderer for GlesRenderer {
             finished: AtomicBool::new(false),
 
             span,
+
+            gpu_span: Some(gpu_span),
         })
     }
 
@@ -2292,6 +2311,10 @@ impl Frame for GlesFrame<'_, '_> {
             return Ok(());
         }
 
+        let scope = self
+            .renderer
+            .profiler
+            .enter(tracy_client::span_location!("clear"), &self.renderer.gl);
         unsafe {
             self.renderer.gl.Disable(ffi::BLEND);
         }
@@ -2302,6 +2325,8 @@ impl Frame for GlesFrame<'_, '_> {
             self.renderer.gl.Enable(ffi::BLEND);
             self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
+        self.renderer.profiler.exit(&self.renderer.gl, scope);
+
         res
     }
 
@@ -2319,6 +2344,10 @@ impl Frame for GlesFrame<'_, '_> {
 
         let is_opaque = color.is_opaque();
 
+        let scope = self
+            .renderer
+            .profiler
+            .enter(tracy_client::span_location!("draw_solid"), &self.renderer.gl);
         if is_opaque {
             unsafe {
                 self.renderer.gl.Disable(ffi::BLEND);
@@ -2333,6 +2362,7 @@ impl Frame for GlesFrame<'_, '_> {
                 self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
             }
         }
+        self.renderer.profiler.exit(&self.renderer.gl, scope);
 
         res
     }
@@ -2386,6 +2416,10 @@ impl GlesFrame<'_, '_> {
             return Ok(SyncPoint::signaled());
         }
 
+        let finish_gpu_span = self
+            .renderer
+            .profiler
+            .enter(tracy_client::span_location!("finish_internal"), &self.renderer.gl);
         unsafe {
             self.renderer.gl.Disable(ffi::SCISSOR_TEST);
             self.renderer.gl.Disable(ffi::BLEND);
@@ -2396,12 +2430,28 @@ impl GlesFrame<'_, '_> {
         }
 
         // delayed destruction until the next frame rendering.
-        self.renderer.cleanup();
+        {
+            let scope = self
+                .renderer
+                .profiler
+                .enter(tracy_client::span_location!("cleanup"), &self.renderer.gl);
+            self.renderer.cleanup();
+            self.renderer.profiler.exit(&self.renderer.gl, scope);
+        }
+
+        self.renderer.profiler.exit(&self.renderer.gl, finish_gpu_span);
+        if let Some(span) = self.gpu_span.take() {
+            self.renderer.profiler.exit(&self.renderer.gl, span);
+        }
 
         // if we support egl fences we should use it
         if let Some(sync_point) = self.renderer.export_sync_point() {
+            // Sync after glFlush in export_sync_point() and right before returning.
+            self.renderer.profiler.sync_gpu(&self.renderer.gl);
             return Ok(sync_point);
         }
+
+        self.renderer.profiler.sync_gpu(&self.renderer.gl);
 
         // as a last option we force finish, this is unlikely to happen
         unsafe {
@@ -2487,6 +2537,10 @@ impl GlesFrame<'_, '_> {
         }
 
         let gl = &self.renderer.gl;
+        let _scope = self
+            .renderer
+            .profiler
+            .scope(tracy_client::span_location!("draw_solid"), &self.renderer.gl);
         unsafe {
             gl.UseProgram(self.renderer.solid_program.program);
             gl.Uniform4f(
@@ -2785,6 +2839,10 @@ impl GlesFrame<'_, '_> {
         let sync_lock = tex.0.sync.read().unwrap();
         unsafe {
             sync_lock.wait_for_upload(gl);
+            let scope = self
+                .renderer
+                .profiler
+                .enter(tracy_client::span_location!("render_texture"), gl);
             gl.ActiveTexture(ffi::TEXTURE0);
             gl.BindTexture(target, tex.0.texture);
             gl.TexParameteri(
@@ -2852,11 +2910,20 @@ impl GlesFrame<'_, '_> {
             );
 
             if self.renderer.capabilities.contains(&Capability::Instancing) {
+                let _scope = self
+                    .renderer
+                    .profiler
+                    .scope(tracy_client::span_location!("draw instanced"), gl);
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len as i32);
             } else {
+                let _scope = self
+                    .renderer
+                    .profiler
+                    .scope(tracy_client::span_location!("draw batched"), gl);
+
                 // When we have more than 10 rectangles, draw them in batches of 10.
                 for i in 0..(damage_len - 1) / 10 {
                     gl.DrawArrays(ffi::TRIANGLES, 0, 60);
@@ -2880,6 +2947,7 @@ impl GlesFrame<'_, '_> {
             gl.BindTexture(target, 0);
             gl.DisableVertexAttribArray(program.attrib_vert as u32);
             gl.DisableVertexAttribArray(program.attrib_vert_position as u32);
+            self.renderer.profiler.exit(gl, scope);
 
             if self.renderer.capabilities.contains(&Capability::Fencing) {
                 sync_lock.update_read(gl);
@@ -2970,6 +3038,10 @@ impl GlesFrame<'_, '_> {
         // render
         let gl = &self.renderer.gl;
         unsafe {
+            let _scope = self
+                .renderer
+                .profiler
+                .scope(tracy_client::span_location!("render_pixel_shader_to"), gl);
             gl.UseProgram(program.program);
 
             gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
