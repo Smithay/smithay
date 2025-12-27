@@ -15,12 +15,13 @@ use smithay::{
             default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
         },
     },
-    delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale,
-    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_layer_shell,
-    delegate_output, delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_security_context,
-    delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_control, delegate_data_device, delegate_fixes,
+    delegate_fractional_scale, delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit,
+    delegate_layer_shell, delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
+    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
     desktop::{
         space::SpaceElement,
         utils::{
@@ -53,6 +54,7 @@ use smithay::{
         compositor::{get_parent, with_states, CompositorClientState, CompositorHandler, CompositorState},
         dmabuf::DmabufFeedback,
         fifo::{FifoBarrierCachedState, FifoManagerState},
+        fixes::FixesState,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
         input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
         keyboard_shortcuts_inhibit::{
@@ -595,6 +597,8 @@ smithay::delegate_fifo!(@<BackendData: Backend + 'static> AnvilState<BackendData
 
 smithay::delegate_commit_timing!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+delegate_fixes!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
@@ -676,6 +680,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 .get_data::<ClientState>()
                 .is_none_or(|client_state| client_state.security_context.is_none())
         });
+        FixesState::new::<Self>(&dh);
 
         // init input
         let seat_name = backend_data.seat_name();
