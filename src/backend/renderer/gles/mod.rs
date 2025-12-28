@@ -423,7 +423,7 @@ pub struct GlesFrame<'frame, 'buffer> {
 
     span: EnteredSpan,
 
-    gpu_span: Option<profiler::EnteredGpuTracepoint>,
+    gpu_span: Option<profiler::GpuSpan>,
 }
 
 impl fmt::Debug for GlesFrame<'_, '_> {

@@ -21,23 +21,23 @@ struct QueryPool {
 #[repr(transparent)]
 struct GpuQuery(ffi::types::GLuint);
 
-pub struct EnteredGpuTracepoint {
+pub struct GpuSpan {
     active: bool,
 }
 
-impl Drop for EnteredGpuTracepoint {
+impl Drop for GpuSpan {
     fn drop(&mut self) {
         assert!(!self.active, "GPU span must be properly exited");
     }
 }
 
-pub struct ScopedGpuTracepoint<'a, 'b> {
-    span: Option<EnteredGpuTracepoint>,
+pub struct ScopedGpuSpan<'a, 'b> {
+    span: Option<GpuSpan>,
     profiler: &'a mut GpuProfiler,
     gl: &'b ffi::Gles2,
 }
 
-impl<'a, 'b> Drop for ScopedGpuTracepoint<'a, 'b> {
+impl<'a, 'b> Drop for ScopedGpuSpan<'a, 'b> {
     fn drop(&mut self) {
         let span = self.span.take().unwrap();
         self.profiler.exit(self.gl, span);
@@ -124,22 +124,18 @@ impl GpuProfiler {
         Self { context, pool }
     }
 
-    pub fn enter(
-        &mut self,
-        span_location: &'static tracy_client::SpanLocation,
-        gl: &ffi::Gles2,
-    ) -> EnteredGpuTracepoint {
+    pub fn enter(&mut self, span_location: &'static tracy_client::SpanLocation, gl: &ffi::Gles2) -> GpuSpan {
         if !tracy_client::Client::is_connected() {
-            return EnteredGpuTracepoint { active: false };
+            return GpuSpan { active: false };
         }
 
         let query = self.pool.next(gl);
         self.context.begin_span(span_location, query.0 as u16);
 
-        EnteredGpuTracepoint { active: true }
+        GpuSpan { active: true }
     }
 
-    pub fn exit(&mut self, gl: &ffi::Gles2, mut entered: EnteredGpuTracepoint) {
+    pub fn exit(&mut self, gl: &ffi::Gles2, mut entered: GpuSpan) {
         if !entered.active {
             return;
         }
@@ -153,10 +149,10 @@ impl GpuProfiler {
         &'a mut self,
         span_location: &'static tracy_client::SpanLocation,
         gl: &'b ffi::Gles2,
-    ) -> ScopedGpuTracepoint<'a, 'b> {
+    ) -> ScopedGpuSpan<'a, 'b> {
         let span = self.enter(span_location, gl);
 
-        ScopedGpuTracepoint {
+        ScopedGpuSpan {
             span: Some(span),
             gl,
             profiler: self,
