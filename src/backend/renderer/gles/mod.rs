@@ -1777,6 +1777,11 @@ impl Blit for GlesRenderer {
             },
         }
 
+        self.profiler.collect(&self.gl);
+        let scope = self
+            .profiler
+            .scope(tracy_client::span_location!("blit"), &self.gl);
+
         match &src_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.0.fbo)
@@ -1804,6 +1809,7 @@ impl Blit for GlesRenderer {
 
         let status = unsafe { self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
         if status != ffi::FRAMEBUFFER_COMPLETE {
+            drop(scope);
             let _ = self.unbind();
             return Err(GlesError::FramebufferBindingError);
         }
@@ -1827,13 +1833,17 @@ impl Blit for GlesRenderer {
             );
             self.gl.GetError()
         };
+        drop(scope);
 
         if errno == ffi::INVALID_OPERATION {
             Err(GlesError::BlitError)
         } else {
             if let Some(sync_point) = self.export_sync_point() {
+                // Sync after glFlush in export_sync_point() and right before returning.
+                self.profiler.sync_gpu(&self.gl);
                 return Ok(sync_point);
             }
+            self.profiler.sync_gpu(&self.gl);
 
             unsafe {
                 self.gl.Finish();
