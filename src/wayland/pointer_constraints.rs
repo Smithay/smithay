@@ -24,7 +24,7 @@ use wayland_server::{
 use super::compositor::{self, RegionAttributes};
 use crate::{
     input::{pointer::PointerHandle, SeatHandler},
-    utils::{Logical, Point},
+    utils::{Logical, Point, Rectangle},
     wayland::seat::PointerUserData,
 };
 
@@ -560,6 +560,78 @@ where
         };
 
         remove_constraint(&data.surface, pointer);
+    }
+}
+
+/// Helper for clamping the mouse position to the pointer constraint region
+#[derive(Default, Debug)]
+pub struct PointerConstraintShape {
+    rects: Vec<Rectangle<f64, Logical>>,
+}
+
+impl PointerConstraintShape {
+    /// Build the shape from WlRegion attrs
+    pub fn from_region(region: &RegionAttributes) -> Self {
+        let mut shape = PointerConstraintShape::default();
+        for (kind, rect) in region.rects.iter().copied() {
+            match kind {
+                compositor::RectangleKind::Add => {
+                    shape.add_rect(rect);
+                }
+                compositor::RectangleKind::Subtract => {
+                    shape.subtract_rect(rect);
+                }
+            }
+        }
+        shape
+    }
+
+    /// Add the specified rectangle to the shape.
+    pub fn add_rect(&mut self, r: Rectangle<i32, Logical>) {
+        if !r.is_empty() {
+            self.rects.push(r.to_f64());
+        }
+    }
+
+    /// Subtract the specified rectangle from the shape.
+    pub fn subtract_rect(&mut self, s: Rectangle<i32, Logical>) {
+        if s.is_empty() {
+            return;
+        }
+
+        let mut new_rects: Vec<_> = Vec::with_capacity(self.rects.len());
+        for r in self.rects.iter() {
+            new_rects.extend(r.subtract_rect(s.to_f64()));
+        }
+        self.rects = new_rects;
+    }
+
+    /// Clamp the point to this shape.
+    pub fn clamp_point(&self, point: Point<f64, Logical>) -> Point<f64, Logical> {
+        // TODO: Perhaps this can be implemented in a simpler way, by taking into account the motion delta
+
+        let mut best = point;
+        let mut best_dist: f64 = f64::INFINITY;
+
+        for r in self.rects.iter() {
+            if r.contains(point) {
+                // already inside the shape, no need for constrain
+                return point;
+            }
+
+            let constrained = point.constrain(*r);
+            let delta = point - constrained;
+
+            // This stores `dist^2`
+            let dist = delta.x.powi(2) + delta.y.powi(2);
+
+            if dist < best_dist {
+                best_dist = dist;
+                best = constrained;
+            }
+        }
+
+        best
     }
 }
 
