@@ -22,7 +22,7 @@ use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan
 pub mod element;
 mod error;
 pub mod format;
-mod profiler;
+pub mod profiler;
 mod shaders;
 mod texture;
 mod uniform;
@@ -30,10 +30,12 @@ mod version;
 
 pub use error::*;
 use format::*;
-pub use profiler::GpuSpan;
 pub use shaders::*;
 pub use texture::*;
 pub use uniform::*;
+
+use crate::gpu_span_location;
+use profiler::{GpuSpan, SpanLocation};
 
 use self::version::GlVersion;
 
@@ -1778,9 +1780,7 @@ impl Blit for GlesRenderer {
         }
 
         self.profiler.collect(&self.gl);
-        let scope = self
-            .profiler
-            .scope(tracy_client::span_location!("blit"), &self.gl);
+        let scope = self.profiler.scope(gpu_span_location!("blit"), &self.gl);
 
         match &src_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
@@ -2102,11 +2102,7 @@ impl GlesFrame<'_, '_> {
     /// This is the recommended way to profile custom GL rendering code. It combines
     /// [`with_context()`](Self::with_context) with automatic GPU span entry and exit for profiling.
     #[instrument(level = "trace", parent = &self.span, skip_all)]
-    pub fn with_profiled_context<F, R>(
-        &mut self,
-        location: &'static tracy_client::SpanLocation,
-        func: F,
-    ) -> Result<R, GlesError>
+    pub fn with_profiled_context<F, R>(&mut self, location: SpanLocation, func: F) -> Result<R, GlesError>
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
@@ -2128,12 +2124,14 @@ impl GlesFrame<'_, '_> {
     /// # Example
     ///
     /// ```ignore
-    /// let span = frame.enter_gpu_span(tracy_client::span_location!("outer"));
-    /// frame.with_context(|gl| { /* ... */ })?;
+    /// let span = frame.enter_gpu_span(gpu_span_location!("outer"));
+    /// let rv = frame.with_context(|gl| { /* ... */ });
     /// frame.exit_gpu_span(span);
+    /// // Must not early return before existing GPU span.
+    /// rv?;
     /// ```
     #[must_use]
-    pub fn enter_gpu_span(&mut self, location: &'static tracy_client::SpanLocation) -> GpuSpan {
+    pub fn enter_gpu_span(&mut self, location: SpanLocation) -> GpuSpan {
         self.renderer.profiler.enter(location, &self.renderer.gl)
     }
 
@@ -2194,9 +2192,7 @@ impl Renderer for GlesRenderer {
         // Collect last frame's timestamps.
         self.profiler.collect(&self.gl);
 
-        let gpu_span = self
-            .profiler
-            .enter(tracy_client::span_location!("render"), &self.gl);
+        let gpu_span = self.profiler.enter(gpu_span_location!("render"), &self.gl);
 
         unsafe {
             self.gl.Viewport(0, 0, output_size.w, output_size.h);
@@ -2370,7 +2366,7 @@ impl Frame for GlesFrame<'_, '_> {
         let scope = self
             .renderer
             .profiler
-            .enter(tracy_client::span_location!("clear"), &self.renderer.gl);
+            .enter(gpu_span_location!("clear"), &self.renderer.gl);
         unsafe {
             self.renderer.gl.Disable(ffi::BLEND);
         }
@@ -2403,7 +2399,7 @@ impl Frame for GlesFrame<'_, '_> {
         let scope = self
             .renderer
             .profiler
-            .enter(tracy_client::span_location!("draw_solid"), &self.renderer.gl);
+            .enter(gpu_span_location!("draw_solid"), &self.renderer.gl);
         if is_opaque {
             unsafe {
                 self.renderer.gl.Disable(ffi::BLEND);
@@ -2475,7 +2471,7 @@ impl GlesFrame<'_, '_> {
         let finish_gpu_span = self
             .renderer
             .profiler
-            .enter(tracy_client::span_location!("finish_internal"), &self.renderer.gl);
+            .enter(gpu_span_location!("finish_internal"), &self.renderer.gl);
         unsafe {
             self.renderer.gl.Disable(ffi::SCISSOR_TEST);
             self.renderer.gl.Disable(ffi::BLEND);
@@ -2490,7 +2486,7 @@ impl GlesFrame<'_, '_> {
             let scope = self
                 .renderer
                 .profiler
-                .enter(tracy_client::span_location!("cleanup"), &self.renderer.gl);
+                .enter(gpu_span_location!("cleanup"), &self.renderer.gl);
             self.renderer.cleanup();
             self.renderer.profiler.exit(&self.renderer.gl, scope);
         }
@@ -2596,7 +2592,7 @@ impl GlesFrame<'_, '_> {
         let _scope = self
             .renderer
             .profiler
-            .scope(tracy_client::span_location!("draw_solid"), &self.renderer.gl);
+            .scope(gpu_span_location!("draw_solid"), &self.renderer.gl);
         unsafe {
             gl.UseProgram(self.renderer.solid_program.program);
             gl.Uniform4f(
@@ -2898,7 +2894,7 @@ impl GlesFrame<'_, '_> {
             let scope = self
                 .renderer
                 .profiler
-                .enter(tracy_client::span_location!("render_texture"), gl);
+                .enter(gpu_span_location!("render_texture"), gl);
             gl.ActiveTexture(ffi::TEXTURE0);
             gl.BindTexture(target, tex.0.texture);
             gl.TexParameteri(
@@ -2969,7 +2965,7 @@ impl GlesFrame<'_, '_> {
                 let _scope = self
                     .renderer
                     .profiler
-                    .scope(tracy_client::span_location!("draw instanced"), gl);
+                    .scope(gpu_span_location!("draw instanced"), gl);
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
 
@@ -2978,7 +2974,7 @@ impl GlesFrame<'_, '_> {
                 let _scope = self
                     .renderer
                     .profiler
-                    .scope(tracy_client::span_location!("draw batched"), gl);
+                    .scope(gpu_span_location!("draw batched"), gl);
 
                 // When we have more than 10 rectangles, draw them in batches of 10.
                 for i in 0..(damage_len - 1) / 10 {
@@ -3097,7 +3093,7 @@ impl GlesFrame<'_, '_> {
             let _scope = self
                 .renderer
                 .profiler
-                .scope(tracy_client::span_location!("render_pixel_shader_to"), gl);
+                .scope(gpu_span_location!("render_pixel_shader_to"), gl);
             gl.UseProgram(program.program);
 
             gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
