@@ -30,6 +30,7 @@ mod version;
 
 pub use error::*;
 use format::*;
+pub use profiler::GpuSpan;
 pub use shaders::*;
 pub use texture::*;
 pub use uniform::*;
@@ -2084,6 +2085,51 @@ impl GlesFrame<'_, '_> {
         F: FnOnce(&ffi::Gles2) -> R,
     {
         Ok(func(&self.renderer.gl))
+    }
+
+    /// Run custom code in the GL context with GPU profiling.
+    ///
+    /// This is the recommended way to profile custom GL rendering code. It combines
+    /// [`with_context()`](Self::with_context) with automatic GPU span entry and exit for profiling.
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
+    pub fn with_profiled_context<F, R>(
+        &mut self,
+        location: &'static tracy_client::SpanLocation,
+        func: F,
+    ) -> Result<R, GlesError>
+    where
+        F: FnOnce(&ffi::Gles2) -> R,
+    {
+        let span = self.renderer.profiler.enter(location, &self.renderer.gl);
+        let result = func(&self.renderer.gl);
+        self.renderer.profiler.exit(&self.renderer.gl, span);
+        Ok(result)
+    }
+
+    /// Enter a GPU profiling span for custom rendering code.
+    ///
+    /// The returned [`GpuSpan`] must be passed to [`exit_gpu_span()`](Self::exit_gpu_span) after the custom
+    /// code completes. For simpler use cases, consider using
+    /// [`with_profiled_context()`](Self::with_profiled_context) instead.
+    ///
+    /// This method is useful when you need more control over span boundaries, such as when profiling code
+    /// that spans multiple `with_context` calls or when creating nested profiling spans.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let span = frame.enter_gpu_span(tracy_client::span_location!("outer"));
+    /// frame.with_context(|gl| { /* ... */ })?;
+    /// frame.exit_gpu_span(span);
+    /// ```
+    #[must_use]
+    pub fn enter_gpu_span(&mut self, location: &'static tracy_client::SpanLocation) -> GpuSpan {
+        self.renderer.profiler.enter(location, &self.renderer.gl)
+    }
+
+    /// Exit a GPU profiling span started with [`enter_gpu_span()`](Self::enter_gpu_span).
+    pub fn exit_gpu_span(&mut self, span: GpuSpan) {
+        self.renderer.profiler.exit(&self.renderer.gl, span)
     }
 }
 

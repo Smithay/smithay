@@ -21,6 +21,16 @@ struct QueryPool {
 #[repr(transparent)]
 struct GpuQuery(ffi::types::GLuint);
 
+/// An active GPU profiling span.
+///
+/// This type represents a GPU profiling span that has been entered but not yet exited. It must be passed to
+/// `exit_gpu_span()` when the profiled code section is complete.
+///
+/// # Panics
+///
+/// Dropping this type without calling `exit_gpu_span()` will panic to ensure GPU profiling spans are
+/// properly closed.
+#[derive(Debug)]
 pub struct GpuSpan {
     active: bool,
 }
