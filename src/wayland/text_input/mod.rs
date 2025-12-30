@@ -62,7 +62,8 @@ use crate::input::{Seat, SeatHandler};
 pub use text_input_handle::TextInputHandle;
 pub use text_input_handle::TextInputUserData;
 
-use super::input_method::InputMethodHandle;
+use super::input_method;
+use super::input_method_v3;
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -149,18 +150,24 @@ where
 
                 let user_data = seat.user_data();
                 user_data.insert_if_missing(TextInputHandle::default);
-                user_data.insert_if_missing(InputMethodHandle::default);
+                user_data.insert_if_missing(input_method::InputMethodHandle::default);
+                user_data.insert_if_missing(input_method_v3::InputMethodHandle::default);
                 let handle = user_data.get::<TextInputHandle>().unwrap();
-                let input_method_handle = user_data.get::<InputMethodHandle>().unwrap();
+                let input_method_handle = user_data.get::<input_method::InputMethodHandle>().unwrap();
+                let input_method_v3_handle = user_data.get::<input_method_v3::InputMethodHandle>().unwrap();
                 let instance = data_init.init(
                     id,
                     TextInputUserData {
                         handle: handle.clone(),
                         input_method_handle: input_method_handle.clone(),
+                        input_method_v3_handle: input_method_v3_handle.clone(),
                     },
                 );
                 handle.add_instance(&instance);
                 if input_method_handle.has_instance() {
+                    handle.enter();
+                }
+                if input_method_v3_handle.has_instance() {
                     handle.enter();
                 }
             }

@@ -1,7 +1,7 @@
 use std::mem;
 use std::sync::{Arc, Mutex};
 
-use tracing::debug;
+use tracing::{debug, warn};
 use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{
     self, ChangeCause, ContentHint, ContentPurpose, ZwpTextInputV3,
 };
@@ -10,7 +10,8 @@ use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::input::SeatHandler;
 use crate::utils::{Logical, Rectangle};
-use crate::wayland::input_method::InputMethodHandle;
+use crate::wayland::input_method;
+use crate::wayland::input_method_v3;
 
 use super::TextInputManagerState;
 
@@ -185,7 +186,8 @@ impl TextInputHandle {
 #[derive(Debug)]
 pub struct TextInputUserData {
     pub(super) handle: TextInputHandle,
-    pub(crate) input_method_handle: InputMethodHandle,
+    pub(crate) input_method_handle: input_method::InputMethodHandle,
+    pub(crate) input_method_v3_handle: input_method_v3::InputMethodHandle,
 }
 
 impl<D> Dispatch<ZwpTextInputV3, TextInputUserData, D> for TextInputManagerState
@@ -208,10 +210,15 @@ where
             data.handle.increment_serial(resource);
         }
 
-        // Discard requsets without any active input method instance.
-        if !data.input_method_handle.has_instance() {
+        // Discard requests without any active input method instance.
+        if !data.input_method_handle.has_instance() && !data.input_method_v3_handle.has_instance() {
             debug!("discarding text-input request without IME running");
             return;
+        }
+
+        if data.input_method_handle.has_instance() && data.input_method_v3_handle.has_instance() {
+            warn!("Two separate versions of input method registered for the seat. Expect conflicts.");
+            // We'll try to drive both IM instances because it makes the code simpler. The results are going to be unexpected no matter what strategy is chosen now.
         }
 
         let focus = match data.handle.focus() {
@@ -273,12 +280,14 @@ where
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
                         data.input_method_handle.activate_input_method(state, &focus);
+                        data.input_method_v3_handle.activate_input_method(state, &focus);
                     }
                     Some(false) => {
                         *active_text_input_id = None;
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
                         data.input_method_handle.deactivate_input_method(state);
+                        data.input_method_v3_handle.deactivate_input_method(state);
                         return;
                     }
                     None => {
@@ -293,7 +302,10 @@ where
                 }
 
                 if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
+                    data.input_method_handle.with_instance(|input_method| {
+                        input_method.object.surrounding_text(text.clone(), cursor, anchor)
+                    });
+                    data.input_method_v3_handle.with_instance(move |input_method| {
                         input_method.object.surrounding_text(text, cursor, anchor)
                     });
                 }
@@ -302,10 +314,16 @@ where
                     data.input_method_handle.with_instance(move |input_method| {
                         input_method.object.text_change_cause(cause);
                     });
+                    data.input_method_v3_handle.with_instance(move |input_method| {
+                        input_method.object.text_change_cause(cause);
+                    });
                 }
 
                 if let Some((hint, purpose)) = new_state.content_type.take() {
                     data.input_method_handle.with_instance(move |input_method| {
+                        input_method.object.content_type(hint, purpose);
+                    });
+                    data.input_method_v3_handle.with_instance(move |input_method| {
                         input_method.object.content_type(hint, purpose);
                     });
                 }
@@ -313,11 +331,13 @@ where
                 if let Some(rect) = new_state.cursor_rectangle.take() {
                     data.input_method_handle
                         .set_text_input_rectangle::<D>(state, rect);
+                    data.input_method_v3_handle.set_cursor_rectangle::<D>(state, rect);
                 }
 
                 data.input_method_handle.with_instance(|input_method| {
                     input_method.done();
                 });
+                data.input_method_v3_handle.done();
             }
             zwp_text_input_v3::Request::Destroy => {
                 // Nothing to do
@@ -348,6 +368,7 @@ where
 
         if deactivate_im {
             data.input_method_handle.deactivate_input_method(state);
+            data.input_method_v3_handle.deactivate_input_method(state);
         }
     }
 }

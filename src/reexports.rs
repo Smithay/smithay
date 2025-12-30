@@ -19,6 +19,8 @@ pub use udev;
 #[cfg(feature = "wayland_frontend")]
 pub use wayland_protocols;
 #[cfg(feature = "wayland_frontend")]
+pub use wayland_protocols_experimental;
+#[cfg(feature = "wayland_frontend")]
 pub use wayland_protocols_misc;
 #[cfg(feature = "wayland_frontend")]
 pub use wayland_protocols_wlr;
