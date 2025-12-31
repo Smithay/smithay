@@ -349,6 +349,24 @@ impl PixmanFrame<'_, '_> {
 
         Ok(())
     }
+
+    /// Run custom drawing code on the framebuffer used by this frame.
+    ///
+    /// You are given mutable access to the underlying [`pixman::Image`].
+    /// The state of the image is considered an implementation detail, some modifications may have undesired side effects.
+    ///
+    /// # Safety
+    ///
+    /// - The image must still referr to the same memory region after `func` was executed.
+    pub unsafe fn with_framebuffer<R, F>(&mut self, func: F) -> Result<R, PixmanError>
+    where
+        F: for<'a> FnOnce(&'a mut Image<'static, 'static>) -> R,
+    {
+        match &mut self.target.0 {
+            PixmanTargetInternal::Dmabuf { ref mut image, .. } => image.accessor()?.with_image(func),
+            PixmanTargetInternal::Image(ref mut image) => Ok(func(image)),
+        }
+    }
 }
 
 impl Frame for PixmanFrame<'_, '_> {
