@@ -416,16 +416,7 @@ impl<N: Coordinate, Kind> Point<N, Kind> {
     #[inline]
     #[must_use = "this returns the result of the operation, without modifying the original"]
     pub fn to_size(self) -> Size<N, Kind> {
-        debug_assert!(
-            self.x.non_negative() && self.y.non_negative(),
-            "Attempting to create a `Size` of negative size: {:?}",
-            (self.x, self.y)
-        );
-        Size {
-            w: self.x,
-            h: self.y,
-            _kind: std::marker::PhantomData,
-        }
+        Size::new(self.x, self.y)
     }
 
     /// Convert this [`Point`] to a [`Size`] with the same coordinates
@@ -784,11 +775,8 @@ pub struct Size<N, Kind> {
 impl<N: Coordinate, Kind> Size<N, Kind> {
     /// Create a new Size
     pub fn new(w: N, h: N) -> Size<N, Kind> {
-        debug_assert!(
-            w.non_negative() && h.non_negative(),
-            "Attempting to create a `Size` of negative size: {:?}",
-            (w, h)
-        );
+        let w = w.max(N::ZERO);
+        let h = h.max(N::ZERO);
         Size {
             w,
             h,
@@ -1879,7 +1867,7 @@ impl From<Transform> for WlTransform {
 
 #[cfg(test)]
 mod tests {
-    use super::{Logical, Rectangle, Size, Transform};
+    use super::{Logical, Point, Rectangle, Size, Transform};
 
     #[test]
     fn transform_rect_ident() {
@@ -2134,5 +2122,14 @@ mod tests {
         assert_eq!(smaller - bigger, Size::from((0, 0)));
         smaller -= bigger;
         assert_eq!(smaller, Size::from((0, 0)));
+    }
+
+    #[test]
+    fn new_size_negative() {
+        let one = Size::<_, Logical>::new(-1, -2);
+        assert_eq!(one, Size::new(0, 0));
+
+        let two = Point::<_, Logical>::new(-1, 20).to_size();
+        assert_eq!(two, Size::new(0, 20));
     }
 }
