@@ -1,6 +1,6 @@
 //! Cycles through initial commit-configure sequence, over and over again (every 1s)
 
-use std::{convert::TryInto, time::Duration};
+use std::time::Duration;
 
 use smithay_client_toolkit::reexports::{calloop, client as wayland_client};
 
@@ -27,7 +27,6 @@ use tracing::info;
 use wayland_client::{
     protocol::{
         wl_output::{self, WlOutput},
-        wl_shm,
         wl_surface::{self, WlSurface},
     },
     Connection, QueueHandle,
@@ -173,63 +172,15 @@ impl App {
             return;
         }
 
-        let width = self.width;
-        let height = self.height;
-        let stride = self.width as i32 * 4;
-
-        let buffer = self.buffer.get_or_insert_with(|| {
-            self.pool
-                .create_buffer(width as i32, height as i32, stride, wl_shm::Format::Argb8888)
-                .unwrap()
-                .0
-        });
-
-        let canvas = match self.pool.canvas(buffer) {
-            Some(canvas) => canvas,
-            None => {
-                // This should be rare, but if the compositor has not released the previous
-                // buffer, we need double-buffering.
-                let (second_buffer, canvas) = self
-                    .pool
-                    .create_buffer(
-                        self.width as i32,
-                        self.height as i32,
-                        stride,
-                        wl_shm::Format::Argb8888,
-                    )
-                    .unwrap();
-                *buffer = second_buffer;
-                canvas
-            }
-        };
-
-        // Draw to the window:
-        canvas.chunks_exact_mut(4).enumerate().for_each(|(index, chunk)| {
-            let x = ((index + self.shift as usize) % width as usize) as u32;
-            let y = (index / width as usize) as u32;
-
-            let a = 0xFF;
-            let r = u32::min(((width - x) * 0xFF) / width, ((height - y) * 0xFF) / height);
-            let g = u32::min((x * 0xFF) / width, ((height - y) * 0xFF) / height);
-            let b = u32::min(((width - x) * 0xFF) / width, (y * 0xFF) / height);
-            let color = (a << 24) + (r << 16) + (g << 8) + b;
-
-            let array: &mut [u8; 4] = chunk.try_into().unwrap();
-            *array = color.to_le_bytes();
-        });
-
-        self.shift = (self.shift + 1) % width;
-
-        self.window
-            .wl_surface()
-            .damage_buffer(0, 0, self.width as i32, self.height as i32);
-
-        self.window
-            .wl_surface()
-            .frame(qh, self.window.wl_surface().clone());
-
-        buffer.attach_to(self.window.wl_surface()).expect("buffer attach");
-        self.window.commit();
+        test_clients::draw(
+            qh,
+            &self.window,
+            &mut self.pool,
+            &mut self.buffer,
+            self.width,
+            self.height,
+            &mut self.shift,
+        );
     }
 }
 
