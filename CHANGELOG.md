@@ -105,6 +105,8 @@ You also no longer need to manually set `LayerSurfaceAttributes::initial_configu
 
 ### Additions
 
+- ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
+
 `crate::input::dnd` was introduced to enable implementation of Drag&Drop operations on custom types.
 Internally the same types and traits are used to implement `wayland::data_device` dnd-operations and XDND
 operations (see below).
