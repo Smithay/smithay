@@ -1,0 +1,35 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="The aim of the color management extension is to allow clients to know the color properties of outputs, and to tell the compositor about the color properties of their content on surfaces. Doing this enables a compositor to perform automatic color management of content for different outputs according to how content is intended to look like."><title>wayland_protocols::wp::color_management - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="wayland_protocols" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module color_management</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../wayland_protocols/index.html">wayland_<wbr>protocols</a><span class="version">0.32.10</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module color_<wbr>management</a></h2><h3><a href="#modules">Module Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In wayland_<wbr>protocols::<wbr>wp</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">wayland_protocols</a>::<wbr><a href="../index.html">wp</a></div><h1>Module <span>color_<wbr>management</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/wayland_protocols/wp.rs.html#20">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>staging</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The aim of the color management extension is to allow clients to know
+the color properties of outputs, and to tell the compositor about the color
+properties of their content on surfaces. Doing this enables a compositor
+to perform automatic color management of content for different outputs
+according to how content is intended to look like.</p>
+<p>The color properties are represented as an image description object which
+is immutable after it has been created. A wl_output always has an
+associated image description that clients can observe. A wl_surface
+always has an associated preferred image description as a hint chosen by
+the compositor that clients can also observe. Clients can set an image
+description on a wl_surface to denote the color characteristics of the
+surface contents.</p>
+<p>An image description includes SDR and HDR colorimetry and encoding, HDR
+metadata, and viewing environment parameters. An image description does
+not include the properties set through color-representation extension.
+It is expected that the color-representation extension is used in
+conjunction with the color management extension when necessary,
+particularly with the YUV family of pixel formats.</p>
+<p>Recommendation ITU-T H.273
+“Coding-independent code points for video signal type identification”
+shall be referred to as simply H.273 here.</p>
+<p>The color-and-hdr repository
+(<a href="https://gitlab.freedesktop.org/pq/color-and-hdr">https://gitlab.freedesktop.org/pq/color-and-hdr</a>) contains
+background information on the protocol design and legacy color management.
+It also contains a glossary, learning resources for digital color, tools,
+samples and more.</p>
+<p>The terminology used in this protocol is based on common color science and
+color encoding terminology where possible. The glossary in the color-and-hdr
+repository shall be the authority on the definition of terms in this
+protocol.</p>
+<p>Warning! The protocol described in this file is currently in the testing
+phase. Backward compatible changes may be added together with the
+corresponding interface version bump. Backward incompatible changes can
+only be done by creating a new major version of the extension.</p>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="v1/index.html" title="mod wayland_protocols::wp::color_management::v1">v1</a></dt></dl></section></div></main></body></html>

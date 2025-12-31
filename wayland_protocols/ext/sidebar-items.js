@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["background_effect","data_control","foreign_toplevel_list","idle_notify","image_capture_source","image_copy_capture","session_lock","transient_seat","workspace"]};

@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.25.0"><title>winit::changelog::v0_25 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_25</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_25</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#0250" title="0.25.0">0.25.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_25</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#26">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="0250"><a class="doc-anchor" href="#0250">§</a>0.25.0</h3>
+<ul>
+<li><strong>Breaking:</strong> On macOS, replace <code>WindowBuilderExtMacOS::with_activation_policy</code> with <code>EventLoopExtMacOS::set_activation_policy</code></li>
+<li>On macOS, wait with activating the application until the application has initialized.</li>
+<li>On macOS, fix creating new windows when the application has a main menu.</li>
+<li>On Windows, fix fractional deltas for mouse wheel device events.</li>
+<li>On macOS, fix segmentation fault after dropping the main window.</li>
+<li>On Android, <code>InputEvent::KeyEvent</code> is partially implemented providing the key scancode.</li>
+<li>Added <code>is_maximized</code> method to <code>Window</code>.</li>
+<li>On Windows, fix bug where clicking the decoration bar would make the cursor blink.</li>
+<li>On Windows, fix bug causing newly created windows to erroneously display the “wait” (spinning) cursor.</li>
+<li>On macOS, wake up the event loop immediately when a redraw is requested.</li>
+<li>On Windows, change the default window size (1024x768) to match the default on other desktop platforms (800x600).</li>
+<li>On Windows, fix bug causing mouse capture to not be released.</li>
+<li>On Windows, fix fullscreen not preserving minimized/maximized state.</li>
+<li>On Android, unimplemented events are marked as unhandled on the native event loop.</li>
+<li>On Windows, added <code>WindowBuilderExtWindows::with_menu</code> to set a custom menu at window creation time.</li>
+<li>On Android, bump <code>ndk</code> and <code>ndk-glue</code> to 0.3: use predefined constants for event <code>ident</code>.</li>
+<li>On macOS, fix objects captured by the event loop closure not being dropped on panic.</li>
+<li>On Windows, fixed <code>WindowEvent::ThemeChanged</code> not properly firing and fixed <code>Window::theme</code> returning the wrong theme.</li>
+<li>On Web, added support for <code>DeviceEvent::MouseMotion</code> to listen for relative mouse movements.</li>
+<li>Added <code>WindowBuilder::with_position</code> to allow setting the position of a <code>Window</code> on creation. Supported on Windows, macOS and X11.</li>
+<li>Added <code>Window::drag_window</code>. Implemented on Windows, macOS, X11 and Wayland.</li>
+<li>On X11, bump <code>mio</code> to 0.7.</li>
+<li>On Windows, added <code>WindowBuilderExtWindows::with_owner_window</code> to allow creating popup windows.</li>
+<li>On Windows, added <code>WindowExtWindows::set_enable</code> to allow creating modal popup windows.</li>
+<li>On macOS, emit <code>RedrawRequested</code> events immediately while the window is being resized.</li>
+<li>Implement <code>Default</code>, <code>Hash</code>, and <code>Eq</code> for <code>LogicalPosition</code>, <code>PhysicalPosition</code>, <code>LogicalSize</code>, and <code>PhysicalSize</code>.</li>
+<li>On macOS, initialize the Menu Bar with minimal defaults. (Can be prevented using <code>enable_default_menu_creation</code>)</li>
+<li>On macOS, change the default behavior for first click when the window was unfocused. Now the window becomes focused and then emits a <code>MouseInput</code> event on a “first mouse click”.</li>
+<li>Implement mint (math interoperability standard types) conversions (under feature flag <code>mint</code>).</li>
+</ul>
+</div></details></section></div></main></body></html>

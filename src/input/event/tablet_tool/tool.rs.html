@@ -1,0 +1,153 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/input-0.9.1/src/event/tablet_tool/tool.rs`."><title>tool.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="input" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">input/event/tablet_tool/</div>tool.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use crate</span>::{ffi, AsRaw, FromRaw};
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="doccomment">/// Available tool types for a device with the `DeviceCapability::TabletTool` capability.
+<a href=#4 id=4 data-nosnippet>4</a>///
+<a href=#5 id=5 data-nosnippet>5</a>/// The tool type defines the default usage of the tool as advertised by the
+<a href=#6 id=6 data-nosnippet>6</a>/// manufacturer. Multiple different physical tools may share the same tool type, e.g. a
+<a href=#7 id=7 data-nosnippet>7</a>/// Wacom Classic Pen, Wacom Pro Pen and a Wacom Grip Pen are all of type
+<a href=#8 id=8 data-nosnippet>8</a>/// `TabletToolType::Pen`. Use `TabletTool::tool_id` to get a specific model where
+<a href=#9 id=9 data-nosnippet>9</a>/// applicable.
+<a href=#10 id=10 data-nosnippet>10</a>///
+<a href=#11 id=11 data-nosnippet>11</a>/// Note that on some device, the eraser tool is on the tail end of a pen device. On
+<a href=#12 id=12 data-nosnippet>12</a>/// other devices, e.g. MS Surface 3, the eraser is the pen tip while a button is held
+<a href=#13 id=13 data-nosnippet>13</a>/// down.
+<a href=#14 id=14 data-nosnippet>14</a>///
+<a href=#15 id=15 data-nosnippet>15</a>/// ## Note
+<a href=#16 id=16 data-nosnippet>16</a>///
+<a href=#17 id=17 data-nosnippet>17</a>/// The `TabletToolType` can only describe the default physical type of the device. For
+<a href=#18 id=18 data-nosnippet>18</a>/// devices with adjustable physical properties the tool type remains the same, i.e.
+<a href=#19 id=19 data-nosnippet>19</a>/// putting a Wacom stroke nib into a classic pen leaves the tool type as
+<a href=#20 id=20 data-nosnippet>20</a>/// `TabletToolType::Pen`.
+<a href=#21 id=21 data-nosnippet>21</a></span><span class="attr">#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+<a href=#22 id=22 data-nosnippet>22</a>#[non_exhaustive]
+<a href=#23 id=23 data-nosnippet>23</a></span><span class="kw">pub enum </span>TabletToolType {
+<a href=#24 id=24 data-nosnippet>24</a>    <span class="doccomment">/// A generic pen.
+<a href=#25 id=25 data-nosnippet>25</a>    </span>Pen,
+<a href=#26 id=26 data-nosnippet>26</a>    <span class="doccomment">/// Eraser.
+<a href=#27 id=27 data-nosnippet>27</a>    </span>Eraser,
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="doccomment">/// A paintbrush-like tool.
+<a href=#29 id=29 data-nosnippet>29</a>    </span>Brush,
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="doccomment">/// Physical drawing tool, e.g. Wacom Inking Pen
+<a href=#31 id=31 data-nosnippet>31</a>    </span>Pencil,
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="doccomment">/// An airbrush-like tool.
+<a href=#33 id=33 data-nosnippet>33</a>    </span>Airbrush,
+<a href=#34 id=34 data-nosnippet>34</a>    <span class="doccomment">/// A mouse bound to the tablet.
+<a href=#35 id=35 data-nosnippet>35</a>    </span>Mouse,
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="doccomment">/// A mouse tool with a lens.
+<a href=#37 id=37 data-nosnippet>37</a>    </span>Lens,
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="doccomment">/// A rotary device with positional and rotation data
+<a href=#39 id=39 data-nosnippet>39</a>    </span><span class="attr">#[cfg(feature = <span class="string">"libinput_1_14"</span>)]
+<a href=#40 id=40 data-nosnippet>40</a>    </span>Totem,
+<a href=#41 id=41 data-nosnippet>41</a>}
+<a href=#42 id=42 data-nosnippet>42</a>
+<a href=#43 id=43 data-nosnippet>43</a><span class="macro">ffi_ref_struct!</span> {
+<a href=#44 id=44 data-nosnippet>44</a>    <span class="doccomment">/// An object representing a tool being used by a device with the
+<a href=#45 id=45 data-nosnippet>45</a>    /// `DeviceCapability::TabletTool` capability.
+<a href=#46 id=46 data-nosnippet>46</a>    ///
+<a href=#47 id=47 data-nosnippet>47</a>    /// Tablet events generated by such a device are bound to a specific tool rather than
+<a href=#48 id=48 data-nosnippet>48</a>    /// coming from the device directly. Depending on the hardware it is possible to track
+<a href=#49 id=49 data-nosnippet>49</a>    /// the same physical tool across multiple `Device`s, see
+<a href=#50 id=50 data-nosnippet>50</a>    /// [Tracking unique tools](https://wayland.freedesktop.org/libinput/doc/latest/tablet-support.html#tablet-serial-numbers).
+<a href=#51 id=51 data-nosnippet>51</a>    </span><span class="kw">struct </span>TabletTool, ffi::libinput_tablet_tool, ffi::libinput_tablet_tool_ref, ffi::libinput_tablet_tool_unref
+<a href=#52 id=52 data-nosnippet>52</a>}
+<a href=#53 id=53 data-nosnippet>53</a>
+<a href=#54 id=54 data-nosnippet>54</a><span class="kw">impl </span>TabletTool {
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="macro">ffi_func!</span>(
+<a href=#56 id=56 data-nosnippet>56</a>    <span class="doccomment">/// Return the serial number of a tool.
+<a href=#57 id=57 data-nosnippet>57</a>    ///
+<a href=#58 id=58 data-nosnippet>58</a>    /// If the tool does not report a serial number, this function returns zero.
+<a href=#59 id=59 data-nosnippet>59</a>    /// See [Tracking unique tools](https://wayland.freedesktop.org/libinput/doc/latest/tablet-support.html#tablet-serial-numbers) for details.
+<a href=#60 id=60 data-nosnippet>60</a>    </span><span class="kw">pub fn </span>serial, ffi::libinput_tablet_tool_get_serial, u64);
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="macro">ffi_func!</span>(
+<a href=#62 id=62 data-nosnippet>62</a>    <span class="doccomment">/// Return the tool ID for a tool object.
+<a href=#63 id=63 data-nosnippet>63</a>    ///
+<a href=#64 id=64 data-nosnippet>64</a>    /// If nonzero, this number identifies the specific type of the tool with more
+<a href=#65 id=65 data-nosnippet>65</a>    /// precision than the type returned in `tool_type`,
+<a href=#66 id=66 data-nosnippet>66</a>    /// see [Vendor-specific tablet tool types](https://wayland.freedesktop.org/libinput/doc/latest/tablet-support.html#tablet-tool-types).
+<a href=#67 id=67 data-nosnippet>67</a>    /// Not all tablets support a tool ID.
+<a href=#68 id=68 data-nosnippet>68</a>    ///
+<a href=#69 id=69 data-nosnippet>69</a>    /// Tablets known to support tool IDs include the Wacom Intuos 3, 4, 5, Wacom Cintiq
+<a href=#70 id=70 data-nosnippet>70</a>    /// and Wacom Intuos Pro series.
+<a href=#71 id=71 data-nosnippet>71</a>    </span><span class="kw">pub fn </span>tool_id, ffi::libinput_tablet_tool_get_tool_id, u64);
+<a href=#72 id=72 data-nosnippet>72</a>
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="doccomment">/// Return the tool type for a tool object,
+<a href=#74 id=74 data-nosnippet>74</a>    /// see [Vendor-specific tablet tool types](https://wayland.freedesktop.org/libinput/doc/latest/tablet-support.html#tablet-tool-types)
+<a href=#75 id=75 data-nosnippet>75</a>    /// for details.
+<a href=#76 id=76 data-nosnippet>76</a>    ///
+<a href=#77 id=77 data-nosnippet>77</a>    /// A return value of `None` means the tool type is not known.
+<a href=#78 id=78 data-nosnippet>78</a>    </span><span class="kw">pub fn </span>tool_type(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;TabletToolType&gt; {
+<a href=#79 id=79 data-nosnippet>79</a>        <span class="kw">match unsafe </span>{ ffi::libinput_tablet_tool_get_type(<span class="self">self</span>.as_raw_mut()) } {
+<a href=#80 id=80 data-nosnippet>80</a>            ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_PEN =&gt; {
+<a href=#81 id=81 data-nosnippet>81</a>                <span class="prelude-val">Some</span>(TabletToolType::Pen)
+<a href=#82 id=82 data-nosnippet>82</a>            }
+<a href=#83 id=83 data-nosnippet>83</a>            ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_ERASER =&gt; {
+<a href=#84 id=84 data-nosnippet>84</a>                <span class="prelude-val">Some</span>(TabletToolType::Eraser)
+<a href=#85 id=85 data-nosnippet>85</a>            }
+<a href=#86 id=86 data-nosnippet>86</a>            ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_BRUSH =&gt; {
+<a href=#87 id=87 data-nosnippet>87</a>                <span class="prelude-val">Some</span>(TabletToolType::Brush)
+<a href=#88 id=88 data-nosnippet>88</a>            }
+<a href=#89 id=89 data-nosnippet>89</a>            ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_PENCIL =&gt; {
+<a href=#90 id=90 data-nosnippet>90</a>                <span class="prelude-val">Some</span>(TabletToolType::Pencil)
+<a href=#91 id=91 data-nosnippet>91</a>            }
+<a href=#92 id=92 data-nosnippet>92</a>            ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_AIRBRUSH =&gt; {
+<a href=#93 id=93 data-nosnippet>93</a>                <span class="prelude-val">Some</span>(TabletToolType::Airbrush)
+<a href=#94 id=94 data-nosnippet>94</a>            }
+<a href=#95 id=95 data-nosnippet>95</a>            ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_MOUSE =&gt; {
+<a href=#96 id=96 data-nosnippet>96</a>                <span class="prelude-val">Some</span>(TabletToolType::Mouse)
+<a href=#97 id=97 data-nosnippet>97</a>            }
+<a href=#98 id=98 data-nosnippet>98</a>            ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_LENS =&gt; {
+<a href=#99 id=99 data-nosnippet>99</a>                <span class="prelude-val">Some</span>(TabletToolType::Lens)
+<a href=#100 id=100 data-nosnippet>100</a>            }
+<a href=#101 id=101 data-nosnippet>101</a>            <span class="attr">#[cfg(feature = <span class="string">"libinput_1_14"</span>)]
+<a href=#102 id=102 data-nosnippet>102</a>            </span>ffi::libinput_tablet_tool_type_LIBINPUT_TABLET_TOOL_TYPE_TOTEM =&gt; {
+<a href=#103 id=103 data-nosnippet>103</a>                <span class="prelude-val">Some</span>(TabletToolType::Totem)
+<a href=#104 id=104 data-nosnippet>104</a>            }
+<a href=#105 id=105 data-nosnippet>105</a>            _x =&gt; {
+<a href=#106 id=106 data-nosnippet>106</a>                <span class="attr">#[cfg(feature = <span class="string">"log"</span>)]
+<a href=#107 id=107 data-nosnippet>107</a>                </span><span class="macro">log::warn!</span>(<span class="string">"Unknown `TabletToolType` returned by libinput: {}"</span>, _x);
+<a href=#108 id=108 data-nosnippet>108</a>                <span class="prelude-val">None
+<a href=#109 id=109 data-nosnippet>109</a>            </span>}
+<a href=#110 id=110 data-nosnippet>110</a>        }
+<a href=#111 id=111 data-nosnippet>111</a>    }
+<a href=#112 id=112 data-nosnippet>112</a>
+<a href=#113 id=113 data-nosnippet>113</a>    <span class="doccomment">/// Check if a tablet tool has a button with the passed-in code (see linux/input.h).
+<a href=#114 id=114 data-nosnippet>114</a>    </span><span class="kw">pub fn </span>has_button(<span class="kw-2">&amp;</span><span class="self">self</span>, button: u32) -&gt; bool {
+<a href=#115 id=115 data-nosnippet>115</a>        <span class="kw">unsafe </span>{ ffi::libinput_tablet_tool_has_button(<span class="self">self</span>.as_raw_mut(), button) != <span class="number">0 </span>}
+<a href=#116 id=116 data-nosnippet>116</a>    }
+<a href=#117 id=117 data-nosnippet>117</a>
+<a href=#118 id=118 data-nosnippet>118</a>    <span class="macro">ffi_func!</span>(
+<a href=#119 id=119 data-nosnippet>119</a>    <span class="doccomment">/// Return whether the tablet tool supports distance.
+<a href=#120 id=120 data-nosnippet>120</a>    </span><span class="kw">pub fn </span>has_distance, ffi::libinput_tablet_tool_has_distance, bool);
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="macro">ffi_func!</span>(
+<a href=#122 id=122 data-nosnippet>122</a>    <span class="doccomment">/// Return whether the tablet tool supports pressure.
+<a href=#123 id=123 data-nosnippet>123</a>    </span><span class="kw">pub fn </span>has_pressure, ffi::libinput_tablet_tool_has_pressure, bool);
+<a href=#124 id=124 data-nosnippet>124</a>    <span class="macro">ffi_func!</span>(
+<a href=#125 id=125 data-nosnippet>125</a>    <span class="doccomment">/// Return whether the tablet tool supports z-rotation.v
+<a href=#126 id=126 data-nosnippet>126</a>    </span><span class="kw">pub fn </span>has_rotation, ffi::libinput_tablet_tool_has_rotation, bool);
+<a href=#127 id=127 data-nosnippet>127</a>    <span class="macro">ffi_func!</span>(
+<a href=#128 id=128 data-nosnippet>128</a>    <span class="doccomment">/// Return whether the tablet tool has a slider axis.
+<a href=#129 id=129 data-nosnippet>129</a>    </span><span class="kw">pub fn </span>has_slider, ffi::libinput_tablet_tool_has_slider, bool);
+<a href=#130 id=130 data-nosnippet>130</a>    <span class="macro">ffi_func!</span>(
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="doccomment">/// Return whether the tablet tool supports tilt.
+<a href=#132 id=132 data-nosnippet>132</a>    </span><span class="kw">pub fn </span>has_tilt, ffi::libinput_tablet_tool_has_tilt, bool);
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="macro">ffi_func!</span>(
+<a href=#134 id=134 data-nosnippet>134</a>    <span class="doccomment">/// Return whether the tablet tool has a relative wheel.
+<a href=#135 id=135 data-nosnippet>135</a>    </span><span class="kw">pub fn </span>has_wheel, ffi::libinput_tablet_tool_has_wheel, bool);
+<a href=#136 id=136 data-nosnippet>136</a>    <span class="macro">ffi_func!</span>(
+<a href=#137 id=137 data-nosnippet>137</a>    <span class="doccomment">/// Returns `true` if the physical tool can be uniquely identified by libinput, or
+<a href=#138 id=138 data-nosnippet>138</a>    /// `false` otherwise.
+<a href=#139 id=139 data-nosnippet>139</a>    ///
+<a href=#140 id=140 data-nosnippet>140</a>    /// If a tool can be uniquely identified, keeping a reference to the tool allows
+<a href=#141 id=141 data-nosnippet>141</a>    /// tracking the tool across proximity out sequences and across compatible tablets.
+<a href=#142 id=142 data-nosnippet>142</a>    /// See [Tracking unique tools](https://wayland.freedesktop.org/libinput/doc/latest/tablet-support.html#tablet-serial-numbers)
+<a href=#143 id=143 data-nosnippet>143</a>    /// for more details.
+<a href=#144 id=144 data-nosnippet>144</a>    </span><span class="kw">pub fn </span>is_unique, ffi::libinput_tablet_tool_is_unique, bool);
+<a href=#145 id=145 data-nosnippet>145</a>    <span class="attr">#[cfg(feature = <span class="string">"libinput_1_14"</span>)]
+<a href=#146 id=146 data-nosnippet>146</a>    </span><span class="macro">ffi_func!</span>(
+<a href=#147 id=147 data-nosnippet>147</a>    <span class="doccomment">/// Returns whether the tablet tool has a ellipsis major and minor.
+<a href=#148 id=148 data-nosnippet>148</a>    ///
+<a href=#149 id=149 data-nosnippet>149</a>    /// Where the underlying hardware only supports one of either major or minor,
+<a href=#150 id=150 data-nosnippet>150</a>    /// libinput emulated the other axis as a cicular contact, i.e. major == minor
+<a href=#151 id=151 data-nosnippet>151</a>    /// for all values of major.
+<a href=#152 id=152 data-nosnippet>152</a>    </span><span class="kw">pub fn </span>tablet_tool_has_size, ffi::libinput_tablet_tool_has_size, bool);
+<a href=#153 id=153 data-nosnippet>153</a>}</code></pre></div></section></main></body></html>
