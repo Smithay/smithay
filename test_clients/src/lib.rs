@@ -8,7 +8,6 @@ use smithay_client_toolkit::{
             protocol::{wl_callback::WlCallback, wl_shm, wl_surface::WlSurface},
         },
     },
-    shell::{xdg::window::Window, WaylandSurface},
     shm::slot::{Buffer, SlotPool},
 };
 
@@ -64,7 +63,7 @@ pub fn fill_with_gradient_bytes(canvas: &mut [u8], shift: u32, width: u32, heigh
 
 pub fn draw<D>(
     qh: &QueueHandle<D>,
-    window: &Window,
+    wl_surface: &WlSurface,
     pool: &mut SlotPool,
     buffer: &mut Option<Buffer>,
     width: u32,
@@ -99,12 +98,10 @@ pub fn draw<D>(
     fill_with_gradient_bytes(canvas, *shift, width, height);
     *shift = (*shift + 1) % width;
 
-    window
-        .wl_surface()
-        .damage_buffer(0, 0, width as i32, height as i32);
+    wl_surface.damage_buffer(0, 0, width as i32, height as i32);
 
-    window.wl_surface().frame(qh, window.wl_surface().clone());
+    wl_surface.frame(qh, wl_surface.clone());
 
-    buffer.attach_to(window.wl_surface()).expect("buffer attach");
-    window.commit();
+    buffer.attach_to(wl_surface).expect("buffer attach");
+    wl_surface.commit();
 }
