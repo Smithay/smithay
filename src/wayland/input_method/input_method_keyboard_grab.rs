@@ -3,10 +3,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use tracing::info;
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::{
     self, ZwpInputMethodKeyboardGrabV2,
 };
-use wayland_server::backend::ClientId;
+use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::Dispatch;
 
 use crate::input::{
@@ -28,6 +29,7 @@ use super::InputMethodManagerState;
 pub(crate) struct InputMethodKeyboard {
     pub grab: Option<ZwpInputMethodKeyboardGrabV2>,
     pub text_input_handle: TextInputHandle,
+    pub active_input_method_id: Option<ObjectId>,
 }
 
 /// Handle to an input method instance
@@ -43,7 +45,7 @@ where
     fn input(
         &mut self,
         _data: &mut D,
-        _handle: &mut KeyboardInnerHandle<'_, D>,
+        handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
         key_state: KeyState,
         modifiers: Option<ModifiersState>,
@@ -51,10 +53,54 @@ where
         time: u32,
     ) {
         let inner = self.inner.lock().unwrap();
+
+        // Check if there's an active input method
+        let is_active = inner.active_input_method_id.is_some();
+
+        // Check if there's an active text input with focus
+        let has_text_input = inner.text_input_handle.has_active_text_input();
+
+        info!(
+            "InputMethodKeyboardGrab: Checking active state - active_input_method_id: {:?}, is_active: {}, has_text_input: {}",
+            inner.active_input_method_id, is_active, has_text_input
+        );
+
+        // Only forward to IME if both an IME is active AND a text input has focus
+        if !is_active || !has_text_input {
+            // No active input method or no text input focus, forward to normal keyboard handling
+            info!(
+                "InputMethodKeyboardGrab: No active IME or no text input focus, forwarding to keyboard - keycode: {}, state: {:?}",
+                keycode.raw(),
+                key_state
+            );
+            drop(inner);
+            handle.input(_data, keycode, key_state, modifiers, serial, time);
+            return;
+        }
+
+        // Active input method with text input focus - forward to it
+        info!(
+            "InputMethodKeyboardGrab: Received keyboard input - keycode: {}, state: {:?}, serial: {:?}, active_id: {:?}",
+            keycode.raw(),
+            key_state,
+            serial,
+            inner.active_input_method_id
+        );
+
         let keyboard = inner.grab.as_ref().unwrap();
+        info!(
+            "InputMethodKeyboardGrab: Forwarding to grab object, active_input_method_id: {:?}",
+            inner.active_input_method_id
+        );
+
         inner
             .text_input_handle
             .active_text_input_serial_or_default(serial.0, |serial| {
+                info!(
+                    "InputMethodKeyboardGrab: Sending key event to IME - keycode: {}, state: {:?}",
+                    keycode.raw() - 8,
+                    key_state
+                );
                 keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
                 if let Some(serialized) = modifiers.map(|m| m.serialized) {
                     keyboard.modifiers(
@@ -109,6 +155,7 @@ impl<D: SeatHandler + 'static> Dispatch<ZwpInputMethodKeyboardGrabV2, InputMetho
         _object: &ZwpInputMethodKeyboardGrabV2,
         data: &InputMethodKeyboardUserData<D>,
     ) {
+        info!("InputMethodKeyboardGrab: Keyboard grab destroyed, unsetting grab");
         data.handle.inner.lock().unwrap().grab = None;
         data.keyboard_handle.unset_grab(state);
     }

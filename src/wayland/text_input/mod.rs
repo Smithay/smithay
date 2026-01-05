@@ -158,7 +158,8 @@ where
                         handle: handle.clone(),
                     },
                 );
-                handle.add_instance(&instance, input_method_handle.clone());
+                handle.add_instance(&instance, &input_method_handle);
+
                 if input_method_handle.has_instance() {
                     handle.enter();
                 }

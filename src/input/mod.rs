@@ -571,8 +571,13 @@ impl<D: SeatHandler + 'static> Seat<D> {
         repeat_delay: i32,
         repeat_rate: i32,
     ) -> Result<KeyboardHandle<D>, KeyboardError> {
+        tracing::info!(
+            "Smithay add_keyboard: layout='{}', variant='{}', model='{}', options='{:?}', repeat_delay={}, repeat_rate={}",
+            xkb_config.layout, xkb_config.variant, xkb_config.model, xkb_config.options, repeat_delay, repeat_rate
+        );
         let mut inner = self.arc.inner.lock().unwrap();
         let keyboard = self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate)?;
+        tracing::info!("Smithay add_keyboard: keyboard handle created successfully");
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
