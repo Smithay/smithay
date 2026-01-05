@@ -62,7 +62,7 @@ pub struct GpuSpan {
 
 impl Drop for GpuSpan {
     fn drop(&mut self) {
-        assert!(!self.active, "GPU span must be properly exited");
+        debug_assert!(!self.active, "GPU span must be properly exited");
     }
 }
 
@@ -187,7 +187,7 @@ mod imp {
 
     impl Drop for QueryPool {
         fn drop(&mut self) {
-            assert!(self.pool.is_empty(), "QueryPool must be cleaned up before drop");
+            debug_assert!(self.pool.is_empty(), "QueryPool must be cleaned up before drop");
         }
     }
 
