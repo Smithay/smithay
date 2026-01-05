@@ -82,6 +82,10 @@ impl<'a, 'b> Drop for ScopedGpuSpan<'a, 'b> {
 #[cfg(feature = "tracy_gpu_profiling")]
 mod imp {
     use std::cell::Cell;
+    use std::ffi::CStr;
+    use std::os::raw::c_char;
+
+    use tracing::warn;
 
     use super::{ffi, GpuSpan, SpanLocation};
 
@@ -195,6 +199,9 @@ mod imp {
                 return Self { pool: None };
             }
 
+            let gpu_name = unsafe { CStr::from_ptr(gl.GetString(ffi::RENDERER) as *const c_char).to_str() };
+            let gpu_name = gpu_name.unwrap_or("GlesRenderer");
+
             let client = tracy_client::Client::start();
 
             let mut gpu_timestamp = 0;
@@ -202,7 +209,7 @@ mod imp {
 
             let context = client
                 .new_gpu_context(
-                    Some("GlesRenderer"),
+                    Some(gpu_name),
                     tracy_client::GpuContextType::OpenGL,
                     gpu_timestamp,
                     1.0,
