@@ -31,7 +31,6 @@ impl TextInput {
                 let instance_id = text_input.instance.id();
                 if instance_id.same_client_as(&surface.id()) {
                     f(&text_input.instance, surface, text_input.serial);
-                    break;
                 }
             }
         };
@@ -200,7 +199,7 @@ impl TextInputHandle {
         });
     }
 
-    /// Access the text-input instance for the currently focused surface.
+    /// Access the text-input instances for the currently focused surface.
     pub fn with_focused_text_input<F>(&self, mut f: F)
     where
         F: FnMut(&ZwpTextInputV3, &WlSurface),
@@ -262,7 +261,6 @@ impl TextInputHandle {
 #[derive(Debug)]
 pub struct TextInputUserData {
     pub(super) handle: TextInputHandle,
-    pub(crate) input_method_handle: InputMethodHandle,
 }
 
 impl<D> Dispatch<ZwpTextInputV3, TextInputUserData, D> for TextInputManagerState
@@ -356,13 +354,17 @@ where
                         *active_text_input_id = Some(resource.id());
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        data.input_method_handle.activate_input_method(state, &focus);
+                        if let Some(im_handle) = input_method_handle {
+                            im_handle.activate_input_method(state, &focus);
+                        }
                     }
                     Some(false) => {
                         *active_text_input_id = None;
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        data.input_method_handle.deactivate_input_method(state);
+                        if let Some(im_handle) = input_method_handle {
+                            im_handle.deactivate_input_method(state);
+                        }
                         return;
                     }
                     None => {
@@ -433,7 +435,7 @@ where
 
     fn destroyed(state: &mut D, _client: ClientId, text_input: &ZwpTextInputV3, data: &TextInputUserData) {
         let destroyed_id = text_input.id();
-        let deactivate_im = {
+        let (deactivate_im, im_handle) = {
             let mut inner = data.handle.inner.lock().unwrap();
 
             inner.instances.retain(|inst| inst.instance.id() != destroyed_id);
@@ -445,15 +447,19 @@ where
 
             // Deactivate IM when we either lost focus entirely or destroyed text-input for the
             // currently focused client.
-            destroyed_focused
+            let should_deactivate = destroyed_focused
                 && !inner
                     .instances
                     .iter()
-                    .any(|inst| inst.instance.id().same_client_as(&destroyed_id))
+                    .any(|inst| inst.instance.id().same_client_as(&destroyed_id));
+
+            (should_deactivate, im_handle)
         };
 
         if deactivate_im {
-            data.input_method_handle.deactivate_input_method(state);
+            if let Some(im_handle) = im_handle {
+                im_handle.deactivate_input_method(state);
+            }
         }
     }
 }

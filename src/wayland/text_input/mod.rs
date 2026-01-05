@@ -156,7 +156,6 @@ where
                     id,
                     TextInputUserData {
                         handle: handle.clone(),
-                        input_method_handle: input_method_handle.clone(),
                     },
                 );
                 handle.add_instance(&instance, &input_method_handle);

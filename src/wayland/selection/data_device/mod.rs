@@ -289,27 +289,6 @@ fn handle_dnd<D, S>(
             }
         }
         Request::Finish => {
-            if !data.active {
-                offer.post_error(
-                    wl_data_offer::Error::InvalidFinish,
-                    "Cannot finish a data offer that is no longer active.",
-                );
-                return;
-            }
-            if !data.accepted {
-                offer.post_error(
-                    wl_data_offer::Error::InvalidFinish,
-                    "Cannot finish a data offer that has not been accepted.",
-                );
-                return;
-            }
-            if !data.dropped {
-                offer.post_error(
-                    wl_data_offer::Error::InvalidFinish,
-                    "Cannot finish a data offer that has not been dropped.",
-                );
-                return;
-            }
             if data.chosen_action.is_empty() {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
@@ -318,7 +297,9 @@ fn handle_dnd<D, S>(
                 return;
             }
             if let Some(source) = source.take() {
-                source.finished();
+                if data.accepted {
+                    source.finished();
+                }
             } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
