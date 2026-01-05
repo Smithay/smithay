@@ -14,7 +14,7 @@ use crate::wayland::{
     compositor,
     shell::{
         is_valid_parent,
-        xdg::{XdgShellHandler, XdgToplevelSurfaceData},
+        xdg::{XdgShellHandler, XdgToplevelSurfaceData, XDG_TOPLEVEL_ROLE},
     },
 };
 
@@ -59,6 +59,15 @@ where
     ) {
         match request {
             zxdg_exporter_v2::Request::ExportToplevel { id, surface } => {
+                if compositor::get_role(&surface) != Some(XDG_TOPLEVEL_ROLE) {
+                    data_init.post_error(
+                        id,
+                        zxdg_exporter_v2::Error::InvalidSurface,
+                        "exported surface had an invalid role",
+                    );
+                    return;
+                }
+
                 let handle = XdgForeignHandle::new();
                 let exported = data_init.init(
                     id,

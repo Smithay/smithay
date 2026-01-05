@@ -567,17 +567,38 @@ where
 #[macro_export]
 macro_rules! delegate_pointer_constraints {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1: ()
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1: ()
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_confined_pointer_v1::ZwpConfinedPointerV1: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_locked_pointer_v1::ZwpLockedPointerV1: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::pointer_constraints::zv1::server::{
+                        zwp_confined_pointer_v1::ZwpConfinedPointerV1,
+                        zwp_locked_pointer_v1::ZwpLockedPointerV1,
+                        zwp_pointer_constraints_v1::ZwpPointerConstraintsV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::pointer_constraints::{PointerConstraintUserData, PointerConstraintsState},
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPointerConstraintsV1: ()] => PointerConstraintsState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPointerConstraintsV1: ()] => PointerConstraintsState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpConfinedPointerV1: PointerConstraintUserData<Self>] => PointerConstraintsState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpLockedPointerV1: PointerConstraintUserData<Self>] => PointerConstraintsState
+            );
+        };
     };
 }

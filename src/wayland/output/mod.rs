@@ -356,21 +356,43 @@ impl Output {
 #[macro_export]
 macro_rules! delegate_output {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::WlOutputData
-        ] => $crate::wayland::output::OutputManagerState);
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
-        ] => $crate::wayland::output::OutputManagerState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xdg::xdg_output::zv1::server::{
+                        zxdg_output_manager_v1::ZxdgOutputManagerV1, zxdg_output_v1::ZxdgOutputV1,
+                    },
+                    wayland_server::{
+                        delegate_dispatch, delegate_global_dispatch, protocol::wl_output::WlOutput,
+                    },
+                },
+                wayland::output::{OutputManagerState, OutputUserData, WlOutputData, XdgOutputUserData},
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputUserData
-        ] => $crate::wayland::output::OutputManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1: $crate::wayland::output::XdgOutputUserData
-        ] => $crate::wayland::output::OutputManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
-        ] => $crate::wayland::output::OutputManagerState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlOutput: WlOutputData] => OutputManagerState
+            );
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgOutputManagerV1: ()] => OutputManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlOutput: OutputUserData] => OutputManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgOutputV1: XdgOutputUserData] => OutputManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgOutputManagerV1: ()] => OutputManagerState
+            );
+        };
     };
 }

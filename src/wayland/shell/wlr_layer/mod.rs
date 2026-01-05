@@ -174,6 +174,8 @@ pub struct LayerSurfaceCachedState {
     pub anchor: Anchor,
     /// Descripton of exclusive zone
     pub exclusive_zone: ExclusiveZone,
+    /// Edge for exclusive zone
+    pub exclusive_edge: Option<Anchor>,
     /// Describes distance from the anchor point of the output
     pub margin: Margins,
     /// Describes how keyboard events are delivered to this surface
@@ -229,7 +231,7 @@ impl WlrLayerShellState {
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let shell_global = display.create_global::<D, ZwlrLayerShellV1, WlrLayerShellGlobalData>(
-            4,
+            5,
             WlrLayerShellGlobalData {
                 filter: Box::new(filter),
             },
@@ -498,6 +500,16 @@ impl LayerSurface {
                 return;
             }
 
+            if let Some(edge) = pending.exclusive_edge {
+                if !pending.anchor.contains(edge) {
+                    role.surface.post_error(
+                        zwlr_layer_surface_v1::Error::InvalidExclusiveEdge,
+                        "exclusive edge is not an anchor",
+                    );
+                    return;
+                }
+            }
+
             // The presence of last_acked always follows the buffer assignment because the
             // surface is not allowed to attach a buffer without acking the initial configure.
             let had_buffer_before = pending.last_acked.is_some();
@@ -574,20 +586,33 @@ pub struct LayerSurfaceConfigure {
 #[macro_export]
 macro_rules! delegate_layer_shell {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ZwlrLayerShellV1 =
-            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::ZwlrLayerShellV1;
-        type __ZwlrLayerShellSurfaceV1 =
-            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols_wlr::layer_shell::v1::server::{
+                        zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::shell::wlr_layer::{
+                    WlrLayerShellGlobalData, WlrLayerShellState, WlrLayerSurfaceUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellV1: ()
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellSurfaceV1: $crate::wayland::shell::wlr_layer::WlrLayerSurfaceUserData
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwlrLayerShellV1: ()] => WlrLayerShellState
+            );
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellV1: $crate::wayland::shell::wlr_layer::WlrLayerShellGlobalData
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwlrLayerSurfaceV1: WlrLayerSurfaceUserData] => WlrLayerShellState
+            );
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwlrLayerShellV1: WlrLayerShellGlobalData] => WlrLayerShellState
+            );
+        };
     };
 }

@@ -99,12 +99,24 @@ impl<D: XdgSystemBellHandler> Dispatch<XdgSystemBellV1, (), D> for XdgSystemBell
 #[macro_export]
 macro_rules! delegate_xdg_system_bell {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::system_bell::v1::server::xdg_system_bell_v1::XdgSystemBellV1: ()
-        ] => $crate::wayland::xdg_system_bell::XdgSystemBellState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xdg::system_bell::v1::server::xdg_system_bell_v1::XdgSystemBellV1,
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::xdg_system_bell::XdgSystemBellState,
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::system_bell::v1::server::xdg_system_bell_v1::XdgSystemBellV1: ()
-        ] => $crate::wayland::xdg_system_bell::XdgSystemBellState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgSystemBellV1: ()] => XdgSystemBellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgSystemBellV1: ()] => XdgSystemBellState
+            );
+        };
     };
 }

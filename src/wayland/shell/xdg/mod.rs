@@ -123,6 +123,7 @@ use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
 use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::compositor::{self, BufferAssignment, SurfaceAttributes};
+use crate::wayland::shell::xdg::dialog::ToplevelDialogHint;
 use std::cmp::min;
 use std::{collections::HashSet, fmt::Debug, sync::Mutex};
 
@@ -342,12 +343,11 @@ xdg_role!(
         /// should be brought to front. If the parent is focused
         /// all of it's child should be brought to front.
         pub parent: Option<wl_surface::WlSurface>,
-        /// Hints that the dialog has "modal" behavior.
-        /// Modal dialogs typically require to be fully addressed by the user (i.e. closed)
-        /// before resuming interaction with the parent toplevel, and may require a distinct presentation.
+        /// Hint related to the toplevel's "dialog" status.
+        /// See ToplevelDialogHint for more information.
         ///
         /// This value has no effect on toplevels that are not attached to a parent toplevel.
-        pub modal: bool,
+        pub dialog_hint: ToplevelDialogHint,
         /// Holds the optional title the client has set for
         /// this toplevel. For example a web-browser will most likely
         /// set this to include the current uri.
@@ -2180,24 +2180,50 @@ impl From<PopupConfigure> for Configure {
 #[macro_export]
 macro_rules! delegate_xdg_shell {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: ()
-        ] => $crate::wayland::shell::xdg::XdgShellState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xdg::shell::server::{
+                        xdg_popup::XdgPopup, xdg_positioner::XdgPositioner, xdg_surface::XdgSurface,
+                        xdg_toplevel::XdgToplevel, xdg_wm_base::XdgWmBase,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::shell::xdg::{
+                    XdgPositionerUserData, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData,
+                    XdgWmBaseUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: $crate::wayland::shell::xdg::XdgWmBaseUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::XdgPositioner: $crate::wayland::shell::xdg::XdgPositionerUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_popup::XdgPopup: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_surface::XdgSurface: $crate::wayland::shell::xdg::XdgSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgWmBase: ()] => XdgShellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgWmBase: XdgWmBaseUserData] => XdgShellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgPositioner: XdgPositionerUserData] => XdgShellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgPopup: XdgShellSurfaceUserData] => XdgShellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgSurface: XdgSurfaceUserData] => XdgShellState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [XdgToplevel: XdgShellSurfaceUserData] => XdgShellState
+            );
+        };
     };
 }

@@ -1,6 +1,7 @@
+#[cfg(feature = "xwayland")]
+use std::os::unix::io::OwnedFd;
 use std::{
     collections::HashMap,
-    os::unix::io::OwnedFd,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
@@ -14,12 +15,13 @@ use smithay::{
             default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
         },
     },
-    delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale,
-    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_layer_shell,
-    delegate_output, delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_security_context,
-    delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_control, delegate_data_device, delegate_fixes,
+    delegate_fractional_scale, delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit,
+    delegate_layer_shell, delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
+    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
     desktop::{
         space::SpaceElement,
         utils::{
@@ -29,8 +31,9 @@ use smithay::{
         PopupKind, PopupManager, Space,
     },
     input::{
+        dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source},
         keyboard::{Keysym, LedState, XkbConfig},
-        pointer::{CursorImageStatus, CursorImageSurfaceData, PointerHandle},
+        pointer::{CursorImageStatus, Focus, PointerHandle},
         Seat, SeatHandler, SeatState,
     },
     output::Output,
@@ -41,16 +44,17 @@ use smithay::{
         },
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
-            protocol::{wl_data_source::WlDataSource, wl_surface::WlSurface},
+            protocol::wl_surface::WlSurface,
             Client, Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point, Rectangle, Time},
+    utils::{Clock, Logical, Monotonic, Point, Rectangle, Serial, Time},
     wayland::{
         commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState},
         compositor::{get_parent, with_states, CompositorClientState, CompositorHandler, CompositorState},
         dmabuf::DmabufFeedback,
         fifo::{FifoBarrierCachedState, FifoManagerState},
+        fixes::FixesState,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
         input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
         keyboard_shortcuts_inhibit::{
@@ -66,10 +70,7 @@ use smithay::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
         selection::{
-            data_device::{
-                set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
-                ServerDndGrabHandler,
-            },
+            data_device::{set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
             primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
             wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
@@ -193,31 +194,53 @@ impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     }
 }
 
-impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
-    fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
-        let offset = if let CursorImageStatus::Surface(ref surface) = self.cursor_status {
-            with_states(surface, |states| {
-                let hotspot = states
-                    .data_map
-                    .get::<CursorImageSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .hotspot;
-                Point::from((-hotspot.x, -hotspot.y))
-            })
-        } else {
-            (0, 0).into()
-        };
-        self.dnd_icon = icon.map(|surface| DndIcon { surface, offset });
-    }
-    fn dropped(&mut self, _target: Option<WlSurface>, _validated: bool, _seat: Seat<Self>) {
-        self.dnd_icon = None;
+impl<BackendData: Backend> WaylandDndGrabHandler for AnvilState<BackendData> {
+    fn dnd_requested<S: Source>(
+        &mut self,
+        source: S,
+        icon: Option<WlSurface>,
+        seat: Seat<Self>,
+        serial: Serial,
+        type_: GrabType,
+    ) {
+        self.dnd_icon = icon.map(|surface| DndIcon {
+            surface,
+            offset: (0, 0).into(),
+        });
+
+        match type_ {
+            GrabType::Pointer => {
+                let pointer = seat.get_pointer().unwrap();
+                let start_data = pointer.grab_start_data().unwrap();
+                pointer.set_grab(
+                    self,
+                    DnDGrab::new_pointer(&self.display_handle, start_data, source, seat),
+                    serial,
+                    Focus::Keep,
+                );
+            }
+            GrabType::Touch => {
+                let touch = seat.get_touch().unwrap();
+                let start_data = touch.grab_start_data().unwrap();
+                touch.set_grab(
+                    self,
+                    DnDGrab::new_touch(&self.display_handle, start_data, source, seat),
+                    serial,
+                );
+            }
+        }
     }
 }
-impl<BackendData: Backend> ServerDndGrabHandler for AnvilState<BackendData> {
-    fn send(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {
-        unreachable!("Anvil doesn't do server-side grabs");
+
+impl<BackendData: Backend> DndGrabHandler for AnvilState<BackendData> {
+    fn dropped(
+        &mut self,
+        _target: Option<DndTarget<'_, Self>>,
+        _validated: bool,
+        _seat: Seat<Self>,
+        _location: Point<f64, Logical>,
+    ) {
+        self.dnd_icon = None;
     }
 }
 delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -247,7 +270,7 @@ impl<BackendData: Backend> SelectionHandler for AnvilState<BackendData> {
         _user_data: &(),
     ) {
         if let Some(xwm) = self.xwm.as_mut() {
-            if let Err(err) = xwm.send_selection(ty, mime_type, fd, self.handle.clone()) {
+            if let Err(err) = xwm.send_selection(ty, mime_type, fd) {
                 warn!(?err, "Failed to send primary (X11 -> Wayland)");
             }
         }
@@ -574,6 +597,8 @@ smithay::delegate_fifo!(@<BackendData: Backend + 'static> AnvilState<BackendData
 
 smithay::delegate_commit_timing!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+delegate_fixes!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
@@ -653,8 +678,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         SecurityContextState::new::<Self, _>(&dh, |client| {
             client
                 .get_data::<ClientState>()
-                .map_or(true, |client_state| client_state.security_context.is_none())
+                .is_none_or(|client_state| client_state.security_context.is_none())
         });
+        FixesState::new::<Self>(&dh);
 
         // init input
         let seat_name = backend_data.seat_name();
@@ -736,6 +762,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         )
         .expect("failed to start XWayland");
 
+        let display_handle = self.display_handle.clone();
         let ret = self
             .handle
             .insert_source(xwayland, move |event, _, data| match event {
@@ -749,8 +776,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                         .unwrap_or(1.);
                     data.client_compositor_state(&client)
                         .set_client_scale(xwayland_scale);
-                    let mut wm = X11Wm::start_wm(data.handle.clone(), x11_socket, client.clone())
-                        .expect("Failed to attach X11 Window Manager");
+                    let mut wm =
+                        X11Wm::start_wm(data.handle.clone(), &display_handle, x11_socket, client.clone())
+                            .expect("Failed to attach X11 Window Manager");
 
                     let cursor = Cursor::load();
                     let image = cursor.get_image(1, Duration::ZERO);

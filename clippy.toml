@@ -1,4 +1,4 @@
-msrv = "1.80.1"
+msrv = "1.85"
 type-complexity-threshold = 400
 
 disallowed-macros = [

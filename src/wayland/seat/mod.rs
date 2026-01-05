@@ -228,22 +228,45 @@ impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
 #[macro_export]
 macro_rules! delegate_seat {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatGlobalData<$ty>
-        ] => $crate::input::SeatState<$ty>);
+        const _: () = {
+            use $crate::{
+                input::SeatState,
+                reexports::wayland_server::{
+                    delegate_dispatch, delegate_global_dispatch,
+                    protocol::{
+                        wl_keyboard::WlKeyboard, wl_pointer::WlPointer, wl_seat::WlSeat, wl_touch::WlTouch,
+                    },
+                },
+                wayland::seat::{
+                    KeyboardUserData, PointerUserData, SeatGlobalData, SeatUserData, TouchUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?$ty: [
-            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlSeat: SeatGlobalData<$ty>] => SeatState<$ty>
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlSeat: SeatUserData<$ty>] => SeatState<$ty>
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlPointer: PointerUserData<$ty>] => SeatState<$ty>
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlKeyboard: KeyboardUserData<$ty>] => SeatState<$ty>
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlTouch: TouchUserData<$ty>] => SeatState<$ty>
+            );
+        };
     };
 }
 

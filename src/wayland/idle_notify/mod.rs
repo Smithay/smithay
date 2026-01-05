@@ -370,27 +370,32 @@ where
 #[macro_export]
 macro_rules! delegate_idle_notify {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ExtIdleNotifierV1 =
-            $crate::reexports::wayland_protocols::ext::idle_notify::v1::server::ext_idle_notifier_v1::ExtIdleNotifierV1;
-        type __ExtIdleNotificationV1 =
-            $crate::reexports::wayland_protocols::ext::idle_notify::v1::server::ext_idle_notification_v1::ExtIdleNotificationV1;
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::ext::idle_notify::v1::server::{
+                        ext_idle_notification_v1::ExtIdleNotificationV1,
+                        ext_idle_notifier_v1::ExtIdleNotifierV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::idle_notify::{IdleNotificationUserData, IdleNotifierState},
+            };
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtIdleNotifierV1: ()
-            ] => $crate::wayland::idle_notify::IdleNotifierState<$ty>
-        );
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtIdleNotifierV1: ()] => IdleNotifierState<$ty>
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtIdleNotifierV1: ()
-            ] => $crate::wayland::idle_notify::IdleNotifierState<$ty>
-        );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtIdleNotifierV1: ()] => IdleNotifierState<$ty>
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ExtIdleNotificationV1: $crate::wayland::idle_notify::IdleNotificationUserData
-            ] => $crate::wayland::idle_notify::IdleNotifierState<$ty>
-        );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ExtIdleNotificationV1: IdleNotificationUserData] => IdleNotifierState<$ty>
+            );
+        };
     };
 }

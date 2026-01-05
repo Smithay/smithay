@@ -241,25 +241,47 @@ where
 #[macro_export]
 macro_rules! delegate_input_method_manager {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2:
-            $crate::wayland::input_method::InputMethodManagerGlobalData
-        ] => $crate::wayland::input_method::InputMethodManagerState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols_misc::zwp_input_method_v2::server::{
+                        zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
+                        zwp_input_method_manager_v2::ZwpInputMethodManagerV2,
+                        zwp_input_method_v2::ZwpInputMethodV2,
+                        zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::input_method::{
+                    InputMethodKeyboardUserData, InputMethodManagerGlobalData, InputMethodManagerState,
+                    InputMethodPopupSurfaceUserData, InputMethodUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2: ()
-        ] => $crate::wayland::input_method::InputMethodManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::ZwpInputMethodV2:
-            $crate::wayland::input_method::InputMethodUserData<Self>
-        ] => $crate::wayland::input_method::InputMethodManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2:
-            $crate::wayland::input_method::InputMethodKeyboardUserData<Self>
-        ] => $crate::wayland::input_method::InputMethodManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2:
-            $crate::wayland::input_method::InputMethodPopupSurfaceUserData
-        ] => $crate::wayland::input_method::InputMethodManagerState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpInputMethodManagerV2: InputMethodManagerGlobalData] => InputMethodManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpInputMethodManagerV2: ()] => InputMethodManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpInputMethodV2: InputMethodUserData<Self>] => InputMethodManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpInputMethodKeyboardGrabV2: InputMethodKeyboardUserData<Self>] => InputMethodManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpInputPopupSurfaceV2: InputMethodPopupSurfaceUserData] => InputMethodManagerState
+            );
+        };
     };
 }

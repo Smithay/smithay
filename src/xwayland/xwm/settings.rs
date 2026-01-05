@@ -2,7 +2,7 @@
 //!
 //! See <https://specifications.freedesktop.org/xsettings-spec/0.5/>
 
-use std::{borrow::Borrow, collections::HashMap, hash::Hash};
+use std::{borrow::Borrow, collections::HashMap, hash::Hash, sync::Arc};
 
 use tracing::debug;
 use x11rb::{
@@ -12,11 +12,12 @@ use x11rb::{
     rust_connection::RustConnection,
     wrapper::ConnectionExt as _,
 };
-// use std::{borrow::Borrow, hash::Hash};
+
+use crate::xwayland::xwm::OwnedX11Window;
 
 #[derive(Debug)]
 pub(super) struct XSettings {
-    pub(super) window: Window,
+    pub(super) window: OwnedX11Window,
     atoms: super::Atoms,
     values: HashMap<String, Setting>,
     current_serial: u32,
@@ -81,7 +82,7 @@ pub enum NameError {
 
 impl XSettings {
     pub(super) fn new(
-        conn: &RustConnection,
+        conn: &Arc<RustConnection>,
         depth: u8,
         root: Window,
         atoms: &super::Atoms,
@@ -105,7 +106,7 @@ impl XSettings {
         debug!(window = win, "Created XSettings window");
 
         let mut this = XSettings {
-            window: win,
+            window: OwnedX11Window::new(win, conn),
             atoms: *atoms,
             values: HashMap::default(),
             current_serial: 0,
@@ -187,7 +188,7 @@ impl XSettings {
             data.push(0u8);
             data.extend(&(name.len() as u16).to_ne_bytes());
             data.extend(name);
-            data.extend(std::iter::repeat(0u8).take(pad(name.len())));
+            data.extend(std::iter::repeat_n(0u8, pad(name.len())));
             data.extend(&setting.last_changed_serial.to_ne_bytes());
 
             setting.val.serialize(&mut data);
@@ -201,7 +202,7 @@ impl XSettings {
     pub(super) fn update(&mut self, conn: &RustConnection) -> Result<(), ConnectionError> {
         conn.change_property8(
             PropMode::REPLACE,
-            self.window,
+            *self.window,
             self.atoms._XSETTINGS_SETTINGS,
             self.atoms._XSETTINGS_SETTINGS,
             &self.serialize(),
@@ -228,7 +229,7 @@ impl Value {
                 let val = val.as_bytes();
                 data.extend(&(val.len() as u32).to_ne_bytes());
                 data.extend(val);
-                data.extend(std::iter::repeat(0u8).take(pad(val.len())));
+                data.extend(std::iter::repeat_n(0u8, pad(val.len())));
             }
             Value::Color(val) => {
                 for component in val {

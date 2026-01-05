@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
@@ -10,7 +10,7 @@ use wayland_server::{
 
 use crate::{
     backend::allocator::dmabuf::{Dmabuf, Plane, MAX_PLANES},
-    wayland::{buffer::BufferHandler, compositor},
+    wayland::{buffer::BufferHandler, compositor, dmabuf::SurfaceDmabufFeedbackStateInner},
 };
 
 use super::{
@@ -109,18 +109,27 @@ where
                     },
                 );
 
+                if compositor::with_states(&surface, |states| {
+                    states.data_map.get::<SurfaceDmabufFeedbackState>().is_none()
+                }) {
+                    let new_feedback = state
+                        .new_surface_feedback(&surface, &DmabufGlobal { id: data.id })
+                        .unwrap_or_else(|| data.default_feedback.as_ref().unwrap().lock().unwrap().clone());
+                    compositor::with_states(&surface, |states| {
+                        states
+                            .data_map
+                            .insert_if_missing_threadsafe(|| SurfaceDmabufFeedbackState {
+                                inner: Arc::new(Mutex::new(SurfaceDmabufFeedbackStateInner {
+                                    feedback: new_feedback,
+                                    known_instances: Vec::new(),
+                                })),
+                            });
+                    });
+                }
+
                 let surface_feedback = compositor::with_states(&surface, |states| {
-                    states
-                        .data_map
-                        .insert_if_missing_threadsafe(SurfaceDmabufFeedbackState::default);
                     let feedback_state = states.data_map.get::<SurfaceDmabufFeedbackState>().unwrap();
-                    feedback_state.add_instance(&feedback, || {
-                        state
-                            .new_surface_feedback(&surface, &DmabufGlobal { id: data.id })
-                            .unwrap_or_else(|| {
-                                data.default_feedback.as_ref().unwrap().lock().unwrap().clone()
-                            })
-                    })
+                    feedback_state.add_instance(&feedback)
                 });
 
                 surface_feedback.send(&feedback);

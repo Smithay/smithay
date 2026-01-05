@@ -503,18 +503,34 @@ impl ShmBufferUserData {
 #[macro_export]
 macro_rules! delegate_shm {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
-        ] => $crate::wayland::shm::ShmState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_server::protocol::{wl_buffer::WlBuffer, wl_shm::WlShm, wl_shm_pool::WlShmPool},
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::shm::{ShmBufferUserData, ShmPoolUserData, ShmState},
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
-        ] => $crate::wayland::shm::ShmState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool: $crate::wayland::shm::ShmPoolUserData
-        ] => $crate::wayland::shm::ShmState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::wayland::shm::ShmBufferUserData
-        ] => $crate::wayland::shm::ShmState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlShm: ()] => ShmState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlShm: ()] => ShmState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlShmPool: ShmPoolUserData] => ShmState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WlBuffer: ShmBufferUserData] => ShmState
+            );
+        };
     };
 }

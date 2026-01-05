@@ -393,15 +393,33 @@ impl Cacheable for FifoBarrierCachedState {
 #[macro_export]
 macro_rules! delegate_fifo {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fifo::v1::server::wp_fifo_manager_v1::WpFifoManagerV1: bool
-        ] => $crate::wayland::fifo::FifoManagerState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::fifo::v1::server::{
+                        wp_fifo_manager_v1::WpFifoManagerV1, wp_fifo_v1::WpFifoV1,
+                    },
+                    wayland_server::{
+                        delegate_dispatch, delegate_global_dispatch, protocol::wl_buffer::WlBuffer,
+                        protocol::wl_surface::WlSurface, Weak,
+                    },
+                },
+                wayland::fifo::FifoManagerState,
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fifo::v1::server::wp_fifo_manager_v1::WpFifoManagerV1: bool
-        ] => $crate::wayland::fifo::FifoManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fifo::v1::server::wp_fifo_v1::WpFifoV1: $crate::reexports::wayland_server::Weak<$crate::reexports::wayland_server::protocol::wl_surface::WlSurface>
-        ] => $crate::wayland::fifo::FifoManagerState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpFifoManagerV1: bool] => FifoManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpFifoManagerV1: bool] => FifoManagerState
+            );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpFifoV1: Weak<WlSurface>] => FifoManagerState
+            );
+        };
     };
 }

@@ -161,13 +161,25 @@ impl<D: PointerWarpHandler> Dispatch<WpPointerWarpV1, (), D> for PointerWarpMana
 #[macro_export]
 macro_rules! delegate_pointer_warp {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_warp::v1::server::wp_pointer_warp_v1::WpPointerWarpV1: ()
-        ] => $crate::wayland::pointer_warp::PointerWarpManager);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::pointer_warp::v1::server::wp_pointer_warp_v1::WpPointerWarpV1,
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::pointer_warp::PointerWarpManager,
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_warp::v1::server::wp_pointer_warp_v1::WpPointerWarpV1: ()
-        ] => $crate::wayland::pointer_warp::PointerWarpManager);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpPointerWarpV1: ()] => PointerWarpManager
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpPointerWarpV1: ()] => PointerWarpManager
+            );
+        };
     };
 }
 

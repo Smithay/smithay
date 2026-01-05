@@ -361,14 +361,32 @@ fn shape_to_cursor_icon(shape: Shape) -> CursorIcon {
 #[macro_export]
 macro_rules! delegate_cursor_shape {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1: ()
-        ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1: ()
-        ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1: $crate::wayland::cursor_shape::CursorShapeDeviceUserData<$ty>
-        ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::cursor_shape::v1::server::{
+                        wp_cursor_shape_device_v1::WpCursorShapeDeviceV1,
+                        wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::cursor_shape::{CursorShapeDeviceUserData, CursorShapeManagerState},
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpCursorShapeManagerV1: ()] => CursorShapeManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpCursorShapeManagerV1: ()] => CursorShapeManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [WpCursorShapeDeviceV1: CursorShapeDeviceUserData<$ty>] => CursorShapeManagerState
+            );
+        };
     };
 }

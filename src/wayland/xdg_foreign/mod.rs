@@ -136,47 +136,47 @@ impl XdgForeignState {
 #[macro_export]
 macro_rules! delegate_xdg_foreign {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ZxdgExporterV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_exporter_v2::ZxdgExporterV2;
-        type __ZxdgImporterV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_importer_v2::ZxdgImporterV2;
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::xdg::foreign::zv2::server::{
+                        zxdg_exported_v2::ZxdgExportedV2, zxdg_exporter_v2::ZxdgExporterV2,
+                        zxdg_imported_v2::ZxdgImportedV2, zxdg_importer_v2::ZxdgImporterV2,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::xdg_foreign::{XdgExportedUserData, XdgForeignState, XdgImportedUserData},
+            };
 
-        type __ZxdgExportedV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_exported_v2::ZxdgExportedV2;
-        type __ZxdgImportedV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_imported_v2::ZxdgImportedV2;
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgExporterV2: ()] => XdgForeignState
+            );
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgExporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgImporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgImporterV2: ()] => XdgForeignState
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgExporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgImporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgExporterV2: ()] => XdgForeignState
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgExportedV2: $crate::wayland::xdg_foreign::XdgExportedUserData
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgImportedV2: $crate::wayland::xdg_foreign::XdgImportedUserData
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgImporterV2: ()] => XdgForeignState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgExportedV2: XdgExportedUserData] => XdgForeignState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZxdgImportedV2: XdgImportedUserData] => XdgForeignState
+            );
+        };
     };
 }

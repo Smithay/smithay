@@ -593,20 +593,44 @@ where
 #[macro_export]
 macro_rules! delegate_pointer_gestures {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gestures_v1::ZwpPointerGesturesV1: ()
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gestures_v1::ZwpPointerGesturesV1: ()
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_swipe_v1::ZwpPointerGestureSwipeV1: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_hold_v1::ZwpPointerGestureHoldV1: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::pointer_gestures::zv1::server::{
+                        zwp_pointer_gesture_hold_v1::ZwpPointerGestureHoldV1,
+                        zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1,
+                        zwp_pointer_gesture_swipe_v1::ZwpPointerGestureSwipeV1,
+                        zwp_pointer_gestures_v1::ZwpPointerGesturesV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::pointer_gestures::{PointerGestureUserData, PointerGesturesState},
+            };
+
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPointerGesturesV1: ()] => PointerGesturesState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPointerGesturesV1: ()] => PointerGesturesState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPointerGestureSwipeV1: PointerGestureUserData<Self>] => PointerGesturesState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPointerGesturePinchV1: PointerGestureUserData<Self>] => PointerGesturesState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpPointerGestureHoldV1: PointerGestureUserData<Self>] => PointerGesturesState
+            );
+        };
     };
 }

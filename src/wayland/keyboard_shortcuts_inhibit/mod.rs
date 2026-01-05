@@ -243,15 +243,34 @@ pub trait KeyboardShortcutsInhibitHandler {
 #[macro_export]
 macro_rules! delegate_keyboard_shortcuts_inhibit {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1: ()
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::{
+                        zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1,
+                        zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::keyboard_shortcuts_inhibit::{
+                    KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitorUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1: ()
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1: $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorUserData
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpKeyboardShortcutsInhibitManagerV1: ()] => KeyboardShortcutsInhibitState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpKeyboardShortcutsInhibitManagerV1: ()] => KeyboardShortcutsInhibitState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpKeyboardShortcutsInhibitorV1: KeyboardShortcutsInhibitorUserData] => KeyboardShortcutsInhibitState
+            );
+        };
     };
 }

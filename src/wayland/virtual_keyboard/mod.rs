@@ -157,13 +157,11 @@ where
         match request {
             zwp_virtual_keyboard_manager_v1::Request::CreateVirtualKeyboard { seat, id } => {
                 let seat = Seat::<D>::from_resource(&seat).unwrap();
-                let user_data = seat.user_data();
-                user_data.insert_if_missing(VirtualKeyboardHandle::default);
-                let virtual_keyboard_handle = user_data.get::<VirtualKeyboardHandle>().unwrap();
+                let virtual_keyboard_handle = VirtualKeyboardHandle::default();
                 data_init.init(
                     id,
                     VirtualKeyboardUserData {
-                        handle: virtual_keyboard_handle.clone(),
+                        handle: virtual_keyboard_handle,
                         seat: seat.clone(),
                     },
                 );
@@ -177,16 +175,34 @@ where
 #[macro_export]
 macro_rules! delegate_virtual_keyboard_manager {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1: $crate::wayland::virtual_keyboard::VirtualKeyboardManagerGlobalData
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
+        const _: () = {
+            use $crate::{
+                reexports::{
+                    wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
+                        zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
+                        zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
+                    },
+                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+                },
+                wayland::virtual_keyboard::{
+                    VirtualKeyboardManagerGlobalData, VirtualKeyboardManagerState, VirtualKeyboardUserData,
+                },
+            };
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1: ()
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
+            delegate_global_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpVirtualKeyboardManagerV1: VirtualKeyboardManagerGlobalData] => VirtualKeyboardManagerState
+            );
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1: $crate::wayland::virtual_keyboard::VirtualKeyboardUserData<Self>
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpVirtualKeyboardManagerV1: ()] => VirtualKeyboardManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpVirtualKeyboardV1: VirtualKeyboardUserData<Self>] => VirtualKeyboardManagerState
+            );
+        };
     };
 }

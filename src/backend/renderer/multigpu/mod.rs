@@ -64,7 +64,7 @@ use crate::{
     backend::{
         allocator::{
             dmabuf::{AnyError, Dmabuf},
-            format::FormatSet,
+            format::{get_bpp, FormatSet},
             Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
         },
         drm::DrmNode,
@@ -2209,6 +2209,7 @@ fn dma_shadow_copy<S, T>(
     slot: &mut Option<(Dmabuf, Box<dyn Any + 'static>, Option<SyncPoint>)>,
     src: &mut S::Device,
     mut target: Option<&mut T::Device>,
+    transfer_format: Option<Fourcc>,
 ) -> Result<(), Error<S, T>>
 where
     S: GraphicsApi,
@@ -2226,35 +2227,68 @@ where
     }
 
     let format = src_texture.format().unwrap_or(Fourcc::Abgr8888);
-    let read_formats = if let Some(target) = target.as_ref() {
-        ImportDma::dmabuf_formats(target.renderer())
-    } else {
-        ImportDma::dmabuf_formats(src.renderer())
-    }
-    .iter()
-    .filter(|f| f.code == format)
-    .copied()
-    .collect::<FormatSet>();
-    let write_formats = Bind::<Dmabuf>::supported_formats(src.renderer()).unwrap_or_default();
-    let modifiers = read_formats
-        .intersection(&write_formats)
-        .map(|f| f.modifier)
-        .filter(|m| *m != Modifier::Invalid)
-        .collect::<Vec<_>>();
 
-    if modifiers.is_empty() {
-        return Err(Error::ImportFailed);
-    }
-
-    let ((shadow_buffer, _, existing_sync_point), is_new_buffer) = if slot
-        .as_ref()
-        .is_some_and(|(buffer, _, _)| buffer.format().code == format)
-    {
+    let ((shadow_buffer, _, existing_sync_point), is_new_buffer) = if slot.is_some() {
         (slot.as_mut().unwrap(), false)
     } else {
+        let read_formats = if let Some(target) = target.as_ref() {
+            ImportDma::dmabuf_formats(target.renderer())
+        } else {
+            ImportDma::dmabuf_formats(src.renderer())
+        };
+        let write_formats = Bind::<Dmabuf>::supported_formats(src.renderer()).ok_or(Error::ImportFailed)?;
+        let candidates = read_formats
+            .intersection(&write_formats)
+            .filter(|f| f.modifier != Modifier::Invalid)
+            .copied()
+            .collect::<FormatSet>();
+
+        if candidates.indexset().is_empty() {
+            return Err(Error::ImportFailed);
+        }
+
+        let transfer_format = match transfer_format {
+            Some(fmt) if candidates.iter().any(|f| f.code == fmt) => fmt,
+            Some(_) => return Err(Error::ImportFailed),
+            None => {
+                if candidates.iter().any(|f| f.code == format) {
+                    format
+                } else {
+                    let bpp = get_bpp(format).unwrap_or(8);
+                    if let Some(f) = candidates
+                        .iter()
+                        .find(|f| get_bpp(f.code).is_some_and(|val| val == bpp))
+                    {
+                        f.code
+                    } else {
+                        candidates
+                            .iter()
+                            .find(|f| get_bpp(f.code).is_some_and(|val| val == 8))
+                            .map(|f| f.code)
+                            .ok_or(Error::ImportFailed)?
+                    }
+                }
+            }
+        };
+
+        let modifiers = candidates
+            .into_iter()
+            .filter(|f| f.code == transfer_format)
+            .map(|f| f.modifier)
+            .collect::<Vec<_>>();
+
+        if modifiers.is_empty() {
+            return Err(Error::ImportFailed);
+        }
+
         let shadow_buffer = src
             .allocator()
-            .create_buffer(src_texture.width(), src_texture.height(), format, &modifiers)
+            .create_buffer(
+                src_texture.width(),
+                src_texture.height(),
+                transfer_format,
+                &modifiers,
+            )
             .map_err(Error::AllocatorError)?;
 
         let target_texture = if let Some(target) = target.as_mut() {
@@ -2271,7 +2305,7 @@ where
                     .map_err(Error::Render)?,
             ) as Box<dyn Any + 'static>
         };
-        (slot.get_or_insert((shadow_buffer, target_texture, None)), true)
+        (slot.insert((shadow_buffer, target_texture, None)), true)
     };
 
     let src_renderer = src.renderer_mut();
@@ -2494,7 +2528,7 @@ where
         }) => {
             if let Some((dmabuf, texture)) = external_shadow.take() {
                 let mut slot = Some((dmabuf, texture, None));
-                dma_shadow_copy::<S, S>(src_texture, damage, &mut slot, src, None)
+                dma_shadow_copy::<S, S>(src_texture, damage, &mut slot, src, None, None)
                     .map_err(Error::generalize::<T>)?;
                 external_shadow = slot.map(|(dmabuf, texture, sync_point)| {
                     if let Some(sync) = sync_point {
@@ -2523,7 +2557,6 @@ where
                 })
                 .unwrap_or(src_texture);
             let res = mem_copy::<S, T>(src_texture, damage, &mut slot, src, target);
-
             *target_texture = slot.map(|(mappings, texture)| GpuSingleTexture::Mem {
                 external_shadow,
                 texture: texture.map(|texture| texture as Box<dyn Any + 'static>),
@@ -2545,7 +2578,7 @@ where
             sync,
         }) => {
             let mut slot = Some((dmabuf, texture, sync));
-            let res = dma_shadow_copy::<S, T>(src_texture, damage, &mut slot, src, Some(target));
+            let res = dma_shadow_copy::<S, T>(src_texture, damage, &mut slot, src, Some(target), None);
             *target_texture = slot.map(|(dmabuf, texture, sync)| GpuSingleTexture::Dma {
                 texture,
                 dmabuf,
@@ -2555,7 +2588,7 @@ where
         }
         None => {
             let mut slot = None;
-            match dma_shadow_copy::<S, T>(src_texture, damage, &mut slot, src, Some(target)) {
+            match dma_shadow_copy::<S, T>(src_texture, damage, &mut slot, src, Some(target), None) {
                 Ok(()) => {
                     *target_texture = slot.map(|(dmabuf, texture, sync)| GpuSingleTexture::Dma {
                         texture: texture as Box<dyn Any + 'static>,
@@ -2570,7 +2603,7 @@ where
                     let mut external_shadow = None;
                     if !ExportMem::can_read_texture(src.renderer_mut(), src_texture).map_err(Error::Render)? {
                         let mut slot = None;
-                        dma_shadow_copy::<S, S>(src_texture, damage, &mut slot, src, None)
+                        dma_shadow_copy::<S, S>(src_texture, damage, &mut slot, src, None, None)
                             .map_err(Error::generalize::<T>)?;
                         external_shadow = slot.map(|(dmabuf, texture, sync_point)| {
                             if let Some(sync) = sync_point {
@@ -2584,7 +2617,7 @@ where
                     };
 
                     let mut slot = None;
-                    let src_texture = external_shadow
+                    let mem_src_texture = external_shadow
                         .as_ref()
                         .map(|(_, texture)| {
                             texture
@@ -2593,7 +2626,40 @@ where
                         })
                         .unwrap_or(src_texture);
 
-                    let res = mem_copy::<S, T>(src_texture, damage, &mut slot, src, target);
+                    let res = match mem_copy::<S, T>(mem_src_texture, damage, &mut slot, src, target) {
+                        Ok(res) => Ok(res),
+                        Err(_) => {
+                            let mut dma_slot = None;
+                            dma_shadow_copy::<S, S>(
+                                src_texture,
+                                damage,
+                                &mut dma_slot,
+                                src,
+                                None,
+                                Some(Fourcc::Abgr8888),
+                            )
+                            .map_err(Error::generalize::<T>)?;
+                            external_shadow = dma_slot.map(|(dmabuf, texture, sync_point)| {
+                                if let Some(sync) = sync_point {
+                                    // ignore interrupt errors
+                                    src.renderer_mut().wait(&sync).unwrap_or_else(|_| {
+                                        let _ = sync.wait();
+                                    });
+                                }
+                                (dmabuf, texture as Box<dyn Any + 'static>)
+                            });
+                            let src_texture = external_shadow
+                                .as_ref()
+                                .map(|(_, texture)| {
+                                    texture
+                                        .downcast_ref::<<<S::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>()
+                                        .unwrap()
+                                })
+                                .unwrap_or(src_texture);
+                            mem_copy::<S, T>(src_texture, damage, &mut slot, src, target)
+                        }
+                    };
+
                     *target_texture = slot.map(|(mappings, texture)| GpuSingleTexture::Mem {
                         texture: texture.map(|texture| texture as Box<dyn Any + 'static>),
                         mappings: mappings.map(|mappings| {
