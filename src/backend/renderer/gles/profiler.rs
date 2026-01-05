@@ -191,6 +191,7 @@ mod imp {
         pub fn new(gl: &ffi::Gles2, extensions: &[String]) -> Self {
             let has_timer_query = extensions.iter().any(|ext| ext == "GL_EXT_disjoint_timer_query");
             if !has_timer_query {
+                warn!("GPU profiling enabled but GL_EXT_disjoint_timer_query is not supported");
                 return Self { pool: None };
             }
 
