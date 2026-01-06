@@ -1,4 +1,5 @@
 use crate::{
+    backend::renderer::utils::RendererSurfaceStateUserData,
     desktop::{utils::*, PopupManager},
     output::{Output, WeakOutput},
     utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Size},
@@ -146,10 +147,10 @@ impl LayerMap {
         if !self.layers.contains(layer) {
             return None;
         }
-        let mut bbox = layer.bbox();
+        let mut geo = layer.geometry();
         let state = layer_state(layer);
-        bbox.loc += state.location.unwrap_or_default();
-        Some(bbox)
+        geo.loc += state.location.unwrap_or_default();
+        Some(geo)
     }
 
     /// Returns a [`LayerSurface`] under a given point and on a given layer, if any.
@@ -576,6 +577,18 @@ impl LayerSurface {
     /// Returns the namespace of this surface
     pub fn namespace(&self) -> &str {
         &self.0.namespace
+    }
+
+    /// Returns the bounding box over this layer surface excluding its subsurfaces.
+    pub fn geometry(&self) -> Rectangle<i32, Logical> {
+        with_states(self.0.surface.wl_surface(), |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.and_then(|d| d.lock().unwrap().view()).map(|view| Rectangle {
+                loc: view.offset,
+                size: view.dst,
+            })
+        })
+        .unwrap_or_default()
     }
 
     /// Returns the bounding box over this layer surface and its subsurfaces.
