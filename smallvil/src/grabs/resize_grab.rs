@@ -1,3 +1,8 @@
+//! Resize grab is the state of a composer during which the client window is being resized.
+//!
+//! eg. Usually whenever a user clicks on the app's border and starts dragging, the compositors
+//! enters a ResizeSurfaceGrab state.
+
 use crate::Smallvil;
 use smithay::{
     desktop::{Space, Window},
