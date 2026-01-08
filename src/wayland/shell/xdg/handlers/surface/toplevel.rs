@@ -184,22 +184,7 @@ where
             let toplevel = state.xdg_shell_state().known_toplevels.remove(index);
             let surface = toplevel.wl_surface().clone();
             XdgShellHandler::toplevel_destroyed(state, toplevel);
-            compositor::with_states(&surface, |states| {
-                *states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap() = Default::default();
-
-                let mut guard = states.cached_state.get::<SurfaceCachedState>();
-                *guard.pending() = Default::default();
-                *guard.current() = Default::default();
-
-                let mut guard = states.cached_state.get::<ToplevelCachedState>();
-                *guard.pending() = Default::default();
-                *guard.current() = Default::default();
-            })
+            reset_toplevel_surface_state(&surface, true);
         }
     }
 }
@@ -228,6 +213,29 @@ pub(super) fn make_toplevel_handle(
         wl_surface: data.wl_surface.clone(),
         shell_surface: resource.clone(),
     }
+}
+
+/// Resets the internal state of a surface to clear any residue from previous xdg_toplevel roles.
+///
+/// If `include_generic_state` is true, this will also clear generic wl_surface state
+/// (buffer scale, transform, etc). This should only be used when the role is being destroyed,
+/// not when it is being initialized/reused.
+pub fn reset_toplevel_surface_state(surface: &wl_surface::WlSurface, include_generic_state: bool) {
+    compositor::with_states(surface, |states| {
+        if let Some(role) = states.data_map.get::<XdgToplevelSurfaceData>() {
+            *role.lock().unwrap() = Default::default();
+        }
+
+        let mut toplevel_state = states.cached_state.get::<ToplevelCachedState>();
+        *toplevel_state.pending() = Default::default();
+        *toplevel_state.current() = Default::default();
+
+        if include_generic_state {
+            let mut surface_state = states.cached_state.get::<SurfaceCachedState>();
+            *surface_state.pending() = Default::default();
+            *surface_state.current() = Default::default();
+        }
+    });
 }
 
 pub fn get_parent(toplevel: &xdg_toplevel::XdgToplevel) -> Option<wl_surface::WlSurface> {

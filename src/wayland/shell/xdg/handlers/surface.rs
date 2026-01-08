@@ -31,7 +31,7 @@ use super::{
 
 mod toplevel;
 use toplevel::make_toplevel_handle;
-pub use toplevel::{get_parent, send_toplevel_configure};
+pub use toplevel::{get_parent, reset_toplevel_surface_state, send_toplevel_configure};
 
 mod popup;
 pub use popup::{make_popup_handle, send_popup_configure};
@@ -92,6 +92,10 @@ where
                 // We now can assign a role to the surface
                 let surface = &data.wl_surface;
                 let shell = &data.wm_base;
+
+                // Sanitize the surface role data.
+                // This handles clients that reuse surfaces and might have left them dirty.
+                reset_toplevel_surface_state(surface, false);
 
                 if compositor::give_role(surface, XDG_TOPLEVEL_ROLE).is_err() {
                     shell.post_error(xdg_wm_base::Error::Role, "Surface already has a role.");
