@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = Smallvil::new(&mut event_loop, display);
 
-    // Open a Wayland/X11 window four our nested compositor
+    // Open a Wayland/X11 window for our nested compositor
     crate::winit::init_winit(&mut event_loop, &mut state)?;
 
     // Set WAYLAND_DISPLAY to our socket name, so child processes connect to Smallvil rather
