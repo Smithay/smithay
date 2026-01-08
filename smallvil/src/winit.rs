@@ -12,15 +12,12 @@ use smithay::{
     utils::{Rectangle, Transform},
 };
 
-use crate::{CalloopData, Smallvil};
+use crate::Smallvil;
 
 pub fn init_winit(
-    event_loop: &mut EventLoop<CalloopData>,
-    data: &mut CalloopData,
+    event_loop: &mut EventLoop<Smallvil>,
+    state: &mut Smallvil,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let display_handle = &mut data.display_handle;
-    let state = &mut data.state;
-
     let (mut backend, winit) = winit::init()?;
 
     let mode = Mode {
@@ -38,7 +35,7 @@ pub fn init_winit(
             serial_number: "Unknown".into(),
         },
     );
-    let _global = output.create_global::<Smallvil>(display_handle);
+    let _global = output.create_global::<Smallvil>(&state.display_handle);
     output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
     output.set_preferred(mode);
 
@@ -46,12 +43,7 @@ pub fn init_winit(
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
 
-    std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
-
-    event_loop.handle().insert_source(winit, move |event, _, data| {
-        let display = &mut data.display_handle;
-        let state = &mut data.state;
-
+    event_loop.handle().insert_source(winit, move |event, _, state| {
         match event {
             WinitEvent::Resized { size, .. } => {
                 output.change_current_state(
@@ -102,7 +94,7 @@ pub fn init_winit(
 
                 state.space.refresh();
                 state.popups.cleanup();
-                let _ = display.flush_clients();
+                let _ = state.display_handle.flush_clients();
 
                 // Ask for redraw to schedule new frame.
                 backend.window().request_redraw();

@@ -22,8 +22,6 @@ use smithay::{
     },
 };
 
-use crate::CalloopData;
-
 pub struct Smallvil {
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
@@ -45,21 +43,29 @@ pub struct Smallvil {
 }
 
 impl Smallvil {
-    pub fn new(event_loop: &mut EventLoop<CalloopData>, display: Display<Self>) -> Self {
+    pub fn new(event_loop: &mut EventLoop<Self>, display: Display<Self>) -> Self {
         let start_time = std::time::Instant::now();
 
         let dh = display.handle();
 
+        // Here we initialize implementations of some wayland protocols
+        // Some of them require us to implement traits on the Smallvil state,
+        // you can find those implementations in the `crate::handlers` module
+
+        // Initialize protocols needed for displaying windows
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
-        let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
-        let mut seat_state = SeatState::new();
-        let data_device_state = DataDeviceState::new::<Self>(&dh);
         let popups = PopupManager::default();
+
+        let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
+
+        // Data device is responsible for clipboard and drag-and-drop
+        let data_device_state = DataDeviceState::new::<Self>(&dh);
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
+        let mut seat_state = SeatState::new();
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit");
 
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
@@ -76,6 +82,7 @@ impl Smallvil {
         // Outputs become views of a part of the Space and can be rendered via Space::render_output.
         let space = Space::default();
 
+        // Setup a wayland socket that will be used to accept clients
         let socket_name = Self::init_wayland_listener(display, event_loop);
 
         // Get the loop signal, used to stop the event loop
@@ -100,10 +107,7 @@ impl Smallvil {
         }
     }
 
-    fn init_wayland_listener(
-        display: Display<Smallvil>,
-        event_loop: &mut EventLoop<CalloopData>,
-    ) -> OsString {
+    fn init_wayland_listener(display: Display<Smallvil>, event_loop: &mut EventLoop<Self>) -> OsString {
         // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
         let listening_socket = ListeningSocketSource::new_auto().unwrap();
 
@@ -132,7 +136,7 @@ impl Smallvil {
                 |_, display, state| {
                     // Safety: we don't drop the display
                     unsafe {
-                        display.get_mut().dispatch_clients(&mut state.state).unwrap();
+                        display.get_mut().dispatch_clients(state).unwrap();
                     }
                     Ok(PostAction::Continue)
                 },
@@ -151,6 +155,8 @@ impl Smallvil {
     }
 }
 
+/// Data associated with a wayland client that connects to Smallvil.
+/// One instance of this type per client.
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
