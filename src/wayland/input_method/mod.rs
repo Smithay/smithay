@@ -238,7 +238,9 @@ where
                 // Notify compositor about new input method
                 state.new_input_method(&app_id);
             }
-            zwp_input_method_manager_v2::Request::Destroy => {}
+            zwp_input_method_manager_v2::Request::Destroy => {
+                // Nothing to do
+            }
             _ => unreachable!(),
         }
     }
