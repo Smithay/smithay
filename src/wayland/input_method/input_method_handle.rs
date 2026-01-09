@@ -245,6 +245,60 @@ impl InputMethodHandle {
         keyboard.grab.is_some()
     }
 
+    /// Send keymap update to active input method keyboard grab
+    ///
+    /// This should be called when the keyboard layout changes to ensure
+    /// the IME receives the new keymap and can update its virtual keyboard accordingly.
+    pub fn send_keymap_to_grab<D: SeatHandler + 'static>(&self, keyboard_handle: &KeyboardHandle<D>) {
+        let inner = self.inner.lock().unwrap();
+
+        // Get the active instance's keyboard grab
+        let active_id = match inner.active_input_method_id.as_ref() {
+            Some(id) => id,
+            None => {
+                info!("InputMethod: send_keymap_to_grab - no active input method");
+                return;
+            }
+        };
+
+        let keyboard_grab_obj = inner
+            .instances
+            .iter()
+            .find(|inst| inst.object.id() == *active_id)
+            .and_then(|inst| inst.keyboard_grab.as_ref());
+
+        let keyboard_grab = match keyboard_grab_obj {
+            Some(grab) => grab,
+            None => {
+                info!("InputMethod: send_keymap_to_grab - active instance has no keyboard grab");
+                return;
+            }
+        };
+
+        // Send the current keymap to the grab
+        let guard = keyboard_handle.arc.internal.lock().unwrap();
+        let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
+        let res = keymap_file.with_fd(false, |fd, size| {
+            keyboard_grab.keymap(KeymapFormat::XkbV1, fd, size as u32);
+        });
+
+        if let Err(err) = res {
+            warn!(err = ?err, "Failed to send keymap update to IME keyboard grab");
+        } else {
+            info!("InputMethod: send_keymap_to_grab - successfully sent keymap to active grab");
+
+            // Also send current modifiers to keep them in sync
+            let mods = guard.mods_state.serialized;
+            keyboard_grab.modifiers(
+                SERIAL_COUNTER.next_serial().into(),
+                mods.depressed,
+                mods.latched,
+                mods.locked,
+                mods.layout_effective,
+            );
+        }
+    }
+
     pub(crate) fn set_text_input_rectangle<D: SeatHandler + 'static>(
         &self,
         state: &mut D,

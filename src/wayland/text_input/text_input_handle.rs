@@ -261,6 +261,7 @@ impl TextInputHandle {
 #[derive(Debug)]
 pub struct TextInputUserData {
     pub(super) handle: TextInputHandle,
+    pub(super) input_method_handle: InputMethodHandle,
 }
 
 impl<D> Dispatch<ZwpTextInputV3, TextInputUserData, D> for TextInputManagerState
@@ -354,17 +355,13 @@ where
                         *active_text_input_id = Some(resource.id());
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        if let Some(im_handle) = input_method_handle {
-                            im_handle.activate_input_method(state, &focus);
-                        }
+                        data.input_method_handle.activate_input_method(state, &focus);
                     }
                     Some(false) => {
                         *active_text_input_id = None;
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        if let Some(im_handle) = input_method_handle {
-                            im_handle.deactivate_input_method(state);
-                        }
+                        data.input_method_handle.deactivate_input_method(state);
                         return;
                     }
                     None => {
@@ -435,7 +432,7 @@ where
 
     fn destroyed(state: &mut D, _client: ClientId, text_input: &ZwpTextInputV3, data: &TextInputUserData) {
         let destroyed_id = text_input.id();
-        let (deactivate_im, im_handle) = {
+        let deactivate_im = {
             let mut inner = data.handle.inner.lock().unwrap();
 
             inner.instances.retain(|inst| inst.instance.id() != destroyed_id);
@@ -453,13 +450,11 @@ where
                     .iter()
                     .any(|inst| inst.instance.id().same_client_as(&destroyed_id));
 
-            (should_deactivate, im_handle)
+            should_deactivate
         };
 
         if deactivate_im {
-            if let Some(im_handle) = im_handle {
-                im_handle.deactivate_input_method(state);
-            }
+            data.input_method_handle.deactivate_input_method(state);
         }
     }
 }
