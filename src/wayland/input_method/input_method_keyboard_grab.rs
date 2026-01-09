@@ -61,7 +61,7 @@ where
 
         // Only forward to IME if both an IME is active AND a text input has focus
         if !is_active || !has_text_input {
-            // No active input method or no text input focus, forward to normal keyboard handlingł
+            // No active input method or no text input focus, forward to normal keyboard handling
             drop(inner);
             handle.input(data, keycode, key_state, modifiers, serial, time);
             return;

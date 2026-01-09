@@ -112,7 +112,7 @@ pub trait InputMethodHandler {
 
     /// Called when a new input method instance is added.
     /// The app_id identifies the input method application.
-    fn new_input_method(&mut self, _app_id: &str) {}
+    fn new_input_method(&mut self, _app_id: &str);
 }
 
 /// Extends [Seat] with input method functionality
