@@ -112,8 +112,9 @@ where
                 // Ensure virtual keyboard's keymap is active.
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
 
-                if ime_keyboard_grabbed.is_some()
-                    && ime_keyboard_grabbed.unwrap().client().unwrap() == *client
+                if ime_keyboard_grabbed
+                    .map(|grab| grab.client().as_ref() == Some(client))
+                    .unwrap_or(false)
                 {
                     use wayland_server::protocol::wl_keyboard::KeyState;
                     let mut internal = keyboard_handle.arc.internal.lock().unwrap();
