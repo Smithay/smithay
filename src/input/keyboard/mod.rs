@@ -736,19 +736,12 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         // Ignore request which do not change the keymap.
         let new_id = keymap_file.id();
         if new_id == *self.arc.active_keymap.read().unwrap() {
-            info!("Smithay change_keymap: keymap ID unchanged, skipping");
             return false;
         }
         *self.arc.active_keymap.write().unwrap() = new_id;
 
         // Update keymap for every wl_keyboard.
         let known_kbds = &self.arc.known_kbds;
-        let kbd_count = known_kbds.lock().unwrap().len();
-        info!(
-            "Smithay change_keymap: sending new keymap to {} wl_keyboard clients",
-            kbd_count
-        );
-
         for kbd in &*known_kbds.lock().unwrap() {
             let Ok(kbd) = kbd.upgrade() else {
                 continue;
@@ -768,18 +761,13 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         // Send updated modifiers.
         let seat = self.get_seat(data);
         if let Some(focus) = focus {
-            info!("Smithay change_keymap: sending modifiers to focused client");
             focus.modifiers(&seat, data, mods, SERIAL_COUNTER.next_serial());
-        } else {
-            info!("Smithay change_keymap: no focused client for modifiers");
         }
 
-        info!("Smithay change_keymap: completed");
         true
     }
 
     fn update_xkb_state(&self, data: &mut D, keymap: xkb::Keymap) {
-        info!("Smithay update_xkb_state: creating new XKB state");
         let mut internal = self.arc.internal.lock().unwrap();
 
         let mut state = xkb::State::new(&keymap);
@@ -806,10 +794,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
 
         #[cfg(feature = "wayland_frontend")]
-        {
-            info!("Smithay update_xkb_state: calling change_keymap to notify clients");
-            self.change_keymap(data, &focus, &keymap, mods);
-        }
+        self.change_keymap(data, &focus, &keymap, mods);
 
         if leds_changed {
             let led_state = internal.led_state;
@@ -817,7 +802,6 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             let seat = self.get_seat(data);
             data.led_state_changed(&seat, led_state);
         }
-        info!("Smithay update_xkb_state: completed");
     }
 
     /// Change the [`Keymap`](xkb::Keymap) used by the keyboard.
@@ -842,20 +826,12 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
     /// Change the [`XkbConfig`] used by the keyboard.
     pub fn set_xkb_config(&self, data: &mut D, xkb_config: XkbConfig<'_>) -> Result<(), Error> {
-        info!(
-            "Smithay set_xkb_config: layout='{}', variant='{}', model='{}', options='{:?}'",
-            xkb_config.layout, xkb_config.variant, xkb_config.model, xkb_config.options
-        );
         let keymap = xkb_config
             .compile_keymap(&self.arc.internal.lock().unwrap().xkb.lock().unwrap().context)
             .map_err(|_| {
-                info!(
-                    "Smithay FAILED to compile keymap: layout='{}', variant='{}', model='{}', options='{:?}'",
-                    xkb_config.layout, xkb_config.variant, xkb_config.model, xkb_config.options
-                );
+                debug!("Loading keymap from XkbConfig failed");
                 Error::BadKeymap
             })?;
-        info!("Smithay keymap compiled successfully, updating XKB state");
         self.update_xkb_state(data, keymap);
         Ok(())
     }
