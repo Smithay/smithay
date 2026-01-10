@@ -56,6 +56,10 @@ use smithay::{
         fifo::{FifoBarrierCachedState, FifoManagerState},
         fixes::FixesState,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
+        image_capture_source::{ImageCaptureSource, ImageCaptureSourceHandler, ImageCaptureSourceState},
+        image_copy_capture::{
+            BufferConstraints, Frame, ImageCopyCaptureHandler, ImageCopyCaptureState, Session, SessionRef,
+        },
         input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
@@ -158,6 +162,8 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub single_pixel_buffer_state: SinglePixelBufferState,
     pub fifo_manager_state: FifoManagerState,
     pub commit_timing_manager_state: CommitTimingManagerState,
+    pub image_capture_source_state: ImageCaptureSourceState,
+    pub image_copy_capture_state: ImageCopyCaptureState,
 
     pub dnd_icon: Option<DndIcon>,
 
@@ -599,6 +605,52 @@ smithay::delegate_commit_timing!(@<BackendData: Backend + 'static> AnvilState<Ba
 
 delegate_fixes!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+impl<BackendData: Backend> ImageCaptureSourceHandler for AnvilState<BackendData> {
+    fn image_capture_source_state(&mut self) -> &mut ImageCaptureSourceState {
+        &mut self.image_capture_source_state
+    }
+
+    fn output_source_created(&mut self, source: ImageCaptureSource, output: &Output) {
+        source.user_data().insert_if_missing(|| output.downgrade());
+    }
+}
+smithay::delegate_image_capture_source!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+impl<BackendData: Backend> ImageCopyCaptureHandler for AnvilState<BackendData> {
+    fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState {
+        &mut self.image_copy_capture_state
+    }
+
+    fn capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
+        use smithay::output::WeakOutput;
+        let weak_output = source.user_data().get::<WeakOutput>()?;
+        let output = weak_output.upgrade()?;
+        let mode = output.current_mode()?;
+
+        Some(BufferConstraints {
+            size: mode
+                .size
+                .to_logical(1)
+                .to_buffer(1, smithay::utils::Transform::Normal),
+            shm: vec![
+                smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888,
+                smithay::reexports::wayland_server::protocol::wl_shm::Format::Xrgb8888,
+            ],
+            dma: None,
+        })
+    }
+
+    fn new_session(&mut self, _session: Session) {
+        // Anvil doesn't track sessions; they clean up on drop
+    }
+
+    fn frame(&mut self, _session: &SessionRef, frame: Frame) {
+        // Anvil doesn't implement actual capture
+        frame.fail(smithay::wayland::image_copy_capture::CaptureFailureReason::Unknown);
+    }
+}
+smithay::delegate_image_copy_capture!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
@@ -682,6 +734,10 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         });
         FixesState::new::<Self>(&dh);
 
+        // Image capture protocols (screencopy)
+        let image_capture_source_state = ImageCaptureSourceState::new::<Self>(&dh);
+        let image_copy_capture_state = ImageCopyCaptureState::new::<Self>(&dh);
+
         // init input
         let seat_name = backend_data.seat_name();
         let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
@@ -725,6 +781,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             single_pixel_buffer_state,
             fifo_manager_state,
             commit_timing_manager_state,
+            image_capture_source_state,
+            image_copy_capture_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
             cursor_status: CursorImageStatus::default_named(),
