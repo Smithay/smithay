@@ -107,6 +107,7 @@ use crate::wayland::image_capture_source::ImageCaptureSource;
 
 // Buffer validation imports
 use crate::backend::renderer::{buffer_type, BufferType};
+#[cfg(feature = "backend_drm")]
 use crate::wayland::dmabuf::get_dmabuf;
 use crate::wayland::shm::with_buffer_contents;
 
