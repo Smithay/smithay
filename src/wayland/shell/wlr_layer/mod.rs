@@ -128,7 +128,7 @@ impl LayerSurfaceAttributes {
             .find(|configure| configure.serial == serial)
             .cloned()?;
 
-        self.last_acked = Some(configure.clone());
+        self.last_acked = Some(configure);
 
         self.pending_configures.retain(|c| c.serial > serial);
         Some(configure)
@@ -190,7 +190,7 @@ pub struct LayerSurfaceCachedState {
 
 impl Cacheable for LayerSurfaceCachedState {
     fn commit(&mut self, _dh: &DisplayHandle) -> Self {
-        self.clone()
+        *self
     }
     fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
         *into = self;
@@ -318,7 +318,7 @@ impl LayerSurface {
                 attributes
                     .server_pending
                     .take()
-                    .unwrap_or_else(|| attributes.current_server_state().clone()),
+                    .unwrap_or_else(|| attributes.current_server_state()),
             );
         }
 
@@ -368,14 +368,14 @@ impl LayerSurface {
 
             let state = self
                 .get_pending_state(&mut attributes)
-                .unwrap_or_else(|| attributes.current_server_state().clone());
+                .unwrap_or_else(|| attributes.current_server_state());
 
             let configure = LayerSurfaceConfigure {
                 serial: SERIAL_COUNTER.next_serial(),
                 state,
             };
 
-            attributes.pending_configures.push(configure.clone());
+            attributes.pending_configures.push(configure);
             attributes.initial_configure_sent = true;
 
             configure
@@ -421,7 +421,7 @@ impl LayerSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                attributes.server_pending = Some(attributes.current_server_state().clone());
+                attributes.server_pending = Some(attributes.current_server_state());
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
@@ -526,7 +526,7 @@ impl LayerSurface {
             let got_unmapped = had_buffer_before && !has_buffer;
 
             if has_buffer {
-                let Some(last_acked) = role.last_acked.clone() else {
+                let Some(last_acked) = role.last_acked else {
                     role.surface.post_error(
                         zwlr_layer_surface_v1::Error::InvalidSurfaceState,
                         "must ack the initial configure before attaching buffer",
