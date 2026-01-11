@@ -159,14 +159,14 @@ impl LayerSurfaceAttributes {
 }
 
 /// State of a layer surface
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct LayerSurfaceState {
     /// The suggested size of the surface
     pub size: Option<Size<i32, Logical>>,
 }
 
 /// Represents the client pending state
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct LayerSurfaceCachedState {
     /// The size requested by the client
     pub size: Size<i32, Logical>,
@@ -567,7 +567,7 @@ impl LayerSurface {
 }
 
 /// A configure message for layer surfaces
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct LayerSurfaceConfigure {
     /// The state associated with this configure
     pub state: LayerSurfaceState,
