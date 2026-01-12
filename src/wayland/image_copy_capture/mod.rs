@@ -17,16 +17,21 @@
 //!
 //! ```no_run
 //! use smithay::delegate_image_copy_capture;
+//! use smithay::delegate_image_capture_source;
+//! use smithay::delegate_output_capture_source;
 //! use smithay::wayland::image_copy_capture::{
 //!     ImageCopyCaptureState, ImageCopyCaptureHandler, BufferConstraints,
 //!     Session, SessionRef, Frame,
 //! };
 //! use smithay::wayland::image_capture_source::{
 //!     ImageCaptureSourceState, ImageCaptureSourceHandler, ImageCaptureSource,
+//!     OutputCaptureSourceState, OutputCaptureSourceHandler,
 //! };
+//! use smithay::output::Output;
 //!
 //! pub struct State {
 //!     image_capture_source: ImageCaptureSourceState,
+//!     output_capture_source: OutputCaptureSourceState,
 //!     image_copy_capture: ImageCopyCaptureState,
 //! }
 //!
@@ -51,12 +56,17 @@
 //!     }
 //! }
 //!
-//! # impl ImageCaptureSourceHandler for State {
-//! #     fn image_capture_source_state(&mut self) -> &mut ImageCaptureSourceState {
-//! #         &mut self.image_capture_source
+//! # impl ImageCaptureSourceHandler for State {}
+//! # impl OutputCaptureSourceHandler for State {
+//! #     fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState {
+//! #         &mut self.output_capture_source
+//! #     }
+//! #     fn output_source_created(&mut self, source: ImageCaptureSource, output: &Output) {
+//! #         source.user_data().insert_if_missing(|| output.downgrade());
 //! #     }
 //! # }
 //! # smithay::delegate_image_capture_source!(State);
+//! # smithay::delegate_output_capture_source!(State);
 //!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
