@@ -56,7 +56,10 @@ use smithay::{
         fifo::{FifoBarrierCachedState, FifoManagerState},
         fixes::FixesState,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
-        image_capture_source::{ImageCaptureSource, ImageCaptureSourceHandler, ImageCaptureSourceState},
+        image_capture_source::{
+            ImageCaptureSource, ImageCaptureSourceHandler, ImageCaptureSourceState,
+            OutputCaptureSourceHandler, OutputCaptureSourceState,
+        },
         image_copy_capture::{
             BufferConstraints, Frame, ImageCopyCaptureHandler, ImageCopyCaptureState, Session, SessionRef,
         },
@@ -163,6 +166,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub fifo_manager_state: FifoManagerState,
     pub commit_timing_manager_state: CommitTimingManagerState,
     pub image_capture_source_state: ImageCaptureSourceState,
+    pub output_capture_source_state: OutputCaptureSourceState,
     pub image_copy_capture_state: ImageCopyCaptureState,
 
     pub dnd_icon: Option<DndIcon>,
@@ -606,15 +610,22 @@ smithay::delegate_commit_timing!(@<BackendData: Backend + 'static> AnvilState<Ba
 delegate_fixes!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> ImageCaptureSourceHandler for AnvilState<BackendData> {
-    fn image_capture_source_state(&mut self) -> &mut ImageCaptureSourceState {
-        &mut self.image_capture_source_state
+    fn source_destroyed(&mut self, _source: ImageCaptureSource) {
+        // Anvil doesn't track sources
+    }
+}
+smithay::delegate_image_capture_source!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+impl<BackendData: Backend> OutputCaptureSourceHandler for AnvilState<BackendData> {
+    fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState {
+        &mut self.output_capture_source_state
     }
 
     fn output_source_created(&mut self, source: ImageCaptureSource, output: &Output) {
         source.user_data().insert_if_missing(|| output.downgrade());
     }
 }
-smithay::delegate_image_capture_source!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+smithay::delegate_output_capture_source!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> ImageCopyCaptureHandler for AnvilState<BackendData> {
     fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState {
@@ -735,7 +746,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         FixesState::new::<Self>(&dh);
 
         // Image capture protocols (screencopy)
-        let image_capture_source_state = ImageCaptureSourceState::new::<Self>(&dh);
+        let image_capture_source_state = ImageCaptureSourceState::new();
+        let output_capture_source_state = OutputCaptureSourceState::new::<Self>(&dh);
         let image_copy_capture_state = ImageCopyCaptureState::new::<Self>(&dh);
 
         // init input
@@ -782,6 +794,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             fifo_manager_state,
             commit_timing_manager_state,
             image_capture_source_state,
+            output_capture_source_state,
             image_copy_capture_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
