@@ -1,9 +1,10 @@
-//! Cycles through initial commit-configure sequence, over and over again (every 1s)
+//! Attempt to reproduce https://github.com/Smithay/smithay/issues/1894
 
-use std::time::Duration;
-
+use smithay_client_toolkit::delegate_subcompositor;
+use smithay_client_toolkit::reexports::client::protocol::wl_subsurface::WlSubsurface;
 use smithay_client_toolkit::reexports::{calloop, client as wayland_client};
 
+use smithay_client_toolkit::subcompositor::SubcompositorState;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_output, delegate_registry, delegate_shm, delegate_xdg_shell,
@@ -38,15 +39,18 @@ fn main() {
     let (mut event_loop, globals, qh) = test_clients::init_connection::<App>();
 
     let compositor = CompositorState::bind(&globals, &qh).unwrap();
+    let subcompositor = SubcompositorState::bind(compositor.wl_compositor().clone(), &globals, &qh).unwrap();
     let xdg_shell = XdgShell::bind(&globals, &qh).unwrap();
 
     let surface = compositor.create_surface(&qh);
+    let subsurface = subcompositor.create_subsurface(surface.clone(), &qh);
+
     let window = xdg_shell.create_window(surface, WindowDecorations::RequestServer, &qh);
 
     let shm = Shm::bind(&globals, &qh).unwrap();
     let pool = SlotPool::new(256 * 256 * 4, &shm).unwrap();
 
-    let mut simple_window = App {
+    let mut app = App {
         registry_state: RegistryState::new(&globals),
         output_state: OutputState::new(&globals, &qh),
         shm,
@@ -60,18 +64,14 @@ fn main() {
         shift: 0,
         buffer: None,
         window,
+        subsurface,
+        commit_only_once: true,
         loop_signal: event_loop.get_signal(),
     };
 
-    event_loop
-        .handle()
-        .insert_source(calloop::timer::Timer::immediate(), |_, _, app| {
-            app.map_toggle();
-            calloop::timer::TimeoutAction::ToDuration(Duration::from_secs(1))
-        })
-        .unwrap();
+    app.map_toggle();
 
-    event_loop.run(None, &mut simple_window, |_| {}).unwrap();
+    event_loop.run(None, &mut app, |_| {}).unwrap();
 }
 
 struct App {
@@ -88,6 +88,9 @@ struct App {
     shift: u32,
     buffer: Option<Buffer>,
     window: Window,
+    subsurface: (WlSubsurface, WlSurface),
+    commit_only_once: bool,
+
     loop_signal: calloop::LoopSignal,
 }
 
@@ -172,6 +175,21 @@ impl App {
             return;
         }
 
+        if std::mem::take(&mut self.commit_only_once) {
+            test_clients::draw(
+                qh,
+                &self.subsurface.1,
+                &mut self.pool,
+                &mut self.buffer,
+                self.width,
+                self.height,
+                &mut self.shift,
+            );
+        }
+
+        // Test if setting the pos and never calling commit on the subsurface still applies the pos on partent commit
+        self.subsurface.0.set_position(self.shift as i32, 20);
+
         test_clients::draw(
             qh,
             self.window.wl_surface(),
@@ -185,6 +203,8 @@ impl App {
 }
 
 delegate_compositor!(App);
+delegate_subcompositor!(App);
+
 delegate_output!(App);
 delegate_shm!(App);
 

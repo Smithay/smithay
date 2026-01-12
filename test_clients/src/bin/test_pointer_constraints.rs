@@ -171,7 +171,7 @@ impl App {
 
         test_clients::draw(
             qh,
-            &self.window,
+            self.window.wl_surface(),
             &mut self.pool,
             &mut self.buffer,
             self.width,
