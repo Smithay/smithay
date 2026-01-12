@@ -99,71 +99,21 @@ impl TextInputHandle {
         }
     }
 
-    /// Set the input method for the currently focused text input by app_id.
-    /// Returns true if an input method with the given app_id was found and assigned.
-    pub fn set_input_method(&self, app_id: &str, input_method_handle: &InputMethodHandle) -> bool {
-        // Find the input method instance with this app_id
-        let im_object_id = {
-            let im_inner = input_method_handle.inner.lock().unwrap();
-            let instance = im_inner.instances.iter().find(|i| i.app_id == app_id);
-            let Some(im_instance) = instance else {
-                return false;
-            };
-            im_instance.object.id()
-        };
-
-        // Set it for the active text input
-        let mut inner = self.inner.lock().unwrap();
-        let active_id = inner.active_text_input_id.clone();
-        if let Some(active_id) = active_id {
-            if let Some(text_input) = inner
-                .instances
-                .iter_mut()
-                .find(|inst| inst.instance.id() == active_id)
-            {
-                text_input.input_method_id = Some(im_object_id);
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Assign the given input method to all text inputs by app_id (global mode).
-    /// Returns true if an input method with the given app_id was found.
-    pub fn set_input_method_globally(&self, app_id: &str, input_method_handle: &InputMethodHandle) -> bool {
-        // Find the input method instance with this app_id
-        let im_object_id = {
-            let im_inner = input_method_handle.inner.lock().unwrap();
-            let instance = im_inner.instances.iter().find(|i| i.app_id == app_id);
-            let Some(im_instance) = instance else {
-                return false;
-            };
-            im_instance.object.id()
-        };
-
-        // Set it for all text inputs
-        let mut inner = self.inner.lock().unwrap();
-        for text_input in inner.instances.iter_mut() {
-            text_input.input_method_id = Some(im_object_id.clone());
-        }
-        true
-    }
-
     /// Return the currently focused surface.
-    pub fn focus(&self) -> Option<WlSurface> {
+    pub(crate) fn focus(&self) -> Option<WlSurface> {
         self.inner.lock().unwrap().focus.clone()
     }
 
     /// Advance the focus for the client to `surface`.
     ///
     /// This doesn't send any 'enter' or 'leave' events.
-    pub fn set_focus(&self, surface: Option<WlSurface>) {
+    pub(crate) fn set_focus(&self, surface: Option<WlSurface>) {
         self.inner.lock().unwrap().focus = surface;
     }
 
     /// Send `leave` on the text-input instance for the currently focused
     /// surface.
-    pub fn leave(&self) {
+    pub(crate) fn leave(&self) {
         let mut inner = self.inner.lock().unwrap();
         // Leaving clears the active text input.
         inner.active_text_input_id = None;
@@ -186,7 +136,7 @@ impl TextInputHandle {
 
     /// The `discard_state` is used when the input-method signaled that
     /// the state should be discarded and wrong serial sent.
-    pub fn done(&self, discard_state: bool) {
+    pub(crate) fn done(&self, discard_state: bool) {
         let mut inner = self.inner.lock().unwrap();
         inner.with_active_text_input(|text_input, _, serial| {
             if discard_state {
@@ -211,7 +161,7 @@ impl TextInputHandle {
     }
 
     /// Access the active text-input instance for the currently focused surface.
-    pub fn with_active_text_input<F>(&self, mut f: F)
+    pub(crate) fn with_active_text_input<F>(&self, mut f: F)
     where
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
@@ -222,7 +172,7 @@ impl TextInputHandle {
     }
 
     /// Check if there's an active text input with focus.
-    pub fn has_active_text_input(&self) -> bool {
+    pub(crate) fn has_active_text_input(&self) -> bool {
         let inner = self.inner.lock().unwrap();
         let has_active = inner.focus.is_some() && inner.active_text_input_id.is_some();
         has_active

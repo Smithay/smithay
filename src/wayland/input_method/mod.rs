@@ -177,7 +177,7 @@ where
     fn bind(
         _: &mut D,
         _: &DisplayHandle,
-        _client: &Client,
+        _: &Client,
         resource: New<ZwpInputMethodManagerV2>,
         _: &InputMethodManagerGlobalData,
         data_init: &mut DataInit<'_, D>,

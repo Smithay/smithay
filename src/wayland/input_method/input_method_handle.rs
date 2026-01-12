@@ -141,20 +141,6 @@ impl InputMethodHandle {
         f(&mut inner);
     }
 
-    /// Get a list of all registered input method instances with their app_ids and active status.
-    /// Returns a vector of tuples: (app_id, serial, is_active)
-    pub fn list_instances(&self) -> Vec<(String, u32, bool)> {
-        let inner = self.inner.lock().unwrap();
-        inner
-            .instances
-            .iter()
-            .map(|inst| {
-                let is_active = inner.active_input_method_id.as_ref() == Some(&inst.object.id());
-                (inst.app_id.clone(), inst.serial, is_active)
-            })
-            .collect()
-    }
-
     /// Set which input method instance should be active by app_id.
     /// Returns true if an instance with the given app_id was found and set as active.
     pub fn set_active_instance(&self, app_id: &str) -> bool {
