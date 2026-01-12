@@ -205,11 +205,6 @@ impl TextInputHandle {
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
         let mut inner = self.inner.lock().unwrap();
-        tracing::debug!(
-            "TextInputHandle::with_focused_text_input - focus: {:?}, active_id: {:?}",
-            inner.focus.as_ref().map(|s| s.id()),
-            inner.active_text_input_id
-        );
         inner.with_focused_client_all_text_inputs(|ti, surface, _| {
             f(ti, surface);
         });
@@ -230,12 +225,6 @@ impl TextInputHandle {
     pub fn has_active_text_input(&self) -> bool {
         let inner = self.inner.lock().unwrap();
         let has_active = inner.focus.is_some() && inner.active_text_input_id.is_some();
-        tracing::debug!(
-            "TextInputHandle::has_active_text_input - focus: {:?}, active_id: {:?}, result: {}",
-            inner.focus.as_ref().map(|s| s.id()),
-            inner.active_text_input_id,
-            has_active
-        );
         has_active
     }
 
@@ -335,6 +324,7 @@ where
             }
             zwp_text_input_v3::Request::Commit => {
                 let mut new_state = mem::take(pending_state);
+                let _ = pending_state;
 
                 // Get the input_method_id for this text input (if set)
                 let input_method_id = guard
@@ -375,22 +365,8 @@ where
                     }
                 }
 
-                // Use the specific input method if set, otherwise use the global active one
-                let im_handle = &data.input_method_handle;
-
-                // If this text input has a specific input_method_id, temporarily set it as active
-                let restore_active = if let Some(specific_im_id) = input_method_id {
-                    let mut im_inner = im_handle.inner.lock().unwrap();
-                    let old_active = im_inner.active_input_method_id.clone();
-                    im_inner.active_input_method_id = Some(specific_im_id);
-                    drop(im_inner);
-                    old_active
-                } else {
-                    None
-                };
-
                 if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
-                    im_handle.with_instance(|input_method| {
+                    data.input_method_handle.with_instance(|input_method| {
                         input_method
                             .object
                             .surrounding_text(text.to_string(), cursor, anchor)
@@ -398,28 +374,38 @@ where
                 }
 
                 if let Some(cause) = new_state.text_change_cause.take() {
-                    im_handle.with_instance(|input_method| {
+                    data.input_method_handle.with_instance(|input_method| {
                         input_method.object.text_change_cause(cause);
                     });
                 }
 
                 if let Some((hint, purpose)) = new_state.content_type.take() {
-                    im_handle.with_instance(|input_method| {
+                    data.input_method_handle.with_instance(|input_method| {
                         input_method.object.content_type(hint, purpose);
                     });
                 }
 
                 if let Some(rect) = new_state.cursor_rectangle.take() {
-                    im_handle.set_text_input_rectangle::<D>(state, rect);
+                    data.input_method_handle
+                        .set_text_input_rectangle::<D>(state, rect);
                 }
 
-                im_handle.with_instance(|input_method| {
+                data.input_method_handle.with_instance(|input_method| {
                     input_method.done();
                 });
 
+                // If this text input has a specific input_method_id, temporarily set it as active
+                let restore_active = if let Some(specific_im_id) = input_method_id {
+                    let im_inner = &mut data.input_method_handle.inner.lock().unwrap();
+                    let old_active = im_inner.active_input_method_id.clone();
+                    im_inner.active_input_method_id = Some(specific_im_id);
+                    old_active
+                } else {
+                    None
+                };
                 // Restore the original active input method if we changed it
                 if restore_active.is_some() {
-                    let mut im_inner = im_handle.inner.lock().unwrap();
+                    let im_inner = &mut data.input_method_handle.inner.lock().unwrap();
                     im_inner.active_input_method_id = restore_active;
                 }
             }

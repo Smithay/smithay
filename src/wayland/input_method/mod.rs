@@ -208,9 +208,9 @@ where
     ) {
         match request {
             zwp_input_method_manager_v2::Request::GetInputMethod { seat, input_method } => {
-                let seat_clone = Seat::<D>::from_resource(&seat).unwrap();
+                let seat = Seat::<D>::from_resource(&seat).unwrap();
 
-                let user_data = seat_clone.user_data();
+                let user_data = seat.user_data();
                 user_data.insert_if_missing(TextInputHandle::default);
                 user_data.insert_if_missing(InputMethodHandle::default);
                 let handle = user_data.get::<InputMethodHandle>().unwrap();
@@ -218,7 +218,7 @@ where
                 text_input_handle.with_focused_text_input(|ti, surface| {
                     ti.enter(surface);
                 });
-                let keyboard_handle = seat_clone.get_keyboard().unwrap();
+                let keyboard_handle = seat.get_keyboard().unwrap();
                 let instance = data_init.init(
                     input_method,
                     InputMethodUserData {
