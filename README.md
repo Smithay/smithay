@@ -1,14 +1,18 @@
-<img align="right" width="25%" src="https://github.com/Smithay/smithay/assets/20758186/7a84ab10-e229-4823-bad8-9c647546407b">
+<p align="center">
+  <img width="240" src="https://github.com/Smithay/smithay/assets/20758186/7a84ab10-e229-4823-bad8-9c647546407b" alt="Smithay"/>
+</p>
 
-# Smithay
+<p align="center">
+  <a href="https://crates.io/crates/smithay"><img src="https://img.shields.io/crates/v/smithay.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/smithay"><img src="https://docs.rs/smithay/badge.svg" alt="docs.rs"></a>
+  <a href="https://github.com/Smithay/smithay/actions"><img src="https://github.com/Smithay/smithay/workflows/Continuous%20Integration/badge.svg" alt="CI"></a>
+  <a href="https://matrix.to/#/#smithay:matrix.org"><img src="https://img.shields.io/badge/Matrix-%23smithay%3Amatrix.org-blue.svg" alt="Matrix"></a>
+  <a href="https://libera.chat/"><img src="https://img.shields.io/badge/IRC-%23Smithay-blue.svg" alt="IRC"></a>
+</p>
 
-[![Crates.io](https://img.shields.io/crates/v/smithay.svg)](https://crates.io/crates/smithay)
-[![docs.rs](https://docs.rs/smithay/badge.svg)](https://docs.rs/smithay)
-[![Build Status](https://github.com/Smithay/smithay/workflows/Continuous%20Integration/badge.svg)](https://github.com/Smithay/smithay/actions)
-[![Join the chat on matrix at #smithay:matrix.org](https://img.shields.io/badge/%5Bm%5D-%23smithay%3Amatrix.org-blue.svg)](https://matrix.to/#/#smithay:matrix.org)
-![Join the chat via bridge on #smithay on libera.chat](https://img.shields.io/badge/IRC-%23Smithay-blue.svg)
-
-A smithy for rusty wayland compositors
+<p align="center">
+  <strong>A smithy for rusty Wayland compositors</strong>
+</p>
 
 ## Goals
 
@@ -35,7 +39,7 @@ Also:
 
 Smithay as a compositor library has its own sample compositor: anvil.
 
-To get informations about it and how you can run it visit [anvil README](https://github.com/Smithay/smithay/blob/master/anvil/README.md)
+To get information about it and how you can run it visit [anvil README](https://github.com/Smithay/smithay/blob/master/anvil/README.md)
 
 ## Other compositors that use Smithay
 
