@@ -194,7 +194,7 @@ where
     D: 'static,
 {
     fn request(
-        state: &mut D,
+        _state: &mut D,
         client: &Client,
         _: &ZwpInputMethodManagerV2,
         request: zwp_input_method_manager_v2::Request,
@@ -227,7 +227,6 @@ where
                         dismiss_popup: D::dismiss_popup,
                     },
                 );
-
                 // Add instance
                 handle.add_instance(&instance, client, dh);
             }
