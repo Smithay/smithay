@@ -69,20 +69,12 @@ pub struct TextInputHandle {
 }
 
 impl TextInputHandle {
-    pub(super) fn add_instance(&self, instance: &ZwpTextInputV3, input_method_handle: &InputMethodHandle) {
+    pub(super) fn add_instance(&self, instance: &ZwpTextInputV3) {
         let mut inner = self.inner.lock().unwrap();
-        // Get the currently active input method id (if any) to set as default
-        let active_im_id = input_method_handle
-            .inner
-            .lock()
-            .unwrap()
-            .active_input_method_id
-            .clone();
         inner.instances.push(Instance {
             instance: instance.clone(),
             serial: 0,
             pending_state: Default::default(),
-            input_method_id: active_im_id,
         });
     }
 
@@ -276,13 +268,6 @@ where
                 let mut new_state = mem::take(pending_state);
                 let _ = pending_state;
 
-                // Get the input_method_id for this text input (if set)
-                let input_method_id = guard
-                    .instances
-                    .iter()
-                    .find(|inst| inst.instance == *resource)
-                    .and_then(|inst| inst.input_method_id.clone());
-
                 let active_text_input_id = &mut guard.active_text_input_id;
 
                 if active_text_input_id.is_some() && *active_text_input_id != Some(resource.id()) {
@@ -343,21 +328,6 @@ where
                 data.input_method_handle.with_instance(|input_method| {
                     input_method.done();
                 });
-
-                // If this text input has a specific input_method_id, temporarily set it as active
-                let restore_active = if let Some(specific_im_id) = input_method_id {
-                    let im_inner = &mut data.input_method_handle.inner.lock().unwrap();
-                    let old_active = im_inner.active_input_method_id.clone();
-                    im_inner.active_input_method_id = Some(specific_im_id);
-                    old_active
-                } else {
-                    None
-                };
-                // Restore the original active input method if we changed it
-                if restore_active.is_some() {
-                    let im_inner = &mut data.input_method_handle.inner.lock().unwrap();
-                    im_inner.active_input_method_id = restore_active;
-                }
             }
             zwp_text_input_v3::Request::Destroy => {
                 // Nothing to do
@@ -370,7 +340,6 @@ where
         let destroyed_id = text_input.id();
         let deactivate_im = {
             let mut inner = data.handle.inner.lock().unwrap();
-
             inner.instances.retain(|inst| inst.instance.id() != destroyed_id);
             let destroyed_focused = inner
                 .focus
@@ -380,13 +349,11 @@ where
 
             // Deactivate IM when we either lost focus entirely or destroyed text-input for the
             // currently focused client.
-            let should_deactivate = destroyed_focused
+            destroyed_focused
                 && !inner
                     .instances
                     .iter()
-                    .any(|inst| inst.instance.id().same_client_as(&destroyed_id));
-
-            should_deactivate
+                    .any(|inst| inst.instance.id().same_client_as(&destroyed_id))
         };
 
         if deactivate_im {
@@ -400,7 +367,6 @@ struct Instance {
     instance: ZwpTextInputV3,
     serial: u32,
     pending_state: TextInputState,
-    input_method_id: Option<ObjectId>,
 }
 
 #[derive(Debug, Default)]
