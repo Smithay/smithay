@@ -109,10 +109,6 @@ pub trait InputMethodHandler {
 
     /// Sets the parent location so the popup surface can be placed correctly
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical>;
-
-    /// Called when a new input method instance is added.
-    /// The app_id identifies the input method application.
-    fn new_input_method(&mut self, _app_id: &str);
 }
 
 /// Extends [Seat] with input method functionality
@@ -232,11 +228,8 @@ where
                     },
                 );
 
-                // Add instance and get its app_id
-                let app_id = handle.add_instance(&instance, client, dh);
-
-                // Notify compositor about new input method
-                state.new_input_method(&app_id);
+                // Add instance
+                handle.add_instance(&instance, client, dh);
             }
             zwp_input_method_manager_v2::Request::Destroy => {
                 // Nothing to do

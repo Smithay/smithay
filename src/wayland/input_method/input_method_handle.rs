@@ -87,12 +87,7 @@ pub struct InputMethodHandle {
 }
 
 impl InputMethodHandle {
-    pub(super) fn add_instance(
-        &self,
-        instance: &ZwpInputMethodV2,
-        client: &Client,
-        dh: &DisplayHandle,
-    ) -> String {
+    pub(super) fn add_instance(&self, instance: &ZwpInputMethodV2, client: &Client, dh: &DisplayHandle) {
         let app_id = client
             .get_credentials(dh)
             .ok()
@@ -103,12 +98,9 @@ impl InputMethodHandle {
         inner.instances.push(Instance {
             object: instance.clone(),
             serial: 0,
-            app_id: app_id.clone(),
+            app_id,
             keyboard_grab: None,
         });
-
-        // Don't auto-activate - let the compositor decide when to activate
-        app_id
     }
 
     /// Whether there's an active instance of input-method.
