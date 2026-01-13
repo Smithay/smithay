@@ -227,7 +227,6 @@ where
                         dismiss_popup: D::dismiss_popup,
                     },
                 );
-                // Add instance
                 handle.add_instance(&instance, client, dh);
             }
             zwp_input_method_manager_v2::Request::Destroy => {

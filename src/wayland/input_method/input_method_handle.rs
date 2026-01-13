@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use tracing::{info, warn};
+use tracing::warn;
 use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
     zwp_input_method_v2::{self, ZwpInputMethodV2},
@@ -195,7 +195,7 @@ impl InputMethodHandle {
         let active_id = match inner.active_input_method_id.as_ref() {
             Some(id) => id,
             None => {
-                info!("InputMethod: send_keymap_to_grab - no active input method");
+                warn!("InputMethod: send_keymap_to_grab - no active input method");
                 return;
             }
         };
@@ -209,7 +209,7 @@ impl InputMethodHandle {
         let keyboard_grab = match keyboard_grab_obj {
             Some(grab) => grab,
             None => {
-                info!("InputMethod: send_keymap_to_grab - active instance has no keyboard grab");
+                warn!("InputMethod: send_keymap_to_grab - active instance has no keyboard grab");
                 return;
             }
         };
@@ -313,13 +313,13 @@ impl InputMethodHandle {
             if let Some(grab) = active_instance_grab {
                 keyboard_grab.grab = Some(grab.clone());
             } else {
-                info!(
+                warn!(
                     "InputMethod: activate_input_method - WARNING: active instance {:?} has no keyboard grab object",
                     id
                 );
             }
         } else {
-            info!("InputMethod: activate_input_method - WARNING: inner.active_input_method_id is None after activation");
+            warn!("InputMethod: activate_input_method - WARNING: inner.active_input_method_id is None after activation");
         }
     }
 
