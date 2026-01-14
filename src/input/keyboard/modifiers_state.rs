@@ -4,8 +4,12 @@ use xkbcommon::xkb;
 ///
 /// Each field of this struct represents a modifier and is `true` if this modifier is active.
 ///
-/// For some modifiers, this means that the key is currently pressed, others are toggled
+/// For some modifiers, this means that the key is currently pressed, others are toggled/locked
 /// (like caps lock).
+///
+/// **Note:** The XKB state should usually be the single source of truth, and the
+/// serialization is lossy and will not survive round trips. This is documented in
+/// [`xkb::State::update_mask`].
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ModifiersState {
     /// The "control" key
@@ -30,12 +34,19 @@ pub struct ModifiersState {
     /// The "ISO level 5 shift" key
     pub iso_level5_shift: bool,
 
-    /// Serialized modifier state, as send e.g. by the wl_keyboard protocol
+    /// Cached serialized modifier state, e.g. for sending in `wl_keyboard.modifiers`.
+    ///
+    /// Note that this may have outdated information compared to the other fields, and that
+    /// this is not updated in [`ModifiersState::serialize_back`].
     pub serialized: SerializedMods,
 }
 
 impl ModifiersState {
-    /// Update the modifiers state from an xkb state
+    /// Updates the high-level modifiers state from an XKB state.
+    ///
+    /// **Note:** The XKB state should usually be the single source of truth, and the
+    /// serialization is lossy and will not survive round trips. This is documented in
+    /// [`xkb::State::update_mask`].
     pub fn update_with(&mut self, state: &xkb::State) {
         self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
         self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
@@ -49,7 +60,33 @@ impl ModifiersState {
         self.serialized = serialize_modifiers(state);
     }
 
-    /// Serialize modifier state back to be sent to xkb.
+    /// Serializes the high-level modifiers state to be sent to XKB e.g. in
+    /// `wl_keyboard.modifiers`.
+    ///
+    /// **Note:** The XKB state should usually be the single source of truth, and the
+    /// serialization is lossy and will not survive round trips. This is documented in
+    /// [`xkb::State::update_mask`].
+    ///
+    /// Note that cached serialized state is stored in [`ModifiersState::serialized`], but it may
+    /// have outdated information. This function ignores that field. You should update the cached
+    /// serialized state after using this function, like so:
+    ///
+    /// ```no_run
+    /// use smithay::input::keyboard::ModifiersState;
+    ///
+    /// let mut mods_state: ModifiersState;
+    /// # mods_state = todo!();
+    /// # let xkb_state = todo!();
+    ///
+    /// // Update the information
+    /// mods_state.ctrl = true;
+    ///
+    /// // Serialize e.g. for sending in `wl_keyboard.modifiers`
+    /// let serialized = mods_state.serialize_back(&xkb_state);
+    ///
+    /// // Update the cached serialized state
+    /// mods_state.serialized = serialized;
+    /// ```
     pub fn serialize_back(&self, state: &xkb::State) -> SerializedMods {
         let keymap = state.get_keymap();
 
