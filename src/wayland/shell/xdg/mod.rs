@@ -157,6 +157,7 @@ pub const XDG_POPUP_ROLE: &str = "xdg_popup";
 /// Constant for toplevel state version checking
 const XDG_TOPLEVEL_STATE_TILED_SINCE: u32 = 2;
 const XDG_TOPLEVEL_STATE_SUSPENDED_SINCE: u32 = 6;
+const XDG_TOPLEVEL_STATE_CONSTRAINED_SINCE: u32 = 7;
 
 macro_rules! xdg_role {
     ($state:ty,
@@ -935,51 +936,33 @@ impl ToplevelStateSet {
 
     /// Filter the states according to the provided version
     /// of the [`XdgToplevel`]
-    pub(crate) fn into_filtered_states(self, version: u32) -> Vec<xdg_toplevel::State> {
-        let tiled_supported = version >= XDG_TOPLEVEL_STATE_TILED_SINCE;
-        let suspended_supported = version >= XDG_TOPLEVEL_STATE_SUSPENDED_SINCE;
+    pub(crate) fn into_filtered_states(mut self, version: u32) -> Vec<xdg_toplevel::State> {
+        let constrained_supported = version >= XDG_TOPLEVEL_STATE_CONSTRAINED_SINCE;
 
-        // If the client version supports the suspended states
-        // we can directly return the states which will save
-        // us from allocating another vector
-        if suspended_supported {
+        // If constrained is supported, everything is, so we can just return
+        if constrained_supported {
             return self.states;
         }
 
-        let is_suspended = |state: &xdg_toplevel::State| *state == xdg_toplevel::State::Suspended;
-        let contains_suspended = self.states.contains(&xdg_toplevel::State::Suspended);
-
-        // If tiled is supported and there is no suspend state there is nothing to filter out
-        if tiled_supported && !contains_suspended {
-            return self.states;
-        }
-
-        let is_tiled = |state: &xdg_toplevel::State| {
-            matches!(
-                state,
-                xdg_toplevel::State::TiledTop
-                    | xdg_toplevel::State::TiledBottom
-                    | xdg_toplevel::State::TiledLeft
-                    | xdg_toplevel::State::TiledRight
-            )
-        };
-        let contains_tiled = self.states.iter().any(is_tiled);
-
-        // If it does not contain unsupported values
-        if !contains_suspended && !contains_tiled {
-            return self.states;
+        fn version_needed_for_state(state: &xdg_toplevel::State) -> u32 {
+            match state {
+                xdg_toplevel::State::TiledLeft
+                | xdg_toplevel::State::TiledRight
+                | xdg_toplevel::State::TiledTop
+                | xdg_toplevel::State::TiledBottom => XDG_TOPLEVEL_STATE_TILED_SINCE,
+                xdg_toplevel::State::ConstrainedLeft
+                | xdg_toplevel::State::ConstrainedRight
+                | xdg_toplevel::State::ConstrainedTop
+                | xdg_toplevel::State::ConstrainedBottom => XDG_TOPLEVEL_STATE_CONSTRAINED_SINCE,
+                xdg_toplevel::State::Suspended => XDG_TOPLEVEL_STATE_SUSPENDED_SINCE,
+                _ => 1,
+            }
         }
 
         self.states
-            .into_iter()
-            .filter(|state| {
-                if tiled_supported {
-                    !is_suspended(state)
-                } else {
-                    !is_suspended(state) && !is_tiled(state)
-                }
-            })
-            .collect()
+            .retain(|state| version >= version_needed_for_state(state));
+
+        self.states
     }
 }
 
@@ -1243,7 +1226,7 @@ impl XdgShellState {
     where
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
     {
-        let global = display.create_global::<D, XdgWmBase, _>(6, ());
+        let global = display.create_global::<D, XdgWmBase, _>(7, ());
 
         XdgShellState {
             known_toplevels: Vec::new(),
