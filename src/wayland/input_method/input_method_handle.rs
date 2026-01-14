@@ -5,7 +5,7 @@ use std::{
 
 use tracing::warn;
 use wayland_protocols_misc::zwp_input_method_v2::server::{
-    zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
+    zwp_input_method_keyboard_grab_v2::{self, ZwpInputMethodKeyboardGrabV2},
     zwp_input_method_v2::{self, ZwpInputMethodV2},
     zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
 };
@@ -18,24 +18,27 @@ use wayland_server::{
 };
 
 use crate::{
-    input::{keyboard::KeyboardHandle, SeatHandler},
-    utils::{alive_tracker::AliveTracker, Logical, Rectangle, SERIAL_COUNTER},
+    backend::input::{KeyState, Keycode},
+    input::{
+        keyboard::{
+            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
+            ModifiersState,
+        },
+        SeatHandler,
+    },
+    utils::{alive_tracker::AliveTracker, Logical, Rectangle, Serial, SERIAL_COUNTER},
     wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
-    input_method_keyboard_grab::InputMethodKeyboardGrab,
     input_method_popup_surface::{PopupHandle, PopupParent, PopupSurface},
-    InputMethodHandler, InputMethodKeyboardUserData, InputMethodManagerState,
-    InputMethodPopupSurfaceUserData, INPUT_POPUP_SURFACE_ROLE,
+    InputMethodHandler, InputMethodManagerState, InputMethodPopupSurfaceUserData, INPUT_POPUP_SURFACE_ROLE,
 };
 
 #[derive(Default, Debug)]
 pub(crate) struct InputMethod {
     pub instances: Vec<Instance>,
     pub active_input_method_id: Option<ObjectId>,
-    pub popup_handle: PopupHandle,
-    pub keyboard_grab: InputMethodKeyboardGrab,
 }
 
 #[derive(Debug)]
@@ -44,6 +47,8 @@ pub(crate) struct Instance {
     pub serial: u32,
     pub app_id: String,
     pub keyboard_grab: Option<ZwpInputMethodKeyboardGrabV2>,
+    pub text_input_handle: TextInputHandle,
+    pub popup_handle: PopupHandle,
 }
 
 impl Instance {
@@ -87,7 +92,13 @@ pub struct InputMethodHandle {
 }
 
 impl InputMethodHandle {
-    pub(super) fn add_instance(&self, instance: &ZwpInputMethodV2, client: &Client, dh: &DisplayHandle) {
+    pub(super) fn add_instance(
+        &self,
+        instance: &ZwpInputMethodV2,
+        client: &Client,
+        dh: &DisplayHandle,
+        text_input_handle: TextInputHandle,
+    ) {
         let app_id = client
             .get_credentials(dh)
             .ok()
@@ -100,6 +111,8 @@ impl InputMethodHandle {
             serial: 0,
             app_id,
             keyboard_grab: None,
+            text_input_handle,
+            popup_handle: PopupHandle::default(),
         });
     }
 
@@ -153,11 +166,6 @@ impl InputMethodHandle {
                         old_instance.done();
                     }
                 }
-
-                // Clear the keyboard grab's active ID
-                let mut keyboard_grab = inner.keyboard_grab.inner.lock().unwrap();
-                keyboard_grab.active_input_method_id = None;
-                drop(keyboard_grab);
             }
 
             inner.active_input_method_id = Some(object_id.clone());
@@ -180,8 +188,16 @@ impl InputMethodHandle {
     /// Indicates that an input method has grabbed a keyboard
     pub fn keyboard_grabbed(&self) -> bool {
         let inner = self.inner.lock().unwrap();
-        let keyboard = inner.keyboard_grab.inner.lock().unwrap();
-        keyboard.grab.is_some()
+        if let Some(active_id) = inner.active_input_method_id.as_ref() {
+            inner
+                .instances
+                .iter()
+                .find(|inst| inst.object.id() == *active_id)
+                .and_then(|inst| inst.keyboard_grab.as_ref())
+                .is_some()
+        } else {
+            false
+        }
     }
 
     /// Send keymap update to active input method keyboard grab
@@ -242,24 +258,28 @@ impl InputMethodHandle {
         rect: Rectangle<i32, Logical>,
     ) {
         let mut inner = self.inner.lock().unwrap();
-        inner.popup_handle.rectangle = rect;
-
-        let mut popup_surface = match inner.popup_handle.surface.clone() {
-            Some(popup_surface) => popup_surface,
-            None => return,
-        };
-
-        popup_surface.set_text_input_rectangle(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
 
         let active_id = match inner.active_input_method_id.clone() {
             Some(id) => id,
             None => return,
         };
 
-        if let Some(instance) = inner.instances.iter().find(|i| i.object.id() == active_id) {
-            let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
-            (data.popup_repositioned)(state, popup_surface.clone());
-        }
+        let instance = match inner.instances.iter_mut().find(|i| i.object.id() == active_id) {
+            Some(inst) => inst,
+            None => return,
+        };
+
+        instance.popup_handle.rectangle = rect;
+
+        let mut popup_surface = match instance.popup_handle.surface.clone() {
+            Some(popup_surface) => popup_surface,
+            None => return,
+        };
+
+        popup_surface.set_text_input_rectangle(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
+
+        let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+        (data.popup_repositioned)(state, popup_surface.clone());
     }
 
     /// Activate input method on the given surface.
@@ -280,7 +300,7 @@ impl InputMethodHandle {
             };
             instance.object.activate();
 
-            if let Some(popup) = im.popup_handle.surface.as_mut() {
+            if let Some(popup) = instance.popup_handle.surface.as_mut() {
                 let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
                 let location = (data.popup_geometry_callback)(state, surface);
                 (data.dismiss_popup)(state, popup.clone());
@@ -293,34 +313,6 @@ impl InputMethodHandle {
                 (data.new_popup)(state, popup.clone());
             }
         });
-
-        // Set the active input method ID in the keyboard grab so it knows to forward events
-        // Also update the grab object to point to the active IME's grab
-        let inner = self.inner.lock().unwrap();
-        let active_id = inner.active_input_method_id.clone();
-        if let Some(id) = active_id {
-            // Find the active instance and get its grab object
-            let active_instance_grab = inner
-                .instances
-                .iter()
-                .find(|inst| inst.object.id() == id)
-                .and_then(|inst| inst.keyboard_grab.clone());
-
-            let mut keyboard_grab = inner.keyboard_grab.inner.lock().unwrap();
-            keyboard_grab.active_input_method_id = Some(id.clone());
-
-            // Update the grab object to point to the active IME's grab
-            if let Some(grab) = active_instance_grab {
-                keyboard_grab.grab = Some(grab.clone());
-            } else {
-                warn!(
-                    "InputMethod: activate_input_method - WARNING: active instance {:?} has no keyboard grab object",
-                    id
-                );
-            }
-        } else {
-            warn!("InputMethod: activate_input_method - WARNING: inner.active_input_method_id is None after activation");
-        }
     }
 
     /// Deactivate the active input method.
@@ -342,7 +334,7 @@ impl InputMethodHandle {
             instance.object.deactivate();
             instance.done();
 
-            if let Some(popup) = im.popup_handle.surface.as_mut() {
+            if let Some(popup) = instance.popup_handle.surface.as_mut() {
                 let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
                 if popup.get_parent().is_some() {
                     (data.dismiss_popup)(state, popup.clone());
@@ -350,11 +342,6 @@ impl InputMethodHandle {
                 popup.set_parent(None);
             }
         });
-
-        // Clear the active input method ID in the keyboard grab so it stops forwarding events
-        let inner = self.inner.lock().unwrap();
-        let mut keyboard_grab = inner.keyboard_grab.inner.lock().unwrap();
-        keyboard_grab.active_input_method_id = None;
     }
 }
 
@@ -484,23 +471,33 @@ where
                 );
 
                 let mut input_method = data.handle.inner.lock().unwrap();
-                let popup_rect = Arc::new(Mutex::new(input_method.popup_handle.rectangle));
+                let active_id = match input_method.active_input_method_id.clone() {
+                    Some(id) => id,
+                    None => return,
+                };
+
+                let inst = match input_method
+                    .instances
+                    .iter_mut()
+                    .find(|i| i.object.id() == active_id)
+                {
+                    Some(inst) => inst,
+                    None => return,
+                };
+
+                let popup_rect = Arc::new(Mutex::new(inst.popup_handle.rectangle));
                 let popup = PopupSurface::new(instance, surface, popup_rect, parent);
-                input_method.popup_handle.surface = Some(popup.clone());
+                inst.popup_handle.surface = Some(popup.clone());
                 if popup.get_parent().is_some() {
                     state.new_popup(popup);
                 }
             }
             zwp_input_method_v2::Request::GrabKeyboard { keyboard } => {
-                let input_method = data.handle.inner.lock().unwrap();
-                let keyboard_grab = input_method.keyboard_grab.clone();
-                drop(input_method);
-
                 // Create the protocol object and store it
                 let instance = data_init.init(
                     keyboard,
                     InputMethodKeyboardUserData {
-                        handle: keyboard_grab.clone(),
+                        handle: data.handle.clone(),
                         keyboard_handle: data.keyboard_handle.clone(),
                     },
                 );
@@ -509,20 +506,13 @@ where
                 let mut im = data.handle.inner.lock().unwrap();
                 if let Some(inst) = im.instances.iter_mut().find(|i| i.object == *seat) {
                     inst.keyboard_grab = Some(instance.clone());
+                    drop(im);
+                    data.keyboard_handle
+                        .set_grab(state, data.handle.clone(), SERIAL_COUNTER.next_serial());
                 } else {
                     warn!("InputMethod: GrabKeyboard - could not find instance for resource");
+                    drop(im);
                 }
-
-                // Also store in the shared keyboard grab for backward compatibility
-                let mut keyboard = keyboard_grab.inner.lock().unwrap();
-                keyboard.grab = Some(instance.clone());
-                keyboard.text_input_handle = data.text_input_handle.clone();
-                drop(keyboard);
-                drop(im);
-
-                // Install the keyboard grab permanently - it will check active_input_method_id internally
-                data.keyboard_handle
-                    .set_grab(state, keyboard_grab.clone(), SERIAL_COUNTER.next_serial());
 
                 // Send keyboard information to the client
                 let guard = data.keyboard_handle.arc.internal.lock().unwrap();
@@ -572,5 +562,146 @@ where
         drop(inner);
 
         data.text_input_handle.leave();
+    }
+}
+
+impl<D> KeyboardGrab<D> for InputMethodHandle
+where
+    D: SeatHandler + 'static,
+{
+    fn input(
+        &mut self,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        keycode: Keycode,
+        key_state: KeyState,
+        modifiers: Option<ModifiersState>,
+        serial: Serial,
+        time: u32,
+    ) {
+        let inner = self.inner.lock().unwrap();
+
+        // Get the active instance
+        let active_id = inner.active_input_method_id.as_ref();
+
+        let Some(act_id) = active_id else {
+            // No active input method, forward to normal keyboard handling
+            drop(inner);
+            handle.input(data, keycode, key_state, modifiers, serial, time);
+            return;
+        };
+
+        let instance = inner.instances.iter().find(|inst| inst.object.id() == *act_id);
+
+        let Some(inst) = instance else {
+            // Active instance not found, forward to normal keyboard handling
+            drop(inner);
+            handle.input(data, keycode, key_state, modifiers, serial, time);
+            return;
+        };
+
+        // Check if this instance has a keyboard grab
+        let Some(keyboard) = inst.keyboard_grab.as_ref() else {
+            // No keyboard grab, forward to normal keyboard handling
+            drop(inner);
+            handle.input(data, keycode, key_state, modifiers, serial, time);
+            return;
+        };
+
+        // Check if there's an active text input with focus
+        let has_text_input = inst.text_input_handle.has_active_text_input();
+
+        if !has_text_input {
+            // No text input focus, forward to normal keyboard handling
+            drop(inner);
+            handle.input(data, keycode, key_state, modifiers, serial, time);
+            return;
+        }
+
+        // Forward to IME
+        inst.text_input_handle
+            .active_text_input_serial_or_default(serial.0, |serial| {
+                keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
+                if let Some(serialized) = modifiers.map(|m| m.serialized) {
+                    keyboard.modifiers(
+                        serial,
+                        serialized.depressed,
+                        serialized.latched,
+                        serialized.locked,
+                        serialized.layout_effective,
+                    )
+                }
+            });
+    }
+
+    fn set_focus(
+        &mut self,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        focus: Option<<D as SeatHandler>::KeyboardFocus>,
+        serial: Serial,
+    ) {
+        handle.set_focus(data, focus, serial)
+    }
+
+    fn start_data(&self) -> &KeyboardGrabStartData<D> {
+        &KeyboardGrabStartData { focus: None }
+    }
+
+    fn unset(&mut self, _data: &mut D) {}
+}
+
+/// User data of ZwpInputKeyboardGrabV2 object
+pub struct InputMethodKeyboardUserData<D: SeatHandler> {
+    pub(crate) handle: InputMethodHandle,
+    pub(crate) keyboard_handle: KeyboardHandle<D>,
+}
+
+impl<D: SeatHandler> fmt::Debug for InputMethodKeyboardUserData<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InputMethodKeyboardUserData")
+            .field("handle", &self.handle)
+            .field("keyboard_handle", &self.keyboard_handle)
+            .finish()
+    }
+}
+
+impl<D: SeatHandler + 'static> Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>, D>
+    for InputMethodManagerState
+{
+    fn destroyed(
+        state: &mut D,
+        _client: ClientId,
+        _object: &ZwpInputMethodKeyboardGrabV2,
+        data: &InputMethodKeyboardUserData<D>,
+    ) {
+        // Clear the grab from the instance
+        let mut inner = data.handle.inner.lock().unwrap();
+        for inst in inner.instances.iter_mut() {
+            if inst.keyboard_grab.as_ref().map(|g| g.id()) == Some(_object.id()) {
+                inst.keyboard_grab = None;
+                break;
+            }
+        }
+        drop(inner);
+
+        data.keyboard_handle.unset_grab(state);
+    }
+
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        _resource: &ZwpInputMethodKeyboardGrabV2,
+        request: zwp_input_method_keyboard_grab_v2::Request,
+        _data: &InputMethodKeyboardUserData<D>,
+        _dhandle: &wayland_server::DisplayHandle,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
+        match request {
+            zwp_input_method_keyboard_grab_v2::Request::Release => {
+                // Nothing to do
+            }
+            _ => unreachable!(),
+        }
     }
 }
