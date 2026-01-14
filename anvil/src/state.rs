@@ -647,6 +647,7 @@ impl<BackendData: Backend> ImageCopyCaptureHandler for AnvilState<BackendData> {
                 smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888,
                 smithay::reexports::wayland_server::protocol::wl_shm::Format::Xrgb8888,
             ],
+            #[cfg(any(feature = "udev", feature = "winit"))]
             dma: None,
         })
     }
