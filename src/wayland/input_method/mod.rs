@@ -80,7 +80,8 @@ use crate::{
     utils::{Logical, Rectangle},
 };
 
-pub use input_method_handle::{InputMethodHandle, InputMethodKeyboardUserData, InputMethodUserData};
+pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
+pub use input_method_keyboard_grab::InputMethodKeyboardUserData;
 pub use input_method_popup_surface::InputMethodPopupSurfaceUserData;
 
 use super::text_input::TextInputHandle;
@@ -91,6 +92,7 @@ const MANAGER_VERSION: u32 = 1;
 pub const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
 
 mod input_method_handle;
+mod input_method_keyboard_grab;
 mod input_method_popup_surface;
 pub use input_method_popup_surface::{PopupParent, PopupSurface};
 
