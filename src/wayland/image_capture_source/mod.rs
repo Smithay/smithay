@@ -255,7 +255,7 @@ impl ImageCaptureSource {
     }
 
     /// Add a protocol resource instance to this source.
-    pub(crate) fn add_instance(&self, resource: &ExtImageCaptureSourceV1) {
+    pub fn add_instance(&self, resource: &ExtImageCaptureSourceV1) {
         self.inner.0.instances.lock().unwrap().push(resource.downgrade());
     }
 
