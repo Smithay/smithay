@@ -166,8 +166,7 @@ impl TextInputHandle {
     /// Check if there's an active text input with focus.
     pub(crate) fn has_active_text_input(&self) -> bool {
         let inner = self.inner.lock().unwrap();
-        let has_active = inner.focus.is_some() && inner.active_text_input_id.is_some();
-        has_active
+        inner.focus.is_some() && inner.active_text_input_id.is_some()
     }
 
     /// Call the callback with the serial of the active text_input or with the passed
