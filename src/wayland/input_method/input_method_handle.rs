@@ -137,13 +137,20 @@ impl InputMethodHandle {
         }
     }
 
-    /// Callback function to access the input method.
-    pub(crate) fn with_input_method<F>(&self, mut f: F)
+    /// Callback function to access the active input method instance (read-only)
+    pub(crate) fn with_instance_readonly<F, R>(&self, mut f: F) -> Option<R>
     where
-        F: FnMut(&mut InputMethod),
+        F: FnMut(&Instance) -> R,
     {
-        let mut inner = self.inner.lock().unwrap();
-        f(&mut inner);
+        let inner = self.inner.lock().unwrap();
+        let active_id = inner.active_input_method_id.as_ref()?;
+        let instance = inner.instances.iter().find(|i| i.object.id() == *active_id)?;
+        Some(f(instance))
+    }
+
+    /// Get the serial number of the active input method instance
+    pub(crate) fn get_active_serial(&self) -> u32 {
+        self.with_instance_readonly(|inst| inst.serial).unwrap_or(0)
     }
 
     /// Set which input method instance should be active by app_id.
@@ -205,27 +212,14 @@ impl InputMethodHandle {
     /// This should be called when the keyboard layout changes to ensure
     /// the IME receives the new keymap and can update its virtual keyboard accordingly.
     pub fn send_keymap_to_grab<D: SeatHandler + 'static>(&self, keyboard_handle: &KeyboardHandle<D>) {
-        let inner = self.inner.lock().unwrap();
-
-        // Get the active instance's keyboard grab
-        let active_id = match inner.active_input_method_id.as_ref() {
-            Some(id) => id,
-            None => {
-                warn!("InputMethod: send_keymap_to_grab - no active input method");
+        let keyboard_grab = match self.with_instance_readonly(|inst| inst.keyboard_grab.clone()) {
+            Some(Some(grab)) => grab,
+            Some(None) => {
+                warn!("InputMethod: send_keymap_to_grab - active instance has no keyboard grab");
                 return;
             }
-        };
-
-        let keyboard_grab_obj = inner
-            .instances
-            .iter()
-            .find(|inst| inst.object.id() == *active_id)
-            .and_then(|inst| inst.keyboard_grab.as_ref());
-
-        let keyboard_grab = match keyboard_grab_obj {
-            Some(grab) => grab,
             None => {
-                warn!("InputMethod: send_keymap_to_grab - active instance has no keyboard grab");
+                warn!("InputMethod: send_keymap_to_grab - no active input method");
                 return;
             }
         };
@@ -257,47 +251,24 @@ impl InputMethodHandle {
         state: &mut D,
         rect: Rectangle<i32, Logical>,
     ) {
-        let mut inner = self.inner.lock().unwrap();
+        self.with_instance(|instance| {
+            instance.popup_handle.rectangle = rect;
 
-        let active_id = match inner.active_input_method_id.clone() {
-            Some(id) => id,
-            None => return,
-        };
+            let mut popup_surface = match instance.popup_handle.surface.clone() {
+                Some(popup_surface) => popup_surface,
+                None => return,
+            };
 
-        let instance = match inner.instances.iter_mut().find(|i| i.object.id() == active_id) {
-            Some(inst) => inst,
-            None => return,
-        };
+            popup_surface.set_text_input_rectangle(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
 
-        instance.popup_handle.rectangle = rect;
-
-        let mut popup_surface = match instance.popup_handle.surface.clone() {
-            Some(popup_surface) => popup_surface,
-            None => return,
-        };
-
-        popup_surface.set_text_input_rectangle(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
-
-        let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
-        (data.popup_repositioned)(state, popup_surface.clone());
+            let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+            (data.popup_repositioned)(state, popup_surface.clone());
+        });
     }
 
     /// Activate input method on the given surface.
     pub fn activate_input_method<D: SeatHandler + 'static>(&self, state: &mut D, surface: &WlSurface) {
-        self.with_input_method(|im| {
-            let active_id = match im.active_input_method_id.clone() {
-                Some(id) => id,
-                None => {
-                    return;
-                }
-            };
-
-            let instance = match im.instances.iter_mut().find(|i| i.object.id() == active_id) {
-                Some(inst) => inst,
-                None => {
-                    return;
-                }
-            };
+        self.with_instance(|instance| {
             instance.object.activate();
 
             if let Some(popup) = instance.popup_handle.surface.as_mut() {
@@ -319,18 +290,7 @@ impl InputMethodHandle {
     ///
     /// The `done` is always send when deactivating IME.
     pub fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D) {
-        self.with_input_method(|im| {
-            let active_id = match im.active_input_method_id.clone() {
-                Some(id) => id,
-                None => {
-                    return;
-                }
-            };
-
-            let instance = match im.instances.iter_mut().find(|i| i.object.id() == active_id) {
-                Some(inst) => inst,
-                None => return,
-            };
+        self.with_instance(|instance| {
             instance.object.deactivate();
             instance.done();
 
@@ -409,18 +369,7 @@ where
                 });
             }
             zwp_input_method_v2::Request::Commit { serial } => {
-                let inner = data.handle.inner.lock().unwrap();
-                let current_serial = if let Some(active_id) = inner.active_input_method_id.clone() {
-                    inner
-                        .instances
-                        .iter()
-                        .find(|i| i.object.id() == active_id)
-                        .map(|i| i.serial)
-                        .unwrap_or(0)
-                } else {
-                    0
-                };
-
+                let current_serial = data.handle.get_active_serial();
                 data.text_input_handle.done(serial != current_serial);
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
@@ -579,59 +528,46 @@ where
         serial: Serial,
         time: u32,
     ) {
-        let inner = self.inner.lock().unwrap();
+        // Get the keyboard grab and text input handle from the active instance
+        let grab_info = self.with_instance_readonly(|inst| {
+            (
+                inst.keyboard_grab.clone(),
+                inst.text_input_handle.clone(),
+                inst.text_input_handle.has_active_text_input(),
+            )
+        });
 
-        // Get the active instance
-        let active_id = inner.active_input_method_id.as_ref();
-
-        let Some(act_id) = active_id else {
+        let Some((keyboard_grab, text_input_handle, has_text_input)) = grab_info else {
             // No active input method, forward to normal keyboard handling
-            drop(inner);
             handle.input(data, keycode, key_state, modifiers, serial, time);
             return;
         };
 
-        let instance = inner.instances.iter().find(|inst| inst.object.id() == *act_id);
-
-        let Some(inst) = instance else {
-            // Active instance not found, forward to normal keyboard handling
-            drop(inner);
-            handle.input(data, keycode, key_state, modifiers, serial, time);
-            return;
-        };
-
-        // Check if this instance has a keyboard grab
-        let Some(keyboard) = inst.keyboard_grab.as_ref() else {
+        let Some(keyboard) = keyboard_grab else {
             // No keyboard grab, forward to normal keyboard handling
-            drop(inner);
             handle.input(data, keycode, key_state, modifiers, serial, time);
             return;
         };
-
-        // Check if there's an active text input with focus
-        let has_text_input = inst.text_input_handle.has_active_text_input();
 
         if !has_text_input {
             // No text input focus, forward to normal keyboard handling
-            drop(inner);
             handle.input(data, keycode, key_state, modifiers, serial, time);
             return;
         }
 
         // Forward to IME
-        inst.text_input_handle
-            .active_text_input_serial_or_default(serial.0, |serial| {
-                keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
-                if let Some(serialized) = modifiers.map(|m| m.serialized) {
-                    keyboard.modifiers(
-                        serial,
-                        serialized.depressed,
-                        serialized.latched,
-                        serialized.locked,
-                        serialized.layout_effective,
-                    )
-                }
-            });
+        text_input_handle.active_text_input_serial_or_default(serial.0, |serial| {
+            keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
+            if let Some(serialized) = modifiers.map(|m| m.serialized) {
+                keyboard.modifiers(
+                    serial,
+                    serialized.depressed,
+                    serialized.latched,
+                    serialized.locked,
+                    serialized.layout_effective,
+                )
+            }
+        });
     }
 
     fn set_focus(
