@@ -37,7 +37,7 @@ gl_generator = "0.14"
 
 [features]
 debug = ["fps_ticker", "image/png", "renderdoc"]
-default = ["egl", "winit", "x11", "udev", "xwayland"]
+default = ["egl", "winit", "x11", "udev", "xwayland", "libei"]
 egl = ["smithay/use_system_lib", "smithay/backend_egl"]
 test_all_features = ["default", "debug"]
 udev = [
@@ -58,6 +58,7 @@ udev = [
 winit = ["smithay/backend_winit", "smithay/backend_drm"]
 x11 = ["smithay/backend_x11", "x11rb", "smithay/renderer_gl", "smithay/backend_vulkan"]
 xwayland = ["smithay/xwayland", "x11rb", "smithay/x11rb_event_source", "xcursor"]
+libei = ["smithay/backend_libei", "udev"]
 profile-with-puffin = ["profiling/profile-with-puffin", "puffin_http"]
 profile-with-tracy = ["profiling/profile-with-tracy"]
 profile-with-tracy-mem = ["profile-with-tracy"]
