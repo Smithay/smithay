@@ -121,6 +121,14 @@ impl EventSource for EiInput {
 
             match event {
                 Ok(EisRequestSourceEvent::Connected) => {
+                    if connection.0.connection.context_type() == eis::handshake::ContextType::Receiver {
+                        connection.0.connection.disconnected(
+                            eis::connection::DisconnectReason::Disconnected,
+                            "receiver context not supported",
+                        );
+                        let _ = connection.flush();
+                        return Ok(PostAction::Remove);
+                    }
                     cb(EiInputEvent::Connected, connection);
                 }
                 Ok(EisRequestSourceEvent::Request(EisRequest::Disconnect)) => {
