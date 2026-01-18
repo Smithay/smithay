@@ -203,6 +203,21 @@ impl fmt::Debug for Xkb {
 // same thread
 unsafe impl Send for Xkb {}
 
+/// A keymap that is bound to a specific keyboard handler
+pub struct Keymap<'a, D: SeatHandler> {
+    inner: xkb::Keymap,
+    handle: &'a KeyboardHandle<D>,
+}
+
+impl<'a, D: SeatHandler> fmt::Debug for Keymap<'a, D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Keymap")
+            .field("inner", &self.inner.get_raw_ptr())
+            .field("handle", &self.handle)
+            .finish()
+    }
+}
+
 pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
@@ -833,6 +848,29 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 Error::BadKeymap
             })?;
         self.update_xkb_state(data, keymap);
+        Ok(())
+    }
+
+    /// Get the current [`Keymap`] used by the keyboard.
+    pub fn get_keymap(&self) -> Keymap<'_, D> {
+        let internal = self.arc.internal.lock().unwrap();
+        let xkb = internal.xkb.lock().unwrap();
+        Keymap {
+            inner: xkb.keymap.clone(),
+            handle: self,
+        }
+    }
+
+    /// Change the [`Keymap`] used by the keyboard.
+    ///
+    /// The keymap must have been created from this keyboard handle.
+    pub fn set_keymap(&self, data: &mut D, keymap: Keymap<'_, D>) -> Result<(), Error> {
+        // Ensure the keymap was created from this keyboard handle (and thread since it is !Send).
+        if !std::ptr::eq(self, keymap.handle) {
+            debug!("Keymap created from wrong KeyboardHandle");
+            return Err(Error::BadKeymap);
+        }
+        self.update_xkb_state(data, keymap.inner);
         Ok(())
     }
 
