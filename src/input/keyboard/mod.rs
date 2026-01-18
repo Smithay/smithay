@@ -203,6 +203,35 @@ impl fmt::Debug for Xkb {
 // same thread
 unsafe impl Send for Xkb {}
 
+#[derive(Clone)]
+/// A keymap that is bound to a specific keyboard handler
+pub struct Keymap {
+    /// XKB context used to create this keymap
+    context: xkb::Context,
+    /// The XKB keymap
+    inner: xkb::Keymap,
+}
+
+impl Keymap {
+    /// Get current keymap
+    pub fn keymap(&self) -> &xkb::Keymap {
+        &self.inner
+    }
+    /// Get current context
+    pub fn context(&self) -> &xkb::Context {
+        &self.context
+    }
+}
+
+impl fmt::Debug for Keymap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Keymap")
+            .field("inner", &self.inner.get_raw_ptr())
+            .field("context", &self.context.get_raw_ptr())
+            .finish()
+    }
+}
+
 pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
@@ -767,15 +796,22 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         true
     }
 
-    fn update_xkb_state(&self, data: &mut D, keymap: xkb::Keymap) {
+    fn update_context(&self, context: &xkb::Context) {
+        let internal = self.arc.internal.lock().unwrap();
+        let mut xkb = internal.xkb.lock().unwrap();
+        xkb.context = context.clone();
+        drop(xkb);
+    }
+
+    fn update_xkb_state(&self, data: &mut D, keymap: &xkb::Keymap) {
         let mut internal = self.arc.internal.lock().unwrap();
 
-        let mut state = xkb::State::new(&keymap);
+        let mut state = xkb::State::new(keymap);
         for key in &internal.pressed_keys {
             state.update_key(*key, xkb::KeyDirection::Down);
         }
 
-        let led_mapping = LedMapping::from_keymap(&keymap);
+        let led_mapping = LedMapping::from_keymap(keymap);
         internal.led_mapping = led_mapping;
         internal.mods_state.update_with(&state);
         let leds_changed = internal.led_state.update_with(&state, &led_mapping);
@@ -794,7 +830,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
 
         #[cfg(feature = "wayland_frontend")]
-        self.change_keymap(data, &focus, &keymap, mods);
+        self.change_keymap(data, &focus, keymap, mods);
 
         if leds_changed {
             let led_state = internal.led_state;
@@ -820,7 +856,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             debug!("Loading keymap from string failed");
             Error::BadKeymap
         })?;
-        self.update_xkb_state(data, keymap);
+        self.update_xkb_state(data, &keymap);
         Ok(())
     }
 
@@ -832,7 +868,26 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 debug!("Loading keymap from XkbConfig failed");
                 Error::BadKeymap
             })?;
-        self.update_xkb_state(data, keymap);
+        self.update_xkb_state(data, &keymap);
+        Ok(())
+    }
+
+    /// Get the current [`Keymap`] used by the keyboard.
+    pub fn get_keymap(&self) -> Keymap {
+        let internal = self.arc.internal.lock().unwrap();
+        let xkb = internal.xkb.lock().unwrap();
+        Keymap {
+            inner: xkb.keymap.clone(),
+            context: xkb.context.clone(),
+        }
+    }
+
+    /// Change the [`Keymap`] used by the keyboard.
+    ///
+    /// The keymap must have been created from this keyboard handle.
+    pub fn set_keymap(&self, data: &mut D, keymap: &Keymap) -> Result<(), Error> {
+        self.update_xkb_state(data, &keymap.inner);
+        self.update_context(&keymap.context);
         Ok(())
     }
 
