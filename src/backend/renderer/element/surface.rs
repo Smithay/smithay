@@ -133,7 +133,8 @@ impl KindEvaluation {
         KindEvaluation::Dynamic(func)
     }
 
-    fn eval(&self, data: &SurfaceData) -> Kind {
+    /// Evaluates the `Kind` for a given `SurfaceData` struct.
+    pub fn eval(&self, data: &SurfaceData) -> Kind {
         match self {
             KindEvaluation::Static(res) => *res,
             KindEvaluation::Dynamic(func) => func(data),
