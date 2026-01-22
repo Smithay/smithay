@@ -6,7 +6,7 @@ use std::{
 use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 use crate::{
-    backend::input::{ButtonState, KeyState, Keycode},
+    backend::input::{ButtonState, KeyState, Keycode, TouchSlot},
     input::{
         keyboard::{
             GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
@@ -18,6 +18,7 @@ use crate::{
             GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
             PointerInnerHandle, RelativeMotionEvent,
         },
+        touch::{self, DownEvent, OrientationEvent, ShapeEvent, TouchGrab, TouchInnerHandle, UpEvent},
         SeatHandler,
     },
     utils::{DeadResource, IsAlive, Logical, Point, Serial, SERIAL_COUNTER},
@@ -227,6 +228,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     root: <D as SeatHandler>::KeyboardFocus,
     serial: Serial,
@@ -235,6 +237,7 @@ where
     keyboard_handle: Option<KeyboardHandle<D>>,
     keyboard_grab_start_data: KeyboardGrabStartData<D>,
     pointer_grab_start_data: PointerGrabStartData<D>,
+    touch_grab_start_data: touch::GrabStartData<D>,
 }
 
 impl<D> fmt::Debug for PopupGrab<D>
@@ -242,6 +245,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PopupGrab")
@@ -251,6 +255,7 @@ where
             .field("keyboard_handle", &self.keyboard_handle)
             .field("keyboard_grab_start_data", &self.keyboard_grab_start_data)
             .field("pointer_grab_start_data", &self.pointer_grab_start_data)
+            .field("touch_grab_start_data", &self.touch_grab_start_data)
             .finish()
     }
 }
@@ -260,6 +265,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     fn clone(&self) -> Self {
         PopupGrab {
@@ -270,6 +276,7 @@ where
             keyboard_handle: self.keyboard_handle.clone(),
             keyboard_grab_start_data: self.keyboard_grab_start_data.clone(),
             pointer_grab_start_data: self.pointer_grab_start_data.clone(),
+            touch_grab_start_data: self.touch_grab_start_data.clone(),
         }
     }
 }
@@ -279,6 +286,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     pub(super) fn new(
         toplevel_popups: PopupGrabInner,
@@ -304,7 +312,12 @@ where
                 // We set the focus to root as this will make
                 // sure the grab will stay alive until the
                 // toplevel is destroyed or the grab is unset
+                focus: Some((root.clone().into(), (0f64, 0f64).into())),
+                location: (0f64, 0f64).into(),
+            },
+            touch_grab_start_data: touch::GrabStartData {
                 focus: Some((root.into(), (0f64, 0f64).into())),
+                slot: TouchSlot::from(None),
                 location: (0f64, 0f64).into(),
             },
         }
@@ -377,6 +390,10 @@ where
         &self.pointer_grab_start_data
     }
 
+    pub fn touch_grab_start_data(&self) -> &touch::GrabStartData<D> {
+        &self.touch_grab_start_data
+    }
+
     fn unset_keyboard_grab(&self, data: &mut D, serial: Serial) {
         if let Some(keyboard) = self.keyboard_handle.as_ref() {
             if keyboard.is_grabbed()
@@ -401,6 +418,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     popup_grab: PopupGrab<D>,
 }
@@ -410,6 +428,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PopupKeyboardGrab")
@@ -423,6 +442,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     /// Create a [`PopupKeyboardGrab`] for the provided [`PopupGrab`]
     pub fn new(popup_grab: &PopupGrab<D>) -> Self {
@@ -437,6 +457,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     fn input(
         &mut self,
@@ -509,6 +530,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     popup_grab: PopupGrab<D>,
 }
@@ -518,6 +540,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PopupPointerGrab")
@@ -531,6 +554,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     /// Create a [`PopupPointerGrab`] for the provided [`PopupGrab`]
     pub fn new(popup_grab: &PopupGrab<D>) -> Self {
@@ -545,6 +569,7 @@ where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
     fn motion(
         &mut self,
@@ -707,4 +732,104 @@ where
         let serial = SERIAL_COUNTER.next_serial();
         self.popup_grab.unset_keyboard_grab(data, serial);
     }
+}
+
+pub struct PopupTouchGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
+{
+    popup_grab: PopupGrab<D>,
+}
+
+impl<D> PopupTouchGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+{
+    pub fn new(popup_grab: &PopupGrab<D>) -> Self {
+        PopupTouchGrab {
+            popup_grab: popup_grab.clone(),
+        }
+    }
+}
+
+impl<D> TouchGrab<D> for PopupTouchGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+{
+    fn down(
+        &mut self,
+        data: &mut D,
+        handle: &mut TouchInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
+        event: &DownEvent,
+        seq: Serial,
+    ) {
+        if focus
+            .as_ref()
+            .and_then(|f1| {
+                self.popup_grab
+                    .current_grab()
+                    .as_ref()
+                    .and_then(|f2| f2.wl_surface())
+                    .map(|s| f1.0.same_client_as(&s.id()))
+            })
+            .unwrap_or(false)
+        {
+            handle.down(data, focus, event, seq);
+        } else {
+            handle.down(data, None, event, seq);
+        }
+    }
+
+    fn up(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &UpEvent, seq: Serial) {
+        handle.up(data, event, seq)
+    }
+
+    fn motion(
+        &mut self,
+        data: &mut D,
+        handle: &mut TouchInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
+        event: &touch::MotionEvent,
+        seq: Serial,
+    ) {
+        handle.motion(data, focus, event, seq)
+    }
+
+    fn frame(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, seq: Serial) {
+        handle.frame(data, seq)
+    }
+
+    fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, seq: Serial) {
+        handle.cancel(data, seq)
+    }
+
+    fn shape(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &ShapeEvent, seq: Serial) {
+        handle.shape(data, event, seq)
+    }
+
+    fn orientation(
+        &mut self,
+        data: &mut D,
+        handle: &mut TouchInnerHandle<'_, D>,
+        event: &OrientationEvent,
+        seq: Serial,
+    ) {
+        handle.orientation(data, event, seq)
+    }
+
+    fn start_data(&self) -> &touch::GrabStartData<D> {
+        self.popup_grab.touch_grab_start_data()
+    }
+
+    fn unset(&mut self, _data: &mut D) {}
 }

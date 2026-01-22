@@ -66,6 +66,7 @@ impl PopupManager {
         D: SeatHandler + 'static,
         <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
         <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+        <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
     {
         let surface = popup.wl_surface();
         assert_eq!(
