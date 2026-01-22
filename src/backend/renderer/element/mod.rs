@@ -239,11 +239,13 @@ pub enum RenderElementPresentationState {
 #[derive(Debug, Clone, Copy)]
 pub struct RenderElementState {
     /// Holds the physical visible area of the element on the output in pixels.
-    ///  
+    ///
     /// Note: If the presentation_state is [`RenderElementPresentationState::Skipped`] this will be zero.
     pub visible_area: usize,
     /// Holds the presentation state of the element on the output
     pub presentation_state: RenderElementPresentationState,
+    /// The next `RenderElements::draw` call to this element needs an accompanying `capture_framebuffer`-call.
+    pub needs_capture: bool,
 }
 
 impl RenderElementState {
@@ -251,6 +253,7 @@ impl RenderElementState {
         RenderElementState {
             visible_area: Default::default(),
             presentation_state: RenderElementPresentationState::Skipped,
+            needs_capture: false,
         }
     }
 
@@ -258,6 +261,7 @@ impl RenderElementState {
         RenderElementState {
             visible_area,
             presentation_state: RenderElementPresentationState::Rendering { reason: None },
+            needs_capture: false,
         }
     }
 }
@@ -495,6 +499,19 @@ pub trait Element {
     fn kind(&self) -> Kind {
         Kind::default()
     }
+    /// Returns whether this elements is a "framebuffer effect".
+    ///
+    /// Returning `true` will cause implementations of `RenderElement::capture_framebuffer`
+    /// to be called *before* the accompanying `RenderElement::draw` call, *if* the contents behind
+    /// the element have changed.
+    ///
+    /// Additionally damage calculation will be altered to always include the whole area behind the
+    /// element, if a capture is queued up, to make sure the framebuffer contents are available for capture.
+    ///
+    /// Any damage reported by this element will also cause `capture_framebuffer` to be called.
+    fn is_framebuffer_effect(&self) -> bool {
+        false
+    }
 }
 
 /// A single render element
@@ -514,6 +531,19 @@ pub trait RenderElement<R: Renderer>: Element {
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         let _ = renderer;
         None
+    }
+
+    /// Notification, that the underlying framebuffer has changed allowing the element
+    /// to blit the contents of the `frame`.
+    ///
+    /// Will only be called if `Element::is_framebuffer_effect` returns `true`.
+    fn capture_framebuffer(
+        &self,
+        frame: &mut R::Frame<'_, '_>,
+        dst: Rectangle<i32, Physical>,
+    ) -> Result<(), R::Error> {
+        let _ = (frame, dst);
+        unimplemented!("error: is_framebuffer_effect without capture_framebuffer implementation!");
     }
 }
 
@@ -577,6 +607,10 @@ where
     fn kind(&self) -> Kind {
         (*self).kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        (*self).is_framebuffer_effect()
+    }
 }
 
 impl<R, E> RenderElement<R> for &E
@@ -598,6 +632,14 @@ where
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
         (*self).draw(frame, src, dst, damage, opaque_regions)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        dst: Rectangle<i32, Physical>,
+    ) -> Result<(), <R>::Error> {
+        (*self).capture_framebuffer(frame, dst)
     }
 }
 
@@ -882,6 +924,19 @@ macro_rules! render_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
+
+        fn is_framebuffer_effect(&self) -> bool {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call is_framebuffer_effect; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
     };
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
@@ -927,6 +982,32 @@ macro_rules! render_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
+
+        fn capture_framebuffer(
+            &self,
+            frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
+            dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
+        ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
+        where
+        $(
+            $(
+                $renderer: std::convert::AsMut<$other_renderer>,
+                <$renderer as $crate::backend::renderer::RendererSuper>::Frame: std::convert::AsMut<<$other_renderer as $crate::backend::renderer::RendererSuper>::Frame>,
+                <$other_renderer as $crate::backend::renderer::RendererSuper>::Error: Into<<$renderer as $crate::backend::renderer::RendererSuper>::Error>,
+            )*
+        )*
+        {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, dst)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
     };
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
@@ -960,6 +1041,24 @@ macro_rules! render_elements_internal {
                         #[$meta]
                     )*
                     Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; underlying_storage; x, renderer)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn capture_framebuffer(
+            &self,
+            frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
+            dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
+        ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
+        {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, dst)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1512,6 +1611,10 @@ where
     fn kind(&self) -> Kind {
         self.0.kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.0.is_framebuffer_effect()
+    }
 }
 
 impl<R, C> RenderElement<R> for Wrap<C>
@@ -1533,6 +1636,14 @@ where
     #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.0.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        dst: Rectangle<i32, Physical>,
+    ) -> Result<(), <R>::Error> {
+        self.0.capture_framebuffer(frame, dst)
     }
 }
 
