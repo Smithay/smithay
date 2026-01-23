@@ -51,7 +51,7 @@ where
     fn request(
         state: &mut D,
         _client: &Client,
-        _resource: &ZxdgExporterV2,
+        resource: &ZxdgExporterV2,
         request: zxdg_exporter_v2::Request,
         _data: &(),
         _dhandle: &DisplayHandle,
@@ -60,8 +60,7 @@ where
         match request {
             zxdg_exporter_v2::Request::ExportToplevel { id, surface } => {
                 if compositor::get_role(&surface) != Some(XDG_TOPLEVEL_ROLE) {
-                    data_init.post_error(
-                        id,
+                    resource.post_error(
                         zxdg_exporter_v2::Error::InvalidSurface,
                         "exported surface had an invalid role",
                     );
