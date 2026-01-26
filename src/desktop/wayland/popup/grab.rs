@@ -390,6 +390,11 @@ where
         &self.pointer_grab_start_data
     }
 
+    /// Convenience method for getting a [`touch::GrabStartData`] for this grab.
+    ///
+    /// The focus of the [`touch::GrabStartData`] will always be the root
+    /// of the popup grab, e.g. the surface of the toplevel, to make sure
+    /// the grab is not automatically unset.
     pub fn touch_grab_start_data(&self) -> &touch::GrabStartData<D> {
         &self.touch_grab_start_data
     }
@@ -744,6 +749,20 @@ where
     popup_grab: PopupGrab<D>,
 }
 
+impl<D> fmt::Debug for PopupTouchGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupTouchGrab")
+            .field("popup_grab", &self.popup_grab)
+            .finish()
+    }
+}
+
 impl<D> PopupTouchGrab<D>
 where
     D: SeatHandler + 'static,
@@ -751,6 +770,7 @@ where
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
     <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
+    /// Create a [`PopupTouchGrab`] for the provided [`PopupGrab`]
     pub fn new(popup_grab: &PopupGrab<D>) -> Self {
         PopupTouchGrab {
             popup_grab: popup_grab.clone(),
