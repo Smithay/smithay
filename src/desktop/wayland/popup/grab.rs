@@ -739,6 +739,14 @@ where
     }
 }
 
+/// Default implementation of a [`TouchGrab`] for [`PopupGrab`]
+///
+/// The [`PopupTouchGrab`] will make sure that touch events
+/// stays on the same client as the grabbed popup (similar to an
+/// "owner-events" grab in X11 parlance). If an input event happens
+/// outside of the grabbed [`WlSurface`] the popup will be dismissed
+/// and the grab ends. In case of a nested grab all parent grabs will
+/// also be dismissed.
 pub struct PopupTouchGrab<D>
 where
     D: SeatHandler + 'static,
