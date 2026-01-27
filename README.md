@@ -53,7 +53,7 @@ To get information about it and how you can run it visit [anvil README](https://
 - [wprs](https://github.com/wayland-transpositor/wprs): Like [xpra](https://en.wikipedia.org/wiki/Xpra), but for Wayland, and written in
 Rust.
 - [Local Desktop](https://github.com/localdesktop/localdesktop): An Android app for running GUI Linux via PRoot and Wayland.
-- [Otto](https://github.com/nongio/otto): A gesture driven stacking compositor
+- [Otto](https://github.com/nongio/otto): A gesture-driven stacking compositor.
 
 ## System Dependencies
 
