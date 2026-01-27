@@ -1914,6 +1914,31 @@ impl GlesRenderer {
         Ok(func(&self.gl))
     }
 
+    /// Run custom code in the GL context with GPU profiling.
+    ///
+    /// Sets up a GPU profiling span, calls [`with_context()`](Self::with_context), then finishes
+    /// the span, calls `glFlush()` and synchronizes the CPU/GPU timestamp.
+    pub fn with_profiled_context<F, R>(&mut self, location: SpanLocation, func: F) -> Result<R, GlesError>
+    where
+        F: FnOnce(&ffi::Gles2) -> R,
+    {
+        unsafe {
+            self.egl.make_current()?;
+        }
+
+        self.profiler.collect(&self.gl);
+
+        let result = {
+            let _scope = self.profiler.scope(location, &self.gl);
+            func(&self.gl)
+        };
+
+        unsafe { self.gl.Flush() };
+        self.profiler.sync_gpu(&self.gl);
+
+        Ok(result)
+    }
+
     /// Compile a custom pixel shader for rendering with [`GlesFrame::render_pixel_shader_to`].
     ///
     /// Pixel shaders can be used for completely shader-driven drawing into a given region.
