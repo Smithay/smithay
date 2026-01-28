@@ -237,20 +237,22 @@ impl GlesTargetInternal<'_> {
     }
 
     #[profiling::function]
-    fn make_current(&self, gl: &ffi::Gles2, egl: &EGLContext) -> Result<(), MakeCurrentError> {
+    fn make_current(&self, context: &GlesContext) -> Result<(), MakeCurrentError> {
         unsafe {
             if let GlesTargetInternal::Surface { surface, .. } = self {
-                egl.make_current_with_surface(surface)?;
-                gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                context.egl().make_current_with_surface(surface)?;
+                context.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
             } else {
-                egl.make_current()?;
+                context.egl().make_current()?;
                 match self {
                     GlesTargetInternal::Image { ref buf, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo)
+                        context.gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo)
                     }
-                    GlesTargetInternal::Texture { ref fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
+                    GlesTargetInternal::Texture { ref fbo, .. } => {
+                        context.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
+                    }
                     GlesTargetInternal::Renderbuffer { ref fbo, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
+                        context.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
                     }
                     _ => unreachable!(),
                 }
@@ -1348,7 +1350,7 @@ impl ExportMem for GlesRenderer {
         region: Rectangle<i32, BufferCoord>,
         fourcc: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        target.0.make_current(&self.context.gl, &self.context.egl())?;
+        target.0.make_current(&self.context)?;
 
         let (_, has_alpha) = target.0.format().ok_or(GlesError::UnknownPixelFormat)?;
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
@@ -1414,7 +1416,7 @@ impl ExportMem for GlesRenderer {
     ) -> Result<Self::TextureMapping, Self::Error> {
         let mut pbo = 0;
         let target = self.bind_texture(texture)?;
-        target.0.make_current(&self.context.gl, &self.context.egl())?;
+        target.0.make_current(&self.context)?;
 
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
         let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
@@ -1710,9 +1712,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         filter: TextureFilter,
     ) -> Result<(), Self::Error> {
         let res = self.renderer.blit(self.target, to, src, dst, filter);
-        self.target
-            .0
-            .make_current(&self.renderer.context.gl, &self.renderer.context.egl())?;
+        self.target.0.make_current(&self.renderer.context)?;
         res.map(|_| ())
     }
 
@@ -1724,9 +1724,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         filter: TextureFilter,
     ) -> Result<(), Self::Error> {
         let res = self.renderer.blit(from, self.target, src, dst, filter);
-        self.target
-            .0
-            .make_current(&self.renderer.context.gl, &self.renderer.context.egl())?;
+        self.target.0.make_current(&self.renderer.context)?;
         res.map(|_| ())
     }
 }
@@ -2128,7 +2126,7 @@ impl Renderer for GlesRenderer {
     where
         'buffer: 'frame,
     {
-        target.0.make_current(&self.context.gl, &self.context.egl())?;
+        target.0.make_current(&self.context)?;
 
         // Collect last frame's timestamps.
         self.profiler.collect(&self.context.gl);
