@@ -438,7 +438,7 @@ impl OutputDamageTracker {
                     .element_render_state(element_id.clone())
                     .is_some_and(|state| state.needs_capture)
                 {
-                    element.capture_framebuffer(&mut frame, element_geometry)?;
+                    element.capture_framebuffer(&mut frame, element.src(), element_geometry)?;
                 }
 
                 element.draw(
