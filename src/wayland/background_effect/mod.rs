@@ -69,6 +69,11 @@ pub trait ExtBackgroundEffectHandler:
         let _ = wl_surface;
         let _ = region;
     }
+
+    /// Called when blur unset becomes pending, and awaits surface commit.
+    fn unset_blur_region(&mut self, wl_surface: WlSurface) {
+        let _ = wl_surface;
+    }
 }
 
 /// Cached state for background effect per surface (double-buffered)

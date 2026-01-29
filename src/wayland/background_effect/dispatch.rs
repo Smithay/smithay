@@ -74,7 +74,7 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, Backg
     for BackgroundEffectState
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         obj: &ExtBackgroundEffectSurfaceV1,
         request: SurfaceRequest,
@@ -89,11 +89,19 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, Backg
                     return;
                 };
 
+                let region = region.as_ref().map(compositor::get_region_attributes);
+
                 with_states(&surface, |states| {
                     let mut cached = states.cached_state.get::<BackgroundEffectSurfaceCachedState>();
                     let pending = cached.pending();
-                    pending.blur_region = region.map(|r| compositor::get_region_attributes(&r));
+                    pending.blur_region = region.clone();
                 });
+
+                if let Some(region) = region {
+                    state.set_blur_region(surface, region);
+                } else {
+                    state.unset_blur_region(surface);
+                }
             }
             SurfaceRequest::Destroy => {
                 let Some(surface) = data.wl_surface() else {
@@ -110,6 +118,8 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, Backg
                     let mut cached = states.cached_state.get::<BackgroundEffectSurfaceCachedState>();
                     cached.pending().blur_region = None;
                 });
+
+                state.unset_blur_region(surface);
             }
             _ => {}
         }
