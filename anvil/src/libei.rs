@@ -10,9 +10,7 @@ use smithay::{
 use crate::{state::AnvilState, udev::UdevData};
 
 pub fn listen_eis(handle: &calloop::LoopHandle<'static, AnvilState<UdevData>>) {
-    let listener = eis::Listener::bind_auto()
-        .unwrap()
-        .expect("No `XDG_RUNTIME_DIR` defined");
+    let listener = eis::Listener::bind_auto().unwrap();
 
     std::env::set_var("LIBEI_SOCKET", listener.path());
 
