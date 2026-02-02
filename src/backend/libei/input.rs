@@ -58,7 +58,15 @@ impl InputBackend for EiInput {
 
 impl input::Device for request::Device {
     fn id(&self) -> String {
-        self.name().unwrap_or("").to_string()
+        use reis::Interface;
+        use rustix::fd::{AsFd, AsRawFd};
+        let object = self.device().as_object();
+        let id = object.id();
+        // XXX don't panic?
+        // don't need to be valid after calloop source is destroyed?
+        // - (source keeps backend open, so weak handle upgrades)
+        let fd = object.backend().unwrap().as_fd().as_raw_fd();
+        format!("ei-{fd}-{id}")
     }
 
     fn name(&self) -> String {
