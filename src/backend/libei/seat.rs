@@ -188,7 +188,7 @@ impl EiInputSeatInner {
                 let _ = self.event_sender.send(InputEvent::DeviceAdded {
                     device: device.clone(),
                 });
-                self.device_keyboard = Some(DeviceDropWrapper(device));
+                self.device_keyboard = Some(DeviceDropWrapper::new(device, &self.event_sender));
             }
         }
 
@@ -204,7 +204,7 @@ impl EiInputSeatInner {
                 let _ = self.event_sender.send(InputEvent::DeviceAdded {
                     device: device.clone(),
                 });
-                self.device_pointer = Some(DeviceDropWrapper(device));
+                self.device_pointer = Some(DeviceDropWrapper::new(device, &self.event_sender));
             }
         }
 
@@ -224,7 +224,7 @@ impl EiInputSeatInner {
                 let _ = self.event_sender.send(InputEvent::DeviceAdded {
                     device: device.clone(),
                 });
-                self.device_pointer_absolute = Some(DeviceDropWrapper(device));
+                self.device_pointer_absolute = Some(DeviceDropWrapper::new(device, &self.event_sender));
             }
         }
 
@@ -240,7 +240,7 @@ impl EiInputSeatInner {
                 let _ = self.event_sender.send(InputEvent::DeviceAdded {
                     device: device.clone(),
                 });
-                self.device_touch = Some(DeviceDropWrapper(device));
+                self.device_touch = Some(DeviceDropWrapper::new(device, &self.event_sender));
             }
         }
     }
@@ -248,10 +248,28 @@ impl EiInputSeatInner {
 
 // Helper that remove the device on drop
 #[derive(Debug)]
-struct DeviceDropWrapper(reis::request::Device);
+struct DeviceDropWrapper {
+    device: reis::request::Device,
+    event_sender: calloop::channel::Sender<InputEvent<EiInput>>,
+}
+
+impl DeviceDropWrapper {
+    fn new(
+        device: reis::request::Device,
+        event_sender: &calloop::channel::Sender<InputEvent<EiInput>>,
+    ) -> Self {
+        Self {
+            device,
+            event_sender: event_sender.clone(),
+        }
+    }
+}
 
 impl Drop for DeviceDropWrapper {
     fn drop(&mut self) {
-        self.0.remove();
+        let _ = self.event_sender.send(InputEvent::DeviceRemoved {
+            device: self.device.clone(),
+        });
+        self.device.remove();
     }
 }
