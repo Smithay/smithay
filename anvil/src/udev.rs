@@ -1349,7 +1349,7 @@ impl AnvilState<UdevData> {
                 .unwrap_or(true)
             {
                 // However, if we need to do a copy, that might not be enough.
-                // (And without actual comparision to previous frames we cannot really know.)
+                // (And without actual comparison to previous frames we cannot really know.)
                 // So lets ignore that in those cases to avoid thrashing performance.
                 trace!("scheduling repaint timer immediately on {:?}", crtc);
                 Timer::immediate()

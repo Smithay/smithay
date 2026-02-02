@@ -177,7 +177,7 @@ impl TabletTool {
 
                     // Unfocus previous surface
                     self.proximity_out(time);
-                    // Focuss a new one
+                    // Focus a new one
                     self.proximity_in(pos, focus, tablet, serial, time)
                 }
             }

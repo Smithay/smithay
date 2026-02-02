@@ -322,12 +322,12 @@ impl Output {
         self.inner.0.lock().unwrap().transform
     }
 
-    /// Returns the currenly set scale of the output
+    /// Returns the currently set scale of the output
     pub fn current_scale(&self) -> Scale {
         self.inner.0.lock().unwrap().scale
     }
 
-    /// Returns the currenly advertised location of the output
+    /// Returns the currently advertised location of the output
     pub fn current_location(&self) -> Point<i32, Logical> {
         self.inner.0.lock().unwrap().location
     }

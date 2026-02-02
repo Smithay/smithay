@@ -1646,8 +1646,8 @@ impl ToplevelSurface {
                 // Don't forget to prepare the default capabilities though.
                 let default_capabilities = &state.xdg_shell_state().default_capabilities;
                 role.server_pending = Some(Default::default());
-                let current_capabilties = &mut role.server_pending.as_mut().unwrap().capabilities;
-                current_capabilties.replace(default_capabilities.capabilities.iter().copied());
+                let current_capabilities = &mut role.server_pending.as_mut().unwrap().capabilities;
+                current_capabilities.replace(default_capabilities.capabilities.iter().copied());
             }
 
             None

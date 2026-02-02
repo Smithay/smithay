@@ -12,7 +12,7 @@ use wayland_server::WEnum;
 /// Multiple surfaces can share a single layer, and ordering within a single layer is undefined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layer {
-    /// The lowest layer, used usualy for wallpapers
+    /// The lowest layer, used usually for wallpapers
     Background,
     /// The layer bellow the windows and above the wallpaper
     Bottom,

@@ -221,7 +221,7 @@ impl PopupGrabInner {
 /// One example would be to use a timer to automatically dismiss the popup after some
 /// timeout.
 ///
-/// The grab is obtained by calling [`PopupManager::grap_popup`](super::PopupManager::grab_popup).
+/// The grab is obtained by calling [`PopupManager::grab_popup`](super::PopupManager::grab_popup).
 pub struct PopupGrab<D>
 where
     D: SeatHandler + 'static,

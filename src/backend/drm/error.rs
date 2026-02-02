@@ -23,7 +23,7 @@ pub struct AccessError {
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// Unable to acquire DRM master
-    #[error("Failed to aquire DRM master")]
+    #[error("Failed to acquire DRM master")]
     DrmMasterFailed,
     /// The `DrmDevice` encountered an access error
     #[error(transparent)]

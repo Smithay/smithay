@@ -383,7 +383,7 @@ impl X11Handle {
 
         let mut modifiers = modifiers.collect::<Vec<_>>();
         // older dri3 versions do only support buffers with one plane.
-        // we need to make sure, we don't accidently allocate buffers with more.
+        // we need to make sure, we don't accidentally allocate buffers with more.
         if window.0.extensions.dri3 < Some((1, 2)) {
             modifiers.retain(|modi| modi == &DrmModifier::Invalid || modi == &DrmModifier::Linear);
         }

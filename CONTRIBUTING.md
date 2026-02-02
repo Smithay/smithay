@@ -14,7 +14,7 @@ use matrix, this room is also bridged to libera.chat IRC on #smithay.
 
 ## Scope
 
-Smithay attempts to be as generic and un-opinionated as possible. As such, if you have an idea of a feature that would be usefull
+Smithay attempts to be as generic and un-opinionated as possible. As such, if you have an idea of a feature that would be useful
 for your compositor project and would like it to be integrated in Smithay, please consider whether it is in its scope:
 
 - If this is a very generic feature that probably many different projects would find useful, it can be integrated in Smithay

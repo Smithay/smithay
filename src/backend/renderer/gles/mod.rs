@@ -161,7 +161,7 @@ pub struct GlesTarget<'a>(GlesTargetInternal<'a>);
 enum GlesTargetInternal<'a> {
     Image {
         // TODO: Ideally we would be able to share the texture between renderers with shared EGLContexts though.
-        // But we definitly don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
+        // But we definitely don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
         buf: GlesBuffer,
         dmabuf: &'a mut Dmabuf,
     },
@@ -651,7 +651,7 @@ impl GlesRenderer {
                 version::GLES_2_0
             });
 
-            // required for the manditory wl_shm formats
+            // required for the mandatory wl_shm formats
             if !exts.iter().any(|ext| ext == "GL_EXT_texture_format_BGRA8888") {
                 return Err(GlesError::GLExtensionNotSupported(&[
                     "GL_EXT_texture_format_BGRA8888",
@@ -1227,7 +1227,7 @@ impl ImportEgl for GlesRenderer {
             format: match egl.format {
                 EGLFormat::RGB | EGLFormat::RGBA => Some(ffi::RGBA8),
                 EGLFormat::External => None,
-                _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
+                _ => unreachable!("EGLBuffer currently does not expose multi-planar buffers to us"),
             },
             has_alpha: !matches!(egl.format, EGLFormat::RGB),
             is_external: egl.format == EGLFormat::External,
@@ -1887,7 +1887,7 @@ impl GlesRenderer {
     /// Get access to the underlying [`EGLContext`].
     ///
     /// *Note*: Modifying the context state, might result in rendering issues.
-    /// The context state is considerd an implementation detail
+    /// The context state is considered an implementation detail
     /// and no guarantee is made about what can or cannot be changed.
     /// To make sure a certain modification does not interfere with
     /// the renderer's behaviour, check the source.
@@ -2675,7 +2675,7 @@ impl GlesFrame<'_, '_> {
         // dest position and scale
         mat = mat * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
 
-        // src scale, position, tranform and y_inverted
+        // src scale, position, transform and y_inverted
         let tex_size = texture.size();
         let src_size = src.size;
 
@@ -3151,7 +3151,7 @@ impl GlesFrame<'_, '_> {
     /// Get access to the underlying [`EGLContext`].
     ///
     /// *Note*: Modifying the context state, might result in rendering issues.
-    /// The context state is considerd an implementation detail
+    /// The context state is considered an implementation detail
     /// and no guarantee is made about what can or cannot be changed.
     /// To make sure a certain modification does not interfere with
     /// the renderer's behaviour, check the source.

@@ -172,7 +172,7 @@ pub struct LayerSurfaceCachedState {
     pub size: Size<i32, Logical>,
     /// Anchor bitflags, describing how the layers surface should be positioned and sized
     pub anchor: Anchor,
-    /// Descripton of exclusive zone
+    /// Description of exclusive zone
     pub exclusive_zone: ExclusiveZone,
     /// Edge for exclusive zone
     pub exclusive_edge: Option<Anchor>,

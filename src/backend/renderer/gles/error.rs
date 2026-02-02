@@ -69,8 +69,8 @@ pub enum GlesError {
     /// The blitting operation was unsuccessful
     #[error("Error blitting between framebuffers")]
     BlitError,
-    /// An error occured while creating the shader object.
-    #[error("An error occured while creating the shader object.")]
+    /// An error occurred while creating the shader object.
+    #[error("An error occurred while creating the shader object.")]
     CreateShaderObject,
     /// Uniform was not declared when compiling shader
     #[error("Uniform {0:?} was not declared when compiling the provided shader")]

@@ -81,7 +81,7 @@ impl LibSeatSession {
         seat.map(|mut seat| {
             let seat_name = seat.name().to_owned();
 
-            // In some cases enable_seat event is avalible right after startup
+            // In some cases enable_seat event is available right after startup
             // so, we can dispatch it
             seat.dispatch(0).unwrap();
             let active = matches!(rx.try_recv(), Ok(SeatEvent::Enable));

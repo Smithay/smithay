@@ -67,7 +67,7 @@ pub use sync_point::*;
 /// Test if DRM device supports `syncobj_eventfd`.
 // Similar to test used in Mutter
 pub fn supports_syncobj_eventfd(device: &DrmDeviceFd) -> bool {
-    // Pass device as palceholder for eventfd as well, since `drm_ffi` requires
+    // Pass device as placeholder for eventfd as well, since `drm_ffi` requires
     // a valid fd.
     match drm_ffi::syncobj::eventfd(device.as_fd(), 0, 0, device.as_fd(), false) {
         Ok(_) => unreachable!(),

@@ -101,17 +101,17 @@ impl KeyboardShortcutsInhibitor {
         self.data().is_active.store(v, atomic::Ordering::Release);
     }
 
-    /// Seat that is beeing inhibited
+    /// Seat that is being inhibited
     fn seat_id(&self) -> &SeatId {
         &self.data().seat
     }
 
-    /// Seat that is beeing inhibited
+    /// Seat that is being inhibited
     pub fn seat(&self, dh: &DisplayHandle) -> Option<WlSeat> {
         WlSeat::from_id(dh, self.seat_id().clone()).ok()
     }
 
-    /// Seat that is beeing inhibited
+    /// Seat that is being inhibited
     #[inline]
     pub fn wl_surface(&self) -> &WlSurface {
         &self.data().surface
@@ -233,7 +233,7 @@ pub trait KeyboardShortcutsInhibitHandler {
     /// You may also postpone activation based on your compositor specific policy.
     fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {}
 
-    /// Inhibitor got destoryed
+    /// Inhibitor got destroyed
     fn inhibitor_destroyed(&mut self, inhibitor: KeyboardShortcutsInhibitor) {}
 }
 
