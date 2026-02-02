@@ -352,7 +352,7 @@ impl DrmSurface {
         }
     }
 
-    /// Returns true whenever any state changes are pending to be commited
+    /// Returns true whenever any state changes are pending to be committed
     ///
     /// The following functions may trigger a pending commit:
     /// - [`add_connector`](DrmSurface::add_connector)

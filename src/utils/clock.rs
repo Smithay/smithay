@@ -84,7 +84,7 @@ impl Time<Monotonic> {
     /// This should match timestamps from libinput:
     /// <https://wayland.freedesktop.org/libinput/doc/latest/timestamps.html>
     pub fn as_micros(&self) -> u64 {
-        // Assume monotonic clock (but not realitime) fits as microseconds in 64-bit
+        // Assume monotonic clock (but not realtime) fits as microseconds in 64-bit
         debug_assert!(self.tp.tv_sec >= 0);
         debug_assert!(self.tp.tv_nsec >= 0);
         self.tp.tv_sec as u64 * 1000000 + self.tp.tv_nsec as u64 / 1000

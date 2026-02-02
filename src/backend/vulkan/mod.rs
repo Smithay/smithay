@@ -521,7 +521,7 @@ impl PhysicalDevice {
     /// [`vkGetPhysicalDeviceProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceProperties2.html
     pub unsafe fn get_properties(&self, props: &mut vk::PhysicalDeviceProperties2<'_>) {
         let instance = self.instance().handle();
-        // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceProperties2
+        // SAFETY: The caller has guaranteed all valid usage requirements for vkGetPhysicalDeviceProperties2
         // are satisfied.
         unsafe { instance.get_physical_device_properties2(self.handle(), props) }
     }
@@ -538,7 +538,7 @@ impl PhysicalDevice {
     /// [`vkGetPhysicalDeviceFormatProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
     pub unsafe fn get_format_properties(&self, format: vk::Format, props: &mut vk::FormatProperties2<'_>) {
         let instance = self.instance().handle();
-        // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2
+        // SAFETY: The caller has guaranteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2
         // are satisfied.
         unsafe { instance.get_physical_device_format_properties2(self.handle(), format, props) }
     }
@@ -659,7 +659,7 @@ fn get_env_or_max_version(max_version: Version) -> Version {
     // Consider max version overrides from env
     match env::var("SMITHAY_VK_VERSION") {
         Ok(version) => {
-            let overriden_version = match &version[..] {
+            let overridden_version = match &version[..] {
                 "1.0" => {
                     warn!("Smithay does not support Vulkan 1.0, ignoring SMITHAY_VK_VERSION");
                     return max_version;
@@ -671,7 +671,7 @@ fn get_env_or_max_version(max_version: Version) -> Version {
             };
 
             // The env var can only lower the maximum version, not raise it.
-            if let Some(overridden_version) = overriden_version {
+            if let Some(overridden_version) = overridden_version {
                 if overridden_version > max_version {
                     warn!(
                         "Ignoring SMITHAY_VK_VERSION since the requested max version is higher than the maximum of {}.{}",

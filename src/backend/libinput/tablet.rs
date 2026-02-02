@@ -170,7 +170,7 @@ where
     }
 
     fn wheel_delta_discrete(&self) -> i32 {
-        // I have no idea why f64 is returend by this fn, in libinput's api wheel clicks are always i32
+        // I have no idea why f64 is returned by this fn, in libinput's api wheel clicks are always i32
         tablet_tool::TabletToolEventTrait::wheel_delta_discrete(self) as i32
     }
 

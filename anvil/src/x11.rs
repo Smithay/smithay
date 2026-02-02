@@ -101,7 +101,7 @@ pub fn run_x11() {
     let display = Display::new().unwrap();
     let mut display_handle = display.handle();
 
-    let backend = X11Backend::new().expect("Failed to initilize X11 backend");
+    let backend = X11Backend::new().expect("Failed to initialize X11 backend");
     let handle = backend.handle();
 
     // Obtain the DRM node the X server uses for direct rendering.

@@ -37,7 +37,7 @@ pub trait PointerConstraintsHandler: SeatHandler {
     /// Use [`with_pointer_constraint`] to access the constraint.
     fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>);
 
-    /// The client holding a LockedPointer has commited a cursor position hint.
+    /// The client holding a LockedPointer has committed a cursor position hint.
     ///
     /// This is emitted upon a surface commit if the cursor position hint has been updated.
     ///
@@ -332,7 +332,7 @@ fn add_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
         if data.constraints.contains_key(pointer) {
             pointer_constraints.post_error(
                 zwp_pointer_constraints_v1::Error::AlreadyConstrained,
-                "pointer constrait already exists for surface and seat",
+                "pointer constraint already exists for surface and seat",
             );
         } else {
             data.constraints.insert(pointer.clone(), constraint);

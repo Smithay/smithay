@@ -341,7 +341,7 @@ pub trait XwmHandler {
     ///
     /// To grant the wish you have to call `X11Surface::set_mapped(true)` for the window to become visible.
     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface);
-    /// Notification a window was mapped sucessfully
+    /// Notification a window was mapped successfully
     fn map_window_notify(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
@@ -519,10 +519,10 @@ pub enum ResizeEdge {
 /// Errors generated working with Xwm Selections
 #[derive(thiserror::Error, Debug)]
 pub enum SelectionError {
-    /// X11 Error occured setting the selection
+    /// X11 Error occurred setting the selection
     #[error(transparent)]
     X11Error(#[from] ReplyOrIdError),
-    /// Calloop error occured trying to register transfer with event loop
+    /// Calloop error occurred trying to register transfer with event loop
     #[error(transparent)]
     Calloop(#[from] calloop::Error),
     /// Unable to determine internal Atom for given mime-type
@@ -540,7 +540,7 @@ impl From<ConnectionError> for SelectionError {
 /// Errors generated updating XSETTINGS
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
-    /// X11 Error occured updating XSETTINGS
+    /// X11 Error occurred updating XSETTINGS
     #[error(transparent)]
     X11Error(#[from] ConnectionError),
     /// A provided name isn't allowed
@@ -557,7 +557,7 @@ pub enum SettingsError {
 /// Errors generated updating the primary output
 #[derive(Debug, thiserror::Error)]
 pub enum PrimaryOutputError {
-    /// X11 Error occured updating xrandr primary output
+    /// X11 Error occurred updating xrandr primary output
     #[error(transparent)]
     X11Error(#[from] ReplyError),
     /// The output was unknown to Xwayland

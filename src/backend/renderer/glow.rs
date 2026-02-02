@@ -109,7 +109,7 @@ impl GlowRenderer {
     /// Get access to the underlying [`EGLContext`].
     ///
     /// *Note*: Modifying the context state, might result in rendering issues.
-    /// The context state is considerd an implementation detail
+    /// The context state is considered an implementation detail
     /// and no guarantee is made about what can or cannot be changed.
     /// To make sure a certain modification does not interfere with
     /// the renderer's behaviour, check the source.

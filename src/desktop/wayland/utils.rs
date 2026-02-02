@@ -250,7 +250,7 @@ pub fn send_frames_surface_tree<T, F>(
 
             if send_frame_callback {
                 // the surface may not have any user_data if it is a subsurface and has not
-                // yet been commited
+                // yet been committed
                 for callback in states
                     .cached_state
                     .get::<SurfaceAttributes>()

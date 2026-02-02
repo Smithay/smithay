@@ -9,7 +9,7 @@ use super::ffi;
 /// When `tracy_gpu_profiling` feature is enabled, this wraps a Tracy span location.
 /// When disabled, this is a zero-sized no-op type.
 #[derive(Clone, Copy)]
-#[allow(missing_debug_implementations)] // Tracy SpanLocation doens't impl Debug.
+#[allow(missing_debug_implementations)] // Tracy SpanLocation doesn't impl Debug.
 pub struct SpanLocation(#[cfg(feature = "tracy_gpu_profiling")] pub &'static tracy_client::SpanLocation);
 
 /// Creates a GPU span location for profiling.

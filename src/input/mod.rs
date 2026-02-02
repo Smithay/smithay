@@ -643,12 +643,12 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// points are released again.
     ///
     /// See [`Seat::add_touch`] for more information
-    pub fn add_touch_with_default_grab<F>(&mut self, defaut_grab: F) -> TouchHandle<D>
+    pub fn add_touch_with_default_grab<F>(&mut self, default_grab: F) -> TouchHandle<D>
     where
         F: Fn() -> Box<dyn TouchGrab<D>> + Send + 'static,
     {
         let mut inner = self.arc.inner.lock().unwrap();
-        let touch = TouchHandle::new(defaut_grab);
+        let touch = TouchHandle::new(default_grab);
         if inner.touch.is_some() {
             // If there's already a tocuh device, remove it notify the clients about the change.
             inner.touch = None;

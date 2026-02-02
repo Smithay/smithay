@@ -208,7 +208,7 @@ where
             data.handle.increment_serial(resource);
         }
 
-        // Discard requsets without any active input method instance.
+        // Discard requests without any active input method instance.
         if !data.input_method_handle.has_instance() {
             debug!("discarding text-input request without IME running");
             return;

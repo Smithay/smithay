@@ -204,8 +204,8 @@ impl EGLDevice {
         }
     }
 
-    /// Returns the drm node beloging to this device.
-    /// Tries to optain a render_node first through `EGL_EXT_device_drm_render_node`
+    /// Returns the drm node belonging to this device.
+    /// Tries to obtain a render_node first through `EGL_EXT_device_drm_render_node`
     /// (see also [`EGLDevice::render_device_path`]) and then falls back to
     /// get a render_node from `EGL_EXT_device_drm` (see also [`EGLDevice::drm_device_path`]).
     /// If both fail to produce a render node, whichever device returned by

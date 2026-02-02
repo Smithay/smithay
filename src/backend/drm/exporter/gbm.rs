@@ -107,7 +107,7 @@ impl<A: AsFd + 'static> ExportFramebuffer<GbmBuffer> for GbmFramebufferExporter<
                     let node = crate::wayland::dmabuf::get_dmabuf(buffer).unwrap().node();
                     self.import_node == node
                 }
-                // Argubly we need specialization here. If the renderer (which we have in `element_config`, which calls this function)
+                // Arguably we need specialization here. If the renderer (which we have in `element_config`, which calls this function)
                 // has `ImportEGL`, we can verify that `EGLBufferRender` is some, which means we have the renderer advertised via wl_drm,
                 // which means this is probably fine.
                 // If we don't have `ImportEGL` or `EGLBufferReader` is none, we should reject this, but we don't want to require `ImportEGL`.

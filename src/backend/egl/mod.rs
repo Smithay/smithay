@@ -185,7 +185,7 @@ impl From<MakeCurrentError> for GraphicsSwapBuffersError {
             From khronos docs:
                 If the previous context of the calling thread has unflushed commands, and the previous surface is no longer valid, an EGL_BAD_CURRENT_SURFACE error is generated.
 
-            This does not consern this or future `makeCurrent`-calls.
+            This does not concern this or future `makeCurrent`-calls.
             */
             x @ MakeCurrentError(EGLError::BadCurrentSurface) => {
                 GraphicsSwapBuffersError::TemporaryFailure(Box::new(x))

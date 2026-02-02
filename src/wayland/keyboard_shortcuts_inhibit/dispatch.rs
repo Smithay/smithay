@@ -20,7 +20,7 @@ use super::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState};
 /// User data of [ZwpKeyboardShortcutsInhibitorV1] object
 #[derive(Debug)]
 pub struct KeyboardShortcutsInhibitorUserData {
-    /// Seat that is beeing inhibited
+    /// Seat that is being inhibited
     pub(crate) seat: ObjectId,
     /// Surface that is inhibiting shortcuts
     pub(crate) surface: WlSurface,

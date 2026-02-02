@@ -60,7 +60,7 @@ impl SimpleCrtcMapper {
         self.is_available(&crtc).then_some(crtc)
     }
 
-    fn pick_next_avalible_for_connector(
+    fn pick_next_available_for_connector(
         &self,
         drm: &impl ControlDevice,
         connector: &connector::Info,
@@ -110,7 +110,7 @@ impl super::CrtcMapper for SimpleCrtcMapper {
         });
 
         for connector in needs_crtc {
-            if let Some(crtc) = self.pick_next_avalible_for_connector(drm, connector) {
+            if let Some(crtc) = self.pick_next_available_for_connector(drm, connector) {
                 self.crtcs.insert(connector.handle(), crtc);
             }
         }
