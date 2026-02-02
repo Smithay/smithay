@@ -813,7 +813,6 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         let led_mapping = LedMapping::from_keymap(keymap);
         internal.led_mapping = led_mapping;
-        internal.mods_state.update_with(&state);
         let leds_changed = internal.led_state.update_with(&state, &led_mapping);
         let mut xkb = internal.xkb.lock().unwrap();
         xkb.keymap = keymap.clone();
@@ -1137,6 +1136,13 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 .collect::<Vec<_>>();
             f(handles)
         }
+    }
+
+    /// Reset modifier via pressed_keys
+    pub fn reset_modifiers(&self) {
+        let mut internal = self.arc.internal.lock().unwrap();
+        let state = internal.xkb.lock().unwrap().state.clone();
+        internal.mods_state.update_with(&state);
     }
 
     /// Get the current modifiers state.
