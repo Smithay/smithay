@@ -510,7 +510,7 @@ impl DrmLeaseState {
             .retain(|lease| !lease.connectors.contains(&connector));
     }
 
-    /// Suspend all connectors temporarily (e.g. upon loosing DRM master as the session becomes inactive)
+    /// Suspend all connectors temporarily (e.g. upon losing DRM master as the session becomes inactive)
     pub fn suspend(&mut self) {
         self.suspend_internal(None);
     }
