@@ -246,7 +246,7 @@ impl EiInputSeatInner {
     }
 }
 
-// Helper that remove the device on drop
+// Helper that remove the device on drop, and send `DeviceRemoved`
 #[derive(Debug)]
 struct DeviceDropWrapper {
     device: reis::request::Device,
