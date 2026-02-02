@@ -28,6 +28,8 @@ pub use seat::EiInputSeat;
 pub struct EiInput {
     source: reis::calloop::EisRequestSource,
     connection: Option<EiInputConnection>,
+    event_sender: calloop::channel::Sender<InputEvent<EiInput>>,
+    channel_source: calloop::channel::Channel<InputEvent<EiInput>>,
 }
 
 impl EiInput {
@@ -35,8 +37,11 @@ impl EiInput {
     ///
     /// `context` should be a new EI socket that has not been used yet.
     pub fn new(context: eis::Context) -> Self {
+        let (event_sender, channel_source) = calloop::channel::channel();
         Self {
             source: reis::calloop::EisRequestSource::new(context, 0),
+            event_sender,
+            channel_source,
             connection: None,
         }
     }
@@ -50,13 +55,18 @@ pub struct EiInputConnection(Arc<EiInputConnectionInner>);
 #[derive(Debug)]
 struct EiInputConnectionInner {
     connection: reis::request::Connection,
+    event_sender: calloop::channel::Sender<InputEvent<EiInput>>,
     seats: Mutex<Vec<EiInputSeat>>,
 }
 
 impl EiInputConnection {
-    fn new(connection: reis::request::Connection) -> Self {
+    fn new(
+        connection: reis::request::Connection,
+        event_sender: calloop::channel::Sender<InputEvent<EiInput>>,
+    ) -> Self {
         Self(Arc::new(EiInputConnectionInner {
             connection,
+            event_sender,
             seats: Mutex::new(Vec::new()),
         }))
     }
@@ -74,7 +84,7 @@ impl EiInputConnection {
                 | DeviceCapability::Scroll
                 | DeviceCapability::Button,
         );
-        let seat = EiInputSeat::new(self, seat);
+        let seat = EiInputSeat::new(self, seat, self.0.event_sender.clone());
         self.0.seats.lock().unwrap().push(seat.clone());
         seat
     }
@@ -112,10 +122,20 @@ impl EventSource for EiInput {
     where
         F: FnMut(EiInputEvent, &mut EiInputConnection),
     {
+        let _ = self.channel_source.process_events(readiness, token, |event, ()| {
+            if let calloop::channel::Event::Msg(event) = event {
+                // Can't create device until there's a connection, so no channel messages
+                let connection = self.connection.as_mut().unwrap();
+                cb(EiInputEvent::Event(event), connection);
+            }
+        });
         self.source.process_events(readiness, token, |event, connection| {
             // Wrap connection in `EiInputConnection` if not created yet
             if self.connection.is_none() {
-                self.connection = Some(EiInputConnection::new(connection.clone()));
+                self.connection = Some(EiInputConnection::new(
+                    connection.clone(),
+                    self.event_sender.clone(),
+                ));
             }
             let connection = self.connection.as_mut().unwrap();
 
@@ -167,6 +187,7 @@ impl EventSource for EiInput {
         poll: &mut calloop::Poll,
         token_factory: &mut TokenFactory,
     ) -> Result<(), calloop::Error> {
+        self.channel_source.register(poll, token_factory)?;
         self.source.register(poll, token_factory)
     }
 
@@ -175,10 +196,12 @@ impl EventSource for EiInput {
         poll: &mut calloop::Poll,
         token_factory: &mut TokenFactory,
     ) -> Result<(), calloop::Error> {
+        self.channel_source.reregister(poll, token_factory)?;
         self.source.reregister(poll, token_factory)
     }
 
     fn unregister(&mut self, poll: &mut calloop::Poll) -> Result<(), calloop::Error> {
+        self.channel_source.unregister(poll)?;
         self.source.unregister(poll)
     }
 }

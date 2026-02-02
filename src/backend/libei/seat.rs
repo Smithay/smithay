@@ -3,9 +3,12 @@ use reis::{eis::device::DeviceType, request::DeviceCapability};
 use std::sync::{Arc, Mutex, Weak};
 use xkbcommon::xkb;
 
-use crate::input::keyboard::{KeymapFile, XkbConfig};
+use crate::{
+    backend::input::InputEvent,
+    input::keyboard::{KeymapFile, XkbConfig},
+};
 
-use super::{EiInputConnection, EiInputConnectionInner};
+use super::{EiInput, EiInputConnection, EiInputConnectionInner};
 
 /// A seat advertised on an EI sender context
 #[derive(Clone, Debug)]
@@ -18,10 +21,15 @@ impl PartialEq<reis::request::Seat> for EiInputSeat {
 }
 
 impl EiInputSeat {
-    pub(super) fn new(connection: &EiInputConnection, seat: reis::request::Seat) -> Self {
+    pub(super) fn new(
+        connection: &EiInputConnection,
+        seat: reis::request::Seat,
+        event_sender: calloop::channel::Sender<InputEvent<EiInput>>,
+    ) -> Self {
         Self(Arc::new(Mutex::new(EiInputSeatInner {
             connection: Arc::downgrade(&connection.0),
             seat,
+            event_sender,
             keyboard: None,
             pointer: None,
             pointer_absolute: None,
@@ -147,6 +155,7 @@ struct EiInputSeatInner {
     connection: Weak<EiInputConnectionInner>,
     seat: reis::request::Seat,
     bound_capabilities: BitFlags<DeviceCapability>,
+    event_sender: calloop::channel::Sender<InputEvent<EiInput>>,
     // Interfaces advertised by the server
     keyboard: Option<(String, KeymapFile)>,
     pointer: Option<String>,
@@ -176,6 +185,9 @@ impl EiInputSeatInner {
                     },
                 );
                 device.resumed();
+                let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                    device: device.clone(),
+                });
                 self.device_keyboard = Some(DeviceDropWrapper(device));
             }
         }
@@ -189,6 +201,9 @@ impl EiInputSeatInner {
                     |_| {},
                 );
                 device.resumed();
+                let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                    device: device.clone(),
+                });
                 self.device_pointer = Some(DeviceDropWrapper(device));
             }
         }
@@ -206,6 +221,9 @@ impl EiInputSeatInner {
                     |_| {},
                 );
                 device.resumed();
+                let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                    device: device.clone(),
+                });
                 self.device_pointer_absolute = Some(DeviceDropWrapper(device));
             }
         }
@@ -219,6 +237,9 @@ impl EiInputSeatInner {
                     |_| {},
                 );
                 device.resumed();
+                let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                    device: device.clone(),
+                });
                 self.device_touch = Some(DeviceDropWrapper(device));
             }
         }
