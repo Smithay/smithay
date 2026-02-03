@@ -130,6 +130,14 @@ impl KdeDecorationState {
     pub fn global(&self) -> GlobalId {
         self.kde_decoration_manager.clone()
     }
+
+    /// Updates the default decoration mode.
+    ///
+    /// The new default mode will only be sent to new binds to the manager object; it is up to you
+    /// to update any existing decoration instances with the new mode, if desired.
+    pub fn set_default_mode(&mut self, default_mode: DefaultMode) {
+        self.default_mode = default_mode;
+    }
 }
 
 #[allow(missing_docs)] // TODO
