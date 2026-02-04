@@ -2456,6 +2456,10 @@ impl Frame for GlesFrame<'_, '_> {
         self.transform
     }
 
+    fn output_size(&self) -> Size<i32, Physical> {
+        self.size
+    }
+
     #[profiling::function]
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         self.renderer.wait(sync)

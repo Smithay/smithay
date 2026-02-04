@@ -644,6 +644,10 @@ impl Frame for PixmanFrame<'_, '_> {
         self.transform
     }
 
+    fn output_size(&self) -> Size<i32, Physical> {
+        self.output_size
+    }
+
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         sync.wait().map_err(|_| PixmanError::SyncInterrupted)
     }

@@ -343,6 +343,9 @@ pub trait Frame {
     /// Output transformation that is applied to this frame
     fn transformation(&self) -> Transform;
 
+    /// Output size this frame was initialized for.
+    fn output_size(&self) -> Size<i32, Physical>;
+
     /// Wait for a [`SyncPoint`] to be signaled
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error>;
 
