@@ -268,6 +268,9 @@ impl Frame for DummyFrame {
     fn transformation(&self) -> Transform {
         Transform::Normal
     }
+    fn output_size(&self) -> Size<i32, Physical> {
+        Size::default()
+    }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         sync.wait().map_err(|_| DummyError::SyncInterrupted)
