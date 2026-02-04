@@ -169,7 +169,7 @@ pub fn serialize_pressed_keys(keys: impl Iterator<Item = Keycode>) -> Vec<u8> {
 }
 
 // WeakSeat doesn't implement `Hash`, but we don't expect a lot of seats anyway,
-// so a vector with linear comparision is fine actually.
+// so a vector with linear comparison is fine actually.
 pub(crate) struct FocusDestroyHook<D: SeatHandler + 'static>(RefCell<Vec<(WeakSeat<D>, HookId)>>);
 
 impl<D: SeatHandler + 'static> FocusDestroyHook<D> {

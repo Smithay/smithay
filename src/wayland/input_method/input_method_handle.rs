@@ -68,7 +68,7 @@ impl InputMethodHandle {
         }
     }
 
-    /// Whether there's an acitve instance of input-method.
+    /// Whether there's an active instance of input-method.
     pub(crate) fn has_instance(&self) -> bool {
         self.inner.lock().unwrap().instance.is_some()
     }

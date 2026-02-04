@@ -24,7 +24,7 @@ pub struct State {
 
 impl State {
     fn current_state<A: DevPath + ControlDevice>(fd: &A, crtc: crtc::Handle) -> Result<Self, Error> {
-        // Try to enumarate the current state to set the initial state variable correctly.
+        // Try to enumerate the current state to set the initial state variable correctly.
         // We need an accurate state to handle `commit_pending`.
         let crtc_info = fd.get_crtc(crtc).map_err(|source| {
             Error::Access(AccessError {
@@ -68,7 +68,7 @@ impl State {
             }
         }
 
-        // If we have no current mode, we create a fake one, which will not match (and thus gets overriden on the commit below).
+        // If we have no current mode, we create a fake one, which will not match (and thus gets overridden on the commit below).
         // A better fix would probably be making mode an `Option`, but that would mean
         // we need to be sure, we require a mode to always be set without relying on the compiler.
         // So we cheat, because it works and is easier to handle later.

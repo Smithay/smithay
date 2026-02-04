@@ -497,7 +497,7 @@ impl error::Error for AnyError {
     }
 }
 
-/// Wrapper for Allocators, whos buffer types implement [`AsDmabuf`].
+/// Wrapper for Allocators, whose buffer types implement [`AsDmabuf`].
 ///
 /// Implements `Allocator<Buffer=Dmabuf, Error=AnyError>`
 #[derive(Debug)]

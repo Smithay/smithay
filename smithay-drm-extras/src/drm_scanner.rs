@@ -3,7 +3,7 @@
 //! - [`ConnectorScanner`] is responsible for tracking connected/disconnected events.
 //! - [`CrtcMapper`] trait and [`SimpleCrtcMapper`] are meant for mapping crtc to connector.
 //! - [`DrmScanner`] combines two above into single abstraction.
-//!   If it does not fit your needs you can always drop down to using [`ConnectoScanner`] alone.
+//!   If it does not fit your needs you can always drop down to using [`ConnectScanner`] alone.
 //!
 //! ### Example
 //! ```no_run

@@ -1,6 +1,6 @@
 // The caching logic is used to process surface synchronization. It creates
 // an effective decoupling between the moment the client sends wl_surface.commit
-// and the moment where the state that was commited is actually applied by the
+// and the moment where the state that was committed is actually applied by the
 // compositor.
 //
 // The way this is modelled in Smithay is through the `Cache` type, which is a container
@@ -14,7 +14,7 @@
 //   the client requests
 // - On commit, a snapshot of this pending state is created by invoking `Cacheable::commit`
 //   and stored in the cache alongside an externally provided id
-// - When the compositor decices that a given state (represented by its commit id) should
+// - When the compositor decides that a given state (represented by its commit id) should
 //   become active, `Cache::apply_state` is invoked with that commit id. The associated state
 //   is then applied to the `current` state, that the compositor can then use as a reference
 //   for the current window state. Note that, to preserve the commit ordering, all states

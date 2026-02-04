@@ -113,7 +113,7 @@ pub trait DataDeviceHandler: Sized + SelectionHandler + WaylandDndGrabHandler {
     /// [DataDeviceState] getter
     fn data_device_state(&mut self) -> &mut DataDeviceState;
 
-    /// Action chooser for DnD negociation
+    /// Action chooser for DnD negotiation
     fn action_choice(&mut self, available: WlDndAction, preferred: WlDndAction) -> WlDndAction {
         default_action_chooser(available, preferred)
     }
@@ -579,13 +579,13 @@ impl DataDeviceState {
     }
 }
 
-/// A simple action chooser for DnD negociation
+/// A simple action chooser for DnD negotiation
 ///
 /// If the preferred action is available, it'll pick it. Otherwise, it'll pick the first
 /// available in the following order: Ask, Copy, Move.
 pub fn default_action_chooser(available: WlDndAction, preferred: WlDndAction) -> WlDndAction {
     // if the preferred action is valid (a single action) and in the available actions, use it
-    // otherwise, follow a fallback stategy
+    // otherwise, follow a fallback strategy
     if [WlDndAction::Move, WlDndAction::Copy, WlDndAction::Ask].contains(&preferred)
         && available.contains(preferred)
     {

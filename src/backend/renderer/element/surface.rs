@@ -90,7 +90,7 @@ pub enum KindEvaluation {
     Static(Kind),
     /// Dynamic evaluation, which will return a [`Kind`] based on the [`SurfaceData`]
     Dynamic(fn(&SurfaceData) -> Kind),
-    /// Dyanmic evaluation, which will return a [`Kind`] based on the [`SurfaceData`] and potentially additional captured context.
+    /// Dynamic evaluation, which will return a [`Kind`] based on the [`SurfaceData`] and potentially additional captured context.
     Closure(Box<dyn Fn(&SurfaceData) -> Kind>),
 }
 

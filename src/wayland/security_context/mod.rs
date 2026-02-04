@@ -64,7 +64,7 @@ impl SecurityContextState {
     /// Register new [WpSecurityContextManagerV1] global
     ///
     /// Filter determines if what clients see the global. It *must* exclude clients
-    /// created through a security context for the protcol to be correct and secure.
+    /// created through a security context for the protocol to be correct and secure.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData>,

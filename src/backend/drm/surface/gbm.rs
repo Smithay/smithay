@@ -231,7 +231,7 @@ where
 
         match drm.test_state([plane_state], true) {
             Ok(_) => {
-                debug!("Choosen format: {:?}", format);
+                debug!("Chosen format: {:?}", format);
                 Ok((buffer, swapchain, use_opaque))
             }
             Err(err) => {
@@ -543,10 +543,10 @@ pub enum Error<E: std::error::Error + Send + Sync + 'static> {
     #[error("Failed to render test frame")]
     InitialRenderingError,
     /// Error accessing the drm device
-    #[error("The underlying drm surface encounted an error: {0}")]
+    #[error("The underlying drm surface encountered an error: {0}")]
     DrmError(#[from] DrmError),
     /// Error importing the rendered buffer to libgbm for scan-out
-    #[error("The underlying gbm device encounted an error: {0}")]
+    #[error("The underlying gbm device encountered an error: {0}")]
     GbmError(#[source] E),
     /// Error exporting as Dmabuf
     #[error("The allocated buffer could not be exported as a dmabuf: {0}")]

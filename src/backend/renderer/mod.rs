@@ -746,7 +746,7 @@ pub trait ExportMem: Renderer {
     ///
     /// This function *may* fail, if:
     /// - There is not enough space to create the mapping
-    /// - The texture does no allow copying for implementation-specfic reasons
+    /// - The texture does no allow copying for implementation-specific reasons
     /// - It is not possible to convert the texture into the provided format.
     fn copy_texture(
         &mut self,
@@ -762,7 +762,7 @@ pub trait ExportMem: Renderer {
     /// method returns `true`.
     ///
     /// This function *may* fail, if:
-    /// - A readability test did successfully complete (not that it returned `unreadble`!)
+    /// - A readability test did successfully complete (not that it returned `unreadable`!)
     /// - Any of the state of the renderer is irrevesibly changed
     fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, Self::Error>;
 

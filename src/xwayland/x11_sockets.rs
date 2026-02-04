@@ -52,7 +52,7 @@ pub(crate) struct X11Lock {
 impl X11Lock {
     /// Try to grab a lockfile for given X display number
     fn grab(number: u32) -> Result<X11Lock, ()> {
-        debug!(display = number, "Attempting to aquire an X11 display lock");
+        debug!(display = number, "Attempting to acquire an X11 display lock");
         let filename = format!("/tmp/.X{number}-lock");
         let lockfile = ::std::fs::OpenOptions::new()
             .write(true)

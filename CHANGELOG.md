@@ -232,7 +232,7 @@ fn ModifiersState::serialize_back(&self, state: &xkb::State) -> SerializedMods;
 ```rs
 /// Get the `zwp_xwayland_keyboard_grab_v1` object that created the grab
 fn XWaylandKeyboardGrab::grab(&self) -> &ZwpXwaylandKeyboardGrabV1;
-/// Grab is now clonable
+/// Grab is now cloneable
 impl Clone for XWaylandKeyboardGrab;
 ```
 
@@ -483,7 +483,7 @@ Items changed in the public API
 * clock: Fix current monotonic time in millis u32 overflow panic by @YaLTeR in https://github.com/Smithay/smithay/pull/1645
 * xwm: Update override-redirect flag on map request by @Ottatop in https://github.com/Smithay/smithay/pull/1656
 * utils: Rework `HookId` recycle logic by @Paraworker in https://github.com/Smithay/smithay/pull/1657
-* rename Rectangle::from_extemities to Rectangle::from_extremeties by @m4rch3n1ng in https://github.com/Smithay/smithay/pull/1646
+* rename Rectangle::from_extemities to Rectangle::from_extremities by @m4rch3n1ng in https://github.com/Smithay/smithay/pull/1646
 * xdg_activation: Allow passing all data in XdgActivationState::create_external_token by @bbb651 in https://github.com/Smithay/smithay/pull/1658
 
 ## 0.4.0

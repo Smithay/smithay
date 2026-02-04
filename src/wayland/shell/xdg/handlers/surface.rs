@@ -117,8 +117,8 @@ where
                         let current = attributes.current_server_state();
                         attributes.server_pending = Some(current);
                     }
-                    let current_capabilties = &mut attributes.server_pending.as_mut().unwrap().capabilities;
-                    current_capabilties.replace(default_capabilities.capabilities.iter().copied());
+                    let current_capabilities = &mut attributes.server_pending.as_mut().unwrap().capabilities;
+                    current_capabilities.replace(default_capabilities.capabilities.iter().copied());
 
                     initial
                 });

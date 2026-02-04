@@ -2404,7 +2404,7 @@ where
             supports_fencing: self.supports_fencing,
         };
 
-        // We only store the next frame if it acutaly contains any changes or if a commit is pending
+        // We only store the next frame if it actually contains any changes or if a commit is pending
         // Storing the (empty) frame could keep a reference to wayland buffers which
         // could otherwise be potentially released on `frame_submitted`
         if !next_frame.is_empty() {
@@ -3173,7 +3173,7 @@ where
         if !render && !reposition {
             let mut plane_state = previous_state.plane_state(plane_info.handle).unwrap().clone();
             plane_state.skip = true;
-            // Note: we know that we had a cusor plane in the
+            // Note: we know that we had a cursor plane in the
             // previous frame and that nothing changed. In this
             // case skip the whole testing
             plane_state.needs_test = false;
@@ -3186,7 +3186,7 @@ where
             trace!("repositioning cursor plane");
             let mut plane_state = previous_state.plane_state(plane_info.handle).unwrap().clone();
             plane_state.skip = false;
-            // Note: we know that we had a cusor plane in the
+            // Note: we know that we had a cursor plane in the
             // previous frame, so we assume a simple location change
             // does not not to be tested
             plane_state.needs_test = false;
@@ -3481,7 +3481,7 @@ where
             let previous_fb_cache = self
                 .previous_element_states
                 .get_mut(element_id)
-                // Note: We can mem::take the old fb_cache here here as we guarante that
+                // Note: We can mem::take the old fb_cache here here as we guarantee that
                 // the element state will always overwrite the current state at the end of render_frame
                 .map(|state| std::mem::take(&mut state.fb_cache))
                 .unwrap_or_default();
@@ -3653,7 +3653,7 @@ where
                             });
 
                         if !(primary_plane_changed || overlay_plane_changed) {
-                            // we now know that nothing changed and we can assume any previouly failed
+                            // we now know that nothing changed and we can assume any previously failed
                             // test will again fail
                             let instance_state = element_state
                                 .instances

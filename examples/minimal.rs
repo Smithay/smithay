@@ -261,7 +261,7 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
         |_, _, &()| TraversalAction::DoChildren(()),
         |_surf, states, &()| {
             // the surface may not have any user_data if it is a subsurface and has not
-            // yet been commited
+            // yet been committed
             for callback in states
                 .cached_state
                 .get::<SurfaceAttributes>()

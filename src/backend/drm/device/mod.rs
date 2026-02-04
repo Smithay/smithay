@@ -502,7 +502,7 @@ pub enum DrmEvent {
 /// Timing metadata for page-flip events
 #[derive(Debug, Clone, Copy)]
 pub struct EventMetadata {
-    /// The time the frame flip happend
+    /// The time the frame flip happened
     pub time: Time,
     /// The sequence number of the frame
     pub sequence: u32,

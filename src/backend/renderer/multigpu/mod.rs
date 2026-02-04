@@ -24,7 +24,7 @@
 //!
 //! The `ImportMem`-implementation will upload the texture on the render-gpu, failing *if*
 //! the render-gpu does not support the format as normal. Be careful when mixing gpu's
-//! with different memory-formats supported, what formats you annouce.
+//! with different memory-formats supported, what formats you announce.
 //!
 //! In contrast the `ImportDma`-implementations will transparently create copies
 //! of client buffers, if necessary, given it is unclear if a dmabuf can be imported on any given gpu.
@@ -283,9 +283,9 @@ impl<A: GraphicsApi> GpuManager<A> {
 
     /// Create a [`MultiRenderer`].
     ///
-    /// - `render_device` should referr to the gpu node rendering operations will take place upon.
-    /// - `target_device` should referr to the gpu node the composited buffer will end up upon
-    /// - `allocator` should referr to an `Allocator`, that works guaranteed with the `render_device`
+    /// - `render_device` should refer to the gpu node rendering operations will take place upon.
+    /// - `target_device` should refer to the gpu node the composited buffer will end up upon
+    /// - `allocator` should refer to an `Allocator`, that works guaranteed with the `render_device`
     ///     to do offscreen composition on. Dma copies will be used, if buffers returned by the allocator
     ///     also work on the `target_device`.
     /// - `copy_format` denotes the format buffers will be allocated in for offscreen rendering.
@@ -354,9 +354,9 @@ impl<A: GraphicsApi> GpuManager<A> {
     ///
     /// - `render_api` should be the [`GpuManager`] used for the `render_device`.
     /// - `target_api` should be the [`GpuManager`] used for the `target_device`.
-    /// - `render_device` should referr to the gpu node rendering operations will take place upon.
-    /// - `target_device` should referr to the gpu node the composited buffer will end up upon
-    /// - `allocator` should referr to an `Allocator`, that works guaranteed with the `render_device`
+    /// - `render_device` should refer to the gpu node rendering operations will take place upon.
+    /// - `target_device` should refer to the gpu node the composited buffer will end up upon
+    /// - `allocator` should refer to an `Allocator`, that works guaranteed with the `render_device`
     ///     to do offscreen composition on. Dma copies will be used, if buffers returned by the allocator
     ///     also work on the `target_device`.
     /// - `copy_format` denotes the format buffers will be allocated in for offscreen rendering.
@@ -451,7 +451,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     /// If you are using [`MultiRenderer`]s do rendering of your client buffers,
     /// you can call `early_import` on commit to start necessary copy processes early.
     ///
-    /// - `target` referrs to the gpu node, that the buffer needs to be accessable on later.
+    /// - `target` refers to the gpu node, that the buffer needs to be accessible on later.
     ///    *Note*: Usually this will be **render**ing gpu of a [`MultiRenderer`]
     /// - `surface` is the wayland surface, whose buffer and subsurfaces buffers shall be imported
     ///
@@ -688,7 +688,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                 Ok(())
             }
             None => {
-                // welp, nothing we can do
+                // whelp, nothing we can do
                 Ok(())
             }
         }
@@ -706,7 +706,7 @@ pub trait GraphicsApi {
     /// - removing gone devices from list
     /// - adding new devices to list
     ///
-    /// Existing devices are guranteed to be not recreated
+    /// Existing devices are guaranteed to be not recreated
     fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error>;
     /// Method to force a re-enumeration, e.g. to free resources
     fn needs_enumeration(&self) -> bool {
@@ -1214,7 +1214,7 @@ where
                 });
                 let mut render_framebuffer = AliasableBox::from_unique(Box::new(render_framebuffer));
 
-                // We extend the lifetime to 'frame, because this is self-referencial.
+                // We extend the lifetime to 'frame, because this is self-referential.
                 // SAFETY:
                 //  - We drop the framebuffer before `target`, which contains the referenced dmabuf
                 //  - We drop the frame before the framebuffer as we store both in `MultiFrame`
@@ -1365,7 +1365,7 @@ where
             //      (which takes ownership of the frame) or dropping the frame.
             let render = unsafe { &mut *self.render };
 
-            // We extend the lifetime to 'frame, because this is self-referencial.
+            // We extend the lifetime to 'frame, because this is self-referential.
             // SAFETY:
             //  - We drop the framebuffer before `target`, which contains the referenced dmabuf
             //  - We drop the frame before the framebuffer as we store both in `MultiFrame`
@@ -1772,7 +1772,7 @@ impl MultiTexture {
             .map(|(_, mappings)| mappings)
             .unwrap_or_default();
 
-        // don't keep old mappings that are superseeded by new ones
+        // don't keep old mappings that are superseded by new ones
         let format = tex.format;
         let new_mappings = new_mappings
             .filter(|(_, mapping)| {

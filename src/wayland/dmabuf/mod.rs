@@ -974,7 +974,7 @@ pub trait DmabufHandler: BufferHandler {
     /// The `global` indicates which [`DmabufGlobal`] the buffer was imported to. You should import the dmabuf
     /// into your renderer to ensure the dmabuf may be used later when rendering.
     ///
-    /// Whether dmabuf import succeded is notified through the [`ImportNotifier`] object provided in this function.
+    /// Whether dmabuf import succeeded is notified through the [`ImportNotifier`] object provided in this function.
     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier);
 
     /// This function allows to override the default [`DmabufFeedback`] for a surface

@@ -4,7 +4,7 @@
 // pending states identified with numeric commit ids, allowing the compositor
 // to precisely control *when* a state become active. This file is the second
 // half: these identified states are grouped into transactions, which allow the
-// synchronization of updates accross surfaces.
+// synchronization of updates across surfaces.
 //
 // There are 2 main cases when the state of multiple surfaces must be updated
 // atomically:
@@ -15,7 +15,7 @@
 // and are all applied atomically when the transaction itself is applied. The logic for creating
 // new transactions is currently the following:
 //
-// - Each surface has an implicit "pending" transaction, into which its newly commited state is
+// - Each surface has an implicit "pending" transaction, into which its newly committed state is
 //   recorded
 // - Furthermore, on commit, the pending transaction of all synchronized child subsurfaces is merged
 //   into the current surface's pending transaction, and a new implicit transaction is started for those
@@ -27,10 +27,10 @@
 // of the wp_transaction protocol). Explicit synchronization introduces a notion of blockers: the transaction
 // cannot be applied before all blockers are released, and thus must wait for it to be the case.
 //
-// For thoses situations, the (currently unused) `TransactionQueue` will come into play. It is a per-client
+// For those situations, the (currently unused) `TransactionQueue` will come into play. It is a per-client
 // queue of transactions, that stores and applies them by both respecting their topological order
 // (ensuring that for each surface, states are applied in the correct order) and that all transactions
-// wait befor all their blockers are resolved to be merged. If a blocker is cancelled, the whole transaction
+// wait before all their blockers are resolved to be merged. If a blocker is cancelled, the whole transaction
 // it blocks is cancelled as well, and simply dropped. Thanks to the logic of `Cache::apply_state`, the
 // associated state will be applied automatically when the next valid transaction is applied, ensuring
 // global coherence.
@@ -300,7 +300,7 @@ impl TransactionQueue {
         // manually iterate as we're going to modify the Vec while iterating on it
         let mut i = 0;
         // the loop will terminate, as at every iteration either i is incremented by 1
-        // or the lenght of self.transactions is reduced by 1.
+        // or the length of self.transactions is reduced by 1.
         while i < self.transactions.len() {
             let mut skip = false;
             // does the transaction have any active blocker?

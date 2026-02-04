@@ -271,7 +271,7 @@ pub trait XdgActivationHandler {
     );
 }
 
-/// Data assoicated with an activation token protocol object.
+/// Data associated with an activation token protocol object.
 #[derive(Debug)]
 pub struct ActivationTokenData {
     constructed: AtomicBool,

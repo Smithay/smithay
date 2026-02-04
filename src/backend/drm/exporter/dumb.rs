@@ -1,4 +1,4 @@
-//! Implementation for ExportFramebuffer and related utilizies for dumb buffers
+//! Implementation for ExportFramebuffer and related utilities for dumb buffers
 
 use thiserror::Error;
 
