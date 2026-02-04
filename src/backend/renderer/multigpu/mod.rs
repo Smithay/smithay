@@ -1912,6 +1912,9 @@ where
     fn transformation(&self) -> Transform {
         self.frame.as_ref().unwrap().transformation()
     }
+    fn output_size(&self) -> Size<i32, Physical> {
+        self.frame.as_ref().unwrap().output_size()
+    }
 
     #[profiling::function]
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
