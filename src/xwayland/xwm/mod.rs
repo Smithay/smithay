@@ -42,7 +42,7 @@
 //! # }
 //! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 //! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus, dnd::DndGrabHandler};
-//! # use smithay::backend::input::KeyState;
+//! # use smithay::backend::input::KeyEvent;
 //! # use smithay::input::{
 //! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
 //! #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
