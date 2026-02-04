@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Utilities for graphics tablet support"><title>smithay::wayland::tablet_manager - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module tablet_manager</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module tablet_<wbr>manager</a></h2><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>tablet_<wbr>manager</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/tablet_manager/mod.rs.html#1-267">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Utilities for graphics tablet support</p>
+<p>This module provides helpers to handle graphics tablets.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{delegate_seat, delegate_tablet_manager};
+<span class="kw">use </span>smithay::backend::input::TabletToolDescriptor;
+<span class="kw">use </span>smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+<span class="kw">use </span>smithay::wayland::tablet_manager::{TabletManagerState, TabletDescriptor, TabletSeatHandler};
+<span class="kw">use </span>smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+
+
+<span class="kw">let </span><span class="kw-2">mut </span>seat_state = SeatState::&lt;State&gt;::new();
+<span class="kw">let </span>tablet_state = TabletManagerState::new::&lt;State&gt;(<span class="kw-2">&amp;</span>display_handle);
+<span class="comment">// add the seat state to your state
+// ...
+
+// create the seat
+</span><span class="kw">let </span>seat = seat_state.new_wl_seat(
+    <span class="kw-2">&amp;</span>display_handle,          <span class="comment">// the display
+    </span><span class="string">"seat-0"</span>,                 <span class="comment">// the name of the seat, will be advertized to clients
+</span>);
+
+<span class="kw">use </span>smithay::wayland::tablet_manager::TabletSeatTrait;
+
+seat
+   .tablet_seat()                     <span class="comment">// Get TabletSeat asosiated with this seat
+   </span>.add_tablet::&lt;State&gt;(              <span class="comment">// Add a new tablet to a seat
+     </span><span class="kw-2">&amp;</span>display_handle,
+     <span class="kw-2">&amp;</span>TabletDescriptor {    
+       name: <span class="string">"Test"</span>.into(),
+       usb_id: <span class="prelude-val">None</span>,
+       syspath: <span class="prelude-val">None</span>,
+     }
+   );
+
+<span class="comment">// implement the required traits
+</span><span class="kw">impl </span>SeatHandler <span class="kw">for </span>State {
+    <span class="kw">type </span>KeyboardFocus = WlSurface;
+    <span class="kw">type </span>PointerFocus = WlSurface;
+    <span class="kw">type </span>TouchFocus = WlSurface;
+    <span class="kw">fn </span>seat_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>SeatState&lt;<span class="self">Self</span>&gt; {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.seat_state
+    }
+    <span class="kw">fn </span>focus_changed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, focused: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>WlSurface&gt;) {
+        <span class="comment">// ...
+    </span>}
+    <span class="kw">fn </span>cursor_image(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, image: CursorImageStatus) {
+        <span class="comment">// ...
+    </span>}
+}
+<span class="macro">delegate_seat!</span>(State);
+
+<span class="kw">impl </span>TabletSeatHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>tablet_tool_image(<span class="kw-2">&amp;mut </span><span class="self">self</span>, tool: <span class="kw-2">&amp;</span>TabletToolDescriptor, image: CursorImageStatus) {
+        <span class="comment">// ...
+    </span>}
+}
+<span class="macro">delegate_tablet_manager!</span>(State);
+</code></pre></div>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="comment">// Init the manager global
+</span><span class="kw">let </span>state = TabletManagerState::new::&lt;D&gt;(<span class="kw-2">&amp;</span>display);
+
+<span class="comment">// Init the seat
+</span><span class="kw">let </span>seat = Seat::&lt;D&gt;::new(
+    <span class="kw-2">&amp;</span>display,
+    <span class="string">"seat-0"</span>.into(),
+    <span class="prelude-val">None
+</span>);
+
+<span class="kw">use </span>smithay::wyaldnd::tablet_manager::TabletSeatTrait;
+
+seat
+   .tablet_seat()                     <span class="comment">// Get TabletSeat asosiated with this seat
+   </span>.add_tablet(                       <span class="comment">// Add a new tablet to a seat
+     </span>display
+     <span class="kw-2">&amp;</span>TabletDescriptor {    
+       name: <span class="string">"Test"</span>.into(),
+       usb_id: <span class="prelude-val">None</span>,
+       syspath: <span class="prelude-val">None</span>,
+     }
+   );</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.TabletDescriptor.html" title="struct smithay::wayland::tablet_manager::TabletDescriptor">Tablet<wbr>Descriptor</a></dt><dd>Description of graphics tablet device</dd><dt><a class="struct" href="struct.TabletHandle.html" title="struct smithay::wayland::tablet_manager::TabletHandle">Tablet<wbr>Handle</a></dt><dd>Handle to a tablet device</dd><dt><a class="struct" href="struct.TabletManagerState.html" title="struct smithay::wayland::tablet_manager::TabletManagerState">Tablet<wbr>Manager<wbr>State</a></dt><dd>State of wp tablet protocol</dd><dt><a class="struct" href="struct.TabletSeatHandle.html" title="struct smithay::wayland::tablet_manager::TabletSeatHandle">Tablet<wbr>Seat<wbr>Handle</a></dt><dd>Handle to a tablet seat</dd><dt><a class="struct" href="struct.TabletSeatUserData.html" title="struct smithay::wayland::tablet_manager::TabletSeatUserData">Tablet<wbr>Seat<wbr>User<wbr>Data</a></dt><dd>User data of ZwpTabletSeatV2 object</dd><dt><a class="struct" href="struct.TabletToolHandle.html" title="struct smithay::wayland::tablet_manager::TabletToolHandle">Tablet<wbr>Tool<wbr>Handle</a></dt><dd>Handle to a tablet tool device</dd><dt><a class="struct" href="struct.TabletToolUserData.html" title="struct smithay::wayland::tablet_manager::TabletToolUserData">Tablet<wbr>Tool<wbr>User<wbr>Data</a></dt><dd>User data of ZwpTabletToolV2 object</dd><dt><a class="struct" href="struct.TabletUserData.html" title="struct smithay::wayland::tablet_manager::TabletUserData">Tablet<wbr>User<wbr>Data</a></dt><dd>User data of ZwpTabletV2 object</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.TabletSeatHandler.html" title="trait smithay::wayland::tablet_manager::TabletSeatHandler">Tablet<wbr>Seat<wbr>Handler</a></dt><dd>Handler trait for Tablet Seats</dd><dt><a class="trait" href="trait.TabletSeatTrait.html" title="trait smithay::wayland::tablet_manager::TabletSeatTrait">Tablet<wbr>Seat<wbr>Trait</a></dt><dd>Extends <a href="../../input/struct.Seat.html" title="struct smithay::input::Seat">Seat</a> with graphic tablet specific functionality</dd></dl></section></div></main></body></html>

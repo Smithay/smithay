@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A trait which provides an implementation for handling a client’s requests from a resource with some type of associated user data."><title>Dispatch in wayland_server - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="wayland_server" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Dispatch</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../wayland_server/index.html">wayland_<wbr>server</a><span class="version">0.31.11</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Dispatch</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#general-usage" title="General usage">General usage</a></li><li><a href="#modularity" title="Modularity">Modularity</a></li></ul><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.request" title="request">request</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.destroyed" title="destroyed">destroyed</a></li></ul><h3><a href="#dyn-compatibility">Dyn Compatibility</a></h3><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2 class="in-crate"><a href="index.html">In crate wayland_<wbr>server</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="index.html">wayland_server</a></div><h1>Trait <span class="trait">Dispatch</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/wayland_server/dispatch.rs.html#89-123">Source</a> </span></div><pre class="rust item-decl"><code>pub trait Dispatch&lt;I: <a class="trait" href="trait.Resource.html" title="trait wayland_server::Resource">Resource</a>, UserData, State = Self&gt;: <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html" title="trait core::marker::Sized">Sized</a> {
+    // Required method
+    fn <a href="#tymethod.request" class="fn">request</a>(
+        state: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut State</a>,
+        client: &amp;<a class="struct" href="struct.Client.html" title="struct wayland_server::Client">Client</a>,
+        resource: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;I</a>,
+        request: I::<a class="associatedtype" href="trait.Resource.html#associatedtype.Request" title="type wayland_server::Resource::Request">Request</a>,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;UserData</a>,
+        dhandle: &amp;<a class="struct" href="struct.DisplayHandle.html" title="struct wayland_server::DisplayHandle">DisplayHandle</a>,
+        data_init: &amp;mut <a class="struct" href="struct.DataInit.html" title="struct wayland_server::DataInit">DataInit</a>&lt;'_, State&gt;,
+    );
+
+    // Provided method
+    fn <a href="#method.destroyed" class="fn">destroyed</a>(
+        _state: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut State</a>,
+        _client: <a class="struct" href="backend/struct.ClientId.html" title="struct wayland_server::backend::ClientId">ClientId</a>,
+        _resource: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;I</a>,
+        _data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;UserData</a>,
+    ) { ... }
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A trait which provides an implementation for handling a client’s requests from a resource with some type
+of associated user data.</p>
+<h3 id="general-usage"><a class="doc-anchor" href="#general-usage">§</a>General usage</h3>
+<p>You need to implement this trait on your <code>State</code> for every type of Wayland object that will be processed
+by the <a href="struct.Display.html" title="struct wayland_server::Display"><code>Display</code></a> working with your <code>State</code>.</p>
+<p>You can have different implementations of the trait for the same interface but different <code>UserData</code> type,
+this way the events for a given object will be processed by the adequate implementation depending on
+which <code>UserData</code> was assigned to it at creation.</p>
+<p>The way this trait works is that the <a href="trait.Dispatch.html#tymethod.request" title="associated function wayland_server::Dispatch::request"><code>Dispatch::request()</code></a> method will be invoked by the
+<a href="struct.Display.html" title="struct wayland_server::Display"><code>Display</code></a> for every request received by an object. Your implementation can then match
+on the associated <a href="trait.Resource.html#associatedtype.Request" title="associated type wayland_server::Resource::Request"><code>Resource::Request</code></a> enum and do any processing needed with that event.</p>
+<p>If the request being processed created a new object, you’ll receive it as a <a href="struct.New.html" title="struct wayland_server::New"><code>New&lt;I&gt;</code></a>. When that is the
+case, you <em>must</em> initialize it using the <a href="struct.DataInit.html" title="struct wayland_server::DataInit"><code>DataInit</code></a> argument. **Failing to do so will cause a <strong>panic</strong>.</p>
+<h3 id="modularity"><a class="doc-anchor" href="#modularity">§</a>Modularity</h3>
+<p>To provide generic handlers for downstream usage, it is possible to make an implementation of the trait
+that is generic over the last type argument, as illustrated below. Users will then be able to
+automatically delegate their implementation to yours using the <a href="macro.delegate_dispatch.html" title="macro wayland_server::delegate_dispatch"><code>delegate_dispatch!()</code></a> macro.</p>
+<p>As a result, when your implementation is instanciated, the last type parameter <code>State</code> will be the state
+struct of the app using your generic implementation. You can put additional trait constraints on it to
+specify an interface between your module and downstream code, as illustrated in this example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>wayland_server::{protocol::wl_output, Dispatch};
+
+<span class="doccomment">/// The type we want to delegate to
+</span><span class="kw">struct </span>DelegateToMe;
+
+<span class="doccomment">/// The user data relevant for your implementation.
+/// When providing delegate implementation, it is recommended to use your own type here, even if it is
+/// just a unit struct: using () would cause a risk of clashing with an other such implementation.
+</span><span class="kw">struct </span>MyUserData;
+
+<span class="comment">// Now a generic implementation of Dispatch, we are generic over the last type argument instead of using
+// the default State=Self.
+</span><span class="kw">impl</span>&lt;State&gt; Dispatch&lt;wl_output::WlOutput, MyUserData, State&gt; <span class="kw">for </span>DelegateToMe
+<span class="kw">where
+    </span><span class="comment">// State is the type which has delegated to this type, so it needs to have an impl of Dispatch itself
+    </span>State: Dispatch&lt;wl_output::WlOutput, MyUserData&gt;,
+    <span class="comment">// If your delegate type has some internal state, it'll need to access it, and you can
+    // require it by adding custom trait bounds.
+    // In this example, we just require an AsMut implementation
+    </span>State: AsMut&lt;DelegateToMe&gt;,
+{
+    <span class="kw">fn </span>request(
+        state: <span class="kw-2">&amp;mut </span>State,
+        _client: <span class="kw-2">&amp;</span>wayland_server::Client,
+        _resource: <span class="kw-2">&amp;</span>wl_output::WlOutput,
+        _request: wl_output::Request,
+        _udata: <span class="kw-2">&amp;</span>MyUserData,
+        _dhandle: <span class="kw-2">&amp;</span>wayland_server::DisplayHandle,
+        _data_init: <span class="kw-2">&amp;mut </span>wayland_server::DataInit&lt;<span class="lifetime">'_</span>, State&gt;,
+    ) {
+        <span class="comment">// Here the delegate may handle incoming requests as it pleases.
+
+        // For example, it retrives its state and does some processing with it
+        </span><span class="kw">let </span>me: <span class="kw-2">&amp;mut </span>DelegateToMe = state.as_mut();
+        <span class="comment">// do something with `me` ...
+    </span>}
+}</code></pre></div>
+<p><strong>Note:</strong> Due to limitations in Rust’s trait resolution algorithm, a type providing a generic
+implementation of <a href="trait.Dispatch.html" title="trait wayland_server::Dispatch"><code>Dispatch</code></a> cannot be used directly as the dispatching state, as rustc
+currently fails to understand that it also provides <code>Dispatch&lt;I, U, Self&gt;</code> (assuming all other
+trait bounds are respected as well).</p>
+</div></details><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.request" class="method"><a class="src rightside" href="../src/wayland_server/dispatch.rs.html#95-103">Source</a><h4 class="code-header">fn <a href="#tymethod.request" class="fn">request</a>(
+    state: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut State</a>,
+    client: &amp;<a class="struct" href="struct.Client.html" title="struct wayland_server::Client">Client</a>,
+    resource: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;I</a>,
+    request: I::<a class="associatedtype" href="trait.Resource.html#associatedtype.Request" title="type wayland_server::Resource::Request">Request</a>,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;UserData</a>,
+    dhandle: &amp;<a class="struct" href="struct.DisplayHandle.html" title="struct wayland_server::DisplayHandle">DisplayHandle</a>,
+    data_init: &amp;mut <a class="struct" href="struct.DataInit.html" title="struct wayland_server::DataInit">DataInit</a>&lt;'_, State&gt;,
+)</h4></section></summary><div class="docblock"><p>Called when a request from a client is processed.</p>
+<p>The implementation of this function will vary depending on what protocol is being implemented. Typically
+the server may respond to clients by sending events to the resource, or some other resource stored in
+the user data.</p>
+</div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.destroyed" class="method"><a class="src rightside" href="../src/wayland_server/dispatch.rs.html#116-122">Source</a><h4 class="code-header">fn <a href="#method.destroyed" class="fn">destroyed</a>(
+    _state: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut State</a>,
+    _client: <a class="struct" href="backend/struct.ClientId.html" title="struct wayland_server::backend::ClientId">ClientId</a>,
+    _resource: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;I</a>,
+    _data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;UserData</a>,
+)</h4></section></summary><div class="docblock"><p>Called when the object this user data is associated with has been destroyed.</p>
+<p>Note this type only provides an immutable reference to the user data, you will need to use
+interior mutability to change it.</p>
+<p>Typically a <a href="https://doc.rust-lang.org/nightly/std/sync/poison/mutex/struct.Mutex.html" title="struct std::sync::poison::mutex::Mutex"><code>Mutex</code></a> would be used to have interior mutability.</p>
+<p>You are given the <a href="backend/struct.ObjectId.html" title="struct wayland_server::backend::ObjectId"><code>ObjectId</code></a> and <a href="backend/struct.ClientId.html" title="struct wayland_server::backend::ClientId"><code>ClientId</code></a> associated with the destroyed object for cleanup
+convenience.</p>
+<p>By default this method does nothing.</p>
+</div></details></div><h2 id="dyn-compatibility" class="section-header">Dyn Compatibility<a href="#dyn-compatibility" class="anchor">§</a></h2><div class="dyn-compatibility-info"><p>This trait is <b>not</b> <a href="https://doc.rust-lang.org/nightly/reference/items/traits.html#dyn-compatibility">dyn compatible</a>.</p><p><i>In older versions of Rust, dyn compatibility was called "object safety", so this trait is not object safe.</i></p></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"></div><script src="../trait.impl/wayland_server/dispatch/trait.Dispatch.js" async></script></section></div></main></body></html>

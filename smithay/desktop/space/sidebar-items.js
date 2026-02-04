@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConstrainReference","OutputError","RenderZindex","SpaceRenderElements"],"fn":["constrain_space_element","render_output","space_render_elements"],"macro":["space_elements"],"struct":["ConstrainBehavior","Space","SurfaceTree"],"trait":["SpaceElement"]};

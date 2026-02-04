@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CaptureFailureReason"],"struct":["BufferConstraints","CursorSession","CursorSessionData","CursorSessionRef","DmabufConstraints","Frame","FrameData","FrameRef","ImageCopyCaptureGlobalData","ImageCopyCaptureState","Session","SessionData","SessionRef"],"trait":["ImageCopyCaptureHandler"]};

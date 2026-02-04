@@ -1,0 +1,115 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Additional methods on `EventLoop` for pumping events within an external event loop"><title>EventLoopExtPumpEvents in winit::platform::pump_events - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">EventLoopExtPumpEvents</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Event<wbr>Loop<wbr>ExtPump<wbr>Events</a></h2><h3><a href="#required-associated-types">Required Associated Types</a></h3><ul class="block"><li><a href="#associatedtype.UserEvent" title="UserEvent">UserEvent</a></li></ul><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.pump_events" title="pump_events">pump_events</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.pump_app_events" title="pump_app_events">pump_app_events</a></li></ul><h3><a href="#dyn-compatibility">Dyn Compatibility</a></h3><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In winit::<wbr>platform::<wbr>pump_<wbr>events</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">platform</a>::<wbr><a href="index.html">pump_events</a></div><h1>Trait <span class="trait">Event<wbr>Loop<wbr>ExtPump<wbr>Events</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/platform/pump_events.rs.html#8-124">Source</a> </span></div><pre class="rust item-decl"><code>pub trait EventLoopExtPumpEvents {
+    type <a href="#associatedtype.UserEvent" class="associatedtype">UserEvent</a>: 'static;
+
+    // Required method
+    fn <a href="#tymethod.pump_events" class="fn">pump_events</a>&lt;F&gt;(
+        &amp;mut self,
+        timeout: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/core/time/struct.Duration.html" title="struct core::time::Duration">Duration</a>&gt;,
+        event_handler: F,
+    ) -&gt; <a class="enum" href="enum.PumpStatus.html" title="enum winit::platform::pump_events::PumpStatus">PumpStatus</a>
+       <span class="where">where F: <a class="trait" href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnMut.html" title="trait core::ops::function::FnMut">FnMut</a>(<a class="enum" href="../../event/enum.Event.html" title="enum winit::event::Event">Event</a>&lt;Self::<a class="associatedtype" href="trait.EventLoopExtPumpEvents.html#associatedtype.UserEvent" title="type winit::platform::pump_events::EventLoopExtPumpEvents::UserEvent">UserEvent</a>&gt;, &amp;<a class="struct" href="../../event_loop/struct.ActiveEventLoop.html" title="struct winit::event_loop::ActiveEventLoop">ActiveEventLoop</a>)</span>;
+
+    // Provided method
+    fn <a href="#method.pump_app_events" class="fn">pump_app_events</a>&lt;A: <a class="trait" href="../../application/trait.ApplicationHandler.html" title="trait winit::application::ApplicationHandler">ApplicationHandler</a>&lt;Self::<a class="associatedtype" href="trait.EventLoopExtPumpEvents.html#associatedtype.UserEvent" title="type winit::platform::pump_events::EventLoopExtPumpEvents::UserEvent">UserEvent</a>&gt;&gt;(
+        &amp;mut self,
+        timeout: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/core/time/struct.Duration.html" title="struct core::time::Duration">Duration</a>&gt;,
+        app: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut A</a>,
+    ) -&gt; <a class="enum" href="enum.PumpStatus.html" title="enum winit::platform::pump_events::PumpStatus">PumpStatus</a> { ... }
+}</code></pre><span class="item-info"><div class="stab portability">Available on <strong><code>windows_platform</code> or <code>macos_platform</code> or <code>android_platform</code> or <code>x11_platform</code> or <code>wayland_platform</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Additional methods on <a href="../../event_loop/struct.EventLoop.html" title="struct winit::event_loop::EventLoop"><code>EventLoop</code></a> for pumping events within an external event loop</p>
+</div></details><h2 id="required-associated-types" class="section-header">Required Associated Types<a href="#required-associated-types" class="anchor">§</a></h2><div class="methods"><details class="toggle" open><summary><section id="associatedtype.UserEvent" class="method"><a class="src rightside" href="../../../src/winit/platform/pump_events.rs.html#10">Source</a><h4 class="code-header">type <a href="#associatedtype.UserEvent" class="associatedtype">UserEvent</a>: 'static</h4></section></summary><div class="docblock"><p>A type provided by the user that can be passed through <a href="../../event/enum.Event.html#variant.UserEvent" title="variant winit::event::Event::UserEvent"><code>Event::UserEvent</code></a>.</p>
+</div></details></div><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.pump_events" class="method"><a class="src rightside" href="../../../src/winit/platform/pump_events.rs.html#121-123">Source</a><h4 class="code-header">fn <a href="#tymethod.pump_events" class="fn">pump_events</a>&lt;F&gt;(
+    &amp;mut self,
+    timeout: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/core/time/struct.Duration.html" title="struct core::time::Duration">Duration</a>&gt;,
+    event_handler: F,
+) -&gt; <a class="enum" href="enum.PumpStatus.html" title="enum winit::platform::pump_events::PumpStatus">PumpStatus</a><div class="where">where
+    F: <a class="trait" href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnMut.html" title="trait core::ops::function::FnMut">FnMut</a>(<a class="enum" href="../../event/enum.Event.html" title="enum winit::event::Event">Event</a>&lt;Self::<a class="associatedtype" href="trait.EventLoopExtPumpEvents.html#associatedtype.UserEvent" title="type winit::platform::pump_events::EventLoopExtPumpEvents::UserEvent">UserEvent</a>&gt;, &amp;<a class="struct" href="../../event_loop/struct.ActiveEventLoop.html" title="struct winit::event_loop::ActiveEventLoop">ActiveEventLoop</a>),</div></h4></section><span class="item-info"><div class="stab deprecated"><span class="emoji">👎</span><span>Deprecated: use EventLoopExtPumpEvents::pump_app_events</span></div></span></summary><div class="docblock"><p>See <a href="trait.EventLoopExtPumpEvents.html#method.pump_app_events"><code>pump_app_events</code></a>.</p>
+</div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.pump_app_events" class="method"><a class="src rightside" href="../../../src/winit/platform/pump_events.rs.html#106-115">Source</a><h4 class="code-header">fn <a href="#method.pump_app_events" class="fn">pump_app_events</a>&lt;A: <a class="trait" href="../../application/trait.ApplicationHandler.html" title="trait winit::application::ApplicationHandler">ApplicationHandler</a>&lt;Self::<a class="associatedtype" href="trait.EventLoopExtPumpEvents.html#associatedtype.UserEvent" title="type winit::platform::pump_events::EventLoopExtPumpEvents::UserEvent">UserEvent</a>&gt;&gt;(
+    &amp;mut self,
+    timeout: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/core/time/struct.Duration.html" title="struct core::time::Duration">Duration</a>&gt;,
+    app: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut A</a>,
+) -&gt; <a class="enum" href="enum.PumpStatus.html" title="enum winit::platform::pump_events::PumpStatus">PumpStatus</a></h4></section></summary><div class="docblock"><p>Pump the <code>EventLoop</code> to check for and dispatch pending events.</p>
+<p>This API is designed to enable applications to integrate Winit into an
+external event loop, for platforms that can support this.</p>
+<p>The given <code>timeout</code> limits how long it may block waiting for new events.</p>
+<p>Passing a <code>timeout</code> of <code>Some(Duration::ZERO)</code> would ensure your external
+event loop is never blocked but you would likely need to consider how
+to throttle your own external loop.</p>
+<p>Passing a <code>timeout</code> of <code>None</code> means that it may wait indefinitely for new
+events before returning control back to the external loop.</p>
+<p><strong>Note:</strong> This is not a portable API, and its usage involves a number of
+caveats and trade offs that should be considered before using this API!</p>
+<p>You almost certainly shouldn’t use this API, unless you absolutely know it’s
+the only practical option you have.</p>
+<h6 id="synchronous-events"><a class="doc-anchor" href="#synchronous-events">§</a>Synchronous events</h6>
+<p>Some events <em>must</em> only be handled synchronously via the closure that
+is passed to Winit so that the handler will also be synchronized with
+the window system and operating system.</p>
+<p>This is because some events are driven by a window system callback
+where the window systems expects the application to have handled the
+event before returning.</p>
+<p><strong>These events can not be buffered and handled outside of the closure
+passed to Winit.</strong></p>
+<p>As a general rule it is not recommended to ever buffer events to handle
+them outside of the closure passed to Winit since it’s difficult to
+provide guarantees about which events are safe to buffer across all
+operating systems.</p>
+<p>Notable events that will certainly create portability problems if
+buffered and handled outside of Winit include:</p>
+<ul>
+<li>
+<p><code>RedrawRequested</code> events, used to schedule rendering.</p>
+<p>macOS for example uses a <code>drawRect</code> callback to drive rendering
+within applications and expects rendering to be finished before
+the <code>drawRect</code> callback returns.</p>
+<p>For portability it’s strongly recommended that applications should
+keep their rendering inside the closure provided to Winit.</p>
+</li>
+<li>
+<p>Any lifecycle events, such as <code>Suspended</code> / <code>Resumed</code>.</p>
+<p>The handling of these events needs to be synchronized with the
+operating system and it would never be appropriate to buffer a
+notification that your application has been suspended or resumed and
+then handled that later since there would always be a chance that
+other lifecycle events occur while the event is buffered.</p>
+</li>
+</ul>
+<h6 id="supported-platforms"><a class="doc-anchor" href="#supported-platforms">§</a>Supported Platforms</h6>
+<ul>
+<li>Windows</li>
+<li>Linux</li>
+<li>MacOS</li>
+<li>Android</li>
+</ul>
+<h6 id="unsupported-platforms"><a class="doc-anchor" href="#unsupported-platforms">§</a>Unsupported Platforms</h6>
+<ul>
+<li><strong>Web:</strong>  This API is fundamentally incompatible with the event-based way in which Web
+browsers work because it’s not possible to have a long-running external loop that would
+block the browser and there is nothing that can be polled to ask for new new events.
+Events are delivered via callbacks based on an event loop that is internal to the browser
+itself.</li>
+<li><strong>iOS:</strong> It’s not possible to stop and start an <code>NSApplication</code> repeatedly on iOS so
+there’s no way to support the same approach to polling as on MacOS.</li>
+</ul>
+<h6 id="platform-specific"><a class="doc-anchor" href="#platform-specific">§</a>Platform-specific</h6>
+<ul>
+<li>
+<p><strong>Windows</strong>: The implementation will use <code>PeekMessage</code> when checking for window messages
+to avoid blocking your external event loop.</p>
+</li>
+<li>
+<p><strong>MacOS</strong>: The implementation works in terms of stopping the global application whenever
+the application <code>RunLoop</code> indicates that it is preparing to block and wait for new events.</p>
+<p>This is very different to the polling APIs that are available on other
+platforms (the lower level polling primitives on MacOS are private
+implementation details for <code>NSApplication</code> which aren’t accessible to
+application developers)</p>
+<p>It’s likely this will be less efficient than polling on other OSs and
+it also means the <code>NSApplication</code> is stopped while outside of the Winit
+event loop - and that’s observable (for example to crates like <code>rfd</code>)
+because the <code>NSApplication</code> is global state.</p>
+<p>If you render outside of Winit you are likely to see window resizing artifacts
+since MacOS expects applications to render synchronously during any <code>drawRect</code>
+callback.</p>
+</li>
+</ul>
+</div></details></div><h2 id="dyn-compatibility" class="section-header">Dyn Compatibility<a href="#dyn-compatibility" class="anchor">§</a></h2><div class="dyn-compatibility-info"><p>This trait is <b>not</b> <a href="https://doc.rust-lang.org/nightly/reference/items/traits.html#dyn-compatibility">dyn compatible</a>.</p><p><i>In older versions of Rust, dyn compatibility was called "object safety", so this trait is not object safe.</i></p></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><details class="toggle implementors-toggle"><summary><section id="impl-EventLoopExtPumpEvents-for-EventLoop%3CT%3E" class="impl"><a class="src rightside" href="../../../src/winit/platform/pump_events.rs.html#126-135">Source</a><a href="#impl-EventLoopExtPumpEvents-for-EventLoop%3CT%3E" class="anchor">§</a><h3 class="code-header">impl&lt;T&gt; <a class="trait" href="trait.EventLoopExtPumpEvents.html" title="trait winit::platform::pump_events::EventLoopExtPumpEvents">EventLoopExtPumpEvents</a> for <a class="struct" href="../../event_loop/struct.EventLoop.html" title="struct winit::event_loop::EventLoop">EventLoop</a>&lt;T&gt;</h3></section></summary><div class="impl-items"><section id="associatedtype.UserEvent-1" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/winit/platform/pump_events.rs.html#127">Source</a><a href="#associatedtype.UserEvent-1" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.UserEvent" class="associatedtype">UserEvent</a> = T</h4></section></div></details></div><script src="../../../trait.impl/winit/platform/pump_events/trait.EventLoopExtPumpEvents.js" async></script></section></div></main></body></html>

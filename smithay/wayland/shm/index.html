@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="SHM handling helpers"><title>smithay::wayland::shm - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module shm</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module shm</a></h2><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>shm</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/shm/mod.rs.html#1-536">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>SHM handling helpers</p>
+<p>This module provides helpers to handle SHM-based buffers from wayland clients.</p>
+<p>SHM (Shared Memory) is the most basic way wayland clients can send content to
+the compositor: by sending a file descriptor to some (likely RAM-backed) storage
+containing the actual data. This helper handles for you most of the logic for
+handling these file descriptor and accessing their contents as simple <code>&amp;[u8]</code> slices.</p>
+<p>This module is heavily inspired from
+<a href="https://cgit.freedesktop.org/wayland/wayland/tree/src/wayland-shm.c">the similar helpers</a>
+of the wayland C libraries.</p>
+<p>To use it, first add a <code>ShmGlobal</code> to your display, specifying the formats
+you want to support (ARGB8888 and XRGB8888 are always considered as supported,
+as specified by the wayland protocol).</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">extern crate </span>wayland_server;
+<span class="kw">extern crate </span>smithay;
+
+<span class="kw">use </span>smithay::wayland::buffer::BufferHandler;
+<span class="kw">use </span>smithay::wayland::shm::{ShmState, ShmHandler};
+<span class="kw">use </span>smithay::delegate_shm;
+<span class="kw">use </span>wayland_server::protocol::wl_shm::Format;
+
+<span class="comment">// Create the ShmState.
+// Here, we specify that Yuyv and C8 format are supported
+// additionally to the standard Argb8888 and Xrgb8888.
+</span><span class="kw">let </span>state = ShmState::new::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display.handle(),
+    <span class="macro">vec!</span>[Format::Yuyv, Format::C8],
+);
+
+<span class="comment">// insert the shmstate into your compositor state.
+// ..
+
+// provide the necessary trait implementations
+</span><span class="kw">impl </span>BufferHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>buffer_destroyed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, buffer: <span class="kw-2">&amp;</span>wayland_server::protocol::wl_buffer::WlBuffer) {
+        <span class="comment">// All renderers can handle buffer destruction at this point.
+        // Some parts of window management may also use this function.
+    </span>}
+}
+<span class="kw">impl </span>ShmHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>shm_state(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>ShmState {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.shm_state
+    }
+}
+<span class="macro">delegate_shm!</span>(State);</code></pre></div>
+<p>Then, when you have a <a href="../../../wayland_server/protocol/wl_buffer/struct.WlBuffer.html" title="struct wayland_server::protocol::wl_buffer::WlBuffer"><code>WlBuffer</code></a>
+and need to retrieve its contents, use the
+<a href="fn.with_buffer_contents.html" title="fn smithay::wayland::shm::with_buffer_contents"><code>with_buffer_contents</code></a> function to do it:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::wayland::shm::{with_buffer_contents, BufferData, BufferAccessError};
+
+<span class="kw">let </span>content = with_buffer_contents(<span class="kw-2">&amp;</span>buffer,
+    |ptr: <span class="kw-2">*const </span>u8, len: usize, buffer_metadata: BufferData| {
+        <span class="comment">// do something to extract the contents of the buffer
+    </span>}
+);
+
+<span class="kw">match </span>content {
+    <span class="prelude-val">Ok</span>(something) =&gt;  {
+        <span class="comment">/* `something` is the value you returned from the closure */
+    </span>},
+    <span class="prelude-val">Err</span>(BufferAccessError::NotManaged) =&gt; {
+        <span class="comment">/* This buffer is not managed by the SHM global, but by something else */
+    </span>},
+    <span class="prelude-val">Err</span>(BufferAccessError::BadMap) =&gt; {
+        <span class="comment">/* The client supplied invalid content specification for this buffer,
+           and was killed.
+         */
+    </span>},
+    <span class="prelude-val">Err</span>(BufferAccessError::NotReadable) =&gt; {
+        <span class="comment">/* The client has not allowed reads to this buffer */
+    </span>},
+    <span class="prelude-val">Err</span>(BufferAccessError::NotWritable) =&gt; <span class="macro">unreachable!</span>(<span class="string">"cannot be triggered by with_buffer_contents"</span>),
+}</code></pre></div>
+<p><strong>Note</strong></p>
+<p>This handler makes itself safe regarding the client providing a wrong size for the memory pool
+by using a SIGBUS handler.</p>
+<p>If you are already using an handler for this signal, you probably don’t want to use this handler.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.BufferData.html" title="struct smithay::wayland::shm::BufferData">Buffer<wbr>Data</a></dt><dd>Details of the contents of a buffer relative to its pool</dd><dt><a class="struct" href="struct.ShmBufferUserData.html" title="struct smithay::wayland::shm::ShmBufferUserData">ShmBuffer<wbr>User<wbr>Data</a></dt><dd>User data of shm WlBuffer</dd><dt><a class="struct" href="struct.ShmPoolUserData.html" title="struct smithay::wayland::shm::ShmPoolUserData">ShmPool<wbr>User<wbr>Data</a></dt><dd>User data of WlShmPool</dd><dt><a class="struct" href="struct.ShmState.html" title="struct smithay::wayland::shm::ShmState">ShmState</a></dt><dd>State of SHM module</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.BufferAccessError.html" title="enum smithay::wayland::shm::BufferAccessError">Buffer<wbr>Access<wbr>Error</a></dt><dd>Error that can occur when accessing an SHM buffer</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.ShmHandler.html" title="trait smithay::wayland::shm::ShmHandler">ShmHandler</a></dt><dd>Shm global handler</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.fourcc_to_shm_format.html" title="fn smithay::wayland::shm::fourcc_to_shm_format">fourcc_<wbr>to_<wbr>shm_<wbr>format</a></dt><dd>Convert from a <a href="../../backend/allocator/enum.Fourcc.html" title="enum smithay::backend::allocator::Fourcc"><code>Fourcc</code></a> format to a wl_shm format</dd><dt><a class="fn" href="fn.shm_format_to_fourcc.html" title="fn smithay::wayland::shm::shm_format_to_fourcc">shm_<wbr>format_<wbr>to_<wbr>fourcc</a></dt><dd>Convert from a wl_shm format to a <a href="../../backend/allocator/enum.Fourcc.html" title="enum smithay::backend::allocator::Fourcc"><code>Fourcc</code></a> format</dd><dt><a class="fn" href="fn.with_buffer_contents.html" title="fn smithay::wayland::shm::with_buffer_contents">with_<wbr>buffer_<wbr>contents</a></dt><dd>Call given closure with the contents of the given buffer</dd><dt><a class="fn" href="fn.with_buffer_contents_mut.html" title="fn smithay::wayland::shm::with_buffer_contents_mut">with_<wbr>buffer_<wbr>contents_<wbr>mut</a></dt><dd>Call given closure with the contents of the given buffer for mutable access</dd><dt><a class="fn" href="fn.wl_bytes_per_pixel.html" title="fn smithay::wayland::shm::wl_bytes_per_pixel">wl_<wbr>bytes_<wbr>per_<wbr>pixel</a></dt><dd>Returns the bpp of the format</dd></dl></section></div></main></body></html>
