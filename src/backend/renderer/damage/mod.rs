@@ -541,7 +541,7 @@ impl OutputDamageTracker {
         let mut element_damage = std::mem::take(&mut self.element_damage);
 
         let mut element_visible_area_workhouse = std::mem::take(&mut self.element_visible_area_workhouse);
-        let mut z_index = 0;
+        let mut render_element_z_index = 0;
         for element in elements.iter() {
             let element_id = element.id();
             let element_loc = element.geometry(output_scale).loc;
@@ -591,7 +591,7 @@ impl OutputDamageTracker {
                         element_geometry,
                         element_transform,
                         element_alpha,
-                        z_index,
+                        render_element_z_index,
                         element_is_framebuffer_effect,
                     )
                 })
@@ -636,6 +636,8 @@ impl OutputDamageTracker {
             let element_opaque_regions_end_index = self.opaque_regions.len();
             self.opaque_regions_index
                 .push(element_opaque_regions_start_index..element_opaque_regions_end_index);
+
+            render_element_z_index += 1;
             render_elements.push(element);
 
             if let Some(state) = element_render_states.states.get_mut(element_id) {
@@ -650,7 +652,6 @@ impl OutputDamageTracker {
                     RenderElementState::rendered(element_visible_area),
                 );
             }
-            z_index += 1;
         }
         std::mem::swap(
             &mut self.element_visible_area_workhouse,
@@ -721,6 +722,11 @@ impl OutputDamageTracker {
             } else {
                 self.element_damage_index[z_index]
             };
+            let opaque_regions_index = if force_effect_redraw {
+                self.opaque_regions.len()
+            } else {
+                self.opaque_regions_index[z_index].start
+            };
             let element_geometry = element.geometry(output_scale);
             let intersection = element_geometry.intersection(output_geo);
 
@@ -728,6 +734,16 @@ impl OutputDamageTracker {
                 if let Some(state) = element_render_states.states.get_mut(element.id()) {
                     state.needs_capture = true;
                     self.damage.push(intersection.unwrap());
+                    // also drop all opaque regions on top, so they don't block re-drawing below the blur element
+                    for region in self.opaque_regions.iter_mut().take(opaque_regions_index) {
+                        // we want to leave `self.opaque_regions_index` intact,
+                        // fixing it up would be very involved, so lets do the next best thing
+                        // and keep at least part of the opaque region, if possible.
+                        *region = Rectangle::subtract_rect(*region, intersection.unwrap())
+                            .into_iter()
+                            .next()
+                            .unwrap_or_default();
+                    }
                 }
             }
         }
