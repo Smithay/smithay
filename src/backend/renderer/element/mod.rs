@@ -540,10 +540,11 @@ pub trait RenderElement<R: Renderer>: Element {
     fn capture_framebuffer(
         &self,
         frame: &mut R::Frame<'_, '_>,
+        transform: Transform,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
     ) -> Result<(), R::Error> {
-        let _ = (frame, src, dst);
+        let _ = (frame, transform, src, dst);
         unimplemented!("error: is_framebuffer_effect without capture_framebuffer implementation!");
     }
 }
@@ -638,10 +639,11 @@ where
     fn capture_framebuffer(
         &self,
         frame: &mut <R>::Frame<'_, '_>,
+        transform: Transform,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
     ) -> Result<(), <R>::Error> {
-        (*self).capture_framebuffer(frame, src, dst)
+        (*self).capture_framebuffer(frame, transform, src, dst)
     }
 }
 
@@ -988,6 +990,7 @@ macro_rules! render_elements_internal {
         fn capture_framebuffer(
             &self,
             frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
+            transform: $crate::utils::Transform,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
         ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
@@ -1006,7 +1009,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, src, dst)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, transform, src, dst)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1052,6 +1055,7 @@ macro_rules! render_elements_internal {
         fn capture_framebuffer(
             &self,
             frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
+            transform: $crate::utils::Transform,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
         ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
@@ -1062,7 +1066,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, src, dst)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, transform, src, dst)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1645,10 +1649,11 @@ where
     fn capture_framebuffer(
         &self,
         frame: &mut <R>::Frame<'_, '_>,
+        transform: Transform,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
     ) -> Result<(), <R>::Error> {
-        self.0.capture_framebuffer(frame, src, dst)
+        self.0.capture_framebuffer(frame, transform, src, dst)
     }
 }
 

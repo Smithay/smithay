@@ -116,10 +116,11 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
     fn capture_framebuffer(
         &self,
         frame: &mut <R>::Frame<'_, '_>,
+        transform: crate::utils::Transform,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
     ) -> Result<(), <R>::Error> {
-        self.element.capture_framebuffer(frame, src, dst)
+        self.element.capture_framebuffer(frame, transform, src, dst)
     }
 }
 
@@ -313,10 +314,11 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
     fn capture_framebuffer(
         &self,
         frame: &mut <R>::Frame<'_, '_>,
+        transform: crate::utils::Transform,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
     ) -> Result<(), <R>::Error> {
-        self.element.capture_framebuffer(frame, src, dst)
+        self.element.capture_framebuffer(frame, transform, src, dst)
     }
 }
 
@@ -428,10 +430,11 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
     fn capture_framebuffer(
         &self,
         frame: &mut <R>::Frame<'_, '_>,
+        transform: crate::utils::Transform,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
     ) -> Result<(), <R>::Error> {
-        self.element.capture_framebuffer(frame, src, dst)
+        self.element.capture_framebuffer(frame, transform, src, dst)
     }
 }
 
