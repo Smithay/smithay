@@ -657,6 +657,8 @@ impl OutputDamageTracker {
             &mut element_visible_area_workhouse,
         );
 
+        let mut force_effect_redraw = false;
+
         // add the damage for elements gone that are not covered an opaque region
         let elements_gone = self.last_state.elements.iter().filter(|(id, _)| {
             element_render_states
@@ -667,6 +669,7 @@ impl OutputDamageTracker {
         });
 
         for (_, state) in elements_gone {
+            force_effect_redraw = true;
             self.damage.extend(
                 state
                     .last_instances
@@ -680,6 +683,9 @@ impl OutputDamageTracker {
         element_damage.extend_from_slice(&self.last_state.opaque_regions);
         element_damage =
             Rectangle::subtract_rects_many_in_place(element_damage, self.opaque_regions.iter().copied());
+        if !element_damage.is_empty() {
+            force_effect_redraw = true;
+        }
         self.damage.extend_from_slice(&element_damage);
 
         // we no longer need the element damage, return it so that we can
@@ -701,6 +707,7 @@ impl OutputDamageTracker {
                 "Output geometry, transform or clear color changed, damaging whole output geometry");
             self.damage.clear();
             self.damage.push(output_geo);
+            force_effect_redraw = true;
         }
 
         // for backdrop elements check if anything below them changed and add full-damage, if it did.
@@ -709,7 +716,11 @@ impl OutputDamageTracker {
             .enumerate()
             .filter(|(_, e)| e.is_framebuffer_effect())
         {
-            let damage_index = self.element_damage_index[z_index];
+            let damage_index = if force_effect_redraw {
+                0
+            } else {
+                self.element_damage_index[z_index]
+            };
             let element_geometry = element.geometry(output_scale);
             let intersection = element_geometry.intersection(output_geo);
 
