@@ -353,6 +353,7 @@ impl X11Surface {
     ///     shell](crate::wayland::xwayland_shell) protocol on the wayland side,
     ///     and then committed.
     #[inline]
+    #[allow(clippy::same_name_method)]
     pub fn wl_surface(&self) -> Option<WlSurface> {
         self.state.lock().unwrap().wl_surface.clone()
     }
