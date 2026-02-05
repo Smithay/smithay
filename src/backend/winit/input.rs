@@ -190,13 +190,22 @@ impl PointerButtonEvent<WinitInput> for WinitMouseInputEvent {
             WinitMouseButton::Middle => 0x112,
             WinitMouseButton::Forward => 0x115,
             WinitMouseButton::Back => 0x116,
-            WinitMouseButton::Other(b) => {
+            // XXX?
+            _ => {
                 if self.is_x11 {
-                    input::xorg_mouse_to_libinput(b as u32)
+                    input::xorg_mouse_to_libinput(self.button as u32 + 1)
                 } else {
-                    b as u32
+                    self.button as u32 + 1
                 }
-            }
+            } /*
+              WinitMouseButton::Other(b) => {
+                  if self.is_x11 {
+                      input::xorg_mouse_to_libinput(b as u32)
+                  } else {
+                      b as u32
+                  }
+              }
+              */
         }
     }
 
