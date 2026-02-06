@@ -81,7 +81,7 @@ where
                 let lock_surface = data_init.init(id, data);
 
                 // Initialize surface data.
-                compositor::with_states(&surface, |states| {
+                let initial = compositor::with_states(&surface, |states| {
                     let inserted = states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(LockSurfaceAttributes::new(lock_surface.clone()))
                     });
@@ -95,10 +95,14 @@ where
                             .unwrap();
                         attributes.surface = lock_surface.clone();
                     }
+
+                    inserted
                 });
 
-                // Add pre-commit hook for updating surface state.
-                compositor::add_pre_commit_hook::<D, _>(&surface, LockSurface::pre_commit_hook);
+                if initial {
+                    // Add pre-commit hook for updating surface state.
+                    let _ = compositor::add_pre_commit_hook::<D, _>(&surface, LockSurface::pre_commit_hook);
+                }
 
                 // Call compositor handler.
                 let lock_surface = LockSurface::new(surface, lock_surface);

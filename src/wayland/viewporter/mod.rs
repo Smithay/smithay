@@ -177,7 +177,7 @@ where
 
                 // only add the pre-commit hook once for the surface
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(&surface, viewport_pre_commit_hook);
+                    let _ = compositor::add_pre_commit_hook::<D, _>(&surface, viewport_pre_commit_hook);
                 }
             }
             wp_viewporter::Request::Destroy => {

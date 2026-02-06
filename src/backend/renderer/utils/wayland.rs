@@ -391,7 +391,7 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
             |_, _, _| true,
         );
         for surf in &new_surfaces {
-            add_destruction_hook(surf, |_: &mut D, surface| {
+            let _ = add_destruction_hook(surf, |_: &mut D, surface| {
                 // We reset the state on destruction before the user_data is dropped
                 // to prevent a deadlock which can happen if we try to send a buffer
                 // release during drop. This also enables us to free resources earlier

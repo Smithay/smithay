@@ -340,7 +340,7 @@ fn add_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
     });
 
     if added {
-        compositor::add_post_commit_hook(surface, commit_hook::<D>);
+        let _ = compositor::add_post_commit_hook(surface, commit_hook::<D>);
     }
 }
 
