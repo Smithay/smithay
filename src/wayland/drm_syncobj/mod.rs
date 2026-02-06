@@ -308,9 +308,15 @@ where
                     );
                     return;
                 }
-                let commit_hook_id = compositor::add_pre_commit_hook::<D, _>(&surface, commit_hook);
-                let destruction_hook_id =
-                    compositor::add_destruction_hook::<D, _>(&surface, destruction_hook);
+                let Ok(commit_hook_id) = compositor::add_pre_commit_hook::<D, _>(&surface, commit_hook)
+                else {
+                    return;
+                };
+                let Ok(destruction_hook_id) =
+                    compositor::add_destruction_hook::<D, _>(&surface, destruction_hook)
+                else {
+                    return;
+                };
                 let syncobj_surface = data_init.init::<_, _>(
                     id,
                     DrmSyncobjSurfaceData {

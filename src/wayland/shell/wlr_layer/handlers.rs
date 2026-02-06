@@ -122,7 +122,7 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(
+                    let _ = compositor::add_pre_commit_hook::<D, _>(
                         &wl_surface,
                         super::LayerSurface::pre_commit_hook,
                     );

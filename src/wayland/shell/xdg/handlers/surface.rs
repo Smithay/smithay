@@ -124,7 +124,7 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(
+                    let _ = compositor::add_pre_commit_hook::<D, _>(
                         surface,
                         super::super::ToplevelSurface::pre_commit_hook,
                     );
@@ -202,7 +202,7 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook::<D, _>(
+                    let _ = compositor::add_pre_commit_hook::<D, _>(
                         surface,
                         super::super::PopupSurface::pre_commit_hook,
                     );
