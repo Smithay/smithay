@@ -52,7 +52,16 @@ impl ConnectorScanner {
                     (State::Connected, State::Disconnected) => removed.push(conn),
                     (State::Disconnected | State::Unknown, State::Connected) => added.push(conn),
                     //
-                    (State::Connected, State::Connected) => {}
+                    // Re-emit Connected when the mode list changes while
+                    // staying connected.  This covers the EDID race where
+                    // the kernel initially reports a connector as Connected
+                    // with an empty mode list (EDID not yet read) and a
+                    // later rescan finds the modes populated.
+                    (State::Connected, State::Connected) => {
+                        if old.modes() != conn.modes() {
+                            added.push(conn);
+                        }
+                    }
                     (State::Disconnected, State::Disconnected) => {}
                     //
                     (State::Unknown, _) => {}
