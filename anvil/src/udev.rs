@@ -1138,6 +1138,7 @@ impl AnvilState<UdevData> {
                 } => {
                     self.connector_disconnected(node, connector, crtc);
                 }
+                DrmScanEvent::Changed { .. } => {}
                 _ => {}
             }
         }
