@@ -51,11 +51,11 @@ impl ConnectorScanner {
                     (State::Connected, State::Disconnected) => removed.push(conn),
                     (State::Disconnected | State::Unknown, State::Connected) => added.push(conn),
                     //
-                    // Re-emit Connected when the mode list changes while
-                    // staying connected.  This covers the EDID race where
-                    // the kernel initially reports a connector as Connected
-                    // with an empty mode list (EDID not yet read) and a
-                    // later rescan finds the modes populated.
+                    // Emit Changed when the mode list changes while staying
+                    // connected. This covers the EDID race where the kernel
+                    // initially reports a connector as Connected with an
+                    // empty or fallback mode list (EDID not yet read) and a
+                    // later rescan finds the real modes populated.
                     (State::Connected, State::Connected) => {
                         if old.modes() != conn.modes() {
                             changed.push(conn);
@@ -124,15 +124,12 @@ impl IntoIterator for ConnectorScanResult {
     type IntoIter = std::vec::IntoIter<ConnectorScanEvent>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut events =
-            Vec::with_capacity(self.disconnected.len() + self.connected.len() + self.changed.len());
-        events.extend(
-            self.disconnected
-                .into_iter()
-                .map(ConnectorScanEvent::Disconnected),
-        );
-        events.extend(self.connected.into_iter().map(ConnectorScanEvent::Connected));
-        events.extend(self.changed.into_iter().map(ConnectorScanEvent::Changed));
-        events.into_iter()
+        self.disconnected
+            .into_iter()
+            .map(ConnectorScanEvent::Disconnected)
+            .chain(self.connected.into_iter().map(ConnectorScanEvent::Connected))
+            .chain(self.changed.into_iter().map(ConnectorScanEvent::Changed))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }

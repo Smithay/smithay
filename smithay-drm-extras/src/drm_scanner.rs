@@ -233,11 +233,12 @@ impl IntoIterator for DrmScanResult {
     type IntoIter = std::vec::IntoIter<DrmScanEvent>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut events =
-            Vec::with_capacity(self.disconnected.len() + self.connected.len() + self.changed.len());
-        events.extend(self.disconnected.into_iter().map(DrmScanEvent::disconnected));
-        events.extend(self.connected.into_iter().map(DrmScanEvent::connected));
-        events.extend(self.changed.into_iter().map(DrmScanEvent::changed));
-        events.into_iter()
+        self.disconnected
+            .into_iter()
+            .map(DrmScanEvent::disconnected)
+            .chain(self.connected.into_iter().map(DrmScanEvent::connected))
+            .chain(self.changed.into_iter().map(DrmScanEvent::changed))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
