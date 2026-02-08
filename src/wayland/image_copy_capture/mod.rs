@@ -610,6 +610,7 @@ impl FrameInner {
             return;
         }
         self.failed = Some(reason);
+        self.buffer.take();
         if self.capture_requested {
             frame.failed(reason);
         }
@@ -714,7 +715,11 @@ impl Frame {
         let tv_nsec = time.subsec_nanos();
         self.0.obj.presentation_time(tv_sec_hi, tv_sec_lo, tv_nsec);
 
-        self.0.inner.lock().unwrap().ready = true;
+        {
+            let mut inner = self.0.inner.lock().unwrap();
+            inner.ready = true;
+            inner.buffer.take();
+        }
         self.0.obj.ready();
 
         // Prevent drop from sending fail
