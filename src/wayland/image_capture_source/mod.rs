@@ -304,9 +304,13 @@ impl ImageCaptureSourceState {
 pub trait ImageCaptureSourceHandler:
     Dispatch<ExtImageCaptureSourceV1, ImageCaptureSourceData> + 'static
 {
-    /// Called when a capture source is destroyed by the client.
+    /// Called when a capture source is destroyed.
     ///
     /// Use this to clean up any compositor-side state associated with the source.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn source_destroyed(&mut self, source: ImageCaptureSource) {
         let _ = source;
     }

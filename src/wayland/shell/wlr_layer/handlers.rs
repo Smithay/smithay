@@ -327,6 +327,9 @@ where
 
                 WlrLayerShellHandler::ack_configure(state, surface, configure);
             }
+            zwlr_layer_surface_v1::Request::Destroy => {
+                // Handled by destroyed handler
+            }
             _ => {}
         }
     }

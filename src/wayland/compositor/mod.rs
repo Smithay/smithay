@@ -599,6 +599,10 @@ pub trait CompositorHandler {
     /// The surface was destroyed.
     ///
     /// This allows the compositor to clean up any uses of the surface.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn destroyed(&mut self, _surface: &WlSurface) {}
 }
 

@@ -279,6 +279,10 @@ pub trait WlrLayerShellHandler {
     fn ack_configure(&mut self, surface: wl_surface::WlSurface, configure: LayerSurfaceConfigure) {}
 
     /// A layer surface was destroyed.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn layer_destroyed(&mut self, surface: LayerSurface) {}
 }
 
