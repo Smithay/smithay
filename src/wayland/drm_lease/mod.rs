@@ -325,6 +325,10 @@ pub trait DrmLeaseHandler:
     /// A new DRM lease is active. Dropping the provided [`DrmLease`] will revoke the lease.
     fn new_active_lease(&mut self, node: DrmNode, lease: DrmLease);
     /// A DRM lease was destroyed, the previously given [`DrmLease`] should be cleaned up, if not revoked already.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn lease_destroyed(&mut self, node: DrmNode, lease_id: u32);
 }
 

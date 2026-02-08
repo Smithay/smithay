@@ -796,17 +796,29 @@ pub trait ImageCopyCaptureHandler:
         frame.fail(FailureReason::Unknown);
     }
 
-    /// Called when a frame is aborted (e.g., buffer destroyed before capture).
+    /// Called when a frame is aborted (e.g., buffer destroyed before capture)
+    /// or the client disconnects.
+    ///
+    /// Note: In case of implicit destruction the order is undefined and might
+    /// not follow explicit protocol definitions.
     fn frame_aborted(&mut self, frame: FrameRef) {
         let _ = frame;
     }
 
-    /// Called when a session is destroyed by the client.
+    /// Called when a session is destroyed.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn session_destroyed(&mut self, session: SessionRef) {
         let _ = session;
     }
 
-    /// Called when a cursor session is destroyed by the client.
+    /// Called when a cursor session is destroyed.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn cursor_session_destroyed(&mut self, session: CursorSessionRef) {
         let _ = session;
     }

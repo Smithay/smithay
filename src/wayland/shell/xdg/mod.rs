@@ -1171,12 +1171,24 @@ pub trait XdgShellHandler {
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32);
 
     /// A shell client was destroyed.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn client_destroyed(&mut self, client: ShellClient) {}
 
     /// A toplevel surface was destroyed.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {}
 
     /// A popup surface was destroyed.
+    ///
+    /// Note: Destruction might happen explicitly by the client, or implicitly
+    /// when the client quits. In case of implicit destruction the order the
+    /// callbacks are called in is undefined.
     fn popup_destroyed(&mut self, surface: PopupSurface) {}
 
     /// The toplevel surface set a different app id.
