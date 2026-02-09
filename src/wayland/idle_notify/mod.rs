@@ -42,11 +42,16 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{self, AtomicBool},
-        Mutex,
+        atomic::{self, AtomicBool, AtomicU64},
+        Mutex, OnceLock,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
+
+fn elapsed_millis() -> u64 {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
+}
 
 use calloop::{timer::TimeoutAction, LoopHandle, RegistrationToken};
 use wayland_protocols::ext::idle_notify::v1::server::{
@@ -74,6 +79,7 @@ pub struct IdleNotificationUserData {
     is_idle: AtomicBool,
     timeout: Duration,
     timer_token: Mutex<Option<RegistrationToken>>,
+    last_activity: AtomicU64,
 
     /// If listener was created with `get_input_idle_notification`
     ignore_inhibitor: bool,
@@ -171,12 +177,14 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
         for notification in notifications {
             let data = notification.data::<IdleNotificationUserData>().unwrap();
 
+            let now_millis = elapsed_millis();
+            data.last_activity.store(now_millis, atomic::Ordering::Relaxed);
+
             if data.is_idle() {
                 notification.resumed();
                 data.set_idle(false);
+                self.reinsert_timer(notification);
             }
-
-            self.reinsert_timer(notification);
         }
     }
 
@@ -200,6 +208,9 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
             return;
         }
 
+        let now_millis = elapsed_millis();
+        data.last_activity.store(now_millis, atomic::Ordering::Relaxed);
+
         let token = self
             .loop_handle
             .insert_source(calloop::timer::Timer::from_duration(data.timeout), {
@@ -208,15 +219,26 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
                     let data = idle_notification.data::<IdleNotificationUserData>().unwrap();
 
                     let is_inhibited = !data.ignore_inhibitor && state.idle_notifier_state().is_inhibited;
-                    let is_idle_already = data.is_idle();
-
-                    if !is_inhibited && !is_idle_already {
-                        idle_notification.idled();
-                        data.set_idle(true);
+                    if is_inhibited {
+                        data.set_timer_token(None);
+                        return TimeoutAction::Drop;
                     }
 
-                    data.set_timer_token(None);
-                    TimeoutAction::Drop
+                    let last_millis = data.last_activity.load(atomic::Ordering::Relaxed);
+                    let now_millis = elapsed_millis();
+                    let idle_duration = Duration::from_millis(now_millis.saturating_sub(last_millis));
+
+                    if idle_duration >= data.timeout {
+                        if !data.is_idle() {
+                            idle_notification.idled();
+                            data.set_idle(true);
+                        }
+                        data.set_timer_token(None);
+                        TimeoutAction::Drop
+                    } else {
+                        let remaining = data.timeout - idle_duration;
+                        TimeoutAction::ToDuration(remaining)
+                    }
                 }
             });
 
@@ -285,6 +307,7 @@ where
                         is_idle: AtomicBool::new(false),
                         timeout,
                         timer_token: Mutex::new(None),
+                        last_activity: AtomicU64::new(elapsed_millis()),
                         ignore_inhibitor: false,
                     },
                 );
@@ -310,6 +333,7 @@ where
                         is_idle: AtomicBool::new(false),
                         timeout,
                         timer_token: Mutex::new(None),
+                        last_activity: AtomicU64::new(elapsed_millis()),
                         ignore_inhibitor: true,
                     },
                 );
@@ -356,6 +380,11 @@ where
         data: &IdleNotificationUserData,
     ) {
         let state = state.idle_notifier_state();
+
+        if let Some(token) = data.take_timer_token() {
+            state.loop_handle.remove(token);
+        }
+
         if let Some(notifications) = state.notifications.get_mut(&data.seat) {
             notifications.retain(|x| x != notification);
         }
