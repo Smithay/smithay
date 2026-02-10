@@ -665,18 +665,21 @@ impl FrameRef {
 ///
 /// If the frame is dropped without calling either method, it will automatically fail.
 #[derive(Debug)]
-pub struct Frame(FrameRef);
+pub struct Frame {
+    frame: FrameRef,
+    completed: bool,
+}
 
 impl ops::Deref for Frame {
     type Target = FrameRef;
     fn deref(&self) -> &FrameRef {
-        &self.0
+        &self.frame
     }
 }
 
 impl PartialEq<FrameRef> for Frame {
     fn eq(&self, other: &FrameRef) -> bool {
-        self.0 == *other
+        self.frame == *other
     }
 }
 
@@ -689,21 +692,21 @@ impl Frame {
     /// * `damage` - Optional damage regions, or `None` for full damage
     /// * `presented` - The presentation timestamp
     pub fn success(
-        self,
+        mut self,
         transform: impl Into<Transform>,
         damage: impl Into<Option<Vec<Rectangle<i32, BufferCoords>>>>,
         presented: impl Into<Duration>,
     ) {
         {
-            let inner = self.0.inner.lock().unwrap();
+            let inner = self.frame.inner.lock().unwrap();
             if !inner.capture_requested || inner.failed.is_some() {
                 return;
             }
         }
 
-        self.0.obj.transform(transform.into().into());
+        self.frame.obj.transform(transform.into().into());
         for damage in damage.into().into_iter().flatten() {
-            self.0
+            self.frame
                 .obj
                 .damage(damage.loc.x, damage.loc.y, damage.size.w, damage.size.h);
         }
@@ -712,31 +715,33 @@ impl Frame {
         let tv_sec_hi = (time.as_secs() >> 32) as u32;
         let tv_sec_lo = (time.as_secs() & 0xFFFFFFFF) as u32;
         let tv_nsec = time.subsec_nanos();
-        self.0.obj.presentation_time(tv_sec_hi, tv_sec_lo, tv_nsec);
+        self.frame.obj.presentation_time(tv_sec_hi, tv_sec_lo, tv_nsec);
 
-        self.0.inner.lock().unwrap().ready = true;
-        self.0.obj.ready();
+        self.frame.inner.lock().unwrap().ready = true;
+        self.frame.obj.ready();
 
         // Prevent drop from sending fail
-        std::mem::forget(self);
+        self.completed = true;
     }
 
     /// Signal failed capture.
-    pub fn fail(self, reason: FailureReason) {
-        self.0.inner.lock().unwrap().fail(&self.0.obj, reason);
+    pub fn fail(mut self, reason: FailureReason) {
+        self.frame.inner.lock().unwrap().fail(&self.frame.obj, reason);
         // Prevent drop from sending fail again
-        std::mem::forget(self);
+        self.completed = true;
     }
 }
 
 impl Drop for Frame {
     fn drop(&mut self) {
-        // If success() or fail() wasn't called, send Unknown failure
-        self.0
-            .inner
-            .lock()
-            .unwrap()
-            .fail(&self.0.obj, FailureReason::Unknown);
+        if !self.completed {
+            // If success() or fail() wasn't called, send Unknown failure
+            self.frame
+                .inner
+                .lock()
+                .unwrap()
+                .fail(&self.frame.obj, FailureReason::Unknown);
+        }
     }
 }
 
@@ -1289,7 +1294,10 @@ where
                     if session_inner.active_frames.iter().any(|f| f == &frame_ref) {
                         drop(session_inner);
                         let session_ref = session.clone();
-                        let frame = Frame(frame_ref);
+                        let frame = Frame {
+                            frame: frame_ref,
+                            completed: false,
+                        };
                         state.frame(&session_ref, frame);
                         return;
                     }
@@ -1301,7 +1309,10 @@ where
                     if session_inner.active_frames.iter().any(|f| f == &frame_ref) {
                         drop(session_inner);
                         let session_ref = session.clone();
-                        let frame = Frame(frame_ref);
+                        let frame = Frame {
+                            frame: frame_ref,
+                            completed: false,
+                        };
                         state.cursor_frame(&session_ref, frame);
                         return;
                     }
