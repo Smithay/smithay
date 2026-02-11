@@ -16,7 +16,7 @@ use std::{
     hash::{Hash, Hasher},
     sync::{
         atomic::{AtomicU8, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, Weak,
     },
     time::Duration,
 };
@@ -80,6 +80,29 @@ impl IsAlive for Window {
             #[cfg(feature = "xwayland")]
             WindowSurface::X11(s) => s.alive(),
         }
+    }
+}
+
+impl Window {
+    /// Create a weak reference to this window that does not prevent
+    /// the inner resources from being dropped.
+    pub fn downgrade(&self) -> WeakWindow {
+        WeakWindow(Arc::downgrade(&self.0))
+    }
+}
+
+/// A weak reference to a [`Window`] that does not keep it alive.
+///
+/// Use [`WeakWindow::upgrade`] to obtain a [`Window`] if the inner
+/// resources have not yet been dropped.
+#[derive(Debug, Clone)]
+pub struct WeakWindow(Weak<WindowInner>);
+
+impl WeakWindow {
+    /// Attempt to upgrade to a strong [`Window`] reference.
+    /// Returns `None` if the window has already been dropped.
+    pub fn upgrade(&self) -> Option<Window> {
+        self.0.upgrade().map(Window)
     }
 }
 
