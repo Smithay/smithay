@@ -1,18 +1,18 @@
-The following policy applies if you make a contribution to smithay's
+The following policy applies if you make a contribution to Smithay's
 code, documentation, issues, comments, artwork or any other type of resource.
 
 It is your responsibility to ensure that:
 - You fully understand how the code in your contribution works.
 - Your change is accurately described in the commit message.
 - Your contribution is tested and working as described.
-- To the best of your knowledge, you are not introducing bugs and any requests exceptions to this rule must be presented with clear reasoning.
+- To the best of your knowledge, you are not introducing bugs; any exceptions to this rule must be presented with clear reasoning.
 - You are not violating copyright (such as software licenses, creative commons or any other). (See also our [DCO](https://github.com/Smithay/smithay/blob/master/DCO.md).)
 - Use of any AI generated code or documentation is clearly indicated in your commit messages.
 
-If you continuously fail to meet these standards your contributions will no longer
-be considered by smithay's maintainers and possibly removed without further notice.
+If you repeatedly fail to meet these standards, your contributions will no longer
+be considered by Smithay's maintainers and possibly removed without further notice.
 
-Due to the requirements listed above we strongly advise against using large
+Due to the requirements listed above, we strongly advise against using large
 language models or other probabilistic tools such as Copilot and ChatGPT.
 Code produced by these systems is usually more difficult to reason about
 and fails to express important technical design decisions in a concise form.
