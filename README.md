@@ -70,3 +70,9 @@ Rust.
 ## Contact us
 
 If you have questions or want to discuss the project with us, our main chatroom is on Matrix: [`#smithay:matrix.org`](https://matrix.to/#/#smithay:matrix.org).
+
+## Contributing
+
+General notes on contributing to smithay can be found [here](https://github.com/Smithay/smithay/blob/master/Contributing.md).
+
+Please note that to submit code to smithay, you have to agree to our [Developer Certificate of Origin](https://github.com/Smithay/smithay/blob/master/DCO.md).
