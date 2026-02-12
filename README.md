@@ -76,3 +76,5 @@ If you have questions or want to discuss the project with us, our main chatroom 
 General notes on contributing to smithay can be found [here](https://github.com/Smithay/smithay/blob/master/Contributing.md).
 
 Please note that to submit code to smithay, you have to agree to our [Developer Certificate of Origin](https://github.com/Smithay/smithay/blob/master/DCO.md).
+
+If you are used to using generative AI, please ensure you read our [Policy](https://github.com/Smithay/smithay/blob/master/AI.md) before engaging.
