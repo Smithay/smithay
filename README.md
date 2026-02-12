@@ -36,7 +36,7 @@ Also:
 
 ## Getting started
 
-If you want to learn how to build a compositor with smithay, consider this [getting started](https://github.com/Smithay/smithay/blob/master/GETTING_STARTED.md) guide.
+If you want to learn how to build a compositor with Smithay, consider this [getting started](https://github.com/Smithay/smithay/blob/master/GETTING_STARTED.md) guide.
 
 ## Anvil
 
@@ -76,8 +76,8 @@ If you have questions or want to discuss the project with us, our main chatroom 
 
 ## Contributing
 
-General notes on contributing to smithay can be found [here](https://github.com/Smithay/smithay/blob/master/Contributing.md).
+General notes on contributing to Smithay can be found [here](https://github.com/Smithay/smithay/blob/master/Contributing.md).
 
-Please note that to submit code to smithay, you have to agree to our [Developer Certificate of Origin](https://github.com/Smithay/smithay/blob/master/DCO.md).
+Please note that to submit code to Smithay, you have to agree to our [Developer Certificate of Origin](https://github.com/Smithay/smithay/blob/master/DCO.md).
 
 If you are used to using generative AI, please ensure you read our [Policy](https://github.com/Smithay/smithay/blob/master/AI.md) before engaging.
