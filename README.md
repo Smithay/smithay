@@ -34,6 +34,9 @@ Also:
 - **High-level:** You should be able to not have to worry about gory low-level stuff (but 
   Smithay won't stop you if you really want to dive into it).
 
+## Getting started
+
+If you want to learn how to build a compositor with smithay, consider this [getting started](https://github.com/Smithay/smithay/blob/master/GETTING_STARTED.md) guide.
 
 ## Anvil
 
