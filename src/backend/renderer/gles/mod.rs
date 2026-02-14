@@ -954,7 +954,15 @@ impl ImportMemWl for GlesRenderer {
                         ptr.offset(offset as isize) as *const _,
                     );
                 } else {
+                    let tex_bounds: Rectangle<i32, BufferCoord> =
+                        Rectangle::from_size((width, height).into());
                     for region in damage.iter() {
+                        let Some(region) = region.intersection(tex_bounds) else {
+                            continue;
+                        };
+                        if region.is_empty() {
+                            continue;
+                        }
                         trace!("Uploading partial shm texture");
                         self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
                         self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
@@ -1112,6 +1120,14 @@ impl ImportMem for GlesRenderer {
         }
         let (read_format, type_) = gl_read_for_internal(texture.0.format.expect("We check that before"))
             .ok_or(GlesError::UnknownPixelFormat)?;
+
+        // Clamp the update region to the texture dimensions to avoid
+        // GL_INVALID_VALUE from glTexSubImage2D on strict drivers (NVIDIA).
+        let tex_bounds = Rectangle::from_size(texture.0.size);
+        let region = match region.intersection(tex_bounds) {
+            Some(r) if !r.is_empty() => r,
+            _ => return Ok(()),
+        };
 
         if data.len()
             < (region.size.w * region.size.h) as usize
