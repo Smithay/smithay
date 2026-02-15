@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         keyboard.input(
             &mut state,
             smithay::backend::input::Keycode::from(9u32),
-            smithay::backend::input::KeyState::Pressed,
+            smithay::backend::input::KeyEvent::Pressed,
             0.into(),
             0,
             |_, _, _| {
