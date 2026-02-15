@@ -17,13 +17,11 @@
 //!     match event {
 //!         DrmScanEvent::Connected { .. } => {},
 //!         DrmScanEvent::Disconnected { .. } => {},
+//!         DrmScanEvent::Changed { .. } => {},
 //!     }
 //! }
 //! ```
-use std::{
-    collections::HashMap,
-    iter::{Chain, Map},
-};
+use std::collections::HashMap;
 
 use drm::control::{connector, crtc, Device as ControlDevice};
 
@@ -93,14 +91,15 @@ where
     /// let res = scanner.scan_connectors(&drm_device).expect("failed to scan connectors");
     ///
     /// // You can extract scan info manually
-    /// println!("Plugged {} connectors", res.added.len());
-    /// println!("Unplugged {} connectors", res.removed.len());
+    /// println!("Plugged {} connectors", res.connected.len());
+    /// println!("Unplugged {} connectors", res.disconnected.len());
     ///
     /// // Or simply iterate over it
     /// for event in res {
     ///     match event {
     ///         DrmScanEvent::Connected { .. } => {},
     ///         DrmScanEvent::Disconnected { .. } => {},
+    ///         DrmScanEvent::Changed { .. } => {},
     ///     }
     /// }
     /// ```
@@ -127,9 +126,19 @@ where
             })
             .collect();
 
+        let changed = scan
+            .changed
+            .into_iter()
+            .map(|info| {
+                let crtc = self.crtc_mapper.crtc_for_connector(&info.handle());
+                (info, crtc)
+            })
+            .collect();
+
         Ok(DrmScanResult {
             disconnected: removed,
             connected: added,
+            changed,
         })
     }
 
@@ -166,6 +175,8 @@ pub struct DrmScanResult {
     pub connected: Vec<DrmScanItem>,
     /// Connectors that got unplugged since last scan
     pub disconnected: Vec<DrmScanItem>,
+    /// Connectors whose mode list changed while staying connected
+    pub changed: Vec<DrmScanItem>,
 }
 
 impl DrmScanResult {
@@ -194,6 +205,13 @@ pub enum DrmScanEvent {
         /// Crtc that is no longer mapped to this connector
         crtc: Option<crtc::Handle>,
     },
+    /// The connector's mode list changed while staying connected
+    Changed {
+        /// Info about the connector whose modes changed
+        connector: connector::Info,
+        /// Crtc that is mapped to this connector
+        crtc: Option<crtc::Handle>,
+    },
 }
 
 impl DrmScanEvent {
@@ -204,25 +222,23 @@ impl DrmScanEvent {
     fn disconnected((connector, crtc): (connector::Info, Option<crtc::Handle>)) -> Self {
         DrmScanEvent::Disconnected { connector, crtc }
     }
-}
 
-type DrmScanItemToEvent = fn(DrmScanItem) -> DrmScanEvent;
+    fn changed((connector, crtc): (connector::Info, Option<crtc::Handle>)) -> Self {
+        DrmScanEvent::Changed { connector, crtc }
+    }
+}
 
 impl IntoIterator for DrmScanResult {
     type Item = DrmScanEvent;
-    type IntoIter = Chain<
-        Map<std::vec::IntoIter<DrmScanItem>, DrmScanItemToEvent>,
-        Map<std::vec::IntoIter<DrmScanItem>, DrmScanItemToEvent>,
-    >;
+    type IntoIter = std::vec::IntoIter<DrmScanEvent>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.disconnected
             .into_iter()
-            .map(DrmScanEvent::disconnected as DrmScanItemToEvent)
-            .chain(
-                self.connected
-                    .into_iter()
-                    .map(DrmScanEvent::connected as DrmScanItemToEvent),
-            )
+            .map(DrmScanEvent::disconnected)
+            .chain(self.connected.into_iter().map(DrmScanEvent::connected))
+            .chain(self.changed.into_iter().map(DrmScanEvent::changed))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }

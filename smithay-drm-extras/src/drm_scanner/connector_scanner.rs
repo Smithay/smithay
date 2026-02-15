@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    iter::{Chain, Map},
-};
+use std::collections::HashMap;
 
 use drm::control::{connector, Device as ControlDevice};
 
@@ -19,6 +16,7 @@ use drm::control::{connector, Device as ControlDevice};
 ///     match event {
 ///         ConnectorScanEvent::Connected(conn) => {},
 ///         ConnectorScanEvent::Disconnected(conn) => {},
+///         ConnectorScanEvent::Changed(conn) => {},
 ///     }
 /// }
 #[derive(Debug, Default)]
@@ -39,6 +37,7 @@ impl ConnectorScanner {
 
         let mut added = Vec::new();
         let mut removed = Vec::new();
+        let mut changed = Vec::new();
 
         for conn in connector_handles
             .iter()
@@ -52,7 +51,16 @@ impl ConnectorScanner {
                     (State::Connected, State::Disconnected) => removed.push(conn),
                     (State::Disconnected | State::Unknown, State::Connected) => added.push(conn),
                     //
-                    (State::Connected, State::Connected) => {}
+                    // Emit Changed when the mode list changes while staying
+                    // connected. This covers the EDID race where the kernel
+                    // initially reports a connector as Connected with an
+                    // empty or fallback mode list (EDID not yet read) and a
+                    // later rescan finds the real modes populated.
+                    (State::Connected, State::Connected) => {
+                        if old.modes() != conn.modes() {
+                            changed.push(conn);
+                        }
+                    }
                     (State::Disconnected, State::Disconnected) => {}
                     //
                     (State::Unknown, _) => {}
@@ -66,6 +74,7 @@ impl ConnectorScanner {
         Ok(ConnectorScanResult {
             connected: added,
             disconnected: removed,
+            changed,
         })
     }
 
@@ -86,6 +95,8 @@ pub struct ConnectorScanResult {
     pub connected: Vec<connector::Info>,
     /// Connectors that got unplugged since last scan
     pub disconnected: Vec<connector::Info>,
+    /// Connectors whose mode list changed while staying connected
+    pub changed: Vec<connector::Info>,
 }
 
 /// Created from [`ConnectorScanResult`], informs about connector events.
@@ -95,6 +106,8 @@ pub enum ConnectorScanEvent {
     Connected(connector::Info),
     /// A connector got unplugged in since last scan
     Disconnected(connector::Info),
+    /// The connector's mode list changed while staying connected
+    Changed(connector::Info),
 }
 
 impl ConnectorScanResult {
@@ -106,23 +119,17 @@ impl ConnectorScanResult {
     }
 }
 
-type ConnectorScanItemToEvent = fn(connector::Info) -> ConnectorScanEvent;
-
 impl IntoIterator for ConnectorScanResult {
     type Item = ConnectorScanEvent;
-    type IntoIter = Chain<
-        Map<std::vec::IntoIter<connector::Info>, ConnectorScanItemToEvent>,
-        Map<std::vec::IntoIter<connector::Info>, ConnectorScanItemToEvent>,
-    >;
+    type IntoIter = std::vec::IntoIter<ConnectorScanEvent>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.disconnected
             .into_iter()
-            .map(ConnectorScanEvent::Disconnected as ConnectorScanItemToEvent)
-            .chain(
-                self.connected
-                    .into_iter()
-                    .map(ConnectorScanEvent::Connected as ConnectorScanItemToEvent),
-            )
+            .map(ConnectorScanEvent::Disconnected)
+            .chain(self.connected.into_iter().map(ConnectorScanEvent::Connected))
+            .chain(self.changed.into_iter().map(ConnectorScanEvent::Changed))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }

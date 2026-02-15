@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
-use ::drm::control::{connector, crtc};
+use drm::control::{connector, crtc};
 use smithay_drm_extras::{
     display_info,
     drm_scanner::{self, DrmScanEvent},
@@ -192,6 +192,7 @@ impl State {
                 } => {
                     self.connector_disconnected(node, connector, crtc);
                 }
+                DrmScanEvent::Changed { .. } => {}
                 _ => {}
             }
         }

@@ -1138,6 +1138,10 @@ impl AnvilState<UdevData> {
                 } => {
                     self.connector_disconnected(node, connector, crtc);
                 }
+                // The connector's mode list changed while it stayed connected (e.g. EDID
+                // arrived after the initial probe returned empty/fallback modes). Compositors
+                // should re-evaluate the output's mode selection and recreate the surface here.
+                DrmScanEvent::Changed { .. } => {}
                 _ => {}
             }
         }
