@@ -77,7 +77,6 @@ impl input::Device for request::Device {
         match capability {
             input::DeviceCapability::Gesture => false,
             input::DeviceCapability::Keyboard => self.has_capability(DeviceCapability::Keyboard),
-            // TODO also require button?
             input::DeviceCapability::Pointer => {
                 self.has_capability(DeviceCapability::Pointer)
                     || self.has_capability(DeviceCapability::PointerAbsolute)
