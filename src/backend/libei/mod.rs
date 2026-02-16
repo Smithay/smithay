@@ -1,6 +1,38 @@
 //! Input backend for `libei` sender contexts
 //!
-//! TODO add code example
+//! ``` no_run
+//! # let event_loop: calloop::EventLoop<()> = todo!();
+//!
+//! use reis::{calloop::EisListenerSource, eis};
+//! use smithay::{
+//!     backend::libei::{EiInput, EiInputEvent},
+//!     input::keyboard::XkbConfig,
+//! };
+//!
+//! let listener = eis::Listener::bind_auto().unwrap();
+//! let listener_source = EisListenerSource::new(listener);
+//! let handle = event_loop.handle();
+//! event_loop.handle().insert_source(listener_source, |context, _, _| {
+//!     let source = EiInput::new(context);
+//!     handle.insert_source(source, |event, connection, _data| {
+//!         match event {
+//!              EiInputEvent::Connected => {
+//!                 let seat = connection.add_seat("default");
+//!                 let _ = seat.add_keyboard("virtual keyboard", XkbConfig::default());
+//!                 seat.add_pointer("virtual pointer");
+//!                 seat.add_pointer_absolute("virtual absolute pointer");
+//!                 seat.add_touch("virtual touch");
+//!             }
+//!             EiInputEvent::Disconnected => {}
+//!             EiInputEvent::Event(event) => {
+//!                 // Pass input event to compositor's input event handling logic
+//!                 // ...
+//!             }
+//!         }
+//!     }).unwrap();
+//!     Ok(calloop::PostAction::Continue)
+//! }).unwrap();
+//! ```
 
 // TODO: Add helper for receiver contexts
 
