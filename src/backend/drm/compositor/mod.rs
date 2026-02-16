@@ -568,6 +568,7 @@ impl<B: Buffer, F: Framebuffer> Clone for PlaneState<B, F> {
 #[derive(Debug)]
 struct FrameState<B: Buffer, F: Framebuffer> {
     planes: SmallVec<[(plane::Handle, PlaneState<B, F>); 10]>,
+    async_flip_failed: bool,
 }
 
 impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
@@ -644,11 +645,23 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
                 .map(|info| (info.handle, PlaneState::default())),
         );
 
-        FrameState { planes: tmp }
+        FrameState {
+            planes: tmp,
+            async_flip_failed: false,
+        }
     }
 }
 
 impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
+    fn is_fully_compatible(&self, other: &Self) -> bool {
+        self.planes.iter().all(|(handle, state)| {
+            other
+                .plane_state(*handle)
+                .map(|other| state.is_compatible(other))
+                .unwrap_or(false)
+        })
+    }
+
     #[profiling::function]
     #[inline]
     fn set_state(&mut self, plane: plane::Handle, state: PlaneState<B, F>) {
@@ -675,7 +688,10 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         let backup = current_config.clone();
         *current_config = state;
 
-        let res = surface.test_state(self.build_planes(surface, supports_fencing, true), allow_modeset);
+        let res = surface.test_state(
+            self.build_planes(surface, supports_fencing, true, PageFlipFlags::empty()),
+            allow_modeset,
+        );
 
         if res.is_err() {
             // test failed, restore previous state
@@ -699,12 +715,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         allow_partial_update: bool,
     ) -> Result<(), DrmError> {
         let needs_test = self.planes.iter().any(|(_, state)| state.needs_test);
-        let is_fully_compatible = self.planes.iter().all(|(handle, state)| {
-            previous_frame
-                .plane_state(*handle)
-                .map(|other| state.is_compatible(other))
-                .unwrap_or(false)
-        });
+        let is_fully_compatible = self.is_fully_compatible(previous_frame);
 
         if allow_partial_update && (!needs_test || is_fully_compatible) {
             trace!("skipping fully compatible state test");
@@ -715,7 +726,12 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         }
 
         let res = surface.test_state(
-            self.build_planes(surface, supports_fencing, allow_partial_update),
+            self.build_planes(
+                surface,
+                supports_fencing,
+                allow_partial_update,
+                PageFlipFlags::empty(),
+            ),
             allow_modeset,
         );
 
@@ -734,12 +750,16 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         surface: &DrmSurface,
         supports_fencing: bool,
         allow_partial_update: bool,
-        flip_flags: PageFlipFlags,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.commit(
-            self.build_planes(surface, supports_fencing, allow_partial_update),
-            flip_flags,
+            self.build_planes(
+                surface,
+                supports_fencing,
+                allow_partial_update,
+                PageFlipFlags::EVENT,
+            ),
+            PageFlipFlags::EVENT,
         )
     }
 
@@ -753,7 +773,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.page_flip(
-            self.build_planes(surface, supports_fencing, allow_partial_update),
+            self.build_planes(surface, supports_fencing, allow_partial_update, flip_flags),
             flip_flags,
         )
     }
@@ -764,6 +784,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         surface: &'a DrmSurface,
         supports_fencing: bool,
         allow_partial_update: bool,
+        flip_flags: PageFlipFlags,
     ) -> impl IntoIterator<Item = super::PlaneState<'a>> {
         for (_, state) in self.planes.iter_mut().filter(|(_, state)| !state.skip) {
             if let Some(config) = state.config.as_mut() {
@@ -808,17 +829,28 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
             })
             .map(move |(handle, state)| super::surface::PlaneState {
                 handle: *handle,
-                config: state.config.as_mut().map(|config| super::PlaneConfig {
-                    src: config.properties.src,
-                    dst: config.properties.dst,
-                    alpha: config.properties.alpha,
-                    transform: config.properties.transform,
-                    damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
-                    fb: *config.buffer.as_ref(),
-                    fence: config
-                        .sync
-                        .as_ref()
-                        .and_then(|(_, fence)| fence.as_ref().map(|fence| fence.as_fd())),
+                config: state.config.as_mut().map(|config| {
+                    let (damage_clips, fence) = if flip_flags.contains(PageFlipFlags::ASYNC) {
+                        (None, None)
+                    } else {
+                        (
+                            config.damage_clips.as_ref().map(|d| d.blob()),
+                            config
+                                .sync
+                                .as_ref()
+                                .and_then(|(_, fence)| fence.as_ref().map(|fence| fence.as_fd())),
+                        )
+                    };
+
+                    super::PlaneConfig {
+                        src: config.properties.src,
+                        dst: config.properties.dst,
+                        alpha: config.properties.alpha,
+                        transform: config.properties.transform,
+                        damage_clips,
+                        fb: *config.buffer.as_ref(),
+                        fence,
+                    }
                 }),
             })
     }
@@ -2529,10 +2561,9 @@ where
             }
         }
 
-        let flip =
-            prepared_frame
-                .frame
-                .commit(&self.surface, self.supports_fencing, false, PageFlipFlags::EVENT);
+        let flip = prepared_frame
+            .frame
+            .commit(&self.surface, self.supports_fencing, false);
 
         if flip.is_ok() {
             self.queued_frame = None;
@@ -2572,19 +2603,84 @@ where
 
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.surface.commit_pending() {
-            prepared_frame.frame.commit(
-                &self.surface,
-                self.supports_fencing,
-                allow_partial_update,
-                flip_flags,
-            )
+            prepared_frame
+                .frame
+                .commit(&self.surface, self.supports_fencing, allow_partial_update)
         } else {
-            prepared_frame.frame.page_flip(
+            let previous_state = self
+                .pending_frame
+                .as_ref()
+                .map(|f| &f.frame)
+                .unwrap_or(&self.current_frame);
+
+            let primary_is_compatible = prepared_frame
+                .frame
+                // TODO: Is [0] right?
+                .plane_state(self.planes.primary[0].handle)
+                .and_then(|state| {
+                    // TODO: Is [0] right?
+                    previous_state
+                        .plane_state(self.planes.primary[0].handle)
+                        .map(|previous_state| previous_state.is_compatible(state))
+                })
+                .unwrap_or(false);
+
+            // If the properties of the plane did not change we can expect the async flip state to
+            // also stay unchanged. So in case it failed previously we can skip trying again.
+            if primary_is_compatible {
+                prepared_frame.frame.async_flip_failed = previous_state.async_flip_failed;
+            }
+
+            // Currently async page flips are limited to the primary plane, if any other plane
+            // changes (including the cursor plane) it will fail.
+            //
+            // Note: If this changes we should extend `PlaneInfo` to include a flag indicating
+            // async flip support per plane. This would allows us to check for compatible changes
+            // per plane that supports async flips here. But that also requires us to track the failed
+            // combinations.
+            let only_primary_changed = prepared_frame
+                .frame
+                .planes
+                .iter()
+                // TODO: Is [0] right?
+                .filter(|&(handle, _)| *handle != self.planes.primary[0].handle)
+                .all(|(_, state)| state.skip);
+
+            let mut flip_flags = PageFlipFlags::EVENT;
+
+            // As already noted async page flips are only allowed when only the primary plane
+            // changed in a compatible way. We also want to skip it in case we already tried
+            // and failed. An async page flip can for example also fail for certain modifiers,
+            // for example on intel compressed formats might not be allowed.
+            if presentation_mode == PresentationMode::Async
+                && only_primary_changed
+                && primary_is_compatible
+                && allow_partial_update
+                && !prepared_frame.frame.async_flip_failed
+            {
+                flip_flags |= PageFlipFlags::ASYNC;
+            }
+
+            let flip = prepared_frame.frame.page_flip(
                 &self.surface,
                 self.supports_fencing,
                 allow_partial_update,
                 flip_flags,
-            )
+            );
+
+            // If an async page flip fails we retry without async and note
+            // that it failed to not try again until the plane properties change.
+            if flip.is_err() && flip_flags.contains(PageFlipFlags::ASYNC) {
+                prepared_frame.frame.async_flip_failed = true;
+                prepared_frame.frame.page_flip(
+                    &self.surface,
+                    self.supports_fencing,
+                    allow_partial_update,
+                    PageFlipFlags::EVENT,
+                )
+            } else {
+                flip
+            }
         };
 
         self.handle_flip(prepared_frame, Some(user_data), flip)
