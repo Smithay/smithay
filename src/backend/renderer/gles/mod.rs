@@ -802,6 +802,41 @@ impl GlesRenderer {
         Ok(())
     }
 
+    fn create_texture_internal(
+        &mut self,
+        format: Fourcc,
+        size: Size<i32, BufferCoord>,
+    ) -> Result<GlesTexture, GlesError> {
+        let has_alpha = has_alpha(format);
+        let (internal, format, layout) =
+            fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
+        if (internal != ffi::RGBA8 && internal != ffi::BGRA_EXT)
+            && !self.capabilities.contains(&Capability::_10Bit)
+        {
+            return Err(GlesError::UnsupportedPixelLayout);
+        }
+
+        let tex = unsafe {
+            let mut tex = 0;
+            self.gl.GenTextures(1, &mut tex);
+            self.gl.BindTexture(ffi::TEXTURE_2D, tex);
+            self.gl.TexImage2D(
+                ffi::TEXTURE_2D,
+                0,
+                internal as i32,
+                size.w,
+                size.h,
+                0,
+                format,
+                layout,
+                std::ptr::null(),
+            );
+            tex
+        };
+
+        Ok(unsafe { GlesTexture::from_raw(self, Some(internal), !has_alpha, tex, size) })
+    }
+
     fn gles_cleanup(&self) -> &GlesCleanup {
         self.egl_context().user_data().get().unwrap()
     }
@@ -1643,35 +1678,10 @@ impl Offscreen<GlesTexture> for GlesRenderer {
         format: Fourcc,
         size: Size<i32, BufferCoord>,
     ) -> Result<GlesTexture, GlesError> {
-        let has_alpha = has_alpha(format);
-        let (internal, format, layout) =
-            fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
-        if (internal != ffi::RGBA8 && internal != ffi::BGRA_EXT)
-            && !self.capabilities.contains(&Capability::_10Bit)
-        {
-            return Err(GlesError::UnsupportedPixelLayout);
-        }
-
-        let tex = unsafe {
+        unsafe {
             self.egl.make_current()?;
-            let mut tex = 0;
-            self.gl.GenTextures(1, &mut tex);
-            self.gl.BindTexture(ffi::TEXTURE_2D, tex);
-            self.gl.TexImage2D(
-                ffi::TEXTURE_2D,
-                0,
-                internal as i32,
-                size.w,
-                size.h,
-                0,
-                format,
-                layout,
-                std::ptr::null(),
-            );
-            tex
-        };
-
-        Ok(unsafe { GlesTexture::from_raw(self, Some(internal), !has_alpha, tex, size) })
+        }
+        self.create_texture_internal(format, size)
     }
 }
 
@@ -3166,6 +3176,19 @@ impl GlesFrame<'_, '_> {
         }
 
         Ok(())
+    }
+
+    /// Create a texture using the underlying renderer.
+    ///
+    /// See [`Offscreen::create_buffer()`] for details.
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
+    pub fn create_texture(
+        &mut self,
+        format: Fourcc,
+        size: Size<i32, BufferCoord>,
+    ) -> Result<GlesTexture, GlesError> {
+        self.renderer.create_texture_internal(format, size)
     }
 
     /// Projection matrix for this frame
