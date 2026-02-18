@@ -780,8 +780,13 @@ pub trait ImageCopyCaptureHandler:
     /// Return buffer constraints for capturing the cursor on the given source.
     ///
     /// Return `None` if cursor capture is not supported for this source.
-    fn cursor_capture_constraints(&mut self, source: &ImageCaptureSource) -> Option<BufferConstraints> {
+    fn cursor_capture_constraints(
+        &mut self,
+        source: &ImageCaptureSource,
+        pointer: &WlPointer,
+    ) -> Option<BufferConstraints> {
         let _ = source;
+        let _ = pointer;
         None
     }
 
@@ -1057,7 +1062,7 @@ where
 
                 let inner = Arc::new(Mutex::new(CursorSessionInner::new(
                     capture_source.clone(),
-                    pointer,
+                    pointer.clone(),
                 )));
                 let user_data = Arc::new(UserDataMap::new());
 
@@ -1075,7 +1080,7 @@ where
                     user_data,
                 };
 
-                if let Some(constraints) = state.cursor_capture_constraints(&capture_source) {
+                if let Some(constraints) = state.cursor_capture_constraints(&capture_source, &pointer) {
                     session_ref.update_constraints(constraints);
                     state
                         .image_copy_capture_state()
