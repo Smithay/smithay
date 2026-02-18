@@ -230,7 +230,6 @@ impl input::AbsolutePositionEvent<EiInput> for request::PointerMotionAbsolute {
     }
 
     fn x_transformed(&self, _width: i32) -> f64 {
-        // XXX ?
         self.dx_absolute.into()
     }
 
@@ -255,7 +254,6 @@ impl input::AbsolutePositionEvent<EiInput> for request::TouchDown {
     }
 
     fn x_transformed(&self, _width: i32) -> f64 {
-        // XXX ?
         self.x.into()
     }
 
@@ -287,7 +285,6 @@ impl input::AbsolutePositionEvent<EiInput> for request::TouchMotion {
     }
 
     fn x_transformed(&self, _width: i32) -> f64 {
-        // XXX ?
         self.x.into()
     }
 
