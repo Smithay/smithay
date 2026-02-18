@@ -103,7 +103,7 @@ use wayland_protocols::ext::image_copy_capture::v1::server::{
 };
 use wayland_server::{
     backend::GlobalId,
-    protocol::{wl_buffer::WlBuffer, wl_shm},
+    protocol::{wl_buffer::WlBuffer, wl_pointer::WlPointer, wl_shm},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
 };
 
@@ -383,10 +383,11 @@ struct CursorSessionInner {
     position: Option<crate::utils::Point<i32, BufferCoords>>,
     hotspot: crate::utils::Point<i32, BufferCoords>,
     active_frames: Vec<FrameRef>,
+    pointer: WlPointer,
 }
 
 impl CursorSessionInner {
-    fn new(source: ImageCaptureSource) -> Self {
+    fn new(source: ImageCaptureSource, pointer: WlPointer) -> Self {
         Self {
             session_obj: None,
             stopped: false,
@@ -395,6 +396,7 @@ impl CursorSessionInner {
             position: None,
             hotspot: crate::utils::Point::from((0, 0)),
             active_frames: Vec::new(),
+            pointer,
         }
     }
 }
@@ -459,6 +461,11 @@ impl CursorSessionRef {
     /// Get the capture source for this session.
     pub fn source(&self) -> ImageCaptureSource {
         self.inner.lock().unwrap().source.clone()
+    }
+
+    /// Get the pointer for the session.
+    pub fn pointer(&self) -> WlPointer {
+        self.inner.lock().unwrap().pointer.clone()
     }
 
     /// Whether the cursor is currently on this capture source.
@@ -1032,11 +1039,14 @@ where
             ext_image_copy_capture_manager_v1::Request::CreatePointerCursorSession {
                 session,
                 source,
-                pointer: _,
+                pointer,
             } => {
                 let Some(capture_source) = ImageCaptureSource::from_resource(&source) else {
                     // Invalid source - create stopped session
-                    let inner = Arc::new(Mutex::new(CursorSessionInner::new(ImageCaptureSource::new())));
+                    let inner = Arc::new(Mutex::new(CursorSessionInner::new(
+                        ImageCaptureSource::new(),
+                        pointer,
+                    )));
                     inner.lock().unwrap().stopped = true;
                     let user_data = Arc::new(UserDataMap::new());
                     let obj = data_init.init(session, CursorSessionData { inner, user_data });
@@ -1045,7 +1055,10 @@ where
                     return;
                 };
 
-                let inner = Arc::new(Mutex::new(CursorSessionInner::new(capture_source.clone())));
+                let inner = Arc::new(Mutex::new(CursorSessionInner::new(
+                    capture_source.clone(),
+                    pointer,
+                )));
                 let user_data = Arc::new(UserDataMap::new());
 
                 let obj = data_init.init(
