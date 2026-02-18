@@ -27,7 +27,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// Attempt to retrieve a [`TouchHandle`] from an existing resource
     ///
     /// May return `None` for a valid `WlTouch` that was created without
-    /// the keyboard capability.
+    /// the touch capability.
     pub fn from_resource(seat: &WlTouch) -> Option<Self> {
         seat.data::<TouchUserData<D>>()?.handle.clone()
     }

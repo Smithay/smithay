@@ -44,7 +44,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// Attempt to retrieve a [`PointerHandle`] from an existing resource
     ///
     /// May return `None` for a valid `WlPointer` that was created without
-    /// the keyboard capability.
+    /// the pointer capability.
     pub fn from_resource(seat: &WlPointer) -> Option<Self> {
         seat.data::<PointerUserData<D>>()?.handle.clone()
     }
