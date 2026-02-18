@@ -75,6 +75,17 @@ atomic_float = "1.1.0"
 sha2 = "0.10.9"
 tracy-client = { version = "0.18.4", default-features = false, optional = true }
 
+[patch.crates-io]
+wayland-egl = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2"}
+wayland-protocols = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-protocols-wlr = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-protocols-misc = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-server = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-client = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-sys = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-backend = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+wayland-scanner = { git = "https://github.com/drakulix/wayland-rs.git", branch = "forward-dispatch-v2" }
+
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
 criterion = { version = "0.5" }
