@@ -847,6 +847,7 @@ impl std::fmt::Debug for ImageCopyCaptureGlobalData {
 }
 
 /// User data for session protocol resources.
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct SessionData {
     inner: Arc<Mutex<SessionInner>>,
@@ -854,6 +855,7 @@ pub struct SessionData {
 }
 
 /// User data for cursor session protocol resources.
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct CursorSessionData {
     inner: Arc<Mutex<CursorSessionInner>>,
@@ -861,6 +863,7 @@ pub struct CursorSessionData {
 }
 
 /// User data for frame protocol resources.
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct FrameData {
     inner: Arc<Mutex<FrameInner>>,
