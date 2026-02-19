@@ -13,11 +13,7 @@
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
-//! use smithay::input::keyboard::KeyboardHandle;
-//! use smithay::backend::input::{KeyState, Keycode};
-//! use smithay::wayland::virtual_keyboard::VirtualKeyboardHandler;
 //! # use smithay::reexports::wayland_server::Client;
-//! use xkbcommon::xkb::ModMask;
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
@@ -51,22 +47,6 @@
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
-//! impl VirtualKeyboardHandler for State {
-//!    fn on_keyboard_event(
-//!     &mut self,
-//!     keycode: Keycode,
-//!     state: KeyState,
-//!     time: u32,
-//!     keyboard: KeyboardHandle<Self>,
-//!  ) { }
-//!    fn on_keyboard_modifiers(
-//!        &mut self,
-//!        depressed_mods: ModMask,
-//!        latched_mods: ModMask,
-//!        locked_mods: ModMask,
-//!        keyboard: KeyboardHandle<Self>,
-//!    ) { }
-//! }
 //! # delegate_compositor!(State);
 //! ```
 //!
@@ -77,11 +57,9 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
 };
 use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
-use self::virtual_keyboard_handle::VirtualKeyboardHandle;
-use crate::backend::input::{KeyState, Keycode};
-use crate::input::keyboard::KeyboardHandle;
 use crate::input::{Seat, SeatHandler};
-use xkbcommon::xkb::ModMask;
+
+use self::virtual_keyboard_handle::VirtualKeyboardHandle;
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -111,27 +89,6 @@ where
     };
 
     display.create_global::<D, ZwpVirtualKeyboardManagerV1, _>(MANAGER_VERSION, data)
-}
-
-/// Handler for the virtual keyboard protocol
-pub trait VirtualKeyboardHandler: SeatHandler {
-    /// Handle KeyboardEvent as usual
-    fn on_keyboard_event(
-        &mut self,
-        keycode: Keycode,
-        state: KeyState,
-        time: u32,
-        keyboard: KeyboardHandle<Self>,
-    );
-
-    /// Handle modifiers event as usual
-    fn on_keyboard_modifiers(
-        &mut self,
-        depressed_mods: ModMask,
-        latched_mods: ModMask,
-        locked_mods: ModMask,
-        keyboard: KeyboardHandle<Self>,
-    );
 }
 
 impl VirtualKeyboardManagerState {
