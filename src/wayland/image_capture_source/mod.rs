@@ -102,7 +102,7 @@
 //!         &mut self.toplevel_capture_source
 //!     }
 //!
-//!     fn toplevel_source_created(&mut self, source: ImageCaptureSource, toplevel: &ForeignToplevelHandle) {
+//!     fn toplevel_source_created(&mut self, source: ImageCaptureSource, toplevel: ForeignToplevelHandle) {
 //!         source.user_data().insert_if_missing(|| toplevel.downgrade());
 //!     }
 //! }
@@ -551,7 +551,7 @@ pub trait ToplevelCaptureSourceHandler:
     ///
     /// Use [`ImageCaptureSource::user_data()`] to store your representation
     /// of this toplevel.
-    fn toplevel_source_created(&mut self, source: ImageCaptureSource, toplevel: &ForeignToplevelHandle) {
+    fn toplevel_source_created(&mut self, source: ImageCaptureSource, toplevel: ForeignToplevelHandle) {
         let _ = (source, toplevel);
     }
 }
@@ -615,7 +615,7 @@ where
                 );
 
                 capture_source.add_instance(&source_resource);
-                state.toplevel_source_created(capture_source, &handle);
+                state.toplevel_source_created(capture_source, handle);
             }
             ext_foreign_toplevel_image_capture_source_manager_v1::Request::Destroy => {}
             _ => unreachable!(),
