@@ -130,16 +130,11 @@ pub struct ForeignToplevelHandle {
 }
 
 impl ForeignToplevelHandle {
-    fn new(
-        identifier: String,
-        title: String,
-        app_id: String,
-        instances: Vec<Weak<ExtForeignToplevelHandleV1>>,
-    ) -> Self {
+    fn new(title: String, app_id: String, instances: Vec<Weak<ExtForeignToplevelHandleV1>>) -> Self {
         Self {
             inner: Arc::new((
                 Mutex::new(ForeignToplevelHandleInner {
-                    identifier,
+                    identifier: Alphanumeric.sample_string(&mut rand::rng(), 32),
                     title,
                     app_id,
                     instances,
@@ -258,6 +253,12 @@ impl ForeignToplevelHandle {
         self.inner.0.lock().unwrap().closed
     }
 
+    /// Check if two toplevel handles belong to the same toplevel.
+    pub fn matches(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+            || self.inner.0.lock().unwrap().identifier == other.inner.0.lock().unwrap().identifier
+    }
+
     fn init_new_instance(&self, toplevel: ExtForeignToplevelHandleV1) {
         debug_assert!(
             !self.is_closed(),
@@ -328,7 +329,6 @@ impl ForeignToplevelListState {
         app_id: impl Into<String>,
     ) -> ForeignToplevelHandle {
         let handle = ForeignToplevelHandle::new(
-            Alphanumeric.sample_string(&mut rand::rng(), 32),
             title.into(),
             app_id.into(),
             Vec::with_capacity(self.list_instances.len()),
