@@ -255,6 +255,7 @@ impl InputBackend for X11Input {
     type TabletToolProximityEvent = UnusedEvent;
     type TabletToolTipEvent = UnusedEvent;
     type TabletToolButtonEvent = UnusedEvent;
+    type TabletPadButtonEvent = UnusedEvent;
 
     type SwitchToggleEvent = UnusedEvent;
 
