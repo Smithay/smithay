@@ -662,7 +662,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     fn test_state(
         &mut self,
         surface: &DrmSurface,
-        supports_fencing: bool,
+        capabilities: Capabilities,
         plane: plane::Handle,
         state: PlaneState<B, F>,
         allow_modeset: bool,
@@ -674,7 +674,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         let backup = current_config.clone();
         *current_config = state;
 
-        let res = surface.test_state(self.build_planes(surface, supports_fencing, true), allow_modeset);
+        let res = surface.test_state(self.build_planes(surface, capabilities, true), allow_modeset);
 
         if res.is_err() {
             // test failed, restore previous state
@@ -693,7 +693,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         &mut self,
         previous_frame: &Self,
         surface: &DrmSurface,
-        supports_fencing: bool,
+        capabilities: Capabilities,
         allow_modeset: bool,
         allow_partial_update: bool,
     ) -> Result<(), DrmError> {
@@ -714,7 +714,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         }
 
         let res = surface.test_state(
-            self.build_planes(surface, supports_fencing, allow_partial_update),
+            self.build_planes(surface, capabilities, allow_partial_update),
             allow_modeset,
         );
 
@@ -731,13 +731,13 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     fn commit(
         &mut self,
         surface: &DrmSurface,
-        supports_fencing: bool,
+        capabilities: Capabilities,
         allow_partial_update: bool,
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.commit(
-            self.build_planes(surface, supports_fencing, allow_partial_update),
+            self.build_planes(surface, capabilities, allow_partial_update),
             event,
         )
     }
@@ -746,13 +746,13 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     fn page_flip(
         &mut self,
         surface: &DrmSurface,
-        supports_fencing: bool,
+        capabilities: Capabilities,
         allow_partial_update: bool,
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.page_flip(
-            self.build_planes(surface, supports_fencing, allow_partial_update),
+            self.build_planes(surface, capabilities, allow_partial_update),
             event,
         )
     }
@@ -761,7 +761,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
     fn build_planes<'a>(
         &'a mut self,
         surface: &'a DrmSurface,
-        supports_fencing: bool,
+        capabilities: Capabilities,
         allow_partial_update: bool,
     ) -> impl IntoIterator<Item = super::PlaneState<'a>> {
         for (_, state) in self.planes.iter_mut().filter(|(_, state)| !state.skip) {
@@ -770,7 +770,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
                 // If the sync point has no native fence or the surface does not support
                 // fencing force a wait
                 if let Some((sync, fence)) = config.sync.as_mut() {
-                    if supports_fencing && fence.is_none() {
+                    if capabilities.contains(Capabilities::EXPLICIT_SYNC) && fence.is_none() {
                         *fence = sync.export().map(Arc::new);
                     }
                 }
@@ -1040,6 +1040,59 @@ bitflags::bitflags! {
     }
 }
 
+bitflags::bitflags! {
+    /// Possible capabilities
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct Capabilities: u32 {
+        /// Explicit sync
+        const EXPLICIT_SYNC = 1;
+    }
+}
+
+impl Capabilities {
+    /// Get the supported capabilities of the provided surface
+    pub fn from_surface(surface: &DrmSurface) -> Result<Self, DrmError> {
+        let mut capabilities = Capabilities::empty();
+
+        let driver = surface.get_driver().map_err(|err| {
+            DrmError::Access(AccessError {
+                errmsg: "Failed to query drm driver",
+                dev: surface.dev_path(),
+                source: err,
+            })
+        })?;
+
+        // `IN_FENCE_FD` makes commit fail on Nvidia driver
+        // https://github.com/NVIDIA/open-gpu-kernel-modules/issues/622
+        let is_nvidia = driver.name().to_string_lossy().to_lowercase().contains("nvidia")
+            || driver
+                .description()
+                .to_string_lossy()
+                .to_lowercase()
+                .contains("nvidia");
+
+        let supports_fencing = !surface.is_legacy()
+            && surface
+                .get_driver_capability(DriverCapability::SyncObj)
+                .map(|val| val != 0)
+                .map_err(|err| {
+                    DrmError::Access(AccessError {
+                        errmsg: "Failed to query driver capability",
+                        dev: surface.dev_path(),
+                        source: err,
+                    })
+                })?
+            && plane_has_property(surface, surface.plane(), "IN_FENCE_FD")?
+            && !(is_nvidia && nvidia_drm_version().unwrap_or((0, 0, 0)) < (560, 35, 3));
+
+        if supports_fencing {
+            capabilities |= Capabilities::EXPLICIT_SYNC;
+        }
+
+        Ok(capabilities)
+    }
+}
+
 /// Composite an output using a combination of planes and rendering
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
@@ -1059,7 +1112,7 @@ where
     primary_is_opaque: bool,
     primary_plane_element_id: Id,
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
-    supports_fencing: bool,
+    capabilities: Capabilities,
     reset_pending: bool,
     signaled_fence: Option<Arc<OwnedFd>>,
 
@@ -1113,9 +1166,10 @@ where
     ///                          for element buffers) for scan-out
     /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
     /// - `gbm` device used for creating buffers for the cursor plane, `None` will disable the cursor plane
+    /// - `capabilities` defines the capabilities to enable
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all)]
-    pub fn new(
+    pub fn with_capabilities(
         output_mode_source: impl Into<OutputModeSource> + Debug,
         surface: DrmSurface,
         planes: Option<Planes>,
@@ -1125,6 +1179,7 @@ where
         renderer_formats: impl IntoIterator<Item = DrmFormat>,
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
+        capabilities: Capabilities,
     ) -> FrameResult<Self, A, F> {
         let signaled_fence = match surface.create_syncobj(true) {
             Ok(signaled_syncobj) => match surface.syncobj_to_fd(signaled_syncobj, true) {
@@ -1172,43 +1227,14 @@ where
             .overlay
             .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
 
-        let driver = surface.get_driver().map_err(|err| {
-            FrameError::DrmError(DrmError::Access(AccessError {
-                errmsg: "Failed to query drm driver",
-                dev: surface.dev_path(),
-                source: err,
-            }))
-        })?;
-        // `IN_FENCE_FD` makes commit fail on Nvidia driver
-        // https://github.com/NVIDIA/open-gpu-kernel-modules/issues/622
-        let is_nvidia = driver.name().to_string_lossy().to_lowercase().contains("nvidia")
-            || driver
-                .description()
-                .to_string_lossy()
-                .to_lowercase()
-                .contains("nvidia");
-
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
         let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
-        let supports_fencing = !surface.is_legacy()
-            && surface
-                .get_driver_capability(DriverCapability::SyncObj)
-                .map(|val| val != 0)
-                .map_err(|err| {
-                    FrameError::DrmError(DrmError::Access(AccessError {
-                        errmsg: "Failed to query driver capability",
-                        dev: surface.dev_path(),
-                        source: err,
-                    }))
-                })?
-            && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?
-            && !(is_nvidia && nvidia_drm_version().unwrap_or((0, 0, 0)) < (560, 35, 3));
 
         for format in color_formats {
             debug!("Testing color format: {}", format);
             match Self::find_supported_format(
                 surface.clone(),
-                supports_fencing,
+                capabilities,
                 &planes,
                 allocator,
                 &framebuffer_exporter,
@@ -1265,7 +1291,7 @@ where
                         previous_element_states: IndexMap::new(),
                         opaque_regions: Vec::new(),
                         element_opaque_regions_workhouse: Vec::new(),
-                        supports_fencing,
+                        capabilities,
                         debug_flags: DebugFlags::empty(),
                         span,
                     };
@@ -1280,6 +1306,52 @@ where
             }
         }
         Err(error.unwrap())
+    }
+
+    /// Initialize a new [`DrmCompositor`].
+    ///
+    /// The [`OutputModeSource`] can be created from an [`Output`](crate::output::Output), which will automatically track
+    /// the output's mode changes. An [`OutputModeSource::Static`] variant should only be used when
+    /// manually updating modes using [`DrmCompositor::set_output_mode_source`].
+    ///
+    /// - `output_mode_source` is used to determine the current mode, scale and transform
+    /// - `surface` for the compositor to use
+    /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
+    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
+    /// - `allocator` used for the primary plane swapchain
+    /// - `color_formats` are tested in order until a working configuration is found
+    /// - `renderer_formats` as reported by the used renderer, used to build the intersection between
+    ///                      the possible scan-out formats of the primary plane and the renderer
+    /// - `framebuffer_exporter` is used to create drm framebuffers for the swapchain buffers (and if possible
+    ///                          for element buffers) for scan-out
+    /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
+    /// - `gbm` device used for creating buffers for the cursor plane, `None` will disable the cursor plane
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
+    pub fn new(
+        output_mode_source: impl Into<OutputModeSource> + Debug,
+        surface: DrmSurface,
+        planes: Option<Planes>,
+        allocator: A,
+        framebuffer_exporter: F,
+        color_formats: impl IntoIterator<Item = DrmFourcc>,
+        renderer_formats: impl IntoIterator<Item = DrmFormat>,
+        cursor_size: Size<u32, BufferCoords>,
+        gbm: Option<GbmDevice<G>>,
+    ) -> FrameResult<Self, A, F> {
+        let capabilities = Capabilities::from_surface(&surface)?;
+        Self::with_capabilities(
+            output_mode_source,
+            surface,
+            planes,
+            allocator,
+            framebuffer_exporter,
+            color_formats,
+            renderer_formats,
+            cursor_size,
+            gbm,
+            capabilities,
+        )
     }
 
     /// Initialize a new [`DrmCompositor`] with a pre-selected format.
@@ -1299,8 +1371,9 @@ where
     /// - `modifiers` is the set of modifiers allowed, when allocating buffers with the specified color format
     /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
     /// - `gbm` device used for creating buffers for the cursor plane, `None` will disable the cursor plane
+    /// - `capabilities` defines the capabilities to enable
     #[allow(clippy::too_many_arguments)]
-    pub fn with_format(
+    pub fn with_format_and_capabilities(
         output_mode_source: impl Into<OutputModeSource> + Debug,
         surface: DrmSurface,
         planes: Option<Planes>,
@@ -1310,6 +1383,7 @@ where
         modifiers: impl IntoIterator<Item = DrmModifier>,
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
+        capabilities: Capabilities,
     ) -> FrameResult<Self, A, F> {
         let signaled_fence = match surface.create_syncobj(true) {
             Ok(signaled_syncobj) => match surface.syncobj_to_fd(signaled_syncobj, true) {
@@ -1355,41 +1429,12 @@ where
             .overlay
             .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
 
-        let driver = surface.get_driver().map_err(|err| {
-            FrameError::DrmError(DrmError::Access(AccessError {
-                errmsg: "Failed to query drm driver",
-                dev: surface.dev_path(),
-                source: err,
-            }))
-        })?;
-        // `IN_FENCE_FD` makes commit fail on Nvidia driver
-        // https://github.com/NVIDIA/open-gpu-kernel-modules/issues/622
-        let is_nvidia = driver.name().to_string_lossy().to_lowercase().contains("nvidia")
-            || driver
-                .description()
-                .to_string_lossy()
-                .to_lowercase()
-                .contains("nvidia");
-
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
         let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
-        let supports_fencing = !surface.is_legacy()
-            && surface
-                .get_driver_capability(DriverCapability::SyncObj)
-                .map(|val| val != 0)
-                .map_err(|err| {
-                    FrameError::DrmError(DrmError::Access(AccessError {
-                        errmsg: "Failed to query driver capability",
-                        dev: surface.dev_path(),
-                        source: err,
-                    }))
-                })?
-            && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?
-            && !(is_nvidia && nvidia_drm_version().unwrap_or((0, 0, 0)) < (560, 35, 3));
 
         let (swapchain, is_opaque) = Self::test_format(
             &surface,
-            supports_fencing,
+            capabilities,
             &planes,
             allocator,
             &framebuffer_exporter,
@@ -1447,7 +1492,7 @@ where
             previous_element_states: IndexMap::new(),
             opaque_regions: Vec::new(),
             element_opaque_regions_workhouse: Vec::new(),
-            supports_fencing,
+            capabilities,
             debug_flags: DebugFlags::empty(),
             span,
         };
@@ -1455,9 +1500,53 @@ where
         Ok(drm_renderer)
     }
 
+    /// Initialize a new [`DrmCompositor`] with a pre-selected format.
+    ///
+    /// The [`OutputModeSource`] can be created from an [`Output`](crate::output::Output), which will automatically track
+    /// the output's mode changes. An [`OutputModeSource::Static`] variant should only be used when
+    /// manually updating modes using [`DrmCompositor::set_output_mode_source`].
+    ///
+    /// - `output_mode_source` is used to determine the current mode, scale and transform
+    /// - `surface` for the compositor to use
+    /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
+    ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
+    /// - `allocator` used for the primary plane swapchain
+    /// - `framebuffer_exporter` is used to create drm framebuffers for the swapchain buffers (and if possible
+    ///                          for element buffers) for scan-out
+    /// - `code` is the fixed format to initialize the framebuffer with
+    /// - `modifiers` is the set of modifiers allowed, when allocating buffers with the specified color format
+    /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
+    /// - `gbm` device used for creating buffers for the cursor plane, `None` will disable the cursor plane
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_format(
+        output_mode_source: impl Into<OutputModeSource> + Debug,
+        surface: DrmSurface,
+        planes: Option<Planes>,
+        allocator: A,
+        framebuffer_exporter: F,
+        code: DrmFourcc,
+        modifiers: impl IntoIterator<Item = DrmModifier>,
+        cursor_size: Size<u32, BufferCoords>,
+        gbm: Option<GbmDevice<G>>,
+    ) -> FrameResult<Self, A, F> {
+        let capabilities = Capabilities::from_surface(&surface)?;
+        Self::with_format_and_capabilities(
+            output_mode_source,
+            surface,
+            planes,
+            allocator,
+            framebuffer_exporter,
+            code,
+            modifiers,
+            cursor_size,
+            gbm,
+            capabilities,
+        )
+    }
+
     fn test_format(
         drm: &DrmSurface,
-        supports_fencing: bool,
+        capabilities: Capabilities,
         planes: &Planes,
         allocator: A,
         framebuffer_exporter: &F,
@@ -1571,7 +1660,7 @@ where
             }),
         };
 
-        match current_frame_state.test_state(drm, supports_fencing, drm.plane(), plane_state, true) {
+        match current_frame_state.test_state(drm, capabilities, drm.plane(), plane_state, true) {
             Ok(_) => Ok((swapchain, use_opaque)),
             Err(err) => {
                 warn!(
@@ -1586,7 +1675,7 @@ where
 
     fn find_supported_format(
         drm: Arc<DrmSurface>,
-        supports_fencing: bool,
+        capabilities: Capabilities,
         planes: &Planes,
         allocator: A,
         framebuffer_exporter: &F,
@@ -1665,7 +1754,7 @@ where
 
         let (swapchain, use_opaque) = Self::test_format(
             &drm,
-            supports_fencing,
+            capabilities,
             planes,
             allocator,
             framebuffer_exporter,
@@ -2083,7 +2172,7 @@ where
             .test_state_complete(
                 previous_state,
                 &self.surface,
-                self.supports_fencing,
+                self.capabilities,
                 false,
                 allow_partial_update,
             )
@@ -2401,7 +2490,7 @@ where
             cursor_element: cursor_plane_element,
             states: render_element_states,
             primary_plane_element_id: self.primary_plane_element_id.clone(),
-            supports_fencing: self.supports_fencing,
+            capabilities: self.capabilities,
         };
 
         // We only store the next frame if it actually contains any changes or if a commit is pending
@@ -2502,7 +2591,7 @@ where
 
         let flip = prepared_frame
             .frame
-            .commit(&self.surface, self.supports_fencing, false, false);
+            .commit(&self.surface, self.capabilities, false, false);
 
         if flip.is_ok() {
             self.queued_frame = None;
@@ -2538,11 +2627,11 @@ where
         let flip = if self.surface.commit_pending() {
             prepared_frame
                 .frame
-                .commit(&self.surface, self.supports_fencing, allow_partial_update, true)
+                .commit(&self.surface, self.capabilities, allow_partial_update, true)
         } else {
             prepared_frame
                 .frame
-                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
+                .page_flip(&self.surface, self.capabilities, allow_partial_update, true)
         };
 
         self.handle_flip(prepared_frame, Some(user_data), flip)
@@ -2772,7 +2861,7 @@ where
     ) -> Result<(), FrameErrorType<A, F>> {
         let (swapchain, is_oapque) = Self::test_format(
             &self.surface,
-            self.supports_fencing,
+            self.capabilities,
             &self.planes,
             allocator,
             &self.framebuffer_exporter,
@@ -3416,7 +3505,7 @@ where
             frame_state
                 .test_state(
                     &self.surface,
-                    self.supports_fencing,
+                    self.capabilities,
                     plane_info.handle,
                     plane_state,
                     false,
@@ -4038,13 +4127,7 @@ where
             true
         } else {
             frame_state
-                .test_state(
-                    &self.surface,
-                    self.supports_fencing,
-                    plane.handle,
-                    plane_state,
-                    false,
-                )
+                .test_state(&self.surface, self.capabilities, plane.handle, plane_state, false)
                 .is_ok()
         };
 
