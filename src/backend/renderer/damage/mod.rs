@@ -96,16 +96,17 @@
 use std::{
     collections::{HashMap, VecDeque},
     ops::Range,
+    sync::Once,
 };
 
 use indexmap::IndexMap;
 use smallvec::{smallvec, SmallVec};
-use tracing::{info_span, instrument, trace};
+use tracing::{info_span, instrument, trace, warn};
 
 use crate::{
     backend::renderer::{element::RenderElementPresentationState, Frame},
     output::{Output, OutputModeSource, OutputNoMode},
-    utils::{Buffer as BufferCoords, Physical, Rectangle, Scale, Size, Transform},
+    utils::{user_data::UserDataMap, Buffer as BufferCoords, Physical, Rectangle, Scale, Size, Transform},
 };
 
 use super::{
@@ -181,6 +182,7 @@ struct RendererState {
     transform: Option<Transform>,
     size: Option<Size<i32, Physical>>,
     elements: IndexMap<Id, ElementState>,
+    effects_cache: HashMap<Id, UserDataMap>,
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
     opaque_regions: Vec<Rectangle<i32, Physical>>,
     clear_color: Option<Color32F>,
@@ -438,7 +440,12 @@ impl OutputDamageTracker {
                     .element_render_state(element_id.clone())
                     .is_some_and(|state| state.needs_capture)
                 {
-                    element.capture_framebuffer(&mut frame, element.src(), element_geometry)?;
+                    let cache = self
+                        .last_state
+                        .effects_cache
+                        .entry(element.id().clone())
+                        .or_default();
+                    element.capture_framebuffer(&mut frame, element.src(), element_geometry, cache)?;
                 }
 
                 element.draw(
@@ -646,6 +653,15 @@ impl OutputDamageTracker {
                 } else {
                     state.visible_area += element_visible_area;
                 }
+                if element_is_framebuffer_effect {
+                    // if we have multiple instance of the same Id, we need to force a call
+                    // to `capture_framebuffer` before both `draw`-calls, as we can't rely on the cache.
+                    static WARN_ONCE: Once = Once::new();
+                    WARN_ONCE.call_once(|| {
+                        warn!("Duplicated FramebufferEffect element. Re-capturing every frame");
+                    });
+                    state.needs_capture = true;
+                }
             } else {
                 element_render_states.states.insert(
                     element_id.clone(),
@@ -729,21 +745,22 @@ impl OutputDamageTracker {
             };
             let element_geometry = element.geometry(output_scale);
             let intersection = element_geometry.intersection(output_geo);
+            let element_state = element_render_states.states.get_mut(element.id()).unwrap();
 
-            if intersection.is_some_and(|i| self.damage.iter().skip(damage_index).any(|d| d.overlaps(i))) {
-                if let Some(state) = element_render_states.states.get_mut(element.id()) {
-                    state.needs_capture = true;
-                    self.damage.push(intersection.unwrap());
-                    // also drop all opaque regions on top, so they don't block re-drawing below the blur element
-                    for region in self.opaque_regions.iter_mut().take(opaque_regions_index) {
-                        // we want to leave `self.opaque_regions_index` intact,
-                        // fixing it up would be very involved, so lets do the next best thing
-                        // and keep at least part of the opaque region, if possible.
-                        *region = Rectangle::subtract_rect(*region, intersection.unwrap())
-                            .into_iter()
-                            .next()
-                            .unwrap_or_default();
-                    }
+            if element_state.needs_capture
+                || intersection.is_some_and(|i| self.damage.iter().skip(damage_index).any(|d| d.overlaps(i)))
+            {
+                element_state.needs_capture = true;
+                self.damage.push(intersection.unwrap());
+                // also drop all opaque regions on top, so they don't block re-drawing below the blur element
+                for region in self.opaque_regions.iter_mut().take(opaque_regions_index) {
+                    // we want to leave `self.opaque_regions_index` intact,
+                    // fixing it up would be very involved, so lets do the next best thing
+                    // and keep at least part of the opaque region, if possible.
+                    *region = Rectangle::subtract_rect(*region, intersection.unwrap())
+                        .into_iter()
+                        .next()
+                        .unwrap_or_default();
                 }
             }
         }
@@ -838,6 +855,9 @@ impl OutputDamageTracker {
                     map
                 });
 
+        self.last_state
+            .effects_cache
+            .retain(|id, _| new_elements_state.contains_key(id));
         self.last_state.size = Some(output_geo.size);
         self.last_state.transform = Some(output_transform);
         self.last_state.elements = new_elements_state;
