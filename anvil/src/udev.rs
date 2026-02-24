@@ -145,24 +145,6 @@ pub struct UdevData {
     keyboards: Vec<smithay::reexports::input::Device>,
 }
 
-impl UdevData {
-    pub fn set_debug_flags(&mut self, flags: DebugFlags) {
-        if self.debug_flags != flags {
-            self.debug_flags = flags;
-
-            for (_, backend) in self.backends.iter_mut() {
-                for (_, surface) in backend.surfaces.iter_mut() {
-                    surface.drm_output.set_debug_flags(flags);
-                }
-            }
-        }
-    }
-
-    pub fn debug_flags(&self) -> DebugFlags {
-        self.debug_flags
-    }
-}
-
 impl DmabufHandler for AnvilState<UdevData> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
@@ -212,6 +194,22 @@ impl Backend for UdevData {
     fn update_led_state(&mut self, led_state: LedState) {
         for keyboard in self.keyboards.iter_mut() {
             keyboard.led_update(led_state.into());
+        }
+    }
+
+    fn debug_flags(&self) -> DebugFlags {
+        self.debug_flags
+    }
+
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        if self.debug_flags != flags {
+            self.debug_flags = flags;
+
+            for (_, backend) in self.backends.iter_mut() {
+                for (_, surface) in backend.surfaces.iter_mut() {
+                    surface.drm_output.set_debug_flags(flags);
+                }
+            }
         }
     }
 }

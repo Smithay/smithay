@@ -19,7 +19,7 @@ use smithay::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
             gles::GlesRenderer,
-            ImportDma, ImportMemWl,
+            DebugFlags, ImportDma, ImportMemWl, Renderer,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
@@ -70,7 +70,7 @@ impl DmabufHandler for AnvilState<WinitData> {
         if self
             .backend_data
             .backend
-            .renderer()
+            .renderer_mut()
             .import_dmabuf(&dmabuf, None)
             .is_ok()
         {
@@ -91,6 +91,12 @@ impl Backend for WinitData {
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
     fn update_led_state(&mut self, _led_state: LedState) {}
+    fn debug_flags(&self) -> DebugFlags {
+        self.backend.renderer().debug_flags()
+    }
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.backend.renderer_mut().set_debug_flags(flags)
+    }
 }
 
 pub fn run_winit() {
@@ -134,7 +140,7 @@ pub fn run_winit() {
             .unwrap();
     #[cfg(feature = "debug")]
     let fps_texture = backend
-        .renderer()
+        .renderer_mut()
         .import_memory(
             &fps_image.to_rgba8(),
             Fourcc::Abgr8888,
@@ -184,7 +190,7 @@ pub fn run_winit() {
     };
 
     #[cfg(feature = "egl")]
-    if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
+    if backend.renderer_mut().bind_wl_display(&display.handle()).is_ok() {
         info!("EGL hardware-acceleration enabled");
     };
 
@@ -228,6 +234,7 @@ pub fn run_winit() {
                 crate::shell::fixup_positions(&mut state.space, state.pointer.current_location());
             }
             WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
+            WinitEvent::CloseRequested => state.running.store(false, Ordering::SeqCst),
             _ => (),
         });
 

@@ -22,8 +22,8 @@ use smithay::{
         },
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            damage::OutputDamageTracker, element::AsRenderElements, gles::GlesRenderer, Bind, ImportDma,
-            ImportMemWl,
+            damage::OutputDamageTracker, element::AsRenderElements, gles::GlesRenderer, Bind, DebugFlags,
+            ImportDma, ImportMemWl, Renderer,
         },
         vulkan::{version::Version, Instance, PhysicalDevice},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
@@ -94,6 +94,12 @@ impl Backend for X11Data {
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
     fn update_led_state(&mut self, _led_state: LedState) {}
+    fn debug_flags(&self) -> DebugFlags {
+        self.renderer.debug_flags()
+    }
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.renderer.set_debug_flags(flags)
+    }
 }
 
 pub fn run_x11() {

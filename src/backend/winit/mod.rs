@@ -271,7 +271,12 @@ where
     }
 
     /// Access the underlying renderer
-    pub fn renderer(&mut self) -> &mut R {
+    pub fn renderer(&self) -> &R {
+        &self.renderer
+    }
+
+    /// Mutably access the underlying renderer
+    pub fn renderer_mut(&mut self) -> &mut R {
         &mut self.renderer
     }
 

@@ -11,8 +11,11 @@ use tracing::{info, warn};
 use smithay::{
     backend::{
         input::TabletToolDescriptor,
-        renderer::element::{
-            default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
+        renderer::{
+            element::{
+                default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
+            },
+            DebugFlags,
         },
     },
     delegate_compositor, delegate_data_control, delegate_data_device, delegate_fixes,
@@ -1216,4 +1219,6 @@ pub trait Backend {
     fn reset_buffers(&mut self, output: &Output);
     fn early_import(&mut self, surface: &WlSurface);
     fn update_led_state(&mut self, led_state: LedState);
+    fn debug_flags(&self) -> DebugFlags;
+    fn set_debug_flags(&mut self, flags: DebugFlags);
 }
