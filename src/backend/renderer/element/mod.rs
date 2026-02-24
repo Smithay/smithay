@@ -29,7 +29,7 @@ use wayland_server::{backend::ObjectId, Resource};
 
 use crate::{
     output::{Output, WeakOutput},
-    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
+    utils::{user_data::UserDataMap, Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
 };
 
 #[cfg(feature = "wayland_frontend")]
@@ -542,8 +542,9 @@ pub trait RenderElement<R: Renderer>: Element {
         frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
     ) -> Result<(), R::Error> {
-        let _ = (frame, src, dst);
+        let _ = (frame, src, dst, cache);
         unimplemented!("error: is_framebuffer_effect without capture_framebuffer implementation!");
     }
 }
@@ -640,8 +641,9 @@ where
         frame: &mut <R>::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
     ) -> Result<(), <R>::Error> {
-        (*self).capture_framebuffer(frame, src, dst)
+        (*self).capture_framebuffer(frame, src, dst, cache)
     }
 }
 
@@ -990,6 +992,7 @@ macro_rules! render_elements_internal {
             frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
+            cache: &$crate::utils::user_data::UserDataMap,
         ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
         where
         $(
@@ -1006,7 +1009,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, src, dst)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, src, dst, cache)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1054,6 +1057,7 @@ macro_rules! render_elements_internal {
             frame: &mut <$renderer as $crate::backend::renderer::RendererSuper>::Frame<'_, '_>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
+            cache: &$crate::utils::user_data::UserDataMap,
         ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
         {
             match self {
@@ -1062,7 +1066,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, src, dst)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; capture_framebuffer; x, frame, src, dst, cache)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1647,8 +1651,9 @@ where
         frame: &mut <R>::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
     ) -> Result<(), <R>::Error> {
-        self.0.capture_framebuffer(frame, src, dst)
+        self.0.capture_framebuffer(frame, src, dst, cache)
     }
 }
 

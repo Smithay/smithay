@@ -6,7 +6,7 @@ use crate::{
         utils::{DamageSet, OpaqueRegions},
         Renderer,
     },
-    utils::{Buffer, Physical, Point, Rectangle, Scale},
+    utils::{user_data::UserDataMap, Buffer, Physical, Point, Rectangle, Scale},
 };
 
 /// A element that allows to re-scale another element
@@ -41,14 +41,11 @@ impl<E: Element> Element for RescaleRenderElement<E> {
         self.element.current_commit()
     }
 
-    fn src(&self) -> crate::utils::Rectangle<f64, crate::utils::Buffer> {
+    fn src(&self) -> Rectangle<f64, Buffer> {
         self.element.src()
     }
 
-    fn geometry(
-        &self,
-        scale: crate::utils::Scale<f64>,
-    ) -> crate::utils::Rectangle<i32, crate::utils::Physical> {
+    fn geometry(&self, scale: crate::utils::Scale<f64>) -> Rectangle<i32, Physical> {
         let mut element_geometry = self.element.geometry(scale);
         // First we make the element relative to the origin
         element_geometry.loc -= self.origin;
@@ -100,10 +97,10 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
     fn draw(
         &self,
         frame: &mut R::Frame<'_, '_>,
-        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
-        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
-        damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
         self.element.draw(frame, src, dst, damage, opaque_regions)
     }
@@ -116,10 +113,11 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
     fn capture_framebuffer(
         &self,
         frame: &mut <R>::Frame<'_, '_>,
-        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
-        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
     ) -> Result<(), <R>::Error> {
-        self.element.capture_framebuffer(frame, src, dst)
+        self.element.capture_framebuffer(frame, src, dst, cache)
     }
 }
 
@@ -220,11 +218,11 @@ impl<E: Element> Element for CropRenderElement<E> {
         self.element.current_commit()
     }
 
-    fn src(&self) -> crate::utils::Rectangle<f64, crate::utils::Buffer> {
+    fn src(&self) -> Rectangle<f64, Buffer> {
         self.src
     }
 
-    fn geometry(&self, scale: Scale<f64>) -> crate::utils::Rectangle<i32, Physical> {
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         let element_geometry = self.element.geometry(scale);
         if let Some(intersection) = element_geometry.intersection(self.crop_rect) {
             // FIXME: intersection sometimes return a 0 size element
@@ -297,10 +295,10 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
     fn draw(
         &self,
         frame: &mut R::Frame<'_, '_>,
-        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
-        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
-        damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
         self.element.draw(frame, src, dst, damage, opaque_regions)
     }
@@ -315,8 +313,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
         frame: &mut <R>::Frame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
     ) -> Result<(), <R>::Error> {
-        self.element.capture_framebuffer(frame, src, dst)
+        self.element.capture_framebuffer(frame, src, dst, cache)
     }
 }
 
@@ -412,10 +411,10 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
     fn draw(
         &self,
         frame: &mut R::Frame<'_, '_>,
-        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
-        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
-        damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
         self.element.draw(frame, src, dst, damage, opaque_regions)
     }
@@ -430,8 +429,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
         frame: &mut <R>::Frame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
     ) -> Result<(), <R>::Error> {
-        self.element.capture_framebuffer(frame, src, dst)
+        self.element.capture_framebuffer(frame, src, dst, cache)
     }
 }
 
