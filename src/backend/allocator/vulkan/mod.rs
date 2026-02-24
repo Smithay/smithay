@@ -750,9 +750,13 @@ impl VulkanAllocator {
         // TODO: Memory type index
         let mut export_memory_allocate_info = vk::ExportMemoryAllocateInfo::default()
             .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
+        // VUID-vkBindImageMemory-image-01445
+        let mut memory_dedicated_allocate_info = vk::MemoryDedicatedAllocateInfo::default()
+            .image(guard.image);
         let alloc_create_info = vk::MemoryAllocateInfo::default()
             .allocation_size(memory_reqs.size)
-            .push_next(&mut export_memory_allocate_info);
+            .push_next(&mut export_memory_allocate_info)
+            .push_next(&mut memory_dedicated_allocate_info);
 
         unsafe {
             // Allocate memory for the image.
