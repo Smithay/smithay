@@ -39,21 +39,43 @@
 // but will be once proper transaction & blockers support is
 // added to smithay
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt,
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
+use calloop::ping::Ping;
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource, Weak};
 
 use crate::utils::Serial;
 
-use super::{tree::PrivateSurfaceData, CompositorHandler};
+use super::{add_blocker, tree::PrivateSurfaceData, CompositorHandler};
+
+/// Kind for a [`Blocker`]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum BlockerKind {
+    /// A immediate blocker which needs to be cleared before all delayed blockers.
+    Immediate,
+    /// Defines a delayed blocker which will be evaluated after
+    /// all immediate blockers are cleared.
+    Delayed,
+}
 
 /// Types potentially blocking state changes
 pub trait Blocker {
     /// Retrieve the current state of the blocker
     fn state(&self) -> BlockerState;
+
+    /// Retrieve the kind of the blocker
+    fn kind(&self) -> BlockerKind {
+        BlockerKind::Immediate
+    }
+
+    /// Notifies the blocker that all immediate blockers have been cleared
+    /// for a particular surface
+    fn notify(&self, surface: &WlSurface) {
+        let _ = surface;
+    }
 }
 
 /// States of a [`Blocker`]
@@ -104,6 +126,114 @@ impl Blocker for Barrier {
             BlockerState::Released
         } else {
             BlockerState::Pending
+        }
+    }
+}
+
+/// A barrier waiting for multiple surfaces to be notified
+#[derive(Debug, Clone)]
+pub struct SurfaceBarrier {
+    barrier: Barrier,
+    ping: Ping,
+    ready: Arc<AtomicBool>,
+    surfaces: Arc<Mutex<HashMap<Weak<WlSurface>, bool>>>,
+}
+
+impl SurfaceBarrier {
+    /// Initialize an empty surface barrier
+    ///
+    /// [`Ping`] will be used to notify once all [`BlockerKind::Immediate`] blockers are cleared for tracked surfaces.
+    /// On receiving the ping [`SurfaceBarrier::release`] has to be called to clear the surface barrier blockers and
+    /// let the tracked surfaces make progress.
+    pub fn new(ping: Ping) -> Self {
+        Self::with_surfaces(ping, [])
+    }
+
+    /// Initializes a new [`SurfaceBarrier`] from a list of [`WlSurface`]
+    ///
+    /// See [`SurfaceBarrier::new`] for more information.
+    pub fn with_surfaces<'a>(ping: Ping, surfaces: impl IntoIterator<Item = &'a WlSurface>) -> Self {
+        let barrier = Barrier::new(false);
+        let ready = Arc::new(AtomicBool::new(false));
+        let barrier = Self {
+            barrier,
+            ping,
+            ready,
+            surfaces: Arc::new(Mutex::new(HashMap::new())),
+        };
+        barrier.register_surfaces(surfaces);
+        barrier
+    }
+
+    /// Register surfaces to be tracked by this barrier.
+    ///
+    /// This will automatically insert a blocker that will resolve on [`SurfaceBarrier::release`].
+    pub fn register_surfaces<'a>(&self, surfaces: impl IntoIterator<Item = &'a WlSurface>) {
+        let mut lock = self.surfaces.lock().unwrap();
+        for surface in surfaces {
+            if let std::collections::hash_map::Entry::Vacant(vacant_entry) = lock.entry(surface.downgrade()) {
+                vacant_entry.insert(false);
+                add_blocker(
+                    surface,
+                    SurfaceBarrierBlocker {
+                        barrier: self.barrier.clone(),
+                        ping: self.ping.clone(),
+                        ready: self.ready.clone(),
+                        surfaces: self.surfaces.clone(),
+                    },
+                );
+            }
+        }
+        self.ready.store(false, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Release this barrier and clear the blocker on all tracked surfaces
+    pub fn release<D: CompositorHandler + 'static>(&self, dh: &DisplayHandle, state: &mut D) {
+        self.barrier.signal();
+        #[allow(clippy::mutable_key_type)]
+        let surfaces = { std::mem::take(&mut *self.surfaces.lock().unwrap()) };
+        for (surface, _) in surfaces {
+            let Ok(surface) = surface.upgrade() else {
+                continue;
+            };
+            let Some(client) = surface.client() else {
+                continue;
+            };
+            state.client_compositor_state(&client).blocker_cleared(state, dh);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SurfaceBarrierBlocker {
+    barrier: Barrier,
+    ping: Ping,
+    ready: Arc<AtomicBool>,
+    surfaces: Arc<Mutex<HashMap<Weak<WlSurface>, bool>>>,
+}
+
+impl Blocker for SurfaceBarrierBlocker {
+    fn state(&self) -> BlockerState {
+        self.barrier.state()
+    }
+
+    fn kind(&self) -> BlockerKind {
+        BlockerKind::Delayed
+    }
+
+    fn notify(&self, surface: &WlSurface) {
+        let mut surfaces = self.surfaces.lock().unwrap();
+        surfaces
+            .entry(surface.downgrade())
+            .and_modify(|state| *state = true);
+        if surfaces
+            .iter()
+            .all(|(surface, state)| *state || !surface.is_alive())
+        {
+            let signaled = self.ready.swap(true, std::sync::atomic::Ordering::Acquire);
+            if !signaled {
+                self.ping.ping();
+            }
         }
     }
 }
@@ -241,7 +371,7 @@ impl Transaction {
     /// - if at least one blocker is cancelled, the transaction is cancelled
     /// - otherwise, if at least one blocker is pending, the transaction is pending
     /// - otherwise, all blockers are released, and the transaction is also released
-    pub(crate) fn state(&self) -> BlockerState {
+    pub(crate) fn state(&self, kind: Option<BlockerKind>) -> BlockerState {
         // In case all of our surfaces have been destroyed we can cancel this transaction
         // as we won't apply its state anyway
         if !self.surfaces.iter().any(|surface| surface.0.is_alive()) {
@@ -251,11 +381,24 @@ impl Transaction {
         use BlockerState::*;
         self.blockers
             .iter()
+            .filter(|blocker| kind.map(|kind| kind == blocker.kind()).unwrap_or(true))
             .fold(Released, |acc, blocker| match (acc, blocker.state()) {
                 (Cancelled, _) | (_, Cancelled) => Cancelled,
                 (Pending, _) | (_, Pending) => Pending,
                 (Released, Released) => Released,
             })
+    }
+
+    pub(crate) fn notify_blockers(&self) {
+        for (s, _) in &self.surfaces {
+            let Ok(surface) = s.upgrade() else {
+                continue;
+            };
+
+            for blocker in self.blockers.iter() {
+                blocker.notify(&surface);
+            }
+        }
     }
 
     pub(crate) fn apply<C: CompositorHandler + 'static>(self, dh: &DisplayHandle, state: &mut C) {
@@ -304,7 +447,7 @@ impl TransactionQueue {
         while i < self.transactions.len() {
             let mut skip = false;
             // does the transaction have any active blocker?
-            match self.transactions[i].state() {
+            match self.transactions[i].state(Some(BlockerKind::Immediate)) {
                 BlockerState::Cancelled => {
                     // this transaction is cancelled, remove it without further processing
                     self.transactions.remove(i);
@@ -342,7 +485,30 @@ impl TransactionQueue {
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                ready_transactions.push(self.transactions.remove(i));
+                let transaction = &mut self.transactions[i];
+
+                transaction.notify_blockers();
+
+                match transaction.state(None) {
+                    BlockerState::Pending => {
+                        // this transaction is not yet ready and should be skipped, add its surfaces to our
+                        // seen list
+                        for (s, _) in &transaction.surfaces {
+                            // TODO: is this alive check still needed?
+                            if !s.is_alive() {
+                                continue;
+                            }
+                            self.seen_surfaces.insert(s.id().protocol_id());
+                        }
+                        i += 1;
+                    }
+                    BlockerState::Released => ready_transactions.push(self.transactions.remove(i)),
+                    BlockerState::Cancelled =>
+                    // this transaction is cancelled, remove it without further processing
+                    {
+                        self.transactions.remove(i);
+                    }
+                }
             }
         }
 
