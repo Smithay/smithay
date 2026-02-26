@@ -231,6 +231,17 @@ impl XdgToplevelIconManager {
         self.data.lock().unwrap().sizes.insert(size);
     }
 
+    /// Replaces previously-set icon sizes with those in `sizes`
+    ///
+    /// The new icon sizes will only be sent to newly-bound globals, not to existing binds.
+    ///
+    /// - `sizes` an iterator over `i32` icon size values
+    pub fn replace_icon_sizes(&mut self, sizes: impl IntoIterator<Item = i32>) {
+        let mut guard = self.data.lock().unwrap();
+        guard.sizes.clear();
+        guard.sizes.extend(sizes);
+    }
+
     /// Returns the [XdgToplevelIconManagerV1] global id.
     pub fn global(&self) -> GlobalId {
         self.global.clone()
