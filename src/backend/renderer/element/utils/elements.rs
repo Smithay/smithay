@@ -90,6 +90,10 @@ impl<E: Element> Element for RescaleRenderElement<E> {
     fn kind(&self) -> Kind {
         self.element.kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.element.is_framebuffer_effect()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement<E> {
@@ -107,6 +111,15 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
     #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
+        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
+    ) -> Result<(), <R>::Error> {
+        self.element.capture_framebuffer(frame, src, dst)
     }
 }
 
@@ -274,6 +287,10 @@ impl<E: Element> Element for CropRenderElement<E> {
     fn kind(&self) -> Kind {
         self.element.kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.element.is_framebuffer_effect()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
@@ -291,6 +308,15 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
     #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+    ) -> Result<(), <R>::Error> {
+        self.element.capture_framebuffer(frame, src, dst)
     }
 }
 
@@ -376,6 +402,10 @@ impl<E: Element> Element for RelocateRenderElement<E> {
     fn kind(&self) -> Kind {
         self.element.kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.element.is_framebuffer_effect()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElement<E> {
@@ -393,6 +423,15 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
     #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+    ) -> Result<(), <R>::Error> {
+        self.element.capture_framebuffer(frame, src, dst)
     }
 }
 

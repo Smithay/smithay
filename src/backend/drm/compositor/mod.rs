@@ -193,6 +193,7 @@ impl RenderElementState {
         RenderElementState {
             visible_area,
             presentation_state: RenderElementPresentationState::ZeroCopy,
+            needs_capture: false,
         }
     }
 
@@ -200,6 +201,7 @@ impl RenderElementState {
         RenderElementState {
             visible_area: 0,
             presentation_state: RenderElementPresentationState::Rendering { reason: Some(reason) },
+            needs_capture: false,
         }
     }
 }
@@ -2829,6 +2831,9 @@ where
             );
             return Err(None);
         };
+        if element.is_framebuffer_effect() {
+            return Err(None);
+        }
 
         let mut rendering_reason: Option<RenderingReason> = None;
 

@@ -179,6 +179,12 @@ struct LockSurfaceConfigure {
 }
 ```
 
+Added `Element::is_framebuffer_effect` and `RenderElement::capture_framebuffer` to better support render elements,
+that take the current framebuffers contents and modify them, e.g. blurring the backgrounds of windows.
+See the documentation for these functions for how to make use of them, but note, that they provide
+default implementations, which result in skipping the new functionality. As such any custom `RenderElements` wrappers
+(not using `crate::render_elements!`) need to be updated.
+
 ## 0.7.0
 
 ### Breaking changes
