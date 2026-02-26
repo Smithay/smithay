@@ -107,7 +107,7 @@ impl RenderElement<GlesRenderer> for PixelShaderElement {
     #[profiling::function]
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_, '_>,
+        frame: &mut GlesFrame<'_, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -204,7 +204,7 @@ impl RenderElement<GlesRenderer> for TextureShaderElement {
     #[profiling::function]
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_, '_>,
+        frame: &mut GlesFrame<'_, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
