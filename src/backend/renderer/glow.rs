@@ -45,8 +45,8 @@ pub struct GlowRenderer {
 /// [`Frame`] implementation of a [`GlowRenderer`].
 ///
 /// Leaking the frame will cause the same problems as leaking a [`GlesFrame`].
-pub struct GlowFrame<'frame, 'buffer> {
-    frame: Option<GlesFrame<'frame, 'buffer>>,
+pub struct GlowFrame<'frame, 'buffer, 'oldbuffer> {
+    frame: Option<GlesFrame<'frame, 'buffer, 'oldbuffer>>,
     glow: Arc<Context>,
 }
 
@@ -136,7 +136,7 @@ impl GlowRenderer {
     }
 }
 
-impl GlowFrame<'_, '_> {
+impl GlowFrame<'_, '_, '_> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -185,16 +185,20 @@ impl BorrowMut<GlesRenderer> for GlowRenderer {
     }
 }
 
-impl<'frame, 'buffer> Borrow<GlesFrame<'frame, 'buffer>> for GlowFrame<'frame, 'buffer> {
+impl<'frame, 'buffer, 'oldbuffer> Borrow<GlesFrame<'frame, 'buffer, 'oldbuffer>>
+    for GlowFrame<'frame, 'buffer, 'oldbuffer>
+{
     #[inline]
-    fn borrow(&self) -> &GlesFrame<'frame, 'buffer> {
+    fn borrow(&self) -> &GlesFrame<'frame, 'buffer, 'oldbuffer> {
         self.frame.as_ref().unwrap()
     }
 }
 
-impl<'frame, 'buffer> BorrowMut<GlesFrame<'frame, 'buffer>> for GlowFrame<'frame, 'buffer> {
+impl<'frame, 'buffer, 'oldbuffer> BorrowMut<GlesFrame<'frame, 'buffer, 'oldbuffer>>
+    for GlowFrame<'frame, 'buffer, 'oldbuffer>
+{
     #[inline]
-    fn borrow_mut(&mut self) -> &mut GlesFrame<'frame, 'buffer> {
+    fn borrow_mut(&mut self) -> &mut GlesFrame<'frame, 'buffer, 'oldbuffer> {
         self.frame.as_mut().unwrap()
     }
 }
@@ -204,7 +208,7 @@ impl RendererSuper for GlowRenderer {
     type TextureId = GlesTexture;
     type Framebuffer<'buffer> = GlesTarget<'buffer>;
     type Frame<'frame, 'buffer>
-        = GlowFrame<'frame, 'buffer>
+        = GlowFrame<'frame, 'buffer, 'buffer>
     where
         'buffer: 'frame,
         Self: 'frame;
@@ -235,7 +239,7 @@ impl Renderer for GlowRenderer {
         target: &'frame mut GlesTarget<'buffer>,
         output_size: Size<i32, Physical>,
         transform: Transform,
-    ) -> Result<GlowFrame<'frame, 'buffer>, Self::Error>
+    ) -> Result<GlowFrame<'frame, 'buffer, 'buffer>, Self::Error>
     where
         'buffer: 'frame,
     {
@@ -258,12 +262,12 @@ impl Renderer for GlowRenderer {
     }
 }
 
-impl Frame for GlowFrame<'_, '_> {
+impl Frame for GlowFrame<'_, '_, '_> {
     type Error = GlesError;
     type TextureId = GlesTexture;
 
     fn context_id(&self) -> ContextId<GlesTexture> {
-        self.frame.as_ref().unwrap().context_id()
+        Frame::context_id(self.frame.as_ref().unwrap())
     }
 
     #[profiling::function]
@@ -334,7 +338,7 @@ impl Frame for GlowFrame<'_, '_> {
 
     #[profiling::function]
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
-        self.frame.as_mut().unwrap().wait(sync)
+        Frame::wait(self.frame.as_mut().unwrap(), sync)
     }
 
     #[profiling::function]
@@ -343,7 +347,7 @@ impl Frame for GlowFrame<'_, '_> {
     }
 }
 
-impl GlowFrame<'_, '_> {
+impl GlowFrame<'_, '_, '_> {
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<sync::SyncPoint, GlesError> {
         if let Some(frame) = self.frame.take() {
@@ -354,7 +358,7 @@ impl GlowFrame<'_, '_> {
     }
 }
 
-impl Drop for GlowFrame<'_, '_> {
+impl Drop for GlowFrame<'_, '_, '_> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
             warn!("Ignored error finishing GlowFrame on drop: {}", err);
@@ -517,7 +521,7 @@ where
     }
 }
 
-impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlowFrame<'_, 'buffer> {
+impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlowFrame<'_, 'buffer, '_> {
     fn blit_to(
         &mut self,
         to: &mut GlesTarget<'buffer>,
@@ -557,7 +561,7 @@ impl RenderElement<GlowRenderer> for PixelShaderElement {
     #[profiling::function]
     fn draw(
         &self,
-        frame: &mut GlowFrame<'_, '_>,
+        frame: &mut <GlowRenderer as RendererSuper>::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -575,7 +579,7 @@ impl RenderElement<GlowRenderer> for TextureShaderElement {
     #[profiling::function]
     fn draw(
         &self,
-        frame: &mut GlowFrame<'_, '_>,
+        frame: &mut <GlowRenderer as RendererSuper>::Frame<'_, '_>,
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

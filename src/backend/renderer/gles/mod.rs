@@ -24,6 +24,7 @@ mod error;
 pub mod format;
 pub mod profiler;
 mod shaders;
+mod subframe;
 mod texture;
 mod uniform;
 mod version;
@@ -408,6 +409,68 @@ pub struct GlesRenderer {
     profiler: profiler::GpuProfiler,
 }
 
+#[derive(Debug)]
+enum GlesParent<'render, 'buffer> {
+    Renderer(*mut GlesRenderer),
+    Frame {
+        renderer: *mut GlesRenderer,
+        target: *mut GlesTarget<'buffer>,
+        old_size: Size<i32, Physical>,
+        old_transform: Transform,
+    },
+    _Lifetime(PhantomData<&'render ()>),
+}
+
+impl GlesParent<'_, '_> {
+    fn renderer<'a>(&'a self) -> &'a GlesRenderer {
+        match self {
+            Self::Renderer(renderer) | Self::Frame { renderer, .. } => unsafe { &**renderer },
+            _ => unreachable!(),
+        }
+    }
+    fn renderer_mut<'a>(&'a mut self) -> &'a mut GlesRenderer {
+        match self {
+            Self::Renderer(renderer) | Self::Frame { renderer, .. } => unsafe { &mut **renderer },
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Drop for GlesParent<'_, '_> {
+    fn drop(&mut self) {
+        if let GlesParent::Frame {
+            renderer,
+            target,
+            old_size,
+            old_transform,
+        } = self
+        {
+            let renderer = unsafe { &**renderer };
+            if let Err(err) = unsafe { &**target }.0.make_current(&renderer.gl, &renderer.egl) {
+                warn!(?err, "Failed to restore previous render target");
+                return;
+            }
+
+            let output_size = old_size;
+            if let Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 =
+                old_transform
+            {
+                mem::swap(&mut output_size.w, &mut output_size.h);
+            }
+
+            unsafe {
+                renderer.gl.Viewport(0, 0, output_size.w, output_size.h);
+
+                renderer.gl.Scissor(0, 0, output_size.w, output_size.h);
+                renderer.gl.Enable(ffi::SCISSOR_TEST);
+
+                renderer.gl.Enable(ffi::BLEND);
+                renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+            }
+        }
+    }
+}
+
 /// Handle to the currently rendered frame during [`GlesRenderer::render`](Renderer::render).
 ///
 /// Leaking this frame will cause a variety of problems:
@@ -415,8 +478,8 @@ pub struct GlesRenderer {
 /// - Depending on the bound target this can deadlock, if the same target is used later in any way.
 /// - Additionally parts of the GL state might not be reset correctly, causing unexpected results for later render commands.
 /// - The internal GL context and framebuffer will remain valid, no re-creation will be necessary.
-pub struct GlesFrame<'frame, 'buffer> {
-    renderer: &'frame mut GlesRenderer,
+pub struct GlesFrame<'frame, 'buffer, 'parentbuffer> {
+    parent: GlesParent<'frame, 'parentbuffer>,
     target: &'frame mut GlesTarget<'buffer>,
     current_projection: Matrix3<f32>,
     transform: Transform,
@@ -429,10 +492,10 @@ pub struct GlesFrame<'frame, 'buffer> {
     gpu_span: Option<profiler::GpuSpan>,
 }
 
-impl fmt::Debug for GlesFrame<'_, '_> {
+impl fmt::Debug for GlesFrame<'_, '_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlesFrame")
-            .field("renderer", &self.renderer)
+            .field("parent", &self.parent)
             .field("target", &self.target)
             .field("current_projection", &self.current_projection)
             .field("transform", &self.transform)
@@ -1715,7 +1778,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
     }
 }
 
-impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
+impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer, '_> {
     fn blit_to(
         &mut self,
         to: &mut GlesTarget<'buffer>,
@@ -1723,10 +1786,9 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
     ) -> Result<(), Self::Error> {
-        let res = self.renderer.blit(self.target, to, src, dst, filter);
-        self.target
-            .0
-            .make_current(&self.renderer.gl, &self.renderer.egl)?;
+        let renderer = self.parent.renderer_mut();
+        let res = renderer.blit(self.target, to, src, dst, filter);
+        self.target.0.make_current(&renderer.gl, &renderer.egl)?;
         res.map(|_| ())
     }
 
@@ -1737,10 +1799,9 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
     ) -> Result<(), Self::Error> {
-        let res = self.renderer.blit(from, self.target, src, dst, filter);
-        self.target
-            .0
-            .make_current(&self.renderer.gl, &self.renderer.egl)?;
+        let renderer = self.parent.renderer_mut();
+        let res = renderer.blit(from, self.target, src, dst, filter);
+        self.target.0.make_current(&renderer.gl, &renderer.egl)?;
         res.map(|_| ())
     }
 }
@@ -2109,7 +2170,7 @@ impl GlesRenderer {
     }
 }
 
-impl GlesFrame<'_, '_> {
+impl GlesFrame<'_, '_, '_> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -2123,7 +2184,7 @@ impl GlesFrame<'_, '_> {
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
-        Ok(func(&self.renderer.gl))
+        Ok(func(&self.parent.renderer().gl))
     }
 
     /// Run custom code in the GL context with GPU profiling.
@@ -2142,9 +2203,11 @@ impl GlesFrame<'_, '_> {
     where
         F: FnOnce(&mut Self) -> R,
     {
-        let span = self.renderer.profiler.enter(location, &self.renderer.gl);
+        let renderer = self.parent.renderer();
+        let span = renderer.profiler.enter(location, &renderer.gl);
         let result = func(self);
-        self.renderer.profiler.exit(&self.renderer.gl, span);
+        let renderer = self.parent.renderer();
+        renderer.profiler.exit(&renderer.gl, span);
         result
     }
 }
@@ -2154,7 +2217,7 @@ impl RendererSuper for GlesRenderer {
     type TextureId = GlesTexture;
     type Framebuffer<'buffer> = GlesTarget<'buffer>;
     type Frame<'frame, 'buffer>
-        = GlesFrame<'frame, 'buffer>
+        = GlesFrame<'frame, 'buffer, 'buffer>
     where
         'buffer: 'frame;
 }
@@ -2191,7 +2254,7 @@ impl Renderer for GlesRenderer {
         target: &'frame mut GlesTarget<'buffer>,
         mut output_size: Size<i32, Physical>,
         transform: Transform,
-    ) -> Result<GlesFrame<'frame, 'buffer>, GlesError>
+    ) -> Result<GlesFrame<'frame, 'buffer, 'buffer>, GlesError>
     where
         'buffer: 'frame,
     {
@@ -2241,7 +2304,7 @@ impl Renderer for GlesRenderer {
         let span = span!(parent: &self.span, Level::DEBUG, "renderer_gles2_frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
 
         Ok(GlesFrame {
-            renderer: self,
+            parent: GlesParent::Renderer(self),
             target,
             // output transformation passed in by the user
             current_projection,
@@ -2356,12 +2419,12 @@ static OUTPUT_VERTS: [ffi::types::GLfloat; 8] = [
     1.0, -1.0, // bottom left
 ];
 
-impl Frame for GlesFrame<'_, '_> {
+impl Frame for GlesFrame<'_, '_, '_> {
     type Error = GlesError;
     type TextureId = GlesTexture;
 
     fn context_id(&self) -> ContextId<GlesTexture> {
-        self.renderer.context_id()
+        self.parent.renderer().context_id()
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
@@ -2371,21 +2434,20 @@ impl Frame for GlesFrame<'_, '_> {
             return Ok(());
         }
 
-        let scope = self
-            .renderer
-            .profiler
-            .enter(gpu_span_location!("clear"), &self.renderer.gl);
+        let renderer = self.parent.renderer();
+        let scope = renderer.profiler.enter(gpu_span_location!("clear"), &renderer.gl);
         unsafe {
-            self.renderer.gl.Disable(ffi::BLEND);
+            renderer.gl.Disable(ffi::BLEND);
         }
 
         let res = self.draw_solid(Rectangle::from_size(self.size), at, color);
 
+        let renderer = self.parent.renderer();
         unsafe {
-            self.renderer.gl.Enable(ffi::BLEND);
-            self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+            renderer.gl.Enable(ffi::BLEND);
+            renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
-        self.renderer.profiler.exit(&self.renderer.gl, scope);
+        renderer.profiler.exit(&renderer.gl, scope);
 
         res
     }
@@ -2404,25 +2466,26 @@ impl Frame for GlesFrame<'_, '_> {
 
         let is_opaque = color.is_opaque();
 
-        let scope = self
-            .renderer
+        let renderer = self.parent.renderer();
+        let scope = renderer
             .profiler
-            .enter(gpu_span_location!("draw_solid"), &self.renderer.gl);
+            .enter(gpu_span_location!("draw_solid"), &renderer.gl);
         if is_opaque {
             unsafe {
-                self.renderer.gl.Disable(ffi::BLEND);
+                renderer.gl.Disable(ffi::BLEND);
             }
         }
 
         let res = self.draw_solid(dst, damage, color);
 
+        let renderer = self.parent.renderer();
         if is_opaque {
             unsafe {
-                self.renderer.gl.Enable(ffi::BLEND);
-                self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+                renderer.gl.Enable(ffi::BLEND);
+                renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
             }
         }
-        self.renderer.profiler.exit(&self.renderer.gl, scope);
+        renderer.profiler.exit(&renderer.gl, scope);
 
         res
     }
@@ -2458,7 +2521,7 @@ impl Frame for GlesFrame<'_, '_> {
 
     #[profiling::function]
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
-        self.renderer.wait(sync)
+        self.parent.renderer_mut().wait(sync)
     }
 
     #[profiling::function]
@@ -2467,7 +2530,7 @@ impl Frame for GlesFrame<'_, '_> {
     }
 }
 
-impl GlesFrame<'_, '_> {
+impl GlesFrame<'_, '_, '_> {
     #[profiling::function]
     fn finish_internal(&mut self) -> Result<SyncPoint, GlesError> {
         let _guard = self.span.enter();
@@ -2476,46 +2539,45 @@ impl GlesFrame<'_, '_> {
             return Ok(SyncPoint::signaled());
         }
 
-        let finish_gpu_span = self
-            .renderer
+        let renderer = self.parent.renderer_mut();
+        let finish_gpu_span = renderer
             .profiler
-            .enter(gpu_span_location!("finish_internal"), &self.renderer.gl);
+            .enter(gpu_span_location!("finish_internal"), &renderer.gl);
         unsafe {
-            self.renderer.gl.Disable(ffi::SCISSOR_TEST);
-            self.renderer.gl.Disable(ffi::BLEND);
+            renderer.gl.Disable(ffi::SCISSOR_TEST);
+            renderer.gl.Disable(ffi::BLEND);
         }
 
         if let GlesTargetInternal::Texture { sync_lock, .. } = &mut self.target.0 {
-            sync_lock.update_write(&self.renderer.gl);
+            sync_lock.update_write(&renderer.gl);
         }
 
         // delayed destruction until the next frame rendering.
         {
-            let scope = self
-                .renderer
+            let scope = renderer
                 .profiler
-                .enter(gpu_span_location!("cleanup"), &self.renderer.gl);
-            self.renderer.cleanup();
-            self.renderer.profiler.exit(&self.renderer.gl, scope);
+                .enter(gpu_span_location!("cleanup"), &renderer.gl);
+            renderer.cleanup();
+            renderer.profiler.exit(&renderer.gl, scope);
         }
 
-        self.renderer.profiler.exit(&self.renderer.gl, finish_gpu_span);
+        renderer.profiler.exit(&renderer.gl, finish_gpu_span);
         if let Some(span) = self.gpu_span.take() {
-            self.renderer.profiler.exit(&self.renderer.gl, span);
+            renderer.profiler.exit(&renderer.gl, span);
         }
 
         // if we support egl fences we should use it
-        if let Some(sync_point) = self.renderer.export_sync_point() {
+        if let Some(sync_point) = renderer.export_sync_point() {
             // Sync after glFlush in export_sync_point() and right before returning.
-            self.renderer.profiler.sync_gpu(&self.renderer.gl);
+            renderer.profiler.sync_gpu(&renderer.gl);
             return Ok(sync_point);
         }
 
-        self.renderer.profiler.sync_gpu(&self.renderer.gl);
+        renderer.profiler.sync_gpu(&renderer.gl);
 
         // as a last option we force finish, this is unlikely to happen
         unsafe {
-            self.renderer.gl.Finish();
+            renderer.gl.Finish();
         }
         Ok(SyncPoint::signaled())
     }
@@ -2551,14 +2613,15 @@ impl GlesFrame<'_, '_> {
         if damage.is_empty() {
             return Ok(());
         }
+        let renderer = self.parent.renderer_mut();
 
         let mut mat = Matrix3::<f32>::identity();
         mat = self.current_projection * mat;
 
         // prepare the vertices
-        self.renderer.vertices.clear();
-        if self.renderer.capabilities.contains(&Capability::Instancing) {
-            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
+        renderer.vertices.clear();
+        if renderer.capabilities.contains(&Capability::Instancing) {
+            renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
                 let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
@@ -2575,7 +2638,7 @@ impl GlesFrame<'_, '_> {
                 ]
             }))
         } else {
-            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
+            renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
                 let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
@@ -2596,31 +2659,23 @@ impl GlesFrame<'_, '_> {
             }));
         }
 
-        let gl = &self.renderer.gl;
-        let _scope = self
-            .renderer
-            .profiler
-            .scope(gpu_span_location!("draw_solid"), &self.renderer.gl);
+        let gl = &renderer.gl;
+        let _scope = renderer.profiler.scope(gpu_span_location!("draw_solid"), gl);
         unsafe {
-            gl.UseProgram(self.renderer.solid_program.program);
+            gl.UseProgram(renderer.solid_program.program);
             gl.Uniform4f(
-                self.renderer.solid_program.uniform_color,
+                renderer.solid_program.uniform_color,
                 color.r(),
                 color.g(),
                 color.b(),
                 color.a(),
             );
-            gl.UniformMatrix3fv(
-                self.renderer.solid_program.uniform_matrix,
-                1,
-                ffi::FALSE,
-                mat.as_ptr(),
-            );
+            gl.UniformMatrix3fv(renderer.solid_program.uniform_matrix, 1, ffi::FALSE, mat.as_ptr());
 
-            gl.EnableVertexAttribArray(self.renderer.solid_program.attrib_vert as u32);
-            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
+            gl.EnableVertexAttribArray(renderer.solid_program.attrib_vert as u32);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, renderer.vbos[0]);
             gl.VertexAttribPointer(
-                self.renderer.solid_program.attrib_vert as u32,
+                renderer.solid_program.attrib_vert as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2628,23 +2683,23 @@ impl GlesFrame<'_, '_> {
                 std::ptr::null(),
             );
 
-            gl.EnableVertexAttribArray(self.renderer.solid_program.attrib_position as u32);
+            gl.EnableVertexAttribArray(renderer.solid_program.attrib_position as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
 
             gl.VertexAttribPointer(
-                self.renderer.solid_program.attrib_position as u32,
+                renderer.solid_program.attrib_position as u32,
                 4,
                 ffi::FLOAT,
                 ffi::FALSE,
                 0,
-                self.renderer.vertices.as_ptr() as *const _,
+                renderer.vertices.as_ptr() as *const _,
             );
 
             let damage_len = damage.len() as i32;
-            if self.renderer.capabilities.contains(&Capability::Instancing) {
-                gl.VertexAttribDivisor(self.renderer.solid_program.attrib_vert as u32, 0);
+            if renderer.capabilities.contains(&Capability::Instancing) {
+                gl.VertexAttribDivisor(renderer.solid_program.attrib_vert as u32, 0);
 
-                gl.VertexAttribDivisor(self.renderer.solid_program.attrib_position as u32, 1);
+                gl.VertexAttribDivisor(renderer.solid_program.attrib_position as u32, 1);
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
             } else {
@@ -2654,12 +2709,12 @@ impl GlesFrame<'_, '_> {
 
                     // Set damage pointer to the next 10 rectangles.
                     gl.VertexAttribPointer(
-                        self.renderer.solid_program.attrib_position as u32,
+                        renderer.solid_program.attrib_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
                         0,
-                        self.renderer.vertices.as_ptr().add((i + 1) as usize * 60 * 4) as *const _,
+                        renderer.vertices.as_ptr().add((i + 1) as usize * 60 * 4) as *const _,
                     );
                 }
 
@@ -2668,8 +2723,8 @@ impl GlesFrame<'_, '_> {
                 gl.DrawArrays(ffi::TRIANGLES, 0, count);
             }
 
-            gl.DisableVertexAttribArray(self.renderer.solid_program.attrib_vert as u32);
-            gl.DisableVertexAttribArray(self.renderer.solid_program.attrib_position as u32);
+            gl.DisableVertexAttribArray(renderer.solid_program.attrib_vert as u32);
+            gl.DisableVertexAttribArray(renderer.solid_program.attrib_position as u32);
         }
 
         Ok(())
@@ -2742,12 +2797,14 @@ impl GlesFrame<'_, '_> {
             )
         };
 
+        let renderer = self.parent.renderer_mut();
+
         // We split the damage in opaque and non opaque regions, for opaque regions we can
         // disable blending. Most likely we did not clear regions marked as opaque, which can
         // result in read-back when not disabling blending. This can be problematic on tile based
         // renderers.
-        let mut non_opaque_damage = std::mem::take(&mut self.renderer.non_opaque_damage);
-        let mut opaque_damage = std::mem::take(&mut self.renderer.opaque_damage);
+        let mut non_opaque_damage = std::mem::take(&mut renderer.non_opaque_damage);
+        let mut opaque_damage = std::mem::take(&mut renderer.opaque_damage);
         non_opaque_damage.clear();
         opaque_damage.clear();
 
@@ -2781,14 +2838,15 @@ impl GlesFrame<'_, '_> {
 
         let opaque_render_res = if !opaque_damage.is_empty() {
             unsafe {
-                self.renderer.gl.Disable(ffi::BLEND);
+                self.parent.renderer().gl.Disable(ffi::BLEND);
             }
 
             let res = render_texture(self, &opaque_damage);
 
+            let renderer = self.parent.renderer();
             unsafe {
-                self.renderer.gl.Enable(ffi::BLEND);
-                self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+                renderer.gl.Enable(ffi::BLEND);
+                renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
             }
 
             res
@@ -2797,8 +2855,9 @@ impl GlesFrame<'_, '_> {
         };
 
         // Return the damage(s) to be able to re-use the allocation(s)
-        std::mem::swap(&mut self.renderer.non_opaque_damage, &mut non_opaque_damage);
-        std::mem::swap(&mut self.renderer.opaque_damage, &mut opaque_damage);
+        let renderer = self.parent.renderer_mut();
+        std::mem::swap(&mut renderer.non_opaque_damage, &mut non_opaque_damage);
+        std::mem::swap(&mut renderer.opaque_damage, &mut opaque_damage);
 
         non_opaque_render_res?;
         opaque_render_res?;
@@ -2833,12 +2892,14 @@ impl GlesFrame<'_, '_> {
         program: Option<&GlesTexProgram>,
         additional_uniforms: &[Uniform<'_>],
     ) -> Result<(), GlesError> {
+        let renderer = self.parent.renderer_mut();
+
         // prepare the vertices
-        self.renderer.vertices.clear();
+        renderer.vertices.clear();
         let damage_len = if let Some(instances) = instances {
-            if self.renderer.capabilities.contains(&Capability::Instancing) {
-                self.renderer.vertices.extend(instances);
-                self.renderer.vertices.len() / 4
+            if renderer.capabilities.contains(&Capability::Instancing) {
+                renderer.vertices.extend(instances);
+                renderer.vertices.len() / 4
             } else {
                 let mut damage = 0;
                 let mut instances = instances.into_iter();
@@ -2852,23 +2913,23 @@ impl GlesFrame<'_, '_> {
                     ];
                     // Add the 4 f32s per damage rectangle for each of the 6 vertices.
                     for _ in 0..6 {
-                        self.renderer.vertices.extend_from_slice(&vertices);
+                        renderer.vertices.extend_from_slice(&vertices);
                     }
                 }
                 damage
             }
-        } else if self.renderer.capabilities.contains(&Capability::Instancing) {
-            self.renderer.vertices.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]);
+        } else if renderer.capabilities.contains(&Capability::Instancing) {
+            renderer.vertices.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]);
             1
         } else {
             // Add the 4 f32s per damage rectangle for each of the 6 vertices.
             for _ in 0..6 {
-                self.renderer.vertices.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]);
+                renderer.vertices.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]);
             }
             1
         };
 
-        if self.renderer.vertices.is_empty() {
+        if renderer.vertices.is_empty() {
             return Ok(());
         }
 
@@ -2883,32 +2944,29 @@ impl GlesFrame<'_, '_> {
         let (tex_program, additional_uniforms) = program
             .map(|p| (p, additional_uniforms))
             .or_else(|| self.tex_program_override.as_ref().map(|(p, a)| (p, &**a)))
-            .unwrap_or((&self.renderer.tex_program, &[]));
+            .unwrap_or((&renderer.tex_program, &[]));
         let program_variant = tex_program.variant_for_format(
             if !tex.0.is_external { tex.0.format } else { None },
             tex.0.has_alpha,
         );
-        let program = if self.renderer.debug_flags.is_empty() {
+        let program = if renderer.debug_flags.is_empty() {
             &program_variant.normal
         } else {
             &program_variant.debug
         };
 
         // render
-        let gl = &self.renderer.gl;
+        let gl = &renderer.gl;
         let sync_lock = tex.0.sync.read().unwrap();
         unsafe {
             sync_lock.wait_for_upload(gl);
-            let scope = self
-                .renderer
-                .profiler
-                .scope(gpu_span_location!("render_texture"), gl);
+            let scope = renderer.profiler.scope(gpu_span_location!("render_texture"), gl);
             gl.ActiveTexture(ffi::TEXTURE0);
             gl.BindTexture(target, tex.0.texture);
             gl.TexParameteri(
                 target,
                 ffi::TEXTURE_MIN_FILTER,
-                match self.renderer.min_filter {
+                match renderer.min_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,
                     TextureFilter::Linear => ffi::LINEAR as i32,
                 },
@@ -2916,7 +2974,7 @@ impl GlesFrame<'_, '_> {
             gl.TexParameteri(
                 target,
                 ffi::TEXTURE_MAG_FILTER,
-                match self.renderer.max_filter {
+                match renderer.max_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,
                     TextureFilter::Linear => ffi::LINEAR as i32,
                 },
@@ -2928,8 +2986,8 @@ impl GlesFrame<'_, '_> {
             gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
             gl.Uniform1f(program.uniform_alpha, alpha);
 
-            if !self.renderer.debug_flags.is_empty() {
-                let tint = if self.renderer.debug_flags.contains(DebugFlags::TINT) {
+            if !renderer.debug_flags.is_empty() {
+                let tint = if renderer.debug_flags.contains(DebugFlags::TINT) {
                     1.0f32
                 } else {
                     0.0f32
@@ -2946,7 +3004,7 @@ impl GlesFrame<'_, '_> {
             }
 
             gl.EnableVertexAttribArray(program.attrib_vert as u32);
-            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, renderer.vbos[0]);
             gl.VertexAttribPointer(
                 program.attrib_vert as u32,
                 2,
@@ -2966,23 +3024,17 @@ impl GlesFrame<'_, '_> {
                 ffi::FLOAT,
                 ffi::FALSE,
                 0,
-                self.renderer.vertices.as_ptr() as *const _,
+                renderer.vertices.as_ptr() as *const _,
             );
 
-            if self.renderer.capabilities.contains(&Capability::Instancing) {
-                let _scope = self
-                    .renderer
-                    .profiler
-                    .scope(gpu_span_location!("draw instanced"), gl);
+            if renderer.capabilities.contains(&Capability::Instancing) {
+                let _scope = renderer.profiler.scope(gpu_span_location!("draw instanced"), gl);
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len as i32);
             } else {
-                let _scope = self
-                    .renderer
-                    .profiler
-                    .scope(gpu_span_location!("draw batched"), gl);
+                let _scope = renderer.profiler.scope(gpu_span_location!("draw batched"), gl);
 
                 // When we have more than 10 rectangles, draw them in batches of 10.
                 for i in 0..(damage_len - 1) / 10 {
@@ -2990,12 +3042,12 @@ impl GlesFrame<'_, '_> {
 
                     // Set damage pointer to the next 10 rectangles.
                     gl.VertexAttribPointer(
-                        self.renderer.solid_program.attrib_position as u32,
+                        renderer.solid_program.attrib_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
                         0,
-                        self.renderer.vertices.as_ptr().add((i + 1) * 60 * 4) as *const _,
+                        renderer.vertices.as_ptr().add((i + 1) * 60 * 4) as *const _,
                     );
                 }
 
@@ -3009,9 +3061,9 @@ impl GlesFrame<'_, '_> {
             gl.DisableVertexAttribArray(program.attrib_vert_position as u32);
             drop(scope);
 
-            if self.renderer.capabilities.contains(&Capability::Fencing) {
+            if renderer.capabilities.contains(&Capability::Fencing) {
                 sync_lock.update_read(gl);
-            } else if self.renderer.egl.is_shared() {
+            } else if renderer.egl.is_shared() {
                 gl.Finish();
             };
         }
@@ -3034,11 +3086,12 @@ impl GlesFrame<'_, '_> {
     ) -> Result<(), GlesError> {
         let fallback_damage = &[Rectangle::from_size(dest.size)];
         let damage = damage.unwrap_or(fallback_damage);
+        let renderer = self.parent.renderer_mut();
 
         // prepare the vertices
-        self.renderer.vertices.clear();
-        if self.renderer.capabilities.contains(&Capability::Instancing) {
-            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
+        renderer.vertices.clear();
+        if renderer.capabilities.contains(&Capability::Instancing) {
+            renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
                 let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
@@ -3055,7 +3108,7 @@ impl GlesFrame<'_, '_> {
                 ]
             }));
         } else {
-            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
+            renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
                 let rect_constrained_loc = rect.loc.constrain(Rectangle::from_size(dest_size));
@@ -3076,7 +3129,7 @@ impl GlesFrame<'_, '_> {
             }));
         }
 
-        if self.renderer.vertices.is_empty() {
+        if renderer.vertices.is_empty() {
             return Ok(());
         }
 
@@ -3089,17 +3142,16 @@ impl GlesFrame<'_, '_> {
         //apply output transformation
         matrix = self.current_projection * matrix;
 
-        let program = if self.renderer.debug_flags.is_empty() {
+        let program = if renderer.debug_flags.is_empty() {
             &pixel_shader.0.normal
         } else {
             &pixel_shader.0.debug
         };
 
         // render
-        let gl = &self.renderer.gl;
+        let gl = &renderer.gl;
         unsafe {
-            let _scope = self
-                .renderer
+            let _scope = renderer
                 .profiler
                 .scope(gpu_span_location!("render_pixel_shader_to"), gl);
             gl.UseProgram(program.program);
@@ -3108,13 +3160,13 @@ impl GlesFrame<'_, '_> {
             gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
             gl.Uniform2f(program.uniform_size, size.w as f32, size.h as f32);
             gl.Uniform1f(program.uniform_alpha, alpha);
-            let tint = if self.renderer.debug_flags.contains(DebugFlags::TINT) {
+            let tint = if renderer.debug_flags.contains(DebugFlags::TINT) {
                 1.0f32
             } else {
                 0.0f32
             };
 
-            if !self.renderer.debug_flags.is_empty() {
+            if !renderer.debug_flags.is_empty() {
                 gl.Uniform1f(pixel_shader.0.uniform_tint, tint);
             }
 
@@ -3127,7 +3179,7 @@ impl GlesFrame<'_, '_> {
             }
 
             gl.EnableVertexAttribArray(program.attrib_vert as u32);
-            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, renderer.vbos[0]);
             gl.VertexAttribPointer(
                 program.attrib_vert as u32,
                 2,
@@ -3147,11 +3199,11 @@ impl GlesFrame<'_, '_> {
                 ffi::FLOAT,
                 ffi::FALSE,
                 0,
-                self.renderer.vertices.as_ptr() as *const _,
+                renderer.vertices.as_ptr() as *const _,
             );
 
             let damage_len = damage.len() as i32;
-            if self.renderer.capabilities.contains(&Capability::Instancing) {
+            if renderer.capabilities.contains(&Capability::Instancing) {
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_position as u32, 1);
 
@@ -3181,21 +3233,21 @@ impl GlesFrame<'_, '_> {
     /// To make sure a certain modification does not interfere with
     /// the renderer's behaviour, check the source.
     pub fn egl_context(&self) -> &EGLContext {
-        self.renderer.egl_context()
+        self.parent.renderer().egl_context()
     }
 
     /// Returns the supported [`Capabilities`](Capability) of the underlying renderer.
     pub fn capabilities(&self) -> &[Capability] {
-        self.renderer.capabilities()
+        self.parent.renderer().capabilities()
     }
 
     /// Returns the current enabled [`DebugFlags`] of the underlying renderer.
     pub fn debug_flags(&self) -> DebugFlags {
-        self.renderer.debug_flags()
+        self.parent.renderer().debug_flags()
     }
 }
 
-impl Drop for GlesFrame<'_, '_> {
+impl Drop for GlesFrame<'_, '_, '_> {
     fn drop(&mut self) {
         match self.finish_internal() {
             Ok(sync) => {
