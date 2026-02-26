@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["WP_TEARING_CONTROL_MANAGER_V1_INTERFACE","WP_TEARING_CONTROL_V1_INTERFACE","wp_tearing_control_manager_v1_interface","wp_tearing_control_v1_interface"]};

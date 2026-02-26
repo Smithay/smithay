@@ -1,0 +1,231 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A trait to implement a pointer grab"><title>PointerGrab in smithay::input::pointer - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">PointerGrab</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Pointer<wbr>Grab</a></h2><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.axis" title="axis">axis</a></li><li><a href="#tymethod.button" title="button">button</a></li><li><a href="#tymethod.frame" title="frame">frame</a></li><li><a href="#tymethod.gesture_hold_begin" title="gesture_hold_begin">gesture_hold_begin</a></li><li><a href="#tymethod.gesture_hold_end" title="gesture_hold_end">gesture_hold_end</a></li><li><a href="#tymethod.gesture_pinch_begin" title="gesture_pinch_begin">gesture_pinch_begin</a></li><li><a href="#tymethod.gesture_pinch_end" title="gesture_pinch_end">gesture_pinch_end</a></li><li><a href="#tymethod.gesture_pinch_update" title="gesture_pinch_update">gesture_pinch_update</a></li><li><a href="#tymethod.gesture_swipe_begin" title="gesture_swipe_begin">gesture_swipe_begin</a></li><li><a href="#tymethod.gesture_swipe_end" title="gesture_swipe_end">gesture_swipe_end</a></li><li><a href="#tymethod.gesture_swipe_update" title="gesture_swipe_update">gesture_swipe_update</a></li><li><a href="#tymethod.motion" title="motion">motion</a></li><li><a href="#tymethod.relative_motion" title="relative_motion">relative_motion</a></li><li><a href="#tymethod.start_data" title="start_data">start_data</a></li><li><a href="#tymethod.unset" title="unset">unset</a></li></ul><h3><a href="#implementations">Methods</a></h3><ul class="block method"><li><a href="#method.downcast" title="downcast">downcast</a></li><li><a href="#method.downcast_mut" title="downcast_mut">downcast_mut</a></li><li><a href="#method.downcast_rc" title="downcast_rc">downcast_rc</a></li><li><a href="#method.downcast_ref" title="downcast_ref">downcast_ref</a></li><li><a href="#method.is" title="is">is</a></li></ul><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In smithay::<wbr>input::<wbr>pointer</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">input</a>::<wbr><a href="index.html">pointer</a></div><h1>Trait <span class="trait">Pointer<wbr>Grab</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/input/pointer/grab.rs.html#37-173">Source</a> </span></div><pre class="rust item-decl"><code>pub trait PointerGrab&lt;D: <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;: <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + Downcast {
+<details class="toggle type-contents-toggle"><summary class="hideme"><span>Show 15 methods</span></summary>    // Required methods
+    fn <a href="#tymethod.motion" class="fn">motion</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.PointerFocus" title="type smithay::input::SeatHandler::PointerFocus">PointerFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+        event: &amp;<a class="struct" href="struct.MotionEvent.html" title="struct smithay::input::pointer::MotionEvent">MotionEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.relative_motion" class="fn">relative_motion</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.PointerFocus" title="type smithay::input::SeatHandler::PointerFocus">PointerFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+        event: &amp;<a class="struct" href="struct.RelativeMotionEvent.html" title="struct smithay::input::pointer::RelativeMotionEvent">RelativeMotionEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.button" class="fn">button</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.ButtonEvent.html" title="struct smithay::input::pointer::ButtonEvent">ButtonEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.axis" class="fn">axis</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        details: <a class="struct" href="struct.AxisFrame.html" title="struct smithay::input::pointer::AxisFrame">AxisFrame</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.frame" class="fn">frame</a>(&amp;mut self, data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>, handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;);
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_swipe_begin" class="fn">gesture_swipe_begin</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GestureSwipeBeginEvent.html" title="struct smithay::input::pointer::GestureSwipeBeginEvent">GestureSwipeBeginEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_swipe_update" class="fn">gesture_swipe_update</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GestureSwipeUpdateEvent.html" title="struct smithay::input::pointer::GestureSwipeUpdateEvent">GestureSwipeUpdateEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_swipe_end" class="fn">gesture_swipe_end</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GestureSwipeEndEvent.html" title="struct smithay::input::pointer::GestureSwipeEndEvent">GestureSwipeEndEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_pinch_begin" class="fn">gesture_pinch_begin</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GesturePinchBeginEvent.html" title="struct smithay::input::pointer::GesturePinchBeginEvent">GesturePinchBeginEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_pinch_update" class="fn">gesture_pinch_update</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GesturePinchUpdateEvent.html" title="struct smithay::input::pointer::GesturePinchUpdateEvent">GesturePinchUpdateEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_pinch_end" class="fn">gesture_pinch_end</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GesturePinchEndEvent.html" title="struct smithay::input::pointer::GesturePinchEndEvent">GesturePinchEndEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_hold_begin" class="fn">gesture_hold_begin</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GestureHoldBeginEvent.html" title="struct smithay::input::pointer::GestureHoldBeginEvent">GestureHoldBeginEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.gesture_hold_end" class="fn">gesture_hold_end</a>(
+        &amp;mut self,
+        data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+        handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+        event: &amp;<a class="struct" href="struct.GestureHoldEndEvent.html" title="struct smithay::input::pointer::GestureHoldEndEvent">GestureHoldEndEvent</a>,
+    );
+<span class="item-spacer"></span>    fn <a href="#tymethod.start_data" class="fn">start_data</a>(&amp;self) -&gt; &amp;<a class="struct" href="struct.GrabStartData.html" title="struct smithay::input::pointer::GrabStartData">GrabStartData</a>&lt;D&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.unset" class="fn">unset</a>(&amp;mut self, data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>);
+</details>}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A trait to implement a pointer grab</p>
+<p>In some context, it is necessary to temporarily change the behavior of the pointer. This is
+typically known as a pointer grab. A typical example would be, during a drag’n’drop operation,
+the underlying surfaces will no longer receive classic pointer event, but rather special events.</p>
+<p>This trait is the interface to intercept regular pointer events and change them as needed, its
+interface mimics the <a href="struct.PointerHandle.html" title="struct smithay::input::pointer::PointerHandle"><code>PointerHandle</code></a> interface.</p>
+<p>Any interactions with <a href="struct.PointerHandle.html" title="struct smithay::input::pointer::PointerHandle"><code>PointerHandle</code></a>
+should be done using <a href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle"><code>PointerInnerHandle</code></a>, as handle is borrowed/locked before grab methods are called,
+so calling methods on <a href="struct.PointerHandle.html" title="struct smithay::input::pointer::PointerHandle"><code>PointerHandle</code></a> would result in a deadlock.</p>
+<p>If your logic decides that the grab should end, both <a href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle"><code>PointerInnerHandle</code></a>
+and <a href="struct.PointerHandle.html" title="struct smithay::input::pointer::PointerHandle"><code>PointerHandle</code></a> have
+a method to change it.</p>
+<p>When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
+the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
+rather than trying to guess when the grab will end.</p>
+</div></details><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.motion" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#46-52">Source</a><h4 class="code-header">fn <a href="#tymethod.motion" class="fn">motion</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.PointerFocus" title="type smithay::input::SeatHandler::PointerFocus">PointerFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+    event: &amp;<a class="struct" href="struct.MotionEvent.html" title="struct smithay::input::pointer::MotionEvent">MotionEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A motion was reported</p>
+<p>This method allows you attach additional behavior to a motion event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::motion()</code> as part of your processing. If you
+don’t, the rest of the compositor will behave as if the motion event never occurred.</p>
+<p>Some grabs (such as drag’n’drop, shell resize and motion) unset the focus while they are active,
+this is achieved by just setting the focus to <code>None</code> when invoking <code>PointerInnerHandle::motion()</code>.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.relative_motion" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#58-64">Source</a><h4 class="code-header">fn <a href="#tymethod.relative_motion" class="fn">relative_motion</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    focus: <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;(&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.PointerFocus" title="type smithay::input::SeatHandler::PointerFocus">PointerFocus</a>, <a class="struct" href="../../utils/struct.Point.html" title="struct smithay::utils::Point">Point</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a>, <a class="struct" href="../../utils/struct.Logical.html" title="struct smithay::utils::Logical">Logical</a>&gt;)&gt;,
+    event: &amp;<a class="struct" href="struct.RelativeMotionEvent.html" title="struct smithay::input::pointer::RelativeMotionEvent">RelativeMotionEvent</a>,
+)</h4></section></summary><div class="docblock"><p>Relative motion was reported</p>
+<p>This method allows you attach additional behavior to a relative motion event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::relative_motion()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the motion event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.button" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#70">Source</a><h4 class="code-header">fn <a href="#tymethod.button" class="fn">button</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.ButtonEvent.html" title="struct smithay::input::pointer::ButtonEvent">ButtonEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A button press was reported</p>
+<p>This method allows you attach additional behavior to a button event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::button()</code> as part of your processing. If you
+don’t, the rest of the compositor will behave as if the button event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.axis" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#76">Source</a><h4 class="code-header">fn <a href="#tymethod.axis" class="fn">axis</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    details: <a class="struct" href="struct.AxisFrame.html" title="struct smithay::input::pointer::AxisFrame">AxisFrame</a>,
+)</h4></section></summary><div class="docblock"><p>An axis scroll was reported</p>
+<p>This method allows you attach additional behavior to an axis event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::axis()</code> as part of your processing. If you
+don’t, the rest of the compositor will behave as if the axis event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.frame" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#80">Source</a><h4 class="code-header">fn <a href="#tymethod.frame" class="fn">frame</a>(&amp;mut self, data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>, handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;)</h4></section></summary><div class="docblock"><p>End of a pointer frame</p>
+<p>A frame groups associated events. This terminates the frame.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_swipe_begin" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#86-91">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_swipe_begin" class="fn">gesture_swipe_begin</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GestureSwipeBeginEvent.html" title="struct smithay::input::pointer::GestureSwipeBeginEvent">GestureSwipeBeginEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat started a swipe gesture</p>
+<p>This method allows you attach additional behavior to a swipe gesture begin event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_swipe_begin()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_swipe_update" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#97-102">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_swipe_update" class="fn">gesture_swipe_update</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GestureSwipeUpdateEvent.html" title="struct smithay::input::pointer::GestureSwipeUpdateEvent">GestureSwipeUpdateEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat updated a swipe gesture</p>
+<p>This method allows you attach additional behavior to a swipe gesture update event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_swipe_update()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_swipe_end" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#108-113">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_swipe_end" class="fn">gesture_swipe_end</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GestureSwipeEndEvent.html" title="struct smithay::input::pointer::GestureSwipeEndEvent">GestureSwipeEndEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat ended a swipe gesture</p>
+<p>This method allows you attach additional behavior to a swipe gesture end event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_swipe_end()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_pinch_begin" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#119-124">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_pinch_begin" class="fn">gesture_pinch_begin</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GesturePinchBeginEvent.html" title="struct smithay::input::pointer::GesturePinchBeginEvent">GesturePinchBeginEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat started a pinch gesture</p>
+<p>This method allows you attach additional behavior to a pinch gesture begin event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_pinch_begin()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_pinch_update" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#130-135">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_pinch_update" class="fn">gesture_pinch_update</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GesturePinchUpdateEvent.html" title="struct smithay::input::pointer::GesturePinchUpdateEvent">GesturePinchUpdateEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat updated a pinch gesture</p>
+<p>This method allows you attach additional behavior to a pinch gesture update event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_pinch_update()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_pinch_end" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#141-146">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_pinch_end" class="fn">gesture_pinch_end</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GesturePinchEndEvent.html" title="struct smithay::input::pointer::GesturePinchEndEvent">GesturePinchEndEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat ended a pinch gesture</p>
+<p>This method allows you attach additional behavior to a pinch gesture end event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_pinch_end()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_hold_begin" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#152-157">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_hold_begin" class="fn">gesture_hold_begin</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GestureHoldBeginEvent.html" title="struct smithay::input::pointer::GestureHoldBeginEvent">GestureHoldBeginEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat started a hold gesture</p>
+<p>This method allows you attach additional behavior to a hold gesture begin event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_hold_begin()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.gesture_hold_end" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#163-168">Source</a><h4 class="code-header">fn <a href="#tymethod.gesture_hold_end" class="fn">gesture_hold_end</a>(
+    &amp;mut self,
+    data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>,
+    handle: &amp;mut <a class="struct" href="struct.PointerInnerHandle.html" title="struct smithay::input::pointer::PointerInnerHandle">PointerInnerHandle</a>&lt;'_, D&gt;,
+    event: &amp;<a class="struct" href="struct.GestureHoldEndEvent.html" title="struct smithay::input::pointer::GestureHoldEndEvent">GestureHoldEndEvent</a>,
+)</h4></section></summary><div class="docblock"><p>A pointer of a given seat ended a hold gesture</p>
+<p>This method allows you attach additional behavior to a hold gesture end event, possibly altering it.
+You generally will want to invoke <code>PointerInnerHandle::gesture_hold_end()</code> as part of your processing.
+If you don’t, the rest of the compositor will behave as if the event never occurred.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.start_data" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#170">Source</a><h4 class="code-header">fn <a href="#tymethod.start_data" class="fn">start_data</a>(&amp;self) -&gt; &amp;<a class="struct" href="struct.GrabStartData.html" title="struct smithay::input::pointer::GrabStartData">GrabStartData</a>&lt;D&gt;</h4></section></summary><div class="docblock"><p>The data about the event that started the grab.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.unset" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#172">Source</a><h4 class="code-header">fn <a href="#tymethod.unset" class="fn">unset</a>(&amp;mut self, data: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut D</a>)</h4></section></summary><div class="docblock"><p>The grab has been unset or replaced with another grab.</p>
+</div></details></div><h2 id="implementations" class="section-header">Implementations<a href="#implementations" class="anchor">§</a></h2><div id="implementations-list"><details class="toggle implementors-toggle" open><summary><section id="impl-dyn+PointerGrab%3CD%3E" class="impl"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#175">Source</a><a href="#impl-dyn+PointerGrab%3CD%3E" class="anchor">§</a><h3 class="code-header">impl&lt;D&gt; dyn <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt;<div class="where">where
+    D: <a class="trait" href="https://doc.rust-lang.org/nightly/core/any/trait.Any.html" title="trait core::any::Any">Any</a> + 'static + <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>,</div></h3></section></summary><div class="impl-items"><details class="toggle method-toggle" open><summary><section id="method.is" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#175">Source</a><h4 class="code-header">pub fn <a href="#method.is" class="fn">is</a>&lt;__T: <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt;&gt;(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Returns true if the trait object wraps an object of type <code>__T</code>.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.downcast" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#175">Source</a><h4 class="code-header">pub fn <a href="#method.downcast" class="fn">downcast</a>&lt;__T: <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt;&gt;(
+    self: <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;Self&gt;,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;__T&gt;, <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;Self&gt;&gt;</h4></section></summary><div class="docblock"><p>Returns a boxed object from a boxed trait object if the underlying object is of type
+<code>__T</code>. Returns the original boxed trait if it isn’t.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.downcast_rc" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#175">Source</a><h4 class="code-header">pub fn <a href="#method.downcast_rc" class="fn">downcast_rc</a>&lt;__T: <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt;&gt;(
+    self: <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/rc/struct.Rc.html" title="struct alloc::rc::Rc">Rc</a>&lt;Self&gt;,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/alloc/rc/struct.Rc.html" title="struct alloc::rc::Rc">Rc</a>&lt;__T&gt;, <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/rc/struct.Rc.html" title="struct alloc::rc::Rc">Rc</a>&lt;Self&gt;&gt;</h4></section></summary><div class="docblock"><p>Returns an <code>Rc</code>-ed object from an <code>Rc</code>-ed trait object if the underlying object is of
+type <code>__T</code>. Returns the original <code>Rc</code>-ed trait if it isn’t.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.downcast_ref" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#175">Source</a><h4 class="code-header">pub fn <a href="#method.downcast_ref" class="fn">downcast_ref</a>&lt;__T: <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt;&gt;(&amp;self) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;__T</a>&gt;</h4></section></summary><div class="docblock"><p>Returns a reference to the object within the trait object if it is of type <code>__T</code>, or
+<code>None</code> if it isn’t.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.downcast_mut" class="method"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#175">Source</a><h4 class="code-header">pub fn <a href="#method.downcast_mut" class="fn">downcast_mut</a>&lt;__T: <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt;&gt;(&amp;mut self) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;mut __T</a>&gt;</h4></section></summary><div class="docblock"><p>Returns a mutable reference to the object within the trait object if it is of type
+<code>__T</code>, or <code>None</code> if it isn’t.</p>
+</div></details></div></details></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-PointerGrab%3CD%3E-for-PopupPointerGrab%3CD%3E" class="impl"><a class="src rightside" href="../../../src/smithay/desktop/wayland/popup/grab.rs.html#543-710">Source</a><a href="#impl-PointerGrab%3CD%3E-for-PopupPointerGrab%3CD%3E" class="anchor">§</a><h3 class="code-header">impl&lt;D&gt; <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt; for <a class="struct" href="../../desktop/struct.PopupPointerGrab.html" title="struct smithay::desktop::PopupPointerGrab">PopupPointerGrab</a>&lt;D&gt;<div class="where">where
+    D: <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a> + 'static,
+    &lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.KeyboardFocus" title="type smithay::input::SeatHandler::KeyboardFocus">KeyboardFocus</a>: <a class="trait" href="../../wayland/seat/trait.WaylandFocus.html" title="trait smithay::wayland::seat::WaylandFocus">WaylandFocus</a> + <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html" title="trait core::convert::From">From</a>&lt;<a class="enum" href="../../desktop/enum.PopupKind.html" title="enum smithay::desktop::PopupKind">PopupKind</a>&gt;,
+    &lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.PointerFocus" title="type smithay::input::SeatHandler::PointerFocus">PointerFocus</a>: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html" title="trait core::convert::From">From</a>&lt;&lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.KeyboardFocus" title="type smithay::input::SeatHandler::KeyboardFocus">KeyboardFocus</a>&gt; + <a class="trait" href="../../wayland/seat/trait.WaylandFocus.html" title="trait smithay::wayland::seat::WaylandFocus">WaylandFocus</a>,</div></h3><span class="item-info"><div class="stab portability">Available on <strong>crate features <code>wayland_frontend</code> and <code>desktop</code></strong> only.</div></span></section><section id="impl-PointerGrab%3CD%3E-for-DnDGrab%3CD,+S,+%3CD+as+SeatHandler%3E::PointerFocus%3E" class="impl"><a class="src rightside" href="../../../src/smithay/input/dnd/grab.rs.html#314-443">Source</a><a href="#impl-PointerGrab%3CD%3E-for-DnDGrab%3CD,+S,+%3CD+as+SeatHandler%3E::PointerFocus%3E" class="anchor">§</a><h3 class="code-header">impl&lt;D, S&gt; <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt; for <a class="struct" href="../dnd/struct.DnDGrab.html" title="struct smithay::input::dnd::DnDGrab">DnDGrab</a>&lt;D, S, D::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.PointerFocus" title="type smithay::input::SeatHandler::PointerFocus">PointerFocus</a>&gt;<div class="where">where
+    D: <a class="trait" href="../dnd/trait.DndGrabHandler.html" title="trait smithay::input::dnd::DndGrabHandler">DndGrabHandler</a> + <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a> + 'static,
+    &lt;D as <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a>&gt;::<a class="associatedtype" href="../trait.SeatHandler.html#associatedtype.PointerFocus" title="type smithay::input::SeatHandler::PointerFocus">PointerFocus</a>: <a class="trait" href="../dnd/trait.DndFocus.html" title="trait smithay::input::dnd::DndFocus">DndFocus</a>&lt;D&gt; + 'static,
+    S: <a class="trait" href="../dnd/trait.Source.html" title="trait smithay::input::dnd::Source">Source</a>,</div></h3></section><section id="impl-PointerGrab%3CD%3E-for-ClickGrab%3CD%3E" class="impl"><a class="src rightside" href="../../../src/smithay/input/pointer/grab.rs.html#356-470">Source</a><a href="#impl-PointerGrab%3CD%3E-for-ClickGrab%3CD%3E" class="anchor">§</a><h3 class="code-header">impl&lt;D: <a class="trait" href="../trait.SeatHandler.html" title="trait smithay::input::SeatHandler">SeatHandler</a> + 'static&gt; <a class="trait" href="trait.PointerGrab.html" title="trait smithay::input::pointer::PointerGrab">PointerGrab</a>&lt;D&gt; for <a class="struct" href="struct.ClickGrab.html" title="struct smithay::input::pointer::ClickGrab">ClickGrab</a>&lt;D&gt;</h3></section></div><script src="../../../trait.impl/smithay/input/pointer/grab/trait.PointerGrab.js" async></script></section></div></main></body></html>

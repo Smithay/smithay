@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","zwp_tablet_manager_v1","zwp_tablet_seat_v1","zwp_tablet_tool_v1","zwp_tablet_v1"]};

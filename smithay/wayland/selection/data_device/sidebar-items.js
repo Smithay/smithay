@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DND_ICON_ROLE"],"enum":["SelectionRequestError"],"fn":["clear_data_device_selection","current_data_device_selection_userdata","default_action_chooser","request_data_device_client_selection","set_data_device_focus","set_data_device_selection"],"struct":["DataDeviceState","WlOfferData"],"trait":["DataDeviceHandler","WaylandDndGrabHandler"]};

@@ -1,0 +1,462 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/wayland/viewporter/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">smithay/wayland/viewporter/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Utilities for handling the `wp_viewporter` protocol
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! ## How to use it
+<a href=#4 id=4 data-nosnippet>4</a>//!
+<a href=#5 id=5 data-nosnippet>5</a>//! ### Initialization
+<a href=#6 id=6 data-nosnippet>6</a>//!
+<a href=#7 id=7 data-nosnippet>7</a>//! To initialize this implementation, create [`ViewporterState`], store it in your `State` struct and
+<a href=#8 id=8 data-nosnippet>8</a>//! implement the required traits, as shown in this example:
+<a href=#9 id=9 data-nosnippet>9</a>//!
+<a href=#10 id=10 data-nosnippet>10</a>//! ```
+<a href=#11 id=11 data-nosnippet>11</a>//! use smithay::wayland::viewporter::ViewporterState;
+<a href=#12 id=12 data-nosnippet>12</a>//! use smithay::delegate_viewporter;
+<a href=#13 id=13 data-nosnippet>13</a>//! # use smithay::delegate_compositor;
+<a href=#14 id=14 data-nosnippet>14</a>//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
+<a href=#15 id=15 data-nosnippet>15</a>//! # use smithay::reexports::wayland_server::{Client, protocol::wl_surface::WlSurface};
+<a href=#16 id=16 data-nosnippet>16</a>//!
+<a href=#17 id=17 data-nosnippet>17</a>//! # struct State;
+<a href=#18 id=18 data-nosnippet>18</a>//! # let mut display = wayland_server::Display::&lt;State&gt;::new().unwrap();
+<a href=#19 id=19 data-nosnippet>19</a>//!
+<a href=#20 id=20 data-nosnippet>20</a>//! // Create the viewporter state:
+<a href=#21 id=21 data-nosnippet>21</a>//! let viewporter_state = ViewporterState::new::&lt;State&gt;(
+<a href=#22 id=22 data-nosnippet>22</a>//!     &amp;display.handle(), // the display
+<a href=#23 id=23 data-nosnippet>23</a>//! );
+<a href=#24 id=24 data-nosnippet>24</a>//!
+<a href=#25 id=25 data-nosnippet>25</a>//! // implement Dispatch for the Viewporter types
+<a href=#26 id=26 data-nosnippet>26</a>//! delegate_viewporter!(State);
+<a href=#27 id=27 data-nosnippet>27</a>//!
+<a href=#28 id=28 data-nosnippet>28</a>//! # impl CompositorHandler for State {
+<a href=#29 id=29 data-nosnippet>29</a>//! #     fn compositor_state(&amp;mut self) -&gt; &amp;mut CompositorState { unimplemented!() }
+<a href=#30 id=30 data-nosnippet>30</a>//! #     fn client_compositor_state&lt;'a&gt;(&amp;self, client: &amp;'a Client) -&gt; &amp;'a CompositorClientState { unimplemented!() }
+<a href=#31 id=31 data-nosnippet>31</a>//! #     fn commit(&amp;mut self, surface: &amp;WlSurface) {}
+<a href=#32 id=32 data-nosnippet>32</a>//! # }
+<a href=#33 id=33 data-nosnippet>33</a>//! # delegate_compositor!(State);
+<a href=#34 id=34 data-nosnippet>34</a>//!
+<a href=#35 id=35 data-nosnippet>35</a>//! // You're now ready to go!
+<a href=#36 id=36 data-nosnippet>36</a>//! ```
+<a href=#37 id=37 data-nosnippet>37</a>//!
+<a href=#38 id=38 data-nosnippet>38</a>//! ### Use the viewport state
+<a href=#39 id=39 data-nosnippet>39</a>//!
+<a href=#40 id=40 data-nosnippet>40</a>//! The [`viewport state`](ViewportCachedState) is double-buffered and
+<a href=#41 id=41 data-nosnippet>41</a>//! can be accessed by using the [`with_states`] function
+<a href=#42 id=42 data-nosnippet>42</a>//!
+<a href=#43 id=43 data-nosnippet>43</a>//! ```no_compile
+<a href=#44 id=44 data-nosnippet>44</a>//! let viewport = with_states(surface, |states| {
+<a href=#45 id=45 data-nosnippet>45</a>//!     states.cached_state.get::&lt;ViewportCachedState&gt;().current()
+<a href=#46 id=46 data-nosnippet>46</a>//! });
+<a href=#47 id=47 data-nosnippet>47</a>//! ```
+<a href=#48 id=48 data-nosnippet>48</a>//!
+<a href=#49 id=49 data-nosnippet>49</a>//! Before accessing the state you should call [`ensure_viewport_valid`]
+<a href=#50 id=50 data-nosnippet>50</a>//! to ensure the viewport is valid.
+<a href=#51 id=51 data-nosnippet>51</a>//!
+<a href=#52 id=52 data-nosnippet>52</a>//! Note: If you already hand over buffer management to smithay by using
+<a href=#53 id=53 data-nosnippet>53</a>//! [`on_commit_buffer_handler`](crate::backend::renderer::utils::on_commit_buffer_handler)
+<a href=#54 id=54 data-nosnippet>54</a>//! the implementation will already call [`ensure_viewport_valid`] for you.
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a></span><span class="kw">use </span>std::sync::Mutex;
+<a href=#57 id=57 data-nosnippet>57</a>
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">use </span>tracing::trace;
+<a href=#59 id=59 data-nosnippet>59</a><span class="kw">use </span>wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
+<a href=#60 id=60 data-nosnippet>60</a><span class="kw">use </span>wayland_server::{
+<a href=#61 id=61 data-nosnippet>61</a>    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak,
+<a href=#62 id=62 data-nosnippet>62</a>};
+<a href=#63 id=63 data-nosnippet>63</a>
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">use </span><span class="kw">crate</span>::utils::{Client, Logical, Rectangle, Size};
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a><span class="kw">use </span><span class="kw">super</span>::compositor::{<span class="self">self</span>, with_states, Cacheable, CompositorHandler, SurfaceData};
+<a href=#67 id=67 data-nosnippet>67</a>
+<a href=#68 id=68 data-nosnippet>68</a><span class="doccomment">/// State of the wp_viewporter Global
+<a href=#69 id=69 data-nosnippet>69</a></span><span class="attr">#[derive(Debug)]
+<a href=#70 id=70 data-nosnippet>70</a></span><span class="kw">pub struct </span>ViewporterState {
+<a href=#71 id=71 data-nosnippet>71</a>    global: GlobalId,
+<a href=#72 id=72 data-nosnippet>72</a>}
+<a href=#73 id=73 data-nosnippet>73</a>
+<a href=#74 id=74 data-nosnippet>74</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">type </span>ViewporterSurfaceState = Mutex&lt;<span class="prelude-ty">Option</span>&lt;ViewportMarker&gt;&gt;;
+<a href=#75 id=75 data-nosnippet>75</a>
+<a href=#76 id=76 data-nosnippet>76</a><span class="kw">impl </span>ViewporterState {
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="doccomment">/// Create new [`wp_viewporter`] global.
+<a href=#78 id=78 data-nosnippet>78</a>    ///
+<a href=#79 id=79 data-nosnippet>79</a>    /// It returns the viewporter state, which you can drop to remove these global from
+<a href=#80 id=80 data-nosnippet>80</a>    /// the event loop in the future.
+<a href=#81 id=81 data-nosnippet>81</a>    </span><span class="kw">pub fn </span>new&lt;D&gt;(display: <span class="kw-2">&amp;</span>DisplayHandle) -&gt; ViewporterState
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="kw">where
+<a href=#83 id=83 data-nosnippet>83</a>        </span>D: GlobalDispatch&lt;wp_viewporter::WpViewporter, ()&gt;
+<a href=#84 id=84 data-nosnippet>84</a>            + Dispatch&lt;wp_viewporter::WpViewporter, ()&gt;
+<a href=#85 id=85 data-nosnippet>85</a>            + Dispatch&lt;wp_viewport::WpViewport, ViewportState&gt;
+<a href=#86 id=86 data-nosnippet>86</a>            + <span class="lifetime">'static</span>,
+<a href=#87 id=87 data-nosnippet>87</a>    {
+<a href=#88 id=88 data-nosnippet>88</a>        ViewporterState {
+<a href=#89 id=89 data-nosnippet>89</a>            global: display.create_global::&lt;D, wp_viewporter::WpViewporter, ()&gt;(<span class="number">1</span>, ()),
+<a href=#90 id=90 data-nosnippet>90</a>        }
+<a href=#91 id=91 data-nosnippet>91</a>    }
+<a href=#92 id=92 data-nosnippet>92</a>
+<a href=#93 id=93 data-nosnippet>93</a>    <span class="doccomment">/// Returns the viewporter global.
+<a href=#94 id=94 data-nosnippet>94</a>    </span><span class="kw">pub fn </span>global(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; GlobalId {
+<a href=#95 id=95 data-nosnippet>95</a>        <span class="self">self</span>.global.clone()
+<a href=#96 id=96 data-nosnippet>96</a>    }
+<a href=#97 id=97 data-nosnippet>97</a>}
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a><span class="kw">impl</span>&lt;D&gt; GlobalDispatch&lt;wp_viewporter::WpViewporter, (), D&gt; <span class="kw">for </span>ViewporterState
+<a href=#100 id=100 data-nosnippet>100</a><span class="kw">where
+<a href=#101 id=101 data-nosnippet>101</a>    </span>D: GlobalDispatch&lt;wp_viewporter::WpViewporter, ()&gt;,
+<a href=#102 id=102 data-nosnippet>102</a>    D: Dispatch&lt;wp_viewporter::WpViewporter, ()&gt;,
+<a href=#103 id=103 data-nosnippet>103</a>    D: Dispatch&lt;wp_viewport::WpViewport, ViewportState&gt;,
+<a href=#104 id=104 data-nosnippet>104</a>{
+<a href=#105 id=105 data-nosnippet>105</a>    <span class="kw">fn </span>bind(
+<a href=#106 id=106 data-nosnippet>106</a>        _state: <span class="kw-2">&amp;mut </span>D,
+<a href=#107 id=107 data-nosnippet>107</a>        _handle: <span class="kw-2">&amp;</span>DisplayHandle,
+<a href=#108 id=108 data-nosnippet>108</a>        _client: <span class="kw-2">&amp;</span>wayland_server::Client,
+<a href=#109 id=109 data-nosnippet>109</a>        resource: wayland_server::New&lt;wp_viewporter::WpViewporter&gt;,
+<a href=#110 id=110 data-nosnippet>110</a>        _global_data: <span class="kw-2">&amp;</span>(),
+<a href=#111 id=111 data-nosnippet>111</a>        data_init: <span class="kw-2">&amp;mut </span>wayland_server::DataInit&lt;<span class="lifetime">'_</span>, D&gt;,
+<a href=#112 id=112 data-nosnippet>112</a>    ) {
+<a href=#113 id=113 data-nosnippet>113</a>        data_init.init(resource, ());
+<a href=#114 id=114 data-nosnippet>114</a>    }
+<a href=#115 id=115 data-nosnippet>115</a>}
+<a href=#116 id=116 data-nosnippet>116</a>
+<a href=#117 id=117 data-nosnippet>117</a><span class="kw">impl</span>&lt;D&gt; Dispatch&lt;wp_viewporter::WpViewporter, (), D&gt; <span class="kw">for </span>ViewporterState
+<a href=#118 id=118 data-nosnippet>118</a><span class="kw">where
+<a href=#119 id=119 data-nosnippet>119</a>    </span>D: GlobalDispatch&lt;wp_viewporter::WpViewporter, ()&gt;,
+<a href=#120 id=120 data-nosnippet>120</a>    D: Dispatch&lt;wp_viewporter::WpViewporter, ()&gt;,
+<a href=#121 id=121 data-nosnippet>121</a>    D: Dispatch&lt;wp_viewport::WpViewport, ViewportState&gt;,
+<a href=#122 id=122 data-nosnippet>122</a>{
+<a href=#123 id=123 data-nosnippet>123</a>    <span class="kw">fn </span>request(
+<a href=#124 id=124 data-nosnippet>124</a>        _state: <span class="kw-2">&amp;mut </span>D,
+<a href=#125 id=125 data-nosnippet>125</a>        _client: <span class="kw-2">&amp;</span>wayland_server::Client,
+<a href=#126 id=126 data-nosnippet>126</a>        _resource: <span class="kw-2">&amp;</span>wp_viewporter::WpViewporter,
+<a href=#127 id=127 data-nosnippet>127</a>        request: &lt;wp_viewporter::WpViewporter <span class="kw">as </span>wayland_server::Resource&gt;::Request,
+<a href=#128 id=128 data-nosnippet>128</a>        _data: <span class="kw-2">&amp;</span>(),
+<a href=#129 id=129 data-nosnippet>129</a>        _dhandle: <span class="kw-2">&amp;</span>DisplayHandle,
+<a href=#130 id=130 data-nosnippet>130</a>        data_init: <span class="kw-2">&amp;mut </span>wayland_server::DataInit&lt;<span class="lifetime">'_</span>, D&gt;,
+<a href=#131 id=131 data-nosnippet>131</a>    ) {
+<a href=#132 id=132 data-nosnippet>132</a>        <span class="kw">match </span>request {
+<a href=#133 id=133 data-nosnippet>133</a>            wp_viewporter::Request::GetViewport { id, surface } =&gt; {
+<a href=#134 id=134 data-nosnippet>134</a>                <span class="kw">let </span>already_has_viewport = with_states(<span class="kw-2">&amp;</span>surface, |states| {
+<a href=#135 id=135 data-nosnippet>135</a>                    states
+<a href=#136 id=136 data-nosnippet>136</a>                        .data_map
+<a href=#137 id=137 data-nosnippet>137</a>                        .get::&lt;ViewporterSurfaceState&gt;()
+<a href=#138 id=138 data-nosnippet>138</a>                        .map(|v| v.lock().unwrap().is_some())
+<a href=#139 id=139 data-nosnippet>139</a>                        .unwrap_or(<span class="bool-val">false</span>)
+<a href=#140 id=140 data-nosnippet>140</a>                });
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>                <span class="kw">if </span>already_has_viewport {
+<a href=#143 id=143 data-nosnippet>143</a>                    surface.post_error(
+<a href=#144 id=144 data-nosnippet>144</a>                        wp_viewporter::Error::ViewportExists <span class="kw">as </span>u32,
+<a href=#145 id=145 data-nosnippet>145</a>                        <span class="string">"the surface already has a viewport object associated"</span>.to_string(),
+<a href=#146 id=146 data-nosnippet>146</a>                    );
+<a href=#147 id=147 data-nosnippet>147</a>                    <span class="kw">return</span>;
+<a href=#148 id=148 data-nosnippet>148</a>                }
+<a href=#149 id=149 data-nosnippet>149</a>
+<a href=#150 id=150 data-nosnippet>150</a>                <span class="kw">let </span>viewport = data_init.init(
+<a href=#151 id=151 data-nosnippet>151</a>                    id,
+<a href=#152 id=152 data-nosnippet>152</a>                    ViewportState {
+<a href=#153 id=153 data-nosnippet>153</a>                        surface: surface.downgrade(),
+<a href=#154 id=154 data-nosnippet>154</a>                    },
+<a href=#155 id=155 data-nosnippet>155</a>                );
+<a href=#156 id=156 data-nosnippet>156</a>                <span class="kw">let </span>initial = with_states(<span class="kw-2">&amp;</span>surface, |states| {
+<a href=#157 id=157 data-nosnippet>157</a>                    <span class="kw">let </span>inserted = states
+<a href=#158 id=158 data-nosnippet>158</a>                        .data_map
+<a href=#159 id=159 data-nosnippet>159</a>                        .insert_if_missing_threadsafe::&lt;ViewporterSurfaceState, <span class="kw">_</span>&gt;(|| {
+<a href=#160 id=160 data-nosnippet>160</a>                            Mutex::new(<span class="prelude-val">Some</span>(ViewportMarker(viewport.downgrade())))
+<a href=#161 id=161 data-nosnippet>161</a>                        });
+<a href=#162 id=162 data-nosnippet>162</a>
+<a href=#163 id=163 data-nosnippet>163</a>                    <span class="comment">// if we did not insert the marker it will be None as
+<a href=#164 id=164 data-nosnippet>164</a>                    // checked in already_has_viewport and we have to update
+<a href=#165 id=165 data-nosnippet>165</a>                    // it now
+<a href=#166 id=166 data-nosnippet>166</a>                    </span><span class="kw">if </span>!inserted {
+<a href=#167 id=167 data-nosnippet>167</a>                        <span class="kw-2">*</span>states
+<a href=#168 id=168 data-nosnippet>168</a>                            .data_map
+<a href=#169 id=169 data-nosnippet>169</a>                            .get::&lt;ViewporterSurfaceState&gt;()
+<a href=#170 id=170 data-nosnippet>170</a>                            .unwrap()
+<a href=#171 id=171 data-nosnippet>171</a>                            .lock()
+<a href=#172 id=172 data-nosnippet>172</a>                            .unwrap() = <span class="prelude-val">Some</span>(ViewportMarker(viewport.downgrade()));
+<a href=#173 id=173 data-nosnippet>173</a>                    }
+<a href=#174 id=174 data-nosnippet>174</a>
+<a href=#175 id=175 data-nosnippet>175</a>                    inserted
+<a href=#176 id=176 data-nosnippet>176</a>                });
+<a href=#177 id=177 data-nosnippet>177</a>
+<a href=#178 id=178 data-nosnippet>178</a>                <span class="comment">// only add the pre-commit hook once for the surface
+<a href=#179 id=179 data-nosnippet>179</a>                </span><span class="kw">if </span>initial {
+<a href=#180 id=180 data-nosnippet>180</a>                    compositor::add_pre_commit_hook::&lt;D, <span class="kw">_</span>&gt;(<span class="kw-2">&amp;</span>surface, viewport_pre_commit_hook);
+<a href=#181 id=181 data-nosnippet>181</a>                }
+<a href=#182 id=182 data-nosnippet>182</a>            }
+<a href=#183 id=183 data-nosnippet>183</a>            wp_viewporter::Request::Destroy =&gt; {
+<a href=#184 id=184 data-nosnippet>184</a>                <span class="comment">// All is already handled by our destructor
+<a href=#185 id=185 data-nosnippet>185</a>            </span>}
+<a href=#186 id=186 data-nosnippet>186</a>            <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#187 id=187 data-nosnippet>187</a>        }
+<a href=#188 id=188 data-nosnippet>188</a>    }
+<a href=#189 id=189 data-nosnippet>189</a>}
+<a href=#190 id=190 data-nosnippet>190</a>
+<a href=#191 id=191 data-nosnippet>191</a><span class="kw">impl</span>&lt;D&gt; Dispatch&lt;wp_viewport::WpViewport, ViewportState, D&gt; <span class="kw">for </span>ViewportState
+<a href=#192 id=192 data-nosnippet>192</a><span class="kw">where
+<a href=#193 id=193 data-nosnippet>193</a>    </span>D: GlobalDispatch&lt;wp_viewporter::WpViewporter, ()&gt;,
+<a href=#194 id=194 data-nosnippet>194</a>    D: Dispatch&lt;wp_viewporter::WpViewporter, ()&gt;,
+<a href=#195 id=195 data-nosnippet>195</a>    D: Dispatch&lt;wp_viewport::WpViewport, ViewportState&gt;,
+<a href=#196 id=196 data-nosnippet>196</a>    D: CompositorHandler,
+<a href=#197 id=197 data-nosnippet>197</a>{
+<a href=#198 id=198 data-nosnippet>198</a>    <span class="kw">fn </span>request(
+<a href=#199 id=199 data-nosnippet>199</a>        state: <span class="kw-2">&amp;mut </span>D,
+<a href=#200 id=200 data-nosnippet>200</a>        client: <span class="kw-2">&amp;</span>wayland_server::Client,
+<a href=#201 id=201 data-nosnippet>201</a>        resource: <span class="kw-2">&amp;</span>wp_viewport::WpViewport,
+<a href=#202 id=202 data-nosnippet>202</a>        request: &lt;wp_viewport::WpViewport <span class="kw">as </span>wayland_server::Resource&gt;::Request,
+<a href=#203 id=203 data-nosnippet>203</a>        data: <span class="kw-2">&amp;</span>ViewportState,
+<a href=#204 id=204 data-nosnippet>204</a>        _dhandle: <span class="kw-2">&amp;</span>DisplayHandle,
+<a href=#205 id=205 data-nosnippet>205</a>        _data_init: <span class="kw-2">&amp;mut </span>wayland_server::DataInit&lt;<span class="lifetime">'_</span>, D&gt;,
+<a href=#206 id=206 data-nosnippet>206</a>    ) {
+<a href=#207 id=207 data-nosnippet>207</a>        <span class="kw">match </span>request {
+<a href=#208 id=208 data-nosnippet>208</a>            wp_viewport::Request::Destroy =&gt; {
+<a href=#209 id=209 data-nosnippet>209</a>                <span class="kw">if let </span><span class="prelude-val">Ok</span>(surface) = data.surface.upgrade() {
+<a href=#210 id=210 data-nosnippet>210</a>                    with_states(<span class="kw-2">&amp;</span>surface, |states| {
+<a href=#211 id=211 data-nosnippet>211</a>                        states
+<a href=#212 id=212 data-nosnippet>212</a>                            .data_map
+<a href=#213 id=213 data-nosnippet>213</a>                            .get::&lt;ViewporterSurfaceState&gt;()
+<a href=#214 id=214 data-nosnippet>214</a>                            .unwrap()
+<a href=#215 id=215 data-nosnippet>215</a>                            .lock()
+<a href=#216 id=216 data-nosnippet>216</a>                            .unwrap()
+<a href=#217 id=217 data-nosnippet>217</a>                            .take();
+<a href=#218 id=218 data-nosnippet>218</a>                        <span class="kw-2">*</span>states.cached_state.get::&lt;ViewportCachedState&gt;().pending() =
+<a href=#219 id=219 data-nosnippet>219</a>                            ViewportCachedState::default();
+<a href=#220 id=220 data-nosnippet>220</a>                    });
+<a href=#221 id=221 data-nosnippet>221</a>                }
+<a href=#222 id=222 data-nosnippet>222</a>            }
+<a href=#223 id=223 data-nosnippet>223</a>            wp_viewport::Request::SetSource { x, y, width, height } =&gt; {
+<a href=#224 id=224 data-nosnippet>224</a>                <span class="comment">// If all of x, y, width and height are -1.0, the source rectangle is unset instead.
+<a href=#225 id=225 data-nosnippet>225</a>                // Any other set of values where width or height are zero or negative,
+<a href=#226 id=226 data-nosnippet>226</a>                // or x or y are negative, raise the bad_value protocol error.
+<a href=#227 id=227 data-nosnippet>227</a>                </span><span class="kw">let </span>is_unset = x == -<span class="number">1.0 </span>&amp;&amp; y == -<span class="number">1.0 </span>&amp;&amp; width == -<span class="number">1.0 </span>&amp;&amp; height == -<span class="number">1.0</span>;
+<a href=#228 id=228 data-nosnippet>228</a>                <span class="kw">let </span>is_valid_src = x &gt;= <span class="number">0.0 </span>&amp;&amp; y &gt;= <span class="number">0.0 </span>&amp;&amp; width &gt; <span class="number">0.0 </span>&amp;&amp; height &gt; <span class="number">0.0</span>;
+<a href=#229 id=229 data-nosnippet>229</a>
+<a href=#230 id=230 data-nosnippet>230</a>                <span class="kw">if </span>!is_unset &amp;&amp; !is_valid_src {
+<a href=#231 id=231 data-nosnippet>231</a>                    resource.post_error(
+<a href=#232 id=232 data-nosnippet>232</a>                        wp_viewport::Error::BadValue <span class="kw">as </span>u32,
+<a href=#233 id=233 data-nosnippet>233</a>                        <span class="string">"negative or zero values in width or height or negative values in x or y"</span>.to_string(),
+<a href=#234 id=234 data-nosnippet>234</a>                    );
+<a href=#235 id=235 data-nosnippet>235</a>                    <span class="kw">return</span>;
+<a href=#236 id=236 data-nosnippet>236</a>                }
+<a href=#237 id=237 data-nosnippet>237</a>
+<a href=#238 id=238 data-nosnippet>238</a>                <span class="comment">// If the wl_surface associated with the wp_viewport is destroyed,
+<a href=#239 id=239 data-nosnippet>239</a>                // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
+<a href=#240 id=240 data-nosnippet>240</a>                </span><span class="kw">let </span><span class="prelude-val">Ok</span>(surface) = data.surface.upgrade() <span class="kw">else </span>{
+<a href=#241 id=241 data-nosnippet>241</a>                    resource.post_error(
+<a href=#242 id=242 data-nosnippet>242</a>                        wp_viewport::Error::NoSurface <span class="kw">as </span>u32,
+<a href=#243 id=243 data-nosnippet>243</a>                        <span class="string">"the wl_surface was destroyed"</span>.to_string(),
+<a href=#244 id=244 data-nosnippet>244</a>                    );
+<a href=#245 id=245 data-nosnippet>245</a>                    <span class="kw">return</span>;
+<a href=#246 id=246 data-nosnippet>246</a>                };
+<a href=#247 id=247 data-nosnippet>247</a>
+<a href=#248 id=248 data-nosnippet>248</a>                with_states(<span class="kw-2">&amp;</span>surface, |states| {
+<a href=#249 id=249 data-nosnippet>249</a>                    <span class="kw">let </span><span class="kw-2">mut </span>guard = states.cached_state.get::&lt;ViewportCachedState&gt;();
+<a href=#250 id=250 data-nosnippet>250</a>                    <span class="kw">let </span>viewport_state = guard.pending();
+<a href=#251 id=251 data-nosnippet>251</a>                    <span class="kw">let </span>src = <span class="kw">if </span>is_unset {
+<a href=#252 id=252 data-nosnippet>252</a>                        <span class="prelude-val">None
+<a href=#253 id=253 data-nosnippet>253</a>                    </span>} <span class="kw">else </span>{
+<a href=#254 id=254 data-nosnippet>254</a>                        <span class="kw">let </span>src = Rectangle::new((x, y).into(), (width, height).into());
+<a href=#255 id=255 data-nosnippet>255</a>                        <span class="macro">trace!</span>(surface = <span class="question-mark">?</span>surface, src = <span class="question-mark">?</span>src, <span class="string">"setting surface viewport src"</span>);
+<a href=#256 id=256 data-nosnippet>256</a>                        <span class="prelude-val">Some</span>(src)
+<a href=#257 id=257 data-nosnippet>257</a>                    };
+<a href=#258 id=258 data-nosnippet>258</a>                    viewport_state.src = src;
+<a href=#259 id=259 data-nosnippet>259</a>                });
+<a href=#260 id=260 data-nosnippet>260</a>            }
+<a href=#261 id=261 data-nosnippet>261</a>            wp_viewport::Request::SetDestination { width, height } =&gt; {
+<a href=#262 id=262 data-nosnippet>262</a>                <span class="comment">// If width is -1 and height is -1, the destination size is unset instead.
+<a href=#263 id=263 data-nosnippet>263</a>                // Any other pair of values for width and height that contains zero or
+<a href=#264 id=264 data-nosnippet>264</a>                // negative values raises the bad_value protocol error.
+<a href=#265 id=265 data-nosnippet>265</a>                </span><span class="kw">let </span>is_unset = width == -<span class="number">1 </span>&amp;&amp; height == -<span class="number">1</span>;
+<a href=#266 id=266 data-nosnippet>266</a>                <span class="kw">let </span>is_valid_size = width &gt; <span class="number">0 </span>&amp;&amp; height &gt; <span class="number">0</span>;
+<a href=#267 id=267 data-nosnippet>267</a>
+<a href=#268 id=268 data-nosnippet>268</a>                <span class="kw">if </span>!is_unset &amp;&amp; !is_valid_size {
+<a href=#269 id=269 data-nosnippet>269</a>                    resource.post_error(
+<a href=#270 id=270 data-nosnippet>270</a>                        wp_viewport::Error::BadValue <span class="kw">as </span>u32,
+<a href=#271 id=271 data-nosnippet>271</a>                        <span class="string">"negative or zero values in width or height"</span>.to_string(),
+<a href=#272 id=272 data-nosnippet>272</a>                    );
+<a href=#273 id=273 data-nosnippet>273</a>                    <span class="kw">return</span>;
+<a href=#274 id=274 data-nosnippet>274</a>                }
+<a href=#275 id=275 data-nosnippet>275</a>
+<a href=#276 id=276 data-nosnippet>276</a>                <span class="comment">// If the wl_surface associated with the wp_viewport is destroyed,
+<a href=#277 id=277 data-nosnippet>277</a>                // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
+<a href=#278 id=278 data-nosnippet>278</a>                </span><span class="kw">let </span><span class="prelude-val">Ok</span>(surface) = data.surface.upgrade() <span class="kw">else </span>{
+<a href=#279 id=279 data-nosnippet>279</a>                    resource.post_error(
+<a href=#280 id=280 data-nosnippet>280</a>                        wp_viewport::Error::NoSurface <span class="kw">as </span>u32,
+<a href=#281 id=281 data-nosnippet>281</a>                        <span class="string">"the wl_surface was destroyed"</span>.to_string(),
+<a href=#282 id=282 data-nosnippet>282</a>                    );
+<a href=#283 id=283 data-nosnippet>283</a>                    <span class="kw">return</span>;
+<a href=#284 id=284 data-nosnippet>284</a>                };
+<a href=#285 id=285 data-nosnippet>285</a>
+<a href=#286 id=286 data-nosnippet>286</a>                with_states(<span class="kw-2">&amp;</span>surface, |states| {
+<a href=#287 id=287 data-nosnippet>287</a>                    <span class="kw">let </span><span class="kw-2">mut </span>guard = states.cached_state.get::&lt;ViewportCachedState&gt;();
+<a href=#288 id=288 data-nosnippet>288</a>                    <span class="kw">let </span>viewport_state = guard.pending();
+<a href=#289 id=289 data-nosnippet>289</a>                    <span class="kw">let </span>size = <span class="kw">if </span>is_unset {
+<a href=#290 id=290 data-nosnippet>290</a>                        <span class="prelude-val">None
+<a href=#291 id=291 data-nosnippet>291</a>                    </span>} <span class="kw">else </span>{
+<a href=#292 id=292 data-nosnippet>292</a>                        <span class="kw">let </span>client_scale = state.client_compositor_state(client).client_scale();
+<a href=#293 id=293 data-nosnippet>293</a>                        <span class="kw">let </span>dst = Size::&lt;<span class="kw">_</span>, Client&gt;::from((width, height))
+<a href=#294 id=294 data-nosnippet>294</a>                            .to_f64()
+<a href=#295 id=295 data-nosnippet>295</a>                            .to_logical(client_scale)
+<a href=#296 id=296 data-nosnippet>296</a>                            .to_i32_round();
+<a href=#297 id=297 data-nosnippet>297</a>                        <span class="macro">trace!</span>(surface = <span class="question-mark">?</span>surface, size = <span class="question-mark">?</span>dst, <span class="string">"setting surface viewport destination size"</span>);
+<a href=#298 id=298 data-nosnippet>298</a>                        <span class="prelude-val">Some</span>(dst)
+<a href=#299 id=299 data-nosnippet>299</a>                    };
+<a href=#300 id=300 data-nosnippet>300</a>                    viewport_state.dst = size;
+<a href=#301 id=301 data-nosnippet>301</a>                });
+<a href=#302 id=302 data-nosnippet>302</a>            }
+<a href=#303 id=303 data-nosnippet>303</a>            <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+<a href=#304 id=304 data-nosnippet>304</a>        }
+<a href=#305 id=305 data-nosnippet>305</a>    }
+<a href=#306 id=306 data-nosnippet>306</a>}
+<a href=#307 id=307 data-nosnippet>307</a>
+<a href=#308 id=308 data-nosnippet>308</a><span class="doccomment">/// State of a single viewport attached to a surface
+<a href=#309 id=309 data-nosnippet>309</a></span><span class="attr">#[derive(Debug)]
+<a href=#310 id=310 data-nosnippet>310</a></span><span class="kw">pub struct </span>ViewportState {
+<a href=#311 id=311 data-nosnippet>311</a>    surface: Weak&lt;wl_surface::WlSurface&gt;,
+<a href=#312 id=312 data-nosnippet>312</a>}
+<a href=#313 id=313 data-nosnippet>313</a>
+<a href=#314 id=314 data-nosnippet>314</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>ViewportMarker(Weak&lt;wp_viewport::WpViewport&gt;);
+<a href=#315 id=315 data-nosnippet>315</a>
+<a href=#316 id=316 data-nosnippet>316</a><span class="kw">fn </span>viewport_pre_commit_hook&lt;D: <span class="lifetime">'static</span>&gt;(
+<a href=#317 id=317 data-nosnippet>317</a>    _state: <span class="kw-2">&amp;mut </span>D,
+<a href=#318 id=318 data-nosnippet>318</a>    _dh: <span class="kw-2">&amp;</span>DisplayHandle,
+<a href=#319 id=319 data-nosnippet>319</a>    surface: <span class="kw-2">&amp;</span>wl_surface::WlSurface,
+<a href=#320 id=320 data-nosnippet>320</a>) {
+<a href=#321 id=321 data-nosnippet>321</a>    with_states(surface, |states| {
+<a href=#322 id=322 data-nosnippet>322</a>        states
+<a href=#323 id=323 data-nosnippet>323</a>            .data_map
+<a href=#324 id=324 data-nosnippet>324</a>            .insert_if_missing_threadsafe::&lt;ViewporterSurfaceState, <span class="kw">_</span>&gt;(|| Mutex::new(<span class="prelude-val">None</span>));
+<a href=#325 id=325 data-nosnippet>325</a>        <span class="kw">let </span>viewport = states
+<a href=#326 id=326 data-nosnippet>326</a>            .data_map
+<a href=#327 id=327 data-nosnippet>327</a>            .get::&lt;ViewporterSurfaceState&gt;()
+<a href=#328 id=328 data-nosnippet>328</a>            .unwrap()
+<a href=#329 id=329 data-nosnippet>329</a>            .lock()
+<a href=#330 id=330 data-nosnippet>330</a>            .unwrap();
+<a href=#331 id=331 data-nosnippet>331</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(viewport) = <span class="kw-2">&amp;*</span>viewport {
+<a href=#332 id=332 data-nosnippet>332</a>            <span class="kw">let </span><span class="kw-2">mut </span>guard = states.cached_state.get::&lt;ViewportCachedState&gt;();
+<a href=#333 id=333 data-nosnippet>333</a>            <span class="kw">let </span>viewport_state = guard.pending();
+<a href=#334 id=334 data-nosnippet>334</a>
+<a href=#335 id=335 data-nosnippet>335</a>            <span class="comment">// If src_width or src_height are not integers and destination size is not set,
+<a href=#336 id=336 data-nosnippet>336</a>            // the bad_size protocol error is raised when the surface state is applied.
+<a href=#337 id=337 data-nosnippet>337</a>            </span><span class="kw">let </span>src_size = viewport_state.src.map(|src| src.size);
+<a href=#338 id=338 data-nosnippet>338</a>            <span class="kw">if </span>viewport_state.dst.is_none()
+<a href=#339 id=339 data-nosnippet>339</a>                &amp;&amp; src_size != src_size.map(|s| Size::from((s.w <span class="kw">as </span>i32, s.h <span class="kw">as </span>i32)).to_f64())
+<a href=#340 id=340 data-nosnippet>340</a>            {
+<a href=#341 id=341 data-nosnippet>341</a>                <span class="kw">if let </span><span class="prelude-val">Ok</span>(viewport) = viewport.<span class="number">0</span>.upgrade() {
+<a href=#342 id=342 data-nosnippet>342</a>                    viewport.post_error(
+<a href=#343 id=343 data-nosnippet>343</a>                        wp_viewport::Error::BadSize <span class="kw">as </span>u32,
+<a href=#344 id=344 data-nosnippet>344</a>                        <span class="string">"destination size is not integer"</span>.to_string(),
+<a href=#345 id=345 data-nosnippet>345</a>                    );
+<a href=#346 id=346 data-nosnippet>346</a>                }
+<a href=#347 id=347 data-nosnippet>347</a>            }
+<a href=#348 id=348 data-nosnippet>348</a>        }
+<a href=#349 id=349 data-nosnippet>349</a>    });
+<a href=#350 id=350 data-nosnippet>350</a>}
+<a href=#351 id=351 data-nosnippet>351</a>
+<a href=#352 id=352 data-nosnippet>352</a><span class="doccomment">/// Ensures that the viewport, if any, is valid accordingly to the protocol specification.
+<a href=#353 id=353 data-nosnippet>353</a>///
+<a href=#354 id=354 data-nosnippet>354</a>/// If the viewport violates any protocol checks a protocol error will be raised and `false`
+<a href=#355 id=355 data-nosnippet>355</a>/// is returned.
+<a href=#356 id=356 data-nosnippet>356</a></span><span class="kw">pub fn </span>ensure_viewport_valid(states: <span class="kw-2">&amp;</span>SurfaceData, buffer_size: Size&lt;i32, Logical&gt;) -&gt; bool {
+<a href=#357 id=357 data-nosnippet>357</a>    states
+<a href=#358 id=358 data-nosnippet>358</a>        .data_map
+<a href=#359 id=359 data-nosnippet>359</a>        .insert_if_missing_threadsafe::&lt;ViewporterSurfaceState, <span class="kw">_</span>&gt;(|| Mutex::new(<span class="prelude-val">None</span>));
+<a href=#360 id=360 data-nosnippet>360</a>    <span class="kw">let </span>viewport = states
+<a href=#361 id=361 data-nosnippet>361</a>        .data_map
+<a href=#362 id=362 data-nosnippet>362</a>        .get::&lt;ViewporterSurfaceState&gt;()
+<a href=#363 id=363 data-nosnippet>363</a>        .unwrap()
+<a href=#364 id=364 data-nosnippet>364</a>        .lock()
+<a href=#365 id=365 data-nosnippet>365</a>        .unwrap();
+<a href=#366 id=366 data-nosnippet>366</a>
+<a href=#367 id=367 data-nosnippet>367</a>    <span class="kw">if let </span><span class="prelude-val">Some</span>(viewport) = <span class="kw-2">&amp;*</span>viewport {
+<a href=#368 id=368 data-nosnippet>368</a>        <span class="kw">let </span><span class="kw-2">mut </span>guard = states.cached_state.get::&lt;ViewportCachedState&gt;();
+<a href=#369 id=369 data-nosnippet>369</a>        <span class="kw">let </span>state = guard.current();
+<a href=#370 id=370 data-nosnippet>370</a>
+<a href=#371 id=371 data-nosnippet>371</a>        <span class="kw">let </span>buffer_rect = Rectangle::from_size(buffer_size.to_f64());
+<a href=#372 id=372 data-nosnippet>372</a>        <span class="kw">let </span>src = state.src.unwrap_or(buffer_rect);
+<a href=#373 id=373 data-nosnippet>373</a>        <span class="kw">let </span>valid = buffer_rect.contains_rect(src);
+<a href=#374 id=374 data-nosnippet>374</a>        <span class="kw">if </span>!valid {
+<a href=#375 id=375 data-nosnippet>375</a>            <span class="kw">if let </span><span class="prelude-val">Ok</span>(viewport) = viewport.<span class="number">0</span>.upgrade() {
+<a href=#376 id=376 data-nosnippet>376</a>                viewport.post_error(
+<a href=#377 id=377 data-nosnippet>377</a>                    wp_viewport::Error::OutOfBuffer <span class="kw">as </span>u32,
+<a href=#378 id=378 data-nosnippet>378</a>                    <span class="macro">format!</span>(
+<a href=#379 id=379 data-nosnippet>379</a>                        <span class="string">"source rectangle x={},y={},w={},h={} extends outside of the content area x={},y={},w={},h={}"</span>, 
+<a href=#380 id=380 data-nosnippet>380</a>                        src.loc.x, src.loc.y, src.size.w, src.size.h,
+<a href=#381 id=381 data-nosnippet>381</a>                        buffer_rect.loc.x, buffer_rect.loc.y, buffer_rect.size.w, buffer_rect.size.h),
+<a href=#382 id=382 data-nosnippet>382</a>                );
+<a href=#383 id=383 data-nosnippet>383</a>            }
+<a href=#384 id=384 data-nosnippet>384</a>        }
+<a href=#385 id=385 data-nosnippet>385</a>        valid
+<a href=#386 id=386 data-nosnippet>386</a>    } <span class="kw">else </span>{
+<a href=#387 id=387 data-nosnippet>387</a>        <span class="bool-val">true
+<a href=#388 id=388 data-nosnippet>388</a>    </span>}
+<a href=#389 id=389 data-nosnippet>389</a>}
+<a href=#390 id=390 data-nosnippet>390</a>
+<a href=#391 id=391 data-nosnippet>391</a><span class="doccomment">/// Represents the double-buffered viewport
+<a href=#392 id=392 data-nosnippet>392</a>/// state of a [`WlSurface`](wl_surface::WlSurface)
+<a href=#393 id=393 data-nosnippet>393</a></span><span class="attr">#[derive(Debug, Default, Clone, Copy)]
+<a href=#394 id=394 data-nosnippet>394</a></span><span class="kw">pub struct </span>ViewportCachedState {
+<a href=#395 id=395 data-nosnippet>395</a>    <span class="doccomment">/// Defines the source [`Rectangle`] of the [`WlSurface`](wl_surface::WlSurface) in [`Logical`]
+<a href=#396 id=396 data-nosnippet>396</a>    /// coordinates used for cropping.
+<a href=#397 id=397 data-nosnippet>397</a>    </span><span class="kw">pub </span>src: <span class="prelude-ty">Option</span>&lt;Rectangle&lt;f64, Logical&gt;&gt;,
+<a href=#398 id=398 data-nosnippet>398</a>    <span class="doccomment">/// Defines the destination [`Size`] of the [`WlSurface`](wl_surface::WlSurface) in [`Logical`]
+<a href=#399 id=399 data-nosnippet>399</a>    /// coordinates used for scaling.
+<a href=#400 id=400 data-nosnippet>400</a>    </span><span class="kw">pub </span>dst: <span class="prelude-ty">Option</span>&lt;Size&lt;i32, Logical&gt;&gt;,
+<a href=#401 id=401 data-nosnippet>401</a>}
+<a href=#402 id=402 data-nosnippet>402</a>
+<a href=#403 id=403 data-nosnippet>403</a><span class="kw">impl </span>ViewportCachedState {
+<a href=#404 id=404 data-nosnippet>404</a>    <span class="doccomment">/// Gets the actual size the [`WlSurface`](wl_surface::WlSurface) should have on screen in
+<a href=#405 id=405 data-nosnippet>405</a>    /// [`Logical`] coordinates.
+<a href=#406 id=406 data-nosnippet>406</a>    ///
+<a href=#407 id=407 data-nosnippet>407</a>    /// This will return the destination size if set or the size of the source rectangle.
+<a href=#408 id=408 data-nosnippet>408</a>    /// If both are unset `None` is returned.
+<a href=#409 id=409 data-nosnippet>409</a>    </span><span class="kw">pub fn </span>size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Size&lt;i32, Logical&gt;&gt; {
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="self">self</span>.dst.or_else(|| {
+<a href=#411 id=411 data-nosnippet>411</a>            <span class="self">self</span>.src
+<a href=#412 id=412 data-nosnippet>412</a>                .map(|src| Size::from((src.size.w <span class="kw">as </span>i32, src.size.h <span class="kw">as </span>i32)))
+<a href=#413 id=413 data-nosnippet>413</a>        })
+<a href=#414 id=414 data-nosnippet>414</a>    }
+<a href=#415 id=415 data-nosnippet>415</a>}
+<a href=#416 id=416 data-nosnippet>416</a>
+<a href=#417 id=417 data-nosnippet>417</a><span class="kw">impl </span>Cacheable <span class="kw">for </span>ViewportCachedState {
+<a href=#418 id=418 data-nosnippet>418</a>    <span class="kw">fn </span>commit(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _dh: <span class="kw-2">&amp;</span>DisplayHandle) -&gt; <span class="self">Self </span>{
+<a href=#419 id=419 data-nosnippet>419</a>        ViewportCachedState {
+<a href=#420 id=420 data-nosnippet>420</a>            src: <span class="self">self</span>.src,
+<a href=#421 id=421 data-nosnippet>421</a>            dst: <span class="self">self</span>.dst,
+<a href=#422 id=422 data-nosnippet>422</a>        }
+<a href=#423 id=423 data-nosnippet>423</a>    }
+<a href=#424 id=424 data-nosnippet>424</a>
+<a href=#425 id=425 data-nosnippet>425</a>    <span class="kw">fn </span>merge_into(<span class="self">self</span>, into: <span class="kw-2">&amp;mut </span><span class="self">Self</span>, _dh: <span class="kw-2">&amp;</span>DisplayHandle) {
+<a href=#426 id=426 data-nosnippet>426</a>        into.src = <span class="self">self</span>.src;
+<a href=#427 id=427 data-nosnippet>427</a>        into.dst = <span class="self">self</span>.dst;
+<a href=#428 id=428 data-nosnippet>428</a>    }
+<a href=#429 id=429 data-nosnippet>429</a>}
+<a href=#430 id=430 data-nosnippet>430</a>
+<a href=#431 id=431 data-nosnippet>431</a><span class="attr">#[allow(missing_docs)] </span><span class="comment">// TODO
+<a href=#432 id=432 data-nosnippet>432</a></span><span class="attr">#[macro_export]
+<a href=#433 id=433 data-nosnippet>433</a></span><span class="macro">macro_rules!</span> delegate_viewporter {
+<a href=#434 id=434 data-nosnippet>434</a>    ($(@&lt;$( <span class="macro-nonterminal">$lt</span>:tt $( : <span class="macro-nonterminal">$clt</span>:tt $(+ <span class="macro-nonterminal">$dlt</span>:tt )* )<span class="question-mark">? </span>),+&gt;)<span class="question-mark">? </span><span class="macro-nonterminal">$ty</span>: ty) =&gt; {
+<a href=#435 id=435 data-nosnippet>435</a>        <span class="kw">const _</span>: () = {
+<a href=#436 id=436 data-nosnippet>436</a>            <span class="kw">use </span><span class="macro-nonterminal">$</span><span class="kw">crate</span>::{
+<a href=#437 id=437 data-nosnippet>437</a>                <span class="macro-nonterminal">reexports</span>::{
+<a href=#438 id=438 data-nosnippet>438</a>                    wayland_protocols::wp::viewporter::server::{
+<a href=#439 id=439 data-nosnippet>439</a>                        wp_viewport::WpViewport, wp_viewporter::WpViewporter,
+<a href=#440 id=440 data-nosnippet>440</a>                    },
+<a href=#441 id=441 data-nosnippet>441</a>                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
+<a href=#442 id=442 data-nosnippet>442</a>                },
+<a href=#443 id=443 data-nosnippet>443</a>                wayland::viewporter::{ViewportState, ViewporterState},
+<a href=#444 id=444 data-nosnippet>444</a>            };
+<a href=#445 id=445 data-nosnippet>445</a>
+<a href=#446 id=446 data-nosnippet>446</a>            <span class="macro">delegate_global_dispatch!</span>(
+<a href=#447 id=447 data-nosnippet>447</a>                $(@&lt; $( <span class="macro-nonterminal">$lt </span>$( : <span class="macro-nonterminal">$clt </span>$(+ <span class="macro-nonterminal">$dlt </span>)* )<span class="question-mark">? </span>),+ &gt;)<span class="question-mark">?
+<a href=#448 id=448 data-nosnippet>448</a>                </span><span class="macro-nonterminal">$ty</span>: [WpViewporter: ()] =&gt; ViewporterState
+<a href=#449 id=449 data-nosnippet>449</a>            );
+<a href=#450 id=450 data-nosnippet>450</a>
+<a href=#451 id=451 data-nosnippet>451</a>            <span class="macro">delegate_dispatch!</span>(
+<a href=#452 id=452 data-nosnippet>452</a>                $(@&lt; $( <span class="macro-nonterminal">$lt </span>$( : <span class="macro-nonterminal">$clt </span>$(+ <span class="macro-nonterminal">$dlt </span>)* )<span class="question-mark">? </span>),+ &gt;)<span class="question-mark">?
+<a href=#453 id=453 data-nosnippet>453</a>                </span><span class="macro-nonterminal">$ty</span>: [WpViewporter: ()] =&gt; ViewporterState
+<a href=#454 id=454 data-nosnippet>454</a>            );
+<a href=#455 id=455 data-nosnippet>455</a>
+<a href=#456 id=456 data-nosnippet>456</a>            <span class="macro">delegate_dispatch!</span>(
+<a href=#457 id=457 data-nosnippet>457</a>                $(@&lt; $( <span class="macro-nonterminal">$lt </span>$( : <span class="macro-nonterminal">$clt </span>$(+ <span class="macro-nonterminal">$dlt </span>)* )<span class="question-mark">? </span>),+ &gt;)<span class="question-mark">?
+<a href=#458 id=458 data-nosnippet>458</a>                </span><span class="macro-nonterminal">$ty</span>: [WpViewport: ViewportState] =&gt; ViewportState
+<a href=#459 id=459 data-nosnippet>459</a>            );
+<a href=#460 id=460 data-nosnippet>460</a>        };
+<a href=#461 id=461 data-nosnippet>461</a>    };
+<a href=#462 id=462 data-nosnippet>462</a>}</code></pre></div></section></main></body></html>

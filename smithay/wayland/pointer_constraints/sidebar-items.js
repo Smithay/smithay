@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PointerConstraint"],"fn":["with_pointer_constraint"],"struct":["ConfinedPointer","LockedPointer","PointerConstraintRef","PointerConstraintsState"],"trait":["PointerConstraintsHandler"]};

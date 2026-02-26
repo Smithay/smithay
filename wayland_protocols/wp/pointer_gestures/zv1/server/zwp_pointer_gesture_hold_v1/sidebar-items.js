@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_BEGIN_OPCODE","EVT_BEGIN_SINCE","EVT_END_OPCODE","EVT_END_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE"],"enum":["Event","Request"],"struct":["ZwpPointerGestureHoldV1"]};

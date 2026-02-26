@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TouchEvent"],"struct":["TouchCancelEvent","TouchDownEvent","TouchFrameEvent","TouchMotionEvent","TouchUpEvent"],"trait":["TouchEventPosition","TouchEventSlot","TouchEventTrait"]};

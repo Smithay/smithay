@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Format","Modifier"],"struct":["BufferObject","BufferObjectFlags","Device","FrontBufferError","InvalidFdError","MappedBufferObject","Surface"],"trait":["AsRaw"],"type":["BufferObjectHandle"]};

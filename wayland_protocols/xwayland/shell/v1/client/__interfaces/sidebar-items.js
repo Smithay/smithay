@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["XWAYLAND_SHELL_V1_INTERFACE","XWAYLAND_SURFACE_V1_INTERFACE","xwayland_shell_v1_interface","xwayland_surface_v1_interface"]};

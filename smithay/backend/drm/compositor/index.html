@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Composition for `Element`s using drm planes"><title>smithay::backend::drm::compositor - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module compositor</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module compositor</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#what-makes-a-element-eligible-for-direct-scan-out" title="What makes a `Element` eligible for direct scan-out">What makes a <code>Element</code> eligible for direct scan-out</a><ul><li><a href="#general" title="General">General</a></li><li><a href="#overlay-planes" title="Overlay planes">Overlay planes</a></li><li><a href="#underlay-planes" title="Underlay planes">Underlay planes</a></li><li><a href="#primary-plane" title="Primary plane">Primary plane</a></li></ul></li><li><a href="#how-to-use-it" title="How to use it">How to use it</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>backend::<wbr>drm</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">smithay</a>::<wbr><a href="../../index.html">backend</a>::<wbr><a href="../index.html">drm</a></div><h1>Module <span>compositor</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/smithay/backend/drm/compositor/mod.rs.html#1-4436">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate features <code>wayland_frontend</code> and <code>backend_gbm</code> and <code>backend_drm</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Composition for <a href="../../renderer/element/trait.Element.html" title="trait smithay::backend::renderer::element::Element"><code>Element</code></a>s using drm planes</p>
+<p>When possible composition can be (partially) offloaded to the display driver by assigning
+elements to drm planes. This is especially important for latency intensive fullscreen clients
+like video renderers or games.</p>
+<p>The <a href="struct.DrmCompositor.html" title="struct smithay::backend::drm::compositor::DrmCompositor"><code>DrmCompositor</code></a> does so by walking the stack of provided <a href="../../renderer/element/trait.Element.html" title="trait smithay::backend::renderer::element::Element"><code>Element</code></a>s from front to back
+while trying to assign each element to a drm overlay plane. Each item that fails the plane test
+will be rendered on the primary plane using the provided <a href="../../renderer/trait.Renderer.html" title="trait smithay::backend::renderer::Renderer"><code>Renderer</code></a>.
+Additionally it will try to assign the top most element that fit’s into the cursor size (as specified
+by the <a href="../struct.DrmDevice.html" title="struct smithay::backend::drm::DrmDevice"><code>DrmDevice</code></a>) on the cursor plane. If the element can not be
+directly scanned out, pixman will be used to render the element.</p>
+<p>Note: While the <a href="struct.DrmCompositor.html" title="struct smithay::backend::drm::compositor::DrmCompositor"><code>DrmCompositor</code></a> also works on <em>legacy</em> drm the use of overlay and cursor planes is disabled in that case.
+Direct scan-out will only work with an atomic <a href="../struct.DrmSurface.html" title="struct smithay::backend::drm::DrmSurface"><code>DrmSurface</code></a>.</p>
+<h3 id="what-makes-a-element-eligible-for-direct-scan-out"><a class="doc-anchor" href="#what-makes-a-element-eligible-for-direct-scan-out">§</a>What makes a <a href="../../renderer/element/trait.Element.html" title="trait smithay::backend::renderer::element::Element"><code>Element</code></a> eligible for direct scan-out</h3><h4 id="general"><a class="doc-anchor" href="#general">§</a>General</h4>
+<p>First the element has to provide a <a href="../../renderer/element/enum.UnderlyingStorage.html" title="enum smithay::backend::renderer::element::UnderlyingStorage"><code>UnderlyingStorage</code></a> which can be exported as a drm framebuffer.
+Currently this is limited to wayland buffers, but may be extended in the future.
+This module provides a default exporter based on <a href="../../../../gbm/index.html" title="mod gbm"><code>gbm</code></a> which should fit most use-cases.</p>
+<p>If a certain combination of elements works can only be determined by asking the driver by submitting
+a atomic commit test. If that test fails the element is scheduled to be rendered on the primary plane.</p>
+<h4 id="overlay-planes"><a class="doc-anchor" href="#overlay-planes">§</a>Overlay planes</h4>
+<p>The element can only be directly scanned out if it’s geometry does not overlap with an already assigned
+element on a plane higher in the stack.</p>
+<h4 id="underlay-planes"><a class="doc-anchor" href="#underlay-planes">§</a>Underlay planes</h4>
+<p>An underlay plane is only used if it does not overlap with an already assigned plane lower in the stack
+and the element is fully opaque.</p>
+<h4 id="primary-plane"><a class="doc-anchor" href="#primary-plane">§</a>Primary plane</h4>
+<p>For an element to be considered to be directly scanned out on the primary plane it has to be the last remaining
+visible element on the output and no other element has been assigned to the primary plane. If there are multiple
+element assigned to the primary plane the renderer will be used to composite the primary plane into a allocator
+provided buffer. Additionally the element has to be either fully opaque or the clear color has to match the CRTC
+background color and no overlap with an underlay is found.</p>
+<h2 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{
+    backend::drm::{
+        compositor::{DrmCompositor, FrameFlags},
+        exporter::gbm::GbmFramebufferExporter,
+        DrmSurface,
+    },
+    output::{Output, PhysicalProperties, Subpixel},
+    utils::Size,
+};
+
+<span class="comment">// ...initialize the output, drm device, drm surface and allocator
+</span><span class="kw">let </span>output = Output::new(
+    <span class="string">"e-DP"</span>.into(),
+    PhysicalProperties {
+        size: Size::from((<span class="number">800</span>, <span class="number">600</span>)),
+        make: <span class="string">"N/A"</span>.into(),
+        model: <span class="string">"N/A"</span>.into(),
+        subpixel: Subpixel::Unknown,
+        serial_number: <span class="string">"N/A"</span>.into(),
+    },
+);
+
+<span class="kw">let </span><span class="kw-2">mut </span>compositor: DrmCompositor&lt;<span class="kw">_</span>, <span class="kw">_</span>, (), <span class="kw">_</span>&gt; = DrmCompositor::new(
+    <span class="kw-2">&amp;</span>output,
+    surface,
+    <span class="prelude-val">None</span>,
+    allocator,
+    exporter,
+    color_formats,
+    renderer_formats,
+    device.cursor_size(),
+    <span class="prelude-val">Some</span>(gbm),
+)
+.expect(<span class="string">"failed to initialize drm compositor"</span>);
+
+<span class="kw">let </span>render_frame_result = compositor
+    .render_frame::&lt;<span class="kw">_</span>, <span class="kw">_</span>&gt;(<span class="kw-2">&amp;mut </span>renderer, <span class="kw-2">&amp;</span>elements, CLEAR_COLOR, FrameFlags::DEFAULT)
+    .expect(<span class="string">"failed to render frame"</span>);
+
+<span class="kw">if </span>!render_frame_result.is_empty {
+    compositor.queue_frame(()).expect(<span class="string">"failed to queue frame"</span>);
+
+    <span class="comment">// ...wait for VBlank event
+
+    </span>compositor
+        .frame_submitted()
+        .expect(<span class="string">"failed to mark frame as submitted"</span>);
+} <span class="kw">else </span>{
+    <span class="comment">// ...re-schedule frame
+</span>}</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.DrmCompositor.html" title="struct smithay::backend::drm::compositor::DrmCompositor">DrmCompositor</a></dt><dd>Composite an output using a combination of planes and rendering</dd><dt><a class="struct" href="struct.FrameFlags.html" title="struct smithay::backend::drm::compositor::FrameFlags">Frame<wbr>Flags</a></dt><dd>Possible flags for a DMA buffer</dd><dt><a class="struct" href="struct.PrimarySwapchainElement.html" title="struct smithay::backend::drm::compositor::PrimarySwapchainElement">Primary<wbr>Swapchain<wbr>Element</a></dt><dd>Defines the element for the primary plane in cases where a composited buffer was used.</dd><dt><a class="struct" href="struct.RenderFrameResult.html" title="struct smithay::backend::drm::compositor::RenderFrameResult">Render<wbr>Frame<wbr>Result</a></dt><dd>Result for <a href="struct.DrmCompositor.html#method.render_frame" title="method smithay::backend::drm::compositor::DrmCompositor::render_frame"><code>DrmCompositor::render_frame</code></a></dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.BlitFrameResultError.html" title="enum smithay::backend::drm::compositor::BlitFrameResultError">Blit<wbr>Frame<wbr>Result<wbr>Error</a></dt><dd>Error for <a href="struct.RenderFrameResult.html#method.blit_frame_result" title="method smithay::backend::drm::compositor::RenderFrameResult::blit_frame_result"><code>RenderFrameResult::blit_frame_result</code></a></dd><dt><a class="enum" href="enum.FrameError.html" title="enum smithay::backend::drm::compositor::FrameError">Frame<wbr>Error</a></dt><dd>Errors thrown by a <a href="struct.DrmCompositor.html" title="struct smithay::backend::drm::compositor::DrmCompositor"><code>DrmCompositor</code></a></dd><dt><a class="enum" href="enum.PrimaryPlaneElement.html" title="enum smithay::backend::drm::compositor::PrimaryPlaneElement">Primary<wbr>Plane<wbr>Element</a></dt><dd>Defines the element for the primary plane</dd><dt><a class="enum" href="enum.RenderFrameError.html" title="enum smithay::backend::drm::compositor::RenderFrameError">Render<wbr>Frame<wbr>Error</a></dt><dd>Error returned from <a href="struct.DrmCompositor.html#method.render_frame" title="method smithay::backend::drm::compositor::DrmCompositor::render_frame"><code>DrmCompositor::render_frame</code></a></dd></dl></section></div></main></body></html>

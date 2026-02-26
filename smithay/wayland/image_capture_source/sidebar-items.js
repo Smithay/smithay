@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ImageCaptureSource","ImageCaptureSourceData","ImageCaptureSourceState","ImageCaptureSourceWeakHandle","OutputCaptureSourceGlobalData","OutputCaptureSourceState","ToplevelCaptureSourceGlobalData","ToplevelCaptureSourceState"],"trait":["ImageCaptureSourceHandler","OutputCaptureSourceHandler","ToplevelCaptureSourceHandler"]};

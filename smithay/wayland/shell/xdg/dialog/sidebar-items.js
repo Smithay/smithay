@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ToplevelDialogHint"],"struct":["XdgDialogState"],"trait":["XdgDialogHandler"]};

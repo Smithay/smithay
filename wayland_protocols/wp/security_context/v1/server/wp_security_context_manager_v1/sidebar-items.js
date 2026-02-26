@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_CREATE_LISTENER_OPCODE","REQ_CREATE_LISTENER_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE"],"enum":["Error","Event","Request"],"struct":["WpSecurityContextManagerV1"]};

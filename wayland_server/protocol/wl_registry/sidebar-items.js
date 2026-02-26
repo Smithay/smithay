@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_GLOBAL_OPCODE","EVT_GLOBAL_REMOVE_OPCODE","EVT_GLOBAL_REMOVE_SINCE","EVT_GLOBAL_SINCE","REQ_BIND_OPCODE","REQ_BIND_SINCE"],"enum":["Event","Request"],"struct":["WlRegistry"]};

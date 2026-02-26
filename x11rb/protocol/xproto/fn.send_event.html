@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="send an event."><title>send_event in x11rb::protocol::xproto - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">send_event</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">send_<wbr>event</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#fields-1" title="Fields">Fields</a></li><li><a href="#errors" title="Errors">Errors</a></li><li><a href="#see" title="See">See</a></li><li><a href="#example" title="Example">Example</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In x11rb::<wbr>protocol::<wbr>xproto</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">x11rb</a>::<wbr><a href="../index.html">protocol</a>::<wbr><a href="index.html">xproto</a></div><h1>Function <span class="fn">send_<wbr>event</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/x11rb/protocol/xproto.rs.html#1040-1058">Source</a> </span></div><pre class="rust item-decl"><code>pub fn send_event&lt;Conn, A, B&gt;(
+    conn: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;Conn</a>,
+    propagate: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+    destination: A,
+    event_mask: <a class="struct" href="struct.EventMask.html" title="struct x11rb::protocol::xproto::EventMask">EventMask</a>,
+    event: B,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Conn&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;<div class="where">where
+    Conn: <a class="trait" href="../../connection/trait.RequestConnection.html" title="trait x11rb::connection::RequestConnection">RequestConnection</a> + ?<a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html" title="trait core::marker::Sized">Sized</a>,
+    A: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Window.html" title="type x11rb::protocol::xproto::Window">Window</a>&gt;,
+    B: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.array.html">32</a>]&gt;,</div></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>send an event.</p>
+<p>Identifies the <code>destination</code> window, determines which clients should receive
+the specified event and ignores any active grabs.</p>
+<p>The <code>event</code> must be one of the core events or an event defined by an extension,
+so that the X server can correctly byte-swap the contents as necessary. The
+contents of <code>event</code> are otherwise unaltered and unchecked except for the
+<code>send_event</code> field which is forced to ‘true’.</p>
+<h2 id="fields-1"><a class="doc-anchor" href="#fields-1">§</a>Fields</h2>
+<ul>
+<li>
+<p><code>destination</code> - The window to send this event to. Every client which selects any event within
+<code>event_mask</code> on <code>destination</code> will get the event.</p>
+<p>The special value <code>XCB_SEND_EVENT_DEST_POINTER_WINDOW</code> refers to the window
+that contains the mouse pointer.</p>
+<p>The special value <code>XCB_SEND_EVENT_DEST_ITEM_FOCUS</code> refers to the window which
+has the keyboard focus.</p>
+</li>
+<li>
+<p><code>event_mask</code> - Event_mask for determining which clients should receive the specified event.
+See <code>destination</code> and <code>propagate</code>.</p>
+</li>
+<li>
+<p><code>propagate</code> - If <code>propagate</code> is true and no clients have selected any event on <code>destination</code>,
+the destination is replaced with the closest ancestor of <code>destination</code> for
+which some client has selected a type in <code>event_mask</code> and for which no
+intervening window has that type in its do-not-propagate-mask. If no such
+window exists or if the window is an ancestor of the focus window and
+<code>InputFocus</code> was originally specified as the destination, the event is not sent
+to any clients. Otherwise, the event is reported to every client selecting on
+the final destination any of the types specified in <code>event_mask</code>.</p>
+</li>
+<li>
+<p><code>event</code> - The event to send to the specified <code>destination</code>.</p>
+</li>
+</ul>
+<h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
+<ul>
+<li><code>Window</code> - The specified <code>destination</code> window does not exist.</li>
+<li><code>Value</code> - The given <code>event</code> is neither a core event nor an event defined by an extension.</li>
+</ul>
+<h2 id="see"><a class="doc-anchor" href="#see">§</a>See</h2>
+<ul>
+<li><code>ConfigureNotify</code>: event</li>
+</ul>
+<h2 id="example"><a class="doc-anchor" href="#example">§</a>Example</h2><div class="example-wrap"><pre class="language-text"><code>/*
+ * Tell the given window that it was configured to a size of 800x600 pixels.
+ *
+ */
+void my_example(xcb_connection_t *conn, xcb_window_t window) {
+    /* Every X11 event is 32 bytes long. Therefore, XCB will copy 32 bytes.
+     * In order to properly initialize these bytes, we allocate 32 bytes even
+     * though we only need less for an xcb_configure_notify_event_t */
+    xcb_configure_notify_event_t *event = calloc(32, 1);
+
+    event-&gt;event = window;
+    event-&gt;window = window;
+    event-&gt;response_type = XCB_CONFIGURE_NOTIFY;
+
+    event-&gt;x = 0;
+    event-&gt;y = 0;
+    event-&gt;width = 800;
+    event-&gt;height = 600;
+
+    event-&gt;border_width = 0;
+    event-&gt;above_sibling = XCB_NONE;
+    event-&gt;override_redirect = false;
+
+    xcb_send_event(conn, false, window, XCB_EVENT_MASK_STRUCTURE_NOTIFY,
+                   (char*)event);
+    xcb_flush(conn);
+    free(event);
+}</code></pre></div></div></details></section></div></main></body></html>

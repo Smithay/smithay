@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_GET_TABLET_SEAT_OPCODE","REQ_GET_TABLET_SEAT_SINCE"],"enum":["Event","Request"],"struct":["ZwpTabletManagerV1"]};

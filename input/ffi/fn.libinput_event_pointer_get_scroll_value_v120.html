@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="@ingroup event_pointer"><title>libinput_event_pointer_get_scroll_value_v120 in input::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="input" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">libinput_event_pointer_get_scroll_value_v120</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../input/index.html">input</a><span class="version">0.9.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In input::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">input</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">libinput_<wbr>event_<wbr>pointer_<wbr>get_<wbr>scroll_<wbr>value_<wbr>v120</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn libinput_event_pointer_get_scroll_value_v120(
+    event: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.pointer.html">*mut </a><a class="struct" href="struct.libinput_event_pointer.html" title="struct input::ffi::libinput_event_pointer">libinput_event_pointer</a>,
+    axis: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.f64.html">f64</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>@ingroup event_pointer</p>
+<p>For events of type @ref LIBINPUT_EVENT_POINTER_SCROLL_WHEEL
+the v120-normalized value represents the movement in logical mouse wheel
+clicks, normalized to the -120..+120 range.</p>
+<p>A value that is a fraction of ±120 indicates a wheel movement less than
+one logical click, a caller should either scroll by the respective
+fraction of the normal scroll distance or accumulate that value until a
+multiple of 120 is reached.</p>
+<p>For most callers, this is the preferred way of handling high-resolution
+scroll events.</p>
+<p>The normalized v120 value does not take device-specific physical angles
+or distances into account, i.e. a wheel with a click angle of 20 degrees
+produces only 18 logical clicks per 360 degree rotation, a wheel with a
+click angle of 15 degrees produces 24 logical clicks per 360 degree
+rotation. Where the physical angle matters, use
+libinput_event_pointer_get_axis_value() instead.</p>
+<p>The magic number 120 originates from the <a
+href="http://download.microsoft.com/download/b/d/1/bd1f7ef4-7d72-419e-bc5c-9f79ad7bb66e/wheel.docx">
+Windows Vista Mouse Wheel design document</a>.</p>
+<p>@note It is an application bug to call this function for events other than
+@ref LIBINPUT_EVENT_POINTER_SCROLL_WHEEL.</p>
+<p>@return A value normalized to the 0-±120 range</p>
+<p>@see libinput_event_pointer_get_axis_value
+@see libinput_event_pointer_get_axis_value_discrete</p>
+<p>@since 1.19</p>
+</div></details></section></div></main></body></html>

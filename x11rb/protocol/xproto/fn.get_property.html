@@ -1,0 +1,70 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Gets a window property."><title>get_property in x11rb::protocol::xproto - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">get_property</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">get_<wbr>property</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#fields-1" title="Fields">Fields</a></li><li><a href="#errors" title="Errors">Errors</a></li><li><a href="#see" title="See">See</a></li><li><a href="#example" title="Example">Example</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In x11rb::<wbr>protocol::<wbr>xproto</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">x11rb</a>::<wbr><a href="../index.html">protocol</a>::<wbr><a href="index.html">xproto</a></div><h1>Function <span class="fn">get_<wbr>property</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/x11rb/protocol/xproto.rs.html#833-853">Source</a> </span></div><pre class="rust item-decl"><code>pub fn get_property&lt;Conn, A, B&gt;(
+    conn: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;Conn</a>,
+    delete: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+    window: <a class="type" href="type.Window.html" title="type x11rb::protocol::xproto::Window">Window</a>,
+    property: A,
+    type_: B,
+    long_offset: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+    long_length: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Conn, <a class="struct" href="struct.GetPropertyReply.html" title="struct x11rb::protocol::xproto::GetPropertyReply">GetPropertyReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;<div class="where">where
+    Conn: <a class="trait" href="../../connection/trait.RequestConnection.html" title="trait x11rb::connection::RequestConnection">RequestConnection</a> + ?<a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html" title="trait core::marker::Sized">Sized</a>,
+    A: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Atom.html" title="type x11rb::protocol::xproto::Atom">Atom</a>&gt;,
+    B: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Atom.html" title="type x11rb::protocol::xproto::Atom">Atom</a>&gt;,</div></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Gets a window property.</p>
+<p>Gets the specified <code>property</code> from the specified <code>window</code>. Properties are for
+example the window title (<code>WM_NAME</code>) or its minimum size (<code>WM_NORMAL_HINTS</code>).
+Protocols such as EWMH also use properties - for example EWMH defines the
+window title, encoded as UTF-8 string, in the <code>_NET_WM_NAME</code> property.</p>
+<p>TODO: talk about <code>type</code></p>
+<p>TODO: talk about <code>delete</code></p>
+<p>TODO: talk about the offset/length thing. what’s a valid use case?</p>
+<h2 id="fields-1"><a class="doc-anchor" href="#fields-1">§</a>Fields</h2>
+<ul>
+<li><code>window</code> - The window whose property you want to get.</li>
+<li><code>delete</code> - Whether the property should actually be deleted. For deleting a property, the
+specified <code>type</code> has to match the actual property type.</li>
+<li><code>property</code> - The property you want to get (an atom).</li>
+<li><code>type</code> - The type of the property you want to get (an atom).</li>
+<li><code>long_offset</code> - Specifies the offset (in 32-bit multiples) in the specified property where the
+data is to be retrieved.</li>
+<li><code>long_length</code> - Specifies how many 32-bit multiples of data should be retrieved (e.g. if you
+set <code>long_length</code> to 4, you will receive 16 bytes of data).</li>
+</ul>
+<h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
+<ul>
+<li><code>Window</code> - The specified <code>window</code> does not exist.</li>
+<li><code>Atom</code> - <code>property</code> or <code>type</code> do not refer to a valid atom.</li>
+<li><code>Value</code> - The specified <code>long_offset</code> is beyond the actual property length (e.g. the
+property has a length of 3 bytes and you are setting <code>long_offset</code> to 1,
+resulting in a byte offset of 4).</li>
+</ul>
+<h2 id="see"><a class="doc-anchor" href="#see">§</a>See</h2>
+<ul>
+<li><code>InternAtom</code>: request</li>
+<li><code>xprop</code>: program</li>
+</ul>
+<h2 id="example"><a class="doc-anchor" href="#example">§</a>Example</h2><div class="example-wrap"><pre class="language-text"><code>/*
+ * Prints the WM_NAME property of the window.
+ *
+ */
+void my_example(xcb_connection_t *c, xcb_window_t window) {
+    xcb_get_property_cookie_t cookie;
+    xcb_get_property_reply_t *reply;
+
+    /* These atoms are predefined in the X11 protocol. */
+    xcb_atom_t property = XCB_ATOM_WM_NAME;
+    xcb_atom_t type = XCB_ATOM_STRING;
+
+    // TODO: a reasonable long_length for WM_NAME?
+    cookie = xcb_get_property(c, 0, window, property, type, 0, 0);
+    if ((reply = xcb_get_property_reply(c, cookie, NULL))) {
+        int len = xcb_get_property_value_length(reply);
+        if (len == 0) {
+            printf(&quot;TODO\\n&quot;);
+            free(reply);
+            return;
+        }
+        printf(&quot;WM_NAME is %.*s\\n&quot;, len,
+               (char*)xcb_get_property_value(reply));
+    }
+    free(reply);
+}</code></pre></div></div></details></section></div></main></body></html>

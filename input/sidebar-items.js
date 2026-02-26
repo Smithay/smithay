@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AccelProfile","ClickMethod","DeviceCapability","DeviceConfigError","ScrollButtonLockState","ScrollMethod","TapButtonMap"],"mod":["event","ffi"],"struct":["Device","DeviceGroup","Led","Libinput","Seat","SendEventsMode"],"trait":["AsRaw","Context","FromRaw","LibinputInterface"],"type":["DeviceConfigResult"]};

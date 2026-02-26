@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="WlOutput advertising capabilities"><title>smithay::wayland::output - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module output</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module output</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#how-to-use-it" title="How to use it">How to use it</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>output</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/output/mod.rs.html#1-398">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>WlOutput advertising capabilities</p>
+<p>This module provides additional implementations for <a href="../../output/struct.Output.html" title="struct smithay::output::Output"><code>crate::output::Output</code></a>
+to handle advertising of your compositor’s output and their capabilities to your client,
+as well as mapping your clients output request to your physical outputs.</p>
+<h2 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h2>
+<p>After you have instantiated an <a href="../../output/struct.Output.html" title="struct smithay::output::Output"><code>Output</code></a> you need to use <a href="../../output/struct.Output.html#method.create_global" title="method smithay::output::Output::create_global"><code>Output::create_global</code></a>
+to advertise a new output global to clients.
+The resulting <code>GlobalId</code> can later be destroyed again to stop advertising it
+without destroying it’s state. E.g. in case the matching physical output got disabled at runtime.</p>
+<p>If you change the properties of your output (if the current resolution mode changes for example),
+it’ll automatically forward any changes to the clients.</p>
+<p>Additional protocols may piggy-back on this type.
+E.g. to also advertise an xdg-output for every wl-output you can use
+<a href="struct.OutputManagerState.html#method.new_with_xdg_output" title="associated function smithay::wayland::output::OutputManagerState::new_with_xdg_output"><code>OutputManagerState::new_with_xdg_output</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::delegate_output;
+<span class="kw">use </span>smithay::output::{Output, PhysicalProperties, Scale, Mode, Subpixel};
+<span class="kw">use </span>smithay::utils::Transform;
+<span class="kw">use </span>smithay::wayland::output::OutputHandler;
+
+<span class="comment">// Create the Output with given name and physical properties.
+</span><span class="kw">let </span>output = Output::new(
+    <span class="string">"output-0"</span>.into(), <span class="comment">// the name of this output,
+    </span>PhysicalProperties {
+        size: (<span class="number">200</span>, <span class="number">150</span>).into(),        <span class="comment">// dimensions (width, height) in mm
+        </span>subpixel: Subpixel::HorizontalRgb,  <span class="comment">// subpixel information
+        </span>make: <span class="string">"Screens Inc"</span>.into(),     <span class="comment">// make of the monitor
+        </span>model: <span class="string">"Monitor Ultra"</span>.into(),  <span class="comment">// model of the monitor
+        </span>serial_number: <span class="string">"KL11C28J04XJ"</span>.into(), <span class="comment">// serial number of the monitor
+    </span>},
+);
+<span class="comment">// create a global, if you want to advertise it to clients
+</span><span class="kw">let </span>_global = output.create_global::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display_handle,      <span class="comment">// the display
+</span>); <span class="comment">// you can drop the global, if you never intend to destroy it.
+// Now you can configure it
+</span>output.change_current_state(
+    <span class="prelude-val">Some</span>(Mode { size: (<span class="number">1920</span>, <span class="number">1080</span>).into(), refresh: <span class="number">60000 </span>}), <span class="comment">// the resolution mode,
+    </span><span class="prelude-val">Some</span>(Transform::Normal), <span class="comment">// global screen transformation
+    </span><span class="prelude-val">Some</span>(Scale::Integer(<span class="number">1</span>)), <span class="comment">// global screen scaling factor
+    </span><span class="prelude-val">Some</span>((<span class="number">0</span>,<span class="number">0</span>).into()) <span class="comment">// output position
+</span>);
+<span class="comment">// set the preferred mode
+</span>output.set_preferred(Mode { size: (<span class="number">1920</span>, <span class="number">1080</span>).into(), refresh: <span class="number">60000 </span>});
+<span class="comment">// add other supported modes
+</span>output.add_mode(Mode { size: (<span class="number">800</span>, <span class="number">600</span>).into(), refresh: <span class="number">60000 </span>});
+output.add_mode(Mode { size: (<span class="number">1024</span>, <span class="number">768</span>).into(), refresh: <span class="number">60000 </span>});
+
+<span class="kw">impl </span>OutputHandler <span class="kw">for </span>State {}
+
+<span class="macro">delegate_output!</span>(State);</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.OutputManagerState.html" title="struct smithay::wayland::output::OutputManagerState">Output<wbr>Manager<wbr>State</a></dt><dd>State of Smithay output manager</dd><dt><a class="struct" href="struct.OutputUserData.html" title="struct smithay::wayland::output::OutputUserData">Output<wbr>User<wbr>Data</a></dt><dd>User data for WlOutput</dd><dt><a class="struct" href="struct.WlOutputData.html" title="struct smithay::wayland::output::WlOutputData">WlOutput<wbr>Data</a></dt><dd>Internal data of a wl_output global</dd><dt><a class="struct" href="struct.XdgOutputUserData.html" title="struct smithay::wayland::output::XdgOutputUserData">XdgOutput<wbr>User<wbr>Data</a></dt><dd>User data of Xdg Output</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.OutputHandler.html" title="trait smithay::wayland::output::OutputHandler">Output<wbr>Handler</a></dt><dd>Events initiated by the clients interacting with outputs</dd></dl></section></div></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_CURSOR_SIZE"],"enum":["BadIcon","BadImage","Cursor","CursorGrabMode","CursorIcon","Fullscreen","ImePurpose","ResizeDirection","Theme","UserAttentionType","WindowLevel"],"struct":["ActivationToken","CursorIconParseError","CustomCursor","CustomCursorSource","Icon","Window","WindowAttributes","WindowButtons","WindowId"]};

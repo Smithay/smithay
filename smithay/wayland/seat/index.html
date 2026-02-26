@@ -1,0 +1,44 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Seat global utilities"><title>smithay::wayland::seat - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module seat</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module seat</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#how-to-use-it" title="How to use it">How to use it</a><ul><li><a href="#initialization" title="Initialization">Initialization</a></li><li><a href="#run-usage" title="Run usage">Run usage</a></li></ul></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#constants" title="Constants">Constants</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>seat</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/seat/mod.rs.html#1-396">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Seat global utilities</p>
+<p>This module provides you with utilities for handling the seat globals
+and the associated input Wayland objects.</p>
+<h3 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h3><h4 id="initialization"><a class="doc-anchor" href="#initialization">§</a>Initialization</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::delegate_seat;
+<span class="kw">use </span>smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+<span class="kw">use </span>smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+
+
+<span class="kw">let </span><span class="kw-2">mut </span>seat_state = SeatState::&lt;State&gt;::new();
+<span class="comment">// add the seat state to your state
+// ...
+
+// create the wl_seat
+</span><span class="kw">let </span>seat = seat_state.new_wl_seat(
+    <span class="kw-2">&amp;</span>display_handle,          <span class="comment">// the display
+    </span><span class="string">"seat-0"</span>,                 <span class="comment">// the name of the seat, will be advertized to clients
+</span>);
+
+<span class="comment">// implement the required traits
+</span><span class="kw">impl </span>SeatHandler <span class="kw">for </span>State {
+    <span class="kw">type </span>KeyboardFocus = WlSurface;
+    <span class="kw">type </span>PointerFocus = WlSurface;
+    <span class="kw">type </span>TouchFocus = WlSurface;
+    <span class="kw">fn </span>seat_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>SeatState&lt;<span class="self">Self</span>&gt; {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.seat_state
+    }
+    <span class="kw">fn </span>focus_changed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, focused: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>WlSurface&gt;) {
+        <span class="comment">// ...
+    </span>}
+    <span class="kw">fn </span>cursor_image(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, image: CursorImageStatus) {
+        <span class="comment">// ...
+    </span>}
+}
+<span class="macro">delegate_seat!</span>(State);
+</code></pre></div><h4 id="run-usage"><a class="doc-anchor" href="#run-usage">§</a>Run usage</h4>
+<p>Once the seat is initialized, you can add capabilities to it.</p>
+<p>You can add these capabilities via methods of the <a href="../../input/struct.Seat.html" title="struct smithay::input::Seat"><code>Seat</code></a> struct:
+<a href="../../input/struct.Seat.html#method.add_keyboard" title="method smithay::input::Seat::add_keyboard"><code>Seat::add_keyboard</code></a>, <a href="../../input/struct.Seat.html#method.add_pointer" title="method smithay::input::Seat::add_pointer"><code>Seat::add_pointer</code></a> and <a href="../../input/struct.Seat.html#method.add_touch" title="method smithay::input::Seat::add_touch"><code>Seat::add_touch</code></a>.
+These methods return handles that can be cloned and sent across thread, so you can keep one around
+in your event-handling code to forward inputs to your clients.</p>
+<p>This module further defines the <code>"cursor_image"</code> role, that is assigned to surfaces used by clients
+to change the cursor icon.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.KeyboardUserData.html" title="struct smithay::wayland::seat::KeyboardUserData">Keyboard<wbr>User<wbr>Data</a></dt><dd>User data for keyboard</dd><dt><a class="struct" href="struct.PointerUserData.html" title="struct smithay::wayland::seat::PointerUserData">Pointer<wbr>User<wbr>Data</a></dt><dd>User data for pointer</dd><dt><a class="struct" href="struct.SeatGlobalData.html" title="struct smithay::wayland::seat::SeatGlobalData">Seat<wbr>Global<wbr>Data</a></dt><dd>Global data of WlSeat</dd><dt><a class="struct" href="struct.SeatUserData.html" title="struct smithay::wayland::seat::SeatUserData">Seat<wbr>User<wbr>Data</a></dt><dd>User data for seat</dd><dt><a class="struct" href="struct.TouchUserData.html" title="struct smithay::wayland::seat::TouchUserData">Touch<wbr>User<wbr>Data</a></dt><dd>User data for touch</dd></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.CURSOR_IMAGE_ROLE.html" title="constant smithay::wayland::seat::CURSOR_IMAGE_ROLE">CURSOR_<wbr>IMAGE_<wbr>ROLE</a></dt><dd>WlSurface role of a cursor image icon</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.WaylandFocus.html" title="trait smithay::wayland::seat::WaylandFocus">Wayland<wbr>Focus</a></dt><dd>Focused objects that <em>might</em> have an underlying wl_surface.</dd></dl></section></div></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_GET_FRACTIONAL_SCALE_OPCODE","REQ_GET_FRACTIONAL_SCALE_SINCE"],"enum":["Error","Event","Request"],"struct":["WpFractionalScaleManagerV1"]};

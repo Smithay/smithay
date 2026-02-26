@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["XdgExportedUserData","XdgForeignState","XdgImportedUserData"],"trait":["XdgForeignHandler"]};

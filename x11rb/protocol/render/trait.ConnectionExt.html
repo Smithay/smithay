@@ -1,0 +1,417 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Extension trait defining the requests of this extension."><title>ConnectionExt in x11rb::protocol::render - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">ConnectionExt</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Connection<wbr>Ext</a></h2><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.render_add_glyphs" title="render_add_glyphs">render_add_glyphs</a></li><li><a href="#method.render_add_traps" title="render_add_traps">render_add_traps</a></li><li><a href="#method.render_change_picture" title="render_change_picture">render_change_picture</a></li><li><a href="#method.render_composite" title="render_composite">render_composite</a></li><li><a href="#method.render_composite_glyphs8" title="render_composite_glyphs8">render_composite_glyphs8</a></li><li><a href="#method.render_composite_glyphs16" title="render_composite_glyphs16">render_composite_glyphs16</a></li><li><a href="#method.render_composite_glyphs32" title="render_composite_glyphs32">render_composite_glyphs32</a></li><li><a href="#method.render_create_anim_cursor" title="render_create_anim_cursor">render_create_anim_cursor</a></li><li><a href="#method.render_create_conical_gradient" title="render_create_conical_gradient">render_create_conical_gradient</a></li><li><a href="#method.render_create_cursor" title="render_create_cursor">render_create_cursor</a></li><li><a href="#method.render_create_glyph_set" title="render_create_glyph_set">render_create_glyph_set</a></li><li><a href="#method.render_create_linear_gradient" title="render_create_linear_gradient">render_create_linear_gradient</a></li><li><a href="#method.render_create_picture" title="render_create_picture">render_create_picture</a></li><li><a href="#method.render_create_radial_gradient" title="render_create_radial_gradient">render_create_radial_gradient</a></li><li><a href="#method.render_create_solid_fill" title="render_create_solid_fill">render_create_solid_fill</a></li><li><a href="#method.render_fill_rectangles" title="render_fill_rectangles">render_fill_rectangles</a></li><li><a href="#method.render_free_glyph_set" title="render_free_glyph_set">render_free_glyph_set</a></li><li><a href="#method.render_free_glyphs" title="render_free_glyphs">render_free_glyphs</a></li><li><a href="#method.render_free_picture" title="render_free_picture">render_free_picture</a></li><li><a href="#method.render_query_filters" title="render_query_filters">render_query_filters</a></li><li><a href="#method.render_query_pict_formats" title="render_query_pict_formats">render_query_pict_formats</a></li><li><a href="#method.render_query_pict_index_values" title="render_query_pict_index_values">render_query_pict_index_values</a></li><li><a href="#method.render_query_version" title="render_query_version">render_query_version</a></li><li><a href="#method.render_reference_glyph_set" title="render_reference_glyph_set">render_reference_glyph_set</a></li><li><a href="#method.render_set_picture_clip_rectangles" title="render_set_picture_clip_rectangles">render_set_picture_clip_rectangles</a></li><li><a href="#method.render_set_picture_filter" title="render_set_picture_filter">render_set_picture_filter</a></li><li><a href="#method.render_set_picture_transform" title="render_set_picture_transform">render_set_picture_transform</a></li><li><a href="#method.render_trapezoids" title="render_trapezoids">render_trapezoids</a></li><li><a href="#method.render_tri_fan" title="render_tri_fan">render_tri_fan</a></li><li><a href="#method.render_tri_strip" title="render_tri_strip">render_tri_strip</a></li><li><a href="#method.render_triangles" title="render_triangles">render_triangles</a></li></ul><h3><a href="#dyn-compatibility">Dyn Compatibility</a></h3><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In x11rb::<wbr>protocol::<wbr>render</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">x11rb</a>::<wbr><a href="../index.html">protocol</a>::<wbr><a href="index.html">render</a></div><h1>Trait <span class="trait">Connection<wbr>Ext</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/x11rb/protocol/render.rs.html#539-666">Source</a> </span></div><pre class="rust item-decl"><code>pub trait ConnectionExt: <a class="trait" href="../../connection/trait.RequestConnection.html" title="trait x11rb::connection::RequestConnection">RequestConnection</a> {
+<details class="toggle type-contents-toggle"><summary class="hideme"><span>Show 31 methods</span></summary>    // Provided methods
+    fn <a href="#method.render_query_version" class="fn">render_query_version</a>(
+        &amp;self,
+        client_major_version: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+        client_minor_version: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryVersionReply.html" title="struct x11rb::protocol::render::QueryVersionReply">QueryVersionReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_query_pict_formats" class="fn">render_query_pict_formats</a>(
+        &amp;self,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryPictFormatsReply.html" title="struct x11rb::protocol::render::QueryPictFormatsReply">QueryPictFormatsReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_query_pict_index_values" class="fn">render_query_pict_index_values</a>(
+        &amp;self,
+        format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryPictIndexValuesReply.html" title="struct x11rb::protocol::render::QueryPictIndexValuesReply">QueryPictIndexValuesReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_picture" class="fn">render_create_picture</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        pid: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        drawable: <a class="type" href="../xproto/type.Drawable.html" title="type x11rb::protocol::xproto::Drawable">Drawable</a>,
+        format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        value_list: &amp;'input <a class="struct" href="struct.CreatePictureAux.html" title="struct x11rb::protocol::render::CreatePictureAux">CreatePictureAux</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_change_picture" class="fn">render_change_picture</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        value_list: &amp;'input <a class="struct" href="struct.ChangePictureAux.html" title="struct x11rb::protocol::render::ChangePictureAux">ChangePictureAux</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_set_picture_clip_rectangles" class="fn">render_set_picture_clip_rectangles</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        clip_x_origin: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        clip_y_origin: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        rectangles: &amp;'input [<a class="struct" href="../xproto/struct.Rectangle.html" title="struct x11rb::protocol::xproto::Rectangle">Rectangle</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_free_picture" class="fn">render_free_picture</a>(
+        &amp;self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_composite" class="fn">render_composite</a>&lt;A&gt;(
+        &amp;self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask: A,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        mask_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        mask_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        dst_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        dst_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        width: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+        height: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;
+       <span class="where">where A: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>&gt;</span> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_trapezoids" class="fn">render_trapezoids</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        traps: &amp;'input [<a class="struct" href="struct.Trapezoid.html" title="struct x11rb::protocol::render::Trapezoid">Trapezoid</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_triangles" class="fn">render_triangles</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        triangles: &amp;'input [<a class="struct" href="struct.Triangle.html" title="struct x11rb::protocol::render::Triangle">Triangle</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_tri_strip" class="fn">render_tri_strip</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        points: &amp;'input [<a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_tri_fan" class="fn">render_tri_fan</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        points: &amp;'input [<a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_glyph_set" class="fn">render_create_glyph_set</a>(
+        &amp;self,
+        gsid: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+        format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_reference_glyph_set" class="fn">render_reference_glyph_set</a>(
+        &amp;self,
+        gsid: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+        existing: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_free_glyph_set" class="fn">render_free_glyph_set</a>(
+        &amp;self,
+        glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_add_glyphs" class="fn">render_add_glyphs</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+        glyphids: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>],
+        glyphs: &amp;'input [<a class="struct" href="struct.Glyphinfo.html" title="struct x11rb::protocol::render::Glyphinfo">Glyphinfo</a>],
+        data: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_free_glyphs" class="fn">render_free_glyphs</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+        glyphs: &amp;'input [<a class="type" href="type.Glyph.html" title="type x11rb::protocol::render::Glyph">Glyph</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_composite_glyphs8" class="fn">render_composite_glyphs8</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        glyphcmds: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_composite_glyphs16" class="fn">render_composite_glyphs16</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        glyphcmds: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_composite_glyphs32" class="fn">render_composite_glyphs32</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+        glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+        src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        glyphcmds: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_fill_rectangles" class="fn">render_fill_rectangles</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+        dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        color: <a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>,
+        rects: &amp;'input [<a class="struct" href="../xproto/struct.Rectangle.html" title="struct x11rb::protocol::xproto::Rectangle">Rectangle</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_cursor" class="fn">render_create_cursor</a>(
+        &amp;self,
+        cid: <a class="type" href="../xproto/type.Cursor.html" title="type x11rb::protocol::xproto::Cursor">Cursor</a>,
+        source: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+        y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_set_picture_transform" class="fn">render_set_picture_transform</a>(
+        &amp;self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        transform: <a class="struct" href="struct.Transform.html" title="struct x11rb::protocol::render::Transform">Transform</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_query_filters" class="fn">render_query_filters</a>(
+        &amp;self,
+        drawable: <a class="type" href="../xproto/type.Drawable.html" title="type x11rb::protocol::xproto::Drawable">Drawable</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryFiltersReply.html" title="struct x11rb::protocol::render::QueryFiltersReply">QueryFiltersReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_set_picture_filter" class="fn">render_set_picture_filter</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        filter: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+        values: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_anim_cursor" class="fn">render_create_anim_cursor</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        cid: <a class="type" href="../xproto/type.Cursor.html" title="type x11rb::protocol::xproto::Cursor">Cursor</a>,
+        cursors: &amp;'input [<a class="struct" href="struct.Animcursorelt.html" title="struct x11rb::protocol::render::Animcursorelt">Animcursorelt</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_add_traps" class="fn">render_add_traps</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        x_off: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        y_off: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+        traps: &amp;'input [<a class="struct" href="struct.Trap.html" title="struct x11rb::protocol::render::Trap">Trap</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_solid_fill" class="fn">render_create_solid_fill</a>(
+        &amp;self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        color: <a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_linear_gradient" class="fn">render_create_linear_gradient</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        p1: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+        p2: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+        stops: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+        colors: &amp;'input [<a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_radial_gradient" class="fn">render_create_radial_gradient</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        inner: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+        outer: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+        inner_radius: <a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>,
+        outer_radius: <a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>,
+        stops: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+        colors: &amp;'input [<a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.render_create_conical_gradient" class="fn">render_create_conical_gradient</a>&lt;'c, 'input&gt;(
+        &amp;'c self,
+        picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+        center: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+        angle: <a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>,
+        stops: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+        colors: &amp;'input [<a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt; { ... }
+</details>}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Extension trait defining the requests of this extension.</p>
+</div></details><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><section id="method.render_query_version" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#540-543">Source</a><h4 class="code-header">fn <a href="#method.render_query_version" class="fn">render_query_version</a>(
+    &amp;self,
+    client_major_version: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+    client_minor_version: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryVersionReply.html" title="struct x11rb::protocol::render::QueryVersionReply">QueryVersionReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_query_pict_formats" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#544-547">Source</a><h4 class="code-header">fn <a href="#method.render_query_pict_formats" class="fn">render_query_pict_formats</a>(
+    &amp;self,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryPictFormatsReply.html" title="struct x11rb::protocol::render::QueryPictFormatsReply">QueryPictFormatsReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_query_pict_index_values" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#548-551">Source</a><h4 class="code-header">fn <a href="#method.render_query_pict_index_values" class="fn">render_query_pict_index_values</a>(
+    &amp;self,
+    format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryPictIndexValuesReply.html" title="struct x11rb::protocol::render::QueryPictIndexValuesReply">QueryPictIndexValuesReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_picture" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#552-555">Source</a><h4 class="code-header">fn <a href="#method.render_create_picture" class="fn">render_create_picture</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    pid: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    drawable: <a class="type" href="../xproto/type.Drawable.html" title="type x11rb::protocol::xproto::Drawable">Drawable</a>,
+    format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    value_list: &amp;'input <a class="struct" href="struct.CreatePictureAux.html" title="struct x11rb::protocol::render::CreatePictureAux">CreatePictureAux</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_change_picture" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#556-559">Source</a><h4 class="code-header">fn <a href="#method.render_change_picture" class="fn">render_change_picture</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    value_list: &amp;'input <a class="struct" href="struct.ChangePictureAux.html" title="struct x11rb::protocol::render::ChangePictureAux">ChangePictureAux</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_set_picture_clip_rectangles" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#560-563">Source</a><h4 class="code-header">fn <a href="#method.render_set_picture_clip_rectangles" class="fn">render_set_picture_clip_rectangles</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    clip_x_origin: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    clip_y_origin: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    rectangles: &amp;'input [<a class="struct" href="../xproto/struct.Rectangle.html" title="struct x11rb::protocol::xproto::Rectangle">Rectangle</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_free_picture" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#564-567">Source</a><h4 class="code-header">fn <a href="#method.render_free_picture" class="fn">render_free_picture</a>(
+    &amp;self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_composite" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#568-573">Source</a><h4 class="code-header">fn <a href="#method.render_composite" class="fn">render_composite</a>&lt;A&gt;(
+    &amp;self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask: A,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    mask_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    mask_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    dst_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    dst_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    width: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+    height: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;<div class="where">where
+    A: <a class="trait" href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html" title="trait core::convert::Into">Into</a>&lt;<a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>&gt;,</div></h4></section><section id="method.render_trapezoids" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#574-577">Source</a><h4 class="code-header">fn <a href="#method.render_trapezoids" class="fn">render_trapezoids</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    traps: &amp;'input [<a class="struct" href="struct.Trapezoid.html" title="struct x11rb::protocol::render::Trapezoid">Trapezoid</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_triangles" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#578-581">Source</a><h4 class="code-header">fn <a href="#method.render_triangles" class="fn">render_triangles</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    triangles: &amp;'input [<a class="struct" href="struct.Triangle.html" title="struct x11rb::protocol::render::Triangle">Triangle</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_tri_strip" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#582-585">Source</a><h4 class="code-header">fn <a href="#method.render_tri_strip" class="fn">render_tri_strip</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    points: &amp;'input [<a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_tri_fan" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#586-589">Source</a><h4 class="code-header">fn <a href="#method.render_tri_fan" class="fn">render_tri_fan</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    points: &amp;'input [<a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_glyph_set" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#590-593">Source</a><h4 class="code-header">fn <a href="#method.render_create_glyph_set" class="fn">render_create_glyph_set</a>(
+    &amp;self,
+    gsid: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_reference_glyph_set" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#594-597">Source</a><h4 class="code-header">fn <a href="#method.render_reference_glyph_set" class="fn">render_reference_glyph_set</a>(
+    &amp;self,
+    gsid: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    existing: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_free_glyph_set" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#598-601">Source</a><h4 class="code-header">fn <a href="#method.render_free_glyph_set" class="fn">render_free_glyph_set</a>(
+    &amp;self,
+    glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_add_glyphs" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#602-605">Source</a><h4 class="code-header">fn <a href="#method.render_add_glyphs" class="fn">render_add_glyphs</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    glyphids: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>],
+    glyphs: &amp;'input [<a class="struct" href="struct.Glyphinfo.html" title="struct x11rb::protocol::render::Glyphinfo">Glyphinfo</a>],
+    data: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_free_glyphs" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#606-609">Source</a><h4 class="code-header">fn <a href="#method.render_free_glyphs" class="fn">render_free_glyphs</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    glyphs: &amp;'input [<a class="type" href="type.Glyph.html" title="type x11rb::protocol::render::Glyph">Glyph</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_composite_glyphs8" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#610-613">Source</a><h4 class="code-header">fn <a href="#method.render_composite_glyphs8" class="fn">render_composite_glyphs8</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    glyphcmds: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_composite_glyphs16" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#614-617">Source</a><h4 class="code-header">fn <a href="#method.render_composite_glyphs16" class="fn">render_composite_glyphs16</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    glyphcmds: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_composite_glyphs32" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#618-621">Source</a><h4 class="code-header">fn <a href="#method.render_composite_glyphs32" class="fn">render_composite_glyphs32</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    src: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    mask_format: <a class="type" href="type.Pictformat.html" title="type x11rb::protocol::render::Pictformat">Pictformat</a>,
+    glyphset: <a class="type" href="type.Glyphset.html" title="type x11rb::protocol::render::Glyphset">Glyphset</a>,
+    src_x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    src_y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    glyphcmds: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_fill_rectangles" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#622-625">Source</a><h4 class="code-header">fn <a href="#method.render_fill_rectangles" class="fn">render_fill_rectangles</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    op: <a class="struct" href="struct.PictOp.html" title="struct x11rb::protocol::render::PictOp">PictOp</a>,
+    dst: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    color: <a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>,
+    rects: &amp;'input [<a class="struct" href="../xproto/struct.Rectangle.html" title="struct x11rb::protocol::xproto::Rectangle">Rectangle</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_cursor" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#626-629">Source</a><h4 class="code-header">fn <a href="#method.render_create_cursor" class="fn">render_create_cursor</a>(
+    &amp;self,
+    cid: <a class="type" href="../xproto/type.Cursor.html" title="type x11rb::protocol::xproto::Cursor">Cursor</a>,
+    source: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    x: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+    y: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u16.html">u16</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_set_picture_transform" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#630-633">Source</a><h4 class="code-header">fn <a href="#method.render_set_picture_transform" class="fn">render_set_picture_transform</a>(
+    &amp;self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    transform: <a class="struct" href="struct.Transform.html" title="struct x11rb::protocol::render::Transform">Transform</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_query_filters" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#634-637">Source</a><h4 class="code-header">fn <a href="#method.render_query_filters" class="fn">render_query_filters</a>(
+    &amp;self,
+    drawable: <a class="type" href="../xproto/type.Drawable.html" title="type x11rb::protocol::xproto::Drawable">Drawable</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'_, Self, <a class="struct" href="struct.QueryFiltersReply.html" title="struct x11rb::protocol::render::QueryFiltersReply">QueryFiltersReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_set_picture_filter" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#638-641">Source</a><h4 class="code-header">fn <a href="#method.render_set_picture_filter" class="fn">render_set_picture_filter</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    filter: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+    values: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_anim_cursor" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#642-645">Source</a><h4 class="code-header">fn <a href="#method.render_create_anim_cursor" class="fn">render_create_anim_cursor</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    cid: <a class="type" href="../xproto/type.Cursor.html" title="type x11rb::protocol::xproto::Cursor">Cursor</a>,
+    cursors: &amp;'input [<a class="struct" href="struct.Animcursorelt.html" title="struct x11rb::protocol::render::Animcursorelt">Animcursorelt</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_add_traps" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#646-649">Source</a><h4 class="code-header">fn <a href="#method.render_add_traps" class="fn">render_add_traps</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    x_off: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    y_off: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i16.html">i16</a>,
+    traps: &amp;'input [<a class="struct" href="struct.Trap.html" title="struct x11rb::protocol::render::Trap">Trap</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_solid_fill" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#650-653">Source</a><h4 class="code-header">fn <a href="#method.render_create_solid_fill" class="fn">render_create_solid_fill</a>(
+    &amp;self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    color: <a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'_, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_linear_gradient" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#654-657">Source</a><h4 class="code-header">fn <a href="#method.render_create_linear_gradient" class="fn">render_create_linear_gradient</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    p1: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+    p2: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+    stops: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+    colors: &amp;'input [<a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_radial_gradient" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#658-661">Source</a><h4 class="code-header">fn <a href="#method.render_create_radial_gradient" class="fn">render_create_radial_gradient</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    inner: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+    outer: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+    inner_radius: <a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>,
+    outer_radius: <a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>,
+    stops: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+    colors: &amp;'input [<a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section><section id="method.render_create_conical_gradient" class="method"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#662-665">Source</a><h4 class="code-header">fn <a href="#method.render_create_conical_gradient" class="fn">render_create_conical_gradient</a>&lt;'c, 'input&gt;(
+    &amp;'c self,
+    picture: <a class="type" href="type.Picture.html" title="type x11rb::protocol::render::Picture">Picture</a>,
+    center: <a class="struct" href="struct.Pointfix.html" title="struct x11rb::protocol::render::Pointfix">Pointfix</a>,
+    angle: <a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>,
+    stops: &amp;'input [<a class="type" href="type.Fixed.html" title="type x11rb::protocol::render::Fixed">Fixed</a>],
+    colors: &amp;'input [<a class="struct" href="struct.Color.html" title="struct x11rb::protocol::render::Color">Color</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.VoidCookie.html" title="struct x11rb::cookie::VoidCookie">VoidCookie</a>&lt;'c, Self&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</h4></section></div><h2 id="dyn-compatibility" class="section-header">Dyn Compatibility<a href="#dyn-compatibility" class="anchor">§</a></h2><div class="dyn-compatibility-info"><p>This trait is <b>not</b> <a href="https://doc.rust-lang.org/nightly/reference/items/traits.html#dyn-compatibility">dyn compatible</a>.</p><p><i>In older versions of Rust, dyn compatibility was called "object safety", so this trait is not object safe.</i></p></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-ConnectionExt-for-C" class="impl"><a class="src rightside" href="../../../src/x11rb/protocol/render.rs.html#668">Source</a><a href="#impl-ConnectionExt-for-C" class="anchor">§</a><h3 class="code-header">impl&lt;C: <a class="trait" href="../../connection/trait.RequestConnection.html" title="trait x11rb::connection::RequestConnection">RequestConnection</a> + ?<a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html" title="trait core::marker::Sized">Sized</a>&gt; <a class="trait" href="trait.ConnectionExt.html" title="trait x11rb::protocol::render::ConnectionExt">ConnectionExt</a> for C</h3></section></div><script src="../../../trait.impl/x11rb/protocol/render/trait.ConnectionExt.js" async></script></section></div></main></body></html>

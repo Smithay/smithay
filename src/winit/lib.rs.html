@@ -1,0 +1,217 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/lib.rs`."><title>lib.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">winit/</div>lib.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Winit is a cross-platform window creation and event loop management library.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! # Building windows
+<a href=#4 id=4 data-nosnippet>4</a>//!
+<a href=#5 id=5 data-nosnippet>5</a>//! Before you can create a [`Window`], you first need to build an [`EventLoop`]. This is done with
+<a href=#6 id=6 data-nosnippet>6</a>//! the [`EventLoop::new()`] function.
+<a href=#7 id=7 data-nosnippet>7</a>//!
+<a href=#8 id=8 data-nosnippet>8</a>//! ```no_run
+<a href=#9 id=9 data-nosnippet>9</a>//! use winit::event_loop::EventLoop;
+<a href=#10 id=10 data-nosnippet>10</a>//!
+<a href=#11 id=11 data-nosnippet>11</a>//! # // Intentionally use `fn main` for clarity
+<a href=#12 id=12 data-nosnippet>12</a>//! fn main() {
+<a href=#13 id=13 data-nosnippet>13</a>//!     let event_loop = EventLoop::new().unwrap();
+<a href=#14 id=14 data-nosnippet>14</a>//!     // ...
+<a href=#15 id=15 data-nosnippet>15</a>//! }
+<a href=#16 id=16 data-nosnippet>16</a>//! ```
+<a href=#17 id=17 data-nosnippet>17</a>//!
+<a href=#18 id=18 data-nosnippet>18</a>//! Then you create a [`Window`] with [`create_window`].
+<a href=#19 id=19 data-nosnippet>19</a>//!
+<a href=#20 id=20 data-nosnippet>20</a>//! # Event handling
+<a href=#21 id=21 data-nosnippet>21</a>//!
+<a href=#22 id=22 data-nosnippet>22</a>//! Once a [`Window`] has been created, it will generate different *events*. A [`Window`] object can
+<a href=#23 id=23 data-nosnippet>23</a>//! generate [`WindowEvent`]s when certain input events occur, such as a cursor moving over the
+<a href=#24 id=24 data-nosnippet>24</a>//! window or a key getting pressed while the window is focused. Devices can generate
+<a href=#25 id=25 data-nosnippet>25</a>//! [`DeviceEvent`]s, which contain unfiltered event data that isn't specific to a certain window.
+<a href=#26 id=26 data-nosnippet>26</a>//! Some user activity, like mouse movement, can generate both a [`WindowEvent`] *and* a
+<a href=#27 id=27 data-nosnippet>27</a>//! [`DeviceEvent`]. You can also create and handle your own custom [`Event::UserEvent`]s, if
+<a href=#28 id=28 data-nosnippet>28</a>//! desired.
+<a href=#29 id=29 data-nosnippet>29</a>//!
+<a href=#30 id=30 data-nosnippet>30</a>//! You can retrieve events by calling [`EventLoop::run_app()`]. This function will
+<a href=#31 id=31 data-nosnippet>31</a>//! dispatch events for every [`Window`] that was created with that particular [`EventLoop`], and
+<a href=#32 id=32 data-nosnippet>32</a>//! will run until [`exit()`] is used, at which point [`Event::LoopExiting`].
+<a href=#33 id=33 data-nosnippet>33</a>//!
+<a href=#34 id=34 data-nosnippet>34</a>//! Winit no longer uses a `EventLoop::poll_events() -&gt; impl Iterator&lt;Event&gt;`-based event loop
+<a href=#35 id=35 data-nosnippet>35</a>//! model, since that can't be implemented properly on some platforms (e.g web, iOS) and works
+<a href=#36 id=36 data-nosnippet>36</a>//! poorly on most other platforms. However, this model can be re-implemented to an extent with
+<a href=#37 id=37 data-nosnippet>37</a></span><span class="attr">#![cfg_attr(
+<a href=#38 id=38 data-nosnippet>38</a>    any(windows_platform, macos_platform, android_platform, x11_platform, wayland_platform),
+<a href=#39 id=39 data-nosnippet>39</a>    doc = <span class="string">"[`EventLoopExtPumpEvents::pump_app_events()`][platform::pump_events::EventLoopExtPumpEvents::pump_app_events()]"
+<a href=#40 id=40 data-nosnippet>40</a></span>)]
+<a href=#41 id=41 data-nosnippet>41</a>#![cfg_attr(
+<a href=#42 id=42 data-nosnippet>42</a>    not(any(windows_platform, macos_platform, android_platform, x11_platform, wayland_platform)),
+<a href=#43 id=43 data-nosnippet>43</a>    doc = <span class="string">"`EventLoopExtPumpEvents::pump_app_events()`"
+<a href=#44 id=44 data-nosnippet>44</a></span>)]
+<a href=#45 id=45 data-nosnippet>45</a></span><span class="doccomment">//! [^1]. See that method's documentation for more reasons about why
+<a href=#46 id=46 data-nosnippet>46</a>//! it's discouraged beyond compatibility reasons.
+<a href=#47 id=47 data-nosnippet>47</a>//!
+<a href=#48 id=48 data-nosnippet>48</a>//!
+<a href=#49 id=49 data-nosnippet>49</a>//! ```no_run
+<a href=#50 id=50 data-nosnippet>50</a>//! use winit::application::ApplicationHandler;
+<a href=#51 id=51 data-nosnippet>51</a>//! use winit::event::WindowEvent;
+<a href=#52 id=52 data-nosnippet>52</a>//! use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+<a href=#53 id=53 data-nosnippet>53</a>//! use winit::window::{Window, WindowId};
+<a href=#54 id=54 data-nosnippet>54</a>//!
+<a href=#55 id=55 data-nosnippet>55</a>//! #[derive(Default)]
+<a href=#56 id=56 data-nosnippet>56</a>//! struct App {
+<a href=#57 id=57 data-nosnippet>57</a>//!     window: Option&lt;Window&gt;,
+<a href=#58 id=58 data-nosnippet>58</a>//! }
+<a href=#59 id=59 data-nosnippet>59</a>//!
+<a href=#60 id=60 data-nosnippet>60</a>//! impl ApplicationHandler for App {
+<a href=#61 id=61 data-nosnippet>61</a>//!     fn resumed(&amp;mut self, event_loop: &amp;ActiveEventLoop) {
+<a href=#62 id=62 data-nosnippet>62</a>//!         self.window = Some(event_loop.create_window(Window::default_attributes()).unwrap());
+<a href=#63 id=63 data-nosnippet>63</a>//!     }
+<a href=#64 id=64 data-nosnippet>64</a>//!
+<a href=#65 id=65 data-nosnippet>65</a>//!     fn window_event(&amp;mut self, event_loop: &amp;ActiveEventLoop, id: WindowId, event: WindowEvent) {
+<a href=#66 id=66 data-nosnippet>66</a>//!         match event {
+<a href=#67 id=67 data-nosnippet>67</a>//!             WindowEvent::CloseRequested =&gt; {
+<a href=#68 id=68 data-nosnippet>68</a>//!                 println!("The close button was pressed; stopping");
+<a href=#69 id=69 data-nosnippet>69</a>//!                 event_loop.exit();
+<a href=#70 id=70 data-nosnippet>70</a>//!             },
+<a href=#71 id=71 data-nosnippet>71</a>//!             WindowEvent::RedrawRequested =&gt; {
+<a href=#72 id=72 data-nosnippet>72</a>//!                 // Redraw the application.
+<a href=#73 id=73 data-nosnippet>73</a>//!                 //
+<a href=#74 id=74 data-nosnippet>74</a>//!                 // It's preferable for applications that do not render continuously to render in
+<a href=#75 id=75 data-nosnippet>75</a>//!                 // this event rather than in AboutToWait, since rendering in here allows
+<a href=#76 id=76 data-nosnippet>76</a>//!                 // the program to gracefully handle redraws requested by the OS.
+<a href=#77 id=77 data-nosnippet>77</a>//!
+<a href=#78 id=78 data-nosnippet>78</a>//!                 // Draw.
+<a href=#79 id=79 data-nosnippet>79</a>//!
+<a href=#80 id=80 data-nosnippet>80</a>//!                 // Queue a RedrawRequested event.
+<a href=#81 id=81 data-nosnippet>81</a>//!                 //
+<a href=#82 id=82 data-nosnippet>82</a>//!                 // You only need to call this if you've determined that you need to redraw in
+<a href=#83 id=83 data-nosnippet>83</a>//!                 // applications which do not always need to. Applications that redraw continuously
+<a href=#84 id=84 data-nosnippet>84</a>//!                 // can render here instead.
+<a href=#85 id=85 data-nosnippet>85</a>//!                 self.window.as_ref().unwrap().request_redraw();
+<a href=#86 id=86 data-nosnippet>86</a>//!             }
+<a href=#87 id=87 data-nosnippet>87</a>//!             _ =&gt; (),
+<a href=#88 id=88 data-nosnippet>88</a>//!         }
+<a href=#89 id=89 data-nosnippet>89</a>//!     }
+<a href=#90 id=90 data-nosnippet>90</a>//! }
+<a href=#91 id=91 data-nosnippet>91</a>//!
+<a href=#92 id=92 data-nosnippet>92</a>//! # // Intentionally use `fn main` for clarity
+<a href=#93 id=93 data-nosnippet>93</a>//! fn main() {
+<a href=#94 id=94 data-nosnippet>94</a>//!     let event_loop = EventLoop::new().unwrap();
+<a href=#95 id=95 data-nosnippet>95</a>//!
+<a href=#96 id=96 data-nosnippet>96</a>//!     // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
+<a href=#97 id=97 data-nosnippet>97</a>//!     // dispatched any events. This is ideal for games and similar applications.
+<a href=#98 id=98 data-nosnippet>98</a>//!     event_loop.set_control_flow(ControlFlow::Poll);
+<a href=#99 id=99 data-nosnippet>99</a>//!
+<a href=#100 id=100 data-nosnippet>100</a>//!     // ControlFlow::Wait pauses the event loop if no events are available to process.
+<a href=#101 id=101 data-nosnippet>101</a>//!     // This is ideal for non-game applications that only update in response to user
+<a href=#102 id=102 data-nosnippet>102</a>//!     // input, and uses significantly less power/CPU time than ControlFlow::Poll.
+<a href=#103 id=103 data-nosnippet>103</a>//!     event_loop.set_control_flow(ControlFlow::Wait);
+<a href=#104 id=104 data-nosnippet>104</a>//!
+<a href=#105 id=105 data-nosnippet>105</a>//!     let mut app = App::default();
+<a href=#106 id=106 data-nosnippet>106</a>//!     event_loop.run_app(&amp;mut app);
+<a href=#107 id=107 data-nosnippet>107</a>//! }
+<a href=#108 id=108 data-nosnippet>108</a>//! ```
+<a href=#109 id=109 data-nosnippet>109</a>//!
+<a href=#110 id=110 data-nosnippet>110</a>//! [`WindowEvent`] has a [`WindowId`] member. In multi-window environments, it should be
+<a href=#111 id=111 data-nosnippet>111</a>//! compared to the value returned by [`Window::id()`] to determine which [`Window`]
+<a href=#112 id=112 data-nosnippet>112</a>//! dispatched the event.
+<a href=#113 id=113 data-nosnippet>113</a>//!
+<a href=#114 id=114 data-nosnippet>114</a>//! # Drawing on the window
+<a href=#115 id=115 data-nosnippet>115</a>//!
+<a href=#116 id=116 data-nosnippet>116</a>//! Winit doesn't directly provide any methods for drawing on a [`Window`]. However, it allows you
+<a href=#117 id=117 data-nosnippet>117</a>//! to retrieve the raw handle of the window and display (see the [`platform`] module and/or the
+<a href=#118 id=118 data-nosnippet>118</a>//! [`raw_window_handle`] and [`raw_display_handle`] methods), which in turn allows
+<a href=#119 id=119 data-nosnippet>119</a>//! you to create an OpenGL/Vulkan/DirectX/Metal/etc. context that can be used to render graphics.
+<a href=#120 id=120 data-nosnippet>120</a>//!
+<a href=#121 id=121 data-nosnippet>121</a>//! Note that many platforms will display garbage data in the window's client area if the
+<a href=#122 id=122 data-nosnippet>122</a>//! application doesn't render anything to the window by the time the desktop compositor is ready to
+<a href=#123 id=123 data-nosnippet>123</a>//! display the window to the user. If you notice this happening, you should create the window with
+<a href=#124 id=124 data-nosnippet>124</a>//! [`visible` set to `false`][crate::window::WindowAttributes::with_visible] and explicitly make
+<a href=#125 id=125 data-nosnippet>125</a>//! the window visible only once you're ready to render into it.
+<a href=#126 id=126 data-nosnippet>126</a>//!
+<a href=#127 id=127 data-nosnippet>127</a>//! # UI scaling
+<a href=#128 id=128 data-nosnippet>128</a>//!
+<a href=#129 id=129 data-nosnippet>129</a>//! UI scaling is important, go read the docs for the [`dpi`] crate for an
+<a href=#130 id=130 data-nosnippet>130</a>//! introduction.
+<a href=#131 id=131 data-nosnippet>131</a>//!
+<a href=#132 id=132 data-nosnippet>132</a>//! All of Winit's functions return physical types, but can take either logical or physical
+<a href=#133 id=133 data-nosnippet>133</a>//! coordinates as input, allowing you to use the most convenient coordinate system for your
+<a href=#134 id=134 data-nosnippet>134</a>//! particular application.
+<a href=#135 id=135 data-nosnippet>135</a>//!
+<a href=#136 id=136 data-nosnippet>136</a>//! Winit will dispatch a [`ScaleFactorChanged`] event whenever a window's scale factor has changed.
+<a href=#137 id=137 data-nosnippet>137</a>//! This can happen if the user drags their window from a standard-resolution monitor to a high-DPI
+<a href=#138 id=138 data-nosnippet>138</a>//! monitor or if the user changes their DPI settings. This allows you to rescale your application's
+<a href=#139 id=139 data-nosnippet>139</a>//! UI elements and adjust how the platform changes the window's size to reflect the new scale
+<a href=#140 id=140 data-nosnippet>140</a>//! factor. If a window hasn't received a [`ScaleFactorChanged`] event, its scale factor
+<a href=#141 id=141 data-nosnippet>141</a>//! can be found by calling [`window.scale_factor()`].
+<a href=#142 id=142 data-nosnippet>142</a>//!
+<a href=#143 id=143 data-nosnippet>143</a>//! [`ScaleFactorChanged`]: event::WindowEvent::ScaleFactorChanged
+<a href=#144 id=144 data-nosnippet>144</a>//! [`window.scale_factor()`]: window::Window::scale_factor
+<a href=#145 id=145 data-nosnippet>145</a>//!
+<a href=#146 id=146 data-nosnippet>146</a>//! # Cargo Features
+<a href=#147 id=147 data-nosnippet>147</a>//!
+<a href=#148 id=148 data-nosnippet>148</a>//! Winit provides the following Cargo features:
+<a href=#149 id=149 data-nosnippet>149</a>//!
+<a href=#150 id=150 data-nosnippet>150</a>//! * `x11` (enabled by default): On Unix platforms, enables the X11 backend.
+<a href=#151 id=151 data-nosnippet>151</a>//! * `wayland` (enabled by default): On Unix platforms, enables the Wayland backend.
+<a href=#152 id=152 data-nosnippet>152</a>//! * `rwh_04`: Implement `raw-window-handle v0.4` traits.
+<a href=#153 id=153 data-nosnippet>153</a>//! * `rwh_05`: Implement `raw-window-handle v0.5` traits.
+<a href=#154 id=154 data-nosnippet>154</a>//! * `rwh_06`: Implement `raw-window-handle v0.6` traits.
+<a href=#155 id=155 data-nosnippet>155</a>//! * `serde`: Enables serialization/deserialization of certain types with [Serde](https://crates.io/crates/serde).
+<a href=#156 id=156 data-nosnippet>156</a>//! * `mint`: Enables mint (math interoperability standard types) conversions.
+<a href=#157 id=157 data-nosnippet>157</a>//!
+<a href=#158 id=158 data-nosnippet>158</a>//! See the [`platform`] module for documentation on platform-specific cargo
+<a href=#159 id=159 data-nosnippet>159</a>//! features.
+<a href=#160 id=160 data-nosnippet>160</a>//!
+<a href=#161 id=161 data-nosnippet>161</a>//! [`EventLoop`]: event_loop::EventLoop
+<a href=#162 id=162 data-nosnippet>162</a>//! [`EventLoop::new()`]: event_loop::EventLoop::new
+<a href=#163 id=163 data-nosnippet>163</a>//! [`EventLoop::run_app()`]: event_loop::EventLoop::run_app
+<a href=#164 id=164 data-nosnippet>164</a>//! [`exit()`]: event_loop::ActiveEventLoop::exit
+<a href=#165 id=165 data-nosnippet>165</a>//! [`Window`]: window::Window
+<a href=#166 id=166 data-nosnippet>166</a>//! [`WindowId`]: window::WindowId
+<a href=#167 id=167 data-nosnippet>167</a>//! [`WindowAttributes`]: window::WindowAttributes
+<a href=#168 id=168 data-nosnippet>168</a>//! [`create_window`]: event_loop::ActiveEventLoop::create_window
+<a href=#169 id=169 data-nosnippet>169</a>//! [`Window::id()`]: window::Window::id
+<a href=#170 id=170 data-nosnippet>170</a>//! [`WindowEvent`]: event::WindowEvent
+<a href=#171 id=171 data-nosnippet>171</a>//! [`DeviceEvent`]: event::DeviceEvent
+<a href=#172 id=172 data-nosnippet>172</a>//! [`Event::UserEvent`]: event::Event::UserEvent
+<a href=#173 id=173 data-nosnippet>173</a>//! [`Event::LoopExiting`]: event::Event::LoopExiting
+<a href=#174 id=174 data-nosnippet>174</a>//! [`raw_window_handle`]: ./window/struct.Window.html#method.raw_window_handle
+<a href=#175 id=175 data-nosnippet>175</a>//! [`raw_display_handle`]: ./window/struct.Window.html#method.raw_display_handle
+<a href=#176 id=176 data-nosnippet>176</a>//! [^1]: `EventLoopExtPumpEvents::pump_app_events()` is only available on Windows, macOS, Android, X11 and Wayland.
+<a href=#177 id=177 data-nosnippet>177</a>
+<a href=#178 id=178 data-nosnippet>178</a></span><span class="attr">#![deny(rust_2018_idioms)]
+<a href=#179 id=179 data-nosnippet>179</a>#![deny(rustdoc::broken_intra_doc_links)]
+<a href=#180 id=180 data-nosnippet>180</a>#![deny(clippy::all)]
+<a href=#181 id=181 data-nosnippet>181</a>#![deny(unsafe_op_in_unsafe_fn)]
+<a href=#182 id=182 data-nosnippet>182</a>#![cfg_attr(clippy, deny(warnings))]
+<a href=#183 id=183 data-nosnippet>183</a></span><span class="comment">// Doc feature labels can be tested locally by running RUSTDOCFLAGS="--cfg=docsrs" cargo +nightly
+<a href=#184 id=184 data-nosnippet>184</a>// doc
+<a href=#185 id=185 data-nosnippet>185</a></span><span class="attr">#![cfg_attr(docsrs, feature(doc_auto_cfg, doc_cfg_hide), doc(cfg_hide(doc, docsrs)))]
+<a href=#186 id=186 data-nosnippet>186</a>#![allow(clippy::missing_safety_doc)]
+<a href=#187 id=187 data-nosnippet>187</a>#![warn(clippy::uninlined_format_args)]
+<a href=#188 id=188 data-nosnippet>188</a></span><span class="comment">// TODO: wasm-binding needs to be updated for that to be resolved, for now just silence it.
+<a href=#189 id=189 data-nosnippet>189</a></span><span class="attr">#![cfg_attr(web_platform, allow(unknown_lints, renamed_and_removed_lints, wasm_c_abi))]
+<a href=#190 id=190 data-nosnippet>190</a>
+<a href=#191 id=191 data-nosnippet>191</a>#[cfg(feature = <span class="string">"rwh_04"</span>)]
+<a href=#192 id=192 data-nosnippet>192</a></span><span class="kw">pub use </span>rwh_04 <span class="kw">as </span>raw_window_handle_04;
+<a href=#193 id=193 data-nosnippet>193</a><span class="attr">#[cfg(feature = <span class="string">"rwh_05"</span>)]
+<a href=#194 id=194 data-nosnippet>194</a></span><span class="kw">pub use </span>rwh_05 <span class="kw">as </span>raw_window_handle_05;
+<a href=#195 id=195 data-nosnippet>195</a><span class="attr">#[cfg(feature = <span class="string">"rwh_06"</span>)]
+<a href=#196 id=196 data-nosnippet>196</a></span><span class="kw">pub use </span>rwh_06 <span class="kw">as </span>raw_window_handle;
+<a href=#197 id=197 data-nosnippet>197</a>
+<a href=#198 id=198 data-nosnippet>198</a><span class="comment">// Re-export DPI types so that users don't have to put it in Cargo.toml.
+<a href=#199 id=199 data-nosnippet>199</a></span><span class="attr">#[doc(inline)]
+<a href=#200 id=200 data-nosnippet>200</a></span><span class="kw">pub use </span>dpi;
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a><span class="kw">pub mod </span>application;
+<a href=#203 id=203 data-nosnippet>203</a><span class="attr">#[cfg(any(doc, doctest, test))]
+<a href=#204 id=204 data-nosnippet>204</a></span><span class="kw">pub mod </span>changelog;
+<a href=#205 id=205 data-nosnippet>205</a><span class="attr">#[macro_use]
+<a href=#206 id=206 data-nosnippet>206</a></span><span class="kw">pub mod </span>error;
+<a href=#207 id=207 data-nosnippet>207</a><span class="kw">mod </span>cursor;
+<a href=#208 id=208 data-nosnippet>208</a><span class="kw">pub mod </span>event;
+<a href=#209 id=209 data-nosnippet>209</a><span class="kw">pub mod </span>event_loop;
+<a href=#210 id=210 data-nosnippet>210</a><span class="kw">mod </span>icon;
+<a href=#211 id=211 data-nosnippet>211</a><span class="kw">pub mod </span>keyboard;
+<a href=#212 id=212 data-nosnippet>212</a><span class="kw">pub mod </span>monitor;
+<a href=#213 id=213 data-nosnippet>213</a><span class="kw">mod </span>platform_impl;
+<a href=#214 id=214 data-nosnippet>214</a><span class="kw">mod </span>utils;
+<a href=#215 id=215 data-nosnippet>215</a><span class="kw">pub mod </span>window;
+<a href=#216 id=216 data-nosnippet>216</a>
+<a href=#217 id=217 data-nosnippet>217</a><span class="kw">pub mod </span>platform;</code></pre></div></section></main></body></html>

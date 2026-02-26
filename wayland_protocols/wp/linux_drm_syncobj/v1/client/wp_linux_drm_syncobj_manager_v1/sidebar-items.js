@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_GET_SURFACE_OPCODE","REQ_GET_SURFACE_SINCE","REQ_IMPORT_TIMELINE_OPCODE","REQ_IMPORT_TIMELINE_SINCE"],"enum":["Error","Event","Request"],"struct":["WpLinuxDrmSyncobjManagerV1"]};

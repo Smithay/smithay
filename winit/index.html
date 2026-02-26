@@ -1,0 +1,127 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Winit is a cross-platform window creation and event loop management library."><title>winit - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate winit</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#building-windows" title="Building windows">Building windows</a></li><li><a href="#event-handling" title="Event handling">Event handling</a></li><li><a href="#drawing-on-the-window" title="Drawing on the window">Drawing on the window</a></li><li><a href="#ui-scaling" title="UI scaling">UI scaling</a></li><li><a href="#cargo-features" title="Cargo Features">Cargo Features</a></li></ul><h3><a href="#reexports">Crate Items</a></h3><ul class="block"><li><a href="#reexports" title="Re-exports">Re-exports</a></li><li><a href="#modules" title="Modules">Modules</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>winit</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/winit/lib.rs.html#1-217">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Winit is a cross-platform window creation and event loop management library.</p>
+<h2 id="building-windows"><a class="doc-anchor" href="#building-windows">§</a>Building windows</h2>
+<p>Before you can create a <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a>, you first need to build an <a href="event_loop/struct.EventLoop.html" title="struct winit::event_loop::EventLoop"><code>EventLoop</code></a>. This is done with
+the <a href="event_loop/struct.EventLoop.html#method.new" title="associated function winit::event_loop::EventLoop::new"><code>EventLoop::new()</code></a> function.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>winit::event_loop::EventLoop;
+
+<span class="kw">fn </span>main() {
+    <span class="kw">let </span>event_loop = EventLoop::new().unwrap();
+    <span class="comment">// ...
+</span>}</code></pre></div>
+<p>Then you create a <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a> with <a href="event_loop/struct.ActiveEventLoop.html#method.create_window" title="method winit::event_loop::ActiveEventLoop::create_window"><code>create_window</code></a>.</p>
+<h2 id="event-handling"><a class="doc-anchor" href="#event-handling">§</a>Event handling</h2>
+<p>Once a <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a> has been created, it will generate different <em>events</em>. A <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a> object can
+generate <a href="event/enum.WindowEvent.html" title="enum winit::event::WindowEvent"><code>WindowEvent</code></a>s when certain input events occur, such as a cursor moving over the
+window or a key getting pressed while the window is focused. Devices can generate
+<a href="event/enum.DeviceEvent.html" title="enum winit::event::DeviceEvent"><code>DeviceEvent</code></a>s, which contain unfiltered event data that isn’t specific to a certain window.
+Some user activity, like mouse movement, can generate both a <a href="event/enum.WindowEvent.html" title="enum winit::event::WindowEvent"><code>WindowEvent</code></a> <em>and</em> a
+<a href="event/enum.DeviceEvent.html" title="enum winit::event::DeviceEvent"><code>DeviceEvent</code></a>. You can also create and handle your own custom <a href="event/enum.Event.html#variant.UserEvent" title="variant winit::event::Event::UserEvent"><code>Event::UserEvent</code></a>s, if
+desired.</p>
+<p>You can retrieve events by calling <a href="event_loop/struct.EventLoop.html#method.run_app" title="method winit::event_loop::EventLoop::run_app"><code>EventLoop::run_app()</code></a>. This function will
+dispatch events for every <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a> that was created with that particular <a href="event_loop/struct.EventLoop.html" title="struct winit::event_loop::EventLoop"><code>EventLoop</code></a>, and
+will run until <a href="event_loop/struct.ActiveEventLoop.html#method.exit" title="method winit::event_loop::ActiveEventLoop::exit"><code>exit()</code></a> is used, at which point <a href="event/enum.Event.html#variant.LoopExiting" title="variant winit::event::Event::LoopExiting"><code>Event::LoopExiting</code></a>.</p>
+<p>Winit no longer uses a <code>EventLoop::poll_events() -&gt; impl Iterator&lt;Event&gt;</code>-based event loop
+model, since that can’t be implemented properly on some platforms (e.g web, iOS) and works
+poorly on most other platforms. However, this model can be re-implemented to an extent with
+<a href="platform/pump_events/trait.EventLoopExtPumpEvents.html#method.pump_app_events" title="method winit::platform::pump_events::EventLoopExtPumpEvents::pump_app_events"><code>EventLoopExtPumpEvents::pump_app_events()</code></a>
+<sup id="fnref1"><a href="#fn1">1</a></sup>. See that method’s documentation for more reasons about why
+it’s discouraged beyond compatibility reasons.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>winit::application::ApplicationHandler;
+<span class="kw">use </span>winit::event::WindowEvent;
+<span class="kw">use </span>winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+<span class="kw">use </span>winit::window::{Window, WindowId};
+
+<span class="attr">#[derive(Default)]
+</span><span class="kw">struct </span>App {
+    window: <span class="prelude-ty">Option</span>&lt;Window&gt;,
+}
+
+<span class="kw">impl </span>ApplicationHandler <span class="kw">for </span>App {
+    <span class="kw">fn </span>resumed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, event_loop: <span class="kw-2">&amp;</span>ActiveEventLoop) {
+        <span class="self">self</span>.window = <span class="prelude-val">Some</span>(event_loop.create_window(Window::default_attributes()).unwrap());
+    }
+
+    <span class="kw">fn </span>window_event(<span class="kw-2">&amp;mut </span><span class="self">self</span>, event_loop: <span class="kw-2">&amp;</span>ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        <span class="kw">match </span>event {
+            WindowEvent::CloseRequested =&gt; {
+                <span class="macro">println!</span>(<span class="string">"The close button was pressed; stopping"</span>);
+                event_loop.exit();
+            },
+            WindowEvent::RedrawRequested =&gt; {
+                <span class="comment">// Redraw the application.
+                //
+                // It's preferable for applications that do not render continuously to render in
+                // this event rather than in AboutToWait, since rendering in here allows
+                // the program to gracefully handle redraws requested by the OS.
+
+                // Draw.
+
+                // Queue a RedrawRequested event.
+                //
+                // You only need to call this if you've determined that you need to redraw in
+                // applications which do not always need to. Applications that redraw continuously
+                // can render here instead.
+                </span><span class="self">self</span>.window.as_ref().unwrap().request_redraw();
+            }
+            <span class="kw">_ </span>=&gt; (),
+        }
+    }
+}
+
+<span class="kw">fn </span>main() {
+    <span class="kw">let </span>event_loop = EventLoop::new().unwrap();
+
+    <span class="comment">// ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
+    // dispatched any events. This is ideal for games and similar applications.
+    </span>event_loop.set_control_flow(ControlFlow::Poll);
+
+    <span class="comment">// ControlFlow::Wait pauses the event loop if no events are available to process.
+    // This is ideal for non-game applications that only update in response to user
+    // input, and uses significantly less power/CPU time than ControlFlow::Poll.
+    </span>event_loop.set_control_flow(ControlFlow::Wait);
+
+    <span class="kw">let </span><span class="kw-2">mut </span>app = App::default();
+    event_loop.run_app(<span class="kw-2">&amp;mut </span>app);
+}</code></pre></div>
+<p><a href="event/enum.WindowEvent.html" title="enum winit::event::WindowEvent"><code>WindowEvent</code></a> has a <a href="window/struct.WindowId.html" title="struct winit::window::WindowId"><code>WindowId</code></a> member. In multi-window environments, it should be
+compared to the value returned by <a href="window/struct.Window.html#method.id" title="method winit::window::Window::id"><code>Window::id()</code></a> to determine which <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a>
+dispatched the event.</p>
+<h2 id="drawing-on-the-window"><a class="doc-anchor" href="#drawing-on-the-window">§</a>Drawing on the window</h2>
+<p>Winit doesn’t directly provide any methods for drawing on a <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a>. However, it allows you
+to retrieve the raw handle of the window and display (see the <a href="platform/index.html" title="mod winit::platform"><code>platform</code></a> module and/or the
+<a href="./window/struct.Window.html#method.raw_window_handle"><code>raw_window_handle</code></a> and <a href="./window/struct.Window.html#method.raw_display_handle"><code>raw_display_handle</code></a> methods), which in turn allows
+you to create an OpenGL/Vulkan/DirectX/Metal/etc. context that can be used to render graphics.</p>
+<p>Note that many platforms will display garbage data in the window’s client area if the
+application doesn’t render anything to the window by the time the desktop compositor is ready to
+display the window to the user. If you notice this happening, you should create the window with
+<a href="window/struct.WindowAttributes.html#method.with_visible" title="method winit::window::WindowAttributes::with_visible"><code>visible</code> set to <code>false</code></a> and explicitly make
+the window visible only once you’re ready to render into it.</p>
+<h2 id="ui-scaling"><a class="doc-anchor" href="#ui-scaling">§</a>UI scaling</h2>
+<p>UI scaling is important, go read the docs for the <a href="dpi/index.html" title="mod winit::dpi"><code>dpi</code></a> crate for an
+introduction.</p>
+<p>All of Winit’s functions return physical types, but can take either logical or physical
+coordinates as input, allowing you to use the most convenient coordinate system for your
+particular application.</p>
+<p>Winit will dispatch a <a href="event/enum.WindowEvent.html#variant.ScaleFactorChanged" title="variant winit::event::WindowEvent::ScaleFactorChanged"><code>ScaleFactorChanged</code></a> event whenever a window’s scale factor has changed.
+This can happen if the user drags their window from a standard-resolution monitor to a high-DPI
+monitor or if the user changes their DPI settings. This allows you to rescale your application’s
+UI elements and adjust how the platform changes the window’s size to reflect the new scale
+factor. If a window hasn’t received a <a href="event/enum.WindowEvent.html#variant.ScaleFactorChanged" title="variant winit::event::WindowEvent::ScaleFactorChanged"><code>ScaleFactorChanged</code></a> event, its scale factor
+can be found by calling <a href="window/struct.Window.html#method.scale_factor" title="method winit::window::Window::scale_factor"><code>window.scale_factor()</code></a>.</p>
+<h2 id="cargo-features"><a class="doc-anchor" href="#cargo-features">§</a>Cargo Features</h2>
+<p>Winit provides the following Cargo features:</p>
+<ul>
+<li><code>x11</code> (enabled by default): On Unix platforms, enables the X11 backend.</li>
+<li><code>wayland</code> (enabled by default): On Unix platforms, enables the Wayland backend.</li>
+<li><code>rwh_04</code>: Implement <code>raw-window-handle v0.4</code> traits.</li>
+<li><code>rwh_05</code>: Implement <code>raw-window-handle v0.5</code> traits.</li>
+<li><code>rwh_06</code>: Implement <code>raw-window-handle v0.6</code> traits.</li>
+<li><code>serde</code>: Enables serialization/deserialization of certain types with <a href="https://crates.io/crates/serde">Serde</a>.</li>
+<li><code>mint</code>: Enables mint (math interoperability standard types) conversions.</li>
+</ul>
+<p>See the <a href="platform/index.html" title="mod winit::platform"><code>platform</code></a> module for documentation on platform-specific cargo
+features.</p>
+<div class="footnotes"><hr><ol><li id="fn1"><p><code>EventLoopExtPumpEvents::pump_app_events()</code> is only available on Windows, macOS, Android, X11 and Wayland.&nbsp;<a href="#fnref1">↩</a></p></li></ol></div></div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt id="reexport.raw_window_handle"><code>pub use rwh_06 as raw_window_handle;</code><wbr><span class="stab portability" title="Available on crate feature `rwh_06` only"><code>rwh_06</code></span></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="application/index.html" title="mod winit::application">application</a></dt><dd>End user application handling.</dd><dt><a class="mod" href="changelog/index.html" title="mod winit::changelog">changelog</a><wbr><span class="stab portability" title="Available nowhere">Nowhere</span></dt><dd>Changelog and migrations</dd><dt><a class="mod" href="dpi/index.html" title="mod winit::dpi">dpi</a></dt><dd>DPI</dd><dt><a class="mod" href="error/index.html" title="mod winit::error">error</a></dt><dt><a class="mod" href="event/index.html" title="mod winit::event">event</a></dt><dd>The <a href="event/enum.Event.html" title="enum winit::event::Event"><code>Event</code></a> enum and assorted supporting types.</dd><dt><a class="mod" href="event_loop/index.html" title="mod winit::event_loop">event_<wbr>loop</a></dt><dd>The <a href="event_loop/struct.EventLoop.html" title="struct winit::event_loop::EventLoop"><code>EventLoop</code></a> struct and assorted supporting types, including
+<a href="event_loop/enum.ControlFlow.html" title="enum winit::event_loop::ControlFlow"><code>ControlFlow</code></a>.</dd><dt><a class="mod" href="keyboard/index.html" title="mod winit::keyboard">keyboard</a></dt><dd>Types related to the keyboard.</dd><dt><a class="mod" href="monitor/index.html" title="mod winit::monitor">monitor</a></dt><dd>Types useful for interacting with a user’s monitors.</dd><dt><a class="mod" href="platform/index.html" title="mod winit::platform">platform</a></dt><dd>Contains traits with platform-specific methods in them.</dd><dt><a class="mod" href="window/index.html" title="mod winit::window">window</a></dt><dd>The <a href="window/struct.Window.html" title="struct winit::window::Window"><code>Window</code></a> struct and associated types.</dd></dl></section></div></main></body></html>

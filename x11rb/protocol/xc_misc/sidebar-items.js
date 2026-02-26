@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GET_VERSION_REQUEST","GET_XID_LIST_REQUEST","GET_XID_RANGE_REQUEST","X11_EXTENSION_NAME","X11_XML_VERSION"],"fn":["get_version","get_xid_list","get_xid_range"],"struct":["GetVersionReply","GetVersionRequest","GetXIDListReply","GetXIDListRequest","GetXIDRangeReply","GetXIDRangeRequest"],"trait":["ConnectionExt"]};

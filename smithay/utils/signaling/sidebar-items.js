@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["SignalToken","Signaler"],"trait":["Linkable"]};

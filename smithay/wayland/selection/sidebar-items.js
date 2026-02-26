@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SelectionTarget"],"mod":["data_device","ext_data_control","primary_selection","wlr_data_control"],"struct":["SelectionSource"],"trait":["SelectionHandler"]};

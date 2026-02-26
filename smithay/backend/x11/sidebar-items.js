@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AllocateBuffersError","CreateWindowError","MissingExtensionError","PresentError","X11Error","X11Event"],"struct":["Window","WindowBuilder","X11Backend","X11Handle","X11Input","X11KeyboardInputEvent","X11MouseInputEvent","X11MouseMovedEvent","X11MouseWheelEvent","X11Surface","X11VirtualDevice"]};

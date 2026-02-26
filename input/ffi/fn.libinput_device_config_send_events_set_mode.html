@@ -1,0 +1,23 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="@ingroup config"><title>libinput_device_config_send_events_set_mode in input::ffi - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="input" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">libinput_device_config_send_events_set_mode</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../input/index.html">input</a><span class="version">0.9.1</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In input::<wbr>ffi</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">input</a>::<wbr><a href="index.html">ffi</a></div><h1>Function <span class="fn">libinput_<wbr>device_<wbr>config_<wbr>send_<wbr>events_<wbr>set_<wbr>mode</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><pre class="rust item-decl"><code>pub unsafe extern &quot;C&quot; fn libinput_device_config_send_events_set_mode(
+    device: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.pointer.html">*mut </a><a class="struct" href="struct.libinput_device.html" title="struct input::ffi::libinput_device">libinput_device</a>,
+    mode: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
+) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>@ingroup config</p>
+<p>Set the send-event mode for this device. The mode defines when the device
+processes and sends events to the caller.</p>
+<p>The selected mode may not take effect immediately. Events already
+received and processed from this device are unaffected and will be passed
+to the caller on the next call to libinput_get_event().</p>
+<p>If the mode is a bitmask of @ref libinput_config_send_events_mode,
+the device may wait for or generate events until it is in a neutral
+state. For example, this may include waiting for or generating button
+release events.</p>
+<p>If the device is already suspended, this function does nothing and
+returns success. Changing the send-event mode on a device that has been
+removed is permitted.</p>
+<p>@param device The device to configure
+@param mode A bitmask of send-events modes</p>
+<p>@return A config status code.</p>
+<p>@see libinput_device_config_send_events_get_modes
+@see libinput_device_config_send_events_get_mode
+@see libinput_device_config_send_events_get_default_mode</p>
+</div></details></section></div></main></body></html>

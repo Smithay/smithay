@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Axis","AxisSource","ButtonState","PointerEvent"],"struct":["PointerAxisEvent","PointerButtonEvent","PointerMotionAbsoluteEvent","PointerMotionEvent","PointerScrollContinuousEvent","PointerScrollFingerEvent","PointerScrollWheelEvent"],"trait":["PointerEventTrait","PointerScrollEvent"]};

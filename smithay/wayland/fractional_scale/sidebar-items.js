@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["with_fractional_scale"],"struct":["FractionalScaleManagerState","FractionalScaleState"],"trait":["FractionalScaleHandler"],"type":["FractionalScaleStateUserData"]};

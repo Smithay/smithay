@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["WaylandError"],"struct":["Backend","InvalidId","NoWaylandLib","ObjectId","ReadEventsGuard","WeakBackend"],"trait":["ObjectData"]};

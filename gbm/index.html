@@ -1,0 +1,46 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Safe `libgbm` bindings for rust"><title>gbm - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="gbm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate gbm</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../gbm/index.html">gbm</a><span class="version">0.18.0</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#safe-libgbm-bindings-for-rust" title="Safe `libgbm` bindings for rust">Safe <code>libgbm</code> bindings for rust</a><ul><li><a href="#example" title="Example">Example</a></li></ul></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#types" title="Type Aliases">Type Aliases</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>gbm</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/gbm/lib.rs.html#1-205">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="safe-libgbm-bindings-for-rust"><a class="doc-anchor" href="#safe-libgbm-bindings-for-rust">§</a>Safe <code>libgbm</code> bindings for <a href="https://www.rust-lang.org">rust</a></h2>
+<p>The Generic Buffer Manager</p>
+<p>This module provides an abstraction that the caller can use to request a
+buffer from the underlying memory management system for the platform.</p>
+<p>This allows the creation of portable code whilst still allowing access to
+the underlying memory manager.</p>
+<p>This library is best used in combination with <a href="https://github.com/Smithay/drm-rs"><code>drm-rs</code></a>,
+provided through the <code>drm-support</code> feature.</p>
+<h3 id="example"><a class="doc-anchor" href="#example">§</a>Example</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>drm::control::{<span class="self">self</span>, crtc, framebuffer};
+<span class="kw">use </span>gbm::{BufferObjectFlags, Device, Format};
+
+<span class="comment">// ... init your drm device ...
+</span><span class="kw">let </span>drm = init_drm_device();
+
+<span class="comment">// init a GBM device
+</span><span class="kw">let </span>gbm = Device::new(drm).unwrap();
+
+<span class="comment">// create a 4x4 buffer
+</span><span class="kw">let </span><span class="kw-2">mut </span>bo = gbm
+    .create_buffer_object::&lt;()&gt;(
+        <span class="number">1280</span>,
+        <span class="number">720</span>,
+        Format::Argb8888,
+        BufferObjectFlags::SCANOUT | BufferObjectFlags::WRITE,
+    )
+    .unwrap();
+<span class="comment">// write something to it (usually use import or egl rendering instead)
+</span><span class="kw">let </span>buffer = {
+    <span class="kw">let </span><span class="kw-2">mut </span>buffer = Vec::new();
+    <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="number">1280 </span>{
+        <span class="kw">for _ in </span><span class="number">0</span>..<span class="number">720 </span>{
+            buffer.push(<span class="kw">if </span>i % <span class="number">2 </span>== <span class="number">0 </span>{ <span class="number">0 </span>} <span class="kw">else </span>{ <span class="number">255 </span>});
+        }
+    }
+    buffer
+};
+bo.write(<span class="kw-2">&amp;</span>buffer).unwrap();
+
+<span class="comment">// create a framebuffer from our buffer
+</span><span class="kw">let </span>fb = gbm.add_framebuffer(<span class="kw-2">&amp;</span>bo, <span class="number">32</span>, <span class="number">32</span>).unwrap();
+
+<span class="comment">// display it (and get a crtc, mode and connector before)
+</span>gbm.set_crtc(crtc_handle, <span class="prelude-val">Some</span>(fb), (<span class="number">0</span>, <span class="number">0</span>), <span class="kw-2">&amp;</span>[con], <span class="prelude-val">Some</span>(mode))
+    .unwrap();</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.BufferObject.html" title="struct gbm::BufferObject">Buffer<wbr>Object</a></dt><dd>A GBM buffer object</dd><dt><a class="struct" href="struct.BufferObjectFlags.html" title="struct gbm::BufferObjectFlags">Buffer<wbr>Object<wbr>Flags</a></dt><dd>Flags to indicate the intended use for the buffer - these are passed into
+[<code>Device::create_buffer_object()</code>].</dd><dt><a class="struct" href="struct.Device.html" title="struct gbm::Device">Device</a></dt><dd>An open GBM device</dd><dt><a class="struct" href="struct.FrontBufferError.html" title="struct gbm::FrontBufferError">Front<wbr>Buffer<wbr>Error</a></dt><dd>Errors that may happen when locking the front buffer</dd><dt><a class="struct" href="struct.InvalidFdError.html" title="struct gbm::InvalidFdError">Invalid<wbr>FdError</a></dt><dd>Thrown when the fd is invalid</dd><dt><a class="struct" href="struct.MappedBufferObject.html" title="struct gbm::MappedBufferObject">Mapped<wbr>Buffer<wbr>Object</a></dt><dd>A mapped buffer object</dd><dt><a class="struct" href="struct.Surface.html" title="struct gbm::Surface">Surface</a></dt><dd>A GBM rendering surface</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Format.html" title="enum gbm::Format">Format</a></dt><dt><a class="enum" href="enum.Modifier.html" title="enum gbm::Modifier">Modifier</a></dt></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.AsRaw.html" title="trait gbm::AsRaw">AsRaw</a></dt><dd>Trait for types that allow to obtain the underlying raw libinput pointer.</dd></dl><h2 id="types" class="section-header">Type Aliases<a href="#types" class="anchor">§</a></h2><dl class="item-table"><dt><a class="type" href="type.BufferObjectHandle.html" title="type gbm::BufferObjectHandle">Buffer<wbr>Object<wbr>Handle</a></dt><dd>Abstraction representing the handle to a buffer allocated by the manager</dd></dl></section></div></main></body></html>

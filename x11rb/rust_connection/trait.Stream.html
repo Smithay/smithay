@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A trait used to implement the raw communication with the X11 server."><title>Stream in x11rb::rust_connection - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Stream</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Stream</a></h2><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.poll" title="poll">poll</a></li><li><a href="#tymethod.read" title="read">read</a></li><li><a href="#tymethod.write" title="write">write</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.write_vectored" title="write_vectored">write_vectored</a></li></ul><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In x11rb::<wbr>rust_<wbr>connection</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">x11rb</a>::<wbr><a href="index.html">rust_connection</a></div><h1>Trait <span class="trait">Stream</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/x11rb/rust_connection/stream.rs.html#52-138">Source</a> </span></div><pre class="rust item-decl"><code>pub trait Stream {
+    // Required methods
+    fn <a href="#tymethod.poll" class="fn">poll</a>(&amp;self, mode: <a class="enum" href="enum.PollMode.html" title="enum x11rb::rust_connection::PollMode">PollMode</a>) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.unit.html">()</a>&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.read" class="fn">read</a>(
+        &amp;self,
+        buf: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+        fd_storage: &amp;mut <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="type" href="../utils/type.RawFdContainer.html" title="type x11rb::utils::RawFdContainer">RawFdContainer</a>&gt;,
+    ) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.write" class="fn">write</a>(&amp;self, buf: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>], fds: &amp;mut <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="type" href="../utils/type.RawFdContainer.html" title="type x11rb::utils::RawFdContainer">RawFdContainer</a>&gt;) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt;;
+
+    // Provided method
+    fn <a href="#method.write_vectored" class="fn">write_vectored</a>(
+        &amp;self,
+        bufs: &amp;[<a class="struct" href="https://doc.rust-lang.org/nightly/std/io/struct.IoSlice.html" title="struct std::io::IoSlice">IoSlice</a>&lt;'_&gt;],
+        fds: &amp;mut <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="type" href="../utils/type.RawFdContainer.html" title="type x11rb::utils::RawFdContainer">RawFdContainer</a>&gt;,
+    ) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt; { ... }
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A trait used to implement the raw communication with the X11 server.</p>
+<p>None of the functions of this trait shall return <a href="https://doc.rust-lang.org/nightly/std/io/error/enum.ErrorKind.html#variant.Interrupted" title="variant std::io::error::ErrorKind::Interrupted"><code>std::io::ErrorKind::Interrupted</code></a>.
+If a system call fails with this error, the implementation should try again.</p>
+</div></details><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.poll" class="method"><a class="src rightside" href="../../src/x11rb/rust_connection/stream.rs.html#68">Source</a><h4 class="code-header">fn <a href="#tymethod.poll" class="fn">poll</a>(&amp;self, mode: <a class="enum" href="enum.PollMode.html" title="enum x11rb::rust_connection::PollMode">PollMode</a>) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.unit.html">()</a>&gt;</h4></section></summary><div class="docblock"><p>Waits for level-triggered read and/or write events on the stream.</p>
+<p>This function does not return what caused it to complete the poll.
+Instead, callers should try to read or write and check for
+<a href="https://doc.rust-lang.org/nightly/std/io/error/enum.ErrorKind.html#variant.WouldBlock" title="variant std::io::error::ErrorKind::WouldBlock"><code>std::io::ErrorKind::WouldBlock</code></a>.</p>
+<p>This function is allowed to spuriously return even if the stream
+is neither readable nor writable. However, it shall not do it
+continuously, which would cause a 100% CPU usage.</p>
+<h5 id="multithreading"><a class="doc-anchor" href="#multithreading">§</a>Multithreading</h5>
+<p>If <code>Self</code> is <code>Send + Sync</code> and <code>poll</code> is used concurrently from more than
+one thread, all threads should wake when the stream becomes readable (when
+<code>read</code> is <code>true</code>) or writable (when <code>write</code> is <code>true</code>).</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.read" class="method"><a class="src rightside" href="../../src/x11rb/rust_connection/stream.rs.html#91">Source</a><h4 class="code-header">fn <a href="#tymethod.read" class="fn">read</a>(
+    &amp;self,
+    buf: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+    fd_storage: &amp;mut <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="type" href="../utils/type.RawFdContainer.html" title="type x11rb::utils::RawFdContainer">RawFdContainer</a>&gt;,
+) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt;</h4></section></summary><div class="docblock"><p>Read some bytes and FDs from this reader without blocking, returning how many bytes
+were read.</p>
+<p>This function works like <a href="https://doc.rust-lang.org/nightly/std/io/trait.Read.html#tymethod.read" title="method std::io::Read::read"><code>std::io::Read::read</code></a>, but also supports the reception of file
+descriptors. Any received file descriptors are appended to the given <code>fd_storage</code>.
+Whereas implementation of <a href="https://doc.rust-lang.org/nightly/std/io/trait.Read.html#tymethod.read" title="method std::io::Read::read"><code>std::io::Read::read</code></a> are allowed to block or not to block,
+this method shall never block and return <code>ErrorKind::WouldBlock</code> if needed.</p>
+<p>This function does not guarantee that all file descriptors were sent together with the data
+with which they are received. However, file descriptors may not be received later than the
+data that was sent at the same time. Instead, file descriptors may only be received
+earlier.</p>
+<h5 id="multithreading-1"><a class="doc-anchor" href="#multithreading-1">§</a>Multithreading</h5>
+<p>If <code>Self</code> is <code>Send + Sync</code> and <code>read</code> is used concurrently from more than one thread:</p>
+<ul>
+<li>Both the data and the file descriptors shall be read in order, but possibly
+interleaved across threads.</li>
+<li>Neither the data nor the file descriptors shall be duplicated.</li>
+<li>The returned value shall always be the actual number of bytes read into <code>buf</code>.</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.write" class="method"><a class="src rightside" href="../../src/x11rb/rust_connection/stream.rs.html#118">Source</a><h4 class="code-header">fn <a href="#tymethod.write" class="fn">write</a>(&amp;self, buf: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>], fds: &amp;mut <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="type" href="../utils/type.RawFdContainer.html" title="type x11rb::utils::RawFdContainer">RawFdContainer</a>&gt;) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt;</h4></section></summary><div class="docblock"><p>Write a buffer and some FDs into this writer without blocking, returning how many
+bytes were written.</p>
+<p>This function works like <a href="https://doc.rust-lang.org/nightly/std/io/trait.Write.html#tymethod.write" title="method std::io::Write::write"><code>std::io::Write::write</code></a>, but also supports sending file
+descriptors. The <code>fds</code> argument contains the file descriptors to send. The order of file
+descriptors is maintained. Whereas implementation of <a href="https://doc.rust-lang.org/nightly/std/io/trait.Write.html#tymethod.write" title="method std::io::Write::write"><code>std::io::Write::write</code></a> are
+allowed to block or not to block, this function must never block and return
+<code>ErrorKind::WouldBlock</code> if needed.</p>
+<p>This function does not guarantee that all file descriptors are sent together with the data.
+Any file descriptors that were sent are removed from the beginning of the given <code>Vec</code>.</p>
+<p>There is no guarantee that the given file descriptors are received together with the given
+data. File descriptors might be received earlier than their corresponding data. It is not
+allowed for file descriptors to be received later than the bytes that were sent at the same
+time.</p>
+<h5 id="multithreading-2"><a class="doc-anchor" href="#multithreading-2">§</a>Multithreading</h5>
+<p>If <code>Self</code> is <code>Send + Sync</code> and <code>write</code> is used concurrently from more than one thread:</p>
+<ul>
+<li>Both the data and the file descriptors shall be written in order, but possibly
+interleaved across threads.</li>
+<li>Neither the data nor the file descriptors shall be duplicated.</li>
+<li>The returned value shall always be the actual number of bytes written from <code>buf</code>.</li>
+</ul>
+</div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.write_vectored" class="method"><a class="src rightside" href="../../src/x11rb/rust_connection/stream.rs.html#130-137">Source</a><h4 class="code-header">fn <a href="#method.write_vectored" class="fn">write_vectored</a>(
+    &amp;self,
+    bufs: &amp;[<a class="struct" href="https://doc.rust-lang.org/nightly/std/io/struct.IoSlice.html" title="struct std::io::IoSlice">IoSlice</a>&lt;'_&gt;],
+    fds: &amp;mut <a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="type" href="../utils/type.RawFdContainer.html" title="type x11rb::utils::RawFdContainer">RawFdContainer</a>&gt;,
+) -&gt; <a class="type" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html" title="type std::io::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt;</h4></section></summary><div class="docblock"><p>Like <code>write</code>, except that it writes from a slice of buffers. Like <code>write</code>, this
+method must never block.</p>
+<p>This method must behave as a call to <code>write</code> with the buffers concatenated would.</p>
+<p>The default implementation calls <code>write</code> with the first nonempty buffer provided.</p>
+<h5 id="multithreading-3"><a class="doc-anchor" href="#multithreading-3">§</a>Multithreading</h5>
+<p>Same as <code>write</code>.</p>
+</div></details></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-Stream-for-DefaultStream" class="impl"><a class="src rightside" href="../../src/x11rb/rust_connection/stream.rs.html#335-461">Source</a><a href="#impl-Stream-for-DefaultStream" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.Stream.html" title="trait x11rb::rust_connection::Stream">Stream</a> for <a class="struct" href="struct.DefaultStream.html" title="struct x11rb::rust_connection::DefaultStream">DefaultStream</a></h3></section></div><script src="../../trait.impl/x11rb/rust_connection/stream/trait.Stream.js" async></script></section></div></main></body></html>

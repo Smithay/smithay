@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","xdg_toplevel_icon_manager_v1","xdg_toplevel_icon_v1"]};

@@ -1,0 +1,137 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Linux DMABUF protocol"><title>smithay::wayland::dmabuf - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module dmabuf</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module dmabuf</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#how-to-use" title="How to use">How to use</a><ul><li><a href="#notes-on-supporting-per-surface-feedback" title="Notes on supporting per surface feedback">Notes on supporting per surface feedback</a></li><li><a href="#notes-on-clients-binding-version-3-or-lower" title="Notes on clients binding version 3 or lower">Notes on clients binding version 3 or lower</a></li><li><a href="#without-feedback-v3" title="Without feedback (v3)">Without feedback (v3)</a></li></ul></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>dmabuf</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/dmabuf/mod.rs.html#1-1226">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Linux DMABUF protocol</p>
+<p>This module provides helper to handle the linux-dmabuf protocol, which allows clients to submit their
+contents as dmabuf file descriptors. These handlers automate the aggregation of the metadata associated
+with a dma buffer, and do some basic checking of the sanity of what the client sends.</p>
+<h3 id="how-to-use"><a class="doc-anchor" href="#how-to-use">§</a>How to use</h3>
+<p>To setup the dmabuf global, you will need to provide 2 things:</p>
+<ul>
+<li>the default <a href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback"><code>DmabufFeedback</code></a> containing the main device and the formats you wish to support when creating the <code>Global</code> through <a href="struct.DmabufState.html#method.create_global_with_default_feedback" title="method smithay::wayland::dmabuf::DmabufState::create_global_with_default_feedback"><code>DmabufState::create_global_with_default_feedback</code></a></li>
+<li>an implementation of <a href="trait.DmabufHandler.html" title="trait smithay::wayland::dmabuf::DmabufHandler"><code>DmabufHandler</code></a> to test if a dmabuf buffer can be imported by your renderer and optionally override the initial surface feedback</li>
+</ul>
+<p>The list of supported formats is a <code>Vec&lt;Format&gt;</code>, where you will enter all the (code, modifier) pairs you
+support. You can typically receive a list of supported formats for one renderer by calling
+<a href="../../backend/renderer/trait.ImportDma.html#method.dmabuf_formats" title="method smithay::backend::renderer::ImportDma::dmabuf_formats"><code>ImportDma::dmabuf_formats</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{
+    delegate_dmabuf,
+    backend::allocator::dmabuf::{Dmabuf},
+    reexports::{
+        wayland_server::protocol::{
+            wl_buffer::WlBuffer,
+            wl_surface::WlSurface,
+        }
+    },
+    wayland::{
+        buffer::BufferHandler,
+        dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier}
+    },
+};
+
+<span class="kw">pub struct </span>State {
+    dmabuf_state: DmabufState,
+    dmabuf_global: DmabufGlobal,
+}
+
+<span class="comment">// Smithay's "DmabufHandler" also requires the buffer management utilities, you need to implement
+// "BufferHandler".
+</span><span class="kw">impl </span>BufferHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>buffer_destroyed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, buffer: <span class="kw-2">&amp;</span>wayland_server::protocol::wl_buffer::WlBuffer) {
+        <span class="comment">// All renderers can handle buffer destruction at this point. Some parts of window management may
+        // also use this function.
+        //
+        // If you need to mark a dmabuf elsewhere in your state as destroyed, you use the "get_dmabuf"
+        // function defined in this module to access the dmabuf associated the "Buffer".
+    </span>}
+}
+
+<span class="kw">impl </span>DmabufHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>dmabuf_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>DmabufState {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.dmabuf_state
+    }
+
+    <span class="kw">fn </span>dmabuf_imported(<span class="kw-2">&amp;mut </span><span class="self">self</span>, global: <span class="kw-2">&amp;</span>DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
+        <span class="comment">// Here you should import the dmabuf into your renderer.
+        //
+        // The notifier is used to communicate whether import was successful. In this example we
+        // call successful to notify the client import was successful.
+        </span>notifier.successful::&lt;State&gt;();
+    }
+
+    <span class="kw">fn </span>new_surface_feedback(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        surface: <span class="kw-2">&amp;</span>WlSurface,
+        global: <span class="kw-2">&amp;</span>DmabufGlobal,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;DmabufFeedback&gt; {
+        <span class="comment">// Here you can override the initial feedback sent to a client requesting feedback for a specific
+        // surface. Returning `None` instructs the global to return the default feedback to the client which
+        // is also the default implementation for this function when not overridden
+        </span><span class="prelude-val">None
+    </span>}
+}
+
+<span class="comment">// Delegate dmabuf handling for State to DmabufState.
+</span><span class="macro">delegate_dmabuf!</span>(State);
+
+<span class="comment">// First a DmabufState must be created. This type is used to create some "DmabufGlobal"s
+</span><span class="kw">let </span><span class="kw-2">mut </span>dmabuf_state = DmabufState::new();
+
+<span class="comment">// ...identify primary render node and load dmabuf formats supported for rendering...
+
+// Build the default feedback from the device node of the primary render node and
+// the supported dmabuf formats
+</span><span class="kw">let </span>default_feedback = DmabufFeedbackBuilder::new(main_device, formats).build().unwrap();
+
+<span class="comment">// And create the dmabuf global.
+</span><span class="kw">let </span>dmabuf_global = dmabuf_state.create_global_with_default_feedback::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display_handle,
+    <span class="kw-2">&amp;</span>default_feedback,
+);
+
+<span class="kw">let </span>state = State {
+    dmabuf_state,
+    dmabuf_global,
+};
+
+<span class="comment">// Rest of the compositor goes here...</span></code></pre></div>
+<p>Accessing a <a href="../../backend/allocator/dmabuf/struct.Dmabuf.html" title="struct smithay::backend::allocator::dmabuf::Dmabuf"><code>Dmabuf</code></a> associated with a <a href="../../../wayland_server/protocol/wl_buffer/struct.WlBuffer.html" title="struct wayland_server::protocol::wl_buffer::WlBuffer"><code>WlBuffer</code></a>
+may be achieved using <a href="fn.get_dmabuf.html" title="fn smithay::wayland::dmabuf::get_dmabuf"><code>get_dmabuf</code></a>.</p>
+<h5 id="notes-on-supporting-per-surface-feedback"><a class="doc-anchor" href="#notes-on-supporting-per-surface-feedback">§</a>Notes on supporting per surface feedback</h5>
+<p>If a client requests <a href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback"><code>DmabufFeedback</code></a> for a specific <a href="../../../wayland_server/protocol/wl_surface/struct.WlSurface.html" title="struct wayland_server::protocol::wl_surface::WlSurface"><code>WlSurface</code></a> it can be used to inform the client about
+sub-optimal buffer allocations. This is especially important to support direct scan-out over drm planes
+that typically only support a subset of supported formats from the rendering formats.</p>
+<p>The <a href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback"><code>DmabufFeedback</code></a> of a specific <a href="../../../wayland_server/protocol/wl_surface/struct.WlSurface.html" title="struct wayland_server::protocol::wl_surface::WlSurface"><code>WlSurface</code></a> can be updated by retrieving the <a href="struct.SurfaceDmabufFeedbackState.html" title="struct smithay::wayland::dmabuf::SurfaceDmabufFeedbackState"><code>SurfaceDmabufFeedbackState</code></a>
+with <a href="struct.SurfaceDmabufFeedbackState.html#method.from_states" title="associated function smithay::wayland::dmabuf::SurfaceDmabufFeedbackState::from_states"><code>SurfaceDmabufFeedbackState::from_states</code></a> and setting the feedback with <a href="struct.SurfaceDmabufFeedbackState.html#method.set_feedback" title="method smithay::wayland::dmabuf::SurfaceDmabufFeedbackState::set_feedback"><code>SurfaceDmabufFeedbackState::set_feedback</code></a>.</p>
+<p><a href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback"><code>DmabufFeedback</code></a> uses preference tranches to inform the client about formats that could result on more optimal buffer placement.
+Preference tranches can be added to the feedback during initialization with <a href="struct.DmabufFeedbackBuilder.html#method.add_preference_tranche" title="method smithay::wayland::dmabuf::DmabufFeedbackBuilder::add_preference_tranche"><code>DmabufFeedbackBuilder::add_preference_tranche</code></a>.
+Note that the order of formats within a tranche (<code>target_device</code> + <code>flags</code>) is undefined, if you want to communicate preference
+of a specific format you have to split the formats into multiple tranches. A tranche can additionally define <a href="../../../wayland_protocols/wp/linux_dmabuf/zv1/generated/server/zwp_linux_dmabuf_feedback_v1/struct.TrancheFlags.html" title="struct wayland_protocols::wp::linux_dmabuf::zv1::generated::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags"><code>TrancheFlags</code></a>
+which can give clients additional context what the tranche represents. As an example formats gathered from drm planes
+should define <a href="../../../wayland_protocols/wp/linux_dmabuf/zv1/generated/server/zwp_linux_dmabuf_feedback_v1/struct.TrancheFlags.html#associatedconstant.Scanout" title="associated constant wayland_protocols::wp::linux_dmabuf::zv1::generated::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout"><code>TrancheFlags::Scanout</code></a> to communicate that buffers should be allocated so that
+they support scan-out by the device specified as the <code>target device</code>.</p>
+<p>Note: Surface feedback only represents an optimization and the fallback path using compositing should always be supported, so
+typically you do not want to announce formats in a preference tranche that are not supported by the main device for rendering.</p>
+<h5 id="notes-on-clients-binding-version-3-or-lower"><a class="doc-anchor" href="#notes-on-clients-binding-version-3-or-lower">§</a>Notes on clients binding version 3 or lower</h5>
+<p>During instantiation the global will automatically build a format list from the provided <a href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback"><code>DmabufFeedback</code></a> consisting of all formats that are part of a tranche
+having the <code>target device</code> equal the <code>main device</code> and defining no special <a href="../../../wayland_protocols/wp/linux_dmabuf/zv1/generated/server/zwp_linux_dmabuf_feedback_v1/struct.TrancheFlags.html" title="struct wayland_protocols::wp::linux_dmabuf::zv1::generated::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags"><code>TrancheFlags</code></a>.</p>
+<h4 id="without-feedback-v3"><a class="doc-anchor" href="#without-feedback-v3">§</a>Without feedback (v3)</h4>
+<p>It is also possible to initialize the <code>Global</code> without support for <a href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback"><code>DmabufFeedback</code></a> by using <a href="struct.DmabufState.html#method.create_global" title="method smithay::wayland::dmabuf::DmabufState::create_global"><code>DmabufState::create_global</code></a> which
+will then only advertise version <code>3</code> to clients. This is mostly meant to guarantee an easy update path for compositors already
+supporting dmabuf version <code>3</code> without breakage.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// define your supported formats
+</span><span class="kw">let </span>formats = <span class="macro">vec!</span>[
+    <span class="comment">/* ... */
+</span>];
+
+<span class="comment">// And create the dmabuf global.
+</span><span class="kw">let </span>dmabuf_global = dmabuf_state.create_global::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display_handle,
+    formats,
+);
+
+<span class="kw">let </span>state = State {
+    dmabuf_state,
+    dmabuf_global,
+};
+
+<span class="comment">// Rest of the compositor goes here...</span></code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.DmabufData.html" title="struct smithay::wayland::dmabuf::DmabufData">Dmabuf<wbr>Data</a></dt><dd>Data associated with a dmabuf global protocol object.</dd><dt><a class="struct" href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback">Dmabuf<wbr>Feedback</a></dt><dd>Feedback for dmabuf allocation</dd><dt><a class="struct" href="struct.DmabufFeedbackBuilder.html" title="struct smithay::wayland::dmabuf::DmabufFeedbackBuilder">Dmabuf<wbr>Feedback<wbr>Builder</a></dt><dd>Builder for <a href="struct.DmabufFeedback.html" title="struct smithay::wayland::dmabuf::DmabufFeedback"><code>DmabufFeedback</code></a></dd><dt><a class="struct" href="struct.DmabufFeedbackData.html" title="struct smithay::wayland::dmabuf::DmabufFeedbackData">Dmabuf<wbr>Feedback<wbr>Data</a></dt><dd>Data associated with a dmabuf global protocol object.</dd><dt><a class="struct" href="struct.DmabufGlobal.html" title="struct smithay::wayland::dmabuf::DmabufGlobal">Dmabuf<wbr>Global</a></dt><dd>A handle to a registered dmabuf global.</dd><dt><a class="struct" href="struct.DmabufGlobalData.html" title="struct smithay::wayland::dmabuf::DmabufGlobalData">Dmabuf<wbr>Global<wbr>Data</a></dt><dd>Data associated with a dmabuf global.</dd><dt><a class="struct" href="struct.DmabufParamsData.html" title="struct smithay::wayland::dmabuf::DmabufParamsData">Dmabuf<wbr>Params<wbr>Data</a></dt><dd>Data associated with a pending <a href="../../backend/allocator/dmabuf/struct.Dmabuf.html" title="struct smithay::backend::allocator::dmabuf::Dmabuf"><code>Dmabuf</code></a> import.</dd><dt><a class="struct" href="struct.DmabufState.html" title="struct smithay::wayland::dmabuf::DmabufState">Dmabuf<wbr>State</a></dt><dd>Delegate type for all dmabuf globals.</dd><dt><a class="struct" href="struct.ImportNotifier.html" title="struct smithay::wayland::dmabuf::ImportNotifier">Import<wbr>Notifier</a></dt><dd>An object to allow asynchronous creation of a <a href="../../backend/allocator/dmabuf/struct.Dmabuf.html" title="struct smithay::backend::allocator::dmabuf::Dmabuf"><code>Dmabuf</code></a> backed <a href="../../../wayland_server/protocol/wl_buffer/struct.WlBuffer.html" title="struct wayland_server::protocol::wl_buffer::WlBuffer"><code>WlBuffer</code></a>.</dd><dt><a class="struct" href="struct.SurfaceDmabufFeedbackState.html" title="struct smithay::wayland::dmabuf::SurfaceDmabufFeedbackState">Surface<wbr>Dmabuf<wbr>Feedback<wbr>State</a></dt><dd>Feedback state for a surface</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.DmabufHandler.html" title="trait smithay::wayland::dmabuf::DmabufHandler">Dmabuf<wbr>Handler</a></dt><dd>Handler trait for <a href="../../backend/allocator/dmabuf/struct.Dmabuf.html" title="struct smithay::backend::allocator::dmabuf::Dmabuf"><code>Dmabuf</code></a> import from the compositor.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.get_dmabuf.html" title="fn smithay::wayland::dmabuf::get_dmabuf">get_<wbr>dmabuf</a></dt><dd>Gets the contents of a <a href="../../backend/allocator/dmabuf/struct.Dmabuf.html" title="struct smithay::backend::allocator::dmabuf::Dmabuf"><code>Dmabuf</code></a> backed <a href="../../../wayland_server/protocol/wl_buffer/struct.WlBuffer.html" title="struct wayland_server::protocol::wl_buffer::WlBuffer"><code>WlBuffer</code></a>.</dd></dl></section></div></main></body></html>

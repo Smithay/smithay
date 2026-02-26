@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["EXT_BACKGROUND_EFFECT_MANAGER_V1_INTERFACE","EXT_BACKGROUND_EFFECT_SURFACE_V1_INTERFACE","ext_background_effect_manager_v1_interface","ext_background_effect_surface_v1_interface"]};

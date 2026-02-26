@@ -1,0 +1,70 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Integrating x11rb with an Event Loop"><title>x11rb::event_loop_integration - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module event_loop_integration</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module event_<wbr>loop_<wbr>integration</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#integrating-x11rb-with-an-event-loop" title="Integrating x11rb with an Event Loop">Integrating x11rb with an Event Loop</a><ul><li><a href="#threads-and-races" title="Threads and Races">Threads and Races</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2 class="in-crate"><a href="../index.html">In crate x11rb</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">x11rb</a></div><h1>Module <span>event_<wbr>loop_<wbr>integration</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/x11rb/event_loop_integration.rs.html#1-82">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="integrating-x11rb-with-an-event-loop"><a class="doc-anchor" href="#integrating-x11rb-with-an-event-loop">§</a>Integrating x11rb with an Event Loop</h2>
+<p>To integrate x11rb with an event loop,
+<a href="https://doc.rust-lang.org/std/os/unix/io/trait.AsRawFd.html"><code>std::os::unix::io::AsRawFd</code></a> is
+implemented by <a href="../rust_connection/struct.RustConnection.html"><code>RustConnection</code></a>’s
+<a href="../rust_connection/struct.DefaultStream.html#impl-AsRawFd"><code>DefaultStream</code></a> and
+<a href="../xcb_ffi/struct.XCBConnection.html#impl-AsRawFd"><code>XCBConnection</code></a>. This allows to integrate
+with an event loop that also handles timeouts or network I/O. See
+<a href="https://github.com/psychon/x11rb/blob/master/x11rb/examples/xclock_utc.rs"><code>xclock_utc</code></a> for an
+example.</p>
+<p>The general form of such an integration could be as follows:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[cfg(unix)]
+</span><span class="kw">use </span>std::os::unix::io::{AsRawFd, RawFd};
+<span class="attr">#[cfg(windows)]
+</span><span class="kw">use </span>std::os::windows::io::{AsRawSocket, RawSocket};
+<span class="kw">use </span>x11rb::connection::Connection;
+<span class="kw">use </span>x11rb::rust_connection::RustConnection;
+<span class="kw">use </span>x11rb::errors::ConnectionError;
+
+<span class="kw">fn </span>main_loop(conn: <span class="kw-2">&amp;</span>RustConnection) -&gt; <span class="prelude-ty">Result</span>&lt;(), ConnectionError&gt; {
+    <span class="attr">#[cfg(unix)]
+    </span><span class="kw">let </span>raw_handle = conn.stream().as_raw_fd();
+    <span class="attr">#[cfg(windows)]
+    </span><span class="kw">let </span>raw_handle = conn.stream().as_raw_socket();
+    <span class="kw">loop </span>{
+        <span class="kw">while let </span><span class="prelude-val">Some</span>(event) = conn.poll_for_event()<span class="question-mark">? </span>{
+            handle_event(event);
+        }
+
+        poll_for_readable(raw_handle);
+
+        <span class="comment">// Do other work here.
+    </span>}
+}</code></pre></div>
+<p>The function <code>poll_for_readable</code> could wait for any number of I/O streams (besides the one from
+x11rb) to become readable. It can also implement timeouts, as seen in the
+<a href="https://github.com/psychon/x11rb/blob/master/x11rb/examples/xclock_utc.rs"><code>xclock_utc</code> example</a>.</p>
+<h3 id="threads-and-races"><a class="doc-anchor" href="#threads-and-races">§</a>Threads and Races</h3>
+<p>Both <a href="../rust_connection/struct.RustConnection.html"><code>RustConnection</code></a> and
+<a href="../xcb_ffi/struct.XCBConnection.html"><code>XCBConnection</code></a> are <code>Sync+Send</code>. However, it is still
+possible to see races in the presence of threads and an event loop.</p>
+<p>The underlying problem is that the following two points are not equivalent:</p>
+<ol>
+<li>A new event is available and can be returned from <code>conn.poll_for_event()</code>.</li>
+<li>The underlying I/O stream is readable.</li>
+</ol>
+<p>The reason for this is an internal buffer that is required: When an event is received from the
+X11 server, but we are currently not in <code>conn.poll_for_event()</code>, then this event is added to an
+internal buffer. Thus, it can happen that there is an event available, but the stream is not
+readable.</p>
+<p>An example for such an other function is <code>conn.get_input_focus()?.reply()?</code>: The
+<code>GetInputFocus</code> request is sent to the server and then <code>reply()</code> waits for the reply. It does
+so by reading X11 packets from the X11 server until the right reply arrives. Any events that
+are read during this are buffered internally in the <code>Connection</code>.</p>
+<p>If this race occurs, the main loop would sit in <code>poll_for_readable</code> and wait, while the already
+buffered event is available. When something else wakes up the main loop and
+<code>conn.poll_for_event()</code> is called the next time, the event is finally processed.</p>
+<p>There are two ways around this:</p>
+<ol>
+<li>Only interact with x11rb from one thread.</li>
+<li>Use a dedicated thread for waiting for event.</li>
+</ol>
+<p>In case (1), one can call <code>conn.poll_for_event()</code> before waiting for the underlying I/O stream
+to be readable. Since there are no other threads, nothing can read a new event from the stream
+after <code>conn.poll_for_event()</code> returned <code>None</code>.</p>
+<p>Option (2) is to start a thread that calls <code>conn.wait_for_event()</code> in a loop. This is basically
+a dedicated event loop for fetching events from the X11 server. All other threads can now
+freely use the X11 connection without events possibly getting stuck and only being processed
+later.</p>
+</div></details></section></div></main></body></html>

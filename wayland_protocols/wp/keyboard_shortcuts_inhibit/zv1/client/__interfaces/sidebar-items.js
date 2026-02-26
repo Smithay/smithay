@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["ZWP_KEYBOARD_SHORTCUTS_INHIBITOR_V1_INTERFACE","ZWP_KEYBOARD_SHORTCUTS_INHIBIT_MANAGER_V1_INTERFACE","zwp_keyboard_shortcuts_inhibit_manager_v1_interface","zwp_keyboard_shortcuts_inhibitor_v1_interface"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_GET_INPUT_PANEL_SURFACE_OPCODE","REQ_GET_INPUT_PANEL_SURFACE_SINCE"],"enum":["Event","Request"],"struct":["ZwpInputPanelV1"]};

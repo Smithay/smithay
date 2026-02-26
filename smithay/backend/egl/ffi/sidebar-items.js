@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["make_sure_egl_is_loaded"],"mod":["egl"],"type":["EGLLabelKHR","EGLNativeDisplayType","EGLNativePixmapType","EGLNativeWindowType","EGLchar","EGLint","NativeDisplayType","NativePixmapType","NativeWindowType","khronos_ssize_t","khronos_uint64_t","khronos_utime_nanoseconds_t"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_TIMESTAMP_OPCODE","EVT_TIMESTAMP_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE"],"enum":["Event","Request"],"struct":["ZwpInputTimestampsV1"]};

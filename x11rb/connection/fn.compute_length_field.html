@@ -1,0 +1,58 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Check the request length and use BIG-REQUESTS if necessary."><title>compute_length_field in x11rb::connection - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">compute_length_field</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In x11rb::<wbr>connection</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">x11rb</a>::<wbr><a href="index.html">connection</a></div><h1>Function <span class="fn">compute_<wbr>length_<wbr>field</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/x11rb/connection/mod.rs.html#540-610">Source</a> </span></div><pre class="rust item-decl"><code>pub fn compute_length_field&lt;'b&gt;(
+    conn: &amp;impl <a class="trait" href="trait.RequestConnection.html" title="trait x11rb::connection::RequestConnection">RequestConnection</a>,
+    request_buffers: &amp;'b [<a class="struct" href="https://doc.rust-lang.org/nightly/std/io/struct.IoSlice.html" title="struct std::io::IoSlice">IoSlice</a>&lt;'b&gt;],
+    storage: &amp;'b mut (<a class="struct" href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="struct" href="https://doc.rust-lang.org/nightly/std/io/struct.IoSlice.html" title="struct std::io::IoSlice">IoSlice</a>&lt;'b&gt;&gt;, [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.array.html">8</a>]),
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;&amp;'b [<a class="struct" href="https://doc.rust-lang.org/nightly/std/io/struct.IoSlice.html" title="struct std::io::IoSlice">IoSlice</a>&lt;'b&gt;], <a class="enum" href="../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Check the request length and use BIG-REQUESTS if necessary.</p>
+<p>Users of this library will most likely not want to use this function directly.</p>
+<p>This function is used by implementations of <code>RequestConnection</code> for sending requests. It
+examines the given request buffers and checks that the length field is set correctly.</p>
+<p>If the request has more than 2^18 bytes, this function handles using the BIG-REQUESTS
+extension. The request is rewritten to include the correct length field. For this case, the
+<code>storage</code> parameter is needed. This function uses it to store the necessary buffers.</p>
+<p>When using this function, it is recommended to allocate the <code>storage</code> parameter with
+<code>Default::default()</code>.</p>
+<p>Example usage:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::io::IoSlice;
+<span class="kw">use </span>x11rb::connection::{BufWithFds, RequestConnection, compute_length_field};
+<span class="kw">use </span>x11rb::cookie::{Cookie, CookieWithFds, VoidCookie};
+<span class="kw">use </span>x11rb::errors::{ParseError, ConnectionError};
+<span class="kw">use </span>x11rb::utils::RawFdContainer;
+<span class="kw">use </span>x11rb::x11_utils::{ExtensionInformation, TryParse, TryParseFd};
+<span class="kw">use </span>x11rb_protocol::SequenceNumber;
+
+<span class="kw">struct </span>MyConnection();
+
+<span class="kw">impl </span>RequestConnection <span class="kw">for </span>MyConnection {
+    <span class="kw">type </span>Buf = Vec&lt;u8&gt;;
+
+    <span class="comment">// [snip, other functions here]
+
+    </span><span class="kw">fn </span>send_request_with_reply&lt;R&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, bufs: <span class="kw-2">&amp;</span>[IoSlice], fds: Vec&lt;RawFdContainer&gt;)
+    -&gt; <span class="prelude-ty">Result</span>&lt;Cookie&lt;<span class="self">Self</span>, R&gt;, ConnectionError&gt;
+    <span class="kw">where </span>R: TryParse {
+        <span class="prelude-val">Ok</span>(Cookie::new(<span class="self">self</span>, <span class="self">self</span>.send_request(bufs, fds, <span class="bool-val">true</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>))
+    }
+
+    <span class="kw">fn </span>send_request_with_reply_with_fds&lt;R&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, bufs: <span class="kw-2">&amp;</span>[IoSlice], fds: Vec&lt;RawFdContainer&gt;)
+    -&gt; <span class="prelude-ty">Result</span>&lt;CookieWithFds&lt;<span class="self">Self</span>, R&gt;, ConnectionError&gt;
+    <span class="kw">where </span>R: TryParseFd {
+        <span class="prelude-val">Ok</span>(CookieWithFds::new(<span class="self">self</span>, <span class="self">self</span>.send_request(bufs, fds, <span class="bool-val">true</span>, <span class="bool-val">true</span>)<span class="question-mark">?</span>))
+    }
+
+    <span class="kw">fn </span>send_request_without_reply(<span class="kw-2">&amp;</span><span class="self">self</span>, bufs: <span class="kw-2">&amp;</span>[IoSlice], fds: Vec&lt;RawFdContainer&gt;)
+    -&gt; <span class="prelude-ty">Result</span>&lt;VoidCookie&lt;<span class="self">Self</span>&gt;, ConnectionError&gt; {
+        <span class="prelude-val">Ok</span>(VoidCookie::new(<span class="self">self</span>, <span class="self">self</span>.send_request(bufs, fds, <span class="bool-val">false</span>, <span class="bool-val">false</span>)<span class="question-mark">?</span>))
+    }
+}
+
+<span class="kw">impl </span>MyConnection {
+    <span class="kw">fn </span>send_request(<span class="kw-2">&amp;</span><span class="self">self</span>, bufs: <span class="kw-2">&amp;</span>[IoSlice], fds: Vec&lt;RawFdContainer&gt;,
+                    has_reply: bool, reply_has_fds: bool)
+    -&gt; <span class="prelude-ty">Result</span>&lt;SequenceNumber, ConnectionError&gt;
+    {
+        <span class="kw">let </span><span class="kw-2">mut </span>storage = Default::default();
+        <span class="kw">let </span>bufs = compute_length_field(<span class="self">self</span>, bufs, <span class="kw-2">&amp;mut </span>storage)<span class="question-mark">?</span>;
+        <span class="macro">unimplemented!</span>(<span class="string">"Now send bufs and fds to the X11 server"</span>);
+    }
+}</code></pre></div></div></details></section></div></main></body></html>

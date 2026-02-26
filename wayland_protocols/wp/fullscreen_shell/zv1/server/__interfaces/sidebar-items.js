@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["ZWP_FULLSCREEN_SHELL_MODE_FEEDBACK_V1_INTERFACE","ZWP_FULLSCREEN_SHELL_V1_INTERFACE","zwp_fullscreen_shell_mode_feedback_v1_interface","zwp_fullscreen_shell_v1_interface"]};

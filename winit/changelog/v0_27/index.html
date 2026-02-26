@@ -1,0 +1,112 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.27.5"><title>winit::changelog::v0_27 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_27</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_27</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#0275" title="0.27.5">0.27.5</a></li><li><a href="#0274" title="0.27.4">0.27.4</a></li><li><a href="#0273" title="0.27.3">0.27.3</a></li><li><a href="#0272" title="0.27.2">0.27.2</a></li><li><a href="#0271" title="0.27.1">0.27.1</a></li><li><a href="#0270" title="0.27.0">0.27.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_27</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#20">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="0275"><a class="doc-anchor" href="#0275">§</a>0.27.5</h3>
+<ul>
+<li>On Wayland, fix byte offset in <code>Ime::Preedit</code> pointing to invalid bytes.</li>
+</ul>
+<h3 id="0274"><a class="doc-anchor" href="#0274">§</a>0.27.4</h3>
+<ul>
+<li>On Windows, emit <code>ReceivedCharacter</code> events on system keybindings.</li>
+<li>On Windows, fixed focus event emission on minimize.</li>
+<li>On X11, fixed IME crashing during reload.</li>
+</ul>
+<h3 id="0273"><a class="doc-anchor" href="#0273">§</a>0.27.3</h3>
+<ul>
+<li>On Windows, added <code>WindowExtWindows::set_undecorated_shadow</code> and <code>WindowBuilderExtWindows::with_undecorated_shadow</code> to draw the drop shadow behind a borderless window.</li>
+<li>On Windows, fixed default window features (ie snap, animations, shake, etc.) when decorations are disabled.</li>
+<li>On Windows, fixed ALT+Space shortcut to open window menu.</li>
+<li>On Wayland, fixed <code>Ime::Preedit</code> not being sent on IME reset.</li>
+<li>Fixed unbound version specified for <code>raw-window-handle</code> leading to compilation failures.</li>
+<li>Empty <code>Ime::Preedit</code> event will be sent before <code>Ime::Commit</code> to help clearing preedit.</li>
+<li>On X11, fixed IME context picking by querying for supported styles beforehand.</li>
+</ul>
+<h3 id="0272"><a class="doc-anchor" href="#0272">§</a>0.27.2</h3>
+<ul>
+<li>On macOS, fixed touch phase reporting when scrolling.</li>
+<li>On X11, fix min, max and resize increment hints not persisting for resizable windows (e.g. on DPI change).</li>
+<li>On Windows, respect min/max inner sizes when creating the window.</li>
+<li>For backwards compatibility, <code>Window</code> now (additionally) implements the old version (<code>0.4</code>) of the <code>HasRawWindowHandle</code> trait</li>
+<li>On Windows, added support for <code>EventLoopWindowTarget::set_device_event_filter</code>.</li>
+<li>On Wayland, fix user requested <code>WindowEvent::RedrawRequested</code> being delayed by a frame.</li>
+</ul>
+<h3 id="0271"><a class="doc-anchor" href="#0271">§</a>0.27.1</h3>
+<ul>
+<li>The minimum supported Rust version was lowered to <code>1.57.0</code> and now explicitly tested.</li>
+<li>On X11, fix crash on start due to inability to create an IME context without any preedit.</li>
+</ul>
+<h3 id="0270"><a class="doc-anchor" href="#0270">§</a>0.27.0</h3>
+<ul>
+<li>On Windows, fix hiding a maximized window.</li>
+<li>On Android, <code>ndk-glue</code>’s <code>NativeWindow</code> lock is now held between <code>Event::Resumed</code> and <code>Event::Suspended</code>.</li>
+<li>On Web, added <code>EventLoopExtWebSys</code> with a <code>spawn</code> method to start the event loop without throwing an exception.</li>
+<li>Added <code>WindowEvent::Occluded(bool)</code>, currently implemented on macOS and X11.</li>
+<li>On X11, fix events for caps lock key not being sent</li>
+<li>Build docs on <code>docs.rs</code> for iOS and Android as well.</li>
+<li><strong>Breaking:</strong> Removed the <code>WindowAttributes</code> struct, since all its functionality is accessible from <code>WindowBuilder</code>.</li>
+<li>Added <code>WindowBuilder::transparent</code> getter to check if the user set <code>transparent</code> attribute.</li>
+<li>On macOS, Fix emitting <code>Event::LoopDestroyed</code> on CMD+Q.</li>
+<li>On macOS, fixed an issue where having multiple windows would prevent run_return from ever returning.</li>
+<li>On Wayland, fix bug where the cursor wouldn’t hide in GNOME.</li>
+<li>On macOS, Windows, and Wayland, add <code>set_cursor_hittest</code> to let the window ignore mouse events.</li>
+<li>On Windows, added <code>WindowExtWindows::set_skip_taskbar</code> and <code>WindowBuilderExtWindows::with_skip_taskbar</code>.</li>
+<li>On Windows, added <code>EventLoopBuilderExtWindows::with_msg_hook</code>.</li>
+<li>On Windows, remove internally unique DC per window.</li>
+<li>On macOS, remove the need to call <code>set_ime_position</code> after moving the window.</li>
+<li>Added <code>Window::is_visible</code>.</li>
+<li>Added <code>Window::is_resizable</code>.</li>
+<li>Added <code>Window::is_decorated</code>.</li>
+<li>On X11, fix for repeated event loop iteration when <code>ControlFlow</code> was <code>Wait</code></li>
+<li>On X11, fix scale factor calculation when the only monitor is reconnected</li>
+<li>On Wayland, report unaccelerated mouse deltas in <code>DeviceEvent::MouseMotion</code>.</li>
+<li>On Web, a focused event is manually generated when a click occurs to emulate behaviour of other backends.</li>
+<li><strong>Breaking:</strong> Bump <code>ndk</code> version to 0.6, ndk-sys to <code>v0.3</code>, <code>ndk-glue</code> to <code>0.6</code>.</li>
+<li>Remove no longer needed <code>WINIT_LINK_COLORSYNC</code> environment variable.</li>
+<li><strong>Breaking:</strong> Rename the <code>Exit</code> variant of <code>ControlFlow</code> to <code>ExitWithCode</code>, which holds a value to control the exit code after running. Add an <code>Exit</code> constant which aliases to <code>ExitWithCode(0)</code> instead to avoid major breakage. This shouldn’t affect most existing programs.</li>
+<li>Add <code>EventLoopBuilder</code>, which allows you to create and tweak the settings of an event loop before creating it.</li>
+<li>Deprecated <code>EventLoop::with_user_event</code>; use <code>EventLoopBuilder::with_user_event</code> instead.</li>
+<li><strong>Breaking:</strong> Replaced <code>EventLoopExtMacOS</code> with <code>EventLoopBuilderExtMacOS</code> (which also has renamed methods).</li>
+<li><strong>Breaking:</strong> Replaced <code>EventLoopExtWindows</code> with <code>EventLoopBuilderExtWindows</code> (which also has renamed methods).</li>
+<li><strong>Breaking:</strong> Replaced <code>EventLoopExtUnix</code> with <code>EventLoopBuilderExtUnix</code> (which also has renamed methods).</li>
+<li><strong>Breaking:</strong> The platform specific extensions for Windows <code>winit::platform::windows</code> have changed. All <code>HANDLE</code>-like types e.g. <code>HWND</code> and <code>HMENU</code> were converted from winapi types or <code>*mut c_void</code> to <code>isize</code>. This was done to be consistent with the type definitions in windows-sys and to not expose internal dependencies.</li>
+<li>The internal bindings to the <a href="https://docs.microsoft.com/en-us/windows/">Windows API</a> were changed from the unofficial <a href="https://github.com/retep998/winapi-rs">winapi</a> bindings to the official Microsoft <a href="https://github.com/microsoft/windows-rs">windows-sys</a> bindings.</li>
+<li>On Wayland, fix polling during consecutive <code>EventLoop::run_return</code> invocations.</li>
+<li>On Windows, fix race issue creating fullscreen windows with <code>WindowBuilder::with_fullscreen</code></li>
+<li>On Android, <code>virtual_keycode</code> for <code>KeyboardInput</code> events is now filled in where a suitable match is found.</li>
+<li>Added helper methods on <code>ControlFlow</code> to set its value.</li>
+<li>On Wayland, fix <code>TouchPhase::Ended</code> always reporting the location of the first touch down, unless the compositor
+sent a cancel or frame event.</li>
+<li>On iOS, send <code>RedrawEventsCleared</code> even if there are no redraw events, consistent with other platforms.</li>
+<li><strong>Breaking:</strong> Replaced <code>Window::with_app_id</code> and <code>Window::with_class</code> with <code>Window::with_name</code> on <code>WindowBuilderExtUnix</code>.</li>
+<li>On Wayland, fallback CSD was replaced with proper one:
+<ul>
+<li><code>WindowBuilderExtUnix::with_wayland_csd_theme</code> to set color theme in builder.</li>
+<li><code>WindowExtUnix::wayland_set_csd_theme</code> to set color theme when creating a window.</li>
+<li><code>WINIT_WAYLAND_CSD_THEME</code> env variable was added, it can be used to set “dark”/“light” theme in apps that don’t expose theme setting.</li>
+<li><code>wayland-csd-adwaita</code> feature that enables proper CSD with title rendering using FreeType system library.</li>
+<li><code>wayland-csd-adwaita-notitle</code> feature that enables CSD but without title rendering.</li>
+</ul>
+</li>
+<li>On Wayland and X11, fix window not resizing with <code>Window::set_inner_size</code> after calling <code>Window:set_resizable(false)</code>.</li>
+<li>On Windows, fix wrong fullscreen monitors being recognized when handling WM_WINDOWPOSCHANGING messages</li>
+<li><strong>Breaking:</strong> Added new <code>WindowEvent::Ime</code> supported on desktop platforms.</li>
+<li>Added <code>Window::set_ime_allowed</code> supported on desktop platforms.</li>
+<li><strong>Breaking:</strong> IME input on desktop platforms won’t be received unless it’s explicitly allowed via <code>Window::set_ime_allowed</code> and new <code>WindowEvent::Ime</code> events are handled.</li>
+<li>On macOS, <code>WindowEvent::Resized</code> is now emitted in <code>frameDidChange</code> instead of <code>windowDidResize</code>.</li>
+<li><strong>Breaking:</strong> On X11, device events are now ignored for unfocused windows by default, use <code>EventLoopWindowTarget::set_device_event_filter</code> to set the filter level.</li>
+<li>Implemented <code>Default</code> on <code>EventLoop&lt;()&gt;</code>.</li>
+<li>Implemented <code>Eq</code> for <code>Fullscreen</code>, <code>Theme</code>, and <code>UserAttentionType</code>.</li>
+<li><strong>Breaking:</strong> <code>Window::set_cursor_grab</code> now accepts <code>CursorGrabMode</code> to control grabbing behavior.</li>
+<li>On Wayland, add support for <code>Window::set_cursor_position</code>.</li>
+<li>Fix on macOS <code>WindowBuilder::with_disallow_hidpi</code>, setting true or false by the user no matter the SO default value.</li>
+<li><code>EventLoopBuilder::build</code> will now panic when the <code>EventLoop</code> is being created more than once.</li>
+<li>Added <code>From&lt;u64&gt;</code> for <code>WindowId</code> and <code>From&lt;WindowId&gt;</code> for <code>u64</code>.</li>
+<li>Added <code>MonitorHandle::refresh_rate_millihertz</code> to get monitor’s refresh rate.</li>
+<li><strong>Breaking</strong>, Replaced <code>VideoMode::refresh_rate</code> with <code>VideoMode::refresh_rate_millihertz</code> providing better precision.</li>
+<li>On Web, add <code>with_prevent_default</code> and <code>with_focusable</code> to <code>WindowBuilderExtWebSys</code> to control whether events should be propagated.</li>
+<li>On Windows, fix focus events being sent to inactive windows.</li>
+<li><strong>Breaking</strong>, update <code>raw-window-handle</code> to <code>v0.5</code> and implement <code>HasRawDisplayHandle</code> for <code>Window</code> and <code>EventLoopWindowTarget</code>.</li>
+<li>On X11, add function <code>register_xlib_error_hook</code> into <code>winit::platform::unix</code> to subscribe for errors coming from Xlib.</li>
+<li>On Android, upgrade <code>ndk</code> and <code>ndk-glue</code> dependencies to the recently released <code>0.7.0</code>.</li>
+<li>All platforms can now be relied on to emit a <code>Resumed</code> event. Applications are recommended to lazily initialize graphics state and windows on first resume for portability.</li>
+<li><strong>Breaking:</strong>: Reverse horizontal scrolling sign in <code>MouseScrollDelta</code> to match the direction of vertical scrolling. A positive X value now means moving the content to the right. The meaning of vertical scrolling stays the same: a positive Y value means moving the content down.</li>
+<li>On MacOS, fix deadlock when calling <code>set_maximized</code> from event loop.</li>
+</ul>
+</div></details></section></div></main></body></html>

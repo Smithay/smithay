@@ -1,0 +1,35 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.8.3"><title>winit::changelog::v0_8 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_8</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_8</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#083" title="0.8.3">0.8.3</a></li><li><a href="#082" title="0.8.2">0.8.2</a></li><li><a href="#081" title="0.8.1">0.8.1</a></li><li><a href="#080" title="0.8.0">0.8.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_8</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#77">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="083"><a class="doc-anchor" href="#083">§</a>0.8.3</h3>
+<ul>
+<li>Fixed issue of calls to <code>set_inner_size</code> blocking on Windows.</li>
+<li>Mapped <code>ISO_Left_Tab</code> to <code>VirtualKeyCode::Tab</code> to make the key work with modifiers</li>
+<li>Fixed the X11 backed on 32bit targets</li>
+</ul>
+<h3 id="082"><a class="doc-anchor" href="#082">§</a>0.8.2</h3>
+<ul>
+<li>Uniformize keyboard scancode values across Wayland and X11 (#297).</li>
+<li>Internal rework of the wayland event loop</li>
+<li>Added method <code>os::linux::WindowExt::is_ready</code></li>
+</ul>
+<h3 id="081"><a class="doc-anchor" href="#081">§</a>0.8.1</h3>
+<ul>
+<li>Added various methods to <code>os::linux::EventsLoopExt</code>, plus some hidden items necessary to make
+glutin work.</li>
+</ul>
+<h3 id="080"><a class="doc-anchor" href="#080">§</a>0.8.0</h3>
+<ul>
+<li>Added <code>Window::set_maximized</code>, <code>WindowAttributes::maximized</code> and <code>WindowBuilder::with_maximized</code>.</li>
+<li>Added <code>Window::set_fullscreen</code>.</li>
+<li>Changed <code>with_fullscreen</code> to take a <code>Option&lt;MonitorId&gt;</code> instead of a <code>MonitorId</code>.</li>
+<li>Removed <code>MonitorId::get_native_identifier()</code> in favor of platform-specific traits in the <code>os</code>
+module.</li>
+<li>Changed <code>get_available_monitors()</code> and <code>get_primary_monitor()</code> to be methods of <code>EventsLoop</code>
+instead of stand-alone methods.</li>
+<li>Changed <code>EventsLoop</code> to be tied to a specific X11 or Wayland connection.</li>
+<li>Added a <code>os::linux::EventsLoopExt</code> trait that makes it possible to configure the connection.</li>
+<li>Fixed the emscripten code, which now compiles.</li>
+<li>Changed the X11 fullscreen code to use <code>xrandr</code> instead of <code>xxf86vm</code>.</li>
+<li>Fixed the Wayland backend to produce <code>Refresh</code> event after window creation.</li>
+<li>Changed the <code>Suspended</code> event to be outside of <code>WindowEvent</code>.</li>
+<li>Fixed the X11 backend sometimes reporting the wrong virtual key (#273).</li>
+</ul>
+</div></details></section></div></main></body></html>

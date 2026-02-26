@@ -1,0 +1,127 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Calloop, a Callback-based Event Loop"><title>calloop - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="calloop" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate calloop</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../calloop/index.html">calloop</a><span class="version">0.14.4</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#how-to-use-it" title="How to use it">How to use it</a></li><li><a href="#event-source-types" title="Event source types">Event source types</a></li><li><a href="#asyncawait-compatibility" title="Async/Await compatibility">Async/Await compatibility</a></li><li><a href="#custom-event-sources" title="Custom event sources">Custom event sources</a></li><li><a href="#platforms-support" title="Platforms support">Platforms support</a></li></ul><h3><a href="#reexports">Crate Items</a></h3><ul class="block"><li><a href="#reexports" title="Re-exports">Re-exports</a></li><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#macros" title="Macros">Macros</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>calloop</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/calloop/lib.rs.html#1-163">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Calloop, a Callback-based Event Loop</p>
+<p>This crate provides an <a href="struct.EventLoop.html" title="struct calloop::EventLoop"><code>EventLoop</code></a> type, which is a small abstraction
+over a polling system. The main difference between this crate
+and other traditional rust event loops is that it is based on callbacks:
+you can register several event sources, each being associated with a callback
+closure that will be invoked whenever the associated event source generates
+events.</p>
+<p>The main target use of this event loop is thus for apps that expect to spend
+most of their time waiting for events and wishes to do so in a cheap and convenient
+way. It is not meant for large scale high performance IO.</p>
+<h3 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h3>
+<p>Below is a quick usage example of calloop. For a more in-depth tutorial, see
+the <a href="https://smithay.github.io/calloop">calloop book</a>.</p>
+<p>For simple uses, you can just add event sources with callbacks to the event
+loop. For example, here’s a runnable program that exits after five seconds:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>calloop::{timer::{Timer, TimeoutAction}, EventLoop, LoopSignal};
+
+<span class="kw">fn </span>main() {
+    <span class="comment">// Create the event loop. The loop is parameterised by the kind of shared
+    // data you want the callbacks to use. In this case, we want to be able to
+    // stop the loop when the timer fires, so we provide the loop with a
+    // LoopSignal, which has the ability to stop the loop from within events. We
+    // just annotate the type here; the actual data is provided later in the
+    // run() call.
+    </span><span class="kw">let </span><span class="kw-2">mut </span>event_loop: EventLoop&lt;LoopSignal&gt; =
+        EventLoop::try_new().expect(<span class="string">"Failed to initialize the event loop!"</span>);
+
+    <span class="comment">// Retrieve a handle. It is used to insert new sources into the event loop
+    // It can be cloned, allowing you to insert sources from within source
+    // callbacks.
+    </span><span class="kw">let </span>handle = event_loop.handle();
+
+    <span class="comment">// Create our event source, a timer, that will expire in 2 seconds
+    </span><span class="kw">let </span>source = Timer::from_duration(std::time::Duration::from_secs(<span class="number">2</span>));
+
+    <span class="comment">// Inserting an event source takes this general form. It can also be done
+    // from within the callback of another event source.
+    </span>handle
+        .insert_source(
+            <span class="comment">// a type which implements the EventSource trait
+            </span>source,
+            <span class="comment">// a callback that is invoked whenever this source generates an event
+            </span>|event, _metadata, shared_data| {
+                <span class="comment">// This callback is given 3 values:
+                // - the event generated by the source (in our case, timer events are the Instant
+                //   representing the deadline for which it has fired)
+                // - &amp;mut access to some metadata, specific to the event source (in our case, a
+                //   timer handle)
+                // - &amp;mut access to the global shared data that was passed to EventLoop::run or
+                //   EventLoop::dispatch (in our case, a LoopSignal object to stop the loop)
+                //
+                // The return type is just () because nothing uses it. Some
+                // sources will expect a Result of some kind instead.
+                </span><span class="macro">println!</span>(<span class="string">"Timeout for {:?} expired!"</span>, event);
+                <span class="comment">// notify the event loop to stop running using the signal in the shared data
+                // (see below)
+                </span>shared_data.stop();
+                <span class="comment">// The timer event source requires us to return a TimeoutAction to
+                // specify if the timer should be rescheduled. In our case we just drop it.
+                </span>TimeoutAction::Drop
+            },
+        )
+        .expect(<span class="string">"Failed to insert event source!"</span>);
+
+    <span class="comment">// Create the shared data for our loop.
+    </span><span class="kw">let </span><span class="kw-2">mut </span>shared_data = event_loop.get_signal();
+
+    <span class="comment">// Actually run the event loop. This will dispatch received events to their
+    // callbacks, waiting at most 20ms for new events between each invocation of
+    // the provided callback (pass None for the timeout argument if you want to
+    // wait indefinitely between events).
+    //
+    // This is where we pass the *value* of the shared data, as a mutable
+    // reference that will be forwarded to all your callbacks, allowing them to
+    // share some state
+    </span>event_loop
+        .run(
+            std::time::Duration::from_millis(<span class="number">20</span>),
+            <span class="kw-2">&amp;mut </span>shared_data,
+            |_shared_data| {
+                <span class="comment">// Finally, this is where you can insert the processing you need
+                // to do do between each waiting event eg. drawing logic if
+                // you're doing a GUI app.
+            </span>},
+        )
+        .expect(<span class="string">"Error during event loop!"</span>);
+}</code></pre></div><h3 id="event-source-types"><a class="doc-anchor" href="#event-source-types">§</a>Event source types</h3>
+<p>The event loop is backed by an OS provided polling selector (epoll on Linux).</p>
+<p>This crate also provide some adapters for common event sources such as:</p>
+<ul>
+<li><a href="channel/index.html" title="mod calloop::channel">MPSC channels</a></li>
+<li><a href="timer/index.html" title="mod calloop::timer">Timers</a></li>
+<li><a href="signals">unix signals</a> on Linux</li>
+</ul>
+<p>As well as generic objects backed by file descriptors.</p>
+<p>It is also possible to insert “idle” callbacks. These callbacks represent computations that
+need to be done at some point, but are not as urgent as processing the events. These callbacks
+are stored and then executed during <a href="struct.EventLoop.html#method.dispatch" title="struct calloop::EventLoop"><code>EventLoop::dispatch</code></a>, once all
+events from the sources have been processed.</p>
+<h3 id="asyncawait-compatibility"><a class="doc-anchor" href="#asyncawait-compatibility">§</a>Async/Await compatibility</h3>
+<p><code>calloop</code> can be used with futures, both as an executor and for monitoring Async IO.</p>
+<p>Activating the <code>executor</code> cargo feature will add the [<code>futures</code>] module, which provides
+a future executor that can be inserted into an <a href="struct.EventLoop.html" title="struct calloop::EventLoop"><code>EventLoop</code></a> as yet another <a href="trait.EventSource.html" title="trait calloop::EventSource"><code>EventSource</code></a>.</p>
+<p>IO objects can be made Async-aware via the <a href="struct.LoopHandle.html#method.adapt_io" title="struct calloop::LoopHandle"><code>LoopHandle::adapt_io</code></a>
+method. Waking up the futures using these objects is handled by the associated <a href="struct.EventLoop.html" title="struct calloop::EventLoop"><code>EventLoop</code></a>
+directly.</p>
+<h3 id="custom-event-sources"><a class="doc-anchor" href="#custom-event-sources">§</a>Custom event sources</h3>
+<p>You can create custom event sources can will be inserted in the event loop by
+implementing the <a href="trait.EventSource.html" title="trait calloop::EventSource"><code>EventSource</code></a> trait. This can be done either directly from the file
+descriptors of your source of interest, or by wrapping an other event source and further
+processing its events. An <a href="trait.EventSource.html" title="trait calloop::EventSource"><code>EventSource</code></a> can register more than one file descriptor and
+aggregate them.</p>
+<h3 id="platforms-support"><a class="doc-anchor" href="#platforms-support">§</a>Platforms support</h3>
+<p>Currently, calloop is tested on Linux, FreeBSD and macOS.</p>
+<p>The following platforms are also enabled at compile time but not tested: Android, NetBSD,
+OpenBSD, DragonFlyBSD.</p>
+<p>Those platforms <em>should</em> work based on the fact that they have the same polling mechanism as
+tested platforms, but some subtle bugs might still occur.</p>
+</div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt id="reexport.Error"><code>pub use error::<a class="enum" href="error/enum.Error.html" title="enum calloop::error::Error">Error</a>;</code></dt><dt id="reexport.InsertError"><code>pub use error::<a class="struct" href="error/struct.InsertError.html" title="struct calloop::error::InsertError">InsertError</a>;</code></dt><dt id="reexport.Result"><code>pub use error::<a class="type" href="error/type.Result.html" title="type calloop::error::Result">Result</a>;</code></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="channel/index.html" title="mod calloop::channel">channel</a></dt><dd>An MPSC channel whose receiving end is an event source</dd><dt><a class="mod" href="error/index.html" title="mod calloop::error">error</a></dt><dd>Error types used and generated by Calloop.</dd><dt><a class="mod" href="generic/index.html" title="mod calloop::generic">generic</a></dt><dd>A generic event source wrapping an IO objects or file descriptor</dd><dt><a class="mod" href="io/index.html" title="mod calloop::io">io</a></dt><dd>Adapters for async IO objects</dd><dt><a class="mod" href="ping/index.html" title="mod calloop::ping">ping</a></dt><dd>Ping to the event loop</dd><dt><a class="mod" href="timer/index.html" title="mod calloop::timer">timer</a></dt><dd>Timer event source</dd><dt><a class="mod" href="transient/index.html" title="mod calloop::transient">transient</a></dt><dd>Wrapper for a transient Calloop event source.</dd></dl><h2 id="macros" class="section-header">Macros<a href="#macros" class="anchor">§</a></h2><dl class="item-table"><dt><a class="macro" href="macro.batch_register.html" title="macro calloop::batch_register">batch_<wbr>register</a></dt><dd>Register a set of event sources. Effectively calls
+<a href="trait.EventSource.html#tymethod.register" title="method calloop::EventSource::register"><code>EventSource::register()</code></a> for all the sources provided.</dd><dt><a class="macro" href="macro.batch_reregister.html" title="macro calloop::batch_reregister">batch_<wbr>reregister</a></dt><dd>Reregister a set of event sources. Effectively calls
+<a href="trait.EventSource.html#tymethod.reregister" title="method calloop::EventSource::reregister"><code>EventSource::reregister()</code></a> for all the sources provided.</dd><dt><a class="macro" href="macro.batch_unregister.html" title="macro calloop::batch_unregister">batch_<wbr>unregister</a></dt><dd>Unregister a set of event sources. Effectively calls
+<a href="trait.EventSource.html#tymethod.unregister" title="method calloop::EventSource::unregister"><code>EventSource::unregister()</code></a> for all the sources provided.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Dispatcher.html" title="struct calloop::Dispatcher">Dispatcher</a></dt><dd>An event source with its callback.</dd><dt><a class="struct" href="struct.EventIterator.html" title="struct calloop::EventIterator">Event<wbr>Iterator</a></dt><dd>The EventIterator is an <code>Iterator</code> over the events relevant to a particular source
+This type is used in the <a href="trait.EventSource.html#method.before_handle_events" title="method calloop::EventSource::before_handle_events"><code>EventSource::before_handle_events</code></a> methods for
+two main reasons:</dd><dt><a class="struct" href="struct.EventLoop.html" title="struct calloop::EventLoop">Event<wbr>Loop</a></dt><dd>An event loop</dd><dt><a class="struct" href="struct.Idle.html" title="struct calloop::Idle">Idle</a></dt><dd>An idle callback that was inserted in this loop</dd><dt><a class="struct" href="struct.Interest.html" title="struct calloop::Interest">Interest</a></dt><dd>Interest to register regarding the file descriptor</dd><dt><a class="struct" href="struct.LoopHandle.html" title="struct calloop::LoopHandle">Loop<wbr>Handle</a></dt><dd>A handle to an event loop</dd><dt><a class="struct" href="struct.LoopSignal.html" title="struct calloop::LoopSignal">Loop<wbr>Signal</a></dt><dd>A signal that can be shared between thread to stop or wakeup a running
+event loop</dd><dt><a class="struct" href="struct.Poll.html" title="struct calloop::Poll">Poll</a></dt><dd>The polling system</dd><dt><a class="struct" href="struct.Readiness.html" title="struct calloop::Readiness">Readiness</a></dt><dd>Readiness for a file descriptor notification</dd><dt><a class="struct" href="struct.RegistrationToken.html" title="struct calloop::RegistrationToken">Registration<wbr>Token</a></dt><dd>A token representing a registration in the <a href="struct.EventLoop.html" title="struct calloop::EventLoop"><code>EventLoop</code></a>.</dd><dt><a class="struct" href="struct.Token.html" title="struct calloop::Token">Token</a></dt><dd>A token (for implementation of the <a href="trait.EventSource.html" title="trait calloop::EventSource"><code>EventSource</code></a> trait)</dd><dt><a class="struct" href="struct.TokenFactory.html" title="struct calloop::TokenFactory">Token<wbr>Factory</a></dt><dd>Factory for creating tokens in your registrations</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Mode.html" title="enum calloop::Mode">Mode</a></dt><dd>Possible modes for registering a file descriptor</dd><dt><a class="enum" href="enum.PostAction.html" title="enum calloop::PostAction">Post<wbr>Action</a></dt><dd>Possible actions that can be requested to the event loop by an
+event source once its events have been processed.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.EventSource.html" title="trait calloop::EventSource">Event<wbr>Source</a></dt><dd>Trait representing an event source</dd></dl></section></div></main></body></html>

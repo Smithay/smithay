@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Image capture source protocol"><title>smithay::wayland::image_capture_source - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module image_capture_source</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module image_<wbr>capture_<wbr>source</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#architecture" title="Architecture">Architecture</a></li><li><a href="#how-to-use-it" title="How to use it">How to use it</a><ul><li><a href="#output-capture-only" title="Output Capture Only">Output Capture Only</a></li><li><a href="#with-toplevel-capture" title="With Toplevel Capture">With Toplevel Capture</a></li><li><a href="#custom-capture-sources" title="Custom Capture Sources">Custom Capture Sources</a></li></ul></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>image_<wbr>capture_<wbr>source</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/image_capture_source/mod.rs.html#1-708">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Image capture source protocol</p>
+<p>This module implements the <code>ext-image-capture-source-v1</code> protocol, which provides
+opaque image capture source objects that can be created from outputs, toplevels,
+or custom compositor-defined sources.</p>
+<h3 id="architecture"><a class="doc-anchor" href="#architecture">§</a>Architecture</h3>
+<p>This implementation is <strong>modular</strong>. Each source type (output, toplevel, custom) has
+its own independent state and handler:</p>
+<ul>
+<li><a href="struct.ImageCaptureSourceState.html" title="struct smithay::wayland::image_capture_source::ImageCaptureSourceState"><code>ImageCaptureSourceState</code></a> + <a href="trait.ImageCaptureSourceHandler.html" title="trait smithay::wayland::image_capture_source::ImageCaptureSourceHandler"><code>ImageCaptureSourceHandler</code></a>: Core source handling</li>
+<li><a href="struct.OutputCaptureSourceState.html" title="struct smithay::wayland::image_capture_source::OutputCaptureSourceState"><code>OutputCaptureSourceState</code></a> + <a href="trait.OutputCaptureSourceHandler.html" title="trait smithay::wayland::image_capture_source::OutputCaptureSourceHandler"><code>OutputCaptureSourceHandler</code></a>: Output capture sources</li>
+<li><a href="struct.ToplevelCaptureSourceState.html" title="struct smithay::wayland::image_capture_source::ToplevelCaptureSourceState"><code>ToplevelCaptureSourceState</code></a> + <a href="trait.ToplevelCaptureSourceHandler.html" title="trait smithay::wayland::image_capture_source::ToplevelCaptureSourceHandler"><code>ToplevelCaptureSourceHandler</code></a>: Toplevel capture sources</li>
+</ul>
+<p>Compositors only implement the source types they need. Custom source types (like
+workspace capture) can be implemented by compositors using <a href="struct.ImageCaptureSource.html#method.new" title="associated function smithay::wayland::image_capture_source::ImageCaptureSource::new"><code>ImageCaptureSource::new()</code></a>
+directly.</p>
+<h3 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h3><h4 id="output-capture-only"><a class="doc-anchor" href="#output-capture-only">§</a>Output Capture Only</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::delegate_image_capture_source;
+<span class="kw">use </span>smithay::delegate_output_capture_source;
+<span class="kw">use </span>smithay::output::Output;
+<span class="kw">use </span>smithay::wayland::image_capture_source::{
+    ImageCaptureSourceState, ImageCaptureSourceHandler, ImageCaptureSource,
+    OutputCaptureSourceState, OutputCaptureSourceHandler,
+};
+
+<span class="kw">pub struct </span>State {
+    image_capture_source: ImageCaptureSourceState,
+    output_capture_source: OutputCaptureSourceState,
+}
+
+<span class="kw">impl </span>ImageCaptureSourceHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>source_destroyed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, source: ImageCaptureSource) {
+        <span class="comment">// Optional: clean up compositor-side state
+    </span>}
+}
+
+<span class="kw">impl </span>OutputCaptureSourceHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>output_capture_source_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>OutputCaptureSourceState {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.output_capture_source
+    }
+
+    <span class="kw">fn </span>output_source_created(<span class="kw-2">&amp;mut </span><span class="self">self</span>, source: ImageCaptureSource, output: <span class="kw-2">&amp;</span>Output) {
+        source.user_data().insert_if_missing(|| output.downgrade());
+    }
+}
+
+
+<span class="kw">let </span>image_capture_source = ImageCaptureSourceState::new();
+<span class="kw">let </span>output_capture_source = OutputCaptureSourceState::new::&lt;State&gt;(<span class="kw-2">&amp;</span>display_handle);
+
+<span class="macro">delegate_image_capture_source!</span>(State);
+<span class="macro">delegate_output_capture_source!</span>(State);</code></pre></div><h4 id="with-toplevel-capture"><a class="doc-anchor" href="#with-toplevel-capture">§</a>With Toplevel Capture</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::delegate_image_capture_source;
+<span class="kw">use </span>smithay::delegate_output_capture_source;
+<span class="kw">use </span>smithay::delegate_toplevel_capture_source;
+<span class="kw">use </span>smithay::output::Output;
+<span class="kw">use </span>smithay::wayland::image_capture_source::{
+    ImageCaptureSourceState, ImageCaptureSourceHandler, ImageCaptureSource,
+    OutputCaptureSourceState, OutputCaptureSourceHandler,
+    ToplevelCaptureSourceState, ToplevelCaptureSourceHandler,
+};
+<span class="kw">use </span>smithay::wayland::foreign_toplevel_list::ForeignToplevelHandle;
+
+<span class="kw">pub struct </span>State {
+    image_capture_source: ImageCaptureSourceState,
+    output_capture_source: OutputCaptureSourceState,
+    toplevel_capture_source: ToplevelCaptureSourceState,
+}
+
+<span class="kw">impl </span>ImageCaptureSourceHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>source_destroyed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, source: ImageCaptureSource) {
+        <span class="comment">// Optional cleanup
+    </span>}
+}
+
+<span class="kw">impl </span>OutputCaptureSourceHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>output_capture_source_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>OutputCaptureSourceState {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.output_capture_source
+    }
+
+    <span class="kw">fn </span>output_source_created(<span class="kw-2">&amp;mut </span><span class="self">self</span>, source: ImageCaptureSource, output: <span class="kw-2">&amp;</span>Output) {
+        source.user_data().insert_if_missing(|| output.downgrade());
+    }
+}
+
+<span class="kw">impl </span>ToplevelCaptureSourceHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>toplevel_capture_source_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>ToplevelCaptureSourceState {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.toplevel_capture_source
+    }
+
+    <span class="kw">fn </span>toplevel_source_created(<span class="kw-2">&amp;mut </span><span class="self">self</span>, source: ImageCaptureSource, toplevel: ForeignToplevelHandle) {
+        source.user_data().insert_if_missing(|| toplevel.downgrade());
+    }
+}
+
+
+<span class="kw">let </span>image_capture_source = ImageCaptureSourceState::new();
+<span class="kw">let </span>output_capture_source = OutputCaptureSourceState::new::&lt;State&gt;(<span class="kw-2">&amp;</span>display_handle);
+<span class="kw">let </span>toplevel_capture_source = ToplevelCaptureSourceState::new::&lt;State&gt;(<span class="kw-2">&amp;</span>display_handle);
+
+<span class="macro">delegate_image_capture_source!</span>(State);
+<span class="macro">delegate_output_capture_source!</span>(State);
+<span class="macro">delegate_toplevel_capture_source!</span>(State);</code></pre></div><h4 id="custom-capture-sources"><a class="doc-anchor" href="#custom-capture-sources">§</a>Custom Capture Sources</h4>
+<p>Compositors can implement custom source types (e.g., workspace capture) by handling
+their own protocol and creating sources directly:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="comment">// In your custom protocol's create_source request handler:
+</span><span class="kw">fn </span>handle_workspace_create_source(<span class="kw-2">&amp;mut </span><span class="self">self</span>, workspace: <span class="kw-2">&amp;</span>WorkspaceHandle, source_id: New&lt;ExtImageCaptureSourceV1&gt;) {
+    <span class="kw">let </span>source = ImageCaptureSource::new();
+    source.user_data().insert_if_missing(|| MyWorkspaceData::from(workspace));
+    data_init.init(source_id, ImageCaptureSourceData { source });
+}</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.ImageCaptureSource.html" title="struct smithay::wayland::image_capture_source::ImageCaptureSource">Image<wbr>Capture<wbr>Source</a></dt><dd>An opaque handle to an image capture source.</dd><dt><a class="struct" href="struct.ImageCaptureSourceData.html" title="struct smithay::wayland::image_capture_source::ImageCaptureSourceData">Image<wbr>Capture<wbr>Source<wbr>Data</a></dt><dd>User data associated with an <a href="../../../wayland_protocols/ext/image_capture_source/v1/generated/server/ext_image_capture_source_v1/struct.ExtImageCaptureSourceV1.html" title="struct wayland_protocols::ext::image_capture_source::v1::generated::server::ext_image_capture_source_v1::ExtImageCaptureSourceV1"><code>ExtImageCaptureSourceV1</code></a> resource.</dd><dt><a class="struct" href="struct.ImageCaptureSourceState.html" title="struct smithay::wayland::image_capture_source::ImageCaptureSourceState">Image<wbr>Capture<wbr>Source<wbr>State</a></dt><dd>Core state for image capture source handling.</dd><dt><a class="struct" href="struct.ImageCaptureSourceWeakHandle.html" title="struct smithay::wayland::image_capture_source::ImageCaptureSourceWeakHandle">Image<wbr>Capture<wbr>Source<wbr>Weak<wbr>Handle</a></dt><dd>Weak reference to an <a href="struct.ImageCaptureSource.html" title="struct smithay::wayland::image_capture_source::ImageCaptureSource"><code>ImageCaptureSource</code></a>.</dd><dt><a class="struct" href="struct.OutputCaptureSourceGlobalData.html" title="struct smithay::wayland::image_capture_source::OutputCaptureSourceGlobalData">Output<wbr>Capture<wbr>Source<wbr>Global<wbr>Data</a></dt><dd>Data for the output capture source manager global.</dd><dt><a class="struct" href="struct.OutputCaptureSourceState.html" title="struct smithay::wayland::image_capture_source::OutputCaptureSourceState">Output<wbr>Capture<wbr>Source<wbr>State</a></dt><dd>State for the output image capture source manager.</dd><dt><a class="struct" href="struct.ToplevelCaptureSourceGlobalData.html" title="struct smithay::wayland::image_capture_source::ToplevelCaptureSourceGlobalData">Toplevel<wbr>Capture<wbr>Source<wbr>Global<wbr>Data</a></dt><dd>Data for the toplevel capture source manager global.</dd><dt><a class="struct" href="struct.ToplevelCaptureSourceState.html" title="struct smithay::wayland::image_capture_source::ToplevelCaptureSourceState">Toplevel<wbr>Capture<wbr>Source<wbr>State</a></dt><dd>State for the foreign toplevel image capture source manager.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.ImageCaptureSourceHandler.html" title="trait smithay::wayland::image_capture_source::ImageCaptureSourceHandler">Image<wbr>Capture<wbr>Source<wbr>Handler</a></dt><dd>Core handler for image capture sources.</dd><dt><a class="trait" href="trait.OutputCaptureSourceHandler.html" title="trait smithay::wayland::image_capture_source::OutputCaptureSourceHandler">Output<wbr>Capture<wbr>Source<wbr>Handler</a></dt><dd>Handler for output capture sources.</dd><dt><a class="trait" href="trait.ToplevelCaptureSourceHandler.html" title="trait smithay::wayland::image_capture_source::ToplevelCaptureSourceHandler">Toplevel<wbr>Capture<wbr>Source<wbr>Handler</a></dt><dd>Handler for toplevel capture sources.</dd></dl></section></div></main></body></html>

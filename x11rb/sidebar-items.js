@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COPY_CLASS_FROM_PARENT","COPY_DEPTH_FROM_PARENT","COPY_FROM_PARENT","CURRENT_TIME","NONE","NO_SYMBOL"],"fn":["connect"],"macro":["atom_manager"],"mod":["connection","cookie","errors","event_loop_integration","extension_manager","properties","protocol","reexports","resource_manager","rust_connection","utils","wrapper","x11_utils","xcb_ffi"]};

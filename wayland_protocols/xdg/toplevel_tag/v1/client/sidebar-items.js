@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","xdg_toplevel_tag_manager_v1"]};

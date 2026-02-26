@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_SET_OVERLAY_PANEL_OPCODE","REQ_SET_OVERLAY_PANEL_SINCE","REQ_SET_TOPLEVEL_OPCODE","REQ_SET_TOPLEVEL_SINCE"],"enum":["Event","Position","Request"],"struct":["ZwpInputPanelSurfaceV1"]};

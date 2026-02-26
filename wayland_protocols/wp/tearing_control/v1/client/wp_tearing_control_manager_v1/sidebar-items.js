@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_GET_TEARING_CONTROL_OPCODE","REQ_GET_TEARING_CONTROL_SINCE"],"enum":["Error","Event","Request"],"struct":["WpTearingControlManagerV1"]};

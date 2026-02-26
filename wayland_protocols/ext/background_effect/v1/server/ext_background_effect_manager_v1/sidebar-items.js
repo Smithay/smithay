@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVT_CAPABILITIES_OPCODE","EVT_CAPABILITIES_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_GET_BACKGROUND_EFFECT_OPCODE","REQ_GET_BACKGROUND_EFFECT_SINCE"],"enum":["Error","Event","Request"],"struct":["Capability","ExtBackgroundEffectManagerV1"]};

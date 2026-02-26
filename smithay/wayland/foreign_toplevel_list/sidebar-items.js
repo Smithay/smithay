@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ForeignToplevelHandle","ForeignToplevelListGlobalData","ForeignToplevelListState","ForeignToplevelWeakHandle"],"trait":["ForeignToplevelListHandler"]};

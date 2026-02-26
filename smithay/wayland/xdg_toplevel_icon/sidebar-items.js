@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ToplevelIconCachedState","XdgToplevelIconManager","XdgToplevelIconManagerUserData","XdgToplevelIconUserData"],"trait":["XdgToplevelIconHandler"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_RING_OPCODE","REQ_RING_SINCE"],"enum":["Event","Request"],"struct":["XdgSystemBellV1"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","wp_color_representation_manager_v1","wp_color_representation_surface_v1"]};

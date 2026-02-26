@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","zwp_relative_pointer_manager_v1","zwp_relative_pointer_v1"]};

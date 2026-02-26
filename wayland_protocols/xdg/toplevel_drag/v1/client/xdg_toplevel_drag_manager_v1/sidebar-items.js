@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_GET_XDG_TOPLEVEL_DRAG_OPCODE","REQ_GET_XDG_TOPLEVEL_DRAG_SINCE"],"enum":["Error","Event","Request"],"struct":["XdgToplevelDragManagerV1"]};

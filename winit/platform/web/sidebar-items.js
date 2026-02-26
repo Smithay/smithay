@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BadAnimation","CustomCursorError","PollStrategy","WaitUntilStrategy"],"struct":["CustomCursorFuture"],"trait":["ActiveEventLoopExtWebSys","CustomCursorExtWebSys","EventLoopExtWebSys","WindowAttributesExtWebSys","WindowExtWebSys"]};

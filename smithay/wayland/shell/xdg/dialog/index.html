@@ -1,0 +1,47 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="XDG Dialog Windows"><title>smithay::wayland::shell::xdg::dialog - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module dialog</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module dialog</a></h2><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland::<wbr>shell::<wbr>xdg</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../../index.html">smithay</a>::<wbr><a href="../../../index.html">wayland</a>::<wbr><a href="../../index.html">shell</a>::<wbr><a href="../index.html">xdg</a></div><h1>Module <span>dialog</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../../src/smithay/wayland/shell/xdg/dialog.rs.html#1-283">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>XDG Dialog Windows</p>
+<p>This interface allows a compositor to announce support for xdg-dialog toplevel hints, eg. modal hint.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::{delegate_xdg_dialog, delegate_xdg_shell};
+<span class="kw">use </span>smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellHandler};
+<span class="kw">use </span>smithay::wayland::shell::xdg::dialog::{ToplevelDialogHint, XdgDialogState, XdgDialogHandler};
+
+
+<span class="comment">// Create a dialog state
+</span><span class="kw">let </span>dialog_state = XdgDialogState::new::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display.handle(),
+);
+
+<span class="comment">// store that state inside your compositor state
+// ...
+
+// implement the necessary traits
+</span><span class="kw">impl </span>XdgShellHandler <span class="kw">for </span>State {
+    <span class="comment">// ...
+</span>}
+<span class="kw">impl </span>XdgDialogHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>dialog_hint_changed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, toplevel: ToplevelSurface, hint: ToplevelDialogHint) { <span class="comment">/* ... */ </span>}
+}
+
+<span class="kw">use </span>smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+
+<span class="kw">type </span>Target = wl_surface::WlSurface;
+<span class="kw">impl </span>SeatHandler <span class="kw">for </span>State {
+    <span class="kw">type </span>KeyboardFocus = Target;
+    <span class="kw">type </span>PointerFocus = Target;
+    <span class="kw">type </span>TouchFocus = Target;
+
+    <span class="kw">fn </span>seat_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>SeatState&lt;<span class="self">Self</span>&gt; {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.seat_state
+    }
+
+    <span class="kw">fn </span>focus_changed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, focused: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Target&gt;) {
+        <span class="comment">// handle focus changes, if you need to ...
+    </span>}
+    <span class="kw">fn </span>cursor_image(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, image: CursorImageStatus) {
+        <span class="comment">// handle new images for the cursor ...
+    </span>}
+}
+<span class="macro">delegate_xdg_shell!</span>(State);
+<span class="macro">delegate_xdg_dialog!</span>(State);
+
+<span class="comment">// You are ready to go!  </span></code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.XdgDialogState.html" title="struct smithay::wayland::shell::xdg::dialog::XdgDialogState">XdgDialog<wbr>State</a></dt><dd>Delegate type for handling xdg dialog events.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.ToplevelDialogHint.html" title="enum smithay::wayland::shell::xdg::dialog::ToplevelDialogHint">Toplevel<wbr>Dialog<wbr>Hint</a></dt><dd>Dialog hint assigned to toplevels by the xdg-dialog-v1 protocol</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.XdgDialogHandler.html" title="trait smithay::wayland::shell::xdg::dialog::XdgDialogHandler">XdgDialog<wbr>Handler</a></dt><dd>Handler trait for xdg dialog events.</dd></dl></section></div></main></body></html>

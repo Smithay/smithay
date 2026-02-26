@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["WmHintsState","WmSizeHintsSpecification"],"struct":["AspectRatio","WmClass","WmClassCookie","WmHints","WmHintsCookie","WmSizeHints","WmSizeHintsCookie"]};

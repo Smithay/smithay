@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["__interfaces","ext_workspace_group_handle_v1","ext_workspace_handle_v1","ext_workspace_manager_v1"]};

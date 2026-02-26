@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ExtLockSurfaceUserData","LockSurface","LockSurfaceAttributes","LockSurfaceCachedState","LockSurfaceConfigure","LockSurfaceState","SessionLockManagerState","SessionLockState","SessionLocker"],"trait":["SessionLockHandler"],"type":["LockSurfaceData"]};

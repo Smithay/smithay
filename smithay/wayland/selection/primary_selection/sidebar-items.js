@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SelectionRequestError"],"fn":["clear_primary_selection","current_primary_selection_userdata","request_primary_client_selection","set_primary_focus","set_primary_selection"],"struct":["PrimarySelectionState","SourceMetadata"],"trait":["PrimarySelectionHandler"]};

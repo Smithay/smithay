@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_CREATE_OPCODE","REQ_CREATE_SINCE","REQ_SET_ICC_FILE_OPCODE","REQ_SET_ICC_FILE_SINCE"],"enum":["Error","Event","Request"],"struct":["WpImageDescriptionCreatorIccV1"]};

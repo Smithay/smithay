@@ -1,0 +1,44 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="0.15.1"><title>winit::changelog::v0_15 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module v0_15</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../winit/index.html">winit</a><span class="version">0.30.12</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module v0_15</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#0151" title="0.15.1">0.15.1</a></li><li><a href="#0150" title="0.15.0">0.15.0</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In winit::<wbr>changelog</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">winit</a>::<wbr><a href="../index.html">changelog</a></div><h1>Module <span>v0_15</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/winit/changelog/mod.rs.html#56">Source</a> </span></div><span class="item-info"><div class="stab portability">Available <strong>nowhere</strong>.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h3 id="0151"><a class="doc-anchor" href="#0151">§</a>0.15.1</h3>
+<ul>
+<li>On X11, the <code>Moved</code> event is no longer sent when the window is resized without changing position.</li>
+<li><code>MouseCursor</code> and <code>CursorState</code> now implement <code>Default</code>.</li>
+<li><code>WindowBuilder::with_resizable</code> implemented for Windows, X11, Wayland, and macOS.</li>
+<li><code>Window::set_resizable</code> implemented for Windows, X11, Wayland, and macOS.</li>
+<li>On X11, if the monitor’s width or height in millimeters is reported as 0, the DPI is now 1.0 instead of +inf.</li>
+<li>On X11, the environment variable <code>WINIT_HIDPI_FACTOR</code> has been added for overriding DPI factor.</li>
+<li>On X11, enabling transparency no longer causes the window contents to flicker when resizing.</li>
+<li>On X11, <code>with_override_redirect</code> now actually enables override redirect.</li>
+<li>macOS now generates <code>VirtualKeyCode::LAlt</code> and <code>VirtualKeyCode::RAlt</code> instead of <code>None</code> for both.</li>
+<li>On macOS, <code>VirtualKeyCode::RWin</code> and <code>VirtualKeyCode::LWin</code> are no longer switched.</li>
+<li>On macOS, windows without decorations can once again be resized.</li>
+<li>Fixed race conditions when creating an <code>EventsLoop</code> on X11, most commonly manifesting as <code>"[xcb] Unknown sequence number while processing queue"</code>.</li>
+<li>On macOS, <code>CursorMoved</code> and <code>MouseInput</code> events are only generated if they occurs within the window’s client area.</li>
+<li>On macOS, resizing the window no longer generates a spurious <code>MouseInput</code> event.</li>
+</ul>
+<h3 id="0150"><a class="doc-anchor" href="#0150">§</a>0.15.0</h3>
+<ul>
+<li><code>Icon::to_cardinals</code> is no longer public, since it was never supposed to be.</li>
+<li>Wayland: improve diagnostics if initialization fails</li>
+<li>Fix some system event key doesn’t work when focused, do not block keyevent forward to system on macOS</li>
+<li>On X11, the scroll wheel position is now correctly reset on i3 and other WMs that have the same quirk.</li>
+<li>On X11, <code>Window::get_current_monitor</code> now reliably returns the correct monitor.</li>
+<li>On X11, <code>Window::hidpi_factor</code> returns values from XRandR rather than the inaccurate values previously queried from the core protocol.</li>
+<li>On X11, the primary monitor is detected correctly even when using versions of XRandR less than 1.5.</li>
+<li><code>MonitorId</code> now implements <code>Debug</code>.</li>
+<li>Fixed bug on macOS where using <code>with_decorations(false)</code> would cause <code>set_decorations(true)</code> to produce a transparent titlebar with no title.</li>
+<li>Implemented <code>MonitorId::get_position</code> on macOS.</li>
+<li>On macOS, <code>Window::get_current_monitor</code> now returns accurate values.</li>
+<li>Added <code>WindowBuilderExt::with_resize_increments</code> to macOS.</li>
+<li><strong>Breaking:</strong> On X11, <code>WindowBuilderExt::with_resize_increments</code> and <code>WindowBuilderExt::with_base_size</code> now take <code>u32</code> values rather than <code>i32</code>.</li>
+<li>macOS keyboard handling has been overhauled, allowing for the use of dead keys, IME, etc. Right modifier keys are also no longer reported as being left.</li>
+<li>Added the <code>Window::set_ime_spot(x: i32, y: i32)</code> method, which is implemented on X11 and macOS.</li>
+<li><strong>Breaking</strong>: <code>os::unix::WindowExt::send_xim_spot(x: i16, y: i16)</code> no longer exists. Switch to the new <code>Window::set_ime_spot(x: i32, y: i32)</code>, which has equivalent functionality.</li>
+<li>Fixed detection of <code>Pause</code> and <code>Scroll</code> keys on Windows.</li>
+<li>On Windows, alt-tabbing while the cursor is grabbed no longer makes it impossible to re-grab the cursor.</li>
+<li>On Windows, using <code>CursorState::Hide</code> when the cursor is grabbed now ungrabs the cursor first.</li>
+<li>Implemented <code>MouseCursor::NoneCursor</code> on Windows.</li>
+<li>Added <code>WindowBuilder::with_always_on_top</code> and <code>Window::set_always_on_top</code>. Implemented on Windows, macOS, and X11.</li>
+<li>On X11, <code>WindowBuilderExt</code> now has <code>with_class</code>, <code>with_override_redirect</code>, and <code>with_x11_window_type</code> to allow for more control over window creation. <code>WindowExt</code> additionally has <code>set_urgent</code>.</li>
+<li>More hints are set by default on X11, including <code>_NET_WM_PID</code> and <code>WM_CLIENT_MACHINE</code>. Note that prior to this, the <code>WM_CLASS</code> hint was automatically set to whatever value was passed to <code>with_title</code>. It’s now set to the executable name to better conform to expectations and the specification; if this is undesirable, you must explicitly use <code>WindowBuilderExt::with_class</code>.</li>
+</ul>
+</div></details></section></div></main></body></html>

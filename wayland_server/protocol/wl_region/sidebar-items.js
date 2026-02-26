@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_ADD_OPCODE","REQ_ADD_SINCE","REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_SUBTRACT_OPCODE","REQ_SUBTRACT_SINCE"],"enum":["Event","Request"],"struct":["WlRegion"]};

@@ -1,0 +1,63 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="factory for creating dmabuf-based wl_buffers"><title>wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../../" data-static-root-path="../../../../../../static.files/" data-current-crate="wayland_protocols" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module zwp_linux_dmabuf_v1</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../../../../wayland_protocols/index.html">wayland_<wbr>protocols</a><span class="version">0.32.10</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module zwp_<wbr>linux_<wbr>dmabuf_<wbr>v1</a></h2><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#constants" title="Constants">Constants</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In wayland_<wbr>protocols::<wbr>wp::<wbr>linux_<wbr>dmabuf::<wbr>zv1::<wbr>server</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../../../index.html">wayland_protocols</a>::<wbr><a href="../../../../index.html">wp</a>::<wbr><a href="../../../index.html">linux_dmabuf</a>::<wbr><a href="../../index.html">zv1</a>::<wbr><a href="../index.html">server</a></div><h1>Module <span>zwp_<wbr>linux_<wbr>dmabuf_<wbr>v1</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../../../src/wayland_protocols/wp.rs.html#256-259">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>server</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>factory for creating dmabuf-based wl_buffers</p>
+<p>This interface offers ways to create generic dmabuf-based wl_buffers.</p>
+<p>For more information about dmabuf, see:
+https://www.kernel.org/doc/html/next/userspace-api/dma-buf-alloc-exchange.html</p>
+<p>Clients can use the get_surface_feedback request to get dmabuf feedback
+for a particular surface. If the client wants to retrieve feedback not
+tied to a surface, they can use the get_default_feedback request.</p>
+<p>The following are required from clients:</p>
+<ul>
+<li>
+<p>Clients must ensure that either all data in the dma-buf is
+coherent for all subsequent read access or that coherency is
+correctly handled by the underlying kernel-side dma-buf
+implementation.</p>
+</li>
+<li>
+<p>Don’t make any more attachments after sending the buffer to the
+compositor. Making more attachments later increases the risk of
+the compositor not being able to use (re-import) an existing
+dmabuf-based wl_buffer.</p>
+</li>
+</ul>
+<p>The underlying graphics stack must ensure the following:</p>
+<ul>
+<li>The dmabuf file descriptors relayed to the server will stay valid
+for the whole lifetime of the wl_buffer. This means the server may
+at any time use those fds to import the dmabuf into any kernel
+sub-system that might accept it.</li>
+</ul>
+<p>However, when the underlying graphics stack fails to deliver the
+promise, because of e.g. a device hot-unplug which raises internal
+errors, after the wl_buffer has been successfully created the
+compositor must not raise protocol errors to the client when dmabuf
+import later fails.</p>
+<p>To create a wl_buffer from one or more dmabufs, a client creates a
+zwp_linux_dmabuf_params_v1 object with a zwp_linux_dmabuf_v1.create_params
+request. All planes required by the intended format are added with
+the ‘add’ request. Finally, a ‘create’ or ‘create_immed’ request is
+issued, which has the following outcome depending on the import success.</p>
+<p>The ‘create’ request,</p>
+<ul>
+<li>on success, triggers a ‘created’ event which provides the final
+wl_buffer to the client.</li>
+<li>on failure, triggers a ‘failed’ event to convey that the server
+cannot use the dmabufs received from the client.</li>
+</ul>
+<p>For the ‘create_immed’ request,</p>
+<ul>
+<li>on success, the server immediately imports the added dmabufs to
+create a wl_buffer. No event is sent from the server in this case.</li>
+<li>on failure, the server can choose to either:</li>
+<li>terminate the client by raising a fatal error.</li>
+<li>mark the wl_buffer as failed, and send a ‘failed’ event to the
+client. If the client uses a failed wl_buffer as an argument to any
+request, the behaviour is compositor implementation-defined.</li>
+</ul>
+<p>For all DRM formats and unless specified in another protocol extension,
+pre-multiplied alpha is used for pixel values.</p>
+<p>Unless specified otherwise in another protocol extension, implicit
+synchronization is used. In other words, compositors and clients must
+wait and signal fences implicitly passed via the DMA-BUF’s reservation
+mechanism.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.ZwpLinuxDmabufV1.html" title="struct wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1">ZwpLinux<wbr>Dmabuf<wbr>V1</a></dt><dd>factory for creating dmabuf-based wl_buffers</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Event.html" title="enum wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::Event">Event</a></dt><dt><a class="enum" href="enum.Request.html" title="enum wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::Request">Request</a></dt></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.EVT_FORMAT_OPCODE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::EVT_FORMAT_OPCODE">EVT_<wbr>FORMAT_<wbr>OPCODE</a></dt><dd>The wire opcode for this event</dd><dt><a class="constant" href="constant.EVT_FORMAT_SINCE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::EVT_FORMAT_SINCE">EVT_<wbr>FORMAT_<wbr>SINCE</a></dt><dd>The minimal object version supporting this event</dd><dt><a class="constant" href="constant.EVT_MODIFIER_OPCODE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::EVT_MODIFIER_OPCODE">EVT_<wbr>MODIFIER_<wbr>OPCODE</a></dt><dd>The wire opcode for this event</dd><dt><a class="constant" href="constant.EVT_MODIFIER_SINCE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::EVT_MODIFIER_SINCE">EVT_<wbr>MODIFIER_<wbr>SINCE</a></dt><dd>The minimal object version supporting this event</dd><dt><a class="constant" href="constant.REQ_CREATE_PARAMS_OPCODE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_CREATE_PARAMS_OPCODE">REQ_<wbr>CREATE_<wbr>PARAMS_<wbr>OPCODE</a></dt><dd>The wire opcode for this request</dd><dt><a class="constant" href="constant.REQ_CREATE_PARAMS_SINCE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_CREATE_PARAMS_SINCE">REQ_<wbr>CREATE_<wbr>PARAMS_<wbr>SINCE</a></dt><dd>The minimal object version supporting this request</dd><dt><a class="constant" href="constant.REQ_DESTROY_OPCODE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_DESTROY_OPCODE">REQ_<wbr>DESTROY_<wbr>OPCODE</a></dt><dd>The wire opcode for this request</dd><dt><a class="constant" href="constant.REQ_DESTROY_SINCE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_DESTROY_SINCE">REQ_<wbr>DESTROY_<wbr>SINCE</a></dt><dd>The minimal object version supporting this request</dd><dt><a class="constant" href="constant.REQ_GET_DEFAULT_FEEDBACK_OPCODE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_GET_DEFAULT_FEEDBACK_OPCODE">REQ_<wbr>GET_<wbr>DEFAULT_<wbr>FEEDBACK_<wbr>OPCODE</a></dt><dd>The wire opcode for this request</dd><dt><a class="constant" href="constant.REQ_GET_DEFAULT_FEEDBACK_SINCE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_GET_DEFAULT_FEEDBACK_SINCE">REQ_<wbr>GET_<wbr>DEFAULT_<wbr>FEEDBACK_<wbr>SINCE</a></dt><dd>The minimal object version supporting this request</dd><dt><a class="constant" href="constant.REQ_GET_SURFACE_FEEDBACK_OPCODE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_GET_SURFACE_FEEDBACK_OPCODE">REQ_<wbr>GET_<wbr>SURFACE_<wbr>FEEDBACK_<wbr>OPCODE</a></dt><dd>The wire opcode for this request</dd><dt><a class="constant" href="constant.REQ_GET_SURFACE_FEEDBACK_SINCE.html" title="constant wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::REQ_GET_SURFACE_FEEDBACK_SINCE">REQ_<wbr>GET_<wbr>SURFACE_<wbr>FEEDBACK_<wbr>SINCE</a></dt><dd>The minimal object version supporting this request</dd></dl></section></div></main></body></html>

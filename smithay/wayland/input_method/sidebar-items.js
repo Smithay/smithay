@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INPUT_POPUP_SURFACE_ROLE"],"struct":["InputMethodHandle","InputMethodKeyboardGrab","InputMethodKeyboardUserData","InputMethodManagerGlobalData","InputMethodManagerState","InputMethodPopupSurfaceUserData","InputMethodUserData","PopupParent","PopupSurface"],"trait":["InputMethodHandler","InputMethodSeat"]};

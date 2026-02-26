@@ -1,0 +1,1170 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/platform_impl/linux/wayland/window/state.rs`."><title>state.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../../" data-static-root-path="../../../../../../static.files/" data-current-crate="winit" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../../../src-files.js"></script><script defer src="../../../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">winit/platform_impl/linux/wayland/window/</div>state.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! The state of the window, which is shared with the event-loop.
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a></span><span class="kw">use </span>std::num::NonZeroU32;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>std::sync::{Arc, Mutex, Weak};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>std::time::Duration;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>ahash::HashSet;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>tracing::{info, warn};
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>sctk::reexports::client::backend::ObjectId;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>sctk::reexports::client::protocol::wl_seat::WlSeat;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>sctk::reexports::client::protocol::wl_shm::WlShm;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>sctk::reexports::client::protocol::wl_surface::WlSurface;
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>sctk::reexports::client::{Connection, Proxy, QueueHandle};
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>sctk::reexports::csd_frame::{
+<a href=#16 id=16 data-nosnippet>16</a>    DecorationsFrame, FrameAction, FrameClick, ResizeEdge, WindowState <span class="kw">as </span>XdgWindowState,
+<a href=#17 id=17 data-nosnippet>17</a>};
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>sctk::reexports::protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span>sctk::reexports::protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span>sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>sctk::reexports::protocols::xdg::shell::client::xdg_toplevel::ResizeEdge <span class="kw">as </span>XdgResizeEdge;
+<a href=#22 id=22 data-nosnippet>22</a>
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span>sctk::compositor::{CompositorState, Region, SurfaceData, SurfaceDataExt};
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span>sctk::seat::pointer::{PointerDataExt, ThemedPointer};
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use </span>sctk::shell::xdg::window::{DecorationMode, Window, WindowConfigure};
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">use </span>sctk::shell::xdg::XdgSurface;
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">use </span>sctk::shell::WaylandSurface;
+<a href=#28 id=28 data-nosnippet>28</a><span class="kw">use </span>sctk::shm::slot::SlotPool;
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">use </span>sctk::shm::Shm;
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">use </span>sctk::subcompositor::SubcompositorState;
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span>wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a><span class="kw">use </span><span class="kw">crate</span>::cursor::CustomCursor <span class="kw">as </span>RootCustomCursor;
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">use </span><span class="kw">crate</span>::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
+<a href=#35 id=35 data-nosnippet>35</a><span class="kw">use </span><span class="kw">crate</span>::error::{ExternalError, NotSupportedError};
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">use </span><span class="kw">crate</span>::platform_impl::wayland::logical_to_physical_rounded;
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">use </span><span class="kw">crate</span>::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
+<a href=#38 id=38 data-nosnippet>38</a><span class="kw">use </span><span class="kw">crate</span>::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">use </span><span class="kw">crate</span>::platform_impl::{PlatformCustomCursor, WindowId};
+<a href=#40 id=40 data-nosnippet>40</a><span class="kw">use </span><span class="kw">crate</span>::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
+<a href=#41 id=41 data-nosnippet>41</a>
+<a href=#42 id=42 data-nosnippet>42</a><span class="kw">use </span><span class="kw">crate</span>::platform_impl::wayland::seat::{
+<a href=#43 id=43 data-nosnippet>43</a>    PointerConstraintsState, WinitPointerData, WinitPointerDataExt, ZwpTextInputV3Ext,
+<a href=#44 id=44 data-nosnippet>44</a>};
+<a href=#45 id=45 data-nosnippet>45</a><span class="kw">use </span><span class="kw">crate</span>::platform_impl::wayland::state::{WindowCompositorUpdate, WinitState};
+<a href=#46 id=46 data-nosnippet>46</a>
+<a href=#47 id=47 data-nosnippet>47</a><span class="attr">#[cfg(feature = <span class="string">"sctk-adwaita"</span>)]
+<a href=#48 id=48 data-nosnippet>48</a></span><span class="kw">pub type </span>WinitFrame = sctk_adwaita::AdwaitaFrame&lt;WinitState&gt;;
+<a href=#49 id=49 data-nosnippet>49</a><span class="attr">#[cfg(not(feature = <span class="string">"sctk-adwaita"</span>))]
+<a href=#50 id=50 data-nosnippet>50</a></span><span class="kw">pub type </span>WinitFrame = sctk::shell::xdg::fallback_frame::FallbackFrame&lt;WinitState&gt;;
+<a href=#51 id=51 data-nosnippet>51</a>
+<a href=#52 id=52 data-nosnippet>52</a><span class="comment">// Minimum window inner size.
+<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">const </span>MIN_WINDOW_SIZE: LogicalSize&lt;u32&gt; = LogicalSize::new(<span class="number">2</span>, <span class="number">1</span>);
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a><span class="doccomment">/// The state of the window which is being updated from the [`WinitState`].
+<a href=#56 id=56 data-nosnippet>56</a></span><span class="kw">pub struct </span>WindowState {
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="doccomment">/// The connection to Wayland server.
+<a href=#58 id=58 data-nosnippet>58</a>    </span><span class="kw">pub </span>connection: Connection,
+<a href=#59 id=59 data-nosnippet>59</a>
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="doccomment">/// The `Shm` to set cursor.
+<a href=#61 id=61 data-nosnippet>61</a>    </span><span class="kw">pub </span>shm: WlShm,
+<a href=#62 id=62 data-nosnippet>62</a>
+<a href=#63 id=63 data-nosnippet>63</a>    <span class="comment">// A shared pool where to allocate custom cursors.
+<a href=#64 id=64 data-nosnippet>64</a>    </span>custom_cursor_pool: Arc&lt;Mutex&lt;SlotPool&gt;&gt;,
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="doccomment">/// The last received configure.
+<a href=#67 id=67 data-nosnippet>67</a>    </span><span class="kw">pub </span>last_configure: <span class="prelude-ty">Option</span>&lt;WindowConfigure&gt;,
+<a href=#68 id=68 data-nosnippet>68</a>
+<a href=#69 id=69 data-nosnippet>69</a>    <span class="doccomment">/// The pointers observed on the window.
+<a href=#70 id=70 data-nosnippet>70</a>    </span><span class="kw">pub </span>pointers: Vec&lt;Weak&lt;ThemedPointer&lt;WinitPointerData&gt;&gt;&gt;,
+<a href=#71 id=71 data-nosnippet>71</a>
+<a href=#72 id=72 data-nosnippet>72</a>    selected_cursor: SelectedCursor,
+<a href=#73 id=73 data-nosnippet>73</a>
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="doccomment">/// Whether the cursor is visible.
+<a href=#75 id=75 data-nosnippet>75</a>    </span><span class="kw">pub </span>cursor_visible: bool,
+<a href=#76 id=76 data-nosnippet>76</a>
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="doccomment">/// Pointer constraints to lock/confine pointer.
+<a href=#78 id=78 data-nosnippet>78</a>    </span><span class="kw">pub </span>pointer_constraints: <span class="prelude-ty">Option</span>&lt;Arc&lt;PointerConstraintsState&gt;&gt;,
+<a href=#79 id=79 data-nosnippet>79</a>
+<a href=#80 id=80 data-nosnippet>80</a>    <span class="doccomment">/// Queue handle.
+<a href=#81 id=81 data-nosnippet>81</a>    </span><span class="kw">pub </span>queue_handle: QueueHandle&lt;WinitState&gt;,
+<a href=#82 id=82 data-nosnippet>82</a>
+<a href=#83 id=83 data-nosnippet>83</a>    <span class="doccomment">/// Theme variant.
+<a href=#84 id=84 data-nosnippet>84</a>    </span>theme: <span class="prelude-ty">Option</span>&lt;Theme&gt;,
+<a href=#85 id=85 data-nosnippet>85</a>
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="doccomment">/// The current window title.
+<a href=#87 id=87 data-nosnippet>87</a>    </span>title: String,
+<a href=#88 id=88 data-nosnippet>88</a>
+<a href=#89 id=89 data-nosnippet>89</a>    <span class="doccomment">/// Whether the frame is resizable.
+<a href=#90 id=90 data-nosnippet>90</a>    </span>resizable: bool,
+<a href=#91 id=91 data-nosnippet>91</a>
+<a href=#92 id=92 data-nosnippet>92</a>    <span class="comment">// NOTE: we can't use simple counter, since it's racy when seat getting destroyed and new
+<a href=#93 id=93 data-nosnippet>93</a>    // is created, since add/removed stuff could be delivered a bit out of order.
+<a href=#94 id=94 data-nosnippet>94</a>    </span><span class="doccomment">/// Seats that has keyboard focus on that window.
+<a href=#95 id=95 data-nosnippet>95</a>    </span>seat_focus: HashSet&lt;ObjectId&gt;,
+<a href=#96 id=96 data-nosnippet>96</a>
+<a href=#97 id=97 data-nosnippet>97</a>    <span class="doccomment">/// The scale factor of the window.
+<a href=#98 id=98 data-nosnippet>98</a>    </span>scale_factor: f64,
+<a href=#99 id=99 data-nosnippet>99</a>
+<a href=#100 id=100 data-nosnippet>100</a>    <span class="doccomment">/// Whether the window is transparent.
+<a href=#101 id=101 data-nosnippet>101</a>    </span>transparent: bool,
+<a href=#102 id=102 data-nosnippet>102</a>
+<a href=#103 id=103 data-nosnippet>103</a>    <span class="doccomment">/// The state of the compositor to create WlRegions.
+<a href=#104 id=104 data-nosnippet>104</a>    </span>compositor: Arc&lt;CompositorState&gt;,
+<a href=#105 id=105 data-nosnippet>105</a>
+<a href=#106 id=106 data-nosnippet>106</a>    <span class="doccomment">/// The current cursor grabbing mode.
+<a href=#107 id=107 data-nosnippet>107</a>    </span>cursor_grab_mode: GrabState,
+<a href=#108 id=108 data-nosnippet>108</a>
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="doccomment">/// Whether the IME input is allowed for that window.
+<a href=#110 id=110 data-nosnippet>110</a>    </span>ime_allowed: bool,
+<a href=#111 id=111 data-nosnippet>111</a>
+<a href=#112 id=112 data-nosnippet>112</a>    <span class="doccomment">/// The current IME purpose.
+<a href=#113 id=113 data-nosnippet>113</a>    </span>ime_purpose: ImePurpose,
+<a href=#114 id=114 data-nosnippet>114</a>
+<a href=#115 id=115 data-nosnippet>115</a>    <span class="doccomment">/// The text inputs observed on the window.
+<a href=#116 id=116 data-nosnippet>116</a>    </span>text_inputs: Vec&lt;ZwpTextInputV3&gt;,
+<a href=#117 id=117 data-nosnippet>117</a>
+<a href=#118 id=118 data-nosnippet>118</a>    <span class="doccomment">/// The inner size of the window, as in without client side decorations.
+<a href=#119 id=119 data-nosnippet>119</a>    </span>size: LogicalSize&lt;u32&gt;,
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="doccomment">/// Whether the CSD fail to create, so we don't try to create them on each iteration.
+<a href=#122 id=122 data-nosnippet>122</a>    </span>csd_fails: bool,
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a>    <span class="doccomment">/// Whether we should decorate the frame.
+<a href=#125 id=125 data-nosnippet>125</a>    </span>decorate: bool,
+<a href=#126 id=126 data-nosnippet>126</a>
+<a href=#127 id=127 data-nosnippet>127</a>    <span class="doccomment">/// Min size.
+<a href=#128 id=128 data-nosnippet>128</a>    </span>min_inner_size: LogicalSize&lt;u32&gt;,
+<a href=#129 id=129 data-nosnippet>129</a>    max_inner_size: <span class="prelude-ty">Option</span>&lt;LogicalSize&lt;u32&gt;&gt;,
+<a href=#130 id=130 data-nosnippet>130</a>
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="doccomment">/// The size of the window when no states were applied to it. The primary use for it
+<a href=#132 id=132 data-nosnippet>132</a>    /// is to fallback to original window size, before it was maximized, if the compositor
+<a href=#133 id=133 data-nosnippet>133</a>    /// sends `None` for the new size in the configure.
+<a href=#134 id=134 data-nosnippet>134</a>    </span>stateless_size: LogicalSize&lt;u32&gt;,
+<a href=#135 id=135 data-nosnippet>135</a>
+<a href=#136 id=136 data-nosnippet>136</a>    <span class="doccomment">/// Initial window size provided by the user. Removed on the first
+<a href=#137 id=137 data-nosnippet>137</a>    /// configure.
+<a href=#138 id=138 data-nosnippet>138</a>    </span>initial_size: <span class="prelude-ty">Option</span>&lt;Size&gt;,
+<a href=#139 id=139 data-nosnippet>139</a>
+<a href=#140 id=140 data-nosnippet>140</a>    <span class="doccomment">/// The state of the frame callback.
+<a href=#141 id=141 data-nosnippet>141</a>    </span>frame_callback_state: FrameCallbackState,
+<a href=#142 id=142 data-nosnippet>142</a>
+<a href=#143 id=143 data-nosnippet>143</a>    viewport: <span class="prelude-ty">Option</span>&lt;WpViewport&gt;,
+<a href=#144 id=144 data-nosnippet>144</a>    fractional_scale: <span class="prelude-ty">Option</span>&lt;WpFractionalScaleV1&gt;,
+<a href=#145 id=145 data-nosnippet>145</a>    blur: <span class="prelude-ty">Option</span>&lt;OrgKdeKwinBlur&gt;,
+<a href=#146 id=146 data-nosnippet>146</a>    blur_manager: <span class="prelude-ty">Option</span>&lt;KWinBlurManager&gt;,
+<a href=#147 id=147 data-nosnippet>147</a>
+<a href=#148 id=148 data-nosnippet>148</a>    <span class="doccomment">/// Whether the client side decorations have pending move operations.
+<a href=#149 id=149 data-nosnippet>149</a>    ///
+<a href=#150 id=150 data-nosnippet>150</a>    /// The value is the serial of the event triggered moved.
+<a href=#151 id=151 data-nosnippet>151</a>    </span>has_pending_move: <span class="prelude-ty">Option</span>&lt;u32&gt;,
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a>    <span class="doccomment">/// The underlying SCTK window.
+<a href=#154 id=154 data-nosnippet>154</a>    </span><span class="kw">pub </span>window: Window,
+<a href=#155 id=155 data-nosnippet>155</a>
+<a href=#156 id=156 data-nosnippet>156</a>    <span class="comment">// NOTE: The spec says that destroying parent(`window` in our case), will unmap the
+<a href=#157 id=157 data-nosnippet>157</a>    // subsurfaces. Thus to achieve atomic unmap of the client, drop the decorations
+<a href=#158 id=158 data-nosnippet>158</a>    // frame after the `window` is dropped. To achieve that we rely on rust's struct
+<a href=#159 id=159 data-nosnippet>159</a>    // field drop order guarantees.
+<a href=#160 id=160 data-nosnippet>160</a>    </span><span class="doccomment">/// The window frame, which is created from the configure request.
+<a href=#161 id=161 data-nosnippet>161</a>    </span>frame: <span class="prelude-ty">Option</span>&lt;WinitFrame&gt;,
+<a href=#162 id=162 data-nosnippet>162</a>}
+<a href=#163 id=163 data-nosnippet>163</a>
+<a href=#164 id=164 data-nosnippet>164</a><span class="kw">impl </span>WindowState {
+<a href=#165 id=165 data-nosnippet>165</a>    <span class="doccomment">/// Create new window state.
+<a href=#166 id=166 data-nosnippet>166</a>    </span><span class="kw">pub fn </span>new(
+<a href=#167 id=167 data-nosnippet>167</a>        connection: Connection,
+<a href=#168 id=168 data-nosnippet>168</a>        queue_handle: <span class="kw-2">&amp;</span>QueueHandle&lt;WinitState&gt;,
+<a href=#169 id=169 data-nosnippet>169</a>        winit_state: <span class="kw-2">&amp;</span>WinitState,
+<a href=#170 id=170 data-nosnippet>170</a>        initial_size: Size,
+<a href=#171 id=171 data-nosnippet>171</a>        window: Window,
+<a href=#172 id=172 data-nosnippet>172</a>        theme: <span class="prelude-ty">Option</span>&lt;Theme&gt;,
+<a href=#173 id=173 data-nosnippet>173</a>    ) -&gt; <span class="self">Self </span>{
+<a href=#174 id=174 data-nosnippet>174</a>        <span class="kw">let </span>compositor = winit_state.compositor_state.clone();
+<a href=#175 id=175 data-nosnippet>175</a>        <span class="kw">let </span>pointer_constraints = winit_state.pointer_constraints.clone();
+<a href=#176 id=176 data-nosnippet>176</a>        <span class="kw">let </span>viewport = winit_state
+<a href=#177 id=177 data-nosnippet>177</a>            .viewporter_state
+<a href=#178 id=178 data-nosnippet>178</a>            .as_ref()
+<a href=#179 id=179 data-nosnippet>179</a>            .map(|state| state.get_viewport(window.wl_surface(), queue_handle));
+<a href=#180 id=180 data-nosnippet>180</a>        <span class="kw">let </span>fractional_scale = winit_state
+<a href=#181 id=181 data-nosnippet>181</a>            .fractional_scaling_manager
+<a href=#182 id=182 data-nosnippet>182</a>            .as_ref()
+<a href=#183 id=183 data-nosnippet>183</a>            .map(|fsm| fsm.fractional_scaling(window.wl_surface(), queue_handle));
+<a href=#184 id=184 data-nosnippet>184</a>
+<a href=#185 id=185 data-nosnippet>185</a>        <span class="self">Self </span>{
+<a href=#186 id=186 data-nosnippet>186</a>            blur: <span class="prelude-val">None</span>,
+<a href=#187 id=187 data-nosnippet>187</a>            blur_manager: winit_state.kwin_blur_manager.clone(),
+<a href=#188 id=188 data-nosnippet>188</a>            compositor,
+<a href=#189 id=189 data-nosnippet>189</a>            connection,
+<a href=#190 id=190 data-nosnippet>190</a>            csd_fails: <span class="bool-val">false</span>,
+<a href=#191 id=191 data-nosnippet>191</a>            cursor_grab_mode: GrabState::new(),
+<a href=#192 id=192 data-nosnippet>192</a>            selected_cursor: Default::default(),
+<a href=#193 id=193 data-nosnippet>193</a>            cursor_visible: <span class="bool-val">true</span>,
+<a href=#194 id=194 data-nosnippet>194</a>            decorate: <span class="bool-val">true</span>,
+<a href=#195 id=195 data-nosnippet>195</a>            fractional_scale,
+<a href=#196 id=196 data-nosnippet>196</a>            frame: <span class="prelude-val">None</span>,
+<a href=#197 id=197 data-nosnippet>197</a>            frame_callback_state: FrameCallbackState::None,
+<a href=#198 id=198 data-nosnippet>198</a>            seat_focus: Default::default(),
+<a href=#199 id=199 data-nosnippet>199</a>            has_pending_move: <span class="prelude-val">None</span>,
+<a href=#200 id=200 data-nosnippet>200</a>            ime_allowed: <span class="bool-val">false</span>,
+<a href=#201 id=201 data-nosnippet>201</a>            ime_purpose: ImePurpose::Normal,
+<a href=#202 id=202 data-nosnippet>202</a>            last_configure: <span class="prelude-val">None</span>,
+<a href=#203 id=203 data-nosnippet>203</a>            max_inner_size: <span class="prelude-val">None</span>,
+<a href=#204 id=204 data-nosnippet>204</a>            min_inner_size: MIN_WINDOW_SIZE,
+<a href=#205 id=205 data-nosnippet>205</a>            pointer_constraints,
+<a href=#206 id=206 data-nosnippet>206</a>            pointers: Default::default(),
+<a href=#207 id=207 data-nosnippet>207</a>            queue_handle: queue_handle.clone(),
+<a href=#208 id=208 data-nosnippet>208</a>            resizable: <span class="bool-val">true</span>,
+<a href=#209 id=209 data-nosnippet>209</a>            scale_factor: <span class="number">1.</span>,
+<a href=#210 id=210 data-nosnippet>210</a>            shm: winit_state.shm.wl_shm().clone(),
+<a href=#211 id=211 data-nosnippet>211</a>            custom_cursor_pool: winit_state.custom_cursor_pool.clone(),
+<a href=#212 id=212 data-nosnippet>212</a>            size: initial_size.to_logical(<span class="number">1.</span>),
+<a href=#213 id=213 data-nosnippet>213</a>            stateless_size: initial_size.to_logical(<span class="number">1.</span>),
+<a href=#214 id=214 data-nosnippet>214</a>            initial_size: <span class="prelude-val">Some</span>(initial_size),
+<a href=#215 id=215 data-nosnippet>215</a>            text_inputs: Vec::new(),
+<a href=#216 id=216 data-nosnippet>216</a>            theme,
+<a href=#217 id=217 data-nosnippet>217</a>            title: String::default(),
+<a href=#218 id=218 data-nosnippet>218</a>            transparent: <span class="bool-val">false</span>,
+<a href=#219 id=219 data-nosnippet>219</a>            viewport,
+<a href=#220 id=220 data-nosnippet>220</a>            window,
+<a href=#221 id=221 data-nosnippet>221</a>        }
+<a href=#222 id=222 data-nosnippet>222</a>    }
+<a href=#223 id=223 data-nosnippet>223</a>
+<a href=#224 id=224 data-nosnippet>224</a>    <span class="doccomment">/// Apply closure on the given pointer.
+<a href=#225 id=225 data-nosnippet>225</a>    </span><span class="kw">fn </span>apply_on_pointer&lt;F: FnMut(<span class="kw-2">&amp;</span>ThemedPointer&lt;WinitPointerData&gt;, <span class="kw-2">&amp;</span>WinitPointerData)&gt;(
+<a href=#226 id=226 data-nosnippet>226</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#227 id=227 data-nosnippet>227</a>        <span class="kw-2">mut </span>callback: F,
+<a href=#228 id=228 data-nosnippet>228</a>    ) {
+<a href=#229 id=229 data-nosnippet>229</a>        <span class="self">self</span>.pointers.iter().filter_map(Weak::upgrade).for_each(|pointer| {
+<a href=#230 id=230 data-nosnippet>230</a>            <span class="kw">let </span>data = pointer.pointer().winit_data();
+<a href=#231 id=231 data-nosnippet>231</a>            callback(pointer.as_ref(), data);
+<a href=#232 id=232 data-nosnippet>232</a>        })
+<a href=#233 id=233 data-nosnippet>233</a>    }
+<a href=#234 id=234 data-nosnippet>234</a>
+<a href=#235 id=235 data-nosnippet>235</a>    <span class="doccomment">/// Get the current state of the frame callback.
+<a href=#236 id=236 data-nosnippet>236</a>    </span><span class="kw">pub fn </span>frame_callback_state(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; FrameCallbackState {
+<a href=#237 id=237 data-nosnippet>237</a>        <span class="self">self</span>.frame_callback_state
+<a href=#238 id=238 data-nosnippet>238</a>    }
+<a href=#239 id=239 data-nosnippet>239</a>
+<a href=#240 id=240 data-nosnippet>240</a>    <span class="doccomment">/// The frame callback was received, but not yet sent to the user.
+<a href=#241 id=241 data-nosnippet>241</a>    </span><span class="kw">pub fn </span>frame_callback_received(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#242 id=242 data-nosnippet>242</a>        <span class="self">self</span>.frame_callback_state = FrameCallbackState::Received;
+<a href=#243 id=243 data-nosnippet>243</a>    }
+<a href=#244 id=244 data-nosnippet>244</a>
+<a href=#245 id=245 data-nosnippet>245</a>    <span class="doccomment">/// Reset the frame callbacks state.
+<a href=#246 id=246 data-nosnippet>246</a>    </span><span class="kw">pub fn </span>frame_callback_reset(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="self">self</span>.frame_callback_state = FrameCallbackState::None;
+<a href=#248 id=248 data-nosnippet>248</a>    }
+<a href=#249 id=249 data-nosnippet>249</a>
+<a href=#250 id=250 data-nosnippet>250</a>    <span class="doccomment">/// Request a frame callback if we don't have one for this window in flight.
+<a href=#251 id=251 data-nosnippet>251</a>    </span><span class="kw">pub fn </span>request_frame_callback(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#252 id=252 data-nosnippet>252</a>        <span class="kw">let </span>surface = <span class="self">self</span>.window.wl_surface();
+<a href=#253 id=253 data-nosnippet>253</a>        <span class="kw">match </span><span class="self">self</span>.frame_callback_state {
+<a href=#254 id=254 data-nosnippet>254</a>            FrameCallbackState::None | FrameCallbackState::Received =&gt; {
+<a href=#255 id=255 data-nosnippet>255</a>                <span class="self">self</span>.frame_callback_state = FrameCallbackState::Requested;
+<a href=#256 id=256 data-nosnippet>256</a>                surface.frame(<span class="kw-2">&amp;</span><span class="self">self</span>.queue_handle, surface.clone());
+<a href=#257 id=257 data-nosnippet>257</a>            },
+<a href=#258 id=258 data-nosnippet>258</a>            FrameCallbackState::Requested =&gt; (),
+<a href=#259 id=259 data-nosnippet>259</a>        }
+<a href=#260 id=260 data-nosnippet>260</a>    }
+<a href=#261 id=261 data-nosnippet>261</a>
+<a href=#262 id=262 data-nosnippet>262</a>    <span class="kw">pub fn </span>configure(
+<a href=#263 id=263 data-nosnippet>263</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#264 id=264 data-nosnippet>264</a>        configure: WindowConfigure,
+<a href=#265 id=265 data-nosnippet>265</a>        shm: <span class="kw-2">&amp;</span>Shm,
+<a href=#266 id=266 data-nosnippet>266</a>        subcompositor: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;Arc&lt;SubcompositorState&gt;&gt;,
+<a href=#267 id=267 data-nosnippet>267</a>    ) -&gt; bool {
+<a href=#268 id=268 data-nosnippet>268</a>        <span class="comment">// NOTE: when using fractional scaling or wl_compositor@v6 the scaling
+<a href=#269 id=269 data-nosnippet>269</a>        // should be delivered before the first configure, thus apply it to
+<a href=#270 id=270 data-nosnippet>270</a>        // properly scale the physical sizes provided by the users.
+<a href=#271 id=271 data-nosnippet>271</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(initial_size) = <span class="self">self</span>.initial_size.take() {
+<a href=#272 id=272 data-nosnippet>272</a>            <span class="self">self</span>.size = initial_size.to_logical(<span class="self">self</span>.scale_factor());
+<a href=#273 id=273 data-nosnippet>273</a>            <span class="self">self</span>.stateless_size = <span class="self">self</span>.size;
+<a href=#274 id=274 data-nosnippet>274</a>        }
+<a href=#275 id=275 data-nosnippet>275</a>
+<a href=#276 id=276 data-nosnippet>276</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(subcompositor) = subcompositor.as_ref().filter(|<span class="kw">_</span>| {
+<a href=#277 id=277 data-nosnippet>277</a>            configure.decoration_mode == DecorationMode::Client
+<a href=#278 id=278 data-nosnippet>278</a>                &amp;&amp; <span class="self">self</span>.frame.is_none()
+<a href=#279 id=279 data-nosnippet>279</a>                &amp;&amp; !<span class="self">self</span>.csd_fails
+<a href=#280 id=280 data-nosnippet>280</a>        }) {
+<a href=#281 id=281 data-nosnippet>281</a>            <span class="kw">match </span>WinitFrame::new(
+<a href=#282 id=282 data-nosnippet>282</a>                <span class="kw-2">&amp;</span><span class="self">self</span>.window,
+<a href=#283 id=283 data-nosnippet>283</a>                shm,
+<a href=#284 id=284 data-nosnippet>284</a>                <span class="attr">#[cfg(feature = <span class="string">"sctk-adwaita"</span>)]
+<a href=#285 id=285 data-nosnippet>285</a>                </span><span class="self">self</span>.compositor.clone(),
+<a href=#286 id=286 data-nosnippet>286</a>                subcompositor.clone(),
+<a href=#287 id=287 data-nosnippet>287</a>                <span class="self">self</span>.queue_handle.clone(),
+<a href=#288 id=288 data-nosnippet>288</a>                <span class="attr">#[cfg(feature = <span class="string">"sctk-adwaita"</span>)]
+<a href=#289 id=289 data-nosnippet>289</a>                </span>into_sctk_adwaita_config(<span class="self">self</span>.theme),
+<a href=#290 id=290 data-nosnippet>290</a>            ) {
+<a href=#291 id=291 data-nosnippet>291</a>                <span class="prelude-val">Ok</span>(<span class="kw-2">mut </span>frame) =&gt; {
+<a href=#292 id=292 data-nosnippet>292</a>                    frame.set_title(<span class="kw-2">&amp;</span><span class="self">self</span>.title);
+<a href=#293 id=293 data-nosnippet>293</a>                    frame.set_scaling_factor(<span class="self">self</span>.scale_factor);
+<a href=#294 id=294 data-nosnippet>294</a>                    <span class="comment">// Hide the frame if we were asked to not decorate.
+<a href=#295 id=295 data-nosnippet>295</a>                    </span>frame.set_hidden(!<span class="self">self</span>.decorate);
+<a href=#296 id=296 data-nosnippet>296</a>                    <span class="self">self</span>.frame = <span class="prelude-val">Some</span>(frame);
+<a href=#297 id=297 data-nosnippet>297</a>                },
+<a href=#298 id=298 data-nosnippet>298</a>                <span class="prelude-val">Err</span>(err) =&gt; {
+<a href=#299 id=299 data-nosnippet>299</a>                    <span class="macro">warn!</span>(<span class="string">"Failed to create client side decorations frame: {err}"</span>);
+<a href=#300 id=300 data-nosnippet>300</a>                    <span class="self">self</span>.csd_fails = <span class="bool-val">true</span>;
+<a href=#301 id=301 data-nosnippet>301</a>                },
+<a href=#302 id=302 data-nosnippet>302</a>            }
+<a href=#303 id=303 data-nosnippet>303</a>        } <span class="kw">else if </span>configure.decoration_mode == DecorationMode::Server {
+<a href=#304 id=304 data-nosnippet>304</a>            <span class="comment">// Drop the frame for server side decorations to save resources.
+<a href=#305 id=305 data-nosnippet>305</a>            </span><span class="self">self</span>.frame = <span class="prelude-val">None</span>;
+<a href=#306 id=306 data-nosnippet>306</a>        }
+<a href=#307 id=307 data-nosnippet>307</a>
+<a href=#308 id=308 data-nosnippet>308</a>        <span class="kw">let </span>stateless = <span class="self">Self</span>::is_stateless(<span class="kw-2">&amp;</span>configure);
+<a href=#309 id=309 data-nosnippet>309</a>
+<a href=#310 id=310 data-nosnippet>310</a>        <span class="kw">let </span>(<span class="kw-2">mut </span>new_size, constrain) = <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#311 id=311 data-nosnippet>311</a>            <span class="comment">// Configure the window states.
+<a href=#312 id=312 data-nosnippet>312</a>            </span>frame.update_state(configure.state);
+<a href=#313 id=313 data-nosnippet>313</a>
+<a href=#314 id=314 data-nosnippet>314</a>            <span class="kw">match </span>configure.new_size {
+<a href=#315 id=315 data-nosnippet>315</a>                (<span class="prelude-val">Some</span>(width), <span class="prelude-val">Some</span>(height)) =&gt; {
+<a href=#316 id=316 data-nosnippet>316</a>                    <span class="kw">let </span>(width, height) = frame.subtract_borders(width, height);
+<a href=#317 id=317 data-nosnippet>317</a>                    <span class="kw">let </span>width = width.map(|w| w.get()).unwrap_or(<span class="number">1</span>);
+<a href=#318 id=318 data-nosnippet>318</a>                    <span class="kw">let </span>height = height.map(|h| h.get()).unwrap_or(<span class="number">1</span>);
+<a href=#319 id=319 data-nosnippet>319</a>                    ((width, height).into(), <span class="bool-val">false</span>)
+<a href=#320 id=320 data-nosnippet>320</a>                },
+<a href=#321 id=321 data-nosnippet>321</a>                (..) <span class="kw">if </span>stateless =&gt; (<span class="self">self</span>.stateless_size, <span class="bool-val">true</span>),
+<a href=#322 id=322 data-nosnippet>322</a>                <span class="kw">_ </span>=&gt; (<span class="self">self</span>.size, <span class="bool-val">true</span>),
+<a href=#323 id=323 data-nosnippet>323</a>            }
+<a href=#324 id=324 data-nosnippet>324</a>        } <span class="kw">else </span>{
+<a href=#325 id=325 data-nosnippet>325</a>            <span class="kw">match </span>configure.new_size {
+<a href=#326 id=326 data-nosnippet>326</a>                (<span class="prelude-val">Some</span>(width), <span class="prelude-val">Some</span>(height)) =&gt; ((width.get(), height.get()).into(), <span class="bool-val">false</span>),
+<a href=#327 id=327 data-nosnippet>327</a>                <span class="kw">_ if </span>stateless =&gt; (<span class="self">self</span>.stateless_size, <span class="bool-val">true</span>),
+<a href=#328 id=328 data-nosnippet>328</a>                <span class="kw">_ </span>=&gt; (<span class="self">self</span>.size, <span class="bool-val">true</span>),
+<a href=#329 id=329 data-nosnippet>329</a>            }
+<a href=#330 id=330 data-nosnippet>330</a>        };
+<a href=#331 id=331 data-nosnippet>331</a>
+<a href=#332 id=332 data-nosnippet>332</a>        <span class="comment">// Apply configure bounds only when compositor let the user decide what size to pick.
+<a href=#333 id=333 data-nosnippet>333</a>        </span><span class="kw">if </span>constrain {
+<a href=#334 id=334 data-nosnippet>334</a>            <span class="kw">let </span>bounds = <span class="self">self</span>.inner_size_bounds(<span class="kw-2">&amp;</span>configure);
+<a href=#335 id=335 data-nosnippet>335</a>            new_size.width =
+<a href=#336 id=336 data-nosnippet>336</a>                bounds.<span class="number">0</span>.map(|bound_w| new_size.width.min(bound_w.get())).unwrap_or(new_size.width);
+<a href=#337 id=337 data-nosnippet>337</a>            new_size.height = bounds
+<a href=#338 id=338 data-nosnippet>338</a>                .<span class="number">1
+<a href=#339 id=339 data-nosnippet>339</a>                </span>.map(|bound_h| new_size.height.min(bound_h.get()))
+<a href=#340 id=340 data-nosnippet>340</a>                .unwrap_or(new_size.height);
+<a href=#341 id=341 data-nosnippet>341</a>        }
+<a href=#342 id=342 data-nosnippet>342</a>
+<a href=#343 id=343 data-nosnippet>343</a>        <span class="kw">let </span>new_state = configure.state;
+<a href=#344 id=344 data-nosnippet>344</a>        <span class="kw">let </span>old_state = <span class="self">self</span>.last_configure.as_ref().map(|configure| configure.state);
+<a href=#345 id=345 data-nosnippet>345</a>
+<a href=#346 id=346 data-nosnippet>346</a>        <span class="kw">let </span>state_change_requires_resize = old_state
+<a href=#347 id=347 data-nosnippet>347</a>            .map(|old_state| {
+<a href=#348 id=348 data-nosnippet>348</a>                !old_state
+<a href=#349 id=349 data-nosnippet>349</a>                    .symmetric_difference(new_state)
+<a href=#350 id=350 data-nosnippet>350</a>                    .difference(XdgWindowState::ACTIVATED | XdgWindowState::SUSPENDED)
+<a href=#351 id=351 data-nosnippet>351</a>                    .is_empty()
+<a href=#352 id=352 data-nosnippet>352</a>            })
+<a href=#353 id=353 data-nosnippet>353</a>            <span class="comment">// NOTE: `None` is present for the initial configure, thus we must always resize.
+<a href=#354 id=354 data-nosnippet>354</a>            </span>.unwrap_or(<span class="bool-val">true</span>);
+<a href=#355 id=355 data-nosnippet>355</a>
+<a href=#356 id=356 data-nosnippet>356</a>        <span class="comment">// NOTE: Set the configure before doing a resize, since we query it during it.
+<a href=#357 id=357 data-nosnippet>357</a>        </span><span class="self">self</span>.last_configure = <span class="prelude-val">Some</span>(configure);
+<a href=#358 id=358 data-nosnippet>358</a>
+<a href=#359 id=359 data-nosnippet>359</a>        <span class="kw">if </span>state_change_requires_resize || new_size != <span class="self">self</span>.inner_size() {
+<a href=#360 id=360 data-nosnippet>360</a>            <span class="self">self</span>.resize(new_size);
+<a href=#361 id=361 data-nosnippet>361</a>            <span class="bool-val">true
+<a href=#362 id=362 data-nosnippet>362</a>        </span>} <span class="kw">else </span>{
+<a href=#363 id=363 data-nosnippet>363</a>            <span class="bool-val">false
+<a href=#364 id=364 data-nosnippet>364</a>        </span>}
+<a href=#365 id=365 data-nosnippet>365</a>    }
+<a href=#366 id=366 data-nosnippet>366</a>
+<a href=#367 id=367 data-nosnippet>367</a>    <span class="doccomment">/// Compute the bounds for the inner size of the surface.
+<a href=#368 id=368 data-nosnippet>368</a>    </span><span class="kw">fn </span>inner_size_bounds(
+<a href=#369 id=369 data-nosnippet>369</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#370 id=370 data-nosnippet>370</a>        configure: <span class="kw-2">&amp;</span>WindowConfigure,
+<a href=#371 id=371 data-nosnippet>371</a>    ) -&gt; (<span class="prelude-ty">Option</span>&lt;NonZeroU32&gt;, <span class="prelude-ty">Option</span>&lt;NonZeroU32&gt;) {
+<a href=#372 id=372 data-nosnippet>372</a>        <span class="kw">let </span>configure_bounds = <span class="kw">match </span>configure.suggested_bounds {
+<a href=#373 id=373 data-nosnippet>373</a>            <span class="prelude-val">Some</span>((width, height)) =&gt; (NonZeroU32::new(width), NonZeroU32::new(height)),
+<a href=#374 id=374 data-nosnippet>374</a>            <span class="prelude-val">None </span>=&gt; (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>),
+<a href=#375 id=375 data-nosnippet>375</a>        };
+<a href=#376 id=376 data-nosnippet>376</a>
+<a href=#377 id=377 data-nosnippet>377</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_ref() {
+<a href=#378 id=378 data-nosnippet>378</a>            <span class="kw">let </span>(width, height) = frame.subtract_borders(
+<a href=#379 id=379 data-nosnippet>379</a>                configure_bounds.<span class="number">0</span>.unwrap_or(NonZeroU32::new(<span class="number">1</span>).unwrap()),
+<a href=#380 id=380 data-nosnippet>380</a>                configure_bounds.<span class="number">1</span>.unwrap_or(NonZeroU32::new(<span class="number">1</span>).unwrap()),
+<a href=#381 id=381 data-nosnippet>381</a>            );
+<a href=#382 id=382 data-nosnippet>382</a>            (configure_bounds.<span class="number">0</span>.and(width), configure_bounds.<span class="number">1</span>.and(height))
+<a href=#383 id=383 data-nosnippet>383</a>        } <span class="kw">else </span>{
+<a href=#384 id=384 data-nosnippet>384</a>            configure_bounds
+<a href=#385 id=385 data-nosnippet>385</a>        }
+<a href=#386 id=386 data-nosnippet>386</a>    }
+<a href=#387 id=387 data-nosnippet>387</a>
+<a href=#388 id=388 data-nosnippet>388</a>    <span class="attr">#[inline]
+<a href=#389 id=389 data-nosnippet>389</a>    </span><span class="kw">fn </span>is_stateless(configure: <span class="kw-2">&amp;</span>WindowConfigure) -&gt; bool {
+<a href=#390 id=390 data-nosnippet>390</a>        !(configure.is_maximized() || configure.is_fullscreen() || configure.is_tiled())
+<a href=#391 id=391 data-nosnippet>391</a>    }
+<a href=#392 id=392 data-nosnippet>392</a>
+<a href=#393 id=393 data-nosnippet>393</a>    <span class="doccomment">/// Start interacting drag resize.
+<a href=#394 id=394 data-nosnippet>394</a>    </span><span class="kw">pub fn </span>drag_resize_window(<span class="kw-2">&amp;</span><span class="self">self</span>, direction: ResizeDirection) -&gt; <span class="prelude-ty">Result</span>&lt;(), ExternalError&gt; {
+<a href=#395 id=395 data-nosnippet>395</a>        <span class="kw">let </span>xdg_toplevel = <span class="self">self</span>.window.xdg_toplevel();
+<a href=#396 id=396 data-nosnippet>396</a>
+<a href=#397 id=397 data-nosnippet>397</a>        <span class="comment">// TODO(kchibisov) handle touch serials.
+<a href=#398 id=398 data-nosnippet>398</a>        </span><span class="self">self</span>.apply_on_pointer(|<span class="kw">_</span>, data| {
+<a href=#399 id=399 data-nosnippet>399</a>            <span class="kw">let </span>serial = data.latest_button_serial();
+<a href=#400 id=400 data-nosnippet>400</a>            <span class="kw">let </span>seat = data.seat();
+<a href=#401 id=401 data-nosnippet>401</a>            xdg_toplevel.resize(seat, serial, direction.into());
+<a href=#402 id=402 data-nosnippet>402</a>        });
+<a href=#403 id=403 data-nosnippet>403</a>
+<a href=#404 id=404 data-nosnippet>404</a>        <span class="prelude-val">Ok</span>(())
+<a href=#405 id=405 data-nosnippet>405</a>    }
+<a href=#406 id=406 data-nosnippet>406</a>
+<a href=#407 id=407 data-nosnippet>407</a>    <span class="doccomment">/// Start the window drag.
+<a href=#408 id=408 data-nosnippet>408</a>    </span><span class="kw">pub fn </span>drag_window(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;(), ExternalError&gt; {
+<a href=#409 id=409 data-nosnippet>409</a>        <span class="kw">let </span>xdg_toplevel = <span class="self">self</span>.window.xdg_toplevel();
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="comment">// TODO(kchibisov) handle touch serials.
+<a href=#411 id=411 data-nosnippet>411</a>        </span><span class="self">self</span>.apply_on_pointer(|<span class="kw">_</span>, data| {
+<a href=#412 id=412 data-nosnippet>412</a>            <span class="kw">let </span>serial = data.latest_button_serial();
+<a href=#413 id=413 data-nosnippet>413</a>            <span class="kw">let </span>seat = data.seat();
+<a href=#414 id=414 data-nosnippet>414</a>            xdg_toplevel._move(seat, serial);
+<a href=#415 id=415 data-nosnippet>415</a>        });
+<a href=#416 id=416 data-nosnippet>416</a>
+<a href=#417 id=417 data-nosnippet>417</a>        <span class="prelude-val">Ok</span>(())
+<a href=#418 id=418 data-nosnippet>418</a>    }
+<a href=#419 id=419 data-nosnippet>419</a>
+<a href=#420 id=420 data-nosnippet>420</a>    <span class="doccomment">/// Tells whether the window should be closed.
+<a href=#421 id=421 data-nosnippet>421</a>    </span><span class="attr">#[allow(clippy::too_many_arguments)]
+<a href=#422 id=422 data-nosnippet>422</a>    </span><span class="kw">pub fn </span>frame_click(
+<a href=#423 id=423 data-nosnippet>423</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#424 id=424 data-nosnippet>424</a>        click: FrameClick,
+<a href=#425 id=425 data-nosnippet>425</a>        pressed: bool,
+<a href=#426 id=426 data-nosnippet>426</a>        seat: <span class="kw-2">&amp;</span>WlSeat,
+<a href=#427 id=427 data-nosnippet>427</a>        serial: u32,
+<a href=#428 id=428 data-nosnippet>428</a>        timestamp: Duration,
+<a href=#429 id=429 data-nosnippet>429</a>        window_id: WindowId,
+<a href=#430 id=430 data-nosnippet>430</a>        updates: <span class="kw-2">&amp;mut </span>Vec&lt;WindowCompositorUpdate&gt;,
+<a href=#431 id=431 data-nosnippet>431</a>    ) -&gt; <span class="prelude-ty">Option</span>&lt;bool&gt; {
+<a href=#432 id=432 data-nosnippet>432</a>        <span class="kw">match </span><span class="self">self</span>.frame.as_mut()<span class="question-mark">?</span>.on_click(timestamp, click, pressed)<span class="question-mark">? </span>{
+<a href=#433 id=433 data-nosnippet>433</a>            FrameAction::Minimize =&gt; <span class="self">self</span>.window.set_minimized(),
+<a href=#434 id=434 data-nosnippet>434</a>            FrameAction::Maximize =&gt; <span class="self">self</span>.window.set_maximized(),
+<a href=#435 id=435 data-nosnippet>435</a>            FrameAction::UnMaximize =&gt; <span class="self">self</span>.window.unset_maximized(),
+<a href=#436 id=436 data-nosnippet>436</a>            FrameAction::Close =&gt; WinitState::queue_close(updates, window_id),
+<a href=#437 id=437 data-nosnippet>437</a>            FrameAction::Move =&gt; <span class="self">self</span>.has_pending_move = <span class="prelude-val">Some</span>(serial),
+<a href=#438 id=438 data-nosnippet>438</a>            FrameAction::Resize(edge) =&gt; {
+<a href=#439 id=439 data-nosnippet>439</a>                <span class="kw">let </span>edge = <span class="kw">match </span>edge {
+<a href=#440 id=440 data-nosnippet>440</a>                    ResizeEdge::None =&gt; XdgResizeEdge::None,
+<a href=#441 id=441 data-nosnippet>441</a>                    ResizeEdge::Top =&gt; XdgResizeEdge::Top,
+<a href=#442 id=442 data-nosnippet>442</a>                    ResizeEdge::Bottom =&gt; XdgResizeEdge::Bottom,
+<a href=#443 id=443 data-nosnippet>443</a>                    ResizeEdge::Left =&gt; XdgResizeEdge::Left,
+<a href=#444 id=444 data-nosnippet>444</a>                    ResizeEdge::TopLeft =&gt; XdgResizeEdge::TopLeft,
+<a href=#445 id=445 data-nosnippet>445</a>                    ResizeEdge::BottomLeft =&gt; XdgResizeEdge::BottomLeft,
+<a href=#446 id=446 data-nosnippet>446</a>                    ResizeEdge::Right =&gt; XdgResizeEdge::Right,
+<a href=#447 id=447 data-nosnippet>447</a>                    ResizeEdge::TopRight =&gt; XdgResizeEdge::TopRight,
+<a href=#448 id=448 data-nosnippet>448</a>                    ResizeEdge::BottomRight =&gt; XdgResizeEdge::BottomRight,
+<a href=#449 id=449 data-nosnippet>449</a>                    <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+<a href=#450 id=450 data-nosnippet>450</a>                };
+<a href=#451 id=451 data-nosnippet>451</a>                <span class="self">self</span>.window.resize(seat, serial, edge);
+<a href=#452 id=452 data-nosnippet>452</a>            },
+<a href=#453 id=453 data-nosnippet>453</a>            FrameAction::ShowMenu(x, y) =&gt; <span class="self">self</span>.window.show_window_menu(seat, serial, (x, y)),
+<a href=#454 id=454 data-nosnippet>454</a>            <span class="kw">_ </span>=&gt; (),
+<a href=#455 id=455 data-nosnippet>455</a>        };
+<a href=#456 id=456 data-nosnippet>456</a>
+<a href=#457 id=457 data-nosnippet>457</a>        <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)
+<a href=#458 id=458 data-nosnippet>458</a>    }
+<a href=#459 id=459 data-nosnippet>459</a>
+<a href=#460 id=460 data-nosnippet>460</a>    <span class="kw">pub fn </span>frame_point_left(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#461 id=461 data-nosnippet>461</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#462 id=462 data-nosnippet>462</a>            frame.click_point_left();
+<a href=#463 id=463 data-nosnippet>463</a>        }
+<a href=#464 id=464 data-nosnippet>464</a>    }
+<a href=#465 id=465 data-nosnippet>465</a>
+<a href=#466 id=466 data-nosnippet>466</a>    <span class="comment">// Move the point over decorations.
+<a href=#467 id=467 data-nosnippet>467</a>    </span><span class="kw">pub fn </span>frame_point_moved(
+<a href=#468 id=468 data-nosnippet>468</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#469 id=469 data-nosnippet>469</a>        seat: <span class="kw-2">&amp;</span>WlSeat,
+<a href=#470 id=470 data-nosnippet>470</a>        surface: <span class="kw-2">&amp;</span>WlSurface,
+<a href=#471 id=471 data-nosnippet>471</a>        timestamp: Duration,
+<a href=#472 id=472 data-nosnippet>472</a>        x: f64,
+<a href=#473 id=473 data-nosnippet>473</a>        y: f64,
+<a href=#474 id=474 data-nosnippet>474</a>    ) -&gt; <span class="prelude-ty">Option</span>&lt;CursorIcon&gt; {
+<a href=#475 id=475 data-nosnippet>475</a>        <span class="comment">// Take the serial if we had any, so it doesn't stick around.
+<a href=#476 id=476 data-nosnippet>476</a>        </span><span class="kw">let </span>serial = <span class="self">self</span>.has_pending_move.take();
+<a href=#477 id=477 data-nosnippet>477</a>
+<a href=#478 id=478 data-nosnippet>478</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#479 id=479 data-nosnippet>479</a>            <span class="kw">let </span>cursor = frame.click_point_moved(timestamp, <span class="kw-2">&amp;</span>surface.id(), x, y);
+<a href=#480 id=480 data-nosnippet>480</a>            <span class="comment">// If we have a cursor change, that means that cursor is over the decorations,
+<a href=#481 id=481 data-nosnippet>481</a>            // so try to apply move.
+<a href=#482 id=482 data-nosnippet>482</a>            </span><span class="kw">if let </span><span class="prelude-val">Some</span>(serial) = cursor.is_some().then_some(serial).flatten() {
+<a href=#483 id=483 data-nosnippet>483</a>                <span class="self">self</span>.window.move_(seat, serial);
+<a href=#484 id=484 data-nosnippet>484</a>                <span class="prelude-val">None
+<a href=#485 id=485 data-nosnippet>485</a>            </span>} <span class="kw">else </span>{
+<a href=#486 id=486 data-nosnippet>486</a>                cursor
+<a href=#487 id=487 data-nosnippet>487</a>            }
+<a href=#488 id=488 data-nosnippet>488</a>        } <span class="kw">else </span>{
+<a href=#489 id=489 data-nosnippet>489</a>            <span class="prelude-val">None
+<a href=#490 id=490 data-nosnippet>490</a>        </span>}
+<a href=#491 id=491 data-nosnippet>491</a>    }
+<a href=#492 id=492 data-nosnippet>492</a>
+<a href=#493 id=493 data-nosnippet>493</a>    <span class="doccomment">/// Get the stored resizable state.
+<a href=#494 id=494 data-nosnippet>494</a>    </span><span class="attr">#[inline]
+<a href=#495 id=495 data-nosnippet>495</a>    </span><span class="kw">pub fn </span>resizable(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#496 id=496 data-nosnippet>496</a>        <span class="self">self</span>.resizable
+<a href=#497 id=497 data-nosnippet>497</a>    }
+<a href=#498 id=498 data-nosnippet>498</a>
+<a href=#499 id=499 data-nosnippet>499</a>    <span class="doccomment">/// Set the resizable state on the window.
+<a href=#500 id=500 data-nosnippet>500</a>    ///
+<a href=#501 id=501 data-nosnippet>501</a>    /// Returns `true` when the state was applied.
+<a href=#502 id=502 data-nosnippet>502</a>    </span><span class="attr">#[inline]
+<a href=#503 id=503 data-nosnippet>503</a>    </span><span class="kw">pub fn </span>set_resizable(<span class="kw-2">&amp;mut </span><span class="self">self</span>, resizable: bool) -&gt; bool {
+<a href=#504 id=504 data-nosnippet>504</a>        <span class="kw">if </span><span class="self">self</span>.resizable == resizable {
+<a href=#505 id=505 data-nosnippet>505</a>            <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#506 id=506 data-nosnippet>506</a>        }
+<a href=#507 id=507 data-nosnippet>507</a>
+<a href=#508 id=508 data-nosnippet>508</a>        <span class="self">self</span>.resizable = resizable;
+<a href=#509 id=509 data-nosnippet>509</a>        <span class="kw">if </span>resizable {
+<a href=#510 id=510 data-nosnippet>510</a>            <span class="comment">// Restore min/max sizes of the window.
+<a href=#511 id=511 data-nosnippet>511</a>            </span><span class="self">self</span>.reload_min_max_hints();
+<a href=#512 id=512 data-nosnippet>512</a>        } <span class="kw">else </span>{
+<a href=#513 id=513 data-nosnippet>513</a>            <span class="self">self</span>.set_min_inner_size(<span class="prelude-val">Some</span>(<span class="self">self</span>.size));
+<a href=#514 id=514 data-nosnippet>514</a>            <span class="self">self</span>.set_max_inner_size(<span class="prelude-val">Some</span>(<span class="self">self</span>.size));
+<a href=#515 id=515 data-nosnippet>515</a>        }
+<a href=#516 id=516 data-nosnippet>516</a>
+<a href=#517 id=517 data-nosnippet>517</a>        <span class="comment">// Reload the state on the frame as well.
+<a href=#518 id=518 data-nosnippet>518</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#519 id=519 data-nosnippet>519</a>            frame.set_resizable(resizable);
+<a href=#520 id=520 data-nosnippet>520</a>        }
+<a href=#521 id=521 data-nosnippet>521</a>
+<a href=#522 id=522 data-nosnippet>522</a>        <span class="bool-val">true
+<a href=#523 id=523 data-nosnippet>523</a>    </span>}
+<a href=#524 id=524 data-nosnippet>524</a>
+<a href=#525 id=525 data-nosnippet>525</a>    <span class="doccomment">/// Whether the window is focused by any seat.
+<a href=#526 id=526 data-nosnippet>526</a>    </span><span class="attr">#[inline]
+<a href=#527 id=527 data-nosnippet>527</a>    </span><span class="kw">pub fn </span>has_focus(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#528 id=528 data-nosnippet>528</a>        !<span class="self">self</span>.seat_focus.is_empty()
+<a href=#529 id=529 data-nosnippet>529</a>    }
+<a href=#530 id=530 data-nosnippet>530</a>
+<a href=#531 id=531 data-nosnippet>531</a>    <span class="doccomment">/// Whether the IME is allowed.
+<a href=#532 id=532 data-nosnippet>532</a>    </span><span class="attr">#[inline]
+<a href=#533 id=533 data-nosnippet>533</a>    </span><span class="kw">pub fn </span>ime_allowed(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#534 id=534 data-nosnippet>534</a>        <span class="self">self</span>.ime_allowed
+<a href=#535 id=535 data-nosnippet>535</a>    }
+<a href=#536 id=536 data-nosnippet>536</a>
+<a href=#537 id=537 data-nosnippet>537</a>    <span class="doccomment">/// Get the size of the window.
+<a href=#538 id=538 data-nosnippet>538</a>    </span><span class="attr">#[inline]
+<a href=#539 id=539 data-nosnippet>539</a>    </span><span class="kw">pub fn </span>inner_size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; LogicalSize&lt;u32&gt; {
+<a href=#540 id=540 data-nosnippet>540</a>        <span class="self">self</span>.size
+<a href=#541 id=541 data-nosnippet>541</a>    }
+<a href=#542 id=542 data-nosnippet>542</a>
+<a href=#543 id=543 data-nosnippet>543</a>    <span class="doccomment">/// Whether the window received initial configure event from the compositor.
+<a href=#544 id=544 data-nosnippet>544</a>    </span><span class="attr">#[inline]
+<a href=#545 id=545 data-nosnippet>545</a>    </span><span class="kw">pub fn </span>is_configured(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#546 id=546 data-nosnippet>546</a>        <span class="self">self</span>.last_configure.is_some()
+<a href=#547 id=547 data-nosnippet>547</a>    }
+<a href=#548 id=548 data-nosnippet>548</a>
+<a href=#549 id=549 data-nosnippet>549</a>    <span class="attr">#[inline]
+<a href=#550 id=550 data-nosnippet>550</a>    </span><span class="kw">pub fn </span>is_decorated(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; bool {
+<a href=#551 id=551 data-nosnippet>551</a>        <span class="kw">let </span>csd = <span class="self">self
+<a href=#552 id=552 data-nosnippet>552</a>            </span>.last_configure
+<a href=#553 id=553 data-nosnippet>553</a>            .as_ref()
+<a href=#554 id=554 data-nosnippet>554</a>            .map(|configure| configure.decoration_mode == DecorationMode::Client)
+<a href=#555 id=555 data-nosnippet>555</a>            .unwrap_or(<span class="bool-val">false</span>);
+<a href=#556 id=556 data-nosnippet>556</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = csd.then_some(<span class="self">self</span>.frame.as_ref()).flatten() {
+<a href=#557 id=557 data-nosnippet>557</a>            !frame.is_hidden()
+<a href=#558 id=558 data-nosnippet>558</a>        } <span class="kw">else </span>{
+<a href=#559 id=559 data-nosnippet>559</a>            <span class="comment">// Server side decorations.
+<a href=#560 id=560 data-nosnippet>560</a>            </span><span class="bool-val">true
+<a href=#561 id=561 data-nosnippet>561</a>        </span>}
+<a href=#562 id=562 data-nosnippet>562</a>    }
+<a href=#563 id=563 data-nosnippet>563</a>
+<a href=#564 id=564 data-nosnippet>564</a>    <span class="doccomment">/// Get the outer size of the window.
+<a href=#565 id=565 data-nosnippet>565</a>    </span><span class="attr">#[inline]
+<a href=#566 id=566 data-nosnippet>566</a>    </span><span class="kw">pub fn </span>outer_size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; LogicalSize&lt;u32&gt; {
+<a href=#567 id=567 data-nosnippet>567</a>        <span class="self">self</span>.frame
+<a href=#568 id=568 data-nosnippet>568</a>            .as_ref()
+<a href=#569 id=569 data-nosnippet>569</a>            .map(|frame| frame.add_borders(<span class="self">self</span>.size.width, <span class="self">self</span>.size.height).into())
+<a href=#570 id=570 data-nosnippet>570</a>            .unwrap_or(<span class="self">self</span>.size)
+<a href=#571 id=571 data-nosnippet>571</a>    }
+<a href=#572 id=572 data-nosnippet>572</a>
+<a href=#573 id=573 data-nosnippet>573</a>    <span class="doccomment">/// Register pointer on the top-level.
+<a href=#574 id=574 data-nosnippet>574</a>    </span><span class="kw">pub fn </span>pointer_entered(<span class="kw-2">&amp;mut </span><span class="self">self</span>, added: Weak&lt;ThemedPointer&lt;WinitPointerData&gt;&gt;) {
+<a href=#575 id=575 data-nosnippet>575</a>        <span class="self">self</span>.pointers.push(added);
+<a href=#576 id=576 data-nosnippet>576</a>        <span class="self">self</span>.reload_cursor_style();
+<a href=#577 id=577 data-nosnippet>577</a>
+<a href=#578 id=578 data-nosnippet>578</a>        <span class="kw">let </span>mode = <span class="self">self</span>.cursor_grab_mode.user_grab_mode;
+<a href=#579 id=579 data-nosnippet>579</a>        <span class="kw">let _ </span>= <span class="self">self</span>.set_cursor_grab_inner(mode);
+<a href=#580 id=580 data-nosnippet>580</a>    }
+<a href=#581 id=581 data-nosnippet>581</a>
+<a href=#582 id=582 data-nosnippet>582</a>    <span class="doccomment">/// Pointer has left the top-level.
+<a href=#583 id=583 data-nosnippet>583</a>    </span><span class="kw">pub fn </span>pointer_left(<span class="kw-2">&amp;mut </span><span class="self">self</span>, removed: Weak&lt;ThemedPointer&lt;WinitPointerData&gt;&gt;) {
+<a href=#584 id=584 data-nosnippet>584</a>        <span class="kw">let </span><span class="kw-2">mut </span>new_pointers = Vec::new();
+<a href=#585 id=585 data-nosnippet>585</a>        <span class="kw">for </span>pointer <span class="kw">in </span><span class="self">self</span>.pointers.drain(..) {
+<a href=#586 id=586 data-nosnippet>586</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(pointer) = pointer.upgrade() {
+<a href=#587 id=587 data-nosnippet>587</a>                <span class="kw">if </span>pointer.pointer() != removed.upgrade().unwrap().pointer() {
+<a href=#588 id=588 data-nosnippet>588</a>                    new_pointers.push(Arc::downgrade(<span class="kw-2">&amp;</span>pointer));
+<a href=#589 id=589 data-nosnippet>589</a>                }
+<a href=#590 id=590 data-nosnippet>590</a>            }
+<a href=#591 id=591 data-nosnippet>591</a>        }
+<a href=#592 id=592 data-nosnippet>592</a>
+<a href=#593 id=593 data-nosnippet>593</a>        <span class="self">self</span>.pointers = new_pointers;
+<a href=#594 id=594 data-nosnippet>594</a>    }
+<a href=#595 id=595 data-nosnippet>595</a>
+<a href=#596 id=596 data-nosnippet>596</a>    <span class="doccomment">/// Refresh the decorations frame if it's present returning whether the client should redraw.
+<a href=#597 id=597 data-nosnippet>597</a>    </span><span class="kw">pub fn </span>refresh_frame(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; bool {
+<a href=#598 id=598 data-nosnippet>598</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#599 id=599 data-nosnippet>599</a>            <span class="kw">if </span>!frame.is_hidden() &amp;&amp; frame.is_dirty() {
+<a href=#600 id=600 data-nosnippet>600</a>                <span class="kw">return </span>frame.draw();
+<a href=#601 id=601 data-nosnippet>601</a>            }
+<a href=#602 id=602 data-nosnippet>602</a>        }
+<a href=#603 id=603 data-nosnippet>603</a>
+<a href=#604 id=604 data-nosnippet>604</a>        <span class="bool-val">false
+<a href=#605 id=605 data-nosnippet>605</a>    </span>}
+<a href=#606 id=606 data-nosnippet>606</a>
+<a href=#607 id=607 data-nosnippet>607</a>    <span class="doccomment">/// Reload the cursor style on the given window.
+<a href=#608 id=608 data-nosnippet>608</a>    </span><span class="kw">pub fn </span>reload_cursor_style(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#609 id=609 data-nosnippet>609</a>        <span class="kw">if </span><span class="self">self</span>.cursor_visible {
+<a href=#610 id=610 data-nosnippet>610</a>            <span class="kw">match </span><span class="kw-2">&amp;</span><span class="self">self</span>.selected_cursor {
+<a href=#611 id=611 data-nosnippet>611</a>                SelectedCursor::Named(icon) =&gt; <span class="self">self</span>.set_cursor(<span class="kw-2">*</span>icon),
+<a href=#612 id=612 data-nosnippet>612</a>                SelectedCursor::Custom(cursor) =&gt; <span class="self">self</span>.apply_custom_cursor(cursor),
+<a href=#613 id=613 data-nosnippet>613</a>            }
+<a href=#614 id=614 data-nosnippet>614</a>        } <span class="kw">else </span>{
+<a href=#615 id=615 data-nosnippet>615</a>            <span class="self">self</span>.set_cursor_visible(<span class="self">self</span>.cursor_visible);
+<a href=#616 id=616 data-nosnippet>616</a>        }
+<a href=#617 id=617 data-nosnippet>617</a>    }
+<a href=#618 id=618 data-nosnippet>618</a>
+<a href=#619 id=619 data-nosnippet>619</a>    <span class="doccomment">/// Reissue the transparency hint to the compositor.
+<a href=#620 id=620 data-nosnippet>620</a>    </span><span class="kw">pub fn </span>reload_transparency_hint(<span class="kw-2">&amp;</span><span class="self">self</span>) {
+<a href=#621 id=621 data-nosnippet>621</a>        <span class="kw">let </span>surface = <span class="self">self</span>.window.wl_surface();
+<a href=#622 id=622 data-nosnippet>622</a>
+<a href=#623 id=623 data-nosnippet>623</a>        <span class="kw">if </span><span class="self">self</span>.transparent {
+<a href=#624 id=624 data-nosnippet>624</a>            surface.set_opaque_region(<span class="prelude-val">None</span>);
+<a href=#625 id=625 data-nosnippet>625</a>        } <span class="kw">else if let </span><span class="prelude-val">Ok</span>(region) = Region::new(<span class="kw-2">&amp;*</span><span class="self">self</span>.compositor) {
+<a href=#626 id=626 data-nosnippet>626</a>            region.add(<span class="number">0</span>, <span class="number">0</span>, i32::MAX, i32::MAX);
+<a href=#627 id=627 data-nosnippet>627</a>            surface.set_opaque_region(<span class="prelude-val">Some</span>(region.wl_region()));
+<a href=#628 id=628 data-nosnippet>628</a>        } <span class="kw">else </span>{
+<a href=#629 id=629 data-nosnippet>629</a>            <span class="macro">warn!</span>(<span class="string">"Failed to mark window opaque."</span>);
+<a href=#630 id=630 data-nosnippet>630</a>        }
+<a href=#631 id=631 data-nosnippet>631</a>    }
+<a href=#632 id=632 data-nosnippet>632</a>
+<a href=#633 id=633 data-nosnippet>633</a>    <span class="doccomment">/// Try to resize the window when the user can do so.
+<a href=#634 id=634 data-nosnippet>634</a>    </span><span class="kw">pub fn </span>request_inner_size(<span class="kw-2">&amp;mut </span><span class="self">self</span>, inner_size: Size) -&gt; PhysicalSize&lt;u32&gt; {
+<a href=#635 id=635 data-nosnippet>635</a>        <span class="kw">if </span><span class="self">self</span>.last_configure.as_ref().map(<span class="self">Self</span>::is_stateless).unwrap_or(<span class="bool-val">true</span>) {
+<a href=#636 id=636 data-nosnippet>636</a>            <span class="self">self</span>.resize(inner_size.to_logical(<span class="self">self</span>.scale_factor()))
+<a href=#637 id=637 data-nosnippet>637</a>        }
+<a href=#638 id=638 data-nosnippet>638</a>
+<a href=#639 id=639 data-nosnippet>639</a>        logical_to_physical_rounded(<span class="self">self</span>.inner_size(), <span class="self">self</span>.scale_factor())
+<a href=#640 id=640 data-nosnippet>640</a>    }
+<a href=#641 id=641 data-nosnippet>641</a>
+<a href=#642 id=642 data-nosnippet>642</a>    <span class="doccomment">/// Resize the window to the new inner size.
+<a href=#643 id=643 data-nosnippet>643</a>    </span><span class="kw">fn </span>resize(<span class="kw-2">&amp;mut </span><span class="self">self</span>, inner_size: LogicalSize&lt;u32&gt;) {
+<a href=#644 id=644 data-nosnippet>644</a>        <span class="self">self</span>.size = inner_size;
+<a href=#645 id=645 data-nosnippet>645</a>
+<a href=#646 id=646 data-nosnippet>646</a>        <span class="comment">// Update the stateless size.
+<a href=#647 id=647 data-nosnippet>647</a>        </span><span class="kw">if </span><span class="prelude-val">Some</span>(<span class="bool-val">true</span>) == <span class="self">self</span>.last_configure.as_ref().map(<span class="self">Self</span>::is_stateless) {
+<a href=#648 id=648 data-nosnippet>648</a>            <span class="self">self</span>.stateless_size = inner_size;
+<a href=#649 id=649 data-nosnippet>649</a>        }
+<a href=#650 id=650 data-nosnippet>650</a>
+<a href=#651 id=651 data-nosnippet>651</a>        <span class="comment">// Update the inner frame.
+<a href=#652 id=652 data-nosnippet>652</a>        </span><span class="kw">let </span>((x, y), outer_size) = <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#653 id=653 data-nosnippet>653</a>            <span class="comment">// Resize only visible frame.
+<a href=#654 id=654 data-nosnippet>654</a>            </span><span class="kw">if </span>!frame.is_hidden() {
+<a href=#655 id=655 data-nosnippet>655</a>                frame.resize(
+<a href=#656 id=656 data-nosnippet>656</a>                    NonZeroU32::new(<span class="self">self</span>.size.width).unwrap(),
+<a href=#657 id=657 data-nosnippet>657</a>                    NonZeroU32::new(<span class="self">self</span>.size.height).unwrap(),
+<a href=#658 id=658 data-nosnippet>658</a>                );
+<a href=#659 id=659 data-nosnippet>659</a>            }
+<a href=#660 id=660 data-nosnippet>660</a>
+<a href=#661 id=661 data-nosnippet>661</a>            (frame.location(), frame.add_borders(<span class="self">self</span>.size.width, <span class="self">self</span>.size.height).into())
+<a href=#662 id=662 data-nosnippet>662</a>        } <span class="kw">else </span>{
+<a href=#663 id=663 data-nosnippet>663</a>            ((<span class="number">0</span>, <span class="number">0</span>), <span class="self">self</span>.size)
+<a href=#664 id=664 data-nosnippet>664</a>        };
+<a href=#665 id=665 data-nosnippet>665</a>
+<a href=#666 id=666 data-nosnippet>666</a>        <span class="comment">// Reload the hint.
+<a href=#667 id=667 data-nosnippet>667</a>        </span><span class="self">self</span>.reload_transparency_hint();
+<a href=#668 id=668 data-nosnippet>668</a>
+<a href=#669 id=669 data-nosnippet>669</a>        <span class="comment">// Set the window geometry.
+<a href=#670 id=670 data-nosnippet>670</a>        </span><span class="self">self</span>.window.xdg_surface().set_window_geometry(
+<a href=#671 id=671 data-nosnippet>671</a>            x,
+<a href=#672 id=672 data-nosnippet>672</a>            y,
+<a href=#673 id=673 data-nosnippet>673</a>            outer_size.width <span class="kw">as </span>i32,
+<a href=#674 id=674 data-nosnippet>674</a>            outer_size.height <span class="kw">as </span>i32,
+<a href=#675 id=675 data-nosnippet>675</a>        );
+<a href=#676 id=676 data-nosnippet>676</a>
+<a href=#677 id=677 data-nosnippet>677</a>        <span class="comment">// Update the target viewport, this is used if and only if fractional scaling is in use.
+<a href=#678 id=678 data-nosnippet>678</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(viewport) = <span class="self">self</span>.viewport.as_ref() {
+<a href=#679 id=679 data-nosnippet>679</a>            <span class="comment">// Set inner size without the borders.
+<a href=#680 id=680 data-nosnippet>680</a>            </span>viewport.set_destination(<span class="self">self</span>.size.width <span class="kw">as _</span>, <span class="self">self</span>.size.height <span class="kw">as _</span>);
+<a href=#681 id=681 data-nosnippet>681</a>        }
+<a href=#682 id=682 data-nosnippet>682</a>    }
+<a href=#683 id=683 data-nosnippet>683</a>
+<a href=#684 id=684 data-nosnippet>684</a>    <span class="doccomment">/// Get the scale factor of the window.
+<a href=#685 id=685 data-nosnippet>685</a>    </span><span class="attr">#[inline]
+<a href=#686 id=686 data-nosnippet>686</a>    </span><span class="kw">pub fn </span>scale_factor(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; f64 {
+<a href=#687 id=687 data-nosnippet>687</a>        <span class="self">self</span>.scale_factor
+<a href=#688 id=688 data-nosnippet>688</a>    }
+<a href=#689 id=689 data-nosnippet>689</a>
+<a href=#690 id=690 data-nosnippet>690</a>    <span class="doccomment">/// Set the cursor icon.
+<a href=#691 id=691 data-nosnippet>691</a>    </span><span class="kw">pub fn </span>set_cursor(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cursor_icon: CursorIcon) {
+<a href=#692 id=692 data-nosnippet>692</a>        <span class="self">self</span>.selected_cursor = SelectedCursor::Named(cursor_icon);
+<a href=#693 id=693 data-nosnippet>693</a>
+<a href=#694 id=694 data-nosnippet>694</a>        <span class="kw">if </span>!<span class="self">self</span>.cursor_visible {
+<a href=#695 id=695 data-nosnippet>695</a>            <span class="kw">return</span>;
+<a href=#696 id=696 data-nosnippet>696</a>        }
+<a href=#697 id=697 data-nosnippet>697</a>
+<a href=#698 id=698 data-nosnippet>698</a>        <span class="self">self</span>.apply_on_pointer(|pointer, <span class="kw">_</span>| {
+<a href=#699 id=699 data-nosnippet>699</a>            <span class="kw">if </span>pointer.set_cursor(<span class="kw-2">&amp;</span><span class="self">self</span>.connection, cursor_icon).is_err() {
+<a href=#700 id=700 data-nosnippet>700</a>                <span class="macro">warn!</span>(<span class="string">"Failed to set cursor to {:?}"</span>, cursor_icon);
+<a href=#701 id=701 data-nosnippet>701</a>            }
+<a href=#702 id=702 data-nosnippet>702</a>        })
+<a href=#703 id=703 data-nosnippet>703</a>    }
+<a href=#704 id=704 data-nosnippet>704</a>
+<a href=#705 id=705 data-nosnippet>705</a>    <span class="doccomment">/// Set the custom cursor icon.
+<a href=#706 id=706 data-nosnippet>706</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>set_custom_cursor(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cursor: RootCustomCursor) {
+<a href=#707 id=707 data-nosnippet>707</a>        <span class="kw">let </span>cursor = <span class="kw">match </span>cursor {
+<a href=#708 id=708 data-nosnippet>708</a>            RootCustomCursor { inner: PlatformCustomCursor::Wayland(cursor) } =&gt; cursor.<span class="number">0</span>,
+<a href=#709 id=709 data-nosnippet>709</a>            <span class="attr">#[cfg(x11_platform)]
+<a href=#710 id=710 data-nosnippet>710</a>            </span>RootCustomCursor { inner: PlatformCustomCursor::X(<span class="kw">_</span>) } =&gt; {
+<a href=#711 id=711 data-nosnippet>711</a>                <span class="macro">tracing::error!</span>(<span class="string">"passed a X11 cursor to Wayland backend"</span>);
+<a href=#712 id=712 data-nosnippet>712</a>                <span class="kw">return</span>;
+<a href=#713 id=713 data-nosnippet>713</a>            },
+<a href=#714 id=714 data-nosnippet>714</a>        };
+<a href=#715 id=715 data-nosnippet>715</a>
+<a href=#716 id=716 data-nosnippet>716</a>        <span class="kw">let </span>cursor = {
+<a href=#717 id=717 data-nosnippet>717</a>            <span class="kw">let </span><span class="kw-2">mut </span>pool = <span class="self">self</span>.custom_cursor_pool.lock().unwrap();
+<a href=#718 id=718 data-nosnippet>718</a>            CustomCursor::new(<span class="kw-2">&amp;mut </span>pool, <span class="kw-2">&amp;</span>cursor)
+<a href=#719 id=719 data-nosnippet>719</a>        };
+<a href=#720 id=720 data-nosnippet>720</a>
+<a href=#721 id=721 data-nosnippet>721</a>        <span class="kw">if </span><span class="self">self</span>.cursor_visible {
+<a href=#722 id=722 data-nosnippet>722</a>            <span class="self">self</span>.apply_custom_cursor(<span class="kw-2">&amp;</span>cursor);
+<a href=#723 id=723 data-nosnippet>723</a>        }
+<a href=#724 id=724 data-nosnippet>724</a>
+<a href=#725 id=725 data-nosnippet>725</a>        <span class="self">self</span>.selected_cursor = SelectedCursor::Custom(cursor);
+<a href=#726 id=726 data-nosnippet>726</a>    }
+<a href=#727 id=727 data-nosnippet>727</a>
+<a href=#728 id=728 data-nosnippet>728</a>    <span class="kw">fn </span>apply_custom_cursor(<span class="kw-2">&amp;</span><span class="self">self</span>, cursor: <span class="kw-2">&amp;</span>CustomCursor) {
+<a href=#729 id=729 data-nosnippet>729</a>        <span class="self">self</span>.apply_on_pointer(|pointer, data| {
+<a href=#730 id=730 data-nosnippet>730</a>            <span class="kw">let </span>surface = pointer.surface();
+<a href=#731 id=731 data-nosnippet>731</a>
+<a href=#732 id=732 data-nosnippet>732</a>            <span class="kw">let </span>scale = <span class="kw">if let </span><span class="prelude-val">Some</span>(viewport) = data.viewport() {
+<a href=#733 id=733 data-nosnippet>733</a>                <span class="kw">let </span>scale = <span class="self">self</span>.scale_factor();
+<a href=#734 id=734 data-nosnippet>734</a>                <span class="kw">let </span>size = PhysicalSize::new(cursor.w, cursor.h).to_logical(scale);
+<a href=#735 id=735 data-nosnippet>735</a>                viewport.set_destination(size.width, size.height);
+<a href=#736 id=736 data-nosnippet>736</a>                scale
+<a href=#737 id=737 data-nosnippet>737</a>            } <span class="kw">else </span>{
+<a href=#738 id=738 data-nosnippet>738</a>                <span class="kw">let </span>scale = surface.data::&lt;SurfaceData&gt;().unwrap().surface_data().scale_factor();
+<a href=#739 id=739 data-nosnippet>739</a>                surface.set_buffer_scale(scale);
+<a href=#740 id=740 data-nosnippet>740</a>                scale <span class="kw">as </span>f64
+<a href=#741 id=741 data-nosnippet>741</a>            };
+<a href=#742 id=742 data-nosnippet>742</a>
+<a href=#743 id=743 data-nosnippet>743</a>            surface.attach(<span class="prelude-val">Some</span>(cursor.buffer.wl_buffer()), <span class="number">0</span>, <span class="number">0</span>);
+<a href=#744 id=744 data-nosnippet>744</a>            <span class="kw">if </span>surface.version() &gt;= <span class="number">4 </span>{
+<a href=#745 id=745 data-nosnippet>745</a>                surface.damage_buffer(<span class="number">0</span>, <span class="number">0</span>, cursor.w, cursor.h);
+<a href=#746 id=746 data-nosnippet>746</a>            } <span class="kw">else </span>{
+<a href=#747 id=747 data-nosnippet>747</a>                <span class="kw">let </span>size = PhysicalSize::new(cursor.w, cursor.h).to_logical(scale);
+<a href=#748 id=748 data-nosnippet>748</a>                surface.damage(<span class="number">0</span>, <span class="number">0</span>, size.width, size.height);
+<a href=#749 id=749 data-nosnippet>749</a>            }
+<a href=#750 id=750 data-nosnippet>750</a>            surface.commit();
+<a href=#751 id=751 data-nosnippet>751</a>
+<a href=#752 id=752 data-nosnippet>752</a>            <span class="kw">let </span>serial = pointer
+<a href=#753 id=753 data-nosnippet>753</a>                .pointer()
+<a href=#754 id=754 data-nosnippet>754</a>                .data::&lt;WinitPointerData&gt;()
+<a href=#755 id=755 data-nosnippet>755</a>                .and_then(|data| data.pointer_data().latest_enter_serial())
+<a href=#756 id=756 data-nosnippet>756</a>                .unwrap();
+<a href=#757 id=757 data-nosnippet>757</a>
+<a href=#758 id=758 data-nosnippet>758</a>            <span class="kw">let </span>hotspot =
+<a href=#759 id=759 data-nosnippet>759</a>                PhysicalPosition::new(cursor.hotspot_x, cursor.hotspot_y).to_logical(scale);
+<a href=#760 id=760 data-nosnippet>760</a>            pointer.pointer().set_cursor(serial, <span class="prelude-val">Some</span>(surface), hotspot.x, hotspot.y);
+<a href=#761 id=761 data-nosnippet>761</a>        });
+<a href=#762 id=762 data-nosnippet>762</a>    }
+<a href=#763 id=763 data-nosnippet>763</a>
+<a href=#764 id=764 data-nosnippet>764</a>    <span class="doccomment">/// Set maximum inner window size.
+<a href=#765 id=765 data-nosnippet>765</a>    </span><span class="kw">pub fn </span>set_min_inner_size(<span class="kw-2">&amp;mut </span><span class="self">self</span>, size: <span class="prelude-ty">Option</span>&lt;LogicalSize&lt;u32&gt;&gt;) {
+<a href=#766 id=766 data-nosnippet>766</a>        <span class="comment">// Ensure that the window has the right minimum size.
+<a href=#767 id=767 data-nosnippet>767</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>size = size.unwrap_or(MIN_WINDOW_SIZE);
+<a href=#768 id=768 data-nosnippet>768</a>        size.width = size.width.max(MIN_WINDOW_SIZE.width);
+<a href=#769 id=769 data-nosnippet>769</a>        size.height = size.height.max(MIN_WINDOW_SIZE.height);
+<a href=#770 id=770 data-nosnippet>770</a>
+<a href=#771 id=771 data-nosnippet>771</a>        <span class="comment">// Add the borders.
+<a href=#772 id=772 data-nosnippet>772</a>        </span><span class="kw">let </span>size = <span class="self">self
+<a href=#773 id=773 data-nosnippet>773</a>            </span>.frame
+<a href=#774 id=774 data-nosnippet>774</a>            .as_ref()
+<a href=#775 id=775 data-nosnippet>775</a>            .map(|frame| frame.add_borders(size.width, size.height).into())
+<a href=#776 id=776 data-nosnippet>776</a>            .unwrap_or(size);
+<a href=#777 id=777 data-nosnippet>777</a>
+<a href=#778 id=778 data-nosnippet>778</a>        <span class="self">self</span>.min_inner_size = size;
+<a href=#779 id=779 data-nosnippet>779</a>        <span class="self">self</span>.window.set_min_size(<span class="prelude-val">Some</span>(size.into()));
+<a href=#780 id=780 data-nosnippet>780</a>    }
+<a href=#781 id=781 data-nosnippet>781</a>
+<a href=#782 id=782 data-nosnippet>782</a>    <span class="doccomment">/// Set maximum inner window size.
+<a href=#783 id=783 data-nosnippet>783</a>    </span><span class="kw">pub fn </span>set_max_inner_size(<span class="kw-2">&amp;mut </span><span class="self">self</span>, size: <span class="prelude-ty">Option</span>&lt;LogicalSize&lt;u32&gt;&gt;) {
+<a href=#784 id=784 data-nosnippet>784</a>        <span class="kw">let </span>size = size.map(|size| {
+<a href=#785 id=785 data-nosnippet>785</a>            <span class="self">self</span>.frame
+<a href=#786 id=786 data-nosnippet>786</a>                .as_ref()
+<a href=#787 id=787 data-nosnippet>787</a>                .map(|frame| frame.add_borders(size.width, size.height).into())
+<a href=#788 id=788 data-nosnippet>788</a>                .unwrap_or(size)
+<a href=#789 id=789 data-nosnippet>789</a>        });
+<a href=#790 id=790 data-nosnippet>790</a>
+<a href=#791 id=791 data-nosnippet>791</a>        <span class="self">self</span>.max_inner_size = size;
+<a href=#792 id=792 data-nosnippet>792</a>        <span class="self">self</span>.window.set_max_size(size.map(Into::into));
+<a href=#793 id=793 data-nosnippet>793</a>    }
+<a href=#794 id=794 data-nosnippet>794</a>
+<a href=#795 id=795 data-nosnippet>795</a>    <span class="doccomment">/// Set the CSD theme.
+<a href=#796 id=796 data-nosnippet>796</a>    </span><span class="kw">pub fn </span>set_theme(<span class="kw-2">&amp;mut </span><span class="self">self</span>, theme: <span class="prelude-ty">Option</span>&lt;Theme&gt;) {
+<a href=#797 id=797 data-nosnippet>797</a>        <span class="self">self</span>.theme = theme;
+<a href=#798 id=798 data-nosnippet>798</a>        <span class="attr">#[cfg(feature = <span class="string">"sctk-adwaita"</span>)]
+<a href=#799 id=799 data-nosnippet>799</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#800 id=800 data-nosnippet>800</a>            frame.set_config(into_sctk_adwaita_config(theme))
+<a href=#801 id=801 data-nosnippet>801</a>        }
+<a href=#802 id=802 data-nosnippet>802</a>    }
+<a href=#803 id=803 data-nosnippet>803</a>
+<a href=#804 id=804 data-nosnippet>804</a>    <span class="doccomment">/// The current theme for CSD decorations.
+<a href=#805 id=805 data-nosnippet>805</a>    </span><span class="attr">#[inline]
+<a href=#806 id=806 data-nosnippet>806</a>    </span><span class="kw">pub fn </span>theme(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Theme&gt; {
+<a href=#807 id=807 data-nosnippet>807</a>        <span class="self">self</span>.theme
+<a href=#808 id=808 data-nosnippet>808</a>    }
+<a href=#809 id=809 data-nosnippet>809</a>
+<a href=#810 id=810 data-nosnippet>810</a>    <span class="doccomment">/// Set the cursor grabbing state on the top-level.
+<a href=#811 id=811 data-nosnippet>811</a>    </span><span class="kw">pub fn </span>set_cursor_grab(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mode: CursorGrabMode) -&gt; <span class="prelude-ty">Result</span>&lt;(), ExternalError&gt; {
+<a href=#812 id=812 data-nosnippet>812</a>        <span class="kw">if </span><span class="self">self</span>.cursor_grab_mode.user_grab_mode == mode {
+<a href=#813 id=813 data-nosnippet>813</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+<a href=#814 id=814 data-nosnippet>814</a>        }
+<a href=#815 id=815 data-nosnippet>815</a>
+<a href=#816 id=816 data-nosnippet>816</a>        <span class="self">self</span>.set_cursor_grab_inner(mode)<span class="question-mark">?</span>;
+<a href=#817 id=817 data-nosnippet>817</a>        <span class="comment">// Update user grab on success.
+<a href=#818 id=818 data-nosnippet>818</a>        </span><span class="self">self</span>.cursor_grab_mode.user_grab_mode = mode;
+<a href=#819 id=819 data-nosnippet>819</a>        <span class="prelude-val">Ok</span>(())
+<a href=#820 id=820 data-nosnippet>820</a>    }
+<a href=#821 id=821 data-nosnippet>821</a>
+<a href=#822 id=822 data-nosnippet>822</a>    <span class="doccomment">/// Reload the hints for minimum and maximum sizes.
+<a href=#823 id=823 data-nosnippet>823</a>    </span><span class="kw">pub fn </span>reload_min_max_hints(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#824 id=824 data-nosnippet>824</a>        <span class="self">self</span>.set_min_inner_size(<span class="prelude-val">Some</span>(<span class="self">self</span>.min_inner_size));
+<a href=#825 id=825 data-nosnippet>825</a>        <span class="self">self</span>.set_max_inner_size(<span class="self">self</span>.max_inner_size);
+<a href=#826 id=826 data-nosnippet>826</a>    }
+<a href=#827 id=827 data-nosnippet>827</a>
+<a href=#828 id=828 data-nosnippet>828</a>    <span class="doccomment">/// Set the grabbing state on the surface.
+<a href=#829 id=829 data-nosnippet>829</a>    </span><span class="kw">fn </span>set_cursor_grab_inner(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mode: CursorGrabMode) -&gt; <span class="prelude-ty">Result</span>&lt;(), ExternalError&gt; {
+<a href=#830 id=830 data-nosnippet>830</a>        <span class="kw">let </span>pointer_constraints = <span class="kw">match </span><span class="self">self</span>.pointer_constraints.as_ref() {
+<a href=#831 id=831 data-nosnippet>831</a>            <span class="prelude-val">Some</span>(pointer_constraints) =&gt; pointer_constraints,
+<a href=#832 id=832 data-nosnippet>832</a>            <span class="prelude-val">None </span><span class="kw">if </span>mode == CursorGrabMode::None =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
+<a href=#833 id=833 data-nosnippet>833</a>            <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(ExternalError::NotSupported(NotSupportedError::new())),
+<a href=#834 id=834 data-nosnippet>834</a>        };
+<a href=#835 id=835 data-nosnippet>835</a>
+<a href=#836 id=836 data-nosnippet>836</a>        <span class="kw">let </span><span class="kw-2">mut </span>unset_old = <span class="bool-val">false</span>;
+<a href=#837 id=837 data-nosnippet>837</a>        <span class="kw">match </span><span class="self">self</span>.cursor_grab_mode.current_grab_mode {
+<a href=#838 id=838 data-nosnippet>838</a>            CursorGrabMode::None =&gt; unset_old = <span class="bool-val">true</span>,
+<a href=#839 id=839 data-nosnippet>839</a>            CursorGrabMode::Confined =&gt; <span class="self">self</span>.apply_on_pointer(|<span class="kw">_</span>, data| {
+<a href=#840 id=840 data-nosnippet>840</a>                data.unconfine_pointer();
+<a href=#841 id=841 data-nosnippet>841</a>                unset_old = <span class="bool-val">true</span>;
+<a href=#842 id=842 data-nosnippet>842</a>            }),
+<a href=#843 id=843 data-nosnippet>843</a>            CursorGrabMode::Locked =&gt; {
+<a href=#844 id=844 data-nosnippet>844</a>                <span class="self">self</span>.apply_on_pointer(|<span class="kw">_</span>, data| {
+<a href=#845 id=845 data-nosnippet>845</a>                    data.unlock_pointer();
+<a href=#846 id=846 data-nosnippet>846</a>                    unset_old = <span class="bool-val">true</span>;
+<a href=#847 id=847 data-nosnippet>847</a>                });
+<a href=#848 id=848 data-nosnippet>848</a>            },
+<a href=#849 id=849 data-nosnippet>849</a>        }
+<a href=#850 id=850 data-nosnippet>850</a>
+<a href=#851 id=851 data-nosnippet>851</a>        <span class="comment">// In case we haven't unset the old mode, it means that we don't have a cursor above
+<a href=#852 id=852 data-nosnippet>852</a>        // the window, thus just wait for it to re-appear.
+<a href=#853 id=853 data-nosnippet>853</a>        </span><span class="kw">if </span>!unset_old {
+<a href=#854 id=854 data-nosnippet>854</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+<a href=#855 id=855 data-nosnippet>855</a>        }
+<a href=#856 id=856 data-nosnippet>856</a>
+<a href=#857 id=857 data-nosnippet>857</a>        <span class="kw">let </span><span class="kw-2">mut </span>set_mode = <span class="bool-val">false</span>;
+<a href=#858 id=858 data-nosnippet>858</a>        <span class="kw">let </span>surface = <span class="self">self</span>.window.wl_surface();
+<a href=#859 id=859 data-nosnippet>859</a>        <span class="kw">match </span>mode {
+<a href=#860 id=860 data-nosnippet>860</a>            CursorGrabMode::Locked =&gt; <span class="self">self</span>.apply_on_pointer(|pointer, data| {
+<a href=#861 id=861 data-nosnippet>861</a>                <span class="kw">let </span>pointer = pointer.pointer();
+<a href=#862 id=862 data-nosnippet>862</a>                data.lock_pointer(pointer_constraints, surface, pointer, <span class="kw-2">&amp;</span><span class="self">self</span>.queue_handle);
+<a href=#863 id=863 data-nosnippet>863</a>                set_mode = <span class="bool-val">true</span>;
+<a href=#864 id=864 data-nosnippet>864</a>            }),
+<a href=#865 id=865 data-nosnippet>865</a>            CursorGrabMode::Confined =&gt; <span class="self">self</span>.apply_on_pointer(|pointer, data| {
+<a href=#866 id=866 data-nosnippet>866</a>                <span class="kw">let </span>pointer = pointer.pointer();
+<a href=#867 id=867 data-nosnippet>867</a>                data.confine_pointer(pointer_constraints, surface, pointer, <span class="kw-2">&amp;</span><span class="self">self</span>.queue_handle);
+<a href=#868 id=868 data-nosnippet>868</a>                set_mode = <span class="bool-val">true</span>;
+<a href=#869 id=869 data-nosnippet>869</a>            }),
+<a href=#870 id=870 data-nosnippet>870</a>            CursorGrabMode::None =&gt; {
+<a href=#871 id=871 data-nosnippet>871</a>                <span class="comment">// Current lock/confine was already removed.
+<a href=#872 id=872 data-nosnippet>872</a>                </span>set_mode = <span class="bool-val">true</span>;
+<a href=#873 id=873 data-nosnippet>873</a>            },
+<a href=#874 id=874 data-nosnippet>874</a>        }
+<a href=#875 id=875 data-nosnippet>875</a>
+<a href=#876 id=876 data-nosnippet>876</a>        <span class="comment">// Replace the current grab mode after we've ensure that it got updated.
+<a href=#877 id=877 data-nosnippet>877</a>        </span><span class="kw">if </span>set_mode {
+<a href=#878 id=878 data-nosnippet>878</a>            <span class="self">self</span>.cursor_grab_mode.current_grab_mode = mode;
+<a href=#879 id=879 data-nosnippet>879</a>        }
+<a href=#880 id=880 data-nosnippet>880</a>
+<a href=#881 id=881 data-nosnippet>881</a>        <span class="prelude-val">Ok</span>(())
+<a href=#882 id=882 data-nosnippet>882</a>    }
+<a href=#883 id=883 data-nosnippet>883</a>
+<a href=#884 id=884 data-nosnippet>884</a>    <span class="kw">pub fn </span>show_window_menu(<span class="kw-2">&amp;</span><span class="self">self</span>, position: LogicalPosition&lt;u32&gt;) {
+<a href=#885 id=885 data-nosnippet>885</a>        <span class="comment">// TODO(kchibisov) handle touch serials.
+<a href=#886 id=886 data-nosnippet>886</a>        </span><span class="self">self</span>.apply_on_pointer(|<span class="kw">_</span>, data| {
+<a href=#887 id=887 data-nosnippet>887</a>            <span class="kw">let </span>serial = data.latest_button_serial();
+<a href=#888 id=888 data-nosnippet>888</a>            <span class="kw">let </span>seat = data.seat();
+<a href=#889 id=889 data-nosnippet>889</a>            <span class="self">self</span>.window.show_window_menu(seat, serial, position.into());
+<a href=#890 id=890 data-nosnippet>890</a>        });
+<a href=#891 id=891 data-nosnippet>891</a>    }
+<a href=#892 id=892 data-nosnippet>892</a>
+<a href=#893 id=893 data-nosnippet>893</a>    <span class="doccomment">/// Set the position of the cursor.
+<a href=#894 id=894 data-nosnippet>894</a>    </span><span class="kw">pub fn </span>set_cursor_position(<span class="kw-2">&amp;</span><span class="self">self</span>, position: LogicalPosition&lt;f64&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), ExternalError&gt; {
+<a href=#895 id=895 data-nosnippet>895</a>        <span class="kw">if </span><span class="self">self</span>.pointer_constraints.is_none() {
+<a href=#896 id=896 data-nosnippet>896</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(ExternalError::NotSupported(NotSupportedError::new()));
+<a href=#897 id=897 data-nosnippet>897</a>        }
+<a href=#898 id=898 data-nosnippet>898</a>
+<a href=#899 id=899 data-nosnippet>899</a>        <span class="comment">// Position can be set only for locked cursor.
+<a href=#900 id=900 data-nosnippet>900</a>        </span><span class="kw">if </span><span class="self">self</span>.cursor_grab_mode.current_grab_mode != CursorGrabMode::Locked {
+<a href=#901 id=901 data-nosnippet>901</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(ExternalError::Os(<span class="macro">os_error!</span>(<span class="kw">crate</span>::platform_impl::OsError::Misc(
+<a href=#902 id=902 data-nosnippet>902</a>                <span class="string">"cursor position can be set only for locked cursor."
+<a href=#903 id=903 data-nosnippet>903</a>            </span>))));
+<a href=#904 id=904 data-nosnippet>904</a>        }
+<a href=#905 id=905 data-nosnippet>905</a>
+<a href=#906 id=906 data-nosnippet>906</a>        <span class="self">self</span>.apply_on_pointer(|<span class="kw">_</span>, data| {
+<a href=#907 id=907 data-nosnippet>907</a>            data.set_locked_cursor_position(position.x, position.y);
+<a href=#908 id=908 data-nosnippet>908</a>        });
+<a href=#909 id=909 data-nosnippet>909</a>
+<a href=#910 id=910 data-nosnippet>910</a>        <span class="prelude-val">Ok</span>(())
+<a href=#911 id=911 data-nosnippet>911</a>    }
+<a href=#912 id=912 data-nosnippet>912</a>
+<a href=#913 id=913 data-nosnippet>913</a>    <span class="doccomment">/// Set the visibility state of the cursor.
+<a href=#914 id=914 data-nosnippet>914</a>    </span><span class="kw">pub fn </span>set_cursor_visible(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cursor_visible: bool) {
+<a href=#915 id=915 data-nosnippet>915</a>        <span class="self">self</span>.cursor_visible = cursor_visible;
+<a href=#916 id=916 data-nosnippet>916</a>
+<a href=#917 id=917 data-nosnippet>917</a>        <span class="kw">if </span><span class="self">self</span>.cursor_visible {
+<a href=#918 id=918 data-nosnippet>918</a>            <span class="kw">match </span><span class="kw-2">&amp;</span><span class="self">self</span>.selected_cursor {
+<a href=#919 id=919 data-nosnippet>919</a>                SelectedCursor::Named(icon) =&gt; <span class="self">self</span>.set_cursor(<span class="kw-2">*</span>icon),
+<a href=#920 id=920 data-nosnippet>920</a>                SelectedCursor::Custom(cursor) =&gt; <span class="self">self</span>.apply_custom_cursor(cursor),
+<a href=#921 id=921 data-nosnippet>921</a>            }
+<a href=#922 id=922 data-nosnippet>922</a>        } <span class="kw">else </span>{
+<a href=#923 id=923 data-nosnippet>923</a>            <span class="kw">for </span>pointer <span class="kw">in </span><span class="self">self</span>.pointers.iter().filter_map(|pointer| pointer.upgrade()) {
+<a href=#924 id=924 data-nosnippet>924</a>                <span class="kw">let </span>latest_enter_serial = pointer.pointer().winit_data().latest_enter_serial();
+<a href=#925 id=925 data-nosnippet>925</a>
+<a href=#926 id=926 data-nosnippet>926</a>                pointer.pointer().set_cursor(latest_enter_serial, <span class="prelude-val">None</span>, <span class="number">0</span>, <span class="number">0</span>);
+<a href=#927 id=927 data-nosnippet>927</a>            }
+<a href=#928 id=928 data-nosnippet>928</a>        }
+<a href=#929 id=929 data-nosnippet>929</a>    }
+<a href=#930 id=930 data-nosnippet>930</a>
+<a href=#931 id=931 data-nosnippet>931</a>    <span class="doccomment">/// Whether show or hide client side decorations.
+<a href=#932 id=932 data-nosnippet>932</a>    </span><span class="attr">#[inline]
+<a href=#933 id=933 data-nosnippet>933</a>    </span><span class="kw">pub fn </span>set_decorate(<span class="kw-2">&amp;mut </span><span class="self">self</span>, decorate: bool) {
+<a href=#934 id=934 data-nosnippet>934</a>        <span class="kw">if </span>decorate == <span class="self">self</span>.decorate {
+<a href=#935 id=935 data-nosnippet>935</a>            <span class="kw">return</span>;
+<a href=#936 id=936 data-nosnippet>936</a>        }
+<a href=#937 id=937 data-nosnippet>937</a>
+<a href=#938 id=938 data-nosnippet>938</a>        <span class="self">self</span>.decorate = decorate;
+<a href=#939 id=939 data-nosnippet>939</a>
+<a href=#940 id=940 data-nosnippet>940</a>        <span class="kw">match </span><span class="self">self</span>.last_configure.as_ref().map(|configure| configure.decoration_mode) {
+<a href=#941 id=941 data-nosnippet>941</a>            <span class="prelude-val">Some</span>(DecorationMode::Server) <span class="kw">if </span>!<span class="self">self</span>.decorate =&gt; {
+<a href=#942 id=942 data-nosnippet>942</a>                <span class="comment">// To disable decorations we should request client and hide the frame.
+<a href=#943 id=943 data-nosnippet>943</a>                </span><span class="self">self</span>.window.request_decoration_mode(<span class="prelude-val">Some</span>(DecorationMode::Client))
+<a href=#944 id=944 data-nosnippet>944</a>            },
+<a href=#945 id=945 data-nosnippet>945</a>            <span class="kw">_ if </span><span class="self">self</span>.decorate =&gt; <span class="self">self</span>.window.request_decoration_mode(<span class="prelude-val">Some</span>(DecorationMode::Server)),
+<a href=#946 id=946 data-nosnippet>946</a>            <span class="kw">_ </span>=&gt; (),
+<a href=#947 id=947 data-nosnippet>947</a>        }
+<a href=#948 id=948 data-nosnippet>948</a>
+<a href=#949 id=949 data-nosnippet>949</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#950 id=950 data-nosnippet>950</a>            frame.set_hidden(!decorate);
+<a href=#951 id=951 data-nosnippet>951</a>            <span class="comment">// Force the resize.
+<a href=#952 id=952 data-nosnippet>952</a>            </span><span class="self">self</span>.resize(<span class="self">self</span>.size);
+<a href=#953 id=953 data-nosnippet>953</a>        }
+<a href=#954 id=954 data-nosnippet>954</a>    }
+<a href=#955 id=955 data-nosnippet>955</a>
+<a href=#956 id=956 data-nosnippet>956</a>    <span class="doccomment">/// Add seat focus for the window.
+<a href=#957 id=957 data-nosnippet>957</a>    </span><span class="attr">#[inline]
+<a href=#958 id=958 data-nosnippet>958</a>    </span><span class="kw">pub fn </span>add_seat_focus(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: ObjectId) {
+<a href=#959 id=959 data-nosnippet>959</a>        <span class="self">self</span>.seat_focus.insert(seat);
+<a href=#960 id=960 data-nosnippet>960</a>    }
+<a href=#961 id=961 data-nosnippet>961</a>
+<a href=#962 id=962 data-nosnippet>962</a>    <span class="doccomment">/// Remove seat focus from the window.
+<a href=#963 id=963 data-nosnippet>963</a>    </span><span class="attr">#[inline]
+<a href=#964 id=964 data-nosnippet>964</a>    </span><span class="kw">pub fn </span>remove_seat_focus(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>ObjectId) {
+<a href=#965 id=965 data-nosnippet>965</a>        <span class="self">self</span>.seat_focus.remove(seat);
+<a href=#966 id=966 data-nosnippet>966</a>    }
+<a href=#967 id=967 data-nosnippet>967</a>
+<a href=#968 id=968 data-nosnippet>968</a>    <span class="doccomment">/// Returns `true` if the requested state was applied.
+<a href=#969 id=969 data-nosnippet>969</a>    </span><span class="kw">pub fn </span>set_ime_allowed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, allowed: bool) -&gt; bool {
+<a href=#970 id=970 data-nosnippet>970</a>        <span class="self">self</span>.ime_allowed = allowed;
+<a href=#971 id=971 data-nosnippet>971</a>
+<a href=#972 id=972 data-nosnippet>972</a>        <span class="kw">let </span><span class="kw-2">mut </span>applied = <span class="bool-val">false</span>;
+<a href=#973 id=973 data-nosnippet>973</a>        <span class="kw">for </span>text_input <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.text_inputs {
+<a href=#974 id=974 data-nosnippet>974</a>            applied = <span class="bool-val">true</span>;
+<a href=#975 id=975 data-nosnippet>975</a>            <span class="kw">if </span>allowed {
+<a href=#976 id=976 data-nosnippet>976</a>                text_input.enable();
+<a href=#977 id=977 data-nosnippet>977</a>                text_input.set_content_type_by_purpose(<span class="self">self</span>.ime_purpose);
+<a href=#978 id=978 data-nosnippet>978</a>            } <span class="kw">else </span>{
+<a href=#979 id=979 data-nosnippet>979</a>                text_input.disable();
+<a href=#980 id=980 data-nosnippet>980</a>            }
+<a href=#981 id=981 data-nosnippet>981</a>            text_input.commit();
+<a href=#982 id=982 data-nosnippet>982</a>        }
+<a href=#983 id=983 data-nosnippet>983</a>
+<a href=#984 id=984 data-nosnippet>984</a>        applied
+<a href=#985 id=985 data-nosnippet>985</a>    }
+<a href=#986 id=986 data-nosnippet>986</a>
+<a href=#987 id=987 data-nosnippet>987</a>    <span class="doccomment">/// Set the IME position.
+<a href=#988 id=988 data-nosnippet>988</a>    </span><span class="kw">pub fn </span>set_ime_cursor_area(<span class="kw-2">&amp;</span><span class="self">self</span>, position: LogicalPosition&lt;u32&gt;, size: LogicalSize&lt;u32&gt;) {
+<a href=#989 id=989 data-nosnippet>989</a>        <span class="comment">// FIXME: This won't fly unless user will have a way to request IME window per seat, since
+<a href=#990 id=990 data-nosnippet>990</a>        // the ime windows will be overlapping, but winit doesn't expose API to specify for
+<a href=#991 id=991 data-nosnippet>991</a>        // which seat we're setting IME position.
+<a href=#992 id=992 data-nosnippet>992</a>        </span><span class="kw">let </span>(x, y) = (position.x <span class="kw">as </span>i32, position.y <span class="kw">as </span>i32);
+<a href=#993 id=993 data-nosnippet>993</a>        <span class="kw">let </span>(width, height) = (size.width <span class="kw">as </span>i32, size.height <span class="kw">as </span>i32);
+<a href=#994 id=994 data-nosnippet>994</a>        <span class="kw">for </span>text_input <span class="kw">in </span><span class="self">self</span>.text_inputs.iter() {
+<a href=#995 id=995 data-nosnippet>995</a>            text_input.set_cursor_rectangle(x, y, width, height);
+<a href=#996 id=996 data-nosnippet>996</a>            text_input.commit();
+<a href=#997 id=997 data-nosnippet>997</a>        }
+<a href=#998 id=998 data-nosnippet>998</a>    }
+<a href=#999 id=999 data-nosnippet>999</a>
+<a href=#1000 id=1000 data-nosnippet>1000</a>    <span class="doccomment">/// Set the IME purpose.
+<a href=#1001 id=1001 data-nosnippet>1001</a>    </span><span class="kw">pub fn </span>set_ime_purpose(<span class="kw-2">&amp;mut </span><span class="self">self</span>, purpose: ImePurpose) {
+<a href=#1002 id=1002 data-nosnippet>1002</a>        <span class="self">self</span>.ime_purpose = purpose;
+<a href=#1003 id=1003 data-nosnippet>1003</a>
+<a href=#1004 id=1004 data-nosnippet>1004</a>        <span class="kw">for </span>text_input <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.text_inputs {
+<a href=#1005 id=1005 data-nosnippet>1005</a>            text_input.set_content_type_by_purpose(purpose);
+<a href=#1006 id=1006 data-nosnippet>1006</a>            text_input.commit();
+<a href=#1007 id=1007 data-nosnippet>1007</a>        }
+<a href=#1008 id=1008 data-nosnippet>1008</a>    }
+<a href=#1009 id=1009 data-nosnippet>1009</a>
+<a href=#1010 id=1010 data-nosnippet>1010</a>    <span class="doccomment">/// Get the IME purpose.
+<a href=#1011 id=1011 data-nosnippet>1011</a>    </span><span class="kw">pub fn </span>ime_purpose(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ImePurpose {
+<a href=#1012 id=1012 data-nosnippet>1012</a>        <span class="self">self</span>.ime_purpose
+<a href=#1013 id=1013 data-nosnippet>1013</a>    }
+<a href=#1014 id=1014 data-nosnippet>1014</a>
+<a href=#1015 id=1015 data-nosnippet>1015</a>    <span class="doccomment">/// Set the scale factor for the given window.
+<a href=#1016 id=1016 data-nosnippet>1016</a>    </span><span class="attr">#[inline]
+<a href=#1017 id=1017 data-nosnippet>1017</a>    </span><span class="kw">pub fn </span>set_scale_factor(<span class="kw-2">&amp;mut </span><span class="self">self</span>, scale_factor: f64) {
+<a href=#1018 id=1018 data-nosnippet>1018</a>        <span class="self">self</span>.scale_factor = scale_factor;
+<a href=#1019 id=1019 data-nosnippet>1019</a>
+<a href=#1020 id=1020 data-nosnippet>1020</a>        <span class="comment">// NOTE: When fractional scaling is not used update the buffer scale.
+<a href=#1021 id=1021 data-nosnippet>1021</a>        </span><span class="kw">if </span><span class="self">self</span>.fractional_scale.is_none() {
+<a href=#1022 id=1022 data-nosnippet>1022</a>            <span class="kw">let _ </span>= <span class="self">self</span>.window.set_buffer_scale(<span class="self">self</span>.scale_factor <span class="kw">as _</span>);
+<a href=#1023 id=1023 data-nosnippet>1023</a>        }
+<a href=#1024 id=1024 data-nosnippet>1024</a>
+<a href=#1025 id=1025 data-nosnippet>1025</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#1026 id=1026 data-nosnippet>1026</a>            frame.set_scaling_factor(scale_factor);
+<a href=#1027 id=1027 data-nosnippet>1027</a>        }
+<a href=#1028 id=1028 data-nosnippet>1028</a>    }
+<a href=#1029 id=1029 data-nosnippet>1029</a>
+<a href=#1030 id=1030 data-nosnippet>1030</a>    <span class="doccomment">/// Make window background blurred
+<a href=#1031 id=1031 data-nosnippet>1031</a>    </span><span class="attr">#[inline]
+<a href=#1032 id=1032 data-nosnippet>1032</a>    </span><span class="kw">pub fn </span>set_blur(<span class="kw-2">&amp;mut </span><span class="self">self</span>, blurred: bool) {
+<a href=#1033 id=1033 data-nosnippet>1033</a>        <span class="kw">if </span>blurred &amp;&amp; <span class="self">self</span>.blur.is_none() {
+<a href=#1034 id=1034 data-nosnippet>1034</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(blur_manager) = <span class="self">self</span>.blur_manager.as_ref() {
+<a href=#1035 id=1035 data-nosnippet>1035</a>                <span class="kw">let </span>blur = blur_manager.blur(<span class="self">self</span>.window.wl_surface(), <span class="kw-2">&amp;</span><span class="self">self</span>.queue_handle);
+<a href=#1036 id=1036 data-nosnippet>1036</a>                blur.commit();
+<a href=#1037 id=1037 data-nosnippet>1037</a>                <span class="self">self</span>.blur = <span class="prelude-val">Some</span>(blur);
+<a href=#1038 id=1038 data-nosnippet>1038</a>            } <span class="kw">else </span>{
+<a href=#1039 id=1039 data-nosnippet>1039</a>                <span class="macro">info!</span>(<span class="string">"Blur manager unavailable, unable to change blur"</span>)
+<a href=#1040 id=1040 data-nosnippet>1040</a>            }
+<a href=#1041 id=1041 data-nosnippet>1041</a>        } <span class="kw">else if </span>!blurred &amp;&amp; <span class="self">self</span>.blur.is_some() {
+<a href=#1042 id=1042 data-nosnippet>1042</a>            <span class="self">self</span>.blur_manager.as_ref().unwrap().unset(<span class="self">self</span>.window.wl_surface());
+<a href=#1043 id=1043 data-nosnippet>1043</a>            <span class="self">self</span>.blur.take().unwrap().release();
+<a href=#1044 id=1044 data-nosnippet>1044</a>        }
+<a href=#1045 id=1045 data-nosnippet>1045</a>    }
+<a href=#1046 id=1046 data-nosnippet>1046</a>
+<a href=#1047 id=1047 data-nosnippet>1047</a>    <span class="doccomment">/// Set the window title to a new value.
+<a href=#1048 id=1048 data-nosnippet>1048</a>    ///
+<a href=#1049 id=1049 data-nosnippet>1049</a>    /// This will automatically truncate the title to something meaningful.
+<a href=#1050 id=1050 data-nosnippet>1050</a>    </span><span class="kw">pub fn </span>set_title(<span class="kw-2">&amp;mut </span><span class="self">self</span>, <span class="kw-2">mut </span>title: String) {
+<a href=#1051 id=1051 data-nosnippet>1051</a>        <span class="comment">// Truncate the title to at most 1024 bytes, so that it does not blow up the protocol
+<a href=#1052 id=1052 data-nosnippet>1052</a>        // messages
+<a href=#1053 id=1053 data-nosnippet>1053</a>        </span><span class="kw">if </span>title.len() &gt; <span class="number">1024 </span>{
+<a href=#1054 id=1054 data-nosnippet>1054</a>            <span class="kw">let </span><span class="kw-2">mut </span>new_len = <span class="number">1024</span>;
+<a href=#1055 id=1055 data-nosnippet>1055</a>            <span class="kw">while </span>!title.is_char_boundary(new_len) {
+<a href=#1056 id=1056 data-nosnippet>1056</a>                new_len -= <span class="number">1</span>;
+<a href=#1057 id=1057 data-nosnippet>1057</a>            }
+<a href=#1058 id=1058 data-nosnippet>1058</a>            title.truncate(new_len);
+<a href=#1059 id=1059 data-nosnippet>1059</a>        }
+<a href=#1060 id=1060 data-nosnippet>1060</a>
+<a href=#1061 id=1061 data-nosnippet>1061</a>        <span class="comment">// Update the CSD title.
+<a href=#1062 id=1062 data-nosnippet>1062</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(frame) = <span class="self">self</span>.frame.as_mut() {
+<a href=#1063 id=1063 data-nosnippet>1063</a>            frame.set_title(<span class="kw-2">&amp;</span>title);
+<a href=#1064 id=1064 data-nosnippet>1064</a>        }
+<a href=#1065 id=1065 data-nosnippet>1065</a>
+<a href=#1066 id=1066 data-nosnippet>1066</a>        <span class="self">self</span>.window.set_title(<span class="kw-2">&amp;</span>title);
+<a href=#1067 id=1067 data-nosnippet>1067</a>        <span class="self">self</span>.title = title;
+<a href=#1068 id=1068 data-nosnippet>1068</a>    }
+<a href=#1069 id=1069 data-nosnippet>1069</a>
+<a href=#1070 id=1070 data-nosnippet>1070</a>    <span class="doccomment">/// Mark the window as transparent.
+<a href=#1071 id=1071 data-nosnippet>1071</a>    </span><span class="attr">#[inline]
+<a href=#1072 id=1072 data-nosnippet>1072</a>    </span><span class="kw">pub fn </span>set_transparent(<span class="kw-2">&amp;mut </span><span class="self">self</span>, transparent: bool) {
+<a href=#1073 id=1073 data-nosnippet>1073</a>        <span class="self">self</span>.transparent = transparent;
+<a href=#1074 id=1074 data-nosnippet>1074</a>        <span class="self">self</span>.reload_transparency_hint();
+<a href=#1075 id=1075 data-nosnippet>1075</a>    }
+<a href=#1076 id=1076 data-nosnippet>1076</a>
+<a href=#1077 id=1077 data-nosnippet>1077</a>    <span class="doccomment">/// Register text input on the top-level.
+<a href=#1078 id=1078 data-nosnippet>1078</a>    </span><span class="attr">#[inline]
+<a href=#1079 id=1079 data-nosnippet>1079</a>    </span><span class="kw">pub fn </span>text_input_entered(<span class="kw-2">&amp;mut </span><span class="self">self</span>, text_input: <span class="kw-2">&amp;</span>ZwpTextInputV3) {
+<a href=#1080 id=1080 data-nosnippet>1080</a>        <span class="kw">if </span>!<span class="self">self</span>.text_inputs.iter().any(|t| t == text_input) {
+<a href=#1081 id=1081 data-nosnippet>1081</a>            <span class="self">self</span>.text_inputs.push(text_input.clone());
+<a href=#1082 id=1082 data-nosnippet>1082</a>        }
+<a href=#1083 id=1083 data-nosnippet>1083</a>    }
+<a href=#1084 id=1084 data-nosnippet>1084</a>
+<a href=#1085 id=1085 data-nosnippet>1085</a>    <span class="doccomment">/// The text input left the top-level.
+<a href=#1086 id=1086 data-nosnippet>1086</a>    </span><span class="attr">#[inline]
+<a href=#1087 id=1087 data-nosnippet>1087</a>    </span><span class="kw">pub fn </span>text_input_left(<span class="kw-2">&amp;mut </span><span class="self">self</span>, text_input: <span class="kw-2">&amp;</span>ZwpTextInputV3) {
+<a href=#1088 id=1088 data-nosnippet>1088</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(position) = <span class="self">self</span>.text_inputs.iter().position(|t| t == text_input) {
+<a href=#1089 id=1089 data-nosnippet>1089</a>            <span class="self">self</span>.text_inputs.remove(position);
+<a href=#1090 id=1090 data-nosnippet>1090</a>        }
+<a href=#1091 id=1091 data-nosnippet>1091</a>    }
+<a href=#1092 id=1092 data-nosnippet>1092</a>
+<a href=#1093 id=1093 data-nosnippet>1093</a>    <span class="doccomment">/// Get the cached title.
+<a href=#1094 id=1094 data-nosnippet>1094</a>    </span><span class="attr">#[inline]
+<a href=#1095 id=1095 data-nosnippet>1095</a>    </span><span class="kw">pub fn </span>title(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>str {
+<a href=#1096 id=1096 data-nosnippet>1096</a>        <span class="kw-2">&amp;</span><span class="self">self</span>.title
+<a href=#1097 id=1097 data-nosnippet>1097</a>    }
+<a href=#1098 id=1098 data-nosnippet>1098</a>}
+<a href=#1099 id=1099 data-nosnippet>1099</a>
+<a href=#1100 id=1100 data-nosnippet>1100</a><span class="kw">impl </span>Drop <span class="kw">for </span>WindowState {
+<a href=#1101 id=1101 data-nosnippet>1101</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#1102 id=1102 data-nosnippet>1102</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(blur) = <span class="self">self</span>.blur.take() {
+<a href=#1103 id=1103 data-nosnippet>1103</a>            blur.release();
+<a href=#1104 id=1104 data-nosnippet>1104</a>        }
+<a href=#1105 id=1105 data-nosnippet>1105</a>
+<a href=#1106 id=1106 data-nosnippet>1106</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(fs) = <span class="self">self</span>.fractional_scale.take() {
+<a href=#1107 id=1107 data-nosnippet>1107</a>            fs.destroy();
+<a href=#1108 id=1108 data-nosnippet>1108</a>        }
+<a href=#1109 id=1109 data-nosnippet>1109</a>
+<a href=#1110 id=1110 data-nosnippet>1110</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(viewport) = <span class="self">self</span>.viewport.take() {
+<a href=#1111 id=1111 data-nosnippet>1111</a>            viewport.destroy();
+<a href=#1112 id=1112 data-nosnippet>1112</a>        }
+<a href=#1113 id=1113 data-nosnippet>1113</a>
+<a href=#1114 id=1114 data-nosnippet>1114</a>        <span class="comment">// NOTE: the wl_surface used by the window is being cleaned up when
+<a href=#1115 id=1115 data-nosnippet>1115</a>        // dropping SCTK `Window`.
+<a href=#1116 id=1116 data-nosnippet>1116</a>    </span>}
+<a href=#1117 id=1117 data-nosnippet>1117</a>}
+<a href=#1118 id=1118 data-nosnippet>1118</a>
+<a href=#1119 id=1119 data-nosnippet>1119</a><span class="doccomment">/// The state of the cursor grabs.
+<a href=#1120 id=1120 data-nosnippet>1120</a></span><span class="attr">#[derive(Clone, Copy)]
+<a href=#1121 id=1121 data-nosnippet>1121</a></span><span class="kw">struct </span>GrabState {
+<a href=#1122 id=1122 data-nosnippet>1122</a>    <span class="doccomment">/// The grab mode requested by the user.
+<a href=#1123 id=1123 data-nosnippet>1123</a>    </span>user_grab_mode: CursorGrabMode,
+<a href=#1124 id=1124 data-nosnippet>1124</a>
+<a href=#1125 id=1125 data-nosnippet>1125</a>    <span class="doccomment">/// The current grab mode.
+<a href=#1126 id=1126 data-nosnippet>1126</a>    </span>current_grab_mode: CursorGrabMode,
+<a href=#1127 id=1127 data-nosnippet>1127</a>}
+<a href=#1128 id=1128 data-nosnippet>1128</a>
+<a href=#1129 id=1129 data-nosnippet>1129</a><span class="kw">impl </span>GrabState {
+<a href=#1130 id=1130 data-nosnippet>1130</a>    <span class="kw">fn </span>new() -&gt; <span class="self">Self </span>{
+<a href=#1131 id=1131 data-nosnippet>1131</a>        <span class="self">Self </span>{ user_grab_mode: CursorGrabMode::None, current_grab_mode: CursorGrabMode::None }
+<a href=#1132 id=1132 data-nosnippet>1132</a>    }
+<a href=#1133 id=1133 data-nosnippet>1133</a>}
+<a href=#1134 id=1134 data-nosnippet>1134</a>
+<a href=#1135 id=1135 data-nosnippet>1135</a><span class="doccomment">/// The state of the frame callback.
+<a href=#1136 id=1136 data-nosnippet>1136</a></span><span class="attr">#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+<a href=#1137 id=1137 data-nosnippet>1137</a></span><span class="kw">pub enum </span>FrameCallbackState {
+<a href=#1138 id=1138 data-nosnippet>1138</a>    <span class="doccomment">/// No frame callback was requested.
+<a href=#1139 id=1139 data-nosnippet>1139</a>    </span><span class="attr">#[default]
+<a href=#1140 id=1140 data-nosnippet>1140</a>    </span><span class="prelude-val">None</span>,
+<a href=#1141 id=1141 data-nosnippet>1141</a>    <span class="doccomment">/// The frame callback was requested, but not yet arrived, the redraw events are throttled.
+<a href=#1142 id=1142 data-nosnippet>1142</a>    </span>Requested,
+<a href=#1143 id=1143 data-nosnippet>1143</a>    <span class="doccomment">/// The callback was marked as done, and user could receive redraw requested
+<a href=#1144 id=1144 data-nosnippet>1144</a>    </span>Received,
+<a href=#1145 id=1145 data-nosnippet>1145</a>}
+<a href=#1146 id=1146 data-nosnippet>1146</a>
+<a href=#1147 id=1147 data-nosnippet>1147</a><span class="kw">impl </span>From&lt;ResizeDirection&gt; <span class="kw">for </span>XdgResizeEdge {
+<a href=#1148 id=1148 data-nosnippet>1148</a>    <span class="kw">fn </span>from(value: ResizeDirection) -&gt; <span class="self">Self </span>{
+<a href=#1149 id=1149 data-nosnippet>1149</a>        <span class="kw">match </span>value {
+<a href=#1150 id=1150 data-nosnippet>1150</a>            ResizeDirection::North =&gt; XdgResizeEdge::Top,
+<a href=#1151 id=1151 data-nosnippet>1151</a>            ResizeDirection::West =&gt; XdgResizeEdge::Left,
+<a href=#1152 id=1152 data-nosnippet>1152</a>            ResizeDirection::NorthWest =&gt; XdgResizeEdge::TopLeft,
+<a href=#1153 id=1153 data-nosnippet>1153</a>            ResizeDirection::NorthEast =&gt; XdgResizeEdge::TopRight,
+<a href=#1154 id=1154 data-nosnippet>1154</a>            ResizeDirection::East =&gt; XdgResizeEdge::Right,
+<a href=#1155 id=1155 data-nosnippet>1155</a>            ResizeDirection::SouthWest =&gt; XdgResizeEdge::BottomLeft,
+<a href=#1156 id=1156 data-nosnippet>1156</a>            ResizeDirection::SouthEast =&gt; XdgResizeEdge::BottomRight,
+<a href=#1157 id=1157 data-nosnippet>1157</a>            ResizeDirection::South =&gt; XdgResizeEdge::Bottom,
+<a href=#1158 id=1158 data-nosnippet>1158</a>        }
+<a href=#1159 id=1159 data-nosnippet>1159</a>    }
+<a href=#1160 id=1160 data-nosnippet>1160</a>}
+<a href=#1161 id=1161 data-nosnippet>1161</a>
+<a href=#1162 id=1162 data-nosnippet>1162</a><span class="comment">// NOTE: Rust doesn't allow `From&lt;Option&lt;Theme&gt;&gt;`.
+<a href=#1163 id=1163 data-nosnippet>1163</a></span><span class="attr">#[cfg(feature = <span class="string">"sctk-adwaita"</span>)]
+<a href=#1164 id=1164 data-nosnippet>1164</a></span><span class="kw">fn </span>into_sctk_adwaita_config(theme: <span class="prelude-ty">Option</span>&lt;Theme&gt;) -&gt; sctk_adwaita::FrameConfig {
+<a href=#1165 id=1165 data-nosnippet>1165</a>    <span class="kw">match </span>theme {
+<a href=#1166 id=1166 data-nosnippet>1166</a>        <span class="prelude-val">Some</span>(Theme::Light) =&gt; sctk_adwaita::FrameConfig::light(),
+<a href=#1167 id=1167 data-nosnippet>1167</a>        <span class="prelude-val">Some</span>(Theme::Dark) =&gt; sctk_adwaita::FrameConfig::dark(),
+<a href=#1168 id=1168 data-nosnippet>1168</a>        <span class="prelude-val">None </span>=&gt; sctk_adwaita::FrameConfig::auto(),
+<a href=#1169 id=1169 data-nosnippet>1169</a>    }
+<a href=#1170 id=1170 data-nosnippet>1170</a>}</code></pre></div></section></main></body></html>

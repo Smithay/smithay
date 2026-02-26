@@ -1,0 +1,176 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/utils/x11rb.rs`."><title>x11rb.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">smithay/utils/</div>x11rb.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Helper utilities for using x11rb as an event source in calloop.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! The primary use for this module is XWayland integration but is also widely useful for an X11
+<a href=#4 id=4 data-nosnippet>4</a>//! backend in a compositor.
+<a href=#5 id=5 data-nosnippet>5</a>
+<a href=#6 id=6 data-nosnippet>6</a></span><span class="kw">use </span>std::{
+<a href=#7 id=7 data-nosnippet>7</a>    sync::Arc,
+<a href=#8 id=8 data-nosnippet>8</a>    thread::{spawn, JoinHandle},
+<a href=#9 id=9 data-nosnippet>9</a>};
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>tracing::{error, warn};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>x11rb::{
+<a href=#13 id=13 data-nosnippet>13</a>    connection::Connection <span class="kw">as _</span>,
+<a href=#14 id=14 data-nosnippet>14</a>    protocol::{
+<a href=#15 id=15 data-nosnippet>15</a>        xproto::{Atom, ClientMessageEvent, ConnectionExt <span class="kw">as _</span>, EventMask, Window, CLIENT_MESSAGE_EVENT},
+<a href=#16 id=16 data-nosnippet>16</a>        Event,
+<a href=#17 id=17 data-nosnippet>17</a>    },
+<a href=#18 id=18 data-nosnippet>18</a>    rust_connection::RustConnection,
+<a href=#19 id=19 data-nosnippet>19</a>};
+<a href=#20 id=20 data-nosnippet>20</a>
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>calloop::{
+<a href=#22 id=22 data-nosnippet>22</a>    channel::{channel, Channel, ChannelError, Event <span class="kw">as </span>ChannelEvent, Sender},
+<a href=#23 id=23 data-nosnippet>23</a>    EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
+<a href=#24 id=24 data-nosnippet>24</a>};
+<a href=#25 id=25 data-nosnippet>25</a>
+<a href=#26 id=26 data-nosnippet>26</a><span class="doccomment">/// Integration of an x11rb X11 connection with calloop.
+<a href=#27 id=27 data-nosnippet>27</a>///
+<a href=#28 id=28 data-nosnippet>28</a>/// This is a thin wrapper around `Channel`. It works by spawning an extra thread reads events from
+<a href=#29 id=29 data-nosnippet>29</a>/// the X11 connection and then sends them across the channel.
+<a href=#30 id=30 data-nosnippet>30</a>///
+<a href=#31 id=31 data-nosnippet>31</a>/// See [1] for why this extra thread is necessary. The single-thread solution proposed on that
+<a href=#32 id=32 data-nosnippet>32</a>/// page does not work with calloop, since it requires checking something on every main loop
+<a href=#33 id=33 data-nosnippet>33</a>/// iteration. Calloop only allows "when an FD becomes readable".
+<a href=#34 id=34 data-nosnippet>34</a>///
+<a href=#35 id=35 data-nosnippet>35</a>/// [1]: https://docs.rs/x11rb/0.8.1/x11rb/event_loop_integration/index.html#threads-and-races
+<a href=#36 id=36 data-nosnippet>36</a></span><span class="attr">#[derive(Debug)]
+<a href=#37 id=37 data-nosnippet>37</a></span><span class="kw">pub struct </span>X11Source {
+<a href=#38 id=38 data-nosnippet>38</a>    connection: Arc&lt;RustConnection&gt;,
+<a href=#39 id=39 data-nosnippet>39</a>    channel: <span class="prelude-ty">Option</span>&lt;Channel&lt;Event&gt;&gt;,
+<a href=#40 id=40 data-nosnippet>40</a>    event_thread: <span class="prelude-ty">Option</span>&lt;JoinHandle&lt;()&gt;&gt;,
+<a href=#41 id=41 data-nosnippet>41</a>    close_window: Window,
+<a href=#42 id=42 data-nosnippet>42</a>    close_type: Atom,
+<a href=#43 id=43 data-nosnippet>43</a>}
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a><span class="kw">impl </span>X11Source {
+<a href=#46 id=46 data-nosnippet>46</a>    <span class="doccomment">/// Create a new X11 source.
+<a href=#47 id=47 data-nosnippet>47</a>    ///
+<a href=#48 id=48 data-nosnippet>48</a>    /// The returned instance will use `SendRequest` to cause a `ClientMessageEvent` to be sent to
+<a href=#49 id=49 data-nosnippet>49</a>    /// the given window with the given type. The expectation is that this is a window that was
+<a href=#50 id=50 data-nosnippet>50</a>    /// created by us. Thus, the event reading thread will wake up and check an internal exit flag,
+<a href=#51 id=51 data-nosnippet>51</a>    /// then exit.
+<a href=#52 id=52 data-nosnippet>52</a>    </span><span class="kw">pub fn </span>new(connection: Arc&lt;RustConnection&gt;, close_window: Window, close_type: Atom) -&gt; <span class="self">Self </span>{
+<a href=#53 id=53 data-nosnippet>53</a>        <span class="kw">let </span>(sender, channel) = channel();
+<a href=#54 id=54 data-nosnippet>54</a>        <span class="kw">let </span>conn = Arc::clone(<span class="kw-2">&amp;</span>connection);
+<a href=#55 id=55 data-nosnippet>55</a>        <span class="kw">let </span>event_thread = <span class="prelude-val">Some</span>(spawn(<span class="kw">move </span>|| {
+<a href=#56 id=56 data-nosnippet>56</a>            run_event_thread(conn, sender);
+<a href=#57 id=57 data-nosnippet>57</a>        }));
+<a href=#58 id=58 data-nosnippet>58</a>
+<a href=#59 id=59 data-nosnippet>59</a>        <span class="self">Self </span>{
+<a href=#60 id=60 data-nosnippet>60</a>            connection,
+<a href=#61 id=61 data-nosnippet>61</a>            channel: <span class="prelude-val">Some</span>(channel),
+<a href=#62 id=62 data-nosnippet>62</a>            event_thread,
+<a href=#63 id=63 data-nosnippet>63</a>            close_window,
+<a href=#64 id=64 data-nosnippet>64</a>            close_type,
+<a href=#65 id=65 data-nosnippet>65</a>        }
+<a href=#66 id=66 data-nosnippet>66</a>    }
+<a href=#67 id=67 data-nosnippet>67</a>}
+<a href=#68 id=68 data-nosnippet>68</a>
+<a href=#69 id=69 data-nosnippet>69</a><span class="kw">impl </span>Drop <span class="kw">for </span>X11Source {
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#71 id=71 data-nosnippet>71</a>        <span class="comment">// Signal the worker thread to exit by dropping the read end of the channel.
+<a href=#72 id=72 data-nosnippet>72</a>        </span><span class="self">self</span>.channel.take();
+<a href=#73 id=73 data-nosnippet>73</a>
+<a href=#74 id=74 data-nosnippet>74</a>        <span class="comment">// Send an event to wake up the worker so that it actually exits
+<a href=#75 id=75 data-nosnippet>75</a>        </span><span class="kw">let </span>event = ClientMessageEvent {
+<a href=#76 id=76 data-nosnippet>76</a>            response_type: CLIENT_MESSAGE_EVENT,
+<a href=#77 id=77 data-nosnippet>77</a>            format: <span class="number">8</span>,
+<a href=#78 id=78 data-nosnippet>78</a>            sequence: <span class="number">0</span>,
+<a href=#79 id=79 data-nosnippet>79</a>            window: <span class="self">self</span>.close_window,
+<a href=#80 id=80 data-nosnippet>80</a>            type_: <span class="self">self</span>.close_type,
+<a href=#81 id=81 data-nosnippet>81</a>            data: [<span class="number">0</span>; <span class="number">20</span>].into(),
+<a href=#82 id=82 data-nosnippet>82</a>        };
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a>        <span class="kw">let _ </span>= <span class="self">self
+<a href=#85 id=85 data-nosnippet>85</a>            </span>.connection
+<a href=#86 id=86 data-nosnippet>86</a>            .send_event(<span class="bool-val">false</span>, <span class="self">self</span>.close_window, EventMask::NO_EVENT, event);
+<a href=#87 id=87 data-nosnippet>87</a>        <span class="kw">let _ </span>= <span class="self">self</span>.connection.flush();
+<a href=#88 id=88 data-nosnippet>88</a>
+<a href=#89 id=89 data-nosnippet>89</a>        <span class="comment">// Wait for the worker thread to exit
+<a href=#90 id=90 data-nosnippet>90</a>        </span><span class="self">self</span>.event_thread.take().map(|handle| handle.join());
+<a href=#91 id=91 data-nosnippet>91</a>    }
+<a href=#92 id=92 data-nosnippet>92</a>}
+<a href=#93 id=93 data-nosnippet>93</a>
+<a href=#94 id=94 data-nosnippet>94</a><span class="kw">impl </span>EventSource <span class="kw">for </span>X11Source {
+<a href=#95 id=95 data-nosnippet>95</a>    <span class="kw">type </span>Event = ChannelEvent&lt;Event&gt;;
+<a href=#96 id=96 data-nosnippet>96</a>    <span class="kw">type </span>Metadata = ();
+<a href=#97 id=97 data-nosnippet>97</a>    <span class="kw">type </span>Ret = ();
+<a href=#98 id=98 data-nosnippet>98</a>    <span class="kw">type </span>Error = ChannelError;
+<a href=#99 id=99 data-nosnippet>99</a>
+<a href=#100 id=100 data-nosnippet>100</a>    <span class="attr">#[profiling::function]
+<a href=#101 id=101 data-nosnippet>101</a>    </span><span class="kw">fn </span>process_events&lt;C&gt;(
+<a href=#102 id=102 data-nosnippet>102</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#103 id=103 data-nosnippet>103</a>        readiness: Readiness,
+<a href=#104 id=104 data-nosnippet>104</a>        token: Token,
+<a href=#105 id=105 data-nosnippet>105</a>        <span class="kw-2">mut </span>callback: C,
+<a href=#106 id=106 data-nosnippet>106</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;PostAction, ChannelError&gt;
+<a href=#107 id=107 data-nosnippet>107</a>    <span class="kw">where
+<a href=#108 id=108 data-nosnippet>108</a>        </span>C: FnMut(<span class="self">Self</span>::Event, <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Metadata) -&gt; <span class="self">Self</span>::Ret,
+<a href=#109 id=109 data-nosnippet>109</a>    {
+<a href=#110 id=110 data-nosnippet>110</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(channel) = <span class="kw-2">&amp;mut </span><span class="self">self</span>.channel {
+<a href=#111 id=111 data-nosnippet>111</a>            channel.process_events(readiness, token, <span class="kw">move </span>|event, meta| {
+<a href=#112 id=112 data-nosnippet>112</a>                <span class="kw">if </span><span class="macro">matches!</span>(event, ChannelEvent::Closed) {
+<a href=#113 id=113 data-nosnippet>113</a>                    <span class="macro">warn!</span>(<span class="string">"Event thread exited"</span>);
+<a href=#114 id=114 data-nosnippet>114</a>                }
+<a href=#115 id=115 data-nosnippet>115</a>                callback(event, meta)
+<a href=#116 id=116 data-nosnippet>116</a>            })
+<a href=#117 id=117 data-nosnippet>117</a>        } <span class="kw">else </span>{
+<a href=#118 id=118 data-nosnippet>118</a>            <span class="prelude-val">Ok</span>(PostAction::Remove)
+<a href=#119 id=119 data-nosnippet>119</a>        }
+<a href=#120 id=120 data-nosnippet>120</a>    }
+<a href=#121 id=121 data-nosnippet>121</a>
+<a href=#122 id=122 data-nosnippet>122</a>    <span class="kw">fn </span>register(<span class="kw-2">&amp;mut </span><span class="self">self</span>, poll: <span class="kw-2">&amp;mut </span>Poll, factory: <span class="kw-2">&amp;mut </span>TokenFactory) -&gt; calloop::Result&lt;()&gt; {
+<a href=#123 id=123 data-nosnippet>123</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(channel) = <span class="kw-2">&amp;mut </span><span class="self">self</span>.channel {
+<a href=#124 id=124 data-nosnippet>124</a>            channel.register(poll, factory)<span class="question-mark">?</span>;
+<a href=#125 id=125 data-nosnippet>125</a>        }
+<a href=#126 id=126 data-nosnippet>126</a>
+<a href=#127 id=127 data-nosnippet>127</a>        <span class="prelude-val">Ok</span>(())
+<a href=#128 id=128 data-nosnippet>128</a>    }
+<a href=#129 id=129 data-nosnippet>129</a>
+<a href=#130 id=130 data-nosnippet>130</a>    <span class="kw">fn </span>reregister(<span class="kw-2">&amp;mut </span><span class="self">self</span>, poll: <span class="kw-2">&amp;mut </span>Poll, factory: <span class="kw-2">&amp;mut </span>TokenFactory) -&gt; calloop::Result&lt;()&gt; {
+<a href=#131 id=131 data-nosnippet>131</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(channel) = <span class="kw-2">&amp;mut </span><span class="self">self</span>.channel {
+<a href=#132 id=132 data-nosnippet>132</a>            channel.reregister(poll, factory)<span class="question-mark">?</span>;
+<a href=#133 id=133 data-nosnippet>133</a>        }
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>        <span class="prelude-val">Ok</span>(())
+<a href=#136 id=136 data-nosnippet>136</a>    }
+<a href=#137 id=137 data-nosnippet>137</a>
+<a href=#138 id=138 data-nosnippet>138</a>    <span class="kw">fn </span>unregister(<span class="kw-2">&amp;mut </span><span class="self">self</span>, poll: <span class="kw-2">&amp;mut </span>Poll) -&gt; calloop::Result&lt;()&gt; {
+<a href=#139 id=139 data-nosnippet>139</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(channel) = <span class="kw-2">&amp;mut </span><span class="self">self</span>.channel {
+<a href=#140 id=140 data-nosnippet>140</a>            channel.unregister(poll)<span class="question-mark">?</span>;
+<a href=#141 id=141 data-nosnippet>141</a>        }
+<a href=#142 id=142 data-nosnippet>142</a>
+<a href=#143 id=143 data-nosnippet>143</a>        <span class="prelude-val">Ok</span>(())
+<a href=#144 id=144 data-nosnippet>144</a>    }
+<a href=#145 id=145 data-nosnippet>145</a>}
+<a href=#146 id=146 data-nosnippet>146</a>
+<a href=#147 id=147 data-nosnippet>147</a><span class="doccomment">/// This thread reads X11 events from the connection and sends them on the channel.
+<a href=#148 id=148 data-nosnippet>148</a>///
+<a href=#149 id=149 data-nosnippet>149</a>/// This is run in an extra thread since sending an X11 request or waiting for the reply to an X11
+<a href=#150 id=150 data-nosnippet>150</a>/// request can both read X11 events from the underlying socket which are then saved in the
+<a href=#151 id=151 data-nosnippet>151</a>/// RustConnection. Thus, readability of the underlying socket is not enough to guarantee we do not
+<a href=#152 id=152 data-nosnippet>152</a>/// miss wakeups.
+<a href=#153 id=153 data-nosnippet>153</a>///
+<a href=#154 id=154 data-nosnippet>154</a>/// This thread will call wait_for_event(). RustConnection then ensures internally to wake us up
+<a href=#155 id=155 data-nosnippet>155</a>/// when an event arrives. So far, this seems to be the only safe way to integrate x11rb with
+<a href=#156 id=156 data-nosnippet>156</a>/// calloop.
+<a href=#157 id=157 data-nosnippet>157</a></span><span class="kw">fn </span>run_event_thread(connection: Arc&lt;RustConnection&gt;, sender: Sender&lt;Event&gt;) {
+<a href=#158 id=158 data-nosnippet>158</a>    <span class="kw">loop </span>{
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">let </span>event = <span class="kw">match </span>connection.wait_for_event() {
+<a href=#160 id=160 data-nosnippet>160</a>            <span class="prelude-val">Ok</span>(event) =&gt; event,
+<a href=#161 id=161 data-nosnippet>161</a>            <span class="prelude-val">Err</span>(err) =&gt; {
+<a href=#162 id=162 data-nosnippet>162</a>                <span class="comment">// Connection errors are most likely permanent. Thus, exit the thread.
+<a href=#163 id=163 data-nosnippet>163</a>                </span><span class="macro">error!</span>(<span class="string">"Event thread exiting due to connection error {}"</span>, err);
+<a href=#164 id=164 data-nosnippet>164</a>                <span class="kw">break</span>;
+<a href=#165 id=165 data-nosnippet>165</a>            }
+<a href=#166 id=166 data-nosnippet>166</a>        };
+<a href=#167 id=167 data-nosnippet>167</a>        <span class="kw">match </span>sender.send(event) {
+<a href=#168 id=168 data-nosnippet>168</a>            <span class="prelude-val">Ok</span>(()) =&gt; {}
+<a href=#169 id=169 data-nosnippet>169</a>            <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {
+<a href=#170 id=170 data-nosnippet>170</a>                <span class="comment">// The only possible error is that the other end of the channel was dropped.
+<a href=#171 id=171 data-nosnippet>171</a>                // This happens in X11Source's Drop impl.
+<a href=#172 id=172 data-nosnippet>172</a>                </span><span class="kw">break</span>;
+<a href=#173 id=173 data-nosnippet>173</a>            }
+<a href=#174 id=174 data-nosnippet>174</a>        }
+<a href=#175 id=175 data-nosnippet>175</a>    }
+<a href=#176 id=176 data-nosnippet>176</a>}</code></pre></div></section></main></body></html>
