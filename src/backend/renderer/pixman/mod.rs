@@ -10,10 +10,15 @@ use pixman::{Filter, FormatCode, Image, Operation, Repeat};
 use tracing::warn;
 
 use crate::{
-    backend::allocator::{
-        dmabuf::{Dmabuf, DmabufMapping, DmabufMappingMode, DmabufSyncFailed, DmabufSyncFlags, WeakDmabuf},
-        format::{has_alpha, FormatSet},
-        Buffer,
+    backend::{
+        allocator::{
+            dmabuf::{
+                Dmabuf, DmabufMapping, DmabufMappingMode, DmabufSyncFailed, DmabufSyncFlags, WeakDmabuf,
+            },
+            format::{has_alpha, FormatSet},
+            Buffer,
+        },
+        renderer::FrameContext,
     },
     utils::{Buffer as BufferCoords, Physical, Rectangle, Scale, Size, Transform},
 };
@@ -1276,5 +1281,36 @@ impl Bind<Image<'static, 'static>> for PixmanRenderer {
         });
 
         Some(RENDER_BUFFER_FORMATS.clone())
+    }
+}
+
+/// Guard type wrapping the underlying `PixmanRenderer` of a `PixmanFrameGuard`.
+#[derive(Debug)]
+pub struct PixmanFrameGuard<'a, 'frame> {
+    renderer: &'a mut &'frame mut PixmanRenderer,
+}
+
+impl AsRef<PixmanRenderer> for PixmanFrameGuard<'_, '_> {
+    fn as_ref(&self) -> &PixmanRenderer {
+        self.renderer
+    }
+}
+
+impl AsMut<PixmanRenderer> for PixmanFrameGuard<'_, '_> {
+    fn as_mut(&mut self) -> &mut PixmanRenderer {
+        self.renderer
+    }
+}
+
+impl<'a, 'frame, 'buffer> FrameContext<'a, 'frame, 'buffer, PixmanRenderer> for PixmanFrame<'frame, 'buffer>
+where
+    'frame: 'a,
+{
+    type Guard = PixmanFrameGuard<'a, 'frame>;
+
+    fn renderer(&'a mut self) -> Self::Guard {
+        PixmanFrameGuard {
+            renderer: &mut self.renderer,
+        }
     }
 }
