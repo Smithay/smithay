@@ -362,6 +362,16 @@ pub trait Frame {
     fn finish(self) -> Result<sync::SyncPoint, Self::Error>;
 }
 
+/// Helper trait for [`Frame`]s, that allow referencing the underlying renderer
+/// to create additional frames for offscreen targets.
+pub trait FrameContext<'a, 'frame, 'buffer, R: Renderer>: Frame {
+    /// Type returned by [`FrameContext::renderer`] which derefs into the underlying [`Renderer`].
+    type Guard: fmt::Debug + AsRef<R> + AsMut<R> + 'a;
+
+    /// Receive the underlying [`Renderer`]
+    fn renderer(&'a mut self) -> Self::Guard;
+}
+
 bitflags::bitflags! {
     /// Debug flags that can be enabled at runtime
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
