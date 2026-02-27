@@ -123,8 +123,7 @@ pub use self::tree::{AlreadyHasRole, TraversalAction};
 use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
 pub use crate::utils::hook::HookId;
 use crate::utils::Transform;
-use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
-use atomic_float::AtomicF64;
+use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle, AtomicFScale};
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
@@ -618,14 +617,14 @@ pub struct CompositorState {
 #[derive(Debug)]
 pub struct CompositorClientState {
     queue: Mutex<Option<TransactionQueue>>,
-    scale_override: Arc<AtomicF64>,
+    scale_override: Arc<AtomicFScale>,
 }
 
 impl Default for CompositorClientState {
     fn default() -> Self {
         CompositorClientState {
             queue: Mutex::new(None),
-            scale_override: Arc::new(AtomicF64::new(1.)),
+            scale_override: Arc::new(AtomicFScale::new(1.)),
         }
     }
 }
@@ -668,7 +667,7 @@ impl CompositorClientState {
         self.scale_override.load(Ordering::Acquire)
     }
 
-    pub(crate) fn clone_client_scale(&self) -> Arc<AtomicF64> {
+    pub(crate) fn clone_client_scale(&self) -> Arc<AtomicFScale> {
         self.scale_override.clone()
     }
 }

@@ -98,7 +98,6 @@
 
 use std::sync::{atomic::Ordering, Arc, Mutex};
 
-use atomic_float::AtomicF64;
 use wayland_protocols::wp::pointer_gestures::zv1::server::{
     zwp_pointer_gesture_hold_v1::{self, ZwpPointerGestureHoldV1},
     zwp_pointer_gesture_pinch_v1::{self, ZwpPointerGesturePinchV1},
@@ -120,7 +119,7 @@ use crate::{
         },
         SeatHandler,
     },
-    utils::{Serial, SERIAL_COUNTER},
+    utils::{Serial, SERIAL_COUNTER, AtomicFScale},
     wayland::seat::PointerUserData,
 };
 
@@ -366,7 +365,7 @@ pub struct PointerGestureUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
     /// This gesture is in the middle between its begin() and end() on this surface.
     pub(crate) in_progress_on: Mutex<Option<WlSurface>>,
-    client_scale: Arc<AtomicF64>,
+    client_scale: Arc<AtomicFScale>,
 }
 
 /// State of the pointer gestures

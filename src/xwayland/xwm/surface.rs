@@ -10,7 +10,7 @@ use crate::{
         touch::TouchTarget,
         Seat, SeatHandler,
     },
-    utils::{user_data::UserDataMap, Client, IsAlive, Logical, Rectangle, Serial, Size},
+    utils::{user_data::UserDataMap, AtomicFScale, Client, IsAlive, Logical, Rectangle, Serial, Size},
     wayland::{
         compositor,
         seat::{keyboard::enter_internal, WaylandFocus},
@@ -22,7 +22,6 @@ use crate::{
     utils::Point,
 };
 
-use atomic_float::AtomicF64;
 use encoding_rs::WINDOWS_1252;
 use std::{
     borrow::Cow,
@@ -56,7 +55,7 @@ use super::{send_configure_notify, X11Wm, XwmId};
 #[derive(Debug, Clone)]
 pub struct X11Surface {
     xwm: Option<XwmId>,
-    client_scale: Option<Arc<AtomicF64>>,
+    client_scale: Option<Arc<AtomicFScale>>,
     window: X11Window,
     pub(super) conn: Weak<RustConnection>,
     pub(super) atoms: super::Atoms,
