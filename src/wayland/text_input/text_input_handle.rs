@@ -92,20 +92,20 @@ impl TextInputHandle {
     }
 
     /// Return the currently focused surface.
-    pub fn focus(&self) -> Option<WlSurface> {
+    pub(crate) fn focus(&self) -> Option<WlSurface> {
         self.inner.lock().unwrap().focus.clone()
     }
 
     /// Advance the focus for the client to `surface`.
     ///
     /// This doesn't send any 'enter' or 'leave' events.
-    pub fn set_focus(&self, surface: Option<WlSurface>) {
+    pub(crate) fn set_focus(&self, surface: Option<WlSurface>) {
         self.inner.lock().unwrap().focus = surface;
     }
 
     /// Send `leave` on the text-input instance for the currently focused
     /// surface.
-    pub fn leave(&self) {
+    pub(crate) fn leave(&self) {
         let mut inner = self.inner.lock().unwrap();
         // Leaving clears the active text input.
         inner.active_text_input_id = None;
@@ -128,7 +128,7 @@ impl TextInputHandle {
 
     /// The `discard_state` is used when the input-method signaled that
     /// the state should be discarded and wrong serial sent.
-    pub fn done(&self, discard_state: bool) {
+    pub(crate) fn done(&self, discard_state: bool) {
         let mut inner = self.inner.lock().unwrap();
         inner.with_active_text_input(|text_input, _, serial| {
             if discard_state {
@@ -153,7 +153,7 @@ impl TextInputHandle {
     }
 
     /// Access the active text-input instance for the currently focused surface.
-    pub fn with_active_text_input<F>(&self, mut f: F)
+    pub(crate) fn with_active_text_input<F>(&self, mut f: F)
     where
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
@@ -161,6 +161,12 @@ impl TextInputHandle {
         inner.with_active_text_input(|ti, surface, _| {
             f(ti, surface);
         });
+    }
+
+    /// Check if there's an active text input with focus.
+    pub(crate) fn has_active_text_input(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner.focus.is_some() && inner.active_text_input_id.is_some()
     }
 
     /// Call the callback with the serial of the active text_input or with the passed
@@ -185,7 +191,7 @@ impl TextInputHandle {
 #[derive(Debug)]
 pub struct TextInputUserData {
     pub(super) handle: TextInputHandle,
-    pub(crate) input_method_handle: InputMethodHandle,
+    pub(super) input_method_handle: InputMethodHandle,
 }
 
 impl<D> Dispatch<ZwpTextInputV3, TextInputUserData, D> for TextInputManagerState
@@ -260,6 +266,7 @@ where
             zwp_text_input_v3::Request::Commit => {
                 let mut new_state = mem::take(pending_state);
                 let _ = pending_state;
+
                 let active_text_input_id = &mut guard.active_text_input_id;
 
                 if active_text_input_id.is_some() && *active_text_input_id != Some(resource.id()) {
@@ -293,19 +300,21 @@ where
                 }
 
                 if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
-                        input_method.object.surrounding_text(text, cursor, anchor)
+                    data.input_method_handle.with_instance(|input_method| {
+                        input_method
+                            .object
+                            .surrounding_text(text.to_string(), cursor, anchor)
                     });
                 }
 
                 if let Some(cause) = new_state.text_change_cause.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
+                    data.input_method_handle.with_instance(|input_method| {
                         input_method.object.text_change_cause(cause);
                     });
                 }
 
                 if let Some((hint, purpose)) = new_state.content_type.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
+                    data.input_method_handle.with_instance(|input_method| {
                         input_method.object.content_type(hint, purpose);
                     });
                 }
