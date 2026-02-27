@@ -210,7 +210,7 @@ where
 
                 // Make sure we do not install the hook more then once in case the surface is being reused
                 if is_managed && is_initial {
-                    add_pre_commit_hook::<D, _>(&surface, |_, _, surface| {
+                    let _ = add_pre_commit_hook::<D, _>(&surface, |_, _, surface| {
                         let timestamp = with_states(surface, |states| {
                             states
                                 .data_map
@@ -226,7 +226,7 @@ where
                                 barrier_state.lock().unwrap().register(timestamp)
                             });
 
-                            add_blocker(surface, barrier);
+                            let _ = add_blocker(surface, barrier);
                         }
                     });
                 }

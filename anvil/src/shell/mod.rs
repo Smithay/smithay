@@ -115,7 +115,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     }
 
     fn new_surface(&mut self, surface: &WlSurface) {
-        add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+        let _ = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
             #[cfg(feature = "udev")]
             let mut acquire_point = None;
             let maybe_dmabuf = with_states(surface, |surface_data| {
@@ -149,7 +149,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
                             Ok(())
                         });
                         if res.is_ok() {
-                            add_blocker(surface, blocker);
+                            let _ = add_blocker(surface, blocker);
                             return;
                         }
                     }
@@ -162,7 +162,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
                             Ok(())
                         });
                         if res.is_ok() {
-                            add_blocker(surface, blocker);
+                            let _ = add_blocker(surface, blocker);
                         }
                     }
                 }
