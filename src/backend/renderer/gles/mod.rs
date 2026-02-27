@@ -34,7 +34,7 @@ pub use shaders::*;
 pub use texture::*;
 pub use uniform::*;
 
-use crate::gpu_span_location;
+use crate::{backend::renderer::FrameContext, gpu_span_location};
 use profiler::SpanLocation;
 
 use self::version::GlVersion;
@@ -3253,6 +3253,69 @@ fn build_texture_mat(
     ) * tex_mat;
 
     tex_mat
+}
+
+/// Guard type wrapping the underlying [`GlesRenderer`] of a [`GlesFrame`].
+#[derive(Debug)]
+pub struct GlesFrameGuard<'a, 'frame, 'buffer> {
+    renderer: &'a mut &'frame mut GlesRenderer,
+    target: &'a mut &'frame mut GlesTarget<'buffer>,
+    old_size: Size<i32, Physical>,
+    old_transform: Transform,
+}
+
+impl AsRef<GlesRenderer> for GlesFrameGuard<'_, '_, '_> {
+    fn as_ref(&self) -> &GlesRenderer {
+        self.renderer
+    }
+}
+
+impl AsMut<GlesRenderer> for GlesFrameGuard<'_, '_, '_> {
+    fn as_mut(&mut self) -> &mut GlesRenderer {
+        self.renderer
+    }
+}
+
+impl<'a, 'frame, 'buffer> FrameContext<'a, 'frame, 'buffer, GlesRenderer> for GlesFrame<'frame, 'buffer>
+where
+    'frame: 'a,
+{
+    type Guard = GlesFrameGuard<'a, 'frame, 'buffer>;
+
+    fn renderer(&'a mut self) -> Self::Guard {
+        GlesFrameGuard {
+            renderer: &mut self.renderer,
+            target: &mut self.target,
+            old_size: self.size,
+            old_transform: self.transform,
+        }
+    }
+}
+
+impl Drop for GlesFrameGuard<'_, '_, '_> {
+    fn drop(&mut self) {
+        if let Err(err) = self.target.0.make_current(&self.renderer.gl, &self.renderer.egl) {
+            warn!(?err, "Failed to restore previous render target");
+            return;
+        }
+
+        let mut output_size = self.old_size;
+        if let Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 =
+            self.old_transform
+        {
+            mem::swap(&mut output_size.w, &mut output_size.h);
+        }
+
+        unsafe {
+            self.renderer.gl.Viewport(0, 0, output_size.w, output_size.h);
+
+            self.renderer.gl.Scissor(0, 0, output_size.w, output_size.h);
+            self.renderer.gl.Enable(ffi::SCISSOR_TEST);
+
+            self.renderer.gl.Enable(ffi::BLEND);
+            self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+        }
+    }
 }
 
 #[cfg(test)]
