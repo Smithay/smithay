@@ -73,7 +73,7 @@ use crate::{
             Buffer, DamageSet, DamageSnapshot, OpaqueRegions, RendererSurfaceState,
             RendererSurfaceStateUserData, SurfaceView,
         },
-        Color32F, Frame, ImportAll, Renderer, Texture,
+        Color32F, Frame, ImportAll, PresentationMode, Renderer, Texture,
     },
     utils::{Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
@@ -425,6 +425,12 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
 
     fn kind(&self) -> Kind {
         self.kind
+    }
+
+    fn presentation_mode(&self) -> PresentationMode {
+        // On Wayland assume VSync as default preference
+        PresentationMode::VSync
+        // TODO: Return Async in case wp_tearing is attached to the surface
     }
 }
 
