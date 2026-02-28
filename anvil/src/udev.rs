@@ -1285,7 +1285,7 @@ impl AnvilState<UdevData> {
 
         let schedule_render = match submit_result {
             Ok(user_data) => {
-                if let Some(mut feedback) = user_data.flatten() {
+                if let Some(mut feedback) = user_data {
                     feedback.presented(clock, Refresh::fixed(frame_duration), seq as u64, flags);
                 }
 

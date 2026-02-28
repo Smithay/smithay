@@ -676,7 +676,7 @@ where
     /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`]
     /// was received after calling [`DrmOutput::queue_frame`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
-    pub fn frame_submitted(&self) -> FrameResult<Option<U>, A, F> {
+    pub fn frame_submitted(&self) -> FrameResult<U, A, F> {
         self.with_compositor(|compositor| compositor.frame_submitted())
     }
 
