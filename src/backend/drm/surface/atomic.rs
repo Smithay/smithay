@@ -1088,37 +1088,6 @@ impl From<Transform> for DrmRotation {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use crate::{
-        backend::drm::surface::atomic::to_fixed,
-        utils::{Physical, Rectangle},
-    };
-
-    use super::AtomicDrmSurface;
-
-    fn is_send<S: Send>() {}
-
-    #[test]
-    fn surface_is_send() {
-        is_send::<AtomicDrmSurface>();
-    }
-
-    #[test]
-    fn test_fixed_point() {
-        let geometry: Rectangle<f64, Physical> = Rectangle::from_size((1920.0, 1080.0).into());
-        let fixed = to_fixed(geometry.size.w) as u64;
-        assert_eq!(125829120, fixed);
-    }
-
-    #[test]
-    fn test_fractional_fixed_point() {
-        let geometry: Rectangle<f64, Physical> = Rectangle::from_size((1920.1, 1080.0).into());
-        let fixed = to_fixed(geometry.size.w) as u64;
-        assert_eq!(125835674, fixed);
-    }
-}
-
 #[cfg(debug_assertions)]
 struct AtomicRequest<'a> {
     mapping: &'a PropMapping,
@@ -1658,5 +1627,36 @@ impl<'a> AtomicRequest<'a> {
         }
 
         Ok(req)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        backend::drm::surface::atomic::to_fixed,
+        utils::{Physical, Rectangle},
+    };
+
+    use super::AtomicDrmSurface;
+
+    fn is_send<S: Send>() {}
+
+    #[test]
+    fn surface_is_send() {
+        is_send::<AtomicDrmSurface>();
+    }
+
+    #[test]
+    fn test_fixed_point() {
+        let geometry: Rectangle<f64, Physical> = Rectangle::from_size((1920.0, 1080.0).into());
+        let fixed = to_fixed(geometry.size.w) as u64;
+        assert_eq!(125829120, fixed);
+    }
+
+    #[test]
+    fn test_fractional_fixed_point() {
+        let geometry: Rectangle<f64, Physical> = Rectangle::from_size((1920.1, 1080.0).into());
+        let fixed = to_fixed(geometry.size.w) as u64;
+        assert_eq!(125835674, fixed);
     }
 }

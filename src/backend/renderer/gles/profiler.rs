@@ -72,7 +72,7 @@ pub(crate) struct ScopedGpuSpan<'a, 'b> {
     gl: &'b ffi::Gles2,
 }
 
-impl<'a, 'b> Drop for ScopedGpuSpan<'a, 'b> {
+impl Drop for ScopedGpuSpan<'_, '_> {
     fn drop(&mut self) {
         let span = self.span.take().unwrap();
         self.profiler.exit(self.gl, span);

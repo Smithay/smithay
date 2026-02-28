@@ -99,7 +99,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> fmt::Debug for LockedDrmOutputManager<'a, A, F, U, G>
+impl<A, F, U, G> fmt::Debug for LockedDrmOutputManager<'_, A, F, U, G>
 where
     A: Allocator + fmt::Debug,
     <A as Allocator>::Buffer: fmt::Debug,
@@ -150,7 +150,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
+impl<A, F, U, G> LockedDrmOutputManager<'_, A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -277,7 +277,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
+impl<A, F, U, G> LockedDrmOutputManager<'_, A, F, U, G>
 where
     A: Allocator + std::clone::Clone + std::fmt::Debug,
     <A as Allocator>::Buffer: AsDmabuf,
@@ -813,8 +813,8 @@ where
     }
 }
 
-fn use_mode_internal<'a, A, F, U, G, R, E>(
-    compositor_list: &mut RwLockWriteGuard<'a, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
+fn use_mode_internal<A, F, U, G, R, E>(
+    compositor_list: &mut RwLockWriteGuard<'_, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
     crtc: &crtc::Handle,
     mode: Mode,
     allocator: &A,
