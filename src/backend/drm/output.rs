@@ -671,6 +671,22 @@ where
         self.with_compositor(|compositor| compositor.reset_buffers());
     }
 
+    /// Access the currently pending frame without submitting it
+    pub fn with_pending_frame<T, R>(&self, f: T) -> R
+    where
+        T: Fn(Option<FrameRef<'_, U>>) -> R,
+    {
+        self.with_compositor(|compositor| f(compositor.pending_frame()))
+    }
+
+    /// Access the currently queued frame
+    pub fn with_queued_frame<T, R>(&self, f: T) -> R
+    where
+        T: Fn(Option<FrameRef<'_, U>>) -> R,
+    {
+        self.with_compositor(|compositor| f(compositor.queued_frame()))
+    }
+
     /// Marks the current frame as submitted.
     ///
     /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`]

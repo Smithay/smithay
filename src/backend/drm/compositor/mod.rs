@@ -1040,6 +1040,13 @@ bitflags::bitflags! {
     }
 }
 
+/// A reference to a frame
+#[derive(Debug)]
+pub struct FrameRef<'a, U> {
+    /// User-data of the frame
+    pub user_data: &'a U,
+}
+
 /// Composite an output using a combination of planes and rendering
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
@@ -2594,6 +2601,20 @@ where
         };
 
         flip.map_err(FrameError::DrmError)
+    }
+
+    /// Access the currently pending frame without submitting it
+    pub fn pending_frame(&self) -> Option<FrameRef<'_, U>> {
+        self.pending_frame.as_ref().map(|frame| FrameRef {
+            user_data: &frame.user_data,
+        })
+    }
+
+    /// Access the currently queued frame
+    pub fn queued_frame(&self) -> Option<FrameRef<'_, U>> {
+        self.queued_frame.as_ref().map(|frame| FrameRef {
+            user_data: &frame.user_data,
+        })
     }
 
     /// Marks the current frame as submitted.
