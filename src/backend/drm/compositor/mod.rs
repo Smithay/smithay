@@ -2602,16 +2602,20 @@ where
     /// was received after calling [`DrmCompositor::queue_frame`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     #[profiling::function]
-    pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
-        if let Some(PendingFrame { mut frame, user_data }) = self.pending_frame.take() {
-            std::mem::swap(&mut frame, &mut self.current_frame);
-            if self.queued_frame.is_some() {
-                self.submit()?;
-            }
-            Ok(Some(user_data))
-        } else {
-            Ok(None)
+    pub fn frame_submitted(&mut self) -> FrameResult<U, A, F> {
+        let Some(PendingFrame {
+            mut frame, user_data, ..
+        }) = self.pending_frame.take()
+        else {
+            return Err(FrameError::EmptyFrame);
+        };
+
+        std::mem::swap(&mut frame, &mut self.current_frame);
+        if self.queued_frame.is_some() {
+            self.submit()?;
         }
+
+        Ok(user_data)
     }
 
     /// Reset the underlying buffers
