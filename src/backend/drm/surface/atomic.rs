@@ -700,6 +700,7 @@ impl AtomicDrmSurface {
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         allow_modeset: bool,
+        async_commit: bool,
     ) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -708,13 +709,14 @@ impl AtomicDrmSurface {
         let current = self.state.read().unwrap();
         let pending = self.pending.read().unwrap();
 
-        self.test_state_internal(planes, allow_modeset, &current, &pending)
+        self.test_state_internal(planes, allow_modeset, async_commit, &current, &pending)
     }
 
     fn test_state_internal<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         allow_modeset: bool,
+        async_commit: bool,
         current: &'_ State,
         pending: &'_ State,
     ) -> Result<(), Error> {
@@ -735,11 +737,15 @@ impl AtomicDrmSurface {
             &*planes,
         )?;
 
-        let flags = if allow_modeset {
-            AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY
-        } else {
-            AtomicCommitFlags::TEST_ONLY
-        };
+        let mut flags = AtomicCommitFlags::TEST_ONLY;
+        if allow_modeset {
+            flags |= AtomicCommitFlags::ALLOW_MODESET;
+        }
+
+        if async_commit {
+            flags |= AtomicCommitFlags::PAGE_FLIP_ASYNC;
+        }
+
         self.fd.atomic_commit(flags, req.build()?).map_err(|source| {
             Error::Access(AccessError {
                 errmsg: "Error testing state",

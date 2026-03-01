@@ -13,6 +13,7 @@ pub fn select_dmabuf_feedback<'a>(
     render_element_states: &RenderElementStates,
     default_feedback: &'a DmabufFeedback,
     scanout_feedback: &'a DmabufFeedback,
+    async_feedback: &'a DmabufFeedback,
 ) -> &'a DmabufFeedback {
     let id = element.into();
 
@@ -25,9 +26,13 @@ pub fn select_dmabuf_feedback<'a>(
             Some(RenderingReason::FormatUnsupported) | Some(RenderingReason::ScanoutFailed) => {
                 scanout_feedback
             }
+            Some(RenderingReason::AsyncFormatUnsupported) | Some(RenderingReason::AsyncScanoutFailed) => {
+                async_feedback
+            }
             None => default_feedback,
         },
         RenderElementPresentationState::ZeroCopy => scanout_feedback,
+        RenderElementPresentationState::Async => async_feedback,
         RenderElementPresentationState::Skipped => default_feedback,
     }
 }

@@ -727,7 +727,28 @@ fn get_surface_dmabuf_feedback(
         .formats
         .iter()
         .copied()
-        .chain(planes.overlay.into_iter().flat_map(|p| p.formats))
+        .chain(planes.overlay.iter().flat_map(|p| p.formats.iter().copied()))
+        .collect::<FormatSet>()
+        .intersection(&all_render_formats)
+        .copied()
+        .collect::<FormatSet>();
+
+    // We limit the scan-out tranche to formats we can also render from
+    // so that there is always a fallback render path available in case
+    // the supplied buffer can not be scanned out directly
+    let async_planes_formats = surface
+        .plane_info()
+        .formats_async
+        .as_ref()
+        .unwrap_or(&surface.plane_info().formats)
+        .iter()
+        .copied()
+        .chain(
+            planes
+                .overlay
+                .into_iter()
+                .flat_map(|p| p.formats_async.unwrap_or(FormatSet::default())),
+        )
         .collect::<FormatSet>()
         .intersection(&all_render_formats)
         .copied()
@@ -745,10 +766,21 @@ fn get_surface_dmabuf_feedback(
     };
 
     let scanout_feedback = builder
+        .clone()
         .add_preference_tranche(
             surface.device_fd().dev_id().unwrap(),
             Some(zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout),
             planes_formats,
+        )
+        .add_preference_tranche(scanout_node.dev_id(), None, render_formats.clone())
+        .build()
+        .unwrap();
+
+    let async_feedback = builder
+        .add_preference_tranche(
+            surface.device_fd().dev_id().unwrap(),
+            Some(zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout),
+            async_planes_formats,
         )
         .add_preference_tranche(scanout_node.dev_id(), None, render_formats)
         .build()
@@ -757,6 +789,7 @@ fn get_surface_dmabuf_feedback(
     Some(SurfaceDmabufFeedback {
         render_feedback,
         scanout_feedback,
+        async_feedback,
     })
 }
 
@@ -1255,11 +1288,11 @@ impl AnvilState<UdevData> {
             frame_duration.saturating_sub(Time::elapsed(&last_presentation_time, clock))
         });
 
-        if let Some(vblank_remaining_time) = vblank_remaining_time {
-            let presentation_mode = surface
-                .drm_output
-                .with_pending_frame(|frame| frame.map(|frame| frame.presentation_mode));
+        let presentation_mode = surface
+            .drm_output
+            .with_pending_frame(|frame| frame.map(|frame| frame.presentation_mode));
 
+        if let Some(vblank_remaining_time) = vblank_remaining_time {
             if presentation_mode != Some(PresentationMode::Async)
                 && vblank_remaining_time > frame_duration / 2
             {

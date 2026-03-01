@@ -476,7 +476,12 @@ pub fn surface_presentation_feedback_flags_from_states(
                 .map(|val| Id::from(surface).namespaced(val))
                 .unwrap_or(surface.into()),
         )
-        .map(|state| state.presentation_state == RenderElementPresentationState::ZeroCopy)
+        .map(|state| {
+            matches!(
+                state.presentation_state,
+                RenderElementPresentationState::ZeroCopy | RenderElementPresentationState::Async
+            )
+        })
         .unwrap_or(false);
 
     if zero_copy {

@@ -374,9 +374,10 @@ impl DrmSurface {
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         allow_modeset: bool,
+        async_commit: bool,
     ) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.test_state(planes, allow_modeset),
+            DrmSurfaceInternal::Atomic(surf) => surf.test_state(planes, allow_modeset, async_commit),
             DrmSurfaceInternal::Legacy(surf) => {
                 let fb = ensure_legacy_planes(self, planes)?;
 
