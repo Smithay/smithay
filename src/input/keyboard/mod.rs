@@ -215,6 +215,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     led_mapping: LedMapping,
     pub(crate) led_state: LedState,
     grab: GrabStatus<dyn KeyboardGrab<D>>,
+    update_key: bool,
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
@@ -266,6 +267,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             led_mapping,
             led_state,
             grab: GrabStatus::None,
+            update_key: true,
         })
     }
 
@@ -283,17 +285,18 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             }
         };
 
-        // update state
-        // Offset the keycode by 8, as the evdev XKB rules reflect X's
-        // broken keycode system, which starts at 8.
-        let mut xkb = self.xkb.lock().unwrap();
-        let state_components = xkb.state.update_key(keycode, direction);
-        let modifiers_changed = state_components != 0;
-        if modifiers_changed {
-            self.mods_state.update_with(&xkb.state);
+        if self.update_key {
+            let mut xkb = self.xkb.lock().unwrap();
+            let state_components = xkb.state.update_key(keycode, direction);
+            let modifiers_changed = state_components != 0;
+            if modifiers_changed {
+                self.mods_state.update_with(&xkb.state);
+            }
+            let leds_changed = self.led_state.update_with(&xkb.state, &self.led_mapping);
+            (modifiers_changed, leds_changed)
+        } else {
+            (false, false)
         }
-        let leds_changed = self.led_state.update_with(&xkb.state, &self.led_mapping);
-        (modifiers_changed, leds_changed)
     }
 
     fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
@@ -491,18 +494,16 @@ impl XkbContext<'_> {
         self.xkb
     }
 
-    /// Set layout of the keyboard to the given index.
-    pub fn set_layout(&mut self, layout: Layout) {
+    /// Set explict modifier masks and layout
+    ///
+    /// This should generally be used with [`KeyboardHandle::set_update_key`] `false` to disable
+    /// automatic updates to the xkb state on key presses.
+    pub fn update_mask(&mut self, depressed_mods: u32, latched_mods: u32, locked_mods: u32, layout: Layout) {
         let mut xkb = self.xkb.lock().unwrap();
 
-        let state = xkb.state.update_mask(
-            self.mods_state.serialized.depressed,
-            self.mods_state.serialized.latched,
-            self.mods_state.serialized.locked,
-            0,
-            0,
-            layout.0,
-        );
+        let state = xkb
+            .state
+            .update_mask(depressed_mods, latched_mods, locked_mods, 0, 0, layout.0);
 
         if state != 0 {
             self.mods_state.update_with(&xkb.state);
@@ -510,6 +511,16 @@ impl XkbContext<'_> {
         }
 
         *self.leds_changed = self.leds_state.update_with(&xkb.state, self.leds_mapping);
+    }
+
+    /// Set layout of the keyboard to the given index.
+    pub fn set_layout(&mut self, layout: Layout) {
+        self.update_mask(
+            self.mods_state.serialized.depressed,
+            self.mods_state.serialized.latched,
+            self.mods_state.serialized.locked,
+            layout,
+        );
     }
 
     /// Switches layout forward cycling when it reaches the end.
@@ -771,8 +782,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut internal = self.arc.internal.lock().unwrap();
 
         let mut state = xkb::State::new(&keymap);
-        for key in &internal.pressed_keys {
-            state.update_key(*key, xkb::KeyDirection::Down);
+        if internal.update_key {
+            for key in &internal.pressed_keys {
+                state.update_key(*key, xkb::KeyDirection::Down);
+            }
         }
 
         let led_mapping = LedMapping::from_keymap(&keymap);
@@ -1040,6 +1053,15 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         } else {
             trace!("No client currently focused");
         }
+    }
+
+    /// If `true` (the default), each keypress with update the xkb state.
+    ///
+    /// If set to `false`, this will not happen, and something like [`XkbContext::update_mask`]
+    /// should instead be used to update this automatically.
+    pub fn set_update_key(&self, value: bool) {
+        let mut guard = self.arc.internal.lock().unwrap();
+        guard.update_key = value;
     }
 
     /// Set the current focus of this keyboard
