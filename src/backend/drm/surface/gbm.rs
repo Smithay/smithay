@@ -230,7 +230,7 @@ where
             }),
         };
 
-        match drm.test_state([plane_state], true) {
+        match drm.test_state([plane_state], true, false) {
             Ok(_) => {
                 debug!("Chosen format: {:?}", format);
                 Ok((buffer, swapchain, use_opaque))

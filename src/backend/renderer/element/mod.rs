@@ -214,8 +214,12 @@ pub enum UnderlyingStorage<'a> {
 pub enum RenderingReason {
     /// The element buffer format is unsuited for direct scan-out
     FormatUnsupported,
+    /// The element buffer format is unsuited for async direct scan-out
+    AsyncFormatUnsupported,
     /// Element was selected for direct scan-out but failed
     ScanoutFailed,
+    /// Element was selected for async direct scan-out but failed
+    AsyncScanoutFailed,
 }
 
 /// Defines the presentation state of an element after rendering
@@ -231,6 +235,8 @@ pub enum RenderElementPresentationState {
     },
     /// The element was selected for zero-copy scan-out
     ZeroCopy,
+    /// The element was selected for zero-copy async scan-out
+    Async,
     /// The element was skipped as it is current not visible
     Skipped,
 }
