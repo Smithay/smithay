@@ -68,6 +68,7 @@ pub mod idle_notify;
 pub mod image_capture_source;
 pub mod image_copy_capture;
 pub mod input_method;
+pub mod input_method_v1;
 pub mod keyboard_shortcuts_inhibit;
 pub mod output;
 pub mod pointer_constraints;
