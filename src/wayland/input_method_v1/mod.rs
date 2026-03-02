@@ -40,11 +40,13 @@ use crate::input::{
     Seat, SeatHandler,
 };
 use crate::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
+use crate::wayland::compositor;
 use crate::wayland::seat::keyboard::for_each_focused_kbds;
 
 const INPUT_METHOD_VERSION: u32 = 1;
 const TEXT_INPUT_VERSION: u32 = 1;
 const INPUT_PANEL_VERSION: u32 = 1;
+const INPUT_PANEL_SURFACE_ROLE: &str = "zwp_input_panel_surface_v1";
 
 /// Parent surface and geometry used to place an IME popup.
 #[derive(Debug, Clone)]
@@ -748,16 +750,37 @@ where
         resource: &ZwpInputMethodV1,
         data: &InputMethodUserData<D>,
     ) {
-        let mut inner = data.handle.inner.lock().unwrap();
-        if inner
-            .input_method
-            .as_ref()
-            .is_some_and(|im| im.id() == resource.id())
+        let active_seat = {
+            let inner = data.handle.inner.lock().unwrap();
+            if !inner
+                .input_method
+                .as_ref()
+                .is_some_and(|im| im.id() == resource.id())
+            {
+                return;
+            }
+            inner.active.seat.clone()
+        };
+
+        data.handle.hide_popup(state);
+
         {
+            let mut inner = data.handle.inner.lock().unwrap();
+            if !inner
+                .input_method
+                .as_ref()
+                .is_some_and(|im| im.id() == resource.id())
+            {
+                return;
+            }
             inner.input_method = None;
             inner.active = ActiveContext::default();
-            drop(inner);
-            data.handle.hide_popup(state);
+        }
+
+        if let Some(seat) = active_seat.and_then(|s| Seat::<D>::from_resource(&s)) {
+            if let Some(keyboard) = seat.get_keyboard() {
+                keyboard.unset_grab(state);
+            }
         }
     }
 }
@@ -772,12 +795,24 @@ where
     fn request(
         state: &mut D,
         _client: &Client,
-        _resource: &ZwpInputMethodContextV1,
+        resource: &ZwpInputMethodContextV1,
         request: zwp_input_method_context_v1::Request,
         data: &InputMethodContextUserData,
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
+        let is_active_context = {
+            let inner = data.handle.inner.lock().unwrap();
+            inner
+                .active
+                .context
+                .as_ref()
+                .is_some_and(|ctx| ctx.id() == resource.id())
+        };
+        if !is_active_context {
+            return;
+        }
+
         match request {
             zwp_input_method_context_v1::Request::CommitString { serial, text } => {
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
@@ -937,13 +972,23 @@ where
     fn destroyed(
         state: &mut D,
         _client: ClientId,
-        _resource: &ZwpInputMethodContextV1,
+        resource: &ZwpInputMethodContextV1,
         data: &InputMethodContextUserData,
     ) {
         let active_seat = {
             let mut inner = data.handle.inner.lock().unwrap();
-            inner.active.context = None;
-            inner.active.seat.clone()
+            let is_active_context = inner
+                .active
+                .context
+                .as_ref()
+                .is_some_and(|ctx| ctx.id() == resource.id());
+            if is_active_context {
+                let active_seat = inner.active.seat.clone();
+                inner.active = ActiveContext::default();
+                active_seat
+            } else {
+                None
+            }
         };
 
         if let Some(seat) = active_seat.and_then(|s| Seat::<D>::from_resource(&s)) {
@@ -973,19 +1018,22 @@ where
     fn destroyed(
         state: &mut D,
         _client: ClientId,
-        _resource: &WlKeyboard,
+        resource: &WlKeyboard,
         data: &InputMethodKeyboardUserData<D>,
     ) {
-        data.handle
-            .inner
-            .lock()
-            .unwrap()
-            .keyboard_grab
-            .inner
-            .lock()
-            .unwrap()
-            .grab = None;
-        data.keyboard_handle.unset_grab(state);
+        let should_unset = {
+            let inner = data.handle.inner.lock().unwrap();
+            let mut grab = inner.keyboard_grab.inner.lock().unwrap();
+            if grab.grab.as_ref().is_some_and(|g| g.id() == resource.id()) {
+                grab.grab = None;
+                true
+            } else {
+                false
+            }
+        };
+        if should_unset {
+            data.keyboard_handle.unset_grab(state);
+        }
     }
 }
 
@@ -998,13 +1046,21 @@ where
     fn request(
         state: &mut D,
         _client: &Client,
-        _resource: &ZwpInputPanelV1,
+        resource: &ZwpInputPanelV1,
         request: zwp_input_panel_v1::Request,
         data: &InputPanelUserData,
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         if let zwp_input_panel_v1::Request::GetInputPanelSurface { id, surface } = request {
+            if compositor::give_role(&surface, INPUT_PANEL_SURFACE_ROLE).is_err()
+                && compositor::get_role(&surface) != Some(INPUT_PANEL_SURFACE_ROLE)
+            {
+                // Protocol requires this raise an error, but doesn't define an error enum.
+                resource.post_error(0u32, "Surface already has a role.");
+                return;
+            }
+
             let panel_surface = data_init.init(
                 id,
                 InputPanelSurfaceUserData {
@@ -1020,10 +1076,13 @@ where
                 })
             };
 
+            data.handle.hide_popup(state);
+
             let popup = PopupSurface::new(panel_surface, surface, parent);
             {
                 let mut inner = data.handle.inner.lock().unwrap();
                 inner.popup = Some(popup);
+                inner.popup_enabled = false;
                 inner.popup_visible = false;
             }
             data.handle.refresh_popup(state);
@@ -1039,12 +1098,23 @@ where
     fn request(
         state: &mut D,
         _client: &Client,
-        _resource: &ZwpInputPanelSurfaceV1,
+        resource: &ZwpInputPanelSurfaceV1,
         request: zwp_input_panel_surface_v1::Request,
         data: &InputPanelSurfaceUserData,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
+        let is_active_popup_surface = {
+            let inner = data.handle.inner.lock().unwrap();
+            inner
+                .popup
+                .as_ref()
+                .is_some_and(|popup| popup.surface_role.id() == resource.id())
+        };
+        if !is_active_popup_surface {
+            return;
+        }
+
         match request {
             zwp_input_panel_surface_v1::Request::SetOverlayPanel => {
                 data.handle.inner.lock().unwrap().popup_enabled = true;
@@ -1061,9 +1131,20 @@ where
     fn destroyed(
         state: &mut D,
         _client: ClientId,
-        _resource: &ZwpInputPanelSurfaceV1,
+        resource: &ZwpInputPanelSurfaceV1,
         data: &InputPanelSurfaceUserData,
     ) {
+        let is_active_popup_surface = {
+            let inner = data.handle.inner.lock().unwrap();
+            inner
+                .popup
+                .as_ref()
+                .is_some_and(|popup| popup.surface_role.id() == resource.id())
+        };
+        if !is_active_popup_surface {
+            return;
+        }
+
         {
             let mut inner = data.handle.inner.lock().unwrap();
             inner.popup = None;
