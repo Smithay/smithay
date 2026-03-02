@@ -6,7 +6,7 @@
 //! The high-level integration pattern is:
 //! - Implement [`InputMethodV1Handler`] for your compositor state.
 //! - Create globals through [`InputMethodV1ManagerState::new`].
-//! - Delegate protocol dispatch with [`delegate_input_method_manager_v1!`].
+//! - Delegate protocol dispatch with [`macro@crate::delegate_input_method_manager_v1`].
 
 use std::fmt;
 use std::sync::{Arc, Mutex};
