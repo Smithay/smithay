@@ -334,12 +334,19 @@ impl InputMethodV1Handle {
             .as_ref()
             .is_some_and(|ti| ti.id() == text_input.id())
         {
+            let active_seat = inner.active.seat.clone();
             if let (Some(im), Some(ctx)) = (inner.input_method.as_ref(), inner.active.context.as_ref()) {
                 im.deactivate(ctx);
             }
             inner.active = ActiveContext::default();
             drop(inner);
             self.hide_popup(state);
+
+            if let Some(seat) = active_seat.and_then(|s| Seat::<D>::from_resource(&s)) {
+                if let Some(keyboard) = seat.get_keyboard() {
+                    keyboard.unset_grab(state);
+                }
+            }
         }
     }
 }
@@ -928,12 +935,22 @@ where
     }
 
     fn destroyed(
-        _state: &mut D,
+        state: &mut D,
         _client: ClientId,
         _resource: &ZwpInputMethodContextV1,
         data: &InputMethodContextUserData,
     ) {
-        data.handle.inner.lock().unwrap().active.context = None;
+        let active_seat = {
+            let mut inner = data.handle.inner.lock().unwrap();
+            inner.active.context = None;
+            inner.active.seat.clone()
+        };
+
+        if let Some(seat) = active_seat.and_then(|s| Seat::<D>::from_resource(&s)) {
+            if let Some(keyboard) = seat.get_keyboard() {
+                keyboard.unset_grab(state);
+            }
+        }
     }
 }
 
