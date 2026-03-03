@@ -68,6 +68,7 @@ use crate::{
             Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
         },
         drm::DrmNode,
+        renderer::FrameContext,
         SwapBuffersError,
     },
     utils::{Buffer as BufferCoords, Physical, Rectangle, Size, Transform},
@@ -900,6 +901,7 @@ where
         Option<AliasableBox<<<R::Device as ApiDevice>::Renderer as RendererSuper>::Framebuffer<'frame>>>,
     target: Option<TargetFrameData<'target, 'frame, 'buffer, T>>,
     render: *mut &'render mut R::Device,
+    other_renderers: &'frame mut [&'render mut R::Device],
 
     dst_transform: Transform,
     size: Size<i32, Physical>,
@@ -1324,6 +1326,7 @@ where
             framebuffer: new_framebuffer,
             render: ptr, // this is fine, as long as we have the frame, this ptr is valid
             target,
+            other_renderers: &mut self.other_renderers,
             dst_transform,
             size,
             damage: Vec::new(),
@@ -2138,7 +2141,14 @@ where
         let dmabuf = get_dmabuf(buffer).expect("import_dma_buffer without checking buffer type?");
         let texture = MultiTexture::from_surface(surface, dmabuf.size(), dmabuf.format());
         let texture_ref = texture.0.clone();
-        let res = self.import_dmabuf_internal(dmabuf, texture, Some(damage));
+        let res = import_dmabuf_internal(
+            self.render,
+            self.target.as_mut().map(|target| &mut *target.device),
+            &mut self.other_renderers,
+            dmabuf,
+            texture,
+            Some(damage),
+        );
         if res.is_ok() {
             if let Some(surface) = surface {
                 surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
@@ -2179,7 +2189,14 @@ where
         damage: Option<&[Rectangle<i32, BufferCoords>]>,
     ) -> Result<<Self as RendererSuper>::TextureId, <Self as RendererSuper>::Error> {
         let texture = MultiTexture::new(dmabuf.size(), dmabuf.format());
-        self.import_dmabuf_internal(dmabuf, texture, damage)
+        import_dmabuf_internal(
+            self.render,
+            self.target.as_mut().map(|target| &mut *target.device),
+            &mut self.other_renderers,
+            dmabuf,
+            texture,
+            damage,
+        )
     }
 }
 
@@ -2188,7 +2205,7 @@ fn import_on_src_node<'a, R, T>(
     damage: Option<&[Rectangle<i32, BufferCoords>]>,
     texture: &mut MultiTexture,
     render: &mut R::Device,
-    mut target: Option<&mut T::Device>,
+    mut target: Option<&mut &mut T::Device>,
     mut others: impl Iterator<Item = &'a mut R::Device>,
 ) -> Result<DrmNode, Error<R, T>>
 where
@@ -2210,7 +2227,7 @@ where
                 let renderer = target.unwrap().renderer_mut();
                 let imported = renderer.import_dmabuf(dmabuf, damage).map_err(Error::Target)?;
                 texture.insert_texture::<T>(&renderer.context_id(), imported);
-            } else if let Some(other) = others.find(|other| node == *other.node()) {
+            } else if let Some(other) = others.find(|other| node == *(other.node())) {
                 let renderer = other.renderer_mut();
                 let imported = renderer.import_dmabuf(dmabuf, damage).map_err(Error::Render)?;
                 texture.insert_texture::<R>(&renderer.context_id(), imported);
@@ -2758,93 +2775,74 @@ where
     }
 }
 
-impl<R: GraphicsApi, T: GraphicsApi> MultiRenderer<'_, '_, R, T>
+fn import_dmabuf_internal<R, T>(
+    render: &mut R::Device,
+    mut target: Option<&mut T::Device>,
+    other_renderers: &mut [&mut R::Device],
+    dmabuf: &Dmabuf,
+    mut texture: MultiTexture,
+    damage: Option<&[Rectangle<i32, BufferCoords>]>,
+) -> Result<MultiTexture, Error<R, T>>
 where
-    <R::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <T::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem,
+    R: GraphicsApi + 'static,
+    <<R as GraphicsApi>::Device as ApiDevice>::Renderer:
+        Renderer + ImportDma + ExportMem + ImportMem + Bind<Dmabuf>,
     <<R::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
-    <<T::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
-    T: 'static,
-    // We need this because the Renderer-impl does and ImportDma requires Renderer
-    R: 'static,
-    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportMem + ImportDma + ImportMem,
-    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
-    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
-    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<<R as GraphicsApi>::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: 'static,
+    T: GraphicsApi + 'static,
+    <<T as GraphicsApi>::Device as ApiDevice>::Renderer: Renderer + ImportDma + ExportMem + Bind<Dmabuf>,
+    <<<T as GraphicsApi>::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: 'static,
 {
-    #[profiling::function]
-    fn import_dmabuf_internal(
-        &mut self,
-        dmabuf: &Dmabuf,
-        mut texture: MultiTexture,
-        damage: Option<&[Rectangle<i32, BufferCoords>]>,
-    ) -> Result<<Self as RendererSuper>::TextureId, <Self as RendererSuper>::Error> {
-        let src_node = import_on_src_node::<R, T>(
-            dmabuf,
-            damage,
-            &mut texture,
-            self.render,
-            self.target.as_mut().map(|target| &mut *target.device),
-            self.other_renderers.iter_mut().map(|d| &mut **d),
-        )?;
+    let src_node = import_on_src_node::<R, T>(
+        dmabuf,
+        damage,
+        &mut texture,
+        render,
+        target.as_mut(),
+        other_renderers.iter_mut().map(|x| &mut **x),
+    )?;
 
-        if src_node == *self.render.node() {
-            // when we are on the same node, we are done
-            Ok(texture)
-        } else {
-            // else we need to copy
-            let mut texture_internal = texture.0.lock().unwrap();
-            let target_id = self.render.renderer().context_id().erased();
-            let mut target_texture = texture_internal.textures.remove(&target_id);
+    if src_node == *render.node() {
+        // when we are on the same node, we are done
+        Ok(texture)
+    } else {
+        // else we need to copy
+        let mut texture_internal = texture.0.lock().unwrap();
+        let target_id = render.renderer().context_id().erased();
+        let mut target_texture = texture_internal.textures.remove(&target_id);
 
-            let res = if let Some(target) = self
-                .target
-                .as_mut()
-                .filter(|target| src_node == *target.device.node())
-            {
-                let src_id = target.device.renderer().context_id().erased();
-                let src_texture = match texture_internal.textures.get(&src_id).unwrap() {
-                    GpuSingleTexture::Direct(tex) => tex
-                        .downcast_ref::<<<T::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>()
-                        .unwrap(),
-                    _ => unreachable!(),
-                };
-
-                texture_copy::<T, R>(
-                    target.device,
-                    self.render,
-                    src_texture,
-                    &mut target_texture,
-                    damage,
-                )
-                .map_err(Error::transpose)
-            } else if let Some(other) = self
-                .other_renderers
-                .iter_mut()
-                .find(|other| src_node == *other.node())
-            {
-                let src_id = other.renderer().context_id().erased();
-                let src_texture = match texture_internal.textures.get(&src_id).unwrap() {
-                    GpuSingleTexture::Direct(tex) => tex
-                        .downcast_ref::<<<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>()
-                        .unwrap(),
-                    _ => unreachable!(),
-                };
-
-                texture_copy::<R, R>(other, self.render, src_texture, &mut target_texture, damage)
-                    .map_err(Error::generalize::<T>)
-            } else {
-                Err(Error::DeviceMissing)
+        let res = if let Some(target) = target.as_mut().filter(|target| src_node == *target.node()) {
+            let src_id = target.renderer().context_id().erased();
+            let src_texture = match texture_internal.textures.get(&src_id).unwrap() {
+                GpuSingleTexture::Direct(tex) => tex
+                    .downcast_ref::<<<T::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>()
+                    .unwrap(),
+                _ => unreachable!(),
             };
 
-            if let Some(target_texture) = target_texture.filter(|_| res.is_ok()) {
-                texture_internal.textures.insert(target_id, target_texture);
-            }
+            texture_copy::<T, R>(target, render, src_texture, &mut target_texture, damage)
+                .map_err(Error::transpose)
+        } else if let Some(other) = other_renderers.iter_mut().find(|other| src_node == *other.node()) {
+            let src_id = other.renderer().context_id().erased();
+            let src_texture = match texture_internal.textures.get(&src_id).unwrap() {
+                GpuSingleTexture::Direct(tex) => tex
+                    .downcast_ref::<<<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>()
+                    .unwrap(),
+                _ => unreachable!(),
+            };
 
-            std::mem::drop(texture_internal);
-            res.map(|_| texture)
+            texture_copy::<R, R>(other, render, src_texture, &mut target_texture, damage)
+                .map_err(Error::generalize::<T>)
+        } else {
+            Err(Error::DeviceMissing)
+        };
+
+        if let Some(target_texture) = target_texture.filter(|_| res.is_ok()) {
+            texture_internal.textures.insert(target_id, target_texture);
         }
+
+        std::mem::drop(texture_internal);
+        res.map(|_| texture)
     }
 }
 
@@ -3189,5 +3187,612 @@ where
                 .blit(from_fb, to_fb, src, dst, filter)
                 .map_err(Error::Render)
         }
+    }
+}
+
+impl<'a, 'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi>
+    FrameContext<'a, 'frame, 'buffer, LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T>>
+    for MultiFrame<'render, 'target, 'frame, 'buffer, R, T>
+where
+    'frame: 'a,
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer> + 'a,
+{
+    type Guard = LocalRendererGuard<'a, 'render, 'target, 'frame, 'buffer, R, T>;
+
+    fn renderer(&'a mut self) -> Self::Guard {
+        let guard = self.frame.as_mut().unwrap().renderer();
+
+        let span = trace_span!(
+            parent: &self.span,
+            "renderer_local_multi",
+        )
+        .entered();
+
+        LocalRendererGuard {
+            renderer: LocalMultiRenderer {
+                guard,
+                render: self.render,
+                target: self.target.as_mut().map(|data| &mut *data.device),
+                other_renderers: &mut *self.other_renderers,
+                span,
+            },
+        }
+    }
+}
+
+/// Guard type wrapping a [`LocalMultiRenderer`] borrowed from a [`MultiFrame`].
+pub struct LocalRendererGuard<'a, 'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi>
+where
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    renderer: LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T>,
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> fmt::Debug
+    for LocalRendererGuard<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    'buffer: 'frame,
+    <R::Device as ApiDevice>::Renderer: 'frame,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalMultiGuard")
+            .field("renderer", &self.renderer)
+            .finish()
+    }
+}
+
+impl<'a, 'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi>
+    AsRef<LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T>>
+    for LocalRendererGuard<'a, 'render, 'target, 'frame, 'buffer, R, T>
+where
+    'buffer: 'frame,
+    <R::Device as ApiDevice>::Renderer: 'frame,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn as_ref(&self) -> &LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T> {
+        &self.renderer
+    }
+}
+
+impl<'a, 'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi>
+    AsMut<LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T>>
+    for LocalRendererGuard<'a, 'render, 'target, 'frame, 'buffer, R, T>
+where
+    'buffer: 'frame,
+    <R::Device as ApiDevice>::Renderer: 'frame,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn as_mut(&mut self) -> &mut LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T> {
+        &mut self.renderer
+    }
+}
+
+/// Variant of a [`MultiRenderer`], that doesn't render to framebuffer of the target-node,
+/// but to framebuffers of the render-node for offscreen rendering via the use of the [`FrameContext`] trait
+/// on a [`MultiFrame`].
+pub struct LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi>
+where
+    'buffer: 'frame,
+    <R::Device as ApiDevice>::Renderer: 'frame,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    guard: <<<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer> as FrameContext<
+        'a,
+        'frame,
+        'buffer,
+        <R::Device as ApiDevice>::Renderer,
+    >>::Guard,
+    render: *mut &'render mut R::Device,
+    target: Option<&'a mut &'target mut T::Device>,
+    other_renderers: &'a mut [&'render mut R::Device],
+    span: tracing::span::EnteredSpan,
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> fmt::Debug
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LocalMultiRenderer")
+            .field("guard", &self.guard)
+            .field("render", &self.render)
+            .field("target", &self.target)
+            .field("other_renderers", &self.other_renderers)
+            .finish()
+    }
+}
+
+impl<'a, 'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> RendererSuper
+    for LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T>
+where
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    type Error = Error<R, T>;
+    type TextureId = MultiTexture;
+    type Framebuffer<'newbuffer> = MultiFramebuffer<'newbuffer, R>;
+    type Frame<'newframe, 'newbuffer>
+        = MultiFrame<'render, 'target, 'newframe, 'newbuffer, R, T>
+    where
+        'newbuffer: 'newframe,
+        Self: 'newframe;
+}
+
+impl<'a, 'render, 'target, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> Renderer
+    for LocalMultiRenderer<'a, 'render, 'target, 'frame, 'buffer, R, T>
+where
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn context_id(&self) -> ContextId<MultiTexture> {
+        self.guard.as_ref().context_id().map()
+    }
+
+    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        self.guard
+            .as_mut()
+            .downscale_filter(filter)
+            .map_err(Error::Render)
+    }
+
+    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        self.guard.as_mut().upscale_filter(filter).map_err(Error::Render)
+    }
+
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.guard.as_mut().set_debug_flags(flags)
+    }
+
+    fn debug_flags(&self) -> DebugFlags {
+        self.guard.as_ref().debug_flags()
+    }
+
+    fn render<'newframe, 'newbuffer>(
+        &'newframe mut self,
+        framebuffer: &'newframe mut Self::Framebuffer<'newbuffer>,
+        size: Size<i32, Physical>,
+        dst_transform: Transform,
+    ) -> Result<MultiFrame<'render, 'target, 'newframe, 'newbuffer, R, T>, Self::Error>
+    where
+        'newbuffer: 'newframe,
+    {
+        let node = unsafe { *(*self.render).node() };
+        let (MultiFramebufferInternal::Render(fb) | MultiFramebufferInternal::Target(fb)) =
+            &mut framebuffer.0;
+        let frame = self
+            .guard
+            .as_mut()
+            .render(fb, size, dst_transform)
+            .map_err(Error::Render)?;
+
+        let span = trace_span!(
+            parent: &self.span,
+            "renderer_local_multi_frame",
+        )
+        .entered();
+
+        Ok(MultiFrame {
+            node,
+            frame: Some(frame),
+            framebuffer: None,
+            target: None,
+            render: self.render,
+            other_renderers: &mut *self.other_renderers,
+
+            dst_transform,
+            size,
+            damage: Vec::new(),
+            span,
+        })
+    }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.guard.as_mut().wait(sync).map_err(Error::Render)
+    }
+
+    fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
+        self.guard.as_mut().cleanup_texture_cache().map_err(Error::Render)
+    }
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi, Target> Offscreen<Target>
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target>,
+    // TODO comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn create_buffer(
+        &mut self,
+        format: Fourcc,
+        size: Size<i32, BufferCoords>,
+    ) -> Result<Target, Self::Error> {
+        self.guard
+            .as_mut()
+            .create_buffer(format, size)
+            .map_err(Error::Render)
+    }
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi, Target> Bind<Target>
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: Bind<Target>,
+    // TODO: comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn bind<'b>(&mut self, target: &'b mut Target) -> Result<Self::Framebuffer<'b>, Self::Error> {
+        self.guard
+            .as_mut()
+            .bind(target)
+            .map(MultiFramebufferInternal::Render)
+            .map(MultiFramebuffer)
+            .map_err(Error::Render)
+    }
+
+    fn supported_formats(&self) -> Option<FormatSet> {
+        self.guard.as_ref().supported_formats()
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> ImportMemWl
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: ImportMemWl,
+    // TODO: comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn import_shm_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, BufferCoords>],
+    ) -> Result<Self::TextureId, Self::Error> {
+        let shm_texture = self
+            .guard
+            .as_mut()
+            .import_shm_buffer(buffer, surface, damage)
+            .map_err(Error::Render)?;
+        let (dimensions, format) = shm::with_buffer_contents(buffer, |_, _, data| {
+            Ok((
+                (data.width, data.height).into(),
+                shm::shm_format_to_fourcc(data.format)
+                    .map(|code| Format {
+                        code,
+                        modifier: Modifier::Linear,
+                    })
+                    .ok_or(Error::ImportFailed)?,
+            ))
+        })
+        .map_err(|_| Error::ImportFailed)??;
+        let mut texture = MultiTexture::from_surface(surface, dimensions, format);
+        texture.insert_texture::<R>(&self.guard.as_ref().context_id(), shm_texture);
+        Ok(texture)
+    }
+
+    fn shm_formats(&self) -> Box<dyn Iterator<Item = wl_shm::Format>> {
+        ImportMemWl::shm_formats(self.guard.as_ref())
+    }
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> ImportMem
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: ImportMem,
+    // TODO: comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn import_memory(
+        &mut self,
+        data: &[u8],
+        format: Fourcc,
+        size: Size<i32, BufferCoords>,
+        flipped: bool,
+    ) -> Result<<Self as RendererSuper>::TextureId, <Self as RendererSuper>::Error> {
+        let mem_texture = self
+            .guard
+            .as_mut()
+            .import_memory(data, format, size, flipped)
+            .map_err(Error::Render)?;
+        let mut texture = MultiTexture::new(
+            size,
+            Format {
+                code: format,
+                modifier: Modifier::Linear,
+            },
+        );
+        texture.insert_texture::<R>(&self.guard.as_ref().context_id(), mem_texture);
+        Ok(texture)
+    }
+
+    fn update_memory(
+        &mut self,
+        texture: &<Self as RendererSuper>::TextureId,
+        data: &[u8],
+        region: Rectangle<i32, BufferCoords>,
+    ) -> Result<(), <Self as RendererSuper>::Error> {
+        let mem_texture = texture
+            .get::<R>(&self.guard.as_ref().context_id())
+            .ok_or_else(|| Error::MismatchedDevice(*(unsafe { &*self.render }.node())))?;
+        self.guard
+            .as_mut()
+            .update_memory(&mem_texture, data, region)
+            .map_err(Error::Render)
+    }
+
+    fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>> {
+        ImportMem::mem_formats(self.guard.as_ref())
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> ImportDmaWl
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf>,
+    <T::Device as ApiDevice>::Renderer: ExportMem + Bind<Dmabuf>,
+    // TODO: comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn import_dma_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, BufferCoords>],
+    ) -> Result<Self::TextureId, Self::Error> {
+        let dmabuf = get_dmabuf(buffer).expect("import_dma_buffer without checking buffer type?");
+        let texture = MultiTexture::from_surface(surface, dmabuf.size(), dmabuf.format());
+        let texture_ref = texture.0.clone();
+        let res = import_dmabuf_internal::<R, T>(
+            unsafe { *self.render },
+            self.target.as_mut().map(|x| &mut ***x),
+            &mut *self.other_renderers,
+            dmabuf,
+            texture,
+            Some(damage),
+        );
+        if res.is_ok() {
+            if let Some(surface) = surface {
+                surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
+            }
+        }
+        res
+    }
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> ImportDma
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf>,
+    <T::Device as ApiDevice>::Renderer: ExportMem + Bind<Dmabuf>,
+    // TODO: comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn import_dmabuf(
+        &mut self,
+        dmabuf: &Dmabuf,
+        damage: Option<&[Rectangle<i32, BufferCoords>]>,
+    ) -> Result<Self::TextureId, Self::Error> {
+        let texture = MultiTexture::new(dmabuf.size(), dmabuf.format());
+        import_dmabuf_internal(
+            unsafe { *self.render },
+            self.target.as_mut().map(|target| &mut ***target),
+            &mut *self.other_renderers,
+            dmabuf,
+            texture,
+            damage,
+        )
+    }
+
+    fn dmabuf_formats(&self) -> FormatSet {
+        ImportDma::dmabuf_formats(self.guard.as_ref())
+    }
+
+    fn has_dmabuf_format(&self, format: Format) -> bool {
+        ImportDma::has_dmabuf_format(self.guard.as_ref(), format)
+    }
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> ExportMem
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: ExportMem,
+    // TODO: comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    type TextureMapping = <<R::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping;
+
+    fn copy_framebuffer(
+        &mut self,
+        target: &Self::Framebuffer<'_>,
+        region: Rectangle<i32, BufferCoords>,
+        format: Fourcc,
+    ) -> Result<Self::TextureMapping, Self::Error> {
+        // because our `Framebuffer`-type is based on `R`, we cannot get a FramebufferInternal::Target variant, that isn't based on R.
+        // in other words the local multirenderer doesn't let you export a non-local framebuffer created from the non-local multirenderer
+        // through type bounds anyway.
+        let (MultiFramebufferInternal::Render(fb) | MultiFramebufferInternal::Target(fb)) = &target.0;
+
+        self.guard
+            .as_mut()
+            .copy_framebuffer(fb, region, format)
+            .map_err(Error::Render)
+    }
+
+    fn copy_texture(
+        &mut self,
+        texture: &Self::TextureId,
+        region: Rectangle<i32, BufferCoords>,
+        format: Fourcc,
+    ) -> Result<Self::TextureMapping, Self::Error> {
+        let tex = texture
+            .get::<R>(&self.guard.as_ref().context_id())
+            .ok_or_else(|| Error::MismatchedDevice(*unsafe { &*self.render }.node()))?;
+        self.guard
+            .as_mut()
+            .copy_texture(&tex, region, format)
+            .map_err(Error::Render)
+    }
+
+    fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, Self::Error> {
+        let tex = texture
+            .get::<R>(&self.guard.as_ref().context_id())
+            .ok_or_else(|| Error::MismatchedDevice(*unsafe { &*self.render }.node()))?;
+        self.guard.as_mut().can_read_texture(&tex).map_err(Error::Render)
+    }
+
+    fn map_texture<'b>(
+        &mut self,
+        texture_mapping: &'b Self::TextureMapping,
+    ) -> Result<&'b [u8], Self::Error> {
+        self.guard
+            .as_mut()
+            .map_texture(texture_mapping)
+            .map_err(Error::Render)
+    }
+}
+
+impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> Blit
+    for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
+where
+    <R::Device as ApiDevice>::Renderer: Blit,
+    // TODO: comment
+    R: 'static,
+    T: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: ExportMem + ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::TextureId: Clone + Send,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
+    <<R::Device as ApiDevice>::Renderer as RendererSuper>::Frame<'frame, 'buffer>:
+        FrameContext<'a, 'frame, 'buffer, <R::Device as ApiDevice>::Renderer>,
+{
+    fn blit(
+        &mut self,
+        from: &Self::Framebuffer<'_>,
+        to: &mut Self::Framebuffer<'_>,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<SyncPoint, Self::Error> {
+        // because our `Framebuffer`-type is based on `R`, we cannot get a FramebufferInternal::Target variant, that isn't based on R.
+        // in other words the local multirenderer doesn't let you export a non-local framebuffer created from the non-local multirenderer
+        // through type bounds anyway.
+        let (MultiFramebufferInternal::Render(from_fb) | MultiFramebufferInternal::Target(from_fb)) = &from.0;
+        let (MultiFramebufferInternal::Render(to_fb) | MultiFramebufferInternal::Target(to_fb)) = &mut to.0;
+
+        self.guard
+            .as_mut()
+            .blit(from_fb, to_fb, src, dst, filter)
+            .map_err(Error::Render)
     }
 }
