@@ -26,7 +26,7 @@ use crate::{
         allocator::Buffer as BufferTrait,
         egl::display::EGLBufferReader,
         renderer::{
-            multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
+            multigpu::{import_dmabuf_internal, Error as MultigpuError, MultiRenderer, MultiTexture},
             Bind, ExportMem, ImportDma, ImportEgl, ImportMem,
         },
     },
@@ -321,7 +321,14 @@ where
         {
             let texture = MultiTexture::from_surface(surface, dmabuf.size(), dmabuf.format());
             let texture_ref = texture.0.clone();
-            let res = self.import_dmabuf_internal(&dmabuf, texture, Some(damage));
+            let res = import_dmabuf_internal(
+                self.render,
+                self.target.as_mut().map(|target| &mut *target.device),
+                &mut self.other_renderers,
+                &dmabuf,
+                texture,
+                Some(damage),
+            );
             if res.is_ok() {
                 if let Some(surface) = surface {
                     surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
