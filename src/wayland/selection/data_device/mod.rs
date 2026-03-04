@@ -248,14 +248,10 @@ fn handle_dnd<D, S>(
     let mut data = data.state.lock().unwrap();
     match request {
         Request::Accept { mime_type, .. } => {
-            if let Some(source) = source.as_ref() {
-                if let Some(mtype) = mime_type {
-                    data.accepted = source
-                        .metadata()
-                        .is_some_and(|meta| meta.mime_types.contains(&mtype));
-                } else {
-                    data.accepted = false;
-                }
+            if source.is_some() {
+                // A non-NULL mime type means the client accepts the drag.
+                // NULL means it does not.
+                data.accepted = mime_type.is_some();
             } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
