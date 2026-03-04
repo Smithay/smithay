@@ -238,6 +238,7 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
 unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
+    #[allow(dead_code)]
     fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
         Self::with_context_flags(xkb_config, repeat_rate, repeat_delay, xkb::CONTEXT_NO_FLAGS)
     }
@@ -669,6 +670,7 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for KeyboardHandle<D> {
 
 impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Create a keyboard handler from a set of RMLVO rules
+    #[allow(dead_code)]
     pub(crate) fn new(xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) -> Result<Self, Error> {
         Self::with_context_flags(xkb_config, repeat_delay, repeat_rate, xkb::CONTEXT_NO_FLAGS)
     }
