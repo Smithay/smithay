@@ -248,10 +248,21 @@ fn handle_dnd<D, S>(
     let mut data = data.state.lock().unwrap();
     match request {
         Request::Accept { mime_type, .. } => {
-            if source.is_some() {
-                // A non-NULL mime type means the client accepts the drag.
-                // NULL means it does not.
-                data.accepted = mime_type.is_some();
+            if let Some(source) = source.as_ref() {
+                if let Some(mtype) = mime_type {
+                    // Only set accepted when the mime type matches what the
+                    // source offers. Non-matching types are ignored so they
+                    // do not override a previous valid match.
+                    if !data.accepted
+                        && source
+                            .metadata()
+                            .is_some_and(|meta| meta.mime_types.contains(&mtype))
+                    {
+                        data.accepted = true;
+                    }
+                } else {
+                    data.accepted = false;
+                }
             } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,
@@ -417,7 +428,9 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
         let offer_state = Arc::new(Mutex::new(WlOfferState {
             active: true,
             dropped: false,
-            accepted: true,
+            // Set true once any accept matches.
+            // Reset per-enter since each enter creates a new offer state.
+            accepted: false,
             finished: false,
             chosen_action: WlDndAction::empty(),
         }));
