@@ -238,6 +238,10 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
 unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
+    fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
+        Self::with_context_flags(xkb_config, repeat_rate, repeat_delay, xkb::CONTEXT_NO_FLAGS)
+    }
+
     fn with_context_flags(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32, context_flags: ContextFlags) -> Result<KbdInternal<D>, ()> {
         // we create a new context for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
@@ -267,10 +271,6 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             led_state,
             grab: GrabStatus::None,
         })
-    }
-
-    fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
-        Self::with_context_flags(xkb_config, repeat_rate, repeat_delay, xkb::CONTEXT_NO_FLAGS)
     }
 
     // returns whether the modifiers or led state has changed
