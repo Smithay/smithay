@@ -1715,7 +1715,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
     }
 }
 
-impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
+impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, '_> {
     fn blit_to(
         &mut self,
         to: &mut GlesTarget<'buffer>,
