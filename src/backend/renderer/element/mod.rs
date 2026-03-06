@@ -50,7 +50,10 @@ crate::utils::ids::id_gen!(external_id);
 
 #[derive(Debug, Clone)]
 /// A unique id for a [`RenderElement`]
-pub struct Id(InnerId);
+pub struct Id {
+    inner: InnerId,
+    namespace: Option<usize>,
+}
 
 #[derive(Debug, Clone)]
 enum InnerId {
@@ -61,7 +64,10 @@ enum InnerId {
 
 #[derive(Debug, Clone)]
 /// A weak reference to a unique id for a [`RenderElement`]
-pub struct WeakId(InnerWeakId);
+pub struct WeakId {
+    inner: InnerWeakId,
+    namespace: Option<usize>,
+}
 
 #[derive(Debug, Clone)]
 enum InnerWeakId {
@@ -87,32 +93,34 @@ impl Drop for ExternalId {
 
 impl PartialEq for Id {
     fn eq(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            #[cfg(feature = "wayland_frontend")]
-            (InnerId::WaylandResource(this_obj), InnerId::WaylandResource(other_obj)) => {
-                this_obj == other_obj
+        self.namespace == other.namespace
+            && match (&self.inner, &other.inner) {
+                #[cfg(feature = "wayland_frontend")]
+                (InnerId::WaylandResource(this_obj), InnerId::WaylandResource(other_obj)) => {
+                    this_obj == other_obj
+                }
+                (InnerId::External(this_id), InnerId::External(other_id)) => Arc::ptr_eq(this_id, other_id),
+                #[allow(unreachable_patterns)]
+                _ => false,
             }
-            (InnerId::External(this_id), InnerId::External(other_id)) => Arc::ptr_eq(this_id, other_id),
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
     }
 }
 impl Eq for Id {}
 
 impl PartialEq for WeakId {
     fn eq(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            #[cfg(feature = "wayland_frontend")]
-            (InnerWeakId::WaylandResource(this_obj), InnerWeakId::WaylandResource(other_obj)) => {
-                this_obj == other_obj
+        self.namespace == other.namespace
+            && match (&self.inner, &other.inner) {
+                #[cfg(feature = "wayland_frontend")]
+                (InnerWeakId::WaylandResource(this_obj), InnerWeakId::WaylandResource(other_obj)) => {
+                    this_obj == other_obj
+                }
+                (InnerWeakId::External(this_id), InnerWeakId::External(other_id)) => {
+                    Weak::ptr_eq(this_id, other_id)
+                }
+                #[allow(unreachable_patterns)]
+                _ => false,
             }
-            (InnerWeakId::External(this_id), InnerWeakId::External(other_id)) => {
-                Weak::ptr_eq(this_id, other_id)
-            }
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
     }
 }
 impl Eq for WeakId {}
@@ -129,11 +137,14 @@ impl std::hash::Hash for Id {
     where
         H: std::hash::Hasher,
     {
-        match &self.0 {
+        match &self.inner {
             #[cfg(feature = "wayland_frontend")]
             InnerId::WaylandResource(obj) => obj.hash(state),
-            InnerId::External(arc) => (Arc::as_ptr(arc) as usize).hash(state),
+            InnerId::External(arc) => {
+                (Arc::as_ptr(arc) as usize).hash(state);
+            }
         }
+        self.namespace.hash(state);
     }
 }
 
@@ -142,11 +153,14 @@ impl std::hash::Hash for WeakId {
     where
         H: std::hash::Hasher,
     {
-        match &self.0 {
+        match &self.inner {
             #[cfg(feature = "wayland_frontend")]
             InnerWeakId::WaylandResource(obj) => obj.hash(state),
-            InnerWeakId::External(arc) => (Weak::as_ptr(arc) as usize).hash(state),
+            InnerWeakId::External(arc) => {
+                (Weak::as_ptr(arc) as usize).hash(state);
+            }
         }
+        self.namespace.hash(state);
     }
 }
 
@@ -157,7 +171,10 @@ impl Id {
     /// multiple times will return the same id.
     #[cfg(feature = "wayland_frontend")]
     pub fn from_wayland_resource<R: Resource>(resource: &R) -> Self {
-        Id(InnerId::WaylandResource(resource.id()))
+        Id {
+            inner: InnerId::WaylandResource(resource.id()),
+            namespace: None,
+        }
     }
 
     /// Create a new unique id
@@ -166,27 +183,60 @@ impl Id {
     /// are dropped.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Id(InnerId::External(Arc::new(ExternalId::new())))
+        Id {
+            inner: InnerId::External(Arc::new(ExternalId::new())),
+            namespace: None,
+        }
+    }
+
+    /// Add a namespace to this id.
+    ///
+    /// This allows re-use of an `Id`, while still differentiating
+    /// between multiple instances with a stable Hash.
+    ///
+    /// This is especially useful for elements implementing
+    /// [`Element::is_framebuffer_effect`], where multiple instances
+    /// of the same id in a single `DamageTracker`-call will
+    /// degrade performance.
+    pub fn namespaced(&self, namespace: usize) -> Self {
+        Id {
+            inner: self.inner.clone(),
+            namespace: Some(namespace),
+        }
+    }
+
+    /// Remove a previously applied namespace from the `Id`.
+    pub fn unnamespaced(&self) -> Self {
+        Id {
+            inner: self.inner.clone(),
+            namespace: None,
+        }
     }
 
     /// Create a weak reference to this Id, which won't keep it from being re-used internally.
     pub fn downgrade(&self) -> WeakId {
-        WeakId(match &self.0 {
-            #[cfg(feature = "wayland_frontend")]
-            InnerId::WaylandResource(id) => InnerWeakId::WaylandResource(id.clone()),
-            InnerId::External(arc) => InnerWeakId::External(Arc::downgrade(arc)),
-        })
+        WeakId {
+            inner: match &self.inner {
+                #[cfg(feature = "wayland_frontend")]
+                InnerId::WaylandResource(id) => InnerWeakId::WaylandResource(id.clone()),
+                InnerId::External(arc) => InnerWeakId::External(Arc::downgrade(arc)),
+            },
+            namespace: self.namespace,
+        }
     }
 }
 
 impl WeakId {
     /// Create `Id` from this weak handle, if it still exist
     pub fn upgrade(&self) -> Option<Id> {
-        Some(Id(match &self.0 {
-            #[cfg(feature = "wayland_frontend")]
-            InnerWeakId::WaylandResource(obj) => InnerId::WaylandResource(obj.clone()),
-            InnerWeakId::External(weak) => InnerId::External(weak.upgrade()?),
-        }))
+        Some(Id {
+            inner: match &self.inner {
+                #[cfg(feature = "wayland_frontend")]
+                InnerWeakId::WaylandResource(obj) => InnerId::WaylandResource(obj.clone()),
+                InnerWeakId::External(weak) => InnerId::External(weak.upgrade()?),
+            },
+            namespace: self.namespace,
+        })
     }
 }
 
@@ -644,6 +694,117 @@ where
         cache: &UserDataMap,
     ) -> Result<(), <R>::Error> {
         (*self).capture_framebuffer(frame, src, dst, cache)
+    }
+}
+
+/// [`Element`] wrapper namespacing the [`Id`] of the internal element.
+///
+/// See [`Id::namespaced`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamespacedElement<E: Element> {
+    inner: E,
+    namespace: Id,
+}
+
+impl<E: Element> NamespacedElement<E> {
+    /// Create a new `NamespacedElement` wrapping `elem` and using
+    /// `namespace` to namespace the elements id.
+    pub fn new(elem: E, namespace: usize) -> Self {
+        let namespace = elem.id().namespaced(namespace);
+        NamespacedElement {
+            inner: elem,
+            namespace,
+        }
+    }
+
+    /// Extract the inner element
+    pub fn into_inner(self) -> E {
+        self.inner
+    }
+}
+
+impl<E: Element> AsRef<E> for NamespacedElement<E> {
+    fn as_ref(&self) -> &E {
+        &self.inner
+    }
+}
+
+impl<E: Element> AsMut<E> for NamespacedElement<E> {
+    fn as_mut(&mut self) -> &mut E {
+        &mut self.inner
+    }
+}
+
+impl<E: Element> Element for NamespacedElement<E> {
+    fn id(&self) -> &Id {
+        &self.namespace
+    }
+
+    fn current_commit(&self) -> CommitCounter {
+        self.inner.current_commit()
+    }
+
+    fn src(&self) -> Rectangle<f64, BufferCoords> {
+        self.inner.src()
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.inner.geometry(scale)
+    }
+
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        self.inner.location(scale)
+    }
+
+    fn transform(&self) -> Transform {
+        self.inner.transform()
+    }
+
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+        self.inner.damage_since(scale, commit)
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        self.inner.opaque_regions(scale)
+    }
+
+    fn alpha(&self) -> f32 {
+        self.inner.alpha()
+    }
+
+    fn kind(&self) -> Kind {
+        self.inner.kind()
+    }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.inner.is_framebuffer_effect()
+    }
+}
+
+impl<R: Renderer, E: Element + RenderElement<R>> RenderElement<R> for NamespacedElement<E> {
+    fn draw(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+    ) -> Result<(), <R>::Error> {
+        self.inner.draw(frame, src, dst, damage, opaque_regions)
+    }
+
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
+        self.inner.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
+    ) -> Result<(), <R>::Error> {
+        self.inner.capture_framebuffer(frame, src, dst, cache)
     }
 }
 
