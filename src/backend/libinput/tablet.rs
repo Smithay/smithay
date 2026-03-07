@@ -4,7 +4,7 @@ use crate::backend::input::{
 
 use input as libinput;
 use input::event;
-use input::event::{tablet_tool, EventTrait};
+use input::event::{tablet_pad, tablet_tool, EventTrait};
 
 use super::LibinputInputBackend;
 
@@ -25,6 +25,16 @@ where
     }
 
     fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::Event<LibinputInputBackend> for tablet_pad::TabletPadButtonEvent {
+    fn time(&self) -> u64 {
+        tablet_pad::TabletPadEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> <LibinputInputBackend as backend::InputBackend>::Device {
         event::EventTrait::device(self)
     }
 }
@@ -190,5 +200,21 @@ impl backend::TabletToolButtonEvent<LibinputInputBackend> for tablet_tool::Table
 
     fn button_state(&self) -> backend::ButtonState {
         tablet_tool::TabletToolButtonEvent::button_state(self).into()
+    }
+}
+
+impl<E: tablet_pad::TabletPadEventTrait> backend::TabletPadEvent for E {
+    fn mode(&self) -> u32 {
+        tablet_pad::TabletPadEventTrait::mode(self)
+    }
+}
+
+impl backend::TabletPadButtonEvent<LibinputInputBackend> for tablet_pad::TabletPadButtonEvent {
+    fn button(&self) -> u32 {
+        tablet_pad::TabletPadButtonEvent::button_number(self)
+    }
+
+    fn button_state(&self) -> backend::ButtonState {
+        tablet_pad::TabletPadButtonEvent::button_state(self).into()
     }
 }
