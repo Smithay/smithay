@@ -29,6 +29,7 @@ crate::utils::ids::id_gen!(window_id);
 
 /// Represents the surface of a [`Window`]
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum WindowSurface {
     /// An xdg toplevel surface
     Wayland(ToplevelSurface),
