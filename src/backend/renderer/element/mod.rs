@@ -567,6 +567,8 @@ pub trait Element {
 /// A single render element
 pub trait RenderElement<R: Renderer>: Element {
     /// Draw this element
+    ///
+    /// `cache` will only be `Some` if [`Element::is_framebuffer_effect`] returns `true`.
     fn draw(
         &self,
         frame: &mut R::Frame<'_, '_>,
@@ -574,6 +576,7 @@ pub trait RenderElement<R: Renderer>: Element {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
@@ -682,8 +685,9 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        (*self).draw(frame, src, dst, damage, opaque_regions)
+        (*self).draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     fn capture_framebuffer(
@@ -789,8 +793,9 @@ impl<R: Renderer, E: Element + RenderElement<R>> RenderElement<R> for Namespaced
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), <R>::Error> {
-        self.inner.draw(frame, src, dst, damage, opaque_regions)
+        self.inner.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
@@ -1111,6 +1116,7 @@ macro_rules! render_elements_internal {
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             opaque_regions: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
+            cache: Option<&$crate::utils::user_data::UserDataMap>,
         ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
         where
         $(
@@ -1127,7 +1133,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, opaque_regions)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, opaque_regions, cache)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1184,6 +1190,7 @@ macro_rules! render_elements_internal {
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             opaque_regions: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
+            cache: Option<&$crate::utils::user_data::UserDataMap>,
         ) -> Result<(), <$renderer as $crate::backend::renderer::RendererSuper>::Error>
         {
             match self {
@@ -1192,7 +1199,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, opaque_regions)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, opaque_regions, cache)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1515,7 +1522,10 @@ macro_rules! render_elements_internal {
 /// #             Renderer,
 /// #         },
 /// #     },
-/// #     utils::{Buffer, Point, Physical, Rectangle, Scale, Transform},
+/// #     utils::{
+/// #         user_data::UserDataMap,
+/// #         Buffer, Point, Physical, Rectangle, Scale, Transform,
+/// #     },
 /// # };
 /// #
 /// # struct MyRenderElement1;
@@ -1547,6 +1557,7 @@ macro_rules! render_elements_internal {
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
 /// #         _opaque_regions: &[Rectangle<i32, Physical>],
+/// #         _cache: Option<&UserDataMap>,
 /// #     ) -> Result<(), R::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1578,6 +1589,7 @@ macro_rules! render_elements_internal {
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
 /// #         _opaque_regions: &[Rectangle<i32, Physical>],
+/// #         _cache: Option<&UserDataMap>,
 /// #     ) -> Result<(), R::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1798,8 +1810,9 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.0.draw(frame, src, dst, damage, opaque_regions)
+        self.0.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     #[inline]

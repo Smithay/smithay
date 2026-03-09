@@ -49,7 +49,7 @@ use crate::{
         utils::{CommitCounter, OpaqueRegions},
         Color32F, Frame, Renderer,
     },
-    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{user_data::UserDataMap, Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{AsRenderElements, Element, Id, Kind, RenderElement};
@@ -226,6 +226,7 @@ impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         frame.draw_solid(dst, damage, self.color)
     }

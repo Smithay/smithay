@@ -454,6 +454,7 @@ impl OutputDamageTracker {
                     element_geometry,
                     &element_damage,
                     &element_opaque_regions,
+                    self.last_state.effects_cache.get(element.id()),
                 )?;
             }
 

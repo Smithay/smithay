@@ -677,7 +677,7 @@ where
             continue;
         }
 
-        element.draw(frame, element.src(), element_geometry, &element_damage, &[])?;
+        element.draw(frame, element.src(), element_geometry, &element_damage, &[], None)?;
     }
 
     Ok(Some(render_damage))

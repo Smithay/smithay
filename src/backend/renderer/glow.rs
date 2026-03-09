@@ -20,7 +20,7 @@ use crate::{
             Renderer, RendererSuper, TextureFilter,
         },
     },
-    utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
+    utils::{user_data::UserDataMap, Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
 };
 
 #[cfg(feature = "wayland_frontend")]
@@ -632,8 +632,9 @@ impl RenderElement<GlowRenderer> for PixelShaderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage, opaque_regions)
+        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage, opaque_regions, cache)
     }
 
     fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage<'_>> {
@@ -650,8 +651,9 @@ impl RenderElement<GlowRenderer> for TextureShaderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage, opaque_regions)
+        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage, opaque_regions, cache)
     }
 
     fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage<'_>> {
