@@ -119,7 +119,7 @@ use crate::{
             ErasedContextId, Frame, ImportMem, Renderer,
         },
     },
-    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{user_data::UserDataMap, Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{Element, Id, Kind, RenderElement, UnderlyingStorage};
@@ -642,6 +642,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         frame.render_texture_from_to(
             &self.texture,

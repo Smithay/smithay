@@ -75,7 +75,10 @@ use crate::{
         },
         Color32F, Frame, ImportAll, Renderer, Texture,
     },
-    utils::{Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{
+        user_data::UserDataMap, Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size,
+        Transform,
+    },
     wayland::{
         alpha_modifier::AlphaModifierSurfaceCachedState,
         compositor::{self, SurfaceData, TraversalAction},
@@ -448,6 +451,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         match self.texture {
             WaylandSurfaceTexture::Texture(ref texture) => frame.render_texture_from_to(

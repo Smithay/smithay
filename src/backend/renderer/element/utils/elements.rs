@@ -101,8 +101,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.element.draw(frame, src, dst, damage, opaque_regions)
+        self.element.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     #[inline]
@@ -299,8 +300,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.element.draw(frame, src, dst, damage, opaque_regions)
+        self.element.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     #[inline]
@@ -415,8 +417,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.element.draw(frame, src, dst, damage, opaque_regions)
+        self.element.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     #[inline]
