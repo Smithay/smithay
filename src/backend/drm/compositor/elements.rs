@@ -5,7 +5,7 @@ use crate::{
         Color32F, Frame, Renderer,
     },
     render_elements,
-    utils::{Buffer, Physical, Rectangle, Scale, Transform},
+    utils::{user_data::UserDataMap, Buffer, Physical, Rectangle, Scale, Transform},
 };
 
 render_elements! {
@@ -44,6 +44,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         frame.clear(
             Color32F::TRANSPARENT,
@@ -177,6 +178,7 @@ where
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         // We do not actually draw anything here
         Ok(())

@@ -406,7 +406,7 @@ where
                 tracing::trace!("drawing frame element with damage: {:#?}", element_damage);
 
                 element
-                    .draw(&mut frame, src, dst, &element_damage, &[])
+                    .draw(&mut frame, src, dst, &element_damage, &[], None)
                     .map_err(BlitFrameResultError::Rendering)?;
             }
 

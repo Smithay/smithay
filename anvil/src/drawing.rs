@@ -20,7 +20,7 @@ use smithay::{
         utils::CommitCounter,
         Frame,
     },
-    utils::{Buffer, Logical, Rectangle, Size, Transform},
+    utils::{user_data::UserDataMap, Buffer, Logical, Rectangle, Size, Transform},
 };
 
 pub static CLEAR_COLOR: Color32F = Color32F::new(0.8, 0.8, 0.9, 1.0);
@@ -203,6 +203,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         // FIXME: respect the src for cropping
         let scale = dst.size.to_f64() / self.src().size;

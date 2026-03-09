@@ -206,7 +206,10 @@ use crate::{
             ContextId, Frame, ImportMem, Renderer, Texture,
         },
     },
-    utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{
+        user_data::UserDataMap, Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size,
+        Transform,
+    },
 };
 
 use super::{CommitCounter, Element, Id, Kind, RenderElement};
@@ -693,6 +696,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         if frame.context_id() != self.context_id {
             warn!("trying to render texture from different renderer context");
