@@ -572,11 +572,18 @@ impl<D: SeatHandler + 'static> Seat<D> {
         repeat_delay: i32,
         repeat_rate: i32,
     ) -> Result<KeyboardHandle<D>, KeyboardError> {
-        Self::add_keyboard_with_context_flags(self, xkb_config, repeat_delay, repeat_rate, xkbcommon::xkb::CONTEXT_NO_FLAGS)
+        Self::add_keyboard_with_context_flags(
+            self,
+            xkb_config,
+            repeat_delay,
+            repeat_rate,
+            xkbcommon::xkb::CONTEXT_NO_FLAGS,
+        )
     }
 
-    /// Inner helper function for `add_keyboard` which allowed for overwriting default context
-    /// flags passed to creation of xkb::Context.
+    /// [`Self::add_keyboard`] equivalent, that allows for overwriting default xkb::Context flags.
+    ///
+    /// For more info read [`Self::add_keyboard`] docs.
     #[instrument(parent = &self.arc.span, skip(self))]
     pub fn add_keyboard_with_context_flags(
         &mut self,
@@ -586,7 +593,8 @@ impl<D: SeatHandler + 'static> Seat<D> {
         context_flags: ContextFlags,
     ) -> Result<KeyboardHandle<D>, KeyboardError> {
         let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard = self::keyboard::KeyboardHandle::with_context_flags(xkb_config, repeat_delay, repeat_rate, context_flags)?;
+        let keyboard =
+            self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate, context_flags)?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change

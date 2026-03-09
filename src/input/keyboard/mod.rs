@@ -15,7 +15,7 @@ use thiserror::Error;
 use tracing::{debug, info, info_span, instrument, trace};
 
 use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
-pub use xkbcommon::xkb::{self, ContextFlags, keysyms, Keycode, Keysym};
+pub use xkbcommon::xkb::{self, keysyms, ContextFlags, Keycode, Keysym};
 
 use super::{GrabStatus, Seat, SeatHandler};
 
@@ -238,12 +238,12 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
 unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
-    #[allow(dead_code)]
-    fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
-        Self::with_context_flags(xkb_config, repeat_rate, repeat_delay, xkb::CONTEXT_NO_FLAGS)
-    }
-
-    fn with_context_flags(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32, context_flags: ContextFlags) -> Result<KbdInternal<D>, ()> {
+    fn new(
+        xkb_config: XkbConfig<'_>,
+        repeat_rate: i32,
+        repeat_delay: i32,
+        context_flags: ContextFlags,
+    ) -> Result<KbdInternal<D>, ()> {
         // we create a new context for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
         // sure nothing goes wrong.
@@ -670,21 +670,21 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for KeyboardHandle<D> {
 
 impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Create a keyboard handler from a set of RMLVO rules
-    #[allow(dead_code)]
-    pub(crate) fn new(xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) -> Result<Self, Error> {
-        Self::with_context_flags(xkb_config, repeat_delay, repeat_rate, xkb::CONTEXT_NO_FLAGS)
-    }
-
-    /// Create a keyboard handler from a set of RMLVO rules
-    pub(crate) fn with_context_flags(xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32, context_flags: ContextFlags) -> Result<Self, Error> {
+    pub(crate) fn new(
+        xkb_config: XkbConfig<'_>,
+        repeat_delay: i32,
+        repeat_rate: i32,
+        context_flags: ContextFlags,
+    ) -> Result<Self, Error> {
         let span = info_span!("input_keyboard");
         let _guard = span.enter();
 
         info!("Initializing a xkbcommon handler with keymap query");
-        let internal = KbdInternal::with_context_flags(xkb_config, repeat_rate, repeat_delay, context_flags).map_err(|_| {
-            debug!("Loading keymap failed");
-            Error::BadKeymap
-        })?;
+        let internal =
+            KbdInternal::new(xkb_config, repeat_rate, repeat_delay, context_flags).map_err(|_| {
+                debug!("Loading keymap failed");
+                Error::BadKeymap
+            })?;
 
         let xkb = internal.xkb.lock().unwrap();
 
