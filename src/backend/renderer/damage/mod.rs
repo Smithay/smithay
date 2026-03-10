@@ -359,6 +359,7 @@ impl OutputDamageTracker {
             output_geo,
             Some(clear_color),
             &mut render_elements,
+            None,
         );
 
         if self.damage.is_empty() {
@@ -415,6 +416,7 @@ impl OutputDamageTracker {
             output_geo,
             Some(clear_color),
             &mut render_elements,
+            Some(&states),
         );
 
         if self.damage.is_empty() {
@@ -458,6 +460,7 @@ impl OutputDamageTracker {
             output_geo,
             self.last_state.clear_color,
             &mut render_elements,
+            None,
         );
 
         if self.damage.is_empty() {
@@ -478,6 +481,7 @@ impl OutputDamageTracker {
         output_geo: Rectangle<i32, Physical>,
         clear_color: Option<Color32F>,
         render_elements: &mut Vec<&'a E>,
+        with_states: Option<&RenderElementStates>,
     ) -> RenderElementStates
     where
         E: Element,
@@ -693,8 +697,12 @@ impl OutputDamageTracker {
             let element_geometry = element.geometry(output_scale);
             let intersection = element_geometry.intersection(output_geo);
             let element_state = element_render_states.states.get_mut(element.id()).unwrap();
+            let with_element_state = with_states
+                .as_ref()
+                .and_then(|states| states.states.get(element.id()));
 
             if element_state.needs_capture
+                || with_element_state.is_some_and(|state| state.needs_capture)
                 || intersection.is_some_and(|i| self.damage.iter().skip(damage_index).any(|d| d.overlaps(i)))
             {
                 element_state.needs_capture = true;
