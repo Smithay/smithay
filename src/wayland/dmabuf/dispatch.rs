@@ -304,7 +304,7 @@ where
                             params.clone(),
                             dh.clone(),
                             dmabuf.clone(),
-                            Import::Falliable,
+                            Import::Fallible,
                         );
                         state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf, notifier);
                     } else {
