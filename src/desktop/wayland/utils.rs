@@ -3,7 +3,7 @@
 use crate::{
     backend::renderer::{
         element::{
-            PrimaryScanoutOutput, RenderElementPresentationState, RenderElementState, RenderElementStates,
+            Id, PrimaryScanoutOutput, RenderElementPresentationState, RenderElementState, RenderElementStates,
         },
         utils::{RendererSurfaceState, RendererSurfaceStateUserData},
     },
@@ -186,6 +186,7 @@ pub fn update_surface_primary_scanout_output<F>(
     surface: &wl_surface::WlSurface,
     output: &Output,
     surface_data: &SurfaceData,
+    namespace: Option<usize>,
     states: &RenderElementStates,
     compare: F,
 ) -> Option<Output>
@@ -202,7 +203,7 @@ where
     surface_primary_scanout_output
         .lock()
         .unwrap()
-        .update_from_render_element_states(surface, output, states, compare)
+        .update_from_render_element_states(surface, output, namespace, states, compare)
 }
 
 /// Sends frame callbacks for a surface and its subsurfaces with the given `time`.
@@ -466,10 +467,15 @@ pub fn take_presentation_feedback_surface_tree<F1, F2>(
 /// in the provided [`RenderElementStates`]
 pub fn surface_presentation_feedback_flags_from_states(
     surface: &wl_surface::WlSurface,
+    namespace: Option<usize>,
     states: &RenderElementStates,
 ) -> wp_presentation_feedback::Kind {
     let zero_copy = states
-        .element_render_state(surface)
+        .element_render_state(
+            namespace
+                .map(|val| Id::from(surface).namespaced(val))
+                .unwrap_or(surface.into()),
+        )
         .map(|state| state.presentation_state == RenderElementPresentationState::ZeroCopy)
         .unwrap_or(false);
 
