@@ -334,6 +334,7 @@ impl PrimaryScanoutOutput {
         &mut self,
         element_id: impl Into<Id>,
         output: &Output,
+        namespace: Option<usize>,
         states: &RenderElementStates,
         compare: F,
     ) -> Option<Output>
@@ -341,6 +342,9 @@ impl PrimaryScanoutOutput {
         F: for<'a> Fn(&'a Output, &'a RenderElementState, &'a Output, &'a RenderElementState) -> &'a Output,
     {
         let element_id = element_id.into();
+        let element_id = namespace
+            .map(|val| element_id.namespaced(val))
+            .unwrap_or(element_id);
         let element_was_presented = states.element_was_presented(element_id.clone());
         let element_state = states.element_render_state(element_id);
         let primary_scanout_output = &mut self.0;
