@@ -1,7 +1,7 @@
 use std::os::unix::io::AsFd;
 use std::sync::Arc;
 
-use drm::control::{connector, crtc, plane, Mode};
+use drm::control::{connector, crtc, plane, Mode, PageFlipFlags};
 use drm::{Device, DriverCapability};
 use indexmap::IndexSet;
 
@@ -12,7 +12,7 @@ use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapc
 use crate::backend::drm::error::AccessError;
 use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
 use crate::backend::drm::{plane_has_property, DrmError, DrmSurface};
-use crate::backend::renderer::sync::SyncPoint;
+use crate::backend::renderer::{sync::SyncPoint, PresentationMode};
 use crate::backend::SwapBuffersError;
 use crate::utils::{DevPath, Physical, Rectangle, Transform};
 
@@ -26,6 +26,7 @@ struct QueuedFb<U> {
     sync: Option<SyncPoint>,
     damage: Option<Vec<Rectangle<i32, Physical>>>,
     user_data: U,
+    presentation_mode: PresentationMode,
 }
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
@@ -292,6 +293,7 @@ where
         sync: Option<SyncPoint>,
         damage: Option<Vec<Rectangle<i32, Physical>>>,
         user_data: U,
+        presentation_mode: PresentationMode,
     ) -> Result<(), Error<A::Error>> {
         if !self.drm.is_active() {
             return Err(Error::<A::Error>::DrmError(DrmError::DeviceInactive));
@@ -306,6 +308,7 @@ where
             sync,
             damage,
             user_data,
+            presentation_mode,
         });
         if self.pending_fb.is_none() {
             self.submit()?;
@@ -342,6 +345,7 @@ where
             sync,
             damage,
             user_data,
+            presentation_mode,
         } = self.queued_fb.take().unwrap();
         let handle = slot.userdata().get::<GbmFramebuffer>().unwrap();
         let mode = self.drm.pending_mode();
@@ -388,10 +392,15 @@ where
             }),
         };
 
+        let mut flip_flags = PageFlipFlags::EVENT;
+        if presentation_mode == PresentationMode::Async {
+            flip_flags |= PageFlipFlags::ASYNC;
+        }
+
         let flip = if self.drm.commit_pending() {
-            self.drm.commit([plane_state], true)
+            self.drm.commit([plane_state], flip_flags)
         } else {
-            self.drm.page_flip([plane_state], true)
+            self.drm.page_flip([plane_state], flip_flags)
         };
         if flip.is_ok() {
             self.pending_fb = Some((slot, user_data));

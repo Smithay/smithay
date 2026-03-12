@@ -18,7 +18,10 @@ use crate::{
             gbm::GbmDevice,
             Allocator,
         },
-        renderer::{element::RenderElement, Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture},
+        renderer::{
+            element::RenderElement, Bind, Color32F, DebugFlags, PresentationMode, Renderer, RendererSuper,
+            Texture,
+        },
     },
     output::OutputModeSource,
 };
@@ -723,8 +726,12 @@ where
     /// Otherwise the underlying swapchain will eventually run out of buffers.
     ///
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]    
-    pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
-        self.with_compositor(|compositor| compositor.queue_frame(user_data))
+    pub fn queue_frame(
+        &mut self,
+        user_data: U,
+        presentation_mode: PresentationMode,
+    ) -> FrameResult<(), A, F> {
+        self.with_compositor(|compositor| compositor.queue_frame(user_data, presentation_mode))
     }
 
     /// Commits the current frame for scan-out.

@@ -1645,7 +1645,7 @@ fn render_surface<'a>(
     } else {
         FrameFlags::DEFAULT
     };
-    let (rendered, states) = surface
+    let (rendered, states, presentation_mode) = surface
         .drm_output
         .render_frame(renderer, &elements, clear_color, frame_mode)
         .map(|render_frame_result| {
@@ -1653,7 +1653,14 @@ fn render_surface<'a>(
             if let PrimaryPlaneElement::Swapchain(element) = render_frame_result.primary_element {
                 element.sync.wait();
             }
-            (!render_frame_result.is_empty, render_frame_result.states)
+
+            let presentation_mode = render_frame_result.presentation_mode();
+
+            (
+                !render_frame_result.is_empty,
+                render_frame_result.states,
+                presentation_mode,
+            )
         })
         .map_err(|err| match err {
             smithay::backend::drm::compositor::RenderFrameError::PrepareFrame(err) => {
@@ -1671,7 +1678,7 @@ fn render_surface<'a>(
         let output_presentation_feedback = take_presentation_feedback(output, space, &states);
         surface
             .drm_output
-            .queue_frame(Some(output_presentation_feedback))
+            .queue_frame(Some(output_presentation_feedback), presentation_mode)
             .map_err(Into::<SwapBuffersError>::into)?;
     }
 
