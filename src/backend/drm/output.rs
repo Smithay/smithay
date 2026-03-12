@@ -18,7 +18,11 @@ use crate::{
             gbm::GbmDevice,
             Allocator,
         },
-        renderer::{element::RenderElement, Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture},
+        drm::compositor::FrameRef,
+        renderer::{
+            element::RenderElement, Bind, Color32F, DebugFlags, PresentationMode, Renderer, RendererSuper,
+            Texture,
+        },
     },
     output::OutputModeSource,
 };
@@ -99,7 +103,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> fmt::Debug for LockedDrmOutputManager<'a, A, F, U, G>
+impl<A, F, U, G> fmt::Debug for LockedDrmOutputManager<'_, A, F, U, G>
 where
     A: Allocator + fmt::Debug,
     <A as Allocator>::Buffer: fmt::Debug,
@@ -150,7 +154,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
+impl<A, F, U, G> LockedDrmOutputManager<'_, A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -277,7 +281,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
+impl<A, F, U, G> LockedDrmOutputManager<'_, A, F, U, G>
 where
     A: Allocator + std::clone::Clone + std::fmt::Debug,
     <A as Allocator>::Buffer: AsDmabuf,
@@ -671,12 +675,28 @@ where
         self.with_compositor(|compositor| compositor.reset_buffers());
     }
 
+    /// Access the currently pending frame without submitting it
+    pub fn with_pending_frame<T, R>(&self, f: T) -> R
+    where
+        T: Fn(Option<FrameRef<'_, U>>) -> R,
+    {
+        self.with_compositor(|compositor| f(compositor.pending_frame()))
+    }
+
+    /// Access the currently queued frame
+    pub fn with_queued_frame<T, R>(&self, f: T) -> R
+    where
+        T: Fn(Option<FrameRef<'_, U>>) -> R,
+    {
+        self.with_compositor(|compositor| f(compositor.queued_frame()))
+    }
+
     /// Marks the current frame as submitted.
     ///
     /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`]
     /// was received after calling [`DrmOutput::queue_frame`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
-    pub fn frame_submitted(&self) -> FrameResult<Option<U>, A, F> {
+    pub fn frame_submitted(&self) -> FrameResult<U, A, F> {
         self.with_compositor(|compositor| compositor.frame_submitted())
     }
 
@@ -695,6 +715,7 @@ where
         elements: &'a [E],
         clear_color: impl Into<Color32F>,
         frame_mode: FrameFlags,
+        presentation_mode: PresentationMode,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
@@ -703,7 +724,7 @@ where
         R::Error: Send + Sync + 'static,
     {
         self.with_compositor(|compositor| {
-            compositor.render_frame(renderer, elements, clear_color, frame_mode)
+            compositor.render_frame(renderer, elements, clear_color, frame_mode, presentation_mode)
         })
     }
 
@@ -813,8 +834,8 @@ where
     }
 }
 
-fn use_mode_internal<'a, A, F, U, G, R, E>(
-    compositor_list: &mut RwLockWriteGuard<'a, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
+fn use_mode_internal<A, F, U, G, R, E>(
+    compositor_list: &mut RwLockWriteGuard<'_, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
     crtc: &crtc::Handle,
     mode: Mode,
     allocator: &A,
@@ -1017,7 +1038,13 @@ where
             .map(|(ref elements, ref color)| (&**elements, color))
             .unwrap_or((&[], &Color32F::BLACK));
         let frame_result = compositor
-            .render_frame(renderer, elements, *clear_color, FrameFlags::empty())
+            .render_frame(
+                renderer,
+                elements,
+                *clear_color,
+                FrameFlags::empty(),
+                PresentationMode::VSync,
+            )
             .map_err(DrmOutputManagerError::RenderFrame)?;
         if frame_result.needs_sync() {
             if let PrimaryPlaneElement::Swapchain(primary_swapchain_element) = frame_result.primary_element {

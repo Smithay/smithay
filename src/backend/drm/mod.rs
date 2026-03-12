@@ -145,6 +145,8 @@ pub struct PlaneInfo {
     pub zpos: Option<i32>,
     /// Formats supported by this plane
     pub formats: FormatSet,
+    /// Async formats supported by this plane
+    pub formats_async: Option<FormatSet>,
     /// Recommended plane size in order of preference
     pub size_hints: Option<Vec<Size<u16, Physical>>>,
 }
@@ -187,12 +189,14 @@ fn planes(
             let zpos = plane_zpos(dev, plane).ok().flatten();
             let type_ = plane_type(dev, plane)?;
             let formats = plane_formats(dev, plane)?;
+            let formats_async = plane_formats_async(dev, plane)?;
             let size_hints = plane_size_hints(dev, plane)?;
             let plane_info = PlaneInfo {
                 handle: plane,
                 type_,
                 zpos,
                 formats,
+                formats_async,
                 size_hints,
             };
             match type_ {
@@ -407,6 +411,118 @@ fn plane_formats(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> 
     );
 
     Ok(FormatSet::from_formats(formats))
+}
+
+fn plane_formats_async(
+    dev: &(impl ControlDevice + DevPath),
+    plane: plane::Handle,
+) -> Result<Option<FormatSet>, DrmError> {
+    let Ok(1) = dev.get_driver_capability(DriverCapability::AddFB2Modifiers) else {
+        return Ok(None);
+    };
+
+    let set = dev.get_properties(plane).map_err(|source| {
+        DrmError::Access(AccessError {
+            errmsg: "Failed to query properties",
+            dev: dev.dev_path(),
+            source,
+        })
+    })?;
+    let (handles, _) = set.as_props_and_values();
+
+    // for every handle ...
+    let prop = handles
+        .iter()
+        .find(|handle| {
+            // get information of that property
+            if let Ok(info) = dev.get_property(**handle) {
+                // to find out, if we got the handle of the "IN_FORMATS_ASYNC" property ...
+                if info
+                    .name()
+                    .to_str()
+                    .map(|x| x == "IN_FORMATS_ASYNC")
+                    .unwrap_or(false)
+                {
+                    // so we can use that to get formats
+                    return true;
+                }
+            }
+            false
+        })
+        .copied();
+
+    let Some(prop) = prop else {
+        return Ok(None);
+    };
+
+    let prop_info = dev.get_property(prop).map_err(|source| {
+        DrmError::Access(AccessError {
+            errmsg: "Failed to query property",
+            dev: dev.dev_path(),
+            source,
+        })
+    })?;
+    let (handles, raw_values) = set.as_props_and_values();
+    let raw_value = raw_values[handles
+        .iter()
+        .enumerate()
+        .find_map(|(i, handle)| if *handle == prop { Some(i) } else { None })
+        .unwrap()];
+
+    let drm::control::property::Value::Blob(blob) = prop_info.value_type().convert_value(raw_value) else {
+        return Ok(None);
+    };
+
+    let data = dev.get_property_blob(blob).map_err(|source| {
+        DrmError::Access(AccessError {
+            errmsg: "Failed to query property blob data",
+            dev: dev.dev_path(),
+            source,
+        })
+    })?;
+
+    let mut formats = IndexSet::new();
+
+    // be careful here, we have no idea about the alignment inside the blob, so always copy using `read_unaligned`,
+    // although slice::from_raw_parts would be so much nicer to iterate and to read.
+    unsafe {
+        let fmt_mod_blob_ptr = data.as_ptr() as *const drm_ffi::drm_format_modifier_blob;
+        let fmt_mod_blob = &*fmt_mod_blob_ptr;
+
+        let formats_ptr: *const u32 = fmt_mod_blob_ptr
+            .cast::<u8>()
+            .offset(fmt_mod_blob.formats_offset as isize) as *const _;
+        let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr
+            .cast::<u8>()
+            .offset(fmt_mod_blob.modifiers_offset as isize)
+            as *const _;
+        #[allow(clippy::unnecessary_cast)]
+        let formats_ptr = formats_ptr as *const u32;
+        #[allow(clippy::unnecessary_cast)]
+        let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
+
+        for i in 0..fmt_mod_blob.count_modifiers {
+            let mod_info = modifiers_ptr.offset(i as isize).read_unaligned();
+            for j in 0..64 {
+                if mod_info.formats & (1u64 << j) != 0 {
+                    let code = DrmFourcc::try_from(
+                        formats_ptr
+                            .offset((j + mod_info.offset) as isize)
+                            .read_unaligned(),
+                    )
+                    .ok();
+                    let modifier = DrmModifier::from(mod_info.modifier);
+                    if let Some(code) = code {
+                        formats.insert(DrmFormat { code, modifier });
+                    }
+                }
+            }
+        }
+    }
+
+    trace!("Supported async formats for plane ({:?}): {:?}", plane, formats);
+
+    Ok(Some(FormatSet::from_formats(formats)))
 }
 
 #[cfg(feature = "backend_gbm")]
