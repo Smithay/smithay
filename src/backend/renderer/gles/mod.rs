@@ -117,7 +117,7 @@ struct GlesBuffer(Rc<GlesBufferInner>);
 /// Usually more performant than using a texture as a framebuffer.
 /// Can be read out, but not used like a texture otherwise.
 #[derive(Debug, Clone)]
-pub struct GlesRenderbuffer(Rc<GlesRenderbufferInternal>);
+pub struct GlesRenderbuffer(Arc<GlesRenderbufferInternal>);
 
 #[derive(Debug)]
 struct GlesRenderbufferInternal {
@@ -127,6 +127,8 @@ struct GlesRenderbufferInternal {
     size: Size<i32, BufferCoord>,
     destruction_callback_sender: Sender<CleanupResource>,
 }
+unsafe impl Send for GlesRenderbufferInternal {}
+unsafe impl Sync for GlesRenderbufferInternal {}
 
 impl GlesRenderbuffer {
     /// Size of the renderbuffer
@@ -1704,7 +1706,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
                 .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
             self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
-            Ok(GlesRenderbuffer(Rc::new(GlesRenderbufferInternal {
+            Ok(GlesRenderbuffer(Arc::new(GlesRenderbufferInternal {
                 rbo,
                 format: internal,
                 has_alpha,
