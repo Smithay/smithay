@@ -140,7 +140,7 @@ use drm::{
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::{IndexMap, IndexSet};
 use smallvec::SmallVec;
-use tracing::{debug, error, info, info_span, instrument, trace, warn};
+use tracing::{debug, error, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
 #[cfg(feature = "renderer_pixman")]
@@ -3181,6 +3181,28 @@ where
             return Some(plane_info.into());
         }
 
+        let dst = Rectangle::new(cursor_plane_location, cursor_plane_size);
+
+        // we try hard to avoid atomic tests and assume that a simple reposition
+        // of a previously successful cursor plane will not fail.
+        // unfortunately there are drivers where this assumption might fail in special
+        // situations like the cursor plane going slightly offscreen.
+        // instead of just failing at the next page flip we try to detect such situations
+        // while keeping atomic tests at a minium.
+        let entered_or_exited_offscreen = previous_state
+            .plane_state(plane_info.handle)
+            .map(|state| {
+                state
+                    .config
+                    .as_ref()
+                    .map(|other| {
+                        output_geometry.contains_rect(other.properties.dst)
+                            != output_geometry.contains_rect(dst)
+                    })
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+
         // we no not have to re-render but update the planes location
         if !render && reposition {
             trace!("repositioning cursor plane");
@@ -3188,12 +3210,35 @@ where
             plane_state.skip = false;
             // Note: we know that we had a cursor plane in the
             // previous frame, so we assume a simple location change
-            // does not not to be tested
-            plane_state.needs_test = false;
+            // does not not to be tested unless it entered or exited offscreen
+            plane_state.needs_test = entered_or_exited_offscreen;
             let config = plane_state.config.as_mut().unwrap();
             config.properties.dst.loc = cursor_plane_location;
-            frame_state.set_state(plane_info.handle, plane_state);
-            return Some(plane_info.into());
+
+            let res = if !plane_state.needs_test {
+                frame_state.set_state(plane_info.handle, plane_state);
+                true
+            } else {
+                debug!("re-testing cursor plane position");
+                frame_state
+                    .test_state(
+                        &self.surface,
+                        self.supports_fencing,
+                        plane_info.handle,
+                        plane_state,
+                        false,
+                    )
+                    .is_ok()
+            };
+
+            if !res {
+                debug!(
+                    "failed to test re-position of cursor plane {:?}",
+                    plane_info.handle
+                );
+            }
+
+            return res.then_some(plane_info.into());
         }
 
         trace!(
@@ -3355,7 +3400,6 @@ where
         };
 
         let src = Rectangle::from_size(cursor_buffer_size).to_f64();
-        let dst = Rectangle::new(cursor_plane_location, cursor_plane_size);
 
         let config = PlaneConfig {
             properties: PlaneProperties {
@@ -3398,8 +3442,10 @@ where
             // not compatible. This should only happen if we either
             // had no cursor plane before or we did direct scan-out
             // on it. A simple re-position without re-render is
-            // already handled earlier.
-            needs_test: !is_compatible,
+            // already handled earlier. We also apply the workaround
+            // for exiting/entering offscreen just like during the
+            // re-position test.
+            needs_test: !is_compatible || entered_or_exited_offscreen,
             element_state: Some(PlaneElementState {
                 id: element.id().clone(),
                 commit: element.current_commit(),
@@ -3409,7 +3455,7 @@ where
             config: Some(config),
         };
 
-        let res = if is_compatible {
+        let res = if !plane_state.needs_test {
             frame_state.set_state(plane_info.handle, plane_state);
             true
         } else {
@@ -3429,7 +3475,7 @@ where
             cursor_state.previous_output_transform = Some(output_transform);
             Some(plane_info.into())
         } else {
-            info!("failed to test cursor {:?} state", plane_info.handle);
+            debug!("failed to test cursor {:?} state", plane_info.handle);
             None
         }
     }
