@@ -628,16 +628,24 @@ impl OutputDamageTracker {
         let mut force_effect_redraw = false;
 
         // add the damage for elements gone that are not covered an opaque region
-        let elements_gone = self.last_state.elements.iter().filter(|(id, _)| {
-            element_render_states
-                .states
-                .get(id)
-                .map(|state| state.presentation_state == RenderElementPresentationState::Skipped)
-                .unwrap_or(true)
-        });
+        let mut elements_gone = self
+            .last_state
+            .elements
+            .iter()
+            .filter(|(id, _)| {
+                element_render_states
+                    .states
+                    .get(id)
+                    .map(|state| state.presentation_state == RenderElementPresentationState::Skipped)
+                    .unwrap_or(true)
+            })
+            .peekable();
+
+        if elements_gone.peek().is_some() {
+            force_effect_redraw = true;
+        }
 
         for (_, state) in elements_gone {
-            force_effect_redraw = true;
             self.damage.extend(
                 state
                     .last_instances
@@ -695,7 +703,8 @@ impl OutputDamageTracker {
                 self.opaque_regions_index[z_index].start
             };
             let element_geometry = element.geometry(output_scale);
-            let intersection = element_geometry.intersection(output_geo);
+            // SAFETY: render_elements only contains elements overlapping with the output geometry
+            let intersection = element_geometry.intersection(output_geo).unwrap();
             let element_state = element_render_states.states.get_mut(element.id()).unwrap();
             let with_element_state = with_states
                 .as_ref()
@@ -703,16 +712,20 @@ impl OutputDamageTracker {
 
             if element_state.needs_capture
                 || with_element_state.is_some_and(|state| state.needs_capture)
-                || intersection.is_some_and(|i| self.damage.iter().skip(damage_index).any(|d| d.overlaps(i)))
+                || self
+                    .damage
+                    .iter()
+                    .skip(damage_index)
+                    .any(|d| d.overlaps(intersection))
             {
                 element_state.needs_capture = true;
-                self.damage.push(intersection.unwrap());
+                self.damage.push(intersection);
                 // also drop all opaque regions on top, so they don't block re-drawing below the blur element
                 for region in self.opaque_regions.iter_mut().take(opaque_regions_index) {
                     // we want to leave `self.opaque_regions_index` intact,
                     // fixing it up would be very involved, so lets do the next best thing
                     // and keep at least part of the opaque region, if possible.
-                    *region = Rectangle::subtract_rect(*region, intersection.unwrap())
+                    *region = Rectangle::subtract_rect(*region, intersection)
                         .into_iter()
                         .next()
                         .unwrap_or_default();
@@ -918,6 +931,7 @@ impl OutputDamageTracker {
                     element_damage,
                 );
 
+                let element_src = element.src();
                 if states
                     .element_render_state(element_id.clone())
                     .is_some_and(|state| state.needs_capture)
@@ -925,18 +939,18 @@ impl OutputDamageTracker {
                     let cache = self
                         .last_state
                         .effects_cache
-                        .entry(element.id().clone())
+                        .entry(element_id.clone())
                         .or_default();
-                    element.capture_framebuffer(&mut frame, element.src(), element_geometry, cache)?;
+                    element.capture_framebuffer(&mut frame, element_src, element_geometry, cache)?;
                 }
 
                 element.draw(
                     &mut frame,
-                    element.src(),
+                    element_src,
                     element_geometry,
                     &element_damage,
                     &element_opaque_regions,
-                    self.last_state.effects_cache.get(element.id()),
+                    self.last_state.effects_cache.get(element_id),
                 )?;
             }
 
