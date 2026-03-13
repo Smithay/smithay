@@ -79,6 +79,9 @@ use wayland_server::protocol::{wl_buffer, wl_shm, wl_surface::WlSurface};
 #[cfg(all(feature = "backend_gbm", feature = "backend_egl", feature = "renderer_gl"))]
 pub mod gbm;
 
+#[cfg(all(feature = "backend_drm", feature = "renderer_pixman"))]
+pub mod drm;
+
 /// Tracks available gpus from a given [`GraphicsApi`]
 #[derive(Debug)]
 pub struct GpuManager<A: GraphicsApi> {
@@ -3076,4 +3079,14 @@ where
                 .map_err(Error::Render)
         }
     }
+}
+
+/// Trait for failable import of egl buffers as [`Dmabuf`]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+pub trait TryImportEgl<R> {
+    /// Error returned from trying to import the egl buffer
+    type Error: std::error::Error;
+
+    /// Tries to import the provided [`WlBuffer`](wl_buffer::WlBuffer) as a [`Dmabuf`]
+    fn try_import_egl(renderer: &mut R, buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, Self::Error>;
 }
