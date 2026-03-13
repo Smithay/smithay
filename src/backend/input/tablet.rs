@@ -334,3 +334,33 @@ impl<B: InputBackend> TabletToolButtonEvent<B> for UnusedEvent {
         match *self {}
     }
 }
+
+/// Common functions all TabletPad-Events implement.
+pub trait TabletPadEvent {
+    /// Returns the mode the button, ring, or strip that triggered this event is in, at the time of the event.
+    fn mode(&self) -> u32;
+}
+
+impl TabletPadEvent for UnusedEvent {
+    fn mode(&self) -> u32 {
+        match *self {}
+    }
+}
+
+/// Signals that a pad has changed a logical button state on a device with the DeviceCapability::TabletPad capability.
+pub trait TabletPadButtonEvent<B: InputBackend>: TabletPadEvent + Event<B> {
+    /// Return the button that triggered this event.
+    fn button(&self) -> u32;
+    /// Return the button state of the event.
+    fn button_state(&self) -> ButtonState;
+}
+
+impl<B: InputBackend> TabletPadButtonEvent<B> for UnusedEvent {
+    fn button(&self) -> u32 {
+        match *self {}
+    }
+
+    fn button_state(&self) -> ButtonState {
+        match *self {}
+    }
+}

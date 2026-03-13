@@ -99,6 +99,7 @@
 use crate::input::{Seat, SeatHandler};
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
+    zwp_tablet_pad_v2::ZwpTabletPadV2,
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::ZwpTabletToolV2,
     zwp_tablet_v2::ZwpTabletV2,
@@ -108,10 +109,12 @@ use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandl
 const MANAGER_VERSION: u32 = 1;
 
 mod tablet;
+mod tablet_pad;
 mod tablet_seat;
 pub(crate) mod tablet_tool;
 
 pub use tablet::{TabletDescriptor, TabletHandle, TabletUserData};
+pub use tablet_pad::{TabletPadDescriptor, TabletPadHandle, TabletPadUserData};
 pub use tablet_seat::{TabletSeatHandle, TabletSeatHandler, TabletSeatUserData};
 pub use tablet_tool::{TabletToolHandle, TabletToolUserData};
 
@@ -183,6 +186,7 @@ where
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
+    D: Dispatch<ZwpTabletPadV2, TabletPadUserData>,
     D: SeatHandler + TabletSeatHandler + 'static,
     D: CompositorHandler,
 {
@@ -228,13 +232,14 @@ macro_rules! delegate_tablet_manager {
             use $crate::{
                 reexports::{
                     wayland_protocols::wp::tablet::zv2::server::{
-                        zwp_tablet_manager_v2::ZwpTabletManagerV2, zwp_tablet_seat_v2::ZwpTabletSeatV2,
-                        zwp_tablet_tool_v2::ZwpTabletToolV2, zwp_tablet_v2::ZwpTabletV2,
+                        zwp_tablet_manager_v2::ZwpTabletManagerV2, zwp_tablet_pad_v2::ZwpTabletPadV2,
+                        zwp_tablet_seat_v2::ZwpTabletSeatV2, zwp_tablet_tool_v2::ZwpTabletToolV2,
+                        zwp_tablet_v2::ZwpTabletV2,
                     },
                     wayland_server::{delegate_dispatch, delegate_global_dispatch},
                 },
                 wayland::tablet_manager::{
-                    TabletManagerState, TabletSeatUserData, TabletToolUserData, TabletUserData,
+                    TabletManagerState, TabletPadUserData, TabletSeatUserData, TabletToolUserData, TabletUserData,
                 },
             };
 
@@ -256,6 +261,11 @@ macro_rules! delegate_tablet_manager {
             delegate_dispatch!(
                 $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
                 $ty: [ZwpTabletToolV2: TabletToolUserData] => TabletManagerState
+            );
+
+            delegate_dispatch!(
+                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
+                $ty: [ZwpTabletPadV2: TabletPadUserData] => TabletManagerState
             );
 
             delegate_dispatch!(
