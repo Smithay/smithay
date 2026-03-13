@@ -122,8 +122,8 @@ pub use self::transaction::{Barrier, Blocker, BlockerState};
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
 pub use crate::utils::hook::HookId;
-use crate::utils::Transform;
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
+use crate::utils::{DeadResource, Transform};
 use atomic_float::AtomicF64;
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
@@ -449,7 +449,7 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// post-commit hook to apply state changes (i.e. copy last acked state to current).
 ///
 /// Compositors should use this for adding blockers if needed, e.g. the DMA-BUF readiness blocker.
-pub fn add_pre_commit_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
+pub fn add_pre_commit_hook<D, F>(surface: &WlSurface, hook: F) -> Result<HookId, DeadResource>
 where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     D: 'static,
@@ -463,11 +463,15 @@ where
         user_state_type,
     );
 
+    if !surface.is_alive() {
+        return Err(DeadResource);
+    }
+
     let hook = move |state: &mut dyn Any, dh: &DisplayHandle, surface: &WlSurface| {
         let state = state.downcast_mut::<D>().unwrap();
         hook(state, dh, surface);
     };
-    PrivateSurfaceData::add_pre_commit_hook(surface, hook)
+    Ok(PrivateSurfaceData::add_pre_commit_hook(surface, hook))
 }
 
 /// Register a post-commit hook to be invoked on surface commit
@@ -477,7 +481,7 @@ where
 ///
 /// Protocol implementations should apply state changes here, i.e. copy last acked state into
 /// current.
-pub fn add_post_commit_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
+pub fn add_post_commit_hook<D, F>(surface: &WlSurface, hook: F) -> Result<HookId, DeadResource>
 where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     D: 'static,
@@ -491,11 +495,15 @@ where
         user_state_type,
     );
 
+    if !surface.is_alive() {
+        return Err(DeadResource);
+    }
+
     let hook = move |state: &mut dyn Any, dh: &DisplayHandle, surface: &WlSurface| {
         let state = state.downcast_mut::<D>().unwrap();
         hook(state, dh, surface);
     };
-    PrivateSurfaceData::add_post_commit_hook(surface, hook)
+    Ok(PrivateSurfaceData::add_post_commit_hook(surface, hook))
 }
 
 /// Register a destruction hook to be invoked on surface destruction
@@ -504,7 +512,7 @@ where
 /// client disconnect).
 ///
 /// D generic is the compositor state, same as used in `CompositorState::new<D>()`
-pub fn add_destruction_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
+pub fn add_destruction_hook<D, F>(surface: &WlSurface, hook: F) -> Result<HookId, DeadResource>
 where
     F: Fn(&mut D, &WlSurface) + Send + Sync + 'static,
     D: 'static,
@@ -518,11 +526,15 @@ where
         user_state_type,
     );
 
+    if !surface.is_alive() {
+        return Err(DeadResource);
+    }
+
     let hook = move |state: &mut dyn Any, surface: &WlSurface| {
         let state = state.downcast_mut::<D>().unwrap();
         hook(state, surface);
     };
-    PrivateSurfaceData::add_destruction_hook(surface, hook)
+    Ok(PrivateSurfaceData::add_destruction_hook(surface, hook))
 }
 
 /// Unregister a pre-commit hook
@@ -549,8 +561,12 @@ pub fn remove_destruction_hook(surface: &WlSurface, hook_id: HookId) {
 /// The module will only evaluate blocker states on commit. If a blocker
 /// becomes ready later, a call to [`CompositorClientState::blocker_cleared`] is necessary
 /// to trigger a re-evaluation.
-pub fn add_blocker(surface: &WlSurface, blocker: impl Blocker + Send + 'static) {
-    PrivateSurfaceData::add_blocker(surface, blocker)
+pub fn add_blocker(surface: &WlSurface, blocker: impl Blocker + Send + 'static) -> Result<(), DeadResource> {
+    if !surface.is_alive() {
+        return Err(DeadResource);
+    }
+    PrivateSurfaceData::add_blocker(surface, blocker);
+    Ok(())
 }
 
 /// Handler trait for compositor
