@@ -40,7 +40,6 @@
 //! ```
 
 use std::{
-    collections::HashMap,
     sync::{
         atomic::{self, AtomicBool},
         Mutex,
@@ -80,28 +79,38 @@ pub struct IdleNotificationUserData {
 }
 
 impl IdleNotificationUserData {
+    #[inline]
     fn take_timer_token(&self) -> Option<RegistrationToken> {
         self.timer_token.lock().unwrap().take()
     }
 
+    #[inline]
     fn set_timer_token(&self, idle: Option<RegistrationToken>) {
         *self.timer_token.lock().unwrap() = idle;
     }
 
+    #[inline]
     fn set_idle(&self, idle: bool) {
         self.is_idle.store(idle, atomic::Ordering::Release);
     }
 
+    #[inline]
     fn is_idle(&self) -> bool {
         self.is_idle.load(atomic::Ordering::Acquire)
     }
+}
+
+#[derive(Debug, Default)]
+struct IdleNotifierSeatState {
+    notifications: Vec<ExtIdleNotificationV1>,
+    idle_pending: bool,
 }
 
 /// State of ext-idle-notify module
 #[derive(Debug)]
 pub struct IdleNotifierState<D> {
     global: GlobalId,
-    notifications: HashMap<WlSeat, Vec<ExtIdleNotificationV1>>,
+    seat_state: smallvec::SmallVec<[(WlSeat, IdleNotifierSeatState); 4]>,
     loop_handle: LoopHandle<'static, D>,
     is_inhibited: bool,
 }
@@ -119,7 +128,7 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
         let global = display.create_global::<D, ExtIdleNotifierV1, _>(2, ());
         Self {
             global,
-            notifications: HashMap::new(),
+            seat_state: Default::default(),
             loop_handle,
             is_inhibited: false,
         }
@@ -164,11 +173,12 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
     ///
     /// You may want to use [`Self::notify_activity`] instead which accepts a [`Seat`].
     pub fn notify_activity_for_wl_seat(&mut self, seat: &WlSeat) {
-        let Some(notifications) = self.notifications.get(seat) else {
+        let Some(seat_index) = self.seat_state_index(seat) else {
             return;
         };
 
-        for notification in notifications {
+        let (_, seat_state) = unsafe { self.seat_state.get_unchecked(seat_index) };
+        for notification in &seat_state.notifications {
             let data = notification.data::<IdleNotificationUserData>().unwrap();
 
             if data.is_idle() {
@@ -176,8 +186,33 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
                 data.set_idle(false);
             }
 
-            self.reinsert_timer(notification);
+            if let Some(token) = data.take_timer_token() {
+                self.loop_handle.remove(token);
+            }
         }
+
+        if seat_state.idle_pending {
+            return;
+        }
+
+        let seat = seat.clone();
+        self.loop_handle.insert_idle(move |state| {
+            let idle_notifier_state = state.idle_notifier_state();
+            let Some(seat_index) = idle_notifier_state.seat_state_index(&seat) else {
+                return;
+            };
+
+            let (_, seat_state) = unsafe { idle_notifier_state.seat_state.get_unchecked(seat_index) };
+            for notification in &seat_state.notifications {
+                idle_notifier_state.reinsert_timer(notification);
+            }
+
+            let (_, seat_state) = unsafe { idle_notifier_state.seat_state.get_unchecked_mut(seat_index) };
+            seat_state.idle_pending = false;
+        });
+
+        let (_, seat_state) = unsafe { self.seat_state.get_unchecked_mut(seat_index) };
+        seat_state.idle_pending = true;
     }
 
     /// Returns the [`ExtIdleNotifierV1`] global.
@@ -185,8 +220,22 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
         self.global.clone()
     }
 
+    fn seat_state_index(&self, seat: &WlSeat) -> Option<usize> {
+        self.seat_state
+            .iter()
+            .enumerate()
+            .find_map(|(index, (s, _))| if s == seat { Some(index) } else { None })
+    }
+
+    fn seat_state_mut(&mut self, seat: &WlSeat) -> Option<&mut IdleNotifierSeatState> {
+        let index = self.seat_state_index(seat)?;
+        unsafe { Some(&mut self.seat_state.get_unchecked_mut(index).1) }
+    }
+
     fn notifications(&self) -> impl Iterator<Item = &ExtIdleNotificationV1> {
-        self.notifications.values().flatten()
+        self.seat_state
+            .iter()
+            .flat_map(|(_, state)| state.notifications.iter())
     }
 
     fn reinsert_timer(&self, notification: &ExtIdleNotificationV1) {
@@ -276,8 +325,6 @@ where
             ext_idle_notifier_v1::Request::GetIdleNotification { id, timeout, seat } => {
                 let timeout = Duration::from_millis(timeout as u64);
 
-                let idle_notifier_state = state.idle_notifier_state();
-
                 let idle_notification = data_init.init(
                     id,
                     IdleNotificationUserData {
@@ -289,19 +336,21 @@ where
                     },
                 );
 
+                let idle_notifier_state = state.idle_notifier_state();
                 idle_notifier_state.reinsert_timer(&idle_notification);
 
-                state
-                    .idle_notifier_state()
-                    .notifications
-                    .entry(seat)
-                    .or_default()
-                    .push(idle_notification);
+                if let Some(seat_state) = idle_notifier_state.seat_state_mut(&seat) {
+                    seat_state.notifications.push(idle_notification);
+                } else {
+                    let seat_state = IdleNotifierSeatState {
+                        notifications: vec![idle_notification],
+                        ..Default::default()
+                    };
+                    idle_notifier_state.seat_state.push((seat, seat_state));
+                };
             }
             ext_idle_notifier_v1::Request::GetInputIdleNotification { id, timeout, seat } => {
                 let timeout = Duration::from_millis(timeout as u64);
-
-                let idle_notifier_state = state.idle_notifier_state();
 
                 let idle_notification = data_init.init(
                     id,
@@ -314,14 +363,18 @@ where
                     },
                 );
 
+                let idle_notifier_state = state.idle_notifier_state();
                 idle_notifier_state.reinsert_timer(&idle_notification);
 
-                state
-                    .idle_notifier_state()
-                    .notifications
-                    .entry(seat)
-                    .or_default()
-                    .push(idle_notification);
+                if let Some(seat_state) = idle_notifier_state.seat_state_mut(&seat) {
+                    seat_state.notifications.push(idle_notification);
+                } else {
+                    let seat_state = IdleNotifierSeatState {
+                        notifications: vec![idle_notification],
+                        ..Default::default()
+                    };
+                    idle_notifier_state.seat_state.push((seat, seat_state));
+                };
             }
             ext_idle_notifier_v1::Request::Destroy => {}
             _ => unimplemented!(),
@@ -355,14 +408,16 @@ where
         notification: &ExtIdleNotificationV1,
         data: &IdleNotificationUserData,
     ) {
-        let state = state.idle_notifier_state();
-        if let Some(notifications) = state.notifications.get_mut(&data.seat) {
-            notifications.retain(|x| x != notification);
-        }
+        let idle_notifier_state = state.idle_notifier_state();
 
-        state
-            .notifications
-            .retain(|seat, notifications| !notifications.is_empty() && seat.is_alive());
+        let Some(seat_state) = idle_notifier_state.seat_state_mut(&data.seat) else {
+            return;
+        };
+
+        seat_state.notifications.retain(|x| x != notification);
+        idle_notifier_state
+            .seat_state
+            .retain(|(seat, state)| !state.notifications.is_empty() && seat.is_alive());
     }
 }
 
