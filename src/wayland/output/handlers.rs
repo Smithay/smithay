@@ -1,6 +1,5 @@
 use std::sync::{atomic::Ordering, Arc};
 
-use atomic_float::AtomicF64;
 use tracing::{trace, warn, warn_span};
 use wayland_protocols::xdg::xdg_output::zv1::server::{
     zxdg_output_manager_v1::{self, ZxdgOutputManagerV1},
@@ -11,6 +10,7 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
+use crate::utils::AtomicFScale;
 use crate::wayland::compositor::CompositorHandler;
 
 use super::{xdg::XdgOutput, Output, OutputHandler, OutputManagerState, OutputUserData, WlOutputData};
@@ -40,7 +40,7 @@ where
             resource,
             OutputUserData {
                 output: global_data.output.downgrade(),
-                last_client_scale: AtomicF64::new(client_scale.load(Ordering::Acquire)),
+                last_client_scale: AtomicFScale::new(client_scale.load(Ordering::Acquire)),
                 client_scale,
             },
         );
@@ -191,7 +191,7 @@ where
                     id,
                     XdgOutputUserData {
                         xdg_output,
-                        last_client_scale: AtomicF64::new(client_scale.load(Ordering::Acquire)),
+                        last_client_scale: AtomicFScale::new(client_scale.load(Ordering::Acquire)),
                         client_scale,
                     },
                 );
@@ -208,8 +208,8 @@ where
 #[derive(Debug)]
 pub struct XdgOutputUserData {
     xdg_output: XdgOutput,
-    pub(super) last_client_scale: AtomicF64,
-    pub(super) client_scale: Arc<AtomicF64>,
+    pub(super) last_client_scale: AtomicFScale,
+    pub(super) client_scale: Arc<AtomicFScale>,
 }
 
 impl<D> Dispatch<ZxdgOutputV1, XdgOutputUserData, D> for OutputManagerState
