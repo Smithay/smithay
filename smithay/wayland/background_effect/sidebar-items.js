@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BackgroundEffectState","BackgroundEffectSurfaceCachedState","BackgroundEffectSurfaceUserData","Capability"],"trait":["ExtBackgroundEffectHandler"]};

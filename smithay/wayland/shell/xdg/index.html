@@ -1,0 +1,105 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Utilities for handling shell surfaces with the `xdg_shell` protocol"><title>smithay::wayland::shell::xdg - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module xdg</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module xdg</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#why-use-this-implementation" title="Why use this implementation">Why use this implementation</a></li><li><a href="#how-to-use-it" title="How to use it">How to use it</a><ul><li><a href="#initialization" title="Initialization">Initialization</a></li><li><a href="#access-to-shell-surface-and-clients-data" title="Access to shell surface and clients data">Access to shell surface and clients data</a></li></ul></li></ul><h3><a href="#modules">Module Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#constants" title="Constants">Constants</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#types" title="Type Aliases">Type Aliases</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland::<wbr>shell</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">smithay</a>::<wbr><a href="../../index.html">wayland</a>::<wbr><a href="../index.html">shell</a></div><h1>Module <span>xdg</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/smithay/wayland/shell/xdg/mod.rs.html#1-2224">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Utilities for handling shell surfaces with the <code>xdg_shell</code> protocol</p>
+<p>This module provides automatic handling of shell surfaces objects, by being registered
+as a global handler for <code>xdg_shell</code>.</p>
+<h3 id="why-use-this-implementation"><a class="doc-anchor" href="#why-use-this-implementation">§</a>Why use this implementation</h3>
+<p>This implementation can track for you the various shell surfaces defined by the
+clients by handling the <code>xdg_shell</code> protocol.</p>
+<p>It allows you to easily access a list of all shell surfaces defined by your clients
+access their associated metadata and underlying <code>wl_surface</code>s.</p>
+<p>This handler only handles the protocol exchanges with the client to present you the
+information in a coherent and relatively easy to use manner. All the actual drawing
+and positioning logic of windows is out of its scope.</p>
+<h3 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h3><h4 id="initialization"><a class="doc-anchor" href="#initialization">§</a>Initialization</h4>
+<p>To initialize this handler, create <a href="struct.XdgShellState.html" title="struct smithay::wayland::shell::xdg::XdgShellState"><code>XdgShellState</code></a>, store it in your <code>State</code> struct and
+implement the <a href="trait.XdgShellHandler.html" title="trait smithay::wayland::shell::xdg::XdgShellHandler"><code>XdgShellHandler</code></a>, as shown in this example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::delegate_xdg_shell;
+<span class="kw">use </span>smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface};
+<span class="kw">use </span>smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState};
+<span class="kw">use </span>smithay::utils::Serial;
+
+<span class="kw">let </span>xdg_shell_state = XdgShellState::new::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display.handle(),
+);
+
+<span class="comment">// insert the xdg_shell_state into your state
+// ...
+
+// implement the necessary traits
+</span><span class="kw">impl </span>XdgShellHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>xdg_shell_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>XdgShellState {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.xdg_shell_state
+    }
+
+    <span class="comment">// handle the shell requests here.
+    // more optional methods can be used to further customized
+    </span><span class="kw">fn </span>new_toplevel(<span class="kw-2">&amp;mut </span><span class="self">self</span>, surface: ToplevelSurface) {
+        <span class="comment">// ...
+    </span>}
+    <span class="kw">fn </span>new_popup(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        surface: PopupSurface,
+        positioner: PositionerState,
+    ) {
+        <span class="comment">// ...
+    </span>}
+    <span class="kw">fn </span>grab(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        surface: PopupSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+    ) {
+        <span class="comment">// ...
+    </span>}
+    <span class="kw">fn </span>reposition_request(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
+    ) {
+        <span class="comment">// ...
+    </span>}
+}
+
+<span class="kw">use </span>smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+
+<span class="kw">type </span>Target = wl_surface::WlSurface;
+<span class="kw">impl </span>SeatHandler <span class="kw">for </span>State {
+    <span class="kw">type </span>KeyboardFocus = Target;
+    <span class="kw">type </span>PointerFocus = Target;
+    <span class="kw">type </span>TouchFocus = Target;
+
+    <span class="kw">fn </span>seat_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>SeatState&lt;<span class="self">Self</span>&gt; {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.seat_state
+    }
+
+    <span class="kw">fn </span>focus_changed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, focused: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Target&gt;) {
+        <span class="comment">// handle focus changes, if you need to ...
+    </span>}
+    <span class="kw">fn </span>cursor_image(<span class="kw-2">&amp;mut </span><span class="self">self</span>, seat: <span class="kw-2">&amp;</span>Seat&lt;<span class="self">Self</span>&gt;, image: CursorImageStatus) {
+        <span class="comment">// handle new images for the cursor ...
+    </span>}
+}
+<span class="macro">delegate_xdg_shell!</span>(State);
+
+<span class="comment">// You're now ready to go!</span></code></pre></div><h4 id="access-to-shell-surface-and-clients-data"><a class="doc-anchor" href="#access-to-shell-surface-and-clients-data">§</a>Access to shell surface and clients data</h4>
+<p>There are mainly 3 kind of objects that you’ll manipulate from this implementation:</p>
+<ul>
+<li><a href="struct.ShellClient.html" title="struct smithay::wayland::shell::xdg::ShellClient"><code>ShellClient</code></a>:
+This is a handle representing an instantiation of a shell global
+you can associate client-wise metadata to it through an <a href="../../../utils/user_data/struct.UserDataMap.html" title="struct smithay::utils::user_data::UserDataMap"><code>UserDataMap</code></a>.</li>
+<li><a href="struct.ToplevelSurface.html" title="struct smithay::wayland::shell::xdg::ToplevelSurface"><code>ToplevelSurface</code></a>:
+This is a handle representing a toplevel surface, you can
+retrieve a list of all currently alive toplevel surface from the
+<a href="struct.XdgShellState.html" title="struct smithay::wayland::shell::xdg::XdgShellState"><code>XdgShellState</code></a>.</li>
+<li><a href="struct.PopupSurface.html" title="struct smithay::wayland::shell::xdg::PopupSurface"><code>PopupSurface</code></a>:
+This is a handle representing a popup/tooltip surface. Similarly,
+you can get a list of all currently alive popup surface from the
+<a href="struct.XdgShellState.html" title="struct smithay::wayland::shell::xdg::XdgShellState"><code>XdgShellState</code></a>.</li>
+</ul>
+<p>You’ll obtain these objects though two means: either via the callback methods of
+the <a href="trait.XdgShellHandler.html" title="trait smithay::wayland::shell::xdg::XdgShellHandler"><code>XdgShellHandler</code></a>, or via methods on the <a href="struct.XdgShellState.html" title="struct smithay::wayland::shell::xdg::XdgShellState"><code>XdgShellState</code></a>.</p>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="decoration/index.html" title="mod smithay::wayland::shell::xdg::decoration">decoration</a></dt><dd>XDG Window decoration manager</dd><dt><a class="mod" href="dialog/index.html" title="mod smithay::wayland::shell::xdg::dialog">dialog</a></dt><dd>XDG Dialog Windows</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.PopupCachedState.html" title="struct smithay::wayland::shell::xdg::PopupCachedState">Popup<wbr>Cached<wbr>State</a></dt><dd>Represents the xdg_popup pending state</dd><dt><a class="struct" href="struct.PopupConfigure.html" title="struct smithay::wayland::shell::xdg::PopupConfigure">Popup<wbr>Configure</a></dt><dd>A configure message for popup surface</dd><dt><a class="struct" href="struct.PopupState.html" title="struct smithay::wayland::shell::xdg::PopupState">Popup<wbr>State</a></dt><dd>Represents the state of the popup</dd><dt><a class="struct" href="struct.PopupSurface.html" title="struct smithay::wayland::shell::xdg::PopupSurface">Popup<wbr>Surface</a></dt><dd>A handle to a popup surface</dd><dt><a class="struct" href="struct.PositionerState.html" title="struct smithay::wayland::shell::xdg::PositionerState">Positioner<wbr>State</a></dt><dd>The state of a positioner, as set by the client</dd><dt><a class="struct" href="struct.ShellClient.html" title="struct smithay::wayland::shell::xdg::ShellClient">Shell<wbr>Client</a></dt><dd>A shell client</dd><dt><a class="struct" href="struct.SurfaceCachedState.html" title="struct smithay::wayland::shell::xdg::SurfaceCachedState">Surface<wbr>Cached<wbr>State</a></dt><dd>Represents the client pending state</dd><dt><a class="struct" href="struct.ToplevelCachedState.html" title="struct smithay::wayland::shell::xdg::ToplevelCachedState">Toplevel<wbr>Cached<wbr>State</a></dt><dd>Represents the xdg_toplevel pending state</dd><dt><a class="struct" href="struct.ToplevelConfigure.html" title="struct smithay::wayland::shell::xdg::ToplevelConfigure">Toplevel<wbr>Configure</a></dt><dd>A configure message for toplevel surfaces</dd><dt><a class="struct" href="struct.ToplevelState.html" title="struct smithay::wayland::shell::xdg::ToplevelState">Toplevel<wbr>State</a></dt><dd>State of a regular toplevel surface</dd><dt><a class="struct" href="struct.ToplevelStateSet.html" title="struct smithay::wayland::shell::xdg::ToplevelStateSet">Toplevel<wbr>State<wbr>Set</a></dt><dd>Container holding the states for a <code>XdgToplevel</code></dd><dt><a class="struct" href="struct.ToplevelSurface.html" title="struct smithay::wayland::shell::xdg::ToplevelSurface">Toplevel<wbr>Surface</a></dt><dd>A handle to a toplevel surface</dd><dt><a class="struct" href="struct.WmCapabilitySet.html" title="struct smithay::wayland::shell::xdg::WmCapabilitySet">WmCapability<wbr>Set</a></dt><dd>Container holding the <a href="../../../../wayland_protocols/xdg/shell/generated/server/xdg_toplevel/enum.WmCapabilities.html" title="enum wayland_protocols::xdg::shell::generated::server::xdg_toplevel::WmCapabilities"><code>xdg_toplevel::WmCapabilities</code></a> for a toplevel</dd><dt><a class="struct" href="struct.XdgPopupSurfaceRoleAttributes.html" title="struct smithay::wayland::shell::xdg::XdgPopupSurfaceRoleAttributes">XdgPopup<wbr>Surface<wbr>Role<wbr>Attributes</a></dt><dd>Role specific attributes for xdg_popup</dd><dt><a class="struct" href="struct.XdgPositionerUserData.html" title="struct smithay::wayland::shell::xdg::XdgPositionerUserData">XdgPositioner<wbr>User<wbr>Data</a></dt><dd>User data for Xdg Positioner</dd><dt><a class="struct" href="struct.XdgShellState.html" title="struct smithay::wayland::shell::xdg::XdgShellState">XdgShell<wbr>State</a></dt><dd>Shell global state</dd><dt><a class="struct" href="struct.XdgShellSurfaceUserData.html" title="struct smithay::wayland::shell::xdg::XdgShellSurfaceUserData">XdgShell<wbr>Surface<wbr>User<wbr>Data</a></dt><dd>User data of xdg toplevel surface</dd><dt><a class="struct" href="struct.XdgSurfaceUserData.html" title="struct smithay::wayland::shell::xdg::XdgSurfaceUserData">XdgSurface<wbr>User<wbr>Data</a></dt><dd>User data of XdgSurface</dd><dt><a class="struct" href="struct.XdgToplevelSurfaceRoleAttributes.html" title="struct smithay::wayland::shell::xdg::XdgToplevelSurfaceRoleAttributes">XdgToplevel<wbr>Surface<wbr>Role<wbr>Attributes</a></dt><dd>Role specific attributes for xdg_toplevel</dd><dt><a class="struct" href="struct.XdgWmBaseUserData.html" title="struct smithay::wayland::shell::xdg::XdgWmBaseUserData">XdgWm<wbr>Base<wbr>User<wbr>Data</a></dt><dd>User data for Xdg Wm Base</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Configure.html" title="enum smithay::wayland::shell::xdg::Configure">Configure</a></dt><dd>Defines the possible configure variants
+for a XdgSurface that will be issued in
+the user_impl for notifying about a ack_configure</dd><dt><a class="enum" href="enum.PopupConfigureError.html" title="enum smithay::wayland::shell::xdg::PopupConfigureError">Popup<wbr>Configure<wbr>Error</a></dt><dd>Represents the possible errors that
+can be returned from <a href="struct.PopupSurface.html#method.send_configure" title="method smithay::wayland::shell::xdg::PopupSurface::send_configure"><code>PopupSurface::send_configure</code></a></dd></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.XDG_POPUP_ROLE.html" title="constant smithay::wayland::shell::xdg::XDG_POPUP_ROLE">XDG_<wbr>POPUP_<wbr>ROLE</a></dt><dd>The role of an XDG popup surface.</dd><dt><a class="constant" href="constant.XDG_TOPLEVEL_ROLE.html" title="constant smithay::wayland::shell::xdg::XDG_TOPLEVEL_ROLE">XDG_<wbr>TOPLEVEL_<wbr>ROLE</a></dt><dd>The role of an XDG toplevel surface.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.XdgShellHandler.html" title="trait smithay::wayland::shell::xdg::XdgShellHandler">XdgShell<wbr>Handler</a></dt><dd>Xdg Shell handler type</dd></dl><h2 id="types" class="section-header">Type Aliases<a href="#types" class="anchor">§</a></h2><dl class="item-table"><dt><a class="type" href="type.XdgPopupSurfaceData.html" title="type smithay::wayland::shell::xdg::XdgPopupSurfaceData">XdgPopup<wbr>Surface<wbr>Data</a></dt><dd>Data associated with XDG popup surface</dd><dt><a class="type" href="type.XdgToplevelSurfaceData.html" title="type smithay::wayland::shell::xdg::XdgToplevelSurfaceData">XdgToplevel<wbr>Surface<wbr>Data</a></dt><dd>Data associated with XDG toplevel surface</dd></dl></section></div></main></body></html>

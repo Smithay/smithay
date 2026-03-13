@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PixmanError"],"struct":["PixmanFrame","PixmanFrameGuard","PixmanMapping","PixmanRenderer","PixmanTarget","PixmanTexture"]};

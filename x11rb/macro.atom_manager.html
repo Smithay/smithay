@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A helper macro for managing atoms"><title>atom_manager in x11rb - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc macro"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">atom_manager</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="index.html">x11rb</a></div><h1>Macro <span class="macro">atom_<wbr>manager</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/x11rb/x11_utils.rs.html#86-141">Source</a> </span></div><pre class="rust item-decl"><code>macro_rules! atom_manager {
+    {
+        $(#[$struct_meta:meta])*
+        $vis:vis $struct_name:ident:
+        $(#[$cookie_meta:meta])*
+        $cookie_name:ident {
+            $($field_name:ident$(: $atom_value:expr)?,)*
+        }
+    } =&gt; { ... };
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A helper macro for managing atoms</p>
+<p>In X11, one often has to work with many different atoms that are already known at compile time.
+This macro can simplify managing such a list of atoms.</p>
+<p>The following macro invocation:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="macro">atom_manager!</span> {
+    <span class="doccomment">/// A collection of Atoms.
+    </span><span class="kw">pub </span>AtomCollection:
+    <span class="doccomment">/// A handle to a response from the X11 server.
+    </span>AtomCollectionCookie {
+        _NET_WM_NAME,
+        _NET_WM_ICON,
+        ATOM_WITH_SPACES: <span class="string">b"ATOM WITH SPACES"</span>,
+        WHATEVER,
+    }
+}</code></pre></div>
+<p>…expands to this:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[allow(non_snake_case)]
+#[derive(Debug, Clone, Copy)]
+</span><span class="doccomment">/// A collection of Atoms.
+</span><span class="kw">pub struct </span>AtomCollection {
+    <span class="kw">pub </span>_NET_WM_NAME: Atom,
+    <span class="kw">pub </span>_NET_WM_ICON: Atom,
+    <span class="kw">pub </span>ATOM_WITH_SPACES: Atom,
+    <span class="kw">pub </span>WHATEVER: Atom,
+}
+
+<span class="attr">#[allow(non_snake_case)]
+#[derive(Debug)]
+</span><span class="doccomment">/// A handle to a response from the X11 server.
+</span><span class="kw">struct </span>AtomCollectionCookie&lt;<span class="lifetime">'c</span>, C: ConnectionExt&gt; {
+    <span class="comment">// please treat the actual members as private
+</span>}
+
+<span class="kw">impl </span>AtomCollection {
+    <span class="kw">pub fn </span>new&lt;C: ConnectionExt&gt;(
+        conn: <span class="kw-2">&amp;</span>C,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;AtomCollectionCookie&lt;<span class="lifetime">'_</span>, C&gt;, ConnectionError&gt; {
+        <span class="comment">// This is just an example for readability; the actual code is more efficient.
+        </span><span class="prelude-val">Ok</span>(AtomCollectionCookie {
+            phantom: std::marker::PhantomData,
+            _NET_WM_NAME: conn.intern_atom(<span class="bool-val">false</span>, <span class="string">b"_NET_WM_NAME"</span>)<span class="question-mark">?</span>,
+            _NET_WM_ICON: conn.intern_atom(<span class="bool-val">false</span>, <span class="string">b"_NET_WM_ICON"</span>)<span class="question-mark">?</span>,
+            ATOM_WITH_SPACES: conn.intern_atom(<span class="bool-val">false</span>, <span class="string">b"ATOM WITH SPACES"</span>)<span class="question-mark">?</span>,
+            WHATEVER: conn.intern_atom(<span class="bool-val">false</span>, <span class="string">b"WHATEVER"</span>)<span class="question-mark">?</span>,
+        })
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">'c</span>, C&gt; AtomCollectionCookie&lt;<span class="lifetime">'c</span>, C&gt;
+<span class="kw">where
+    </span>C: ConnectionExt,
+{
+    <span class="kw">pub fn </span>reply(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;AtomCollection, ReplyError&gt; {
+        <span class="comment">// This is just an example for readability; the actual code is different.
+        </span><span class="prelude-val">Ok</span>(AtomCollection {
+            _NET_WM_NAME: <span class="self">self</span>._NET_WM_NAME.reply()<span class="question-mark">?</span>.atom,
+            _NET_WM_ICON: <span class="self">self</span>._NET_WM_ICON.reply()<span class="question-mark">?</span>.atom,
+            ATOM_WITH_SPACES: <span class="self">self</span>.ATOM_WITH_SPACES.reply()<span class="question-mark">?</span>.atom,
+            WHATEVER: <span class="self">self</span>.WHATEVER.reply()<span class="question-mark">?</span>.atom,
+        })
+    }
+}</code></pre></div></div></details></section></div></main></body></html>
