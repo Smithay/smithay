@@ -1717,25 +1717,29 @@ impl<N: Default, Kind> Default for Rectangle<N, Kind> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-/// Possible transformations to two-dimensional planes
+/// [wl_output::transform](https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_output-enum-transform) - transformation applied to buffer contents
+///
+/// Note that it is a [dihedral group](https://en.wikipedia.org/wiki/Dihedral_group) `D_4`. In the
+/// below, we assume it's acting on the mathematcal coordinate system. Let `r` denote the rotation
+/// 90 degrees conter-clockwise, `f` denote the flip across y-axis.
 #[derive(Default)]
 pub enum Transform {
-    /// Identity transformation (plane is unaltered when applied)
+    /// Identity
     #[default]
     Normal,
-    /// Plane is rotated by 90 degrees
+    /// Rotation 90-degrees counter-clockwise: `r`
     _90,
-    /// Plane is rotated by 180 degrees
+    /// Rotation 180-degrees counter-clockwise: `r^2`
     _180,
-    /// Plane is rotated by 270 degrees
+    /// Rotation 270-degrees counter-clockwise: `r^3`
     _270,
-    /// Plane is flipped vertically
+    /// Flip across y-axis: `f`
     Flipped,
-    /// Plane is flipped vertically and rotated by 90 degrees
+    /// Flip followed by rotate 90-degrees counter-clockwise: `r . f`
     Flipped90,
-    /// Plane is flipped vertically and rotated by 180 degrees
+    /// Flip followed by rotate 180-degrees counter-clockwise: `r^2 . f`
     Flipped180,
-    /// Plane is flipped vertically and rotated by 270 degrees
+    /// Flip followed by rotate 270-degrees counter-clockwise: `r^3 . f`
     Flipped270,
 }
 
