@@ -447,7 +447,7 @@ where
     fn request(
         state: &mut D,
         _client: &Client,
-        resource: &ExtOutputImageCaptureSourceManagerV1,
+        _resource: &ExtOutputImageCaptureSourceManagerV1,
         request: ext_output_image_capture_source_manager_v1::Request,
         _data: &(),
         _dh: &DisplayHandle,
@@ -455,10 +455,7 @@ where
     ) {
         match request {
             ext_output_image_capture_source_manager_v1::Request::CreateSource { source, output } => {
-                let Some(output_inner) = Output::from_resource(&output) else {
-                    resource.post_error(0u32, "invalid output");
-                    return;
-                };
+                let output_inner = Output::from_resource(&output);
 
                 let capture_source = ImageCaptureSource::new();
 
@@ -470,7 +467,10 @@ where
                 );
 
                 capture_source.add_instance(&source_resource);
-                state.output_source_created(capture_source, &output_inner);
+                if let Some(output_inner) = output_inner {
+                    // TODO method to call otherwise?
+                    state.output_source_created(capture_source, &output_inner);
+                }
             }
             ext_output_image_capture_source_manager_v1::Request::Destroy => {}
             _ => unreachable!(),
@@ -584,7 +584,7 @@ where
     fn request(
         state: &mut D,
         _client: &Client,
-        resource: &ExtForeignToplevelImageCaptureSourceManagerV1,
+        _resource: &ExtForeignToplevelImageCaptureSourceManagerV1,
         request: ext_foreign_toplevel_image_capture_source_manager_v1::Request,
         _data: &(),
         _dh: &DisplayHandle,
@@ -595,15 +595,7 @@ where
                 source,
                 toplevel_handle,
             } => {
-                let Some(handle) = ForeignToplevelHandle::from_resource(&toplevel_handle) else {
-                    resource.post_error(0u32, "invalid toplevel handle");
-                    return;
-                };
-
-                if handle.is_closed() {
-                    resource.post_error(0u32, "toplevel has been closed");
-                    return;
-                }
+                let handle = ForeignToplevelHandle::from_resource(&toplevel_handle);
 
                 let capture_source = ImageCaptureSource::new();
 
@@ -615,7 +607,10 @@ where
                 );
 
                 capture_source.add_instance(&source_resource);
-                state.toplevel_source_created(capture_source, handle);
+                if let Some(handle) = handle {
+                    // TODO method to call otherwise?
+                    state.toplevel_source_created(capture_source, handle);
+                }
             }
             ext_foreign_toplevel_image_capture_source_manager_v1::Request::Destroy => {}
             _ => unreachable!(),
