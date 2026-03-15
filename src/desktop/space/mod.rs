@@ -145,6 +145,17 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
     }
 
+    /// Changes the location of an already-mapped [`SpaceElement`] in this space
+    ///
+    /// This function does nothing for unmapped windows.
+    ///
+    /// The element's stacing order and active state are not changed.
+    pub fn relocate_element(&mut self, element: &E, location: Point<i32, Logical>) {
+        if let Some(inner) = self.elements.iter_mut().find(|inner| &inner.element == element) {
+            inner.location = location;
+        }
+    }
+
     /// Unmap a [`SpaceElement`] from this space.
     ///
     /// This function does nothing for already unmapped windows
