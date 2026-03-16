@@ -380,7 +380,7 @@ pub struct InputMethodContextUserData {
 /// User data attached to keyboard resources grabbed by input-method-v1.
 pub struct InputMethodKeyboardUserData<D: SeatHandler> {
     handle: InputMethodV1Handle,
-    keyboard_handle: KeyboardHandle<D>,
+    keyboard_handle: Option<KeyboardHandle<D>>,
 }
 
 #[derive(Debug)]
@@ -809,22 +809,28 @@ where
                 .as_ref()
                 .is_some_and(|ctx| ctx.id() == resource.id())
         };
-        if !is_active_context {
-            return;
-        }
 
         match request {
             zwp_input_method_context_v1::Request::CommitString { serial, text } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.commit_string(serial, text);
                 }
             }
             zwp_input_method_context_v1::Request::PreeditString { serial, text, commit } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.preedit_string(serial, text, commit);
                 }
             }
             zwp_input_method_context_v1::Request::PreeditStyling { index, length, style } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     let style = style
                         .try_into()
@@ -833,21 +839,33 @@ where
                 }
             }
             zwp_input_method_context_v1::Request::PreeditCursor { index } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.preedit_cursor(index);
                 }
             }
             zwp_input_method_context_v1::Request::DeleteSurroundingText { index, length } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.delete_surrounding_text(index, length);
                 }
             }
             zwp_input_method_context_v1::Request::CursorPosition { index, anchor } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.cursor_position(index, anchor);
                 }
             }
             zwp_input_method_context_v1::Request::ModifiersMap { map } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.modifiers_map(map.to_vec());
                 }
@@ -859,16 +877,25 @@ where
                 state,
                 modifiers,
             } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.keysym(serial, time, sym, state, modifiers);
                 }
             }
             zwp_input_method_context_v1::Request::Language { serial, language } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     ti.language(serial, language);
                 }
             }
             zwp_input_method_context_v1::Request::TextDirection { serial, direction } => {
+                if !is_active_context {
+                    return;
+                }
                 if let Some(ti) = data.handle.inner.lock().unwrap().active.text_input.as_ref() {
                     let direction = direction
                         .try_into()
@@ -878,17 +905,11 @@ where
             }
             zwp_input_method_context_v1::Request::GrabKeyboard { keyboard } => {
                 let inner = data.handle.inner.lock().unwrap();
-                let Some(seat_resource) = inner.active.seat.clone() else {
-                    return;
-                };
-                let Some(seat) = Seat::<D>::from_resource(&seat_resource) else {
-                    return;
-                };
-                let Some(keyboard_handle) = seat.get_keyboard() else {
-                    return;
-                };
-
-                keyboard_handle.set_grab(state, inner.keyboard_grab.clone(), SERIAL_COUNTER.next_serial());
+                let seat_resource = inner.active.seat.clone();
+                let keyboard_handle = seat_resource
+                    .as_ref()
+                    .and_then(|seat| Seat::<D>::from_resource(seat))
+                    .and_then(|seat| seat.get_keyboard());
 
                 let instance = data_init.init(
                     keyboard,
@@ -897,7 +918,17 @@ where
                         keyboard_handle: keyboard_handle.clone(),
                     },
                 );
+                if !is_active_context {
+                    // Ignore grabs from inactive contexts, but keep the object initialized.
+                    return;
+                }
 
+                let Some(keyboard_handle) = keyboard_handle else {
+                    warn!("input-method-v1 GrabKeyboard without an active seat/keyboard");
+                    return;
+                };
+
+                keyboard_handle.set_grab(state, inner.keyboard_grab.clone(), SERIAL_COUNTER.next_serial());
                 inner.keyboard_grab.inner.lock().unwrap().grab = Some(instance.clone());
 
                 let guard = keyboard_handle.arc.internal.lock().unwrap();
@@ -925,6 +956,9 @@ where
                 key,
                 state,
             } => {
+                if !is_active_context {
+                    return;
+                }
                 let inner = data.handle.inner.lock().unwrap();
                 let Some(seat_resource) = inner.active.seat.as_ref() else {
                     return;
@@ -951,6 +985,9 @@ where
                 mods_locked,
                 group,
             } => {
+                if !is_active_context {
+                    return;
+                }
                 let inner = data.handle.inner.lock().unwrap();
                 let Some(seat_resource) = inner.active.seat.as_ref() else {
                     return;
@@ -1032,7 +1069,9 @@ where
             }
         };
         if should_unset {
-            data.keyboard_handle.unset_grab(state);
+            if let Some(keyboard_handle) = data.keyboard_handle.as_ref() {
+                keyboard_handle.unset_grab(state);
+            }
         }
     }
 }
