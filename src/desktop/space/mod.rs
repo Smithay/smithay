@@ -150,9 +150,12 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// This function does nothing for unmapped windows.
     ///
     /// The element's stacing order and active state are not changed.
-    pub fn relocate_element(&mut self, element: &E, location: Point<i32, Logical>) {
+    pub fn relocate_element<P>(&mut self, element: &E, location: P)
+    where
+        P: Into<Point<i32, Logical>>,
+    {
         if let Some(inner) = self.elements.iter_mut().find(|inner| &inner.element == element) {
-            inner.location = location;
+            inner.location = location.into();
         }
     }
 
