@@ -103,6 +103,52 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     where
         P: Into<Point<i32, Logical>>,
     {
+        let inner = self.create_inner_element(element, location);
+        self.insert_elem(self.elements.len(), inner, activate);
+    }
+
+    /// Map a [`SpaceElement`] above `reference_element` in the stack
+    ///
+    /// This can safely be called on an already mapped window
+    /// to update its location inside the space.
+    ///
+    /// This function does nothing if `reference_element` is not mapped.
+    ///
+    /// Both elements must have the same z-index, otherwise they will not be placed together.
+    ///
+    /// If activate is true it will set the new windows state
+    /// to be activate and removes that state from every
+    /// other mapped window.
+    pub fn map_element_above<P>(&mut self, element: E, location: P, reference_element: &E, activate: bool)
+    where
+        P: Into<Point<i32, Logical>>,
+    {
+        if let Some(reference_pos) = self
+            .elements
+            .iter()
+            .position(|inner| &inner.element == reference_element)
+        {
+            let (inner, index) =
+                if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
+                    let inner = self.elements.remove(pos);
+                    let index = if pos > reference_pos {
+                        reference_pos + 1
+                    } else {
+                        reference_pos
+                    };
+                    (inner, index)
+                } else {
+                    (self.create_inner_element(element, location), reference_pos + 1)
+                };
+
+            self.insert_elem(index, inner, activate);
+        }
+    }
+
+    fn create_inner_element<P>(&mut self, element: E, location: P) -> InnerElement<E>
+    where
+        P: Into<Point<i32, Logical>>,
+    {
         #[allow(clippy::mutable_key_type)]
         let outputs = if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
             self.elements.remove(pos).outputs
@@ -110,12 +156,11 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             HashMap::new()
         };
 
-        let inner = InnerElement {
+        InnerElement {
             element,
             location: location.into(),
             outputs,
-        };
-        self.insert_elem(self.elements.len(), inner, activate);
+        }
     }
 
     /// Moves an already mapped [`SpaceElement`] to top of the stack
