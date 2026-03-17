@@ -185,6 +185,13 @@ See the documentation for these functions for how to make use of them, but note,
 default implementations, which result in skipping the new functionality. As such any custom `RenderElements` wrappers
 (not using `crate::render_elements!`) need to be updated.
 
+`Space` has new functionality that allows for more fine-grained control over window stacking:
+
+- `map_element_above()`: maps a new element directly above an existing one.
+- `raise_element_above()`: same as above, but moves an already-mapped element.
+- `lower_element()`: lowers an element to the bottom of the stack, respecting its z-index group.
+- `relocate_element()`: moves an element to a new location in the space without changing the stacking order.
+
 ## 0.7.0
 
 ### Breaking changes
