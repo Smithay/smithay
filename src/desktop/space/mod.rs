@@ -132,6 +132,34 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         }
     }
 
+    /// Moves an already-mapped [`SpaceElement`] to be above `reference_element`
+    ///
+    /// This function does nothing if one or both windows are unmapped.
+    ///
+    /// Both elements must have the same z-index, otherwise they will not be placed together.
+    ///
+    /// If activate is true it will set the new windows state
+    /// to be activate and removes that state from every
+    /// other mapped window.
+    pub fn raise_element_above(&mut self, element: &E, reference_element: &E, activate: bool) {
+        if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
+            if let Some(reference_pos) = self
+                .elements
+                .iter()
+                .position(|inner| &inner.element == reference_element)
+            {
+                let index = if pos > reference_pos {
+                    reference_pos + 1
+                } else {
+                    reference_pos
+                };
+
+                let inner = self.elements.remove(pos);
+                self.insert_elem(index, inner, activate);
+            }
+        }
+    }
+
     /// Moves an already mapped [`SpaceElement`] to the bottom of the stack
     ///
     /// This function does nothing for unmapped windows.
