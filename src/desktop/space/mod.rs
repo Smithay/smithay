@@ -115,7 +115,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             location: location.into(),
             outputs,
         };
-        self.insert_elem(inner, activate);
+        self.insert_elem(self.elements.len(), inner, activate);
     }
 
     /// Moves an already mapped [`SpaceElement`] to top of the stack
@@ -128,11 +128,21 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn raise_element(&mut self, element: &E, activate: bool) {
         if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
             let inner = self.elements.remove(pos);
-            self.insert_elem(inner, activate);
+            self.insert_elem(self.elements.len(), inner, activate);
         }
     }
 
-    fn insert_elem(&mut self, elem: InnerElement<E>, activate: bool) {
+    /// Moves an already mapped [`SpaceElement`] to the bottom of the stack
+    ///
+    /// This function does nothing for unmapped windows.
+    pub fn lower_element(&mut self, element: &E) {
+        if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
+            let inner = self.elements.remove(pos);
+            self.insert_elem(0, inner, false);
+        }
+    }
+
+    fn insert_elem(&mut self, index: usize, elem: InnerElement<E>, activate: bool) {
         if activate {
             elem.element.set_activate(true);
             for e in self.elements.iter() {
@@ -140,7 +150,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             }
         }
 
-        self.elements.push(elem);
+        self.elements.insert(index, elem);
         self.elements
             .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
     }
