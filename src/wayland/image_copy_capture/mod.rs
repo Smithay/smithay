@@ -250,7 +250,7 @@ impl PartialEq for SessionRef {
 
 impl IsAlive for SessionRef {
     fn alive(&self) -> bool {
-        self.obj.is_alive()
+        self.obj.is_alive() && !self.inner.lock().unwrap().stopped
     }
 }
 
@@ -417,7 +417,7 @@ impl PartialEq for CursorSessionRef {
 
 impl IsAlive for CursorSessionRef {
     fn alive(&self) -> bool {
-        self.obj.is_alive()
+        self.obj.is_alive() && !self.inner.lock().unwrap().stopped
     }
 }
 
