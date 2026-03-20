@@ -48,6 +48,7 @@ pub struct DnDGrab<D: SeatHandler, S: Source, F: DndFocus<D> + 'static> {
     current_focus: Option<F>,
     offer_data: Option<F::OfferData<S>>,
     seat: Seat<D>,
+    should_drop: bool,
 }
 
 impl<D, S, F> fmt::Debug for DnDGrab<D, S, F>
@@ -98,6 +99,7 @@ where
             current_focus: None,
             offer_data: None,
             seat,
+            should_drop: false,
         }
     }
 }
@@ -124,6 +126,7 @@ where
             current_focus: None,
             offer_data: None,
             seat,
+            should_drop: false,
         }
     }
 }
@@ -275,6 +278,18 @@ where
         }
     }
 
+    fn cancel(&mut self, data: &mut D) {
+        if let Some(ref offer_data) = self.offer_data {
+            offer_data.disable();
+        }
+
+        self.data_source.cancel();
+
+        if let Some(ref focus) = self.current_focus {
+            focus.leave(data, self.offer_data.as_mut(), &self.seat);
+        }
+    }
+
     fn drop<'a>(&'a mut self, data: &mut D, into_target: impl Fn(&'a F) -> DndTarget<'a, D>) {
         // the user dropped, proceed to the drop
         let validated = self.offer_data.as_ref().is_some_and(|data| data.validated());
@@ -348,6 +363,7 @@ where
 
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
+            self.should_drop = true;
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
@@ -438,7 +454,11 @@ where
     }
 
     fn unset(&mut self, data: &mut D) {
-        self.drop(data, DndTarget::Pointer);
+        if self.should_drop {
+            self.drop(data, DndTarget::Pointer);
+        } else {
+            self.cancel(data);
+        }
     }
 }
 
@@ -526,7 +546,11 @@ where
     }
 
     fn unset(&mut self, data: &mut D) {
-        self.drop(data, DndTarget::Touch);
+        if self.should_drop {
+            self.drop(data, DndTarget::Touch);
+        } else {
+            self.cancel(data);
+        }
     }
 }
 
