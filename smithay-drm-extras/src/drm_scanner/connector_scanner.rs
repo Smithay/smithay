@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use drm::control::{connector, Device as ControlDevice};
 
@@ -68,6 +68,24 @@ impl ConnectorScanner {
                 }
             } else if curr_state == State::Connected {
                 added.push(conn)
+            }
+        }
+
+        // Check for connectors that disappeared entirely (e.g., USB-C dock disconnected while
+        // suspended). These won't be in resource_handles() anymore, so handle them specially.
+        let connector_handles_set: HashSet<_> = connector_handles.iter().copied().collect();
+        let to_remove: Vec<_> = self
+            .connectors
+            .keys()
+            .filter(|handle| !connector_handles_set.contains(handle))
+            .copied()
+            .collect();
+
+        for handle in to_remove {
+            if let Some(info) = self.connectors.remove(&handle) {
+                if info.state() == connector::State::Connected {
+                    removed.push(info);
+                }
             }
         }
 
