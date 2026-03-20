@@ -105,7 +105,7 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, Backg
             }
             SurfaceRequest::Destroy => {
                 let Some(surface) = data.wl_surface() else {
-                    obj.post_error(SurfaceError::SurfaceDestroyed, "wl_surface was destroyed");
+                    // object is inert, but destroy is still allowed. We are done here.
                     return;
                 };
 
