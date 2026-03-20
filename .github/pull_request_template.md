@@ -7,4 +7,4 @@
 
 ## Checklist
 <!-- You need to set this checkbox, for your PR to be considered. -->
-[ ] I agree to smithay's [Developer Certificate of Origin](https://github.com/Smithay/smithay/blob/master/DCO.md).
+* [ ] I agree to smithay's [Developer Certificate of Origin](https://github.com/Smithay/smithay/blob/master/DCO.md).
