@@ -37,6 +37,7 @@ use smithay::{
             compositor::{DrmCompositor, FrameFlags},
             exporter::gbm::GbmFramebufferExporter,
             output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
+            sync::supports_syncobj_eventfd,
             CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
             DrmEventTime, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
@@ -91,7 +92,7 @@ use smithay::{
         drm_lease::{
             DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
         },
-        drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjHandler, DrmSyncobjState},
+        drm_syncobj::{DrmSyncobjHandler, DrmSyncobjState},
         presentation::Refresh,
     },
 };

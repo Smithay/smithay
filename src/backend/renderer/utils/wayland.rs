@@ -1,5 +1,5 @@
 #[cfg(feature = "backend_drm")]
-use crate::wayland::drm_syncobj::{DrmSyncPoint, DrmSyncobjCachedState};
+use crate::{backend::drm::sync::DrmSyncPoint, wayland::drm_syncobj::DrmSyncobjCachedState};
 use crate::{
     backend::renderer::{
         buffer_dimensions, buffer_has_alpha, element::RenderElement, ContextId, ErasedContextId, ImportAll,
