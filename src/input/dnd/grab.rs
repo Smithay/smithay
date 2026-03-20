@@ -76,6 +76,13 @@ where
     }
 }
 
+impl<D: SeatHandler, S: Source, F: DndFocus<D>> DnDGrab<D, S, F> {
+    /// Data source for grab
+    pub fn source(&self) -> &S {
+        &self.data_source
+    }
+}
+
 impl<D: SeatHandler, S: Source> DnDGrab<D, S, D::PointerFocus>
 where
     D::PointerFocus: DndFocus<D>,
