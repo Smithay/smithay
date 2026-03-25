@@ -278,7 +278,7 @@ impl OutputDamageTracker {
     /// next call to [`render_output`](OutputDamageTracker::render_output)
     pub fn from_output(output: &Output) -> Self {
         Self {
-            mode: OutputModeSource::Auto(output.clone()),
+            mode: OutputModeSource::Auto(output.downgrade()),
             damage_shaper: Default::default(),
             damage: Default::default(),
             element_damage: Default::default(),
