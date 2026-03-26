@@ -305,7 +305,16 @@ impl PrivateSurfaceData {
                 let child_tx = std::mem::take(&mut child_data.pending_transaction);
                 child_tx.merge_into(&my_data.pending_transaction);
                 child_data.current_txid.0 = child_data.current_txid.0.wrapping_add(1);
-            }
+             } else {
++                // Desync child with non-sync parent: per Wayland protocol spec,
++                // wl_subsurface.set_position "is applied when the parent surface's
++                // wl_surface.commit is called." Commit with None to apply pending
++                // state directly to current (bypassing the transaction queue).
++                // This is safe because desync subsurface buffer state is already
++                // applied on the child's own commit — only SubsurfaceCachedState
++                // (position) has pending changes from set_position. (smithay#1894)
++                child_data.public_data.cached_state.commit(None, dh);
+             }
         }
         my_data
             .pending_transaction
