@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INLINE_ARGS"],"enum":["AllowNull","Argument","ArgumentType","WEnum"],"fn":["same_interface"],"static":["ANONYMOUS_INTERFACE"],"struct":["Interface","Message","MessageDesc","ObjectInfo","ProtocolError","WEnumError","wl_interface","wl_message"],"union":["wl_argument"]};

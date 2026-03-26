@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="DRM Lease protocol"><title>smithay::wayland::drm_lease - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module drm_lease</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module drm_<wbr>lease</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#how-to-use" title="How to use">How to use</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>drm_<wbr>lease</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/drm_lease/mod.rs.html#1-1023">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate features <code>wayland_frontend</code> and <code>backend_drm</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>DRM Lease protocol</p>
+<p>This module provides helpers to handle the wp_drm_lease_v1 protocol,
+which allows clients to lease DRM resources from the compositor.</p>
+<p>This is in particular useful for VR applications, that would like to take over
+a directly attached VR display from the DRM device otherwise controlled by the compositor.
+In theory however any sorts of DRM resources can be lend out to less privileged clients via this protocol.</p>
+<h3 id="how-to-use"><a class="doc-anchor" href="#how-to-use">§</a>How to use</h3>
+<p>To setup the drm_lease global, you will need to first provide the <code>DrmNode</code> you want to lease resources from.
+You can usually get that from your <a href="../../backend/drm/struct.DrmDevice.html" title="struct smithay::backend::drm::DrmDevice"><code>DrmDevice</code></a>. Once the global is up,
+you can advertise connectors as available through <a href="struct.DrmLeaseState.html#method.add_connector" title="method smithay::wayland::drm_lease::DrmLeaseState::add_connector"><code>DrmLeaseState::add_connector</code></a>.
+Should a connector become unavailable or is used by the compositor, you may remove it again using <a href="struct.DrmLeaseState.html#method.withdraw_connector" title="method smithay::wayland::drm_lease::DrmLeaseState::withdraw_connector"><code>DrmLeaseState::withdraw_connector</code></a>.</p>
+<p>Any client requests will be issued through <a href="trait.DrmLeaseHandler.html#tymethod.lease_request" title="method smithay::wayland::drm_lease::DrmLeaseHandler::lease_request"><code>DrmLeaseHandler::lease_request</code></a>, which
+allows you to add additional needed DRM resources to the lease and accept or decline the request.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>
+<span class="kw">pub struct </span>State {
+    drm_lease_state: DrmLeaseState,
+    active_leases: Vec&lt;DrmLease&gt;,
+}
+
+
+<span class="kw">impl </span>DrmLeaseHandler <span class="kw">for </span>State {
+  <span class="kw">fn </span>drm_lease_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>, node: DrmNode) -&gt; <span class="kw-2">&amp;mut </span>DrmLeaseState { <span class="kw-2">&amp;mut </span><span class="self">self</span>.drm_lease_state }
+  <span class="kw">fn </span>lease_request(<span class="kw-2">&amp;mut </span><span class="self">self</span>, node: DrmNode, request: DrmLeaseRequest) -&gt; <span class="prelude-ty">Result</span>&lt;DrmLeaseBuilder, LeaseRejected&gt; {
+     <span class="kw">let </span>device = <span class="self">self</span>.get_device_for_node(<span class="kw-2">&amp;</span>node);
+     <span class="kw">let </span><span class="kw-2">mut </span>builder = DrmLeaseBuilder::new(device);
+     <span class="kw">for </span>connector <span class="kw">in </span>request.connectors {
+        builder.add_connector(connector);
+        builder.add_crtc(some_free_crtc);
+        builder.add_plane(primary_plane_for_connector, primary_plane_claim_for_connector);
+     }
+     <span class="prelude-val">Ok</span>(builder)
+  }
+  <span class="kw">fn </span>new_active_lease(<span class="kw-2">&amp;mut </span><span class="self">self</span>, node: DrmNode, lease: DrmLease) { <span class="self">self</span>.active_leases.push(lease); }
+  <span class="kw">fn </span>lease_destroyed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, node: DrmNode, lease_id: u32) { <span class="self">self</span>.active_leases.retain(|l| l.id() != lease_id); }
+}
+
+<span class="macro">delegate_drm_lease!</span>(State);
+
+<span class="kw">let </span><span class="kw-2">mut </span>drm_lease_state = DrmLeaseState::new::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display.handle(),
+    <span class="kw-2">&amp;</span>DrmNode::from_file(
+        drm_device.device_fd()
+    ).unwrap()
+).unwrap();
+
+<span class="comment">// Add some connectors
+</span>drm_lease_state.add_connector::&lt;State&gt;(some_connector, <span class="string">"Unknown"</span>.into(), <span class="string">"Unknown"</span>.into());
+
+<span class="kw">let </span>state = State {
+   drm_lease_state,
+   active_leases: Vec::new(),
+};
+
+<span class="comment">// Rest of the compositor goes here</span></code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.DrmLease.html" title="struct smithay::wayland::drm_lease::DrmLease">DrmLease</a></dt><dd>Active DRM Lease</dd><dt><a class="struct" href="struct.DrmLeaseBuilder.html" title="struct smithay::wayland::drm_lease::DrmLeaseBuilder">DrmLease<wbr>Builder</a></dt><dd>Builder struct to collect DRM resources to be leased</dd><dt><a class="struct" href="struct.DrmLeaseData.html" title="struct smithay::wayland::drm_lease::DrmLeaseData">DrmLease<wbr>Data</a></dt><dd>Data attached to wp_drm_lease_v1 objects</dd><dt><a class="struct" href="struct.DrmLeaseDeviceGlobalData.html" title="struct smithay::wayland::drm_lease::DrmLeaseDeviceGlobalData">DrmLease<wbr>Device<wbr>Global<wbr>Data</a></dt><dd>Data attached to a wp_drm_lease_device_v1 global</dd><dt><a class="struct" href="struct.DrmLeaseRequest.html" title="struct smithay::wayland::drm_lease::DrmLeaseRequest">DrmLease<wbr>Request</a></dt><dd>DRM lease request containing a set of requested connectors</dd><dt><a class="struct" href="struct.DrmLeaseRequestData.html" title="struct smithay::wayland::drm_lease::DrmLeaseRequestData">DrmLease<wbr>Request<wbr>Data</a></dt><dd>Data attached to wp_drm_lease_request_v1 objects</dd><dt><a class="struct" href="struct.DrmLeaseState.html" title="struct smithay::wayland::drm_lease::DrmLeaseState">DrmLease<wbr>State</a></dt><dd>Delegate type for a drm_lease global</dd><dt><a class="struct" href="struct.LeaseRejected.html" title="struct smithay::wayland::drm_lease::LeaseRejected">Lease<wbr>Rejected</a></dt><dd>DRM lease was rejected by the compositor.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Error.html" title="enum smithay::wayland::drm_lease::Error">Error</a></dt><dd>Errors thrown by the DRM lease global</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.DrmLeaseHandler.html" title="trait smithay::wayland::drm_lease::DrmLeaseHandler">DrmLease<wbr>Handler</a></dt><dd>Handler trait for drm leasing from the compositor.</dd></dl></section></div></main></body></html>

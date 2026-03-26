@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["KeyboardShortcutsInhibitState","KeyboardShortcutsInhibitor","KeyboardShortcutsInhibitorUserData"],"trait":["KeyboardShortcutsInhibitHandler","KeyboardShortcutsInhibitorSeat"]};

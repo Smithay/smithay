@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Get atom identifier by name."><title>intern_atom in x11rb::protocol::xproto - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">intern_atom</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../x11rb/index.html">x11rb</a><span class="version">0.13.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">intern_<wbr>atom</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#fields-1" title="Fields">Fields</a></li><li><a href="#errors" title="Errors">Errors</a></li><li><a href="#see" title="See">See</a></li><li><a href="#example" title="Example">Example</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In x11rb::<wbr>protocol::<wbr>xproto</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">x11rb</a>::<wbr><a href="../index.html">protocol</a>::<wbr><a href="index.html">xproto</a></div><h1>Function <span class="fn">intern_<wbr>atom</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/x11rb/protocol/xproto.rs.html#650-662">Source</a> </span></div><pre class="rust item-decl"><code>pub fn intern_atom&lt;'c, 'input, Conn&gt;(
+    conn: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.reference.html">&amp;'c Conn</a>,
+    only_if_exists: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+    name: &amp;'input [<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="../../cookie/struct.Cookie.html" title="struct x11rb::cookie::Cookie">Cookie</a>&lt;'c, Conn, <a class="struct" href="struct.InternAtomReply.html" title="struct x11rb::protocol::xproto::InternAtomReply">InternAtomReply</a>&gt;, <a class="enum" href="../../errors/enum.ConnectionError.html" title="enum x11rb::errors::ConnectionError">ConnectionError</a>&gt;<div class="where">where
+    Conn: <a class="trait" href="../../connection/trait.RequestConnection.html" title="trait x11rb::connection::RequestConnection">RequestConnection</a> + ?<a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html" title="trait core::marker::Sized">Sized</a>,</div></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Get atom identifier by name.</p>
+<p>Retrieves the identifier (xcb_atom_t TODO) for the atom with the specified
+name. Atoms are used in protocols like EWMH, for example to store window titles
+(<code>_NET_WM_NAME</code> atom) as property of a window.</p>
+<p>If <code>only_if_exists</code> is 0, the atom will be created if it does not already exist.
+If <code>only_if_exists</code> is 1, <code>XCB_ATOM_NONE</code> will be returned if the atom does
+not yet exist.</p>
+<h2 id="fields-1"><a class="doc-anchor" href="#fields-1">§</a>Fields</h2>
+<ul>
+<li><code>name_len</code> - The length of the following <code>name</code>.</li>
+<li><code>name</code> - The name of the atom.</li>
+<li><code>only_if_exists</code> - Return a valid atom id only if the atom already exists.</li>
+</ul>
+<h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
+<ul>
+<li><code>Alloc</code> - TODO: reasons?</li>
+<li><code>Value</code> - A value other than 0 or 1 was specified for <code>only_if_exists</code>.</li>
+</ul>
+<h2 id="see"><a class="doc-anchor" href="#see">§</a>See</h2>
+<ul>
+<li><code>xlsatoms</code>: program</li>
+<li><code>GetAtomName</code>: request</li>
+</ul>
+<h2 id="example"><a class="doc-anchor" href="#example">§</a>Example</h2><div class="example-wrap"><pre class="language-text"><code>/*
+ * Resolves the _NET_WM_NAME atom.
+ *
+ */
+void my_example(xcb_connection_t *c) {
+    xcb_intern_atom_cookie_t cookie;
+    xcb_intern_atom_reply_t *reply;
+
+    cookie = xcb_intern_atom(c, 0, strlen(&quot;_NET_WM_NAME&quot;), &quot;_NET_WM_NAME&quot;);
+    /* ... do other work here if possible ... */
+    if ((reply = xcb_intern_atom_reply(c, cookie, NULL))) {
+        printf(&quot;The _NET_WM_NAME atom has ID %u\n&quot;, reply-&gt;atom);
+        free(reply);
+    }
+}</code></pre></div></div></details></section></div></main></body></html>
