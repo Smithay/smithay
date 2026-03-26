@@ -498,7 +498,7 @@ impl PartialEq<Output> for WeakOutput {
 #[derive(PartialEq, Clone, Debug)]
 pub enum OutputModeSource {
     /// Automatic mode based on an [`Output`].
-    Auto(Output),
+    Auto(WeakOutput),
     /// Static output mode.
     Static {
         /// Size of the static output
@@ -513,7 +513,7 @@ pub enum OutputModeSource {
 impl From<&Output> for OutputModeSource {
     #[inline]
     fn from(output: &Output) -> Self {
-        Self::Auto(output.clone())
+        Self::Auto(output.downgrade())
     }
 }
 
@@ -524,6 +524,9 @@ impl TryFrom<&OutputModeSource> for (Size<i32, Physical>, utils::Scale<f64>, Tra
     fn try_from(mode: &OutputModeSource) -> Result<Self, Self::Error> {
         match mode {
             OutputModeSource::Auto(output) => {
+                let Some(output) = output.upgrade() else {
+                    return Err(OutputNoMode);
+                };
                 let guard = output.inner.0.lock().unwrap();
                 Ok((
                     guard.current_mode.as_ref().ok_or(OutputNoMode)?.size,
