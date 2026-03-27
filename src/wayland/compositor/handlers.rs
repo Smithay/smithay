@@ -99,6 +99,7 @@ where
                     },
                 );
             }
+            wl_compositor::Request::Release => {}
             _ => unreachable!(),
         }
     }
@@ -119,6 +120,7 @@ impl Cacheable for SurfaceAttributes {
             opaque_region: self.opaque_region.clone(),
             input_region: self.input_region.clone(),
             frame_callbacks: std::mem::take(&mut self.frame_callbacks),
+            release_callback: self.release_callback.take(),
             client_scale: self.client_scale,
         }
     }
@@ -137,6 +139,9 @@ impl Cacheable for SurfaceAttributes {
                 }
             }
         }
+        if let Some(release_callback) = &self.release_callback {
+            release_callback.done(0);
+        }
         into.buffer_delta = self.buffer_delta;
         into.buffer_scale = self.buffer_scale;
         into.buffer_transform = self.buffer_transform;
@@ -145,6 +150,7 @@ impl Cacheable for SurfaceAttributes {
         into.input_region = self.input_region;
         into.frame_callbacks.extend(self.frame_callbacks);
         into.client_scale = self.client_scale;
+        into.release_callback = self.release_callback;
     }
 }
 
@@ -332,6 +338,16 @@ where
                             .to_logical(client_scale)
                             .to_i32_round(),
                     );
+                });
+            }
+            wl_surface::Request::GetRelease { callback } => {
+                let callback = data_init.init(callback, ());
+                PrivateSurfaceData::with_states(surface, |states| {
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .release_callback = Some(callback);
                 });
             }
             wl_surface::Request::Destroy => {
