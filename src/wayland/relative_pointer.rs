@@ -86,7 +86,6 @@
 
 use std::sync::{atomic::Ordering, Arc, Mutex};
 
-use atomic_float::AtomicF64;
 use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_manager_v1::{self, ZwpRelativePointerManagerV1},
     zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
@@ -103,6 +102,7 @@ use crate::{
         SeatHandler,
     },
     wayland::seat::PointerUserData,
+    utils::AtomicFScale,
 };
 
 const MANAGER_VERSION: u32 = 1;
@@ -158,7 +158,7 @@ impl WpRelativePointerHandle {
 #[derive(Debug)]
 pub struct RelativePointerUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
-    client_scale: Arc<AtomicF64>,
+    client_scale: Arc<AtomicFScale>,
 }
 
 /// State of the relative pointer manager
