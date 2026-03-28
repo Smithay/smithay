@@ -1,12 +1,19 @@
 use wayland_protocols::wp::tablet::zv2::server::{
+    zwp_tablet_pad_v2::ZwpTabletPadV2,
     zwp_tablet_seat_v2::{self, ZwpTabletSeatV2},
     zwp_tablet_tool_v2::ZwpTabletToolV2,
     zwp_tablet_v2::ZwpTabletV2,
 };
 use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
-use crate::input::pointer::CursorImageStatus;
-use crate::{backend::input::TabletToolDescriptor, wayland::compositor::CompositorHandler};
+use crate::{
+    backend::input::TabletToolDescriptor,
+    wayland::{
+        compositor::CompositorHandler,
+        tablet_manager::tablet_pad::{TabletPadHandle, TabletPadUserData},
+    },
+};
+use crate::{input::pointer::CursorImageStatus, wayland::tablet_manager::tablet_pad::TabletPadDescriptor};
 
 use super::{
     tablet::TabletUserData,
@@ -26,6 +33,7 @@ pub(crate) struct TabletSeat {
     instances: Vec<Weak<ZwpTabletSeatV2>>,
     tablets: HashMap<TabletDescriptor, TabletHandle>,
     tools: HashMap<TabletToolDescriptor, TabletToolHandle>,
+    pads: HashMap<String, TabletPadHandle>,
 }
 
 impl fmt::Debug for TabletSeat {
@@ -34,6 +42,7 @@ impl fmt::Debug for TabletSeat {
             .field("instances", &self.instances)
             .field("tablets", &self.tablets)
             .field("tools", &self.tools)
+            .field("pads", &self.pads)
             .finish()
     }
 }
@@ -67,6 +76,7 @@ impl TabletSeatHandle {
     ) where
         D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
+        D: Dispatch<ZwpTabletPadV2, TabletPadUserData>,
         D: TabletSeatHandler + 'static,
         D: CompositorHandler,
     {
@@ -80,6 +90,11 @@ impl TabletSeatHandle {
         // Notify new instance about available tools
         for (desc, tool) in inner.tools.iter_mut() {
             tool.new_instance(state, client, dh, seat, desc);
+        }
+
+        // Notify new instance about available pads
+        for (_id, pad) in inner.pads.iter_mut() {
+            pad.new_instance::<D>(client, dh, seat);
         }
 
         inner.instances.push(seat.downgrade());
@@ -204,6 +219,48 @@ impl TabletSeatHandle {
     /// Remove all tablet tool devices
     pub fn clear_tools(&self) {
         self.inner.lock().unwrap().tools.clear();
+    }
+
+    /// Add a new tablet pad to a seat.
+    pub fn add_pad<D>(&self, dh: &DisplayHandle, desc: &TabletPadDescriptor) -> TabletPadHandle
+    where
+        D: Dispatch<ZwpTabletPadV2, TabletPadUserData>,
+        D: 'static,
+    {
+        let inner = &mut *self.inner.lock().unwrap();
+
+        let pads = &mut inner.pads;
+        let instances = &inner.instances;
+
+        let pad = pads.entry(desc.id.clone()).or_insert_with(|| {
+            let mut pad = TabletPadHandle::new(desc.clone());
+            // Create new pad instance for every seat instance
+            for seat in instances.iter() {
+                let Ok(seat) = seat.upgrade() else {
+                    continue;
+                };
+
+                if let Ok(client) = dh.get_client(seat.id()) {
+                    pad.new_instance::<D>(&client, dh, &seat);
+                }
+            }
+            pad
+        });
+
+        pad.clone()
+    }
+
+    /// Get a handle to a tablet pad
+    pub fn get_pad(&self, id: &str) -> Option<TabletPadHandle> {
+        self.inner.lock().unwrap().pads.get(id).cloned()
+    }
+
+    /// Remove tablet pad device
+    ///
+    /// Called when tablet pad is no longer available
+    /// For example on [input::Event::DeviceRemoved](crate::backend::input::InputEvent::DeviceRemoved) event.
+    pub fn remove_pad(&self, id: &str) {
+        self.inner.lock().unwrap().pads.remove(id);
     }
 }
 
