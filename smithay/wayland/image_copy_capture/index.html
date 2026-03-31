@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Image copy capture protocol (screencopy)"><title>smithay::wayland::image_copy_capture - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module image_copy_capture</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module image_<wbr>copy_<wbr>capture</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#overview" title="Overview">Overview</a></li><li><a href="#how-to-use-it" title="How to use it">How to use it</a></li><li><a href="#session-lifecycle" title="Session Lifecycle">Session Lifecycle</a></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>image_<wbr>copy_<wbr>capture</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/image_copy_capture/mod.rs.html#1-1444">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Image copy capture protocol (screencopy)</p>
+<p>This module implements the <code>ext-image-copy-capture-v1</code> protocol, which allows
+clients to capture the contents of outputs, toplevels, or other image sources.</p>
+<h3 id="overview"><a class="doc-anchor" href="#overview">§</a>Overview</h3>
+<p>The protocol works as follows:</p>
+<ol>
+<li>Client creates a capture session from an <a href="../image_capture_source/struct.ImageCaptureSource.html" title="struct smithay::wayland::image_capture_source::ImageCaptureSource"><code>ImageCaptureSource</code></a></li>
+<li>Compositor sends buffer constraints (size, formats) via the session</li>
+<li>Client allocates a matching buffer</li>
+<li>Client creates a frame, attaches the buffer, and requests capture</li>
+<li>Compositor renders to the buffer and signals completion</li>
+</ol>
+<h3 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::delegate_image_copy_capture;
+<span class="kw">use </span>smithay::delegate_image_capture_source;
+<span class="kw">use </span>smithay::delegate_output_capture_source;
+<span class="kw">use </span>smithay::wayland::image_copy_capture::{
+    ImageCopyCaptureState, ImageCopyCaptureHandler, BufferConstraints,
+    Session, SessionRef, Frame,
+};
+<span class="kw">use </span>smithay::wayland::image_capture_source::{
+    ImageCaptureSourceState, ImageCaptureSourceHandler, ImageCaptureSource,
+    OutputCaptureSourceState, OutputCaptureSourceHandler,
+};
+<span class="kw">use </span>smithay::output::Output;
+
+<span class="kw">pub struct </span>State {
+    image_capture_source: ImageCaptureSourceState,
+    output_capture_source: OutputCaptureSourceState,
+    image_copy_capture: ImageCopyCaptureState,
+}
+
+<span class="kw">impl </span>ImageCopyCaptureHandler <span class="kw">for </span>State {
+    <span class="kw">fn </span>image_copy_capture_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>ImageCopyCaptureState {
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>.image_copy_capture
+    }
+
+    <span class="kw">fn </span>capture_constraints(<span class="kw-2">&amp;mut </span><span class="self">self</span>, source: <span class="kw-2">&amp;</span>ImageCaptureSource) -&gt; <span class="prelude-ty">Option</span>&lt;BufferConstraints&gt; {
+        <span class="comment">// Return buffer constraints for the given source
+        // Return None to reject capture of this source
+        </span><span class="macro">todo!</span>()
+    }
+
+    <span class="kw">fn </span>new_session(<span class="kw-2">&amp;mut </span><span class="self">self</span>, session: Session) {
+        <span class="comment">// Store the session for later use
+    </span>}
+
+    <span class="kw">fn </span>frame(<span class="kw-2">&amp;mut </span><span class="self">self</span>, session: <span class="kw-2">&amp;</span>SessionRef, frame: Frame) {
+        <span class="comment">// Perform the actual capture
+        // Call frame.success(...) or frame.fail(...) when done
+    </span>}
+}
+
+
+<span class="kw">let </span>state = ImageCopyCaptureState::new::&lt;State&gt;(<span class="kw-2">&amp;</span>display_handle);
+
+<span class="macro">delegate_image_copy_capture!</span>(State);</code></pre></div><h3 id="session-lifecycle"><a class="doc-anchor" href="#session-lifecycle">§</a>Session Lifecycle</h3>
+<p>Sessions are managed using RAII patterns:</p>
+<ul>
+<li><a href="struct.Session.html" title="struct smithay::wayland::image_copy_capture::Session"><code>Session</code></a> is an owned wrapper that sends <code>stopped</code> when dropped</li>
+<li><a href="struct.SessionRef.html" title="struct smithay::wayland::image_copy_capture::SessionRef"><code>SessionRef</code></a> is a cloneable reference for passing to frame handlers</li>
+<li>When a session is stopped (by dropping or explicit <code>stop()</code>), all pending frames are failed</li>
+</ul>
+<p>The same pattern applies to <a href="struct.CursorSession.html" title="struct smithay::wayland::image_copy_capture::CursorSession"><code>CursorSession</code></a> and <a href="struct.CursorSessionRef.html" title="struct smithay::wayland::image_copy_capture::CursorSessionRef"><code>CursorSessionRef</code></a>.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.BufferConstraints.html" title="struct smithay::wayland::image_copy_capture::BufferConstraints">Buffer<wbr>Constraints</a></dt><dd>Buffer constraints that the compositor requires for capture.</dd><dt><a class="struct" href="struct.CursorSession.html" title="struct smithay::wayland::image_copy_capture::CursorSession">Cursor<wbr>Session</a></dt><dd>An owned cursor capture session.</dd><dt><a class="struct" href="struct.CursorSessionRef.html" title="struct smithay::wayland::image_copy_capture::CursorSessionRef">Cursor<wbr>Session<wbr>Ref</a></dt><dd>A cloneable reference to a cursor capture session.</dd><dt><a class="struct" href="struct.DmabufConstraints.html" title="struct smithay::wayland::image_copy_capture::DmabufConstraints">Dmabuf<wbr>Constraints</a><wbr><span class="stab portability" title="Available on crate feature `backend_drm` only"><code>backend_drm</code></span></dt><dd>DMA-BUF specific constraints.</dd><dt><a class="struct" href="struct.Frame.html" title="struct smithay::wayland::image_copy_capture::Frame">Frame</a></dt><dd>An owned capture frame.</dd><dt><a class="struct" href="struct.FrameRef.html" title="struct smithay::wayland::image_copy_capture::FrameRef">Frame<wbr>Ref</a></dt><dd>A cloneable reference to a capture frame.</dd><dt><a class="struct" href="struct.ImageCopyCaptureGlobalData.html" title="struct smithay::wayland::image_copy_capture::ImageCopyCaptureGlobalData">Image<wbr>Copy<wbr>Capture<wbr>Global<wbr>Data</a></dt><dd>Data associated with the image copy capture manager global.</dd><dt><a class="struct" href="struct.ImageCopyCaptureState.html" title="struct smithay::wayland::image_copy_capture::ImageCopyCaptureState">Image<wbr>Copy<wbr>Capture<wbr>State</a></dt><dd>State of the image copy capture protocol.</dd><dt><a class="struct" href="struct.Session.html" title="struct smithay::wayland::image_copy_capture::Session">Session</a></dt><dd>An owned capture session.</dd><dt><a class="struct" href="struct.SessionRef.html" title="struct smithay::wayland::image_copy_capture::SessionRef">Session<wbr>Ref</a></dt><dd>A cloneable reference to a capture session.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.CaptureFailureReason.html" title="enum smithay::wayland::image_copy_capture::CaptureFailureReason">Capture<wbr>Failure<wbr>Reason</a></dt></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.ImageCopyCaptureHandler.html" title="trait smithay::wayland::image_copy_capture::ImageCopyCaptureHandler">Image<wbr>Copy<wbr>Capture<wbr>Handler</a></dt><dd>Handler trait for the image copy capture protocol.</dd></dl></section></div></main></body></html>

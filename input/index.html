@@ -1,0 +1,68 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Libinput bindings for rust"><title>input - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="input" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate input</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../input/index.html">input</a><span class="version">0.9.1</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#libinput-bindings-for-rust" title="Libinput bindings for rust">Libinput bindings for rust</a><ul><li><a href="#differences-to-the-c-library" title="Differences to the C-Library:">Differences to the C-Library:</a></li><li><a href="#userdata-handling" title="Userdata handling">Userdata handling</a></li><li><a href="#getting-started" title="Getting started">Getting started</a></li></ul></li></ul><h3><a href="#reexports">Crate Items</a></h3><ul class="block"><li><a href="#reexports" title="Re-exports">Re-exports</a></li><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#types" title="Type Aliases">Type Aliases</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>input</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/input/lib.rs.html#1-237">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="libinput-bindings-for-rust"><a class="doc-anchor" href="#libinput-bindings-for-rust">§</a>Libinput bindings for rust</h2>
+<p>These bindings closely follow libinput’s concepts and it’s original API.
+Please refer to the <a href="https://wayland.freedesktop.org/libinput/doc/latest/">libinput documentation</a>
+to understand the general structure and concepts.</p>
+<h3 id="differences-to-the-c-library"><a class="doc-anchor" href="#differences-to-the-c-library">§</a>Differences to the C-Library:</h3>
+<ul>
+<li>Refcounting does not need to be done manually. Just call <code>clone</code> when you need an additional reference.</li>
+<li>Libinput logging cannot (currently) not be customized.</li>
+</ul>
+<h3 id="userdata-handling"><a class="doc-anchor" href="#userdata-handling">§</a>Userdata handling</h3>
+<p>Multiple types in the libinput library allow to attach a pointer of an arbitrary type, so called <code>userdata</code>.
+Using this data is unsafe as there is no way to find out what type is stored in the libinput struct.
+Additionally multiple references to the same libinput object may exist and userdata may be shared mutably.</p>
+<p>This is why using and setting userdata is an unsafe operation (except when creating an object).</p>
+<p>If you heavily rely on userdata, you should always stored them wrapped in a <code>Mutex</code> and use the same
+type for every userdata access to further simplify usage.</p>
+<p>You need to be especially cautious when initializing libinput types from raw pointers, you obtained
+from other libraries which may set their own userdata. If accessing their userdata make sure no shared
+mutable access may happen and don’t store something else instead, if the library does not explicitly
+allow this.</p>
+<p>Generally usage of this api is error-prone and discouraged if not needed.</p>
+<h3 id="getting-started"><a class="doc-anchor" href="#getting-started">§</a>Getting started</h3>
+<p>To get started check out the <a href="./struct.Libinput.html"><code>Libinput</code> struct</a>.</p>
+<p>Here’s a small example that prints all events:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>input::{Libinput, LibinputInterface};
+<span class="kw">use </span>std::fs::{File, OpenOptions};
+<span class="kw">use </span>std::os::unix::{fs::OpenOptionsExt, io::OwnedFd};
+<span class="kw">use </span>std::path::Path;
+
+<span class="kw">extern crate </span>libc;
+<span class="kw">use </span>libc::{O_RDONLY, O_RDWR, O_WRONLY};
+
+<span class="kw">struct </span>Interface;
+
+<span class="kw">impl </span>LibinputInterface <span class="kw">for </span>Interface {
+    <span class="kw">fn </span>open_restricted(<span class="kw-2">&amp;mut </span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>Path, flags: i32) -&gt; <span class="prelude-ty">Result</span>&lt;OwnedFd, i32&gt; {
+        OpenOptions::new()
+            .custom_flags(flags)
+            .read((flags &amp; O_RDONLY != <span class="number">0</span>) | (flags &amp; O_RDWR != <span class="number">0</span>))
+            .write((flags &amp; O_WRONLY != <span class="number">0</span>) | (flags &amp; O_RDWR != <span class="number">0</span>))
+            .open(path)
+            .map(|file| file.into())
+            .map_err(|err| err.raw_os_error().unwrap())
+    }
+    <span class="kw">fn </span>close_restricted(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: OwnedFd) {
+        <span class="kw">unsafe </span>{
+            File::from(fd);
+        }
+    }
+}
+
+<span class="kw">fn </span>main() {
+    <span class="kw">let </span><span class="kw-2">mut </span>input = Libinput::new_with_udev(Interface);
+    input.udev_assign_seat(<span class="string">"seat0"</span>).unwrap();
+    <span class="kw">loop </span>{
+        input.dispatch().unwrap();
+        <span class="kw">for </span>event <span class="kw">in </span><span class="kw-2">&amp;mut </span>input {
+            <span class="macro">println!</span>(<span class="string">"Got event: {:?}"</span>, event);
+        }
+    }
+}</code></pre></div></div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt id="reexport.Event"><code>pub use event::<a class="enum" href="event/enum.Event.html" title="enum input::event::Event">Event</a>;</code></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="event/index.html" title="mod input::event">event</a></dt><dd>Libinput Events</dd><dt><a class="mod" href="ffi/index.html" title="mod input::ffi">ffi</a></dt><dd>Unsafe raw C API.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Device.html" title="struct input::Device">Device</a></dt><dd>Representation of a single input device as seen by the kernel.</dd><dt><a class="struct" href="struct.DeviceGroup.html" title="struct input::DeviceGroup">Device<wbr>Group</a></dt><dd>Device group</dd><dt><a class="struct" href="struct.Led.html" title="struct input::Led">Led</a></dt><dd>Mask reflecting LEDs on a device.</dd><dt><a class="struct" href="struct.Libinput.html" title="struct input::Libinput">Libinput</a></dt><dd>Libinput context</dd><dt><a class="struct" href="struct.Seat.html" title="struct input::Seat">Seat</a></dt><dd>A seat has two identifiers, the physical name and the logical name.</dd><dt><a class="struct" href="struct.SendEventsMode.html" title="struct input::SendEventsMode">Send<wbr>Events<wbr>Mode</a></dt><dd>The send-event mode of a device defines when a device may generate
+events and pass those events to the caller.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.AccelProfile.html" title="enum input::AccelProfile">Accel<wbr>Profile</a></dt><dd>Pointer Acceleration Profile</dd><dt><a class="enum" href="enum.ClickMethod.html" title="enum input::ClickMethod">Click<wbr>Method</a></dt><dd>The click method defines when to generate software-emulated
+buttons, usually on a device that does not have a specific
+physical button available.</dd><dt><a class="enum" href="enum.DeviceCapability.html" title="enum input::DeviceCapability">Device<wbr>Capability</a></dt><dd>Capabilities on a device.</dd><dt><a class="enum" href="enum.DeviceConfigError.html" title="enum input::DeviceConfigError">Device<wbr>Config<wbr>Error</a></dt><dd>Errors returned when applying configuration settings.</dd><dt><a class="enum" href="enum.ScrollButtonLockState.html" title="enum input::ScrollButtonLockState">Scroll<wbr>Button<wbr>Lock<wbr>State</a></dt><dd>Whenever scroll button lock is enabled or not</dd><dt><a class="enum" href="enum.ScrollMethod.html" title="enum input::ScrollMethod">Scroll<wbr>Method</a></dt><dd>The scroll method of a device selects when to generate scroll axis
+events instead of pointer motion events.</dd><dt><a class="enum" href="enum.TapButtonMap.html" title="enum input::TapButtonMap">TapButton<wbr>Map</a></dt><dd>Map 1/2/3 finger tips to buttons</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.AsRaw.html" title="trait input::AsRaw">AsRaw</a></dt><dd>Trait for types that allow to optain the underlying raw libinput pointer.</dd><dt><a class="trait" href="trait.Context.html" title="trait input::Context">Context</a></dt><dd>Trait to receive the underlying context</dd><dt><a class="trait" href="trait.FromRaw.html" title="trait input::FromRaw">FromRaw</a></dt><dd>Trait for types that allow to be initialized from a raw pointer</dd><dt><a class="trait" href="trait.LibinputInterface.html" title="trait input::LibinputInterface">Libinput<wbr>Interface</a></dt><dd>libinput does not open file descriptors to devices directly,
+instead <code>open_restricted</code> and <code>close_restricted</code> are called for
+each path that must be opened.</dd></dl><h2 id="types" class="section-header">Type Aliases<a href="#types" class="anchor">§</a></h2><dl class="item-table"><dt><a class="type" href="type.DeviceConfigResult.html" title="type input::DeviceConfigResult">Device<wbr>Config<wbr>Result</a></dt><dd>Result returned when applying configuration settings.</dd></dl></section></div></main></body></html>

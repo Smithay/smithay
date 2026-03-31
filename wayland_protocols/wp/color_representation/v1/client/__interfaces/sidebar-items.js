@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["WP_COLOR_REPRESENTATION_MANAGER_V1_INTERFACE","WP_COLOR_REPRESENTATION_SURFACE_V1_INTERFACE","wp_color_representation_manager_v1_interface","wp_color_representation_surface_v1_interface"]};

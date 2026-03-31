@@ -1,0 +1,732 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/backend/allocator/dmabuf.rs`."><title>dmabuf.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">smithay/backend/allocator/</div>dmabuf.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Module for [dmabuf](https://docs.kernel.org/driver-api/dma-buf.html) buffers.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! `Dmabuf`s act alike to smart pointers and can be freely cloned and passed around.
+<a href=#4 id=4 data-nosnippet>4</a>//! Once the last `Dmabuf` reference is dropped, its file descriptor is closed and
+<a href=#5 id=5 data-nosnippet>5</a>//! underlying resources are freed.
+<a href=#6 id=6 data-nosnippet>6</a>//!
+<a href=#7 id=7 data-nosnippet>7</a>//! If you want to hold on to a potentially alive dmabuf without blocking the free up
+<a href=#8 id=8 data-nosnippet>8</a>//! of the underlying resources, you may `downgrade` a `Dmabuf` reference to a `WeakDmabuf`.
+<a href=#9 id=9 data-nosnippet>9</a>//!
+<a href=#10 id=10 data-nosnippet>10</a>//! This can be especially useful in resources where other parts of the stack should decide upon
+<a href=#11 id=11 data-nosnippet>11</a>//! the lifetime of the buffer. E.g. when you are only caching associated resources for a dmabuf.
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a></span><span class="kw">use </span>calloop::generic::Generic;
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>calloop::{EventSource, Interest, Mode, PostAction};
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>rustix::ioctl::Setter;
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use super</span>::{Allocator, Buffer, Format, Fourcc, Modifier};
+<a href=#18 id=18 data-nosnippet>18</a><span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#19 id=19 data-nosnippet>19</a></span><span class="kw">use </span><span class="kw">crate</span>::backend::drm::DrmNode;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><span class="kw">crate</span>::utils::{Buffer <span class="kw">as </span>BufferCoords, Size};
+<a href=#21 id=21 data-nosnippet>21</a><span class="attr">#[cfg(feature = <span class="string">"wayland_frontend"</span>)]
+<a href=#22 id=22 data-nosnippet>22</a></span><span class="kw">use </span><span class="kw">crate</span>::wayland::compositor::{Blocker, BlockerState};
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span>std::hash::{Hash, Hasher};
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span>std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use </span>std::sync::atomic::{AtomicBool, Ordering};
+<a href=#26 id=26 data-nosnippet>26</a><span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#27 id=27 data-nosnippet>27</a></span><span class="kw">use </span>std::sync::Mutex;
+<a href=#28 id=28 data-nosnippet>28</a><span class="kw">use </span>std::sync::{Arc, Weak};
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">use </span>std::{error, fmt};
+<a href=#30 id=30 data-nosnippet>30</a>
+<a href=#31 id=31 data-nosnippet>31</a><span class="doccomment">/// Maximum amount of planes this implementation supports
+<a href=#32 id=32 data-nosnippet>32</a></span><span class="kw">pub const </span>MAX_PLANES: usize = <span class="number">4</span>;
+<a href=#33 id=33 data-nosnippet>33</a>
+<a href=#34 id=34 data-nosnippet>34</a><span class="attr">#[derive(Debug)]
+<a href=#35 id=35 data-nosnippet>35</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>DmabufInternal {
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="doccomment">/// The submitted planes
+<a href=#37 id=37 data-nosnippet>37</a>    </span><span class="kw">pub </span>planes: Vec&lt;Plane&gt;,
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="doccomment">/// The size of this buffer
+<a href=#39 id=39 data-nosnippet>39</a>    </span><span class="kw">pub </span>size: Size&lt;i32, BufferCoords&gt;,
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="doccomment">/// The format in use
+<a href=#41 id=41 data-nosnippet>41</a>    </span><span class="kw">pub </span>format: Fourcc,
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="doccomment">/// Format modifier
+<a href=#43 id=43 data-nosnippet>43</a>    </span><span class="kw">pub </span>modifier: Modifier,
+<a href=#44 id=44 data-nosnippet>44</a>    <span class="doccomment">/// The flags applied to it
+<a href=#45 id=45 data-nosnippet>45</a>    ///
+<a href=#46 id=46 data-nosnippet>46</a>    /// This is a bitflag, to be compared with the `Flags` enum re-exported by this module.
+<a href=#47 id=47 data-nosnippet>47</a>    </span><span class="kw">pub </span>flags: DmabufFlags,
+<a href=#48 id=48 data-nosnippet>48</a>    <span class="doccomment">/// Presumably compatible device for buffer import
+<a href=#49 id=49 data-nosnippet>49</a>    ///
+<a href=#50 id=50 data-nosnippet>50</a>    /// This is inferred from client apis, however there is no kernel api or guarantee this is correct
+<a href=#51 id=51 data-nosnippet>51</a>    </span><span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#52 id=52 data-nosnippet>52</a>    </span>node: Mutex&lt;<span class="prelude-ty">Option</span>&lt;DrmNode&gt;&gt;,
+<a href=#53 id=53 data-nosnippet>53</a>}
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a><span class="attr">#[derive(Debug)]
+<a href=#56 id=56 data-nosnippet>56</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>Plane {
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="kw">pub </span>fd: OwnedFd,
+<a href=#58 id=58 data-nosnippet>58</a>    <span class="doccomment">/// The plane index
+<a href=#59 id=59 data-nosnippet>59</a>    </span><span class="kw">pub </span>plane_idx: u32,
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="doccomment">/// Offset from the start of the Fd
+<a href=#61 id=61 data-nosnippet>61</a>    </span><span class="kw">pub </span>offset: u32,
+<a href=#62 id=62 data-nosnippet>62</a>    <span class="doccomment">/// Stride for this plane
+<a href=#63 id=63 data-nosnippet>63</a>    </span><span class="kw">pub </span>stride: u32,
+<a href=#64 id=64 data-nosnippet>64</a>}
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a><span class="kw">impl </span>From&lt;Plane&gt; <span class="kw">for </span>OwnedFd {
+<a href=#67 id=67 data-nosnippet>67</a>    <span class="attr">#[inline]
+<a href=#68 id=68 data-nosnippet>68</a>    </span><span class="kw">fn </span>from(plane: Plane) -&gt; OwnedFd {
+<a href=#69 id=69 data-nosnippet>69</a>        plane.fd
+<a href=#70 id=70 data-nosnippet>70</a>    }
+<a href=#71 id=71 data-nosnippet>71</a>}
+<a href=#72 id=72 data-nosnippet>72</a>
+<a href=#73 id=73 data-nosnippet>73</a><span class="macro">bitflags::bitflags!</span> {
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="doccomment">/// Possible flags for a DMA buffer
+<a href=#75 id=75 data-nosnippet>75</a>    </span><span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+<a href=#76 id=76 data-nosnippet>76</a>    </span><span class="kw">pub struct </span>DmabufFlags: u32 {
+<a href=#77 id=77 data-nosnippet>77</a>        <span class="doccomment">/// The buffer content is Y-inverted
+<a href=#78 id=78 data-nosnippet>78</a>        </span><span class="kw">const </span>Y_INVERT = <span class="number">1</span>;
+<a href=#79 id=79 data-nosnippet>79</a>        <span class="doccomment">/// The buffer content is interlaced
+<a href=#80 id=80 data-nosnippet>80</a>        </span><span class="kw">const </span>INTERLACED = <span class="number">2</span>;
+<a href=#81 id=81 data-nosnippet>81</a>        <span class="doccomment">/// The buffer content if interlaced is bottom-field first
+<a href=#82 id=82 data-nosnippet>82</a>        </span><span class="kw">const </span>BOTTOM_FIRST = <span class="number">4</span>;
+<a href=#83 id=83 data-nosnippet>83</a>    }
+<a href=#84 id=84 data-nosnippet>84</a>}
+<a href=#85 id=85 data-nosnippet>85</a>
+<a href=#86 id=86 data-nosnippet>86</a><span class="attr">#[derive(Debug, Clone)]
+<a href=#87 id=87 data-nosnippet>87</a></span><span class="doccomment">/// Strong reference to a dmabuf handle
+<a href=#88 id=88 data-nosnippet>88</a></span><span class="kw">pub struct </span>Dmabuf(<span class="kw">pub</span>(<span class="kw">crate</span>) Arc&lt;DmabufInternal&gt;);
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a><span class="attr">#[derive(Debug, Clone)]
+<a href=#91 id=91 data-nosnippet>91</a></span><span class="doccomment">/// Weak reference to a dmabuf handle
+<a href=#92 id=92 data-nosnippet>92</a></span><span class="kw">pub struct </span>WeakDmabuf(<span class="kw">pub</span>(<span class="kw">crate</span>) Weak&lt;DmabufInternal&gt;);
+<a href=#93 id=93 data-nosnippet>93</a>
+<a href=#94 id=94 data-nosnippet>94</a><span class="comment">// A reference to a particular dmabuf plane fd, so it can be used as a calloop source.
+<a href=#95 id=95 data-nosnippet>95</a></span><span class="attr">#[derive(Debug)]
+<a href=#96 id=96 data-nosnippet>96</a></span><span class="kw">struct </span>PlaneRef {
+<a href=#97 id=97 data-nosnippet>97</a>    dmabuf: Dmabuf,
+<a href=#98 id=98 data-nosnippet>98</a>    idx: usize,
+<a href=#99 id=99 data-nosnippet>99</a>}
+<a href=#100 id=100 data-nosnippet>100</a>
+<a href=#101 id=101 data-nosnippet>101</a><span class="kw">impl </span>AsFd <span class="kw">for </span>PlaneRef {
+<a href=#102 id=102 data-nosnippet>102</a>    <span class="attr">#[inline]
+<a href=#103 id=103 data-nosnippet>103</a>    </span><span class="kw">fn </span>as_fd(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; BorrowedFd&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#104 id=104 data-nosnippet>104</a>        <span class="self">self</span>.dmabuf.<span class="number">0</span>.planes[<span class="self">self</span>.idx].fd.as_fd()
+<a href=#105 id=105 data-nosnippet>105</a>    }
+<a href=#106 id=106 data-nosnippet>106</a>}
+<a href=#107 id=107 data-nosnippet>107</a>
+<a href=#108 id=108 data-nosnippet>108</a><span class="kw">impl </span>PartialEq <span class="kw">for </span>Dmabuf {
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="attr">#[inline]
+<a href=#110 id=110 data-nosnippet>110</a>    </span><span class="kw">fn </span>eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool {
+<a href=#111 id=111 data-nosnippet>111</a>        Arc::ptr_eq(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, <span class="kw-2">&amp;</span>other.<span class="number">0</span>)
+<a href=#112 id=112 data-nosnippet>112</a>    }
+<a href=#113 id=113 data-nosnippet>113</a>}
+<a href=#114 id=114 data-nosnippet>114</a><span class="kw">impl </span>Eq <span class="kw">for </span>Dmabuf {}
+<a href=#115 id=115 data-nosnippet>115</a>
+<a href=#116 id=116 data-nosnippet>116</a><span class="kw">impl </span>PartialEq <span class="kw">for </span>WeakDmabuf {
+<a href=#117 id=117 data-nosnippet>117</a>    <span class="attr">#[inline]
+<a href=#118 id=118 data-nosnippet>118</a>    </span><span class="kw">fn </span>eq(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; bool {
+<a href=#119 id=119 data-nosnippet>119</a>        Weak::ptr_eq(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, <span class="kw-2">&amp;</span>other.<span class="number">0</span>)
+<a href=#120 id=120 data-nosnippet>120</a>    }
+<a href=#121 id=121 data-nosnippet>121</a>}
+<a href=#122 id=122 data-nosnippet>122</a><span class="kw">impl </span>Eq <span class="kw">for </span>WeakDmabuf {}
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a><span class="kw">impl </span>Hash <span class="kw">for </span>Dmabuf {
+<a href=#125 id=125 data-nosnippet>125</a>    <span class="attr">#[inline]
+<a href=#126 id=126 data-nosnippet>126</a>    </span><span class="kw">fn </span>hash&lt;H: Hasher&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span>H) {
+<a href=#127 id=127 data-nosnippet>127</a>        Arc::as_ptr(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>).hash(state)
+<a href=#128 id=128 data-nosnippet>128</a>    }
+<a href=#129 id=129 data-nosnippet>129</a>}
+<a href=#130 id=130 data-nosnippet>130</a><span class="kw">impl </span>Hash <span class="kw">for </span>WeakDmabuf {
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="attr">#[inline]
+<a href=#132 id=132 data-nosnippet>132</a>    </span><span class="kw">fn </span>hash&lt;H: Hasher&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span>H) {
+<a href=#133 id=133 data-nosnippet>133</a>        <span class="self">self</span>.<span class="number">0</span>.as_ptr().hash(state)
+<a href=#134 id=134 data-nosnippet>134</a>    }
+<a href=#135 id=135 data-nosnippet>135</a>}
+<a href=#136 id=136 data-nosnippet>136</a>
+<a href=#137 id=137 data-nosnippet>137</a><span class="kw">impl </span>Buffer <span class="kw">for </span>Dmabuf {
+<a href=#138 id=138 data-nosnippet>138</a>    <span class="attr">#[inline]
+<a href=#139 id=139 data-nosnippet>139</a>    </span><span class="kw">fn </span>size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Size&lt;i32, BufferCoords&gt; {
+<a href=#140 id=140 data-nosnippet>140</a>        <span class="self">self</span>.<span class="number">0</span>.size
+<a href=#141 id=141 data-nosnippet>141</a>    }
+<a href=#142 id=142 data-nosnippet>142</a>
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="attr">#[inline]
+<a href=#144 id=144 data-nosnippet>144</a>    </span><span class="kw">fn </span>format(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Format {
+<a href=#145 id=145 data-nosnippet>145</a>        Format {
+<a href=#146 id=146 data-nosnippet>146</a>            code: <span class="self">self</span>.<span class="number">0</span>.format,
+<a href=#147 id=147 data-nosnippet>147</a>            modifier: <span class="self">self</span>.<span class="number">0</span>.modifier,
+<a href=#148 id=148 data-nosnippet>148</a>        }
+<a href=#149 id=149 data-nosnippet>149</a>    }
+<a href=#150 id=150 data-nosnippet>150</a>}
+<a href=#151 id=151 data-nosnippet>151</a>
+<a href=#152 id=152 data-nosnippet>152</a><span class="doccomment">/// Builder for Dmabufs
+<a href=#153 id=153 data-nosnippet>153</a></span><span class="attr">#[derive(Debug)]
+<a href=#154 id=154 data-nosnippet>154</a></span><span class="kw">pub struct </span>DmabufBuilder {
+<a href=#155 id=155 data-nosnippet>155</a>    internal: DmabufInternal,
+<a href=#156 id=156 data-nosnippet>156</a>}
+<a href=#157 id=157 data-nosnippet>157</a>
+<a href=#158 id=158 data-nosnippet>158</a><span class="kw">impl </span>DmabufBuilder {
+<a href=#159 id=159 data-nosnippet>159</a>    <span class="doccomment">/// Add a plane to the constructed Dmabuf
+<a href=#160 id=160 data-nosnippet>160</a>    ///
+<a href=#161 id=161 data-nosnippet>161</a>    /// *Note*: Each Dmabuf needs at least one plane.
+<a href=#162 id=162 data-nosnippet>162</a>    /// MAX_PLANES notes the maximum amount of planes any format may use with this implementation.
+<a href=#163 id=163 data-nosnippet>163</a>    </span><span class="kw">pub fn </span>add_plane(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: OwnedFd, idx: u32, offset: u32, stride: u32) -&gt; bool {
+<a href=#164 id=164 data-nosnippet>164</a>        <span class="kw">if </span><span class="self">self</span>.internal.planes.len() == MAX_PLANES {
+<a href=#165 id=165 data-nosnippet>165</a>            <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#166 id=166 data-nosnippet>166</a>        }
+<a href=#167 id=167 data-nosnippet>167</a>        <span class="self">self</span>.internal.planes.push(Plane {
+<a href=#168 id=168 data-nosnippet>168</a>            fd,
+<a href=#169 id=169 data-nosnippet>169</a>            plane_idx: idx,
+<a href=#170 id=170 data-nosnippet>170</a>            offset,
+<a href=#171 id=171 data-nosnippet>171</a>            stride,
+<a href=#172 id=172 data-nosnippet>172</a>        });
+<a href=#173 id=173 data-nosnippet>173</a>
+<a href=#174 id=174 data-nosnippet>174</a>        <span class="bool-val">true
+<a href=#175 id=175 data-nosnippet>175</a>    </span>}
+<a href=#176 id=176 data-nosnippet>176</a>
+<a href=#177 id=177 data-nosnippet>177</a>    <span class="doccomment">/// Sets a known good node to import the dmabuf with.
+<a href=#178 id=178 data-nosnippet>178</a>    ///
+<a href=#179 id=179 data-nosnippet>179</a>    /// While this is only a strong hint and no guarantee, implementations
+<a href=#180 id=180 data-nosnippet>180</a>    /// should avoid setting this at all, if they can't be reasonably certain.
+<a href=#181 id=181 data-nosnippet>181</a>    </span><span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#182 id=182 data-nosnippet>182</a>    </span><span class="kw">pub fn </span>set_node(<span class="kw-2">&amp;mut </span><span class="self">self</span>, node: DrmNode) {
+<a href=#183 id=183 data-nosnippet>183</a>        <span class="self">self</span>.internal.node = Mutex::new(<span class="prelude-val">Some</span>(node));
+<a href=#184 id=184 data-nosnippet>184</a>    }
+<a href=#185 id=185 data-nosnippet>185</a>
+<a href=#186 id=186 data-nosnippet>186</a>    <span class="doccomment">/// Build a `Dmabuf` out of the provided parameters and planes
+<a href=#187 id=187 data-nosnippet>187</a>    ///
+<a href=#188 id=188 data-nosnippet>188</a>    /// Returns `None` if the builder has no planes attached.
+<a href=#189 id=189 data-nosnippet>189</a>    </span><span class="kw">pub fn </span>build(<span class="kw-2">mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Dmabuf&gt; {
+<a href=#190 id=190 data-nosnippet>190</a>        <span class="kw">if </span><span class="self">self</span>.internal.planes.is_empty() {
+<a href=#191 id=191 data-nosnippet>191</a>            <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#192 id=192 data-nosnippet>192</a>        }
+<a href=#193 id=193 data-nosnippet>193</a>
+<a href=#194 id=194 data-nosnippet>194</a>        <span class="self">self</span>.internal.planes.sort_by_key(|plane| plane.plane_idx);
+<a href=#195 id=195 data-nosnippet>195</a>        <span class="prelude-val">Some</span>(Dmabuf(Arc::new(<span class="self">self</span>.internal)))
+<a href=#196 id=196 data-nosnippet>196</a>    }
+<a href=#197 id=197 data-nosnippet>197</a>}
+<a href=#198 id=198 data-nosnippet>198</a>
+<a href=#199 id=199 data-nosnippet>199</a><span class="kw">impl </span>Dmabuf {
+<a href=#200 id=200 data-nosnippet>200</a>    <span class="doccomment">/// Create a new Dmabuf by initializing with values from an existing buffer
+<a href=#201 id=201 data-nosnippet>201</a>    ///
+<a href=#202 id=202 data-nosnippet>202</a>    </span><span class="comment">// Note: the `src` Buffer is only used a reference for size and format.
+<a href=#203 id=203 data-nosnippet>203</a>    // The contents are determined by the provided file descriptors, which
+<a href=#204 id=204 data-nosnippet>204</a>    // do not need to refer to the same buffer `src` does.
+<a href=#205 id=205 data-nosnippet>205</a>    </span><span class="kw">pub fn </span>builder_from_buffer(src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Buffer, flags: DmabufFlags) -&gt; DmabufBuilder {
+<a href=#206 id=206 data-nosnippet>206</a>        <span class="self">Self</span>::builder(src.size(), src.format().code, src.format().modifier, flags)
+<a href=#207 id=207 data-nosnippet>207</a>    }
+<a href=#208 id=208 data-nosnippet>208</a>
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="doccomment">/// Create a new Dmabuf builder
+<a href=#210 id=210 data-nosnippet>210</a>    </span><span class="kw">pub fn </span>builder(
+<a href=#211 id=211 data-nosnippet>211</a>        size: <span class="kw">impl </span>Into&lt;Size&lt;i32, BufferCoords&gt;&gt;,
+<a href=#212 id=212 data-nosnippet>212</a>        format: Fourcc,
+<a href=#213 id=213 data-nosnippet>213</a>        modifier: Modifier,
+<a href=#214 id=214 data-nosnippet>214</a>        flags: DmabufFlags,
+<a href=#215 id=215 data-nosnippet>215</a>    ) -&gt; DmabufBuilder {
+<a href=#216 id=216 data-nosnippet>216</a>        DmabufBuilder {
+<a href=#217 id=217 data-nosnippet>217</a>            internal: DmabufInternal {
+<a href=#218 id=218 data-nosnippet>218</a>                planes: Vec::with_capacity(MAX_PLANES),
+<a href=#219 id=219 data-nosnippet>219</a>                size: size.into(),
+<a href=#220 id=220 data-nosnippet>220</a>                format,
+<a href=#221 id=221 data-nosnippet>221</a>                modifier,
+<a href=#222 id=222 data-nosnippet>222</a>                flags,
+<a href=#223 id=223 data-nosnippet>223</a>                <span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#224 id=224 data-nosnippet>224</a>                </span>node: Mutex::new(<span class="prelude-val">None</span>),
+<a href=#225 id=225 data-nosnippet>225</a>            },
+<a href=#226 id=226 data-nosnippet>226</a>        }
+<a href=#227 id=227 data-nosnippet>227</a>    }
+<a href=#228 id=228 data-nosnippet>228</a>
+<a href=#229 id=229 data-nosnippet>229</a>    <span class="doccomment">/// The amount of planes this Dmabuf has
+<a href=#230 id=230 data-nosnippet>230</a>    </span><span class="kw">pub fn </span>num_planes(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#231 id=231 data-nosnippet>231</a>        <span class="self">self</span>.<span class="number">0</span>.planes.len()
+<a href=#232 id=232 data-nosnippet>232</a>    }
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="doccomment">/// Returns raw handles of the planes of this buffer
+<a href=#235 id=235 data-nosnippet>235</a>    </span><span class="kw">pub fn </span>handles(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = BorrowedFd&lt;<span class="lifetime">'_</span>&gt;&gt; + <span class="lifetime">'_ </span>{
+<a href=#236 id=236 data-nosnippet>236</a>        <span class="self">self</span>.<span class="number">0</span>.planes.iter().map(|p| p.fd.as_fd())
+<a href=#237 id=237 data-nosnippet>237</a>    }
+<a href=#238 id=238 data-nosnippet>238</a>
+<a href=#239 id=239 data-nosnippet>239</a>    <span class="doccomment">/// Returns offsets for the planes of this buffer
+<a href=#240 id=240 data-nosnippet>240</a>    </span><span class="kw">pub fn </span>offsets(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = u32&gt; + <span class="lifetime">'_ </span>{
+<a href=#241 id=241 data-nosnippet>241</a>        <span class="self">self</span>.<span class="number">0</span>.planes.iter().map(|p| p.offset)
+<a href=#242 id=242 data-nosnippet>242</a>    }
+<a href=#243 id=243 data-nosnippet>243</a>
+<a href=#244 id=244 data-nosnippet>244</a>    <span class="doccomment">/// Returns strides for the planes of this buffer
+<a href=#245 id=245 data-nosnippet>245</a>    </span><span class="kw">pub fn </span>strides(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = u32&gt; + <span class="lifetime">'_ </span>{
+<a href=#246 id=246 data-nosnippet>246</a>        <span class="self">self</span>.<span class="number">0</span>.planes.iter().map(|p| p.stride)
+<a href=#247 id=247 data-nosnippet>247</a>    }
+<a href=#248 id=248 data-nosnippet>248</a>
+<a href=#249 id=249 data-nosnippet>249</a>    <span class="doccomment">/// Returns if this buffer format has any vendor-specific modifiers set or is implicit/linear
+<a href=#250 id=250 data-nosnippet>250</a>    </span><span class="kw">pub fn </span>has_modifier(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#251 id=251 data-nosnippet>251</a>        <span class="self">self</span>.<span class="number">0</span>.modifier != Modifier::Invalid &amp;&amp; <span class="self">self</span>.<span class="number">0</span>.modifier != Modifier::Linear
+<a href=#252 id=252 data-nosnippet>252</a>    }
+<a href=#253 id=253 data-nosnippet>253</a>
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="doccomment">/// Returns if the buffer is stored inverted on the y-axis
+<a href=#255 id=255 data-nosnippet>255</a>    </span><span class="kw">pub fn </span>y_inverted(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#256 id=256 data-nosnippet>256</a>        <span class="self">self</span>.<span class="number">0</span>.flags.contains(DmabufFlags::Y_INVERT)
+<a href=#257 id=257 data-nosnippet>257</a>    }
+<a href=#258 id=258 data-nosnippet>258</a>
+<a href=#259 id=259 data-nosnippet>259</a>    <span class="doccomment">/// Create a weak reference to this dmabuf
+<a href=#260 id=260 data-nosnippet>260</a>    </span><span class="kw">pub fn </span>weak(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; WeakDmabuf {
+<a href=#261 id=261 data-nosnippet>261</a>        WeakDmabuf(Arc::downgrade(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>))
+<a href=#262 id=262 data-nosnippet>262</a>    }
+<a href=#263 id=263 data-nosnippet>263</a>
+<a href=#264 id=264 data-nosnippet>264</a>    <span class="doccomment">/// Presumably compatible device for buffer import
+<a href=#265 id=265 data-nosnippet>265</a>    ///
+<a href=#266 id=266 data-nosnippet>266</a>    /// This is inferred from client apis, as there is no kernel api or other guarantee this is correct,
+<a href=#267 id=267 data-nosnippet>267</a>    /// so it should only be treated as a hint.
+<a href=#268 id=268 data-nosnippet>268</a>    </span><span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#269 id=269 data-nosnippet>269</a>    </span><span class="kw">pub fn </span>node(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;DrmNode&gt; {
+<a href=#270 id=270 data-nosnippet>270</a>        <span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.node.lock().unwrap()
+<a href=#271 id=271 data-nosnippet>271</a>    }
+<a href=#272 id=272 data-nosnippet>272</a>
+<a href=#273 id=273 data-nosnippet>273</a>    <span class="doccomment">/// Sets or unsets any node set for this dmabuf (see [`Dmabuf::node`]).
+<a href=#274 id=274 data-nosnippet>274</a>    ///
+<a href=#275 id=275 data-nosnippet>275</a>    /// May alter behavior of other parts of smithay using this as a hint.
+<a href=#276 id=276 data-nosnippet>276</a>    </span><span class="attr">#[cfg(feature = <span class="string">"backend_drm"</span>)]
+<a href=#277 id=277 data-nosnippet>277</a>    </span><span class="kw">pub fn </span>set_node(<span class="kw-2">&amp;</span><span class="self">self</span>, node: <span class="kw">impl </span>Into&lt;<span class="prelude-ty">Option</span>&lt;DrmNode&gt;&gt;) {
+<a href=#278 id=278 data-nosnippet>278</a>        <span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.node.lock().unwrap() = node.into();
+<a href=#279 id=279 data-nosnippet>279</a>    }
+<a href=#280 id=280 data-nosnippet>280</a>
+<a href=#281 id=281 data-nosnippet>281</a>    <span class="doccomment">/// Create an [`calloop::EventSource`] and [`Blocker`] for this [`Dmabuf`].
+<a href=#282 id=282 data-nosnippet>282</a>    ///
+<a href=#283 id=283 data-nosnippet>283</a>    /// Usually used to block applying surface state on the readiness of an attached dmabuf.
+<a href=#284 id=284 data-nosnippet>284</a>    </span><span class="attr">#[cfg(feature = <span class="string">"wayland_frontend"</span>)]
+<a href=#285 id=285 data-nosnippet>285</a>    #[profiling::function]
+<a href=#286 id=286 data-nosnippet>286</a>    </span><span class="kw">pub fn </span>generate_blocker(
+<a href=#287 id=287 data-nosnippet>287</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#288 id=288 data-nosnippet>288</a>        interest: Interest,
+<a href=#289 id=289 data-nosnippet>289</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;(DmabufBlocker, DmabufSource), AlreadyReady&gt; {
+<a href=#290 id=290 data-nosnippet>290</a>        <span class="kw">let </span>source = DmabufSource::new(<span class="self">self</span>.clone(), interest)<span class="question-mark">?</span>;
+<a href=#291 id=291 data-nosnippet>291</a>        <span class="kw">let </span>blocker = DmabufBlocker(source.signal.clone());
+<a href=#292 id=292 data-nosnippet>292</a>        <span class="prelude-val">Ok</span>((blocker, source))
+<a href=#293 id=293 data-nosnippet>293</a>    }
+<a href=#294 id=294 data-nosnippet>294</a>
+<a href=#295 id=295 data-nosnippet>295</a>    <span class="doccomment">/// Map the plane at specified index with the specified mode
+<a href=#296 id=296 data-nosnippet>296</a>    ///
+<a href=#297 id=297 data-nosnippet>297</a>    /// Returns `Err` if the plane with the specified index does not exist or
+<a href=#298 id=298 data-nosnippet>298</a>    /// mmap failed
+<a href=#299 id=299 data-nosnippet>299</a>    </span><span class="kw">pub fn </span>map_plane(
+<a href=#300 id=300 data-nosnippet>300</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#301 id=301 data-nosnippet>301</a>        idx: usize,
+<a href=#302 id=302 data-nosnippet>302</a>        mode: DmabufMappingMode,
+<a href=#303 id=303 data-nosnippet>303</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;DmabufMapping, DmabufMappingFailed&gt; {
+<a href=#304 id=304 data-nosnippet>304</a>        <span class="kw">let </span>plane = <span class="self">self
+<a href=#305 id=305 data-nosnippet>305</a>            </span>.<span class="number">0
+<a href=#306 id=306 data-nosnippet>306</a>            </span>.planes
+<a href=#307 id=307 data-nosnippet>307</a>            .get(idx)
+<a href=#308 id=308 data-nosnippet>308</a>            .ok_or(DmabufMappingFailed::PlaneIndexOutOfBound)<span class="question-mark">?</span>;
+<a href=#309 id=309 data-nosnippet>309</a>
+<a href=#310 id=310 data-nosnippet>310</a>        <span class="kw">let </span>size = rustix::fs::seek(<span class="kw-2">&amp;</span>plane.fd, rustix::fs::SeekFrom::End(<span class="number">0</span>)).map_err(std::io::Error::from)<span class="question-mark">?</span>;
+<a href=#311 id=311 data-nosnippet>311</a>        rustix::fs::seek(<span class="kw-2">&amp;</span>plane.fd, rustix::fs::SeekFrom::Start(<span class="number">0</span>)).map_err(std::io::Error::from)<span class="question-mark">?</span>;
+<a href=#312 id=312 data-nosnippet>312</a>
+<a href=#313 id=313 data-nosnippet>313</a>        <span class="kw">let </span>len = (size - plane.offset <span class="kw">as </span>u64) <span class="kw">as </span>usize;
+<a href=#314 id=314 data-nosnippet>314</a>        <span class="kw">let </span>ptr = <span class="kw">unsafe </span>{
+<a href=#315 id=315 data-nosnippet>315</a>            rustix::mm::mmap(
+<a href=#316 id=316 data-nosnippet>316</a>                std::ptr::null_mut(),
+<a href=#317 id=317 data-nosnippet>317</a>                len,
+<a href=#318 id=318 data-nosnippet>318</a>                mode.into(),
+<a href=#319 id=319 data-nosnippet>319</a>                rustix::mm::MapFlags::SHARED,
+<a href=#320 id=320 data-nosnippet>320</a>                <span class="kw-2">&amp;</span>plane.fd,
+<a href=#321 id=321 data-nosnippet>321</a>                plane.offset <span class="kw">as </span>u64,
+<a href=#322 id=322 data-nosnippet>322</a>            )
+<a href=#323 id=323 data-nosnippet>323</a>        }
+<a href=#324 id=324 data-nosnippet>324</a>        .map_err(std::io::Error::from)<span class="question-mark">?</span>;
+<a href=#325 id=325 data-nosnippet>325</a>        <span class="prelude-val">Ok</span>(DmabufMapping { len, ptr })
+<a href=#326 id=326 data-nosnippet>326</a>    }
+<a href=#327 id=327 data-nosnippet>327</a>
+<a href=#328 id=328 data-nosnippet>328</a>    <span class="doccomment">/// Synchronize access for the plane at the specified index
+<a href=#329 id=329 data-nosnippet>329</a>    ///
+<a href=#330 id=330 data-nosnippet>330</a>    /// Returns `Err` if the plane with the specified index does not exist or
+<a href=#331 id=331 data-nosnippet>331</a>    /// the dmabuf_sync ioctl failed
+<a href=#332 id=332 data-nosnippet>332</a>    </span><span class="kw">pub fn </span>sync_plane(<span class="kw-2">&amp;</span><span class="self">self</span>, idx: usize, flags: DmabufSyncFlags) -&gt; <span class="prelude-ty">Result</span>&lt;(), DmabufSyncFailed&gt; {
+<a href=#333 id=333 data-nosnippet>333</a>        <span class="kw">let </span>plane = <span class="self">self
+<a href=#334 id=334 data-nosnippet>334</a>            </span>.<span class="number">0
+<a href=#335 id=335 data-nosnippet>335</a>            </span>.planes
+<a href=#336 id=336 data-nosnippet>336</a>            .get(idx)
+<a href=#337 id=337 data-nosnippet>337</a>            .ok_or(DmabufSyncFailed::PlaneIndexOutOfBound)<span class="question-mark">?</span>;
+<a href=#338 id=338 data-nosnippet>338</a>        <span class="kw">unsafe </span>{ rustix::ioctl::ioctl(<span class="kw-2">&amp;</span>plane.fd, Setter::&lt;DMA_BUF_SYNC, <span class="kw">_</span>&gt;::new(dma_buf_sync { flags })) }
+<a href=#339 id=339 data-nosnippet>339</a>            .map_err(std::io::Error::from)<span class="question-mark">?</span>;
+<a href=#340 id=340 data-nosnippet>340</a>        <span class="prelude-val">Ok</span>(())
+<a href=#341 id=341 data-nosnippet>341</a>    }
+<a href=#342 id=342 data-nosnippet>342</a>}
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a><span class="macro">bitflags::bitflags!</span> {
+<a href=#345 id=345 data-nosnippet>345</a>    <span class="doccomment">/// Modes of mapping a dmabuf plane
+<a href=#346 id=346 data-nosnippet>346</a>    </span><span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+<a href=#347 id=347 data-nosnippet>347</a>    </span><span class="kw">pub struct </span>DmabufMappingMode: u32 {
+<a href=#348 id=348 data-nosnippet>348</a>        <span class="doccomment">/// Map the dmabuf readable
+<a href=#349 id=349 data-nosnippet>349</a>        </span><span class="kw">const </span>READ = <span class="number">0b00000001</span>;
+<a href=#350 id=350 data-nosnippet>350</a>        <span class="doccomment">/// Map the dmabuf writable
+<a href=#351 id=351 data-nosnippet>351</a>        </span><span class="kw">const </span>WRITE = <span class="number">0b00000010</span>;
+<a href=#352 id=352 data-nosnippet>352</a>    }
+<a href=#353 id=353 data-nosnippet>353</a>}
+<a href=#354 id=354 data-nosnippet>354</a>
+<a href=#355 id=355 data-nosnippet>355</a><span class="kw">impl </span>From&lt;DmabufMappingMode&gt; <span class="kw">for </span>rustix::mm::ProtFlags {
+<a href=#356 id=356 data-nosnippet>356</a>    <span class="attr">#[inline]
+<a href=#357 id=357 data-nosnippet>357</a>    </span><span class="kw">fn </span>from(mode: DmabufMappingMode) -&gt; <span class="self">Self </span>{
+<a href=#358 id=358 data-nosnippet>358</a>        <span class="kw">let </span><span class="kw-2">mut </span>flags = rustix::mm::ProtFlags::empty();
+<a href=#359 id=359 data-nosnippet>359</a>
+<a href=#360 id=360 data-nosnippet>360</a>        <span class="kw">if </span>mode.contains(DmabufMappingMode::READ) {
+<a href=#361 id=361 data-nosnippet>361</a>            flags |= rustix::mm::ProtFlags::READ;
+<a href=#362 id=362 data-nosnippet>362</a>        }
+<a href=#363 id=363 data-nosnippet>363</a>
+<a href=#364 id=364 data-nosnippet>364</a>        <span class="kw">if </span>mode.contains(DmabufMappingMode::WRITE) {
+<a href=#365 id=365 data-nosnippet>365</a>            flags |= rustix::mm::ProtFlags::WRITE;
+<a href=#366 id=366 data-nosnippet>366</a>        }
+<a href=#367 id=367 data-nosnippet>367</a>
+<a href=#368 id=368 data-nosnippet>368</a>        flags
+<a href=#369 id=369 data-nosnippet>369</a>    }
+<a href=#370 id=370 data-nosnippet>370</a>}
+<a href=#371 id=371 data-nosnippet>371</a>
+<a href=#372 id=372 data-nosnippet>372</a><span class="doccomment">/// Dmabuf mapping errors
+<a href=#373 id=373 data-nosnippet>373</a></span><span class="attr">#[derive(Debug, thiserror::Error)]
+<a href=#374 id=374 data-nosnippet>374</a>#[error(<span class="string">"Mapping the dmabuf failed"</span>)]
+<a href=#375 id=375 data-nosnippet>375</a></span><span class="kw">pub enum </span>DmabufMappingFailed {
+<a href=#376 id=376 data-nosnippet>376</a>    <span class="doccomment">/// The supplied index for the plane is out of bounds
+<a href=#377 id=377 data-nosnippet>377</a>    </span><span class="attr">#[error(<span class="string">"The supplied index for the plane is out of bounds"</span>)]
+<a href=#378 id=378 data-nosnippet>378</a>    </span>PlaneIndexOutOfBound,
+<a href=#379 id=379 data-nosnippet>379</a>    <span class="doccomment">/// Io error during map operation
+<a href=#380 id=380 data-nosnippet>380</a>    </span>Io(<span class="attr">#[from] </span>std::io::Error),
+<a href=#381 id=381 data-nosnippet>381</a>}
+<a href=#382 id=382 data-nosnippet>382</a>
+<a href=#383 id=383 data-nosnippet>383</a><span class="doccomment">/// Dmabuf sync errors
+<a href=#384 id=384 data-nosnippet>384</a></span><span class="attr">#[derive(Debug, thiserror::Error)]
+<a href=#385 id=385 data-nosnippet>385</a>#[error(<span class="string">"Sync of the dmabuf failed"</span>)]
+<a href=#386 id=386 data-nosnippet>386</a></span><span class="kw">pub enum </span>DmabufSyncFailed {
+<a href=#387 id=387 data-nosnippet>387</a>    <span class="doccomment">/// The supplied index for the plane is out of bounds
+<a href=#388 id=388 data-nosnippet>388</a>    </span><span class="attr">#[error(<span class="string">"The supplied index for the plane is out of bounds"</span>)]
+<a href=#389 id=389 data-nosnippet>389</a>    </span>PlaneIndexOutOfBound,
+<a href=#390 id=390 data-nosnippet>390</a>    <span class="doccomment">/// Io error during sync operation
+<a href=#391 id=391 data-nosnippet>391</a>    </span>Io(<span class="attr">#[from] </span>std::io::Error),
+<a href=#392 id=392 data-nosnippet>392</a>}
+<a href=#393 id=393 data-nosnippet>393</a>
+<a href=#394 id=394 data-nosnippet>394</a><span class="macro">bitflags::bitflags!</span> {
+<a href=#395 id=395 data-nosnippet>395</a>    <span class="doccomment">/// Flags for the [`Dmabuf::sync_plane`](Dmabuf::sync_plane) operation
+<a href=#396 id=396 data-nosnippet>396</a>    </span><span class="attr">#[derive(Copy, Clone)]
+<a href=#397 id=397 data-nosnippet>397</a>    </span><span class="kw">pub struct </span>DmabufSyncFlags: std::ffi::c_ulonglong {
+<a href=#398 id=398 data-nosnippet>398</a>        <span class="doccomment">/// Read from the dmabuf
+<a href=#399 id=399 data-nosnippet>399</a>        </span><span class="kw">const </span>READ = <span class="number">1 </span>&lt;&lt; <span class="number">0</span>;
+<a href=#400 id=400 data-nosnippet>400</a>        <span class="doccomment">/// Write to the dmabuf
+<a href=#401 id=401 data-nosnippet>401</a>        </span><span class="attr">#[allow(clippy::identity_op)]
+<a href=#402 id=402 data-nosnippet>402</a>        </span><span class="kw">const </span>WRITE = <span class="number">2 </span>&lt;&lt; <span class="number">0</span>;
+<a href=#403 id=403 data-nosnippet>403</a>        <span class="doccomment">/// Start of read/write
+<a href=#404 id=404 data-nosnippet>404</a>        </span><span class="kw">const </span>START = <span class="number">0 </span>&lt;&lt; <span class="number">2</span>;
+<a href=#405 id=405 data-nosnippet>405</a>        <span class="doccomment">/// End of read/write
+<a href=#406 id=406 data-nosnippet>406</a>        </span><span class="kw">const </span>END = <span class="number">1 </span>&lt;&lt; <span class="number">2</span>;
+<a href=#407 id=407 data-nosnippet>407</a>    }
+<a href=#408 id=408 data-nosnippet>408</a>}
+<a href=#409 id=409 data-nosnippet>409</a>
+<a href=#410 id=410 data-nosnippet>410</a><span class="attr">#[repr(C)]
+<a href=#411 id=411 data-nosnippet>411</a>#[allow(non_camel_case_types)]
+<a href=#412 id=412 data-nosnippet>412</a></span><span class="kw">struct </span>dma_buf_sync {
+<a href=#413 id=413 data-nosnippet>413</a>    flags: DmabufSyncFlags,
+<a href=#414 id=414 data-nosnippet>414</a>}
+<a href=#415 id=415 data-nosnippet>415</a>
+<a href=#416 id=416 data-nosnippet>416</a><span class="kw">const </span>DMA_BUF_SYNC: rustix::ioctl::Opcode = rustix::ioctl::opcode::write::&lt;dma_buf_sync&gt;(<span class="string">b'b'</span>, <span class="number">0</span>);
+<a href=#417 id=417 data-nosnippet>417</a>
+<a href=#418 id=418 data-nosnippet>418</a><span class="doccomment">/// A mapping into a [`Dmabuf`]
+<a href=#419 id=419 data-nosnippet>419</a></span><span class="attr">#[derive(Debug)]
+<a href=#420 id=420 data-nosnippet>420</a></span><span class="kw">pub struct </span>DmabufMapping {
+<a href=#421 id=421 data-nosnippet>421</a>    ptr: <span class="kw-2">*mut </span>std::ffi::c_void,
+<a href=#422 id=422 data-nosnippet>422</a>    len: usize,
+<a href=#423 id=423 data-nosnippet>423</a>}
+<a href=#424 id=424 data-nosnippet>424</a>
+<a href=#425 id=425 data-nosnippet>425</a><span class="kw">impl </span>DmabufMapping {
+<a href=#426 id=426 data-nosnippet>426</a>    <span class="doccomment">/// Access the raw pointer of the mapping
+<a href=#427 id=427 data-nosnippet>427</a>    </span><span class="kw">pub fn </span>ptr(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">*mut </span>std::ffi::c_void {
+<a href=#428 id=428 data-nosnippet>428</a>        <span class="self">self</span>.ptr
+<a href=#429 id=429 data-nosnippet>429</a>    }
+<a href=#430 id=430 data-nosnippet>430</a>
+<a href=#431 id=431 data-nosnippet>431</a>    <span class="doccomment">/// Access the length of the mapping
+<a href=#432 id=432 data-nosnippet>432</a>    </span><span class="kw">pub fn </span>length(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+<a href=#433 id=433 data-nosnippet>433</a>        <span class="self">self</span>.len
+<a href=#434 id=434 data-nosnippet>434</a>    }
+<a href=#435 id=435 data-nosnippet>435</a>}
+<a href=#436 id=436 data-nosnippet>436</a>
+<a href=#437 id=437 data-nosnippet>437</a><span class="comment">// SAFETY: The caller is responsible for accessing the data without assuming
+<a href=#438 id=438 data-nosnippet>438</a>// another process isn't mutating it, regardless of how many threads this is
+<a href=#439 id=439 data-nosnippet>439</a>// referenced in.
+<a href=#440 id=440 data-nosnippet>440</a></span><span class="kw">unsafe impl </span>Send <span class="kw">for </span>DmabufMapping {}
+<a href=#441 id=441 data-nosnippet>441</a><span class="kw">unsafe impl </span>Sync <span class="kw">for </span>DmabufMapping {}
+<a href=#442 id=442 data-nosnippet>442</a>
+<a href=#443 id=443 data-nosnippet>443</a><span class="kw">impl </span>Drop <span class="kw">for </span>DmabufMapping {
+<a href=#444 id=444 data-nosnippet>444</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#445 id=445 data-nosnippet>445</a>        <span class="kw">let _ </span>= <span class="kw">unsafe </span>{ rustix::mm::munmap(<span class="self">self</span>.ptr, <span class="self">self</span>.len) };
+<a href=#446 id=446 data-nosnippet>446</a>    }
+<a href=#447 id=447 data-nosnippet>447</a>}
+<a href=#448 id=448 data-nosnippet>448</a>
+<a href=#449 id=449 data-nosnippet>449</a><span class="kw">impl </span>WeakDmabuf {
+<a href=#450 id=450 data-nosnippet>450</a>    <span class="doccomment">/// Try to upgrade to a strong reference of this buffer.
+<a href=#451 id=451 data-nosnippet>451</a>    ///
+<a href=#452 id=452 data-nosnippet>452</a>    /// Fails if no strong references exist anymore and the handle was already closed.
+<a href=#453 id=453 data-nosnippet>453</a>    </span><span class="attr">#[inline]
+<a href=#454 id=454 data-nosnippet>454</a>    </span><span class="kw">pub fn </span>upgrade(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Dmabuf&gt; {
+<a href=#455 id=455 data-nosnippet>455</a>        <span class="self">self</span>.<span class="number">0</span>.upgrade().map(Dmabuf)
+<a href=#456 id=456 data-nosnippet>456</a>    }
+<a href=#457 id=457 data-nosnippet>457</a>
+<a href=#458 id=458 data-nosnippet>458</a>    <span class="doccomment">/// Returns true if there are not any strong references remaining
+<a href=#459 id=459 data-nosnippet>459</a>    </span><span class="attr">#[inline]
+<a href=#460 id=460 data-nosnippet>460</a>    </span><span class="kw">pub fn </span>is_gone(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#461 id=461 data-nosnippet>461</a>        <span class="self">self</span>.<span class="number">0</span>.strong_count() == <span class="number">0
+<a href=#462 id=462 data-nosnippet>462</a>    </span>}
+<a href=#463 id=463 data-nosnippet>463</a>}
+<a href=#464 id=464 data-nosnippet>464</a>
+<a href=#465 id=465 data-nosnippet>465</a><span class="doccomment">/// Buffer that can be exported as Dmabufs
+<a href=#466 id=466 data-nosnippet>466</a></span><span class="kw">pub trait </span>AsDmabuf {
+<a href=#467 id=467 data-nosnippet>467</a>    <span class="doccomment">/// Error type returned, if exporting fails
+<a href=#468 id=468 data-nosnippet>468</a>    </span><span class="kw">type </span>Error: std::error::Error;
+<a href=#469 id=469 data-nosnippet>469</a>
+<a href=#470 id=470 data-nosnippet>470</a>    <span class="doccomment">/// Export this buffer as a new Dmabuf
+<a href=#471 id=471 data-nosnippet>471</a>    </span><span class="kw">fn </span>export(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Dmabuf, <span class="self">Self</span>::Error&gt;;
+<a href=#472 id=472 data-nosnippet>472</a>}
+<a href=#473 id=473 data-nosnippet>473</a>
+<a href=#474 id=474 data-nosnippet>474</a><span class="kw">impl </span>AsDmabuf <span class="kw">for </span>Dmabuf {
+<a href=#475 id=475 data-nosnippet>475</a>    <span class="kw">type </span>Error = std::convert::Infallible;
+<a href=#476 id=476 data-nosnippet>476</a>
+<a href=#477 id=477 data-nosnippet>477</a>    <span class="attr">#[inline]
+<a href=#478 id=478 data-nosnippet>478</a>    </span><span class="kw">fn </span>export(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Dmabuf, std::convert::Infallible&gt; {
+<a href=#479 id=479 data-nosnippet>479</a>        <span class="prelude-val">Ok</span>(<span class="self">self</span>.clone())
+<a href=#480 id=480 data-nosnippet>480</a>    }
+<a href=#481 id=481 data-nosnippet>481</a>}
+<a href=#482 id=482 data-nosnippet>482</a>
+<a href=#483 id=483 data-nosnippet>483</a><span class="doccomment">/// Type erased error
+<a href=#484 id=484 data-nosnippet>484</a></span><span class="attr">#[derive(Debug)]
+<a href=#485 id=485 data-nosnippet>485</a></span><span class="kw">pub struct </span>AnyError(Box&lt;<span class="kw">dyn </span>error::Error + Send + Sync&gt;);
+<a href=#486 id=486 data-nosnippet>486</a>
+<a href=#487 id=487 data-nosnippet>487</a><span class="kw">impl </span>fmt::Display <span class="kw">for </span>AnyError {
+<a href=#488 id=488 data-nosnippet>488</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+<a href=#489 id=489 data-nosnippet>489</a>        <span class="self">self</span>.<span class="number">0</span>.fmt(f)
+<a href=#490 id=490 data-nosnippet>490</a>    }
+<a href=#491 id=491 data-nosnippet>491</a>}
+<a href=#492 id=492 data-nosnippet>492</a>
+<a href=#493 id=493 data-nosnippet>493</a><span class="kw">impl </span>error::Error <span class="kw">for </span>AnyError {
+<a href=#494 id=494 data-nosnippet>494</a>    <span class="attr">#[inline]
+<a href=#495 id=495 data-nosnippet>495</a>    </span><span class="kw">fn </span>source(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>(<span class="kw">dyn </span>error::Error + <span class="lifetime">'static</span>)&gt; {
+<a href=#496 id=496 data-nosnippet>496</a>        <span class="prelude-val">Some</span>(<span class="kw-2">&amp;*</span><span class="self">self</span>.<span class="number">0</span>)
+<a href=#497 id=497 data-nosnippet>497</a>    }
+<a href=#498 id=498 data-nosnippet>498</a>}
+<a href=#499 id=499 data-nosnippet>499</a>
+<a href=#500 id=500 data-nosnippet>500</a><span class="doccomment">/// Wrapper for Allocators, whose buffer types implement [`AsDmabuf`].
+<a href=#501 id=501 data-nosnippet>501</a>///
+<a href=#502 id=502 data-nosnippet>502</a>/// Implements `Allocator&lt;Buffer=Dmabuf, Error=AnyError&gt;`
+<a href=#503 id=503 data-nosnippet>503</a></span><span class="attr">#[derive(Debug)]
+<a href=#504 id=504 data-nosnippet>504</a></span><span class="kw">pub struct </span>DmabufAllocator&lt;A&gt;(<span class="kw">pub </span>A)
+<a href=#505 id=505 data-nosnippet>505</a><span class="kw">where
+<a href=#506 id=506 data-nosnippet>506</a>    </span>A: Allocator,
+<a href=#507 id=507 data-nosnippet>507</a>    &lt;A <span class="kw">as </span>Allocator&gt;::Buffer: AsDmabuf + <span class="lifetime">'static</span>,
+<a href=#508 id=508 data-nosnippet>508</a>    &lt;A <span class="kw">as </span>Allocator&gt;::Error: <span class="lifetime">'static</span>;
+<a href=#509 id=509 data-nosnippet>509</a>
+<a href=#510 id=510 data-nosnippet>510</a><span class="kw">impl</span>&lt;A&gt; Allocator <span class="kw">for </span>DmabufAllocator&lt;A&gt;
+<a href=#511 id=511 data-nosnippet>511</a><span class="kw">where
+<a href=#512 id=512 data-nosnippet>512</a>    </span>A: Allocator,
+<a href=#513 id=513 data-nosnippet>513</a>    &lt;A <span class="kw">as </span>Allocator&gt;::Buffer: AsDmabuf + <span class="lifetime">'static</span>,
+<a href=#514 id=514 data-nosnippet>514</a>    &lt;A <span class="kw">as </span>Allocator&gt;::Error: Send + Sync + <span class="lifetime">'static</span>,
+<a href=#515 id=515 data-nosnippet>515</a>    &lt;&lt;A <span class="kw">as </span>Allocator&gt;::Buffer <span class="kw">as </span>AsDmabuf&gt;::Error: Send + Sync + <span class="lifetime">'static</span>,
+<a href=#516 id=516 data-nosnippet>516</a>{
+<a href=#517 id=517 data-nosnippet>517</a>    <span class="kw">type </span>Buffer = Dmabuf;
+<a href=#518 id=518 data-nosnippet>518</a>    <span class="kw">type </span>Error = AnyError;
+<a href=#519 id=519 data-nosnippet>519</a>
+<a href=#520 id=520 data-nosnippet>520</a>    <span class="attr">#[profiling::function]
+<a href=#521 id=521 data-nosnippet>521</a>    </span><span class="kw">fn </span>create_buffer(
+<a href=#522 id=522 data-nosnippet>522</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#523 id=523 data-nosnippet>523</a>        width: u32,
+<a href=#524 id=524 data-nosnippet>524</a>        height: u32,
+<a href=#525 id=525 data-nosnippet>525</a>        fourcc: Fourcc,
+<a href=#526 id=526 data-nosnippet>526</a>        modifiers: <span class="kw-2">&amp;</span>[Modifier],
+<a href=#527 id=527 data-nosnippet>527</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Buffer, <span class="self">Self</span>::Error&gt; {
+<a href=#528 id=528 data-nosnippet>528</a>        <span class="self">self</span>.<span class="number">0
+<a href=#529 id=529 data-nosnippet>529</a>            </span>.create_buffer(width, height, fourcc, modifiers)
+<a href=#530 id=530 data-nosnippet>530</a>            .map_err(|err| AnyError(err.into()))
+<a href=#531 id=531 data-nosnippet>531</a>            .and_then(|b| AsDmabuf::export(<span class="kw-2">&amp;</span>b).map_err(|err| AnyError(err.into())))
+<a href=#532 id=532 data-nosnippet>532</a>    }
+<a href=#533 id=533 data-nosnippet>533</a>}
+<a href=#534 id=534 data-nosnippet>534</a>
+<a href=#535 id=535 data-nosnippet>535</a><span class="doccomment">/// [`Blocker`] implementation for an accompaning [`DmabufSource`]
+<a href=#536 id=536 data-nosnippet>536</a></span><span class="attr">#[cfg(feature = <span class="string">"wayland_frontend"</span>)]
+<a href=#537 id=537 data-nosnippet>537</a>#[derive(Debug)]
+<a href=#538 id=538 data-nosnippet>538</a></span><span class="kw">pub struct </span>DmabufBlocker(Arc&lt;AtomicBool&gt;);
+<a href=#539 id=539 data-nosnippet>539</a>
+<a href=#540 id=540 data-nosnippet>540</a><span class="attr">#[cfg(feature = <span class="string">"wayland_frontend"</span>)]
+<a href=#541 id=541 data-nosnippet>541</a></span><span class="kw">impl </span>Blocker <span class="kw">for </span>DmabufBlocker {
+<a href=#542 id=542 data-nosnippet>542</a>    <span class="kw">fn </span>state(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; BlockerState {
+<a href=#543 id=543 data-nosnippet>543</a>        <span class="kw">if </span><span class="self">self</span>.<span class="number">0</span>.load(Ordering::SeqCst) {
+<a href=#544 id=544 data-nosnippet>544</a>            BlockerState::Released
+<a href=#545 id=545 data-nosnippet>545</a>        } <span class="kw">else </span>{
+<a href=#546 id=546 data-nosnippet>546</a>            BlockerState::Pending
+<a href=#547 id=547 data-nosnippet>547</a>        }
+<a href=#548 id=548 data-nosnippet>548</a>    }
+<a href=#549 id=549 data-nosnippet>549</a>}
+<a href=#550 id=550 data-nosnippet>550</a>
+<a href=#551 id=551 data-nosnippet>551</a><span class="attr">#[derive(Debug)]
+<a href=#552 id=552 data-nosnippet>552</a></span><span class="kw">enum </span>Subsource {
+<a href=#553 id=553 data-nosnippet>553</a>    Active(Generic&lt;PlaneRef, std::io::Error&gt;),
+<a href=#554 id=554 data-nosnippet>554</a>    Done(Generic&lt;PlaneRef, std::io::Error&gt;),
+<a href=#555 id=555 data-nosnippet>555</a>    Empty,
+<a href=#556 id=556 data-nosnippet>556</a>}
+<a href=#557 id=557 data-nosnippet>557</a>
+<a href=#558 id=558 data-nosnippet>558</a><span class="kw">impl </span>Subsource {
+<a href=#559 id=559 data-nosnippet>559</a>    <span class="kw">fn </span>done(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#560 id=560 data-nosnippet>560</a>        <span class="kw">let </span><span class="kw-2">mut </span>this = Subsource::Empty;
+<a href=#561 id=561 data-nosnippet>561</a>        std::mem::swap(<span class="self">self</span>, <span class="kw-2">&amp;mut </span>this);
+<a href=#562 id=562 data-nosnippet>562</a>        <span class="kw">match </span>this {
+<a href=#563 id=563 data-nosnippet>563</a>            Subsource::Done(source) | Subsource::Active(source) =&gt; {
+<a href=#564 id=564 data-nosnippet>564</a>                <span class="kw-2">*</span><span class="self">self </span>= Subsource::Done(source);
+<a href=#565 id=565 data-nosnippet>565</a>            }
+<a href=#566 id=566 data-nosnippet>566</a>            <span class="kw">_ </span>=&gt; {}
+<a href=#567 id=567 data-nosnippet>567</a>        }
+<a href=#568 id=568 data-nosnippet>568</a>    }
+<a href=#569 id=569 data-nosnippet>569</a>}
+<a href=#570 id=570 data-nosnippet>570</a>
+<a href=#571 id=571 data-nosnippet>571</a><span class="doccomment">/// [`Dmabuf`]-based event source. Can be used to monitor implicit fences of a dmabuf.
+<a href=#572 id=572 data-nosnippet>572</a></span><span class="attr">#[derive(Debug)]
+<a href=#573 id=573 data-nosnippet>573</a></span><span class="kw">pub struct </span>DmabufSource {
+<a href=#574 id=574 data-nosnippet>574</a>    dmabuf: Dmabuf,
+<a href=#575 id=575 data-nosnippet>575</a>    signal: Arc&lt;AtomicBool&gt;,
+<a href=#576 id=576 data-nosnippet>576</a>    sources: [Subsource; <span class="number">4</span>],
+<a href=#577 id=577 data-nosnippet>577</a>}
+<a href=#578 id=578 data-nosnippet>578</a>
+<a href=#579 id=579 data-nosnippet>579</a><span class="attr">#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+<a href=#580 id=580 data-nosnippet>580</a>#[error(<span class="string">"Dmabuf is already ready for the given interest"</span>)]
+<a href=#581 id=581 data-nosnippet>581</a></span><span class="doccomment">/// Dmabuf is already ready for the given interest
+<a href=#582 id=582 data-nosnippet>582</a></span><span class="kw">pub struct </span>AlreadyReady;
+<a href=#583 id=583 data-nosnippet>583</a>
+<a href=#584 id=584 data-nosnippet>584</a><span class="kw">impl </span>DmabufSource {
+<a href=#585 id=585 data-nosnippet>585</a>    <span class="doccomment">/// Creates a new [`DmabufSource`] from a [`Dmabuf`] and interest.
+<a href=#586 id=586 data-nosnippet>586</a>    ///
+<a href=#587 id=587 data-nosnippet>587</a>    /// This event source will monitor the implicit fences of the given dmabuf.
+<a href=#588 id=588 data-nosnippet>588</a>    /// Monitoring for READ-access will monitor the state of the most recent write or exclusive fence.
+<a href=#589 id=589 data-nosnippet>589</a>    /// Monitoring for WRITE-access, will monitor state of all attached fences, shared and exclusive ones.
+<a href=#590 id=590 data-nosnippet>590</a>    ///
+<a href=#591 id=591 data-nosnippet>591</a>    /// The event source is a one shot event source and will remove itself from the event loop after being triggered once.
+<a href=#592 id=592 data-nosnippet>592</a>    /// To monitor for new fences added at a later time a new DmabufSource needs to be created.
+<a href=#593 id=593 data-nosnippet>593</a>    ///
+<a href=#594 id=594 data-nosnippet>594</a>    /// Returns `AlreadyReady` if all corresponding fences are already signalled or if `interest` is empty.
+<a href=#595 id=595 data-nosnippet>595</a>    </span><span class="attr">#[profiling::function]
+<a href=#596 id=596 data-nosnippet>596</a>    </span><span class="kw">pub fn </span>new(dmabuf: Dmabuf, interest: Interest) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, AlreadyReady&gt; {
+<a href=#597 id=597 data-nosnippet>597</a>        <span class="kw">if </span>!interest.readable &amp;&amp; !interest.writable {
+<a href=#598 id=598 data-nosnippet>598</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(AlreadyReady);
+<a href=#599 id=599 data-nosnippet>599</a>        }
+<a href=#600 id=600 data-nosnippet>600</a>
+<a href=#601 id=601 data-nosnippet>601</a>        <span class="kw">let </span><span class="kw-2">mut </span>sources = [
+<a href=#602 id=602 data-nosnippet>602</a>            Subsource::Empty,
+<a href=#603 id=603 data-nosnippet>603</a>            Subsource::Empty,
+<a href=#604 id=604 data-nosnippet>604</a>            Subsource::Empty,
+<a href=#605 id=605 data-nosnippet>605</a>            Subsource::Empty,
+<a href=#606 id=606 data-nosnippet>606</a>        ];
+<a href=#607 id=607 data-nosnippet>607</a>        <span class="kw">for </span>(idx, handle) <span class="kw">in </span>dmabuf.handles().enumerate() {
+<a href=#608 id=608 data-nosnippet>608</a>            <span class="kw">if </span><span class="macro">matches!</span>(
+<a href=#609 id=609 data-nosnippet>609</a>                rustix::event::poll(
+<a href=#610 id=610 data-nosnippet>610</a>                    <span class="kw-2">&amp;mut </span>[rustix::event::PollFd::new(
+<a href=#611 id=611 data-nosnippet>611</a>                        <span class="kw-2">&amp;</span>handle,
+<a href=#612 id=612 data-nosnippet>612</a>                        <span class="kw">if </span>interest.writable {
+<a href=#613 id=613 data-nosnippet>613</a>                            rustix::event::PollFlags::OUT
+<a href=#614 id=614 data-nosnippet>614</a>                        } <span class="kw">else </span>{
+<a href=#615 id=615 data-nosnippet>615</a>                            rustix::event::PollFlags::IN
+<a href=#616 id=616 data-nosnippet>616</a>                        },
+<a href=#617 id=617 data-nosnippet>617</a>                    )],
+<a href=#618 id=618 data-nosnippet>618</a>                    <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>rustix::time::Timespec {
+<a href=#619 id=619 data-nosnippet>619</a>                        tv_sec: <span class="number">0</span>,
+<a href=#620 id=620 data-nosnippet>620</a>                        tv_nsec: <span class="number">0
+<a href=#621 id=621 data-nosnippet>621</a>                    </span>})
+<a href=#622 id=622 data-nosnippet>622</a>                ),
+<a href=#623 id=623 data-nosnippet>623</a>                <span class="prelude-val">Ok</span>(<span class="number">1</span>)
+<a href=#624 id=624 data-nosnippet>624</a>            ) {
+<a href=#625 id=625 data-nosnippet>625</a>                <span class="kw">continue</span>;
+<a href=#626 id=626 data-nosnippet>626</a>            }
+<a href=#627 id=627 data-nosnippet>627</a>            <span class="kw">let </span>fd = PlaneRef {
+<a href=#628 id=628 data-nosnippet>628</a>                dmabuf: dmabuf.clone(),
+<a href=#629 id=629 data-nosnippet>629</a>                idx,
+<a href=#630 id=630 data-nosnippet>630</a>            };
+<a href=#631 id=631 data-nosnippet>631</a>            sources[idx] = Subsource::Active(Generic::new(fd, interest, Mode::OneShot));
+<a href=#632 id=632 data-nosnippet>632</a>        }
+<a href=#633 id=633 data-nosnippet>633</a>        <span class="kw">if </span>sources
+<a href=#634 id=634 data-nosnippet>634</a>            .iter()
+<a href=#635 id=635 data-nosnippet>635</a>            .all(|x| <span class="macro">matches!</span>(x, Subsource::Done(<span class="kw">_</span>) | Subsource::Empty))
+<a href=#636 id=636 data-nosnippet>636</a>        {
+<a href=#637 id=637 data-nosnippet>637</a>            <span class="prelude-val">Err</span>(AlreadyReady)
+<a href=#638 id=638 data-nosnippet>638</a>        } <span class="kw">else </span>{
+<a href=#639 id=639 data-nosnippet>639</a>            <span class="prelude-val">Ok</span>(DmabufSource {
+<a href=#640 id=640 data-nosnippet>640</a>                dmabuf,
+<a href=#641 id=641 data-nosnippet>641</a>                sources,
+<a href=#642 id=642 data-nosnippet>642</a>                signal: Arc::new(AtomicBool::new(<span class="bool-val">false</span>)),
+<a href=#643 id=643 data-nosnippet>643</a>            })
+<a href=#644 id=644 data-nosnippet>644</a>        }
+<a href=#645 id=645 data-nosnippet>645</a>    }
+<a href=#646 id=646 data-nosnippet>646</a>}
+<a href=#647 id=647 data-nosnippet>647</a>
+<a href=#648 id=648 data-nosnippet>648</a><span class="kw">impl </span>EventSource <span class="kw">for </span>DmabufSource {
+<a href=#649 id=649 data-nosnippet>649</a>    <span class="kw">type </span>Event = ();
+<a href=#650 id=650 data-nosnippet>650</a>    <span class="kw">type </span>Metadata = Dmabuf;
+<a href=#651 id=651 data-nosnippet>651</a>    <span class="kw">type </span>Ret = <span class="prelude-ty">Result</span>&lt;(), std::io::Error&gt;;
+<a href=#652 id=652 data-nosnippet>652</a>
+<a href=#653 id=653 data-nosnippet>653</a>    <span class="kw">type </span>Error = std::io::Error;
+<a href=#654 id=654 data-nosnippet>654</a>
+<a href=#655 id=655 data-nosnippet>655</a>    <span class="attr">#[profiling::function]
+<a href=#656 id=656 data-nosnippet>656</a>    </span><span class="kw">fn </span>process_events&lt;F&gt;(
+<a href=#657 id=657 data-nosnippet>657</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#658 id=658 data-nosnippet>658</a>        readiness: calloop::Readiness,
+<a href=#659 id=659 data-nosnippet>659</a>        token: calloop::Token,
+<a href=#660 id=660 data-nosnippet>660</a>        <span class="kw-2">mut </span>callback: F,
+<a href=#661 id=661 data-nosnippet>661</a>    ) -&gt; <span class="prelude-ty">Result</span>&lt;PostAction, <span class="self">Self</span>::Error&gt;
+<a href=#662 id=662 data-nosnippet>662</a>    <span class="kw">where
+<a href=#663 id=663 data-nosnippet>663</a>        </span>F: FnMut(<span class="self">Self</span>::Event, <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Metadata) -&gt; <span class="self">Self</span>::Ret,
+<a href=#664 id=664 data-nosnippet>664</a>    {
+<a href=#665 id=665 data-nosnippet>665</a>        <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="number">4 </span>{
+<a href=#666 id=666 data-nosnippet>666</a>            <span class="kw">if let </span><span class="prelude-val">Ok</span>(PostAction::Remove) = <span class="kw">if let </span>Subsource::Active(<span class="kw-2">ref mut </span>source) = <span class="kw-2">&amp;mut </span><span class="self">self</span>.sources[i] {
+<a href=#667 id=667 data-nosnippet>667</a>                <span class="comment">// luckily Generic skips events for other tokens
+<a href=#668 id=668 data-nosnippet>668</a>                </span>source.process_events(readiness, token, |<span class="kw">_</span>, <span class="kw">_</span>| <span class="prelude-val">Ok</span>(PostAction::Remove))
+<a href=#669 id=669 data-nosnippet>669</a>            } <span class="kw">else </span>{
+<a href=#670 id=670 data-nosnippet>670</a>                <span class="prelude-val">Ok</span>(PostAction::Continue)
+<a href=#671 id=671 data-nosnippet>671</a>            } {
+<a href=#672 id=672 data-nosnippet>672</a>                <span class="self">self</span>.sources[i].done();
+<a href=#673 id=673 data-nosnippet>673</a>            }
+<a href=#674 id=674 data-nosnippet>674</a>        }
+<a href=#675 id=675 data-nosnippet>675</a>
+<a href=#676 id=676 data-nosnippet>676</a>        <span class="kw">if </span><span class="self">self
+<a href=#677 id=677 data-nosnippet>677</a>            </span>.sources
+<a href=#678 id=678 data-nosnippet>678</a>            .iter()
+<a href=#679 id=679 data-nosnippet>679</a>            .all(|x| <span class="macro">matches!</span>(x, Subsource::Done(<span class="kw">_</span>) | Subsource::Empty))
+<a href=#680 id=680 data-nosnippet>680</a>        {
+<a href=#681 id=681 data-nosnippet>681</a>            <span class="self">self</span>.signal.store(<span class="bool-val">true</span>, Ordering::SeqCst);
+<a href=#682 id=682 data-nosnippet>682</a>            callback((), <span class="kw-2">&amp;mut </span><span class="self">self</span>.dmabuf)<span class="question-mark">?</span>;
+<a href=#683 id=683 data-nosnippet>683</a>            <span class="prelude-val">Ok</span>(PostAction::Remove)
+<a href=#684 id=684 data-nosnippet>684</a>        } <span class="kw">else </span>{
+<a href=#685 id=685 data-nosnippet>685</a>            <span class="prelude-val">Ok</span>(PostAction::Reregister)
+<a href=#686 id=686 data-nosnippet>686</a>        }
+<a href=#687 id=687 data-nosnippet>687</a>    }
+<a href=#688 id=688 data-nosnippet>688</a>
+<a href=#689 id=689 data-nosnippet>689</a>    <span class="kw">fn </span>register(
+<a href=#690 id=690 data-nosnippet>690</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#691 id=691 data-nosnippet>691</a>        poll: <span class="kw-2">&amp;mut </span>calloop::Poll,
+<a href=#692 id=692 data-nosnippet>692</a>        token_factory: <span class="kw-2">&amp;mut </span>calloop::TokenFactory,
+<a href=#693 id=693 data-nosnippet>693</a>    ) -&gt; calloop::Result&lt;()&gt; {
+<a href=#694 id=694 data-nosnippet>694</a>        <span class="kw">for </span>source <span class="kw">in </span><span class="self">self</span>.sources.iter_mut().filter_map(|source| <span class="kw">match </span>source {
+<a href=#695 id=695 data-nosnippet>695</a>            Subsource::Active(<span class="kw-2">ref mut </span>source) =&gt; <span class="prelude-val">Some</span>(source),
+<a href=#696 id=696 data-nosnippet>696</a>            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+<a href=#697 id=697 data-nosnippet>697</a>        }) {
+<a href=#698 id=698 data-nosnippet>698</a>            source.register(poll, token_factory)<span class="question-mark">?</span>;
+<a href=#699 id=699 data-nosnippet>699</a>        }
+<a href=#700 id=700 data-nosnippet>700</a>        <span class="prelude-val">Ok</span>(())
+<a href=#701 id=701 data-nosnippet>701</a>    }
+<a href=#702 id=702 data-nosnippet>702</a>
+<a href=#703 id=703 data-nosnippet>703</a>    <span class="kw">fn </span>reregister(
+<a href=#704 id=704 data-nosnippet>704</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#705 id=705 data-nosnippet>705</a>        poll: <span class="kw-2">&amp;mut </span>calloop::Poll,
+<a href=#706 id=706 data-nosnippet>706</a>        token_factory: <span class="kw-2">&amp;mut </span>calloop::TokenFactory,
+<a href=#707 id=707 data-nosnippet>707</a>    ) -&gt; calloop::Result&lt;()&gt; {
+<a href=#708 id=708 data-nosnippet>708</a>        <span class="kw">for </span>source <span class="kw">in </span><span class="self">self</span>.sources.iter_mut() {
+<a href=#709 id=709 data-nosnippet>709</a>            <span class="kw">match </span>source {
+<a href=#710 id=710 data-nosnippet>710</a>                Subsource::Active(<span class="kw-2">ref mut </span>source) =&gt; source.reregister(poll, token_factory)<span class="question-mark">?</span>,
+<a href=#711 id=711 data-nosnippet>711</a>                Subsource::Done(<span class="kw-2">ref mut </span>source) =&gt; {
+<a href=#712 id=712 data-nosnippet>712</a>                    <span class="kw">let _ </span>= source.unregister(poll);
+<a href=#713 id=713 data-nosnippet>713</a>                }
+<a href=#714 id=714 data-nosnippet>714</a>                <span class="kw">_ </span>=&gt; {}
+<a href=#715 id=715 data-nosnippet>715</a>            }
+<a href=#716 id=716 data-nosnippet>716</a>        }
+<a href=#717 id=717 data-nosnippet>717</a>        <span class="prelude-val">Ok</span>(())
+<a href=#718 id=718 data-nosnippet>718</a>    }
+<a href=#719 id=719 data-nosnippet>719</a>
+<a href=#720 id=720 data-nosnippet>720</a>    <span class="kw">fn </span>unregister(<span class="kw-2">&amp;mut </span><span class="self">self</span>, poll: <span class="kw-2">&amp;mut </span>calloop::Poll) -&gt; calloop::Result&lt;()&gt; {
+<a href=#721 id=721 data-nosnippet>721</a>        <span class="kw">for </span>source <span class="kw">in </span><span class="self">self</span>.sources.iter_mut() {
+<a href=#722 id=722 data-nosnippet>722</a>            <span class="kw">match </span>source {
+<a href=#723 id=723 data-nosnippet>723</a>                Subsource::Active(<span class="kw-2">ref mut </span>source) =&gt; source.unregister(poll)<span class="question-mark">?</span>,
+<a href=#724 id=724 data-nosnippet>724</a>                Subsource::Done(<span class="kw-2">ref mut </span>source) =&gt; {
+<a href=#725 id=725 data-nosnippet>725</a>                    <span class="kw">let _ </span>= source.unregister(poll);
+<a href=#726 id=726 data-nosnippet>726</a>                }
+<a href=#727 id=727 data-nosnippet>727</a>                <span class="kw">_ </span>=&gt; {}
+<a href=#728 id=728 data-nosnippet>728</a>            }
+<a href=#729 id=729 data-nosnippet>729</a>        }
+<a href=#730 id=730 data-nosnippet>730</a>        <span class="prelude-val">Ok</span>(())
+<a href=#731 id=731 data-nosnippet>731</a>    }
+<a href=#732 id=732 data-nosnippet>732</a>}</code></pre></div></section></main></body></html>
