@@ -565,7 +565,7 @@ impl DataDeviceState {
         D: GlobalDispatch<WlDataDeviceManager, ()> + 'static,
         D: DataDeviceHandler,
     {
-        let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, ());
+        let manager_global = display.create_global::<D, WlDataDeviceManager, _>(4, ());
 
         Self {
             manager_global,
@@ -822,6 +822,7 @@ mod handlers {
                         }
                     }
                 }
+                wl_data_device_manager::Request::Release => {}
                 _ => unreachable!(),
             }
         }

@@ -145,3 +145,14 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch."crates-io"]
+wayland-server = { git = "https://github.com/smithay/wayland-rs" }
+wayland-egl = { git = "https://github.com/smithay/wayland-rs" }
+wayland-client = { git = "https://github.com/smithay/wayland-rs" }
+wayland-cursor = { git = "https://github.com/smithay/wayland-rs" }
+wayland-protocols = { git = "https://github.com/smithay/wayland-rs" }
+wayland-protocols-wlr = { git = "https://github.com/smithay/wayland-rs" }
+wayland-protocols-misc = { git = "https://github.com/smithay/wayland-rs" }
+wayland-sys = { git = "https://github.com/smithay/wayland-rs" }
+wayland-backend = { git = "https://github.com/smithay/wayland-rs" }
