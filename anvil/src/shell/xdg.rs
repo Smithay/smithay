@@ -420,6 +420,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     }
                     pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
                 }
+                // TODO touch grab
             }
         }
     }
