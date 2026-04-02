@@ -526,17 +526,17 @@ where
 }
 
 /// Unregister a pre-commit hook
-pub fn remove_pre_commit_hook(surface: &WlSurface, hook_id: HookId) {
+pub fn remove_pre_commit_hook(surface: &WlSurface, hook_id: &HookId) {
     PrivateSurfaceData::remove_pre_commit_hook(surface, hook_id)
 }
 
 /// Unregister a post-commit hook
-pub fn remove_post_commit_hook(surface: &WlSurface, hook_id: HookId) {
+pub fn remove_post_commit_hook(surface: &WlSurface, hook_id: &HookId) {
     PrivateSurfaceData::remove_post_commit_hook(surface, hook_id)
 }
 
 /// Unregister a destruction hook
-pub fn remove_destruction_hook(surface: &WlSurface, hook_id: HookId) {
+pub fn remove_destruction_hook(surface: &WlSurface, hook_id: &HookId) {
     PrivateSurfaceData::remove_destruction_hook(surface, hook_id)
 }
 
