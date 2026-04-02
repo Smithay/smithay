@@ -491,9 +491,9 @@ impl ShmBufferUserData {
         id
     }
 
-    pub(crate) fn remove_destruction_hook(&self, hook_id: HookId) {
+    pub(crate) fn remove_destruction_hook(&self, hook_id: &HookId) {
         let mut guard = self.destruction_hooks.lock().unwrap();
-        if let Some(id) = guard.iter().position(|hook| hook.id == hook_id) {
+        if let Some(id) = guard.iter().position(|hook| hook.id == *hook_id) {
             guard.remove(id);
         }
     }

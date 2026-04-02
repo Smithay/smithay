@@ -238,7 +238,7 @@ pub(crate) fn enter_internal<D: SeatHandler + 'static>(
             .get_or_insert::<FocusDestroyHook<D>, _>(Default::default)
             .insert(seat, hook_id)
     }) {
-        remove_destruction_hook(surface, old_hook_id);
+        remove_destruction_hook(surface, &old_hook_id);
     }
 
     let text_input = seat.text_input();
@@ -272,7 +272,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 .get::<FocusDestroyHook<D>>()
                 .and_then(|hook| hook.remove(seat))
         }) {
-            remove_destruction_hook(self, hook_id);
+            remove_destruction_hook(self, &hook_id);
         };
 
         let text_input = seat.text_input();
