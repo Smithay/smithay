@@ -156,7 +156,7 @@ impl XdgToplevelIconUserData {
             .map(|id| guard.remove(id))
         {
             if let Some(shm) = buffer.data::<ShmBufferUserData>() {
-                shm.remove_destruction_hook(hook);
+                shm.remove_destruction_hook(&hook);
             }
         }
     }
@@ -166,7 +166,7 @@ impl XdgToplevelIconUserData {
 
         for (buffer, hook) in guard.drain(..) {
             if let Some(shm) = buffer.data::<ShmBufferUserData>() {
-                shm.remove_destruction_hook(hook);
+                shm.remove_destruction_hook(&hook);
             }
         }
     }

@@ -38,7 +38,7 @@ type DestructionHook = dyn Fn(&mut dyn Any, &WlSurface) + Send + Sync;
 ///
 /// Each node also appears within its children list, to allow relative placement
 /// between them.
-pub struct PrivateSurfaceData {
+pub(crate) struct PrivateSurfaceData {
     parent: Option<WlSurface>,
     children: Vec<WlSurface>,
     public_data: SurfaceData,
@@ -191,22 +191,22 @@ impl PrivateSurfaceData {
             .add_blocker(blocker)
     }
 
-    pub fn remove_pre_commit_hook(surface: &WlSurface, hook_id: HookId) {
+    pub fn remove_pre_commit_hook(surface: &WlSurface, hook_id: &HookId) {
         Self::lock_user_data(surface)
             .pre_commit_hooks
-            .retain(|hook| hook.id != hook_id);
+            .retain(|hook| hook.id != *hook_id);
     }
 
-    pub fn remove_post_commit_hook(surface: &WlSurface, hook_id: HookId) {
+    pub fn remove_post_commit_hook(surface: &WlSurface, hook_id: &HookId) {
         Self::lock_user_data(surface)
             .post_commit_hooks
-            .retain(|hook| hook.id != hook_id);
+            .retain(|hook| hook.id != *hook_id);
     }
 
-    pub fn remove_destruction_hook(surface: &WlSurface, hook_id: HookId) {
+    pub fn remove_destruction_hook(surface: &WlSurface, hook_id: &HookId) {
         Self::lock_user_data(surface)
             .destruction_hooks
-            .retain(|hook| hook.id != hook_id);
+            .retain(|hook| hook.id != *hook_id);
     }
 
     pub fn add_pre_commit_hook(
