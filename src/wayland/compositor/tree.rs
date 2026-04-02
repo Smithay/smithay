@@ -38,7 +38,7 @@ type DestructionHook = dyn Fn(&mut dyn Any, &WlSurface) + Send + Sync;
 ///
 /// Each node also appears within its children list, to allow relative placement
 /// between them.
-pub struct PrivateSurfaceData {
+pub(crate) struct PrivateSurfaceData {
     parent: Option<WlSurface>,
     children: Vec<WlSurface>,
     public_data: SurfaceData,
