@@ -50,7 +50,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         let window = WindowElement(Window::new_wayland_window(surface.clone()));
         place_new_window(&mut self.space, self.pointer.current_location(), &window, true);
 
-        compositor::add_post_commit_hook(surface.wl_surface(), |state: &mut Self, _, surface| {
+        // FIXME: On role re-usage this might be problematic
+        let _ = compositor::add_post_commit_hook(surface.wl_surface(), |state: &mut Self, _, surface| {
             handle_toplevel_commit(&mut state.space, surface);
         });
     }

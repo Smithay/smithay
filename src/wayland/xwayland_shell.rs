@@ -264,7 +264,9 @@ where
                     return;
                 }
 
-                compositor::add_pre_commit_hook::<D, _>(&surface, serial_commit_hook);
+                // TODO: Can the xwayland shell role be re-used? In this case we should guard the pre-commit hook
+                // to avoid duplicates.
+                let _ = compositor::add_pre_commit_hook::<D, _>(&surface, serial_commit_hook);
 
                 data_init.init(id, XWaylandSurfaceUserData { wl_surface: surface });
                 // We call the handler callback once the serial is set.
