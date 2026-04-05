@@ -91,7 +91,7 @@ pub(crate) struct SharedSurfaceState {
     hints: Option<WmHints>,
     normal_hints: Option<WmSizeHints>,
     transient_for: Option<X11Window>,
-    net_state: HashSet<Atom>,
+    pub(super) net_state: HashSet<Atom>,
     motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
     pub(crate) opacity: Option<u32>,
@@ -541,6 +541,42 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_FOCUSED)
     }
 
+    /// Returns if the window is in the "above" (always on top) state
+    pub fn is_above(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_ABOVE)
+    }
+
+    /// Returns if the window is in the "below" state
+    pub fn is_below(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_BELOW)
+    }
+
+    /// Returns if the window has requested to be hidden from taskbars
+    pub fn is_skip_taskbar(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_SKIP_TASKBAR)
+    }
+
+    /// Returns if the window has requested to be hidden from pagers
+    pub fn is_skip_pager(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_SKIP_PAGER)
+    }
+
     /// Returns true if the window is client-side decorated
     pub fn is_decorated(&self) -> bool {
         let state = self.state.lock().unwrap();
@@ -606,6 +642,30 @@ impl X11Surface {
             self.change_net_state(&[self.atoms._NET_WM_STATE_FOCUSED], &[])?;
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_FOCUSED])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window as above (always on top) or not.
+    ///
+    /// Allows the client to reflect this state in their UI.
+    pub fn set_above(&self, above: bool) -> Result<(), ConnectionError> {
+        if above {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_ABOVE], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_ABOVE])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window as below or not.
+    ///
+    /// Allows the client to reflect this state in their UI.
+    pub fn set_below(&self, below: bool) -> Result<(), ConnectionError> {
+        if below {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_BELOW], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_BELOW])?;
         }
         Ok(())
     }

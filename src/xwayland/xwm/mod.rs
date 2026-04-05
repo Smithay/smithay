@@ -245,6 +245,10 @@ mod atoms {
             _NET_WM_STATE_HIDDEN,
             _NET_WM_STATE_FULLSCREEN,
             _NET_WM_STATE_FOCUSED,
+            _NET_WM_STATE_ABOVE,
+            _NET_WM_STATE_BELOW,
+            _NET_WM_STATE_SKIP_TASKBAR,
+            _NET_WM_STATE_SKIP_PAGER,
             _NET_SUPPORTING_WM_CHECK,
             _XSETTINGS_SETTINGS,
 
@@ -410,6 +414,23 @@ pub trait XwmHandler {
     }
     /// Window requests to be unminimized.
     fn unminimize_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+
+    /// Window requests to be placed above other windows.
+    fn above_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to no longer be placed above other windows.
+    fn unabove_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be placed below other windows.
+    fn below_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to no longer be placed below other windows.
+    fn unbelow_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
 
@@ -727,6 +748,10 @@ impl X11Wm {
                 atoms._NET_WM_STATE_FULLSCREEN,
                 atoms._NET_WM_STATE_MODAL,
                 atoms._NET_WM_STATE_FOCUSED,
+                atoms._NET_WM_STATE_ABOVE,
+                atoms._NET_WM_STATE_BELOW,
+                atoms._NET_WM_STATE_SKIP_TASKBAR,
+                atoms._NET_WM_STATE_SKIP_PAGER,
                 atoms._NET_ACTIVE_WINDOW,
                 atoms._NET_WM_MOVERESIZE,
                 atoms._NET_CLIENT_LIST,
@@ -1283,7 +1308,8 @@ where
 
             xwm.conn.change_window_attributes(
                 n.window,
-                &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+                &ChangeWindowAttributesAux::new()
+                    .event_mask(EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE),
             )?;
             xwm.conn.flush()?;
 
@@ -1372,6 +1398,29 @@ where
                     // In that case, we set the X11Surface's override-redirect state to false here
                     // to prevent `set_mapped` and `configure` from failing.
                     surface.state.lock().unwrap().override_redirect = false;
+
+                    // Read initial _NET_WM_STATE set by the client before mapping.
+                    // Per EWMH spec, clients may set _NET_WM_STATE prior to mapping
+                    // and the window manager must respect it.
+                    if let Ok(reply) = conn
+                        .get_property(
+                            false,
+                            win,
+                            xwm.atoms._NET_WM_STATE,
+                            AtomEnum::ATOM,
+                            0,
+                            1024,
+                        )?
+                        .reply()
+                    {
+                        if let Some(states) = reply.value32() {
+                            let mut state_lock =
+                                surface.state.lock().unwrap();
+                            for atom in states {
+                                state_lock.net_state.insert(atom);
+                            }
+                        }
+                    }
 
                     drop(_guard);
                     state.map_window_request(xwm_id, surface);
@@ -2060,22 +2109,26 @@ where
             }
         }
         Event::FocusIn(n) => {
-            conn.change_property32(
-                PropMode::REPLACE,
-                xwm.screen.root,
-                xwm.atoms._NET_ACTIVE_WINDOW,
-                AtomEnum::WINDOW,
-                &[n.event],
-            )?;
+            if xwm.windows.iter().any(|x| x.window_id() == n.event) {
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    xwm.screen.root,
+                    xwm.atoms._NET_ACTIVE_WINDOW,
+                    AtomEnum::WINDOW,
+                    &[n.event],
+                )?;
+            }
         }
         Event::FocusOut(n) => {
-            conn.change_property32(
-                PropMode::REPLACE,
-                xwm.screen.root,
-                xwm.atoms._NET_ACTIVE_WINDOW,
-                AtomEnum::WINDOW,
-                &[n.event],
-            )?;
+            if xwm.windows.iter().any(|x| x.window_id() == n.event) {
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    xwm.screen.root,
+                    xwm.atoms._NET_ACTIVE_WINDOW,
+                    AtomEnum::WINDOW,
+                    &[x11rb::NONE],
+                )?;
+            }
         }
         Event::ClientMessage(msg) => {
             if let Some(reply) = conn.get_atom_name(msg.type_)?.reply_unchecked()? {
@@ -2221,6 +2274,34 @@ where
                                             state.unfullscreen_request(xwm_id, surface)
                                         } else {
                                             state.fullscreen_request(xwm_id, surface)
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_ABOVE) => {
+                                match data[0] {
+                                    0 => state.unabove_request(xwm_id, surface),
+                                    1 => state.above_request(xwm_id, surface),
+                                    2 => {
+                                        if surface.is_above() {
+                                            state.unabove_request(xwm_id, surface)
+                                        } else {
+                                            state.above_request(xwm_id, surface)
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_BELOW) => {
+                                match data[0] {
+                                    0 => state.unbelow_request(xwm_id, surface),
+                                    1 => state.below_request(xwm_id, surface),
+                                    2 => {
+                                        if surface.is_below() {
+                                            state.unbelow_request(xwm_id, surface)
+                                        } else {
+                                            state.below_request(xwm_id, surface)
                                         }
                                     }
                                     _ => {}
