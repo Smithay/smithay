@@ -34,6 +34,30 @@ pub struct ModifiersState {
     /// The "ISO level 5 shift" key
     pub iso_level5_shift: bool,
 
+    /// windows left key
+    pub logo_left: bool,
+
+    /// windows right key
+    pub logo_right: bool,
+
+    /// control left key
+    pub ctrl_right: bool,
+
+    /// control right key
+    pub ctrl_left: bool,
+
+    /// alt left key
+    pub alt_left: bool,
+
+    /// alt right key
+    pub alt_right: bool,
+
+    ///  shift left key
+    pub shift_left: bool,
+
+    ///  shift right key
+    pub shift_right: bool,
+
     /// Cached serialized modifier state, e.g. for sending in `wl_keyboard.modifiers`.
     ///
     /// Note that this may have outdated information compared to the other fields, and that
@@ -48,6 +72,16 @@ impl ModifiersState {
     /// serialization is lossy and will not survive round trips. This is documented in
     /// [`xkb::State::update_mask`].
     pub fn update_with(&mut self, state: &xkb::State) {
+        self.init_key_val(state);
+        self.serialized = serialize_modifiers(state);
+    }
+
+    /// Synchronizes the internal modifier flags with the current XKB state.
+    ///
+    /// This method checks if standard modifier names (e.g., Ctrl, Alt, Shift, Caps Lock)
+    /// are currently active in the "effective" state and updates the corresponding
+    /// boolean fields of the struct.
+    pub fn init_key_val(&mut self, state: &xkb::State) {
         self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
         self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
         self.shift = state.mod_name_is_active(&xkb::MOD_NAME_SHIFT, xkb::STATE_MODS_EFFECTIVE);
@@ -57,6 +91,31 @@ impl ModifiersState {
         self.iso_level3_shift =
             state.mod_name_is_active(&xkb::MOD_NAME_ISO_LEVEL3_SHIFT, xkb::STATE_MODS_EFFECTIVE);
         self.iso_level5_shift = state.mod_name_is_active(&xkb::MOD_NAME_MOD3, xkb::STATE_MODS_EFFECTIVE);
+    }
+
+    /// Updates the modifier states based on the provided keycode and XKB state.
+    ///
+    /// This method identifies the specific key pressed (using its Keysym)
+    /// and sets the corresponding internal boolean flags for modifier keys
+    /// (Super, Control, Alt, Shift). Finally, it updates the serialized state string.
+    pub fn update_with_by_keycode(&mut self, keycode: xkb::Keycode, state: &xkb::State) {
+        // 1. Initialize modifier values based on current state
+        self.init_key_val(state);
+        // 2. Identify the specific physical key pressed
+        let keysym = state.key_get_one_sym(keycode);
+        // 3. Match specific modifier keys and update their respective flags
+        match keysym.into() {
+            xkb::keysyms::KEY_Super_L => self.logo_left = true,
+            xkb::keysyms::KEY_Super_R => self.logo_right = true,
+            xkb::keysyms::KEY_Control_L => self.ctrl_left = true,
+            xkb::keysyms::KEY_Control_R => self.ctrl_right = true,
+            xkb::keysyms::KEY_Alt_L => self.alt_left = true,
+            xkb::keysyms::KEY_Alt_R => self.alt_right = true,
+            xkb::keysyms::KEY_Shift_L => self.shift_left = true,
+            xkb::keysyms::KEY_Shift_R => self.shift_right = true,
+            _ => {} // Ignore non-modifier keys
+        }
+        // 4. Synchronize the serialized string representation of active modifiers
         self.serialized = serialize_modifiers(state);
     }
 
