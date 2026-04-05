@@ -1,5 +1,5 @@
 use std::{
-    fmt,
+    fmt, fs,
     sync::{Arc, Mutex},
 };
 
@@ -9,7 +9,10 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_v2::{self, ZwpInputMethodV2},
     zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
 };
-use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface};
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    protocol::wl_surface::WlSurface,
+};
 use wayland_server::{
     protocol::wl_keyboard::KeymapFormat, Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
@@ -21,7 +24,6 @@ use crate::{
 };
 
 use super::{
-    input_method_keyboard_grab::InputMethodKeyboardGrab,
     input_method_popup_surface::{PopupHandle, PopupParent, PopupSurface},
     InputMethodHandler, InputMethodKeyboardUserData, InputMethodManagerState,
     InputMethodPopupSurfaceUserData, INPUT_POPUP_SURFACE_ROLE,
@@ -29,15 +31,18 @@ use super::{
 
 #[derive(Default, Debug)]
 pub(crate) struct InputMethod {
-    pub instance: Option<Instance>,
-    pub popup_handle: PopupHandle,
-    pub keyboard_grab: InputMethodKeyboardGrab,
+    pub instances: Vec<Instance>,
+    pub active_input_method_id: Option<ObjectId>,
 }
 
 #[derive(Debug)]
 pub(crate) struct Instance {
     pub object: ZwpInputMethodV2,
     pub serial: u32,
+    pub app_id: String,
+    pub keyboard_grab: Option<ZwpInputMethodKeyboardGrabV2>,
+    pub text_input_handle: TextInputHandle,
+    pub popup_handle: PopupHandle,
 }
 
 impl Instance {
@@ -48,6 +53,32 @@ impl Instance {
     }
 }
 
+/// Extract app_id from a client's PID by reading /proc/<pid>/comm
+fn get_app_id_from_pid(pid: i32) -> String {
+    // Try to read the process name from /proc/<pid>/comm
+    let comm_path = format!("/proc/{}/comm", pid);
+    if let Ok(comm) = fs::read_to_string(&comm_path) {
+        return comm.trim().to_string();
+    }
+
+    // Fallback: try to get the executable name from /proc/<pid>/cmdline
+    let cmdline_path = format!("/proc/{}/cmdline", pid);
+    if let Ok(cmdline) = fs::read_to_string(&cmdline_path) {
+        // cmdline is null-separated, take the first argument (the executable)
+        if let Some(exe) = cmdline.split('\0').next() {
+            // Extract just the filename from the path
+            if let Some(name) = exe.rsplit('/').next() {
+                if !name.is_empty() {
+                    return name.to_string();
+                }
+            }
+        }
+    }
+
+    // Final fallback: use the PID as identifier
+    format!("unknown-{}", pid)
+}
+
 /// Handle to an input method instance
 #[derive(Default, Debug, Clone)]
 pub struct InputMethodHandle {
@@ -55,49 +86,128 @@ pub struct InputMethodHandle {
 }
 
 impl InputMethodHandle {
-    pub(super) fn add_instance(&self, instance: &ZwpInputMethodV2) {
+    pub(super) fn add_instance(
+        &self,
+        instance: &ZwpInputMethodV2,
+        client: &Client,
+        dh: &DisplayHandle,
+        text_input_handle: TextInputHandle,
+    ) {
+        let app_id = client
+            .get_credentials(dh)
+            .ok()
+            .map(|creds| get_app_id_from_pid(creds.pid))
+            .unwrap_or_else(|| format!("unknown-client-{:?}", client.id()));
+
         let mut inner = self.inner.lock().unwrap();
-        if let Some(instance) = inner.instance.as_mut() {
-            instance.serial = 0;
-            instance.object.unavailable();
-        } else {
-            inner.instance = Some(Instance {
-                object: instance.clone(),
-                serial: 0,
-            });
-        }
+        inner.instances.push(Instance {
+            object: instance.clone(),
+            serial: 0,
+            app_id,
+            keyboard_grab: None,
+            text_input_handle,
+            popup_handle: PopupHandle::default(),
+        });
     }
 
     /// Whether there's an active instance of input-method.
     pub(crate) fn has_instance(&self) -> bool {
-        self.inner.lock().unwrap().instance.is_some()
+        self.inner.lock().unwrap().active_input_method_id.is_some()
     }
 
-    /// Callback function to access the input method object
-    pub(crate) fn with_instance<F>(&self, f: F)
+    /// Callback function to access the active input method instance
+    pub(crate) fn with_instance<F, R>(&self, mut f: F) -> Option<R>
     where
-        F: FnOnce(&mut Instance),
+        F: FnMut(&mut Instance) -> R,
     {
         let mut inner = self.inner.lock().unwrap();
-        if let Some(instance) = inner.instance.as_mut() {
-            f(instance);
+        let active_id = inner.active_input_method_id.clone()?;
+        let instance = inner.instances.iter_mut().find(|i| i.object.id() == active_id)?;
+        Some(f(instance))
+    }
+
+    /// Send keymap and modifiers to a keyboard grab object
+    fn send_keymap_and_modifiers<D: SeatHandler + 'static>(
+        keyboard_grab: &ZwpInputMethodKeyboardGrabV2,
+        keyboard_handle: &KeyboardHandle<D>,
+    ) {
+        let guard = keyboard_handle.arc.internal.lock().unwrap();
+        let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
+        let res = keymap_file.with_fd(false, |fd, size| {
+            keyboard_grab.keymap(KeymapFormat::XkbV1, fd, size as u32);
+        });
+
+        if let Err(err) = res {
+            warn!(err = ?err, "Failed to send keymap to keyboard grab");
+        } else {
+            // Also send current modifiers to keep them in sync
+            let mods = guard.mods_state.serialized;
+            keyboard_grab.modifiers(
+                SERIAL_COUNTER.next_serial().into(),
+                mods.depressed,
+                mods.latched,
+                mods.locked,
+                mods.layout_effective,
+            );
         }
     }
 
-    /// Callback function to access the input method.
-    pub(crate) fn with_input_method<F>(&self, mut f: F)
-    where
-        F: FnMut(&mut InputMethod),
-    {
+    /// Set which input method instance should be active by app_id.
+    /// Returns true if an instance with the given app_id was found and set as active.
+    pub fn set_active_instance(&self, app_id: &str) -> bool {
         let mut inner = self.inner.lock().unwrap();
-        f(&mut inner);
+
+        // Check if we're switching to a different input method
+        let old_active_id = inner.active_input_method_id.clone();
+
+        if let Some(instance) = inner.instances.iter().find(|i| i.app_id == app_id) {
+            let object_id = instance.object.id();
+            // Check if this is the same as the currently active one
+            let is_same = old_active_id.as_ref() == Some(&object_id);
+            if !is_same {
+                // Deactivate the old instance first
+                if let Some(old_id) = old_active_id {
+                    if let Some(old_instance) = inner.instances.iter_mut().find(|i| i.object.id() == old_id) {
+                        old_instance.object.deactivate();
+                        old_instance.done();
+                    }
+                }
+            }
+
+            inner.active_input_method_id = Some(object_id);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Clear the active input method instance.
+    /// This deactivates any currently active input method and releases any keyboard grab.
+    pub fn clear_active_instance<D: SeatHandler + 'static>(&self, state: &mut D) {
+        // First deactivate the input method (this also releases keyboard grab)
+        self.deactivate_input_method(state);
+        // Then clear the active instance
+        let mut inner = self.inner.lock().unwrap();
+        inner.active_input_method_id = None;
     }
 
     /// Indicates that an input method has grabbed a keyboard
     pub fn keyboard_grabbed(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
-        let keyboard = inner.keyboard_grab.inner.lock().unwrap();
-        keyboard.grab.is_some()
+        self.with_instance(|inst| inst.keyboard_grab.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Send keymap update to active input method keyboard grab
+    ///
+    /// This should be called when the keyboard layout changes to ensure
+    /// the IME receives the new keymap and can update its virtual keyboard accordingly.
+    pub fn send_keymap_to_grab<D: SeatHandler + 'static>(&self, keyboard_handle: &KeyboardHandle<D>) {
+        let Some(keyboard_grab) = self.with_instance(|inst| inst.keyboard_grab.clone()).flatten() else {
+            warn!("InputMethod: send_keymap_to_grab - no active input method or no keyboard grab");
+            return;
+        };
+
+        Self::send_keymap_and_modifiers(&keyboard_grab, keyboard_handle);
     }
 
     pub(crate) fn set_text_input_rectangle<D: SeatHandler + 'static>(
@@ -105,41 +215,34 @@ impl InputMethodHandle {
         state: &mut D,
         rect: Rectangle<i32, Logical>,
     ) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.popup_handle.rectangle = rect;
+        self.with_instance(|instance| {
+            instance.popup_handle.rectangle = rect;
 
-        let mut popup_surface = match inner.popup_handle.surface.clone() {
-            Some(popup_surface) => popup_surface,
-            None => return,
-        };
+            if let Some(mut popup_surface) = instance.popup_handle.surface.clone() {
+                popup_surface.set_text_input_rectangle(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
 
-        popup_surface.set_text_input_rectangle(rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
-
-        if let Some(instance) = &inner.instance {
-            let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
-            (data.popup_repositioned)(state, popup_surface);
-        };
+                let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+                (data.popup_repositioned)(state, popup_surface.clone());
+            }
+        });
     }
 
     /// Activate input method on the given surface.
-    pub(crate) fn activate_input_method<D: SeatHandler + 'static>(&self, state: &mut D, surface: &WlSurface) {
-        self.with_input_method(|im| {
-            if let Some(instance) = im.instance.as_ref() {
-                instance.object.activate();
-                if let Some(popup) = im.popup_handle.surface.as_mut() {
-                    let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
-                    let location = (data.popup_geometry_callback)(state, surface);
-                    // Remove old popup.
-                    (data.dismiss_popup)(state, popup.clone());
+    pub fn activate_input_method<D: SeatHandler + 'static>(&self, state: &mut D, surface: &WlSurface) {
+        let _ = self.with_instance(|instance| {
+            instance.object.activate();
 
-                    // Add a new one with updated parent.
-                    let parent = PopupParent {
-                        surface: surface.clone(),
-                        location,
-                    };
-                    popup.set_parent(Some(parent));
-                    (data.new_popup)(state, popup.clone());
-                }
+            if let Some(popup) = instance.popup_handle.surface.as_mut() {
+                let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+                let location = (data.popup_geometry_callback)(state, surface);
+                (data.dismiss_popup)(state, popup.clone());
+                // Add a new popup and set parent
+                let parent = PopupParent {
+                    surface: surface.clone(),
+                    location,
+                };
+                popup.set_parent(Some(parent));
+                (data.new_popup)(state, popup.clone());
             }
         });
     }
@@ -147,18 +250,17 @@ impl InputMethodHandle {
     /// Deactivate the active input method.
     ///
     /// The `done` is always send when deactivating IME.
-    pub(crate) fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D) {
-        self.with_input_method(|im| {
-            if let Some(instance) = im.instance.as_mut() {
-                instance.object.deactivate();
-                instance.done();
-                if let Some(popup) = im.popup_handle.surface.as_mut() {
-                    let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
-                    if popup.get_parent().is_some() {
-                        (data.dismiss_popup)(state, popup.clone());
-                    }
-                    popup.set_parent(None);
+    pub fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D) {
+        let _ = self.with_instance(|instance| {
+            instance.object.deactivate();
+            instance.done();
+
+            if let Some(popup) = instance.popup_handle.surface.as_mut() {
+                let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+                if popup.get_parent().is_some() {
+                    (data.dismiss_popup)(state, popup.clone());
                 }
+                popup.set_parent(None);
             }
         });
     }
@@ -228,16 +330,7 @@ where
                 });
             }
             zwp_input_method_v2::Request::Commit { serial } => {
-                let current_serial = data
-                    .handle
-                    .inner
-                    .lock()
-                    .unwrap()
-                    .instance
-                    .as_ref()
-                    .map(|i| i.serial)
-                    .unwrap_or(0);
-
+                let current_serial = data.handle.with_instance(|inst| inst.serial).unwrap_or(0);
                 data.text_input_handle.done(serial != current_serial);
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
@@ -246,6 +339,25 @@ where
                 {
                     // Protocol requires this raise an error, but doesn't define an error enum
                     seat.post_error(0u32, "Surface already has a role.");
+                    return;
+                }
+
+                // Check if this input method is active before allowing popup creation
+                let input_method = data.handle.inner.lock().unwrap();
+                let requesting_id = seat.id();
+                let is_active = input_method.active_input_method_id.as_ref() == Some(&requesting_id);
+
+                if !is_active {
+                    // Create the protocol object to satisfy the client, but don't track it
+                    // This prevents protocol errors while still blocking the popup
+                    let _instance = data_init.init(
+                        id,
+                        InputMethodPopupSurfaceUserData {
+                            alive_tracker: AliveTracker::default(),
+                        },
+                    );
+                    // Don't create PopupSurface or call state.new_popup() - popup remains invisible
+                    drop(input_method);
                     return;
                 }
 
@@ -259,7 +371,7 @@ where
                     }
                     None => None,
                 };
-                let mut input_method = data.handle.inner.lock().unwrap();
+                drop(input_method);
 
                 let instance = data_init.init(
                     id,
@@ -267,51 +379,57 @@ where
                         alive_tracker: AliveTracker::default(),
                     },
                 );
-                let popup_rect = Arc::new(Mutex::new(input_method.popup_handle.rectangle));
+
+                let mut input_method = data.handle.inner.lock().unwrap();
+                let active_id = match input_method.active_input_method_id.clone() {
+                    Some(id) => id,
+                    None => return,
+                };
+
+                let inst = match input_method
+                    .instances
+                    .iter_mut()
+                    .find(|i| i.object.id() == active_id)
+                {
+                    Some(inst) => inst,
+                    None => return,
+                };
+
+                let popup_rect = Arc::new(Mutex::new(inst.popup_handle.rectangle));
                 let popup = PopupSurface::new(instance, surface, popup_rect, parent);
-                input_method.popup_handle.surface = Some(popup.clone());
+                inst.popup_handle.surface = Some(popup.clone());
                 if popup.get_parent().is_some() {
                     state.new_popup(popup);
                 }
             }
             zwp_input_method_v2::Request::GrabKeyboard { keyboard } => {
-                let input_method = data.handle.inner.lock().unwrap();
-                data.keyboard_handle.set_grab(
-                    state,
-                    input_method.keyboard_grab.clone(),
-                    SERIAL_COUNTER.next_serial(),
-                );
+                // Create the protocol object and store it
                 let instance = data_init.init(
                     keyboard,
                     InputMethodKeyboardUserData {
-                        handle: input_method.keyboard_grab.clone(),
+                        handle: data.handle.clone(),
                         keyboard_handle: data.keyboard_handle.clone(),
                     },
                 );
-                let mut keyboard = input_method.keyboard_grab.inner.lock().unwrap();
-                keyboard.grab = Some(instance.clone());
-                keyboard.text_input_handle = data.text_input_handle.clone();
+
+                // Store the grab object in the instance
+                let mut im = data.handle.inner.lock().unwrap();
+                if let Some(inst) = im.instances.iter_mut().find(|i| i.object == *seat) {
+                    inst.keyboard_grab = Some(instance.clone());
+                    drop(im);
+                    data.keyboard_handle
+                        .set_grab(state, data.handle.clone(), SERIAL_COUNTER.next_serial());
+                } else {
+                    warn!("InputMethod: GrabKeyboard - could not find instance for resource");
+                    drop(im);
+                }
+
+                // Send keyboard information to the client
                 let guard = data.keyboard_handle.arc.internal.lock().unwrap();
                 instance.repeat_info(guard.repeat_rate, guard.repeat_delay);
-                let keymap_file = data.keyboard_handle.arc.keymap.lock().unwrap();
-                let res = keymap_file.with_fd(false, |fd, size| {
-                    instance.keymap(KeymapFormat::XkbV1, fd, size as u32);
-                });
+                drop(guard);
 
-                if let Err(err) = res {
-                    warn!(err = ?err, "Failed to send keymap to client");
-                } else {
-                    // Modifiers can be latched when taking the grab, thus we must send them to keep
-                    // them in sync.
-                    let mods = guard.mods_state.serialized;
-                    instance.modifiers(
-                        SERIAL_COUNTER.next_serial().into(),
-                        mods.depressed,
-                        mods.latched,
-                        mods.locked,
-                        mods.layout_effective,
-                    );
-                }
+                InputMethodHandle::send_keymap_and_modifiers(&instance, &data.keyboard_handle);
             }
             zwp_input_method_v2::Request::Destroy => {
                 // Nothing to do
@@ -323,10 +441,20 @@ where
     fn destroyed(
         _state: &mut D,
         _client: ClientId,
-        _input_method: &ZwpInputMethodV2,
+        input_method: &ZwpInputMethodV2,
         data: &InputMethodUserData<D>,
     ) {
-        data.handle.inner.lock().unwrap().instance = None;
+        let destroyed_id = input_method.id();
+        let mut inner = data.handle.inner.lock().unwrap();
+
+        // Clear active ID if this was the active instance
+        if inner.active_input_method_id.as_ref() == Some(&destroyed_id) {
+            inner.active_input_method_id = None;
+        }
+
+        inner.instances.retain(|inst| inst.object.id() != destroyed_id);
+        drop(inner);
+
         data.text_input_handle.leave();
     }
 }
