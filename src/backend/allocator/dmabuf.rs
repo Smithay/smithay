@@ -246,9 +246,9 @@ impl Dmabuf {
         self.0.planes.iter().map(|p| p.stride)
     }
 
-    /// Returns if this buffer format has any vendor-specific modifiers set or is implicit/linear
+    /// Returns if this buffer format has any vendor-specific modifiers set or is implicit
     pub fn has_modifier(&self) -> bool {
-        self.0.modifier != Modifier::Invalid && self.0.modifier != Modifier::Linear
+        self.0.modifier != Modifier::Invalid
     }
 
     /// Returns if the buffer is stored inverted on the y-axis
