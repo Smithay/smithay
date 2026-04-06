@@ -1,6 +1,5 @@
 use std::sync::{atomic::Ordering, Arc, Mutex};
 
-use atomic_float::AtomicF64;
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
@@ -24,7 +23,7 @@ use crate::{
         },
         Seat,
     },
-    utils::{iter::new_locked_obj_iter_from_vec, Client as ClientCoords, Point, Serial},
+    utils::{iter::new_locked_obj_iter_from_vec, Client as ClientCoords, Point, Serial, AtomicFScale},
     wayland::{compositor, pointer_constraints::with_pointer_constraint},
 };
 
@@ -345,7 +344,7 @@ where
 #[derive(Debug)]
 pub struct PointerUserData<D: SeatHandler> {
     pub(crate) handle: Option<PointerHandle<D>>,
-    pub(crate) client_scale: Arc<AtomicF64>,
+    pub(crate) client_scale: Arc<AtomicFScale>,
 }
 
 impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
