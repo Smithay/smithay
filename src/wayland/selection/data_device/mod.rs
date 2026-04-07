@@ -396,7 +396,11 @@ impl<S: Source> OfferData for WlOfferData<S> {
 
     fn validated(&self) -> bool {
         let data = self.state.lock().unwrap();
-        data.accepted
+        let requires_action = self
+            .wl_offers
+            .iter()
+            .any(|o| o.version() >= wl_data_offer::REQ_SET_ACTIONS_SINCE);
+        data.accepted && (!requires_action || !data.chosen_action.is_empty())
     }
 }
 
