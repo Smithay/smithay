@@ -1244,7 +1244,7 @@ where
             };
 
             // try to import on target node
-            let (direct, ref mut dmabuf) = target.cached_buffer.as_mut().unwrap();
+            let (direct, dmabuf) = target.cached_buffer.as_mut().unwrap();
             // TODO: We could cache that texture all the way back to the GpuManager in a HashMap<WeakDmabuf, Texture>.
             let texture = (*direct)
                 .then(|| {
@@ -2869,8 +2869,8 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
-            TextureMappingInternal::Either(ref mapping) => mapping.fmt(f),
-            TextureMappingInternal::Or(ref mapping) => mapping.fmt(f),
+            TextureMappingInternal::Either(mapping) => mapping.fmt(f),
+            TextureMappingInternal::Or(mapping) => mapping.fmt(f),
         }
     }
 }
@@ -3055,7 +3055,7 @@ where
     ) -> Result<(), Self::Error> {
         self.flush_frame()?;
         if let Some(target) = self.target.as_mut() {
-            let MultiFramebufferInternal::Target(ref mut to_fb) = &mut to.0 else {
+            let MultiFramebufferInternal::Target(to_fb) = &mut to.0 else {
                 unreachable!()
             };
             let sync = target
@@ -3066,7 +3066,7 @@ where
             target.device.renderer_mut().wait(&sync).map_err(Error::Target)?;
             Ok(())
         } else {
-            let MultiFramebufferInternal::Render(ref mut to_fb) = &mut to.0 else {
+            let MultiFramebufferInternal::Render(to_fb) = &mut to.0 else {
                 unreachable!()
             };
             // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
@@ -3095,7 +3095,7 @@ where
     ) -> Result<(), Self::Error> {
         self.flush_frame()?;
         if let Some(target) = self.target.as_mut() {
-            let MultiFramebufferInternal::Target(ref from_fb) = &from.0 else {
+            let MultiFramebufferInternal::Target(from_fb) = &from.0 else {
                 unreachable!()
             };
             let sync = target
@@ -3106,7 +3106,7 @@ where
             target.device.renderer_mut().wait(&sync).map_err(Error::Target)?;
             Ok(())
         } else {
-            let MultiFramebufferInternal::Render(ref from_fb) = &from.0 else {
+            let MultiFramebufferInternal::Render(from_fb) = &from.0 else {
                 unreachable!()
             };
             // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.
@@ -3150,10 +3150,10 @@ where
         filter: TextureFilter,
     ) -> Result<SyncPoint, <Self as RendererSuper>::Error> {
         if let Some(target) = self.target.as_mut() {
-            let MultiFramebufferInternal::Target(ref from_fb) = &from.0 else {
+            let MultiFramebufferInternal::Target(from_fb) = &from.0 else {
                 unreachable!()
             };
-            let MultiFramebufferInternal::Target(ref mut to_fb) = &mut to.0 else {
+            let MultiFramebufferInternal::Target(to_fb) = &mut to.0 else {
                 unreachable!()
             };
             target
@@ -3162,10 +3162,10 @@ where
                 .blit(from_fb, to_fb, src, dst, filter)
                 .map_err(Error::Target)
         } else {
-            let MultiFramebufferInternal::Render(ref from_fb) = &from.0 else {
+            let MultiFramebufferInternal::Render(from_fb) = &from.0 else {
                 unreachable!()
             };
-            let MultiFramebufferInternal::Render(ref mut to_fb) = &mut to.0 else {
+            let MultiFramebufferInternal::Render(to_fb) = &mut to.0 else {
                 unreachable!()
             };
             // SAFETY: We know this is fine, because target can only be `None` (and thus this framebuffer be of variant `Render`), if R == T.

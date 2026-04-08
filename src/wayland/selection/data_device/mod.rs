@@ -719,7 +719,7 @@ where
         .get::<RefCell<SeatData<D::SelectionUserData>>>()
         .unwrap();
     Ref::filter_map(seat_data.borrow(), |data| match data.get_clipboard_selection() {
-        Some(OfferReplySource::Compositor(CompositorSelectionProvider { ref user_data, .. })) => {
+        Some(OfferReplySource::Compositor(CompositorSelectionProvider { user_data, .. })) => {
             Some(user_data)
         }
         _ => None,

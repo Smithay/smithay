@@ -38,15 +38,15 @@ pub struct ConstrainBehavior {
 ///
 /// see [`constrain_as_render_elements`]
 #[profiling::function]
-pub fn constrain_space_element<R, E, C>(
+pub fn constrain_space_element<'e, R, E, C, L, S>(
     renderer: &mut R,
-    element: &E,
-    location: impl Into<Point<i32, Logical>>,
+    element: &'e E,
+    location: L,
     alpha: f32,
-    scale: impl Into<Scale<f64>>,
+    scale: S,
     constrain: Rectangle<i32, Logical>,
     behavior: ConstrainBehavior,
-) -> impl Iterator<Item = C>
+) -> impl Iterator<Item = C> + use<R, E, C, L, S>
 where
     R: Renderer,
     E: SpaceElement + AsRenderElements<R>,
@@ -55,6 +55,8 @@ where
             RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R>>::RenderElement>>,
         >,
     >,
+    L: Into<Point<i32, Logical>>,
+    S: Into<Scale<f64>>
 {
     let location = location.into();
     let scale = scale.into();

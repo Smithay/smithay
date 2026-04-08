@@ -178,7 +178,7 @@ impl Xkb {
     }
 
     /// Iterate over layouts present in the keymap.
-    pub fn layouts(&self) -> impl Iterator<Item = Layout> {
+    pub fn layouts(&self) -> impl Iterator<Item = Layout> + use<> {
         (0..self.keymap.num_layouts()).map(Layout)
     }
 
