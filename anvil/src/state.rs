@@ -1151,7 +1151,7 @@ pub fn update_primary_scanout_output(
         });
     }
 
-    if let CursorImageStatus::Surface(ref surface) = cursor_status {
+    if let CursorImageStatus::Surface(surface) = cursor_status {
         with_surfaces_surface_tree(surface, |surface, states| {
             update_surface_primary_scanout_output(
                 surface,

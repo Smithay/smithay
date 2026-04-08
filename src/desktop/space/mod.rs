@@ -263,7 +263,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn elements_for_output<'output>(
         &'output self,
         output: &'output Output,
-    ) -> impl DoubleEndedIterator<Item = &'output E> {
+    ) -> impl DoubleEndedIterator<Item = &'output E> + use<'output, E> {
         self.elements
             .iter()
             .filter(|e| e.outputs.contains_key(output))

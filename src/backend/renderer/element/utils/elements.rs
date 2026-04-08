@@ -493,17 +493,17 @@ bitflags::bitflags! {
 /// See [`constrain_render_elements`] for more information
 #[profiling::function]
 #[allow(clippy::too_many_arguments)]
-pub fn constrain_as_render_elements<R, E, C>(
+pub fn constrain_as_render_elements<R, E, C, L, S>(
     element: &E,
     renderer: &mut R,
-    location: impl Into<Point<i32, Physical>>,
+    location: L,
     alpha: f32,
     constrain: Rectangle<i32, Physical>,
     reference: Rectangle<i32, Physical>,
     behavior: ConstrainScaleBehavior,
     align: ConstrainAlign,
-    output_scale: impl Into<Scale<f64>>,
-) -> impl Iterator<Item = C>
+    output_scale: S,
+) -> impl Iterator<Item = C> + use<R, E, C, L, S>
 where
     R: Renderer,
     E: AsRenderElements<R>,
@@ -512,6 +512,8 @@ where
             RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R>>::RenderElement>>,
         >,
     >,
+    L: Into<Point<i32, Physical>>,
+    S: Into<Scale<f64>>,
 {
     let location = location.into();
     let output_scale = output_scale.into();

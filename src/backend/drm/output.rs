@@ -1014,7 +1014,7 @@ where
         let (elements, clear_color) = self
             .render_elements
             .get(&compositor.crtc())
-            .map(|(ref elements, ref color)| (&**elements, color))
+            .map(|(elements, color)| (&**elements, color))
             .unwrap_or((&[], &Color32F::BLACK));
         let frame_result = compositor
             .render_frame(renderer, elements, *clear_color, FrameFlags::empty())

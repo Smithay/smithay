@@ -663,7 +663,7 @@ impl EventSource for DmabufSource {
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
         for i in 0..4 {
-            if let Ok(PostAction::Remove) = if let Subsource::Active(ref mut source) = &mut self.sources[i] {
+            if let Ok(PostAction::Remove) = if let Subsource::Active(source) = &mut self.sources[i] {
                 // luckily Generic skips events for other tokens
                 source.process_events(readiness, token, |_, _| Ok(PostAction::Remove))
             } else {
@@ -692,7 +692,7 @@ impl EventSource for DmabufSource {
         token_factory: &mut calloop::TokenFactory,
     ) -> calloop::Result<()> {
         for source in self.sources.iter_mut().filter_map(|source| match source {
-            Subsource::Active(ref mut source) => Some(source),
+            Subsource::Active(source) => Some(source),
             _ => None,
         }) {
             source.register(poll, token_factory)?;
@@ -707,8 +707,8 @@ impl EventSource for DmabufSource {
     ) -> calloop::Result<()> {
         for source in self.sources.iter_mut() {
             match source {
-                Subsource::Active(ref mut source) => source.reregister(poll, token_factory)?,
-                Subsource::Done(ref mut source) => {
+                Subsource::Active(source) => source.reregister(poll, token_factory)?,
+                Subsource::Done(source) => {
                     let _ = source.unregister(poll);
                 }
                 _ => {}
@@ -720,8 +720,8 @@ impl EventSource for DmabufSource {
     fn unregister(&mut self, poll: &mut calloop::Poll) -> calloop::Result<()> {
         for source in self.sources.iter_mut() {
             match source {
-                Subsource::Active(ref mut source) => source.unregister(poll)?,
-                Subsource::Done(ref mut source) => {
+                Subsource::Active(source) => source.unregister(poll)?,
+                Subsource::Done(source) => {
                     let _ = source.unregister(poll);
                 }
                 _ => {}

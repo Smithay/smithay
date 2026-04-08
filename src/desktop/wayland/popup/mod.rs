@@ -27,8 +27,8 @@ impl IsAlive for PopupKind {
     #[inline]
     fn alive(&self) -> bool {
         match self {
-            PopupKind::Xdg(ref p) => p.alive(),
-            PopupKind::InputMethod(ref p) => p.alive(),
+            PopupKind::Xdg(p) => p.alive(),
+            PopupKind::InputMethod(p) => p.alive(),
         }
     }
 }

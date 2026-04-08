@@ -249,7 +249,7 @@ impl WlrLayerShellState {
     }
 
     /// Access all the shell surfaces known by this handler
-    pub fn layer_surfaces(&self) -> impl DoubleEndedIterator<Item = LayerSurface> {
+    pub fn layer_surfaces(&self) -> impl DoubleEndedIterator<Item = LayerSurface> + use<> {
         self.known_layers.lock().unwrap().clone().into_iter()
     }
 }

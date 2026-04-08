@@ -245,11 +245,11 @@ impl GlesTargetInternal<'_> {
             } else {
                 egl.make_current()?;
                 match self {
-                    GlesTargetInternal::Image { ref buf, .. } => {
+                    GlesTargetInternal::Image { buf, .. } => {
                         gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo)
                     }
-                    GlesTargetInternal::Texture { ref fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
-                    GlesTargetInternal::Renderbuffer { ref fbo, .. } => {
+                    GlesTargetInternal::Texture { fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
+                    GlesTargetInternal::Renderbuffer { fbo, .. } => {
                         gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
                     }
                     _ => unreachable!(),
@@ -1785,25 +1785,25 @@ impl Blit for GlesRenderer {
         let scope = self.profiler.scope(gpu_span_location!("blit"), &self.gl);
 
         match &src_target.0 {
-            GlesTargetInternal::Image { ref buf, .. } => unsafe {
+            GlesTargetInternal::Image { buf, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.0.fbo)
             },
-            GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Texture { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
-            GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Renderbuffer { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
         match &dst_target.0 {
-            GlesTargetInternal::Image { ref buf, .. } => unsafe {
+            GlesTargetInternal::Image { buf, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.0.fbo)
             },
-            GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Texture { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
-            GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Renderbuffer { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above

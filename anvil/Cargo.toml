@@ -1,6 +1,6 @@
 [package]
 authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victoria Brekenfeld)"]
-edition = "2021"
+edition = "2024"
 license = "MIT"
 name = "anvil"
 publish = false

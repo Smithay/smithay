@@ -166,7 +166,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
     let keyboard = state.seat.add_keyboard(Default::default(), 200, 200).unwrap();
 
-    std::env::set_var("WAYLAND_DISPLAY", "wayland-5");
+    unsafe { std::env::set_var("WAYLAND_DISPLAY", "wayland-5") };
     std::process::Command::new("weston-terminal").spawn().ok();
 
     loop {

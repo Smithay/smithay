@@ -167,7 +167,7 @@ impl PopupManager {
     }
 
     /// Returns the popups and their relative positions for a given toplevel surface, if any.
-    pub fn popups_for_surface(surface: &WlSurface) -> impl Iterator<Item = (PopupKind, Point<i32, Logical>)> {
+    pub fn popups_for_surface(surface: &WlSurface) -> impl Iterator<Item = (PopupKind, Point<i32, Logical>)> + use<> {
         with_states(surface, |states| {
             states
                 .data_map
@@ -288,7 +288,7 @@ struct PopupNode {
 }
 
 impl PopupTree {
-    fn iter_popups(&self) -> impl Iterator<Item = (PopupKind, Point<i32, Logical>)> {
+    fn iter_popups(&self) -> impl Iterator<Item=(PopupKind, Point<i32, Logical>)> + use<> {
         self.0
             .lock()
             .unwrap()
