@@ -49,7 +49,7 @@
 
 use wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
 use wayland_server::{
-    backend::GlobalId, protocol::wl_buffer::WlBuffer, Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, backend::GlobalId, protocol::wl_buffer::WlBuffer,
 };
 
 mod handlers;

@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::io;
 use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, Weak, atomic::AtomicBool};
 use std::time::{Duration, SystemTime};
 
 use calloop::{EventSource, Interest, Poll, PostAction, Readiness, Token, TokenFactory};
-use drm::control::{connector, crtc, plane, Device as ControlDevice, Event, Mode, ResourceHandles};
+use drm::control::{Device as ControlDevice, Event, Mode, ResourceHandles, connector, crtc, plane};
 use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
 use libc::dev_t;
 
@@ -17,8 +17,8 @@ pub(super) mod legacy;
 use crate::utils::{Buffer, DevPath, Size};
 
 use super::error::AccessError;
-use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
-use super::{error::Error, planes, Planes};
+use super::surface::{DrmSurface, DrmSurfaceInternal, atomic::AtomicDrmSurface, legacy::LegacyDrmSurface};
+use super::{Planes, error::Error, planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
@@ -83,11 +83,7 @@ impl PlaneClaimStorage {
     ) -> Option<PlaneClaim> {
         let mut guard = self.claimed_planes.lock().unwrap();
         if let Some(claim) = guard.get(&plane).and_then(|claim| claim.upgrade()) {
-            if claim.crtc() == crtc {
-                Some(claim)
-            } else {
-                None
-            }
+            if claim.crtc() == crtc { Some(claim) } else { None }
         } else {
             let claim = PlaneClaim {
                 claim: Arc::new(PlaneClaimInner {

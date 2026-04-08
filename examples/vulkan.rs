@@ -1,11 +1,11 @@
 use drm_fourcc::{DrmFourcc, DrmModifier};
 use smithay::backend::{
     allocator::{
+        Allocator, Buffer,
         dmabuf::AsDmabuf,
         vulkan::{ImageUsageFlags, VulkanAllocator},
-        Allocator, Buffer,
     },
-    vulkan::{version::Version, Instance, PhysicalDevice},
+    vulkan::{Instance, PhysicalDevice, version::Version},
 };
 
 fn main() {

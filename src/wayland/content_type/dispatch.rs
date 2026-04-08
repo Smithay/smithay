@@ -3,7 +3,7 @@ use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_v1::{self, WpContentTypeV1},
 };
 use wayland_server::{
-    backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
 };
 
 use super::{ContentTypeState, ContentTypeSurfaceCachedState, ContentTypeSurfaceData, ContentTypeUserData};

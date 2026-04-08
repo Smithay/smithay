@@ -1,12 +1,12 @@
 use std::{
-    sync::{atomic::Ordering, Mutex},
+    sync::{Mutex, atomic::Ordering},
     time::Duration,
 };
 
 use crate::{
     drawing::*,
     render::*,
-    state::{take_presentation_feedback, AnvilState, Backend},
+    state::{AnvilState, Backend, take_presentation_feedback},
 };
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
@@ -22,10 +22,10 @@ use smithay::{
         },
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            damage::OutputDamageTracker, element::AsRenderElements, gles::GlesRenderer, Bind, ImportDma,
-            ImportMemWl,
+            Bind, ImportDma, ImportMemWl, damage::OutputDamageTracker, element::AsRenderElements,
+            gles::GlesRenderer,
         },
-        vulkan::{version::Version, Instance, PhysicalDevice},
+        vulkan::{Instance, PhysicalDevice, version::Version},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
     delegate_dmabuf,
@@ -39,7 +39,7 @@ use smithay::{
         calloop::EventLoop,
         gbm,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
-        wayland_server::{protocol::wl_surface, Display},
+        wayland_server::{Display, protocol::wl_surface},
     },
     utils::{DeviceFd, IsAlive, Scale},
     wayland::{

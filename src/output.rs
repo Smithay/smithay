@@ -60,15 +60,15 @@ use tracing::{info, instrument};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
 #[cfg(feature = "backend_drm")]
-use drm::control::{connector::SubPixel as DrmSubPixel, Mode as DrmMode, ModeFlags};
+use drm::control::{Mode as DrmMode, ModeFlags, connector::SubPixel as DrmSubPixel};
 #[cfg(feature = "wayland_frontend")]
 use std::collections::HashSet;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{
-    backend::WeakHandle, protocol::wl_output::WlOutput, protocol::wl_surface::WlSurface, Weak as WlWeak,
+    Weak as WlWeak, backend::WeakHandle, protocol::wl_output::WlOutput, protocol::wl_surface::WlSurface,
 };
 
-use crate::utils::{self, user_data::UserDataMap, Logical, Physical, Point, Raw, Size, Transform};
+use crate::utils::{self, Logical, Physical, Point, Raw, Size, Transform, user_data::UserDataMap};
 
 /// An output mode
 ///

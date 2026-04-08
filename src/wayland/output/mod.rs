@@ -75,7 +75,7 @@ mod handlers;
 pub(crate) mod xdg;
 
 use std::mem;
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 use crate::{
     output::{Inner, Mode, Output, Scale, Subpixel, WeakOutput},
@@ -86,12 +86,12 @@ use atomic_float::AtomicF64;
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_server::{
+    Client, DisplayHandle, GlobalDispatch, Resource,
     backend::{ClientId, GlobalId},
     protocol::{
         wl_output::{Mode as WMode, Subpixel as WlSubpixel, Transform, WlOutput},
         wl_surface,
     },
-    Client, DisplayHandle, GlobalDispatch, Resource,
 };
 
 use crate::utils::{Logical, Point};

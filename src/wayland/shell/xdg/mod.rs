@@ -119,8 +119,8 @@
 //! the [`XdgShellHandler`], or via methods on the [`XdgShellState`].
 
 use crate::utils::alive_tracker::IsAlive;
-use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
-use crate::utils::{Serial, SERIAL_COUNTER};
+use crate::utils::{Logical, Point, Rectangle, Size, user_data::UserDataMap};
+use crate::utils::{SERIAL_COUNTER, Serial};
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::compositor::{self, BufferAssignment, SurfaceAttributes};
 use crate::wayland::shell::xdg::dialog::ToplevelDialogHint;
@@ -135,8 +135,8 @@ use wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase;
 use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
 use wayland_server::backend::GlobalId;
 use wayland_server::{
-    protocol::{wl_output, wl_seat, wl_surface},
     DisplayHandle, GlobalDispatch, Resource,
+    protocol::{wl_output, wl_seat, wl_surface},
 };
 
 use super::PingError;

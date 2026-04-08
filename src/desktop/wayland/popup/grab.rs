@@ -3,11 +3,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_server::{protocol::wl_surface::WlSurface, Resource};
+use wayland_server::{Resource, protocol::wl_surface::WlSurface};
 
 use crate::{
     backend::input::{ButtonState, KeyState, Keycode},
     input::{
+        SeatHandler,
         keyboard::{
             GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
             ModifiersState,
@@ -18,9 +19,8 @@ use crate::{
             GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
             PointerInnerHandle, RelativeMotionEvent,
         },
-        SeatHandler,
     },
-    utils::{DeadResource, IsAlive, Logical, Point, Serial, SERIAL_COUNTER},
+    utils::{DeadResource, IsAlive, Logical, Point, SERIAL_COUNTER, Serial},
     wayland::seat::WaylandFocus,
 };
 

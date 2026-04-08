@@ -11,12 +11,12 @@ A link to the ICCCM Section 4: https://tronche.com/gui/x/icccm/sec-4.html
 */
 use crate::utils::{Logical, Size};
 
-use super::{extension::Extensions, Atoms, Window, X11Error};
+use super::{Atoms, Window, X11Error, extension::Extensions};
 use drm_fourcc::DrmFourcc;
 use std::sync::{
+    Arc, Mutex, Weak,
     atomic::{AtomicU32, AtomicU64},
     mpsc::Sender,
-    Arc, Mutex, Weak,
 };
 use x11rb::{
     connection::Connection,

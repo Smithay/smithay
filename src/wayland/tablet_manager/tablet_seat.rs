@@ -3,18 +3,18 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_tool_v2::ZwpTabletToolV2,
     zwp_tablet_v2::ZwpTabletV2,
 };
-use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId};
 
 use crate::input::pointer::CursorImageStatus;
 use crate::{backend::input::TabletToolDescriptor, wayland::compositor::CompositorHandler};
 
 use super::{
-    tablet::TabletUserData,
-    tablet_tool::{TabletToolHandle, TabletToolUserData},
+    TabletManagerState,
+    tablet::{TabletDescriptor, TabletHandle},
 };
 use super::{
-    tablet::{TabletDescriptor, TabletHandle},
-    TabletManagerState,
+    tablet::TabletUserData,
+    tablet_tool::{TabletToolHandle, TabletToolUserData},
 };
 
 use std::collections::HashMap;

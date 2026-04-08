@@ -17,7 +17,7 @@ use wayland_protocols::xdg::{
 };
 
 use wayland_server::{
-    backend::ClientId, protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, Resource, WEnum, backend::ClientId, protocol::wl_surface,
 };
 
 use super::{

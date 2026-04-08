@@ -1,15 +1,15 @@
-use crate::{grabs::resize_grab, state::ClientState, Smallvil};
+use crate::{Smallvil, grabs::resize_grab, state::ClientState};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     delegate_compositor, delegate_shm,
     reexports::wayland_server::{
-        protocol::{wl_buffer, wl_surface::WlSurface},
         Client,
+        protocol::{wl_buffer, wl_surface::WlSurface},
     },
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            get_parent, is_sync_subsurface, CompositorClientState, CompositorHandler, CompositorState,
+            CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
         },
         shm::{ShmHandler, ShmState},
     },

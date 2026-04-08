@@ -2,7 +2,7 @@
 use std::os::unix::io::OwnedFd;
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -12,7 +12,7 @@ use smithay::{
     backend::{
         input::TabletToolDescriptor,
         renderer::element::{
-            default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
+            RenderElementStates, default_primary_scanout_output_compare, utils::select_dmabuf_feedback,
         },
     },
     delegate_compositor, delegate_data_control, delegate_data_device, delegate_fixes,
@@ -23,39 +23,40 @@ use smithay::{
     delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
     delegate_xdg_shell,
     desktop::{
+        PopupKind, PopupManager, Space,
         space::SpaceElement,
         utils::{
-            surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
-            update_surface_primary_scanout_output, with_surfaces_surface_tree, OutputPresentationFeedback,
+            OutputPresentationFeedback, surface_presentation_feedback_flags_from_states,
+            surface_primary_scanout_output, update_surface_primary_scanout_output,
+            with_surfaces_surface_tree,
         },
-        PopupKind, PopupManager, Space,
     },
     input::{
+        Seat, SeatHandler, SeatState,
         dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source},
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, Focus, PointerHandle},
-        Seat, SeatHandler, SeatState,
     },
     output::Output,
     reexports::{
-        calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
+        calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic},
         wayland_protocols::xdg::decoration::{
             self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
         },
         wayland_server::{
+            Client, Display, DisplayHandle, Resource,
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
-            Client, Display, DisplayHandle, Resource,
         },
     },
     utils::{Clock, Logical, Monotonic, Point, Rectangle, Serial, Time},
     wayland::{
         commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState},
-        compositor::{get_parent, with_states, CompositorClientState, CompositorHandler, CompositorState},
+        compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, with_states},
         dmabuf::DmabufFeedback,
         fifo::{FifoBarrierCachedState, FifoManagerState},
         fixes::FixesState,
-        fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
+        fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState, with_fractional_scale},
         image_capture_source::{
             ImageCaptureSource, ImageCaptureSourceHandler, ImageCaptureSourceState,
             OutputCaptureSourceHandler, OutputCaptureSourceState,
@@ -68,7 +69,7 @@ use smithay::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
         output::{OutputHandler, OutputManagerState},
-        pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler, PointerConstraintsState},
+        pointer_constraints::{PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint},
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
         relative_pointer::RelativePointerManagerState,
@@ -77,16 +78,16 @@ use smithay::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
         selection::{
-            data_device::{set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
-            primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
-            wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
+            data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus},
+            primary_selection::{PrimarySelectionHandler, PrimarySelectionState, set_primary_focus},
+            wlr_data_control::{DataControlHandler, DataControlState},
         },
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
-                decoration::{XdgDecorationHandler, XdgDecorationState},
                 ToplevelSurface, XdgShellState,
+                decoration::{XdgDecorationHandler, XdgDecorationState},
             },
         },
         shm::{ShmHandler, ShmState},

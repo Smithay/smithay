@@ -4,13 +4,13 @@ use crate::{
     wayland::{
         compositor::{get_role, with_states},
         seat::WaylandFocus,
-        shell::xdg::{PopupCachedState, XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
+        shell::xdg::{PopupCachedState, XDG_POPUP_ROLE, XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes},
     },
 };
 use std::sync::{Arc, Mutex};
 use tracing::trace;
 use wayland_protocols::xdg::shell::server::xdg_wm_base;
-use wayland_server::{protocol::wl_surface::WlSurface, Resource};
+use wayland_server::{Resource, protocol::wl_surface::WlSurface};
 
 use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
 
@@ -137,8 +137,7 @@ impl PopupManager {
                 let tree = states.data_map.get::<PopupTree>().unwrap();
                 trace!(
                     "Adding popup {:?} to existing PopupTree on root {:?}",
-                    popup,
-                    root
+                    popup, root
                 );
                 tree.insert(popup);
 
@@ -167,7 +166,9 @@ impl PopupManager {
     }
 
     /// Returns the popups and their relative positions for a given toplevel surface, if any.
-    pub fn popups_for_surface(surface: &WlSurface) -> impl Iterator<Item = (PopupKind, Point<i32, Logical>)> + use<> {
+    pub fn popups_for_surface(
+        surface: &WlSurface,
+    ) -> impl Iterator<Item = (PopupKind, Point<i32, Logical>)> + use<> {
         with_states(surface, |states| {
             states
                 .data_map
@@ -288,7 +289,7 @@ struct PopupNode {
 }
 
 impl PopupTree {
-    fn iter_popups(&self) -> impl Iterator<Item=(PopupKind, Point<i32, Logical>)> + use<> {
+    fn iter_popups(&self) -> impl Iterator<Item = (PopupKind, Point<i32, Logical>)> + use<> {
         self.0
             .lock()
             .unwrap()

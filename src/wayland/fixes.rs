@@ -2,8 +2,8 @@
 
 use tracing::error;
 use wayland_server::{
-    backend::GlobalId, protocol::wl_fixes, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::GlobalId,
+    protocol::wl_fixes,
 };
 
 /// Delegate type for handling wl fixes requests.

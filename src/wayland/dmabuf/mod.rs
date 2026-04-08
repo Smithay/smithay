@@ -192,34 +192,34 @@ use std::{
     ops::Sub,
     os::unix::io::AsFd,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
 use indexmap::{IndexMap, IndexSet};
-use rustix::fs::{seek, SeekFrom};
+use rustix::fs::{SeekFrom, seek};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1},
     zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
+    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
     backend::{GlobalId, InvalidId},
     protocol::{
         wl_buffer::{self, WlBuffer},
         wl_surface::WlSurface,
     },
-    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
 };
 
 #[cfg(feature = "backend_drm")]
 use crate::backend::drm::DrmNode;
 use crate::{
     backend::allocator::{
-        dmabuf::{Dmabuf, DmabufFlags, Plane},
         Format, Fourcc, Modifier,
+        dmabuf::{Dmabuf, DmabufFlags, Plane},
     },
-    utils::{ids::id_gen, SealedFile, UnmanagedResource},
+    utils::{SealedFile, UnmanagedResource, ids::id_gen},
 };
 
 use super::{buffer::BufferHandler, compositor};

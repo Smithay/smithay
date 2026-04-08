@@ -81,12 +81,12 @@ use std::{
     os::unix::{io::OwnedFd, prelude::AsFd},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex, Weak,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
-use drm::control::{connector, crtc, plane, Device, RawResourceHandle};
+use drm::control::{Device, RawResourceHandle, connector, crtc, plane};
 use rustix::fs::OFlags;
 use wayland_protocols::wp::drm_lease::v1::server::*;
 use wayland_server::backend::GlobalId;

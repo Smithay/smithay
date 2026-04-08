@@ -13,7 +13,7 @@ use std::{
 use smithay::{
     reexports::calloop::{
         self,
-        channel::{channel, Sender},
+        channel::{Sender, channel},
     },
     utils::{Logical, Point},
 };
@@ -24,10 +24,10 @@ use wayland_sys::{
     ffi_dispatch,
 };
 use wlcs::{
-    extension_list,
+    Wlcs, extension_list,
     ffi_display_server_api::{WlcsExtensionDescriptor, WlcsIntegrationDescriptor, WlcsServerIntegration},
     ffi_wrappers::wlcs_server,
-    wlcs_server_integration, Wlcs,
+    wlcs_server_integration,
 };
 
 wlcs_server_integration!(AnvilDisplayServerHandle);

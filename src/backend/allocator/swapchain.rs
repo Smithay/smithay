@@ -2,8 +2,8 @@ use std::{
     fmt,
     ops::Deref,
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 
@@ -207,11 +207,7 @@ where
                 let res = other_slot
                     .age
                     .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |age| {
-                        if age > 0 {
-                            age.checked_add(1)
-                        } else {
-                            Some(0)
-                        }
+                        if age > 0 { age.checked_add(1) } else { Some(0) }
                     });
                 // If the age overflows the slot was not used for a long time. Lets clear it
                 if res.is_err() {

@@ -5,7 +5,7 @@ use std::{
     io,
     ops::Not,
     path::Path,
-    sync::{atomic::Ordering, Mutex, Once},
+    sync::{Mutex, Once, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -13,7 +13,7 @@ use crate::{
     drawing::*,
     render::*,
     shell::WindowElement,
-    state::{take_presentation_feedback, update_primary_scanout_output, AnvilState, Backend},
+    state::{AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output},
 };
 use crate::{
     shell::WindowRenderElement,
@@ -24,38 +24,38 @@ use smithay::backend::drm::compositor::PrimaryPlaneElement;
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::{multigpu::MultiTexture, ImportMem};
+use smithay::backend::renderer::{ImportMem, multigpu::MultiTexture};
 use smithay::{
     backend::{
+        SwapBuffersError,
         allocator::{
+            Fourcc, Modifier,
             dmabuf::Dmabuf,
             format::FormatSet,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
-            Fourcc, Modifier,
         },
         drm::{
+            CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
+            DrmEventTime, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
             compositor::{DrmCompositor, FrameFlags},
             exporter::gbm::GbmFramebufferExporter,
             output::{DrmOutput, DrmOutputManager, DrmOutputRenderElements},
-            CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata,
-            DrmEventTime, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
-        egl::{self, context::ContextPriority, EGLContext, EGLDevice, EGLDisplay},
+        egl::{self, EGLContext, EGLDevice, EGLDisplay, context::ContextPriority},
         input::InputEvent,
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
-            damage::Error as OutputDamageTrackerError,
-            element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElementStates},
-            gles::{Capability, GlesRenderer},
-            multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
             DebugFlags, ImportDma, ImportMemWl,
+            damage::Error as OutputDamageTrackerError,
+            element::{AsRenderElements, RenderElementStates, memory::MemoryRenderBuffer},
+            gles::{Capability, GlesRenderer},
+            multigpu::{GpuManager, MultiRenderer, gbm::GbmGlesBackend},
         },
         session::{
-            libseat::{self, LibSeatSession},
             Event as SessionEvent, Session,
+            libseat::{self, LibSeatSession},
         },
-        udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
-        SwapBuffersError,
+        udev::{UdevBackend, UdevEvent, all_gpus, primary_gpu},
     },
     delegate_dmabuf, delegate_drm_lease,
     desktop::{
@@ -69,12 +69,12 @@ use smithay::{
     output::{Mode as WlMode, Output, PhysicalProperties},
     reexports::{
         calloop::{
-            timer::{TimeoutAction, Timer},
             EventLoop, RegistrationToken,
+            timer::{TimeoutAction, Timer},
         },
         drm::{
-            control::{connector, crtc, Device, ModeTypeFlags},
             Device as _,
+            control::{Device, ModeTypeFlags, connector, crtc},
         },
         input::{DeviceCapability, Libinput},
         rustix::fs::OFlags,
@@ -82,7 +82,7 @@ use smithay::{
             linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1,
             presentation_time::server::wp_presentation_feedback,
         },
-        wayland_server::{backend::GlobalId, protocol::wl_surface, Display, DisplayHandle},
+        wayland_server::{Display, DisplayHandle, backend::GlobalId, protocol::wl_surface},
     },
     utils::{DeviceFd, IsAlive, Logical, Monotonic, Point, Scale, Time, Transform},
     wayland::{
@@ -91,7 +91,7 @@ use smithay::{
         drm_lease::{
             DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
         },
-        drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjHandler, DrmSyncobjState},
+        drm_syncobj::{DrmSyncobjHandler, DrmSyncobjState, supports_syncobj_eventfd},
         presentation::Refresh,
     },
 };
@@ -1360,8 +1360,7 @@ impl AnvilState<UdevData> {
             } else {
                 trace!(
                     "scheduling repaint timer with delay {:?} on {:?}",
-                    repaint_delay,
-                    crtc
+                    repaint_delay, crtc
                 );
                 Timer::from_duration(repaint_delay)
             };
@@ -1529,8 +1528,7 @@ impl AnvilState<UdevData> {
                 Duration::from(next_frame_target).saturating_sub(self.clock.now().into());
             trace!(
                 "reschedule repaint timer with delay {:?} on {:?}",
-                reschedule_timeout,
-                crtc,
+                reschedule_timeout, crtc,
             );
             let timer = Timer::from_duration(reschedule_timeout);
             self.handle

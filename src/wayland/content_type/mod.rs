@@ -50,8 +50,8 @@
 //! ```
 
 use std::sync::{
-    atomic::{self, AtomicBool},
     Mutex,
+    atomic::{self, AtomicBool},
 };
 
 use wayland_protocols::wp::content_type::v1::server::{
@@ -59,8 +59,8 @@ use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_v1::{self, WpContentTypeV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
-    Weak,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 use super::compositor::Cacheable;

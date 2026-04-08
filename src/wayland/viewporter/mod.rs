@@ -58,12 +58,12 @@ use std::sync::Mutex;
 use tracing::trace;
 use wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface,
 };
 
 use crate::utils::{Client, Logical, Rectangle, Size};
 
-use super::compositor::{self, with_states, Cacheable, CompositorHandler, SurfaceData};
+use super::compositor::{self, Cacheable, CompositorHandler, SurfaceData, with_states};
 
 /// State of the wp_viewporter Global
 #[derive(Debug)]

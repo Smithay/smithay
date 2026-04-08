@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    backend::renderer::{gles::GlesRenderer, ImportDma, ImportMem, Renderer, Texture},
-    utils::{user_data::UserDataMap, Buffer, Physical, Point, Rectangle, Scale},
+    backend::renderer::{ImportDma, ImportMem, Renderer, Texture, gles::GlesRenderer},
+    utils::{Buffer, Physical, Point, Rectangle, Scale, user_data::UserDataMap},
 };
 
 use super::{CommitCounter, Element, Id, RenderElement, Wrap};

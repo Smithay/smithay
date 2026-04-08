@@ -92,7 +92,7 @@ use wayland_protocols::xdg::decoration::zv1::server::{
     zxdg_toplevel_decoration_v1::{self, Mode},
 };
 use wayland_server::{
-    backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum, backend::GlobalId,
 };
 
 use super::{ToplevelSurface, XdgShellHandler};

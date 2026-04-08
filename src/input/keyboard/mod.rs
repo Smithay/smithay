@@ -1,8 +1,8 @@
 //! Keyboard-related types for smithay's input abstraction
 
 use crate::backend::input::KeyState;
-use crate::utils::{IsAlive, Serial, SERIAL_COUNTER};
-use downcast_rs::{impl_downcast, Downcast};
+use crate::utils::{IsAlive, SERIAL_COUNTER, Serial};
+use downcast_rs::{Downcast, impl_downcast};
 use std::collections::HashSet;
 #[cfg(feature = "wayland_frontend")]
 use std::sync::RwLock;
@@ -15,7 +15,7 @@ use thiserror::Error;
 use tracing::{debug, info, info_span, instrument, trace};
 
 use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
-pub use xkbcommon::xkb::{self, keysyms, ContextFlags, Keycode, Keysym};
+pub use xkbcommon::xkb::{self, ContextFlags, Keycode, Keysym, keysyms};
 
 use super::{GrabStatus, Seat, SeatHandler};
 
@@ -742,7 +742,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ) -> bool {
         use std::os::unix::io::AsFd;
         use tracing::warn;
-        use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
+        use wayland_server::{Resource, protocol::wl_keyboard::KeymapFormat};
 
         // Ignore request which do not change the keymap.
         let new_id = keymap_file.id();

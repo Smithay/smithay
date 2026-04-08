@@ -5,7 +5,7 @@ use std::ffi::{CStr, CString};
 use ash::{ext, khr, prelude::VkResult, vk};
 use tracing::info_span;
 
-use super::{version::Version, DriverInfo, PhdInfo, UnsupportedProperty};
+use super::{DriverInfo, PhdInfo, UnsupportedProperty, version::Version};
 
 impl super::PhysicalDevice {
     /// # Safety:

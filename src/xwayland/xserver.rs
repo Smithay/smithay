@@ -18,7 +18,7 @@ use wayland_server::{Client, DisplayHandle};
 
 use crate::{utils::user_data::UserDataMap, wayland::compositor::CompositorClientState};
 
-use super::x11_sockets::{prepare_x11_sockets, X11Lock};
+use super::x11_sockets::{X11Lock, prepare_x11_sockets};
 
 /// A handle to a running XWayland process. Using XWayland as an xserver for
 /// X11-based clients requires two connections: one wayland socket, where

@@ -14,12 +14,12 @@ use crate::{
 };
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Fourcc},
-        renderer::{
-            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportMem, Renderer, RendererSuper, Texture,
-            TextureFilter,
-        },
         SwapBuffersError,
+        allocator::{Fourcc, dmabuf::Dmabuf},
+        renderer::{
+            DebugFlags, Frame, ImportDma, ImportMem, Renderer, RendererSuper, Texture, TextureFilter,
+            sync::SyncPoint,
+        },
     },
     utils::{Buffer, Physical, Rectangle, Size, Transform},
 };

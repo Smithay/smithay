@@ -10,7 +10,7 @@ use crate::{
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
-use wayland_server::{backend::ClientId, DataInit, Dispatch, DisplayHandle, Resource};
+use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId};
 
 use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData};
 

@@ -1,18 +1,18 @@
 use std::{borrow::Cow, sync::Arc};
 
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::xwm::XwmOfferData;
-#[cfg(feature = "xwayland")]
 use smithay::xwayland::X11Surface;
+#[cfg(feature = "xwayland")]
+use smithay::xwayland::xwm::XwmOfferData;
 pub use smithay::{
     backend::input::KeyState,
     desktop::{LayerSurface, PopupKind},
     input::{
+        Seat,
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
-        Seat,
     },
-    reexports::wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, Resource},
+    reexports::wayland_server::{Resource, backend::ObjectId, protocol::wl_surface::WlSurface},
     utils::{IsAlive, Serial},
     wayland::seat::WaylandFocus,
 };
@@ -32,7 +32,7 @@ use smithay::{
 };
 
 use crate::{
-    shell::{WindowElement, SSD},
+    shell::{SSD, WindowElement},
     state::{AnvilState, Backend},
 };
 

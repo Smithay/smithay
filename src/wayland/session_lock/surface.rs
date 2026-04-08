@@ -3,7 +3,7 @@
 use std::sync::Mutex;
 
 use crate::backend::renderer::buffer_dimensions;
-use crate::utils::{IsAlive, Logical, Serial, Size, SERIAL_COUNTER};
+use crate::utils::{IsAlive, Logical, SERIAL_COUNTER, Serial, Size};
 use crate::wayland::compositor::{self, BufferAssignment, Cacheable, SurfaceAttributes};
 use crate::wayland::viewporter::{ViewportCachedState, ViewporterSurfaceState};
 use _session_lock::ext_session_lock_surface_v1::{Error, ExtSessionLockSurfaceV1, Request};

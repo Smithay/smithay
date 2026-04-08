@@ -53,7 +53,7 @@ impl SealedFile {
     /// Create a `[SealedFile]` with the given binary data.
     #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "android")))]
     pub fn with_data(name: &CStr, data: &[u8]) -> Result<Self, std::io::Error> {
-        use rand::{distr::Alphanumeric, Rng};
+        use rand::{Rng, distr::Alphanumeric};
         use rustix::{
             io::Errno,
             shm::{self, Mode},

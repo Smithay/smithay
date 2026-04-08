@@ -12,15 +12,15 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
 };
-use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::Weak;
-use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
+use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId};
 
 use crate::{utils::Serial, wayland::compositor};
 
+use super::TabletManagerState;
 use super::tablet::TabletHandle;
 use super::tablet_seat::TabletSeatHandler;
-use super::TabletManagerState;
 
 #[derive(Debug, Default)]
 pub(crate) struct TabletTool {

@@ -66,10 +66,10 @@ use wayland_protocols::wp::fractional_scale::v1::server::{
     wp_fractional_scale_manager_v1, wp_fractional_scale_v1,
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface,
 };
 
-use super::compositor::{with_states, SurfaceData};
+use super::compositor::{SurfaceData, with_states};
 
 /// State of the wp_fractional_scale_manager_v1 Global
 #[derive(Debug)]

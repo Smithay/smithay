@@ -2,22 +2,22 @@ use std::{cell::RefCell, fmt};
 
 use tracing::{instrument, trace, warn};
 use wayland_server::{
+    Client, Dispatch, DisplayHandle, Resource,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, Dispatch, DisplayHandle, Resource,
 };
 
 use super::WaylandFocus;
 use crate::{
     backend::input::{KeyState, Keycode},
     input::{
-        keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
         Seat, SeatHandler, SeatState, WeakSeat,
+        keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
     },
-    utils::{iter::new_locked_obj_iter_from_vec, HookId, Serial},
+    utils::{HookId, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
         compositor::{add_destruction_hook, remove_destruction_hook, with_states},
         input_method::InputMethodSeat,

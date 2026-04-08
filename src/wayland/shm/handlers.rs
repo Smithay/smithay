@@ -1,22 +1,22 @@
 use crate::wayland::{
     buffer::BufferHandler,
-    shm::{wl_bytes_per_pixel, ShmBufferUserData},
+    shm::{ShmBufferUserData, wl_bytes_per_pixel},
 };
 
 use super::{
-    pool::{Pool, ResizeError},
     BufferData, ShmHandler, ShmPoolUserData, ShmState,
+    pool::{Pool, ResizeError},
 };
 
 use std::{num::NonZeroUsize, os::unix::io::AsRawFd, sync::Arc};
 use wayland_server::{
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
     backend::ClientId,
     protocol::{
         wl_buffer,
         wl_shm::{self, WlShm},
         wl_shm_pool::{self, WlShmPool},
     },
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 impl<D> GlobalDispatch<WlShm, (), D> for ShmState

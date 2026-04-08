@@ -41,14 +41,15 @@ use winit::{
 use crate::{
     backend::{
         egl::{
+            EGLContext, EGLSurface, Error as EGLError,
             context::{GlAttributes, PixelFormatRequirements},
             display::EGLDisplay,
-            native, EGLContext, EGLSurface, Error as EGLError,
+            native,
         },
         input::InputEvent,
         renderer::{
-            gles::{GlesError, GlesRenderer},
             Bind,
+            gles::{GlesError, GlesRenderer},
         },
     },
     utils::{Clock, Monotonic, Physical, Rectangle, Size},

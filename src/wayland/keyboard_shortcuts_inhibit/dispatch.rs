@@ -8,9 +8,9 @@ use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::{
     zwp_keyboard_shortcuts_inhibitor_v1::{self, ZwpKeyboardShortcutsInhibitorV1},
 };
 use wayland_server::{
+    Dispatch, GlobalDispatch, Resource,
     backend::{ClientId, ObjectId},
     protocol::wl_surface::WlSurface,
-    Dispatch, GlobalDispatch, Resource,
 };
 
 use crate::input::{Seat, SeatHandler};

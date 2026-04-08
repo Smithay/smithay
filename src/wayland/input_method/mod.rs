@@ -66,8 +66,8 @@
 //! ```
 
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
-    GlobalDispatch, New,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 use wayland_protocols_misc::zwp_input_method_v2::server::{

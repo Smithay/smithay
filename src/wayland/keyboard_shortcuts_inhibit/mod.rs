@@ -10,9 +10,9 @@ use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::{
     zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1,
 };
 use wayland_server::{
+    Dispatch, DisplayHandle, GlobalDispatch, Resource,
     backend::{GlobalId, ObjectId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    Dispatch, DisplayHandle, GlobalDispatch, Resource,
 };
 
 mod dispatch;

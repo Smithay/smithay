@@ -108,13 +108,13 @@ use wayland_server::GlobalDispatch;
 use wayland_server::Resource;
 use wayland_server::WEnum;
 use wayland_server::Weak;
-use wayland_server::{backend::GlobalId, Dispatch, DisplayHandle};
+use wayland_server::{Dispatch, DisplayHandle, backend::GlobalId};
 
-use crate::input::pointer::{CursorIcon, CursorImageStatus};
 use crate::input::SeatHandler;
 use crate::input::WeakSeat;
+use crate::input::pointer::{CursorIcon, CursorImageStatus};
 use crate::utils::Serial;
-use crate::wayland::seat::{pointer::allow_setting_cursor, WaylandFocus};
+use crate::wayland::seat::{WaylandFocus, pointer::allow_setting_cursor};
 
 use super::seat::PointerUserData;
 use super::tablet_manager::{TabletSeatHandler, TabletToolUserData};

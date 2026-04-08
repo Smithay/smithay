@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use drm::{
     buffer::PlanarBuffer,
-    control::{framebuffer, Device, FbCmd2Flags},
+    control::{Device, FbCmd2Flags, framebuffer},
 };
 use drm_fourcc::DrmModifier;
 use tracing::{trace, warn};
@@ -17,16 +17,16 @@ use wayland_server::protocol::wl_buffer::WlBuffer;
 use crate::backend::allocator::Buffer;
 use crate::backend::{
     allocator::{
+        Fourcc,
         dmabuf::Dmabuf,
         format::{get_bpp, get_depth, get_opaque},
         gbm::GbmBuffer,
-        Fourcc,
     },
     drm::DrmDeviceFd,
 };
 use crate::utils::DevPath;
 
-use super::{error::AccessError, warn_legacy_fb_export, Framebuffer};
+use super::{Framebuffer, error::AccessError, warn_legacy_fb_export};
 
 /// A GBM backed framebuffer
 #[derive(Debug)]

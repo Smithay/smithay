@@ -11,16 +11,16 @@ use std::{
     path::Path,
     rc::{Rc, Weak},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
 use rustix::{fs::OFlags, io::Errno};
 
 use calloop::{
-    channel::{self, Channel},
     EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
+    channel::{self, Channel},
 };
 
 use crate::backend::session::{AsErrno, Event as SessionEvent, Session};

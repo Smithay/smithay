@@ -1,8 +1,8 @@
 //! Implementation of the rendering traits using pixman
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, LazyLock, Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -12,11 +12,11 @@ use tracing::warn;
 use crate::{
     backend::{
         allocator::{
+            Buffer,
             dmabuf::{
                 Dmabuf, DmabufMapping, DmabufMappingMode, DmabufSyncFailed, DmabufSyncFlags, WeakDmabuf,
             },
-            format::{has_alpha, FormatSet},
-            Buffer,
+            format::{FormatSet, has_alpha},
         },
         renderer::FrameContext,
     },
@@ -38,8 +38,8 @@ use wayland_server::protocol::wl_buffer;
 ))]
 use super::ImportEgl;
 use super::{
-    sync::SyncPoint, Bind, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
-    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    Bind, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
+    RendererSuper, Texture, TextureFilter, TextureMapping, sync::SyncPoint,
 };
 
 mod error;
@@ -252,20 +252,20 @@ impl PixmanTexture {
 
 impl Texture for PixmanTexture {
     fn width(&self) -> u32 {
-        self.0 .0.image.lock().unwrap().width() as u32
+        self.0.0.image.lock().unwrap().width() as u32
     }
 
     fn height(&self) -> u32 {
-        self.0 .0.image.lock().unwrap().height() as u32
+        self.0.0.image.lock().unwrap().height() as u32
     }
 
     fn size(&self) -> Size<i32, BufferCoords> {
-        let lock = self.0 .0.image.lock().unwrap();
+        let lock = self.0.0.image.lock().unwrap();
         Size::from((lock.width() as i32, lock.height() as i32))
     }
 
     fn format(&self) -> Option<DrmFourcc> {
-        DrmFourcc::try_from(self.0 .0.image.lock().unwrap().format()).ok()
+        DrmFourcc::try_from(self.0.0.image.lock().unwrap().format()).ok()
     }
 }
 
@@ -934,15 +934,15 @@ impl ImportMem for PixmanRenderer {
         region: Rectangle<i32, BufferCoords>,
     ) -> Result<(), Self::Error> {
         #[cfg(feature = "wayland_frontend")]
-        if texture.0 .0.buffer.is_some() {
+        if texture.0.0.buffer.is_some() {
             return Err(PixmanError::ImportFailed);
         }
 
-        if texture.0 .0.dmabuf.is_some() {
+        if texture.0.0.dmabuf.is_some() {
             return Err(PixmanError::ImportFailed);
         }
 
-        let mut image = texture.0 .0.image.lock().unwrap();
+        let mut image = texture.0.0.image.lock().unwrap();
         let stride = image.stride();
         let expected_len = stride * image.height();
 

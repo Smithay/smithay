@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashSet,
-    ffi::{c_int, CStr},
+    ffi::{CStr, c_int},
     hash::{Hash, Hasher},
     mem::MaybeUninit,
     ops::Deref,
@@ -13,7 +13,7 @@ use std::{
 use indexmap::IndexSet;
 use libc::c_void;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
+use wayland_server::{DisplayHandle, Resource, protocol::wl_buffer::WlBuffer};
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_sys::server::wl_display;
 
@@ -24,13 +24,14 @@ use crate::backend::egl::EGLDevice;
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Buffer as _, Format as DrmFormat, Fourcc, Modifier},
+        allocator::{Buffer as _, Format as DrmFormat, Fourcc, Modifier, dmabuf::Dmabuf},
         egl::{
+            EGLError, Error,
             context::{GlAttributes, PixelFormatRequirements},
             ffi,
             ffi::egl::types::EGLImage,
             native::EGLNativeDisplay,
-            wrap_egl_call_bool, wrap_egl_call_ptr, EGLError, Error,
+            wrap_egl_call_bool, wrap_egl_call_ptr,
         },
     },
     utils::{Buffer as BufferCoords, Size},
@@ -181,7 +182,8 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
 
         if !missing_extensions.is_empty() {
             info!(
-                "Skipping EGL platform because one or more required extensions are not supported. Missing extensions: {:?}", missing_extensions
+                "Skipping EGL platform because one or more required extensions are not supported. Missing extensions: {:?}",
+                missing_extensions
             );
             continue;
         }
@@ -1077,13 +1079,13 @@ impl EGLBufferReader {
             x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
             ffi::egl::TEXTURE_EXTERNAL_WL => Format::External,
             ffi::egl::TEXTURE_Y_UV_WL => {
-                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV))
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV));
             }
             ffi::egl::TEXTURE_Y_U_V_WL => {
-                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V))
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V));
             }
             ffi::egl::TEXTURE_Y_XUXV_WL => {
-                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV))
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV));
             }
             x => panic!("EGL returned invalid texture type: {x}"),
         };

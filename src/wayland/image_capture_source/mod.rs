@@ -134,8 +134,8 @@
 //! ```
 
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use wayland_protocols::ext::image_capture_source::v1::server::{
@@ -146,7 +146,7 @@ use wayland_protocols::ext::image_capture_source::v1::server::{
     ext_output_image_capture_source_manager_v1::{self, ExtOutputImageCaptureSourceManagerV1},
 };
 use wayland_server::{
-    backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak, backend::GlobalId,
 };
 
 use crate::output::Output;

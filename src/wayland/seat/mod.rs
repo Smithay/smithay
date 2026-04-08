@@ -76,11 +76,12 @@ use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
 
 pub use self::{
     keyboard::KeyboardUserData,
-    pointer::{PointerUserData, CURSOR_IMAGE_ROLE},
+    pointer::{CURSOR_IMAGE_ROLE, PointerUserData},
     touch::TouchUserData,
 };
 
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId, ObjectId},
     protocol::{
         wl_keyboard::WlKeyboard,
@@ -89,7 +90,6 @@ use wayland_server::{
         wl_surface,
         wl_touch::WlTouch,
     },
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use super::compositor::CompositorHandler;

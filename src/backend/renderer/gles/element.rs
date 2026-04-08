@@ -2,10 +2,10 @@
 
 use crate::{
     backend::renderer::{
-        element::{texture::TextureRenderElement, Element, Id, Kind, RenderElement, UnderlyingStorage},
+        element::{Element, Id, Kind, RenderElement, UnderlyingStorage, texture::TextureRenderElement},
         utils::{CommitCounter, DamageSet, OpaqueRegions},
     },
-    utils::{user_data::UserDataMap, Buffer, Logical, Physical, Point, Rectangle, Scale, Transform},
+    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Transform, user_data::UserDataMap},
 };
 
 use super::{GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexProgram, GlesTexture, Uniform};

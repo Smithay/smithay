@@ -132,15 +132,15 @@ use wayland_protocols::xwayland::shell::v1::server::{
     xwayland_surface_v1::{self, XwaylandSurfaceV1},
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::GlobalId,
     protocol::wl_surface::{self, WlSurface},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{
     input::SeatHandler,
     wayland::compositor,
-    xwayland::{xwm::XwmId, X11Surface, XWaylandClientData, XwmHandler},
+    xwayland::{X11Surface, XWaylandClientData, XwmHandler, xwm::XwmId},
 };
 
 /// The role for an xwayland-associated surface.

@@ -48,28 +48,28 @@ use std::{
 };
 
 use super::{
-    sync::{self, SyncPoint},
     Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ErasedContextId, ExportMem, Frame, ImportDma,
     ImportMem, Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    sync::{self, SyncPoint},
 };
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::{
-    backend::renderer::{buffer_type, BufferType},
+    backend::renderer::{BufferType, buffer_type},
     wayland::{compositor::SurfaceData, dmabuf::get_dmabuf, shm},
 };
 use crate::{
     backend::{
+        SwapBuffersError,
         allocator::{
-            dmabuf::{AnyError, Dmabuf},
-            format::{get_bpp, FormatSet},
             Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
+            dmabuf::{AnyError, Dmabuf},
+            format::{FormatSet, get_bpp},
         },
         drm::DrmNode,
         renderer::FrameContext,
-        SwapBuffersError,
     },
     utils::{Buffer as BufferCoords, Physical, Rectangle, Size, Transform},
 };
@@ -467,7 +467,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     {
         use crate::{
             backend::renderer::utils::RendererSurfaceStateUserData,
-            wayland::compositor::{with_surface_tree_upward, TraversalAction},
+            wayland::compositor::{TraversalAction, with_surface_tree_upward},
         };
 
         if self.devices.is_empty() {

@@ -3,17 +3,17 @@
 
 use crate::{
     backend::renderer::{
+        Color32F, Renderer, Texture,
         damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{AsRenderElements, RenderElement, Wrap},
-        Color32F, Renderer, Texture,
     },
     output::{Output, OutputModeSource, OutputNoMode},
     utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
 };
 #[cfg(feature = "wayland_frontend")]
 use crate::{
-    backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
-    desktop::{layer_map_for_output, LayerSurface, WindowSurfaceType},
+    backend::renderer::{ImportAll, element::surface::WaylandSurfaceRenderElement},
+    desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output},
     wayland::shell::wlr_layer::Layer,
 };
 use std::{collections::HashMap, fmt};
@@ -633,10 +633,10 @@ crate::backend::renderer::element::render_elements! {
 }
 
 impl<
-        #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
-        #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-        E: RenderElement<R> + std::fmt::Debug,
-    > std::fmt::Debug for SpaceRenderElements<R, E>
+    #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+    #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+    E: RenderElement<R> + std::fmt::Debug,
+> std::fmt::Debug for SpaceRenderElements<R, E>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

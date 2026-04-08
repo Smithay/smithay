@@ -10,9 +10,9 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
     self, ZwpVirtualKeyboardV1,
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
     backend::ClientId,
     protocol::wl_keyboard::{KeyState, KeymapFormat},
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 
@@ -20,7 +20,7 @@ use crate::input::keyboard::{KeyboardTarget, KeymapFile, ModifiersState};
 use crate::{
     input::{Seat, SeatHandler},
     utils::SERIAL_COUNTER,
-    wayland::seat::{keyboard::for_each_focused_kbds, WaylandFocus},
+    wayland::seat::{WaylandFocus, keyboard::for_each_focused_kbds},
 };
 
 use super::VirtualKeyboardManagerState;

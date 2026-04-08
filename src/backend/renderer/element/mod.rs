@@ -25,18 +25,18 @@ use std::{
 };
 
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{backend::ObjectId, Resource};
+use wayland_server::{Resource, backend::ObjectId};
 
 use crate::{
     output::{Output, WeakOutput},
-    utils::{user_data::UserDataMap, Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
+    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform, user_data::UserDataMap},
 };
 
 #[cfg(feature = "wayland_frontend")]
 use super::utils::Buffer;
 use super::{
-    utils::{CommitCounter, DamageSet, OpaqueRegions},
     Renderer,
+    utils::{CommitCounter, DamageSet, OpaqueRegions},
 };
 
 pub mod memory;

@@ -47,7 +47,7 @@
 use std::{ffi::OsStr, io, os::unix::net::UnixStream};
 
 use calloop::{
-    generic::Generic, EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory,
+    EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory, generic::Generic,
 };
 use tracing::{debug, info};
 use wayland_server::{BindError, ListeningSocket};

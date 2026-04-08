@@ -20,15 +20,17 @@ pub enum GlesError {
     #[error("Failed to load GL functions from EGL")]
     GLFunctionLoaderError,
     /// Required GL extension are not supported by the underlying implementation
-    #[error("None of the following GL extensions is supported by the underlying GL implementation, at least one is required: {0:?}")]
+    #[error(
+        "None of the following GL extensions is supported by the underlying GL implementation, at least one is required: {0:?}"
+    )]
     GLExtensionNotSupported(&'static [&'static str]),
     /// Required EGL extension are not supported by the underlying implementation
-    #[error("None of the following EGL extensions is supported by the underlying implementation, at least one is required: {0:?}")]
+    #[error(
+        "None of the following EGL extensions is supported by the underlying implementation, at least one is required: {0:?}"
+    )]
     EGLExtensionNotSupported(&'static [&'static str]),
     /// Required GL version is not available by the underlying implementation
-    #[error(
-        "The OpenGL ES version of the underlying GL implementation is too low, at least required: {0:?}"
-    )]
+    #[error("The OpenGL ES version of the underlying GL implementation is too low, at least required: {0:?}")]
     GLVersionNotSupported(version::GlVersion),
     /// The underlying egl context could not be activated
     #[error("Failed to active egl context")]

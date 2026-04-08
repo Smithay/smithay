@@ -5,8 +5,8 @@
 //! conversions to and from [dmabufs](super::dmabuf).
 
 use super::{
-    dmabuf::{AsDmabuf, Dmabuf, DmabufFlags, MAX_PLANES},
     Allocator, Buffer, Format, Fourcc, Modifier,
+    dmabuf::{AsDmabuf, Dmabuf, DmabufFlags, MAX_PLANES},
 };
 use crate::backend::drm::DrmNode;
 use crate::utils::{Buffer as BufferCoords, Size};

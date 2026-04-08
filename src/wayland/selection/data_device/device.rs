@@ -2,25 +2,25 @@ use std::cell::RefCell;
 
 use tracing::debug;
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
     protocol::{
         wl_data_device::{self, WlDataDevice},
         wl_seat::WlSeat,
     },
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
-    input::{dnd::DndFocus, Seat, SeatHandler},
+    input::{Seat, SeatHandler, dnd::DndFocus},
     utils::Serial,
     wayland::{
         compositor,
         seat::WaylandFocus,
         selection::{
+            SelectionTarget,
             device::SelectionDevice,
             offer::OfferReplySource,
             seat_data::SeatData,
             source::{SelectionSource, SelectionSourceProvider},
-            SelectionTarget,
         },
     },
 };

@@ -3,11 +3,11 @@
 //! This provides a way for the client to request that the pointer is confined to a region or
 //! locked in place.
 use std::{
-    collections::{hash_map, HashMap},
+    collections::{HashMap, hash_map},
     ops,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Mutex,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -17,13 +17,13 @@ use wayland_protocols::wp::pointer_constraints::zv1::server::{
     zwp_pointer_constraints_v1::{self, Lifetime, ZwpPointerConstraintsV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
-    GlobalDispatch, New, Resource, WEnum,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 use super::compositor::{self, RegionAttributes};
 use crate::{
-    input::{pointer::PointerHandle, SeatHandler},
+    input::{SeatHandler, pointer::PointerHandle},
     utils::{Logical, Point},
     wayland::seat::PointerUserData,
 };

@@ -1,15 +1,15 @@
 use smithay::{
     delegate_xdg_shell,
-    desktop::{find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Space, Window},
+    desktop::{PopupKind, PopupManager, Space, Window, find_popup_root_surface, get_popup_toplevel_coords},
     input::{
-        pointer::{Focus, GrabStartData as PointerGrabStartData},
         Seat,
+        pointer::{Focus, GrabStartData as PointerGrabStartData},
     },
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_seat, wl_surface::WlSurface},
             Resource,
+            protocol::{wl_seat, wl_surface::WlSurface},
         },
     },
     utils::{Rectangle, Serial},
@@ -23,8 +23,8 @@ use smithay::{
 };
 
 use crate::{
-    grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
     Smallvil,
+    grabs::{MoveSurfaceGrab, ResizeSurfaceGrab},
 };
 
 impl XdgShellHandler for Smallvil {

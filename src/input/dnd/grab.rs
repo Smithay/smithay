@@ -10,6 +10,7 @@ use wayland_server::Resource;
 
 use crate::{
     input::{
+        Seat, SeatHandler,
         dnd::OfferData,
         pointer::{
             AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
@@ -21,9 +22,8 @@ use crate::{
             DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, TouchGrab,
             TouchInnerHandle, UpEvent,
         },
-        Seat, SeatHandler,
     },
-    utils::{Logical, Point, Serial, SERIAL_COUNTER},
+    utils::{Logical, Point, SERIAL_COUNTER, Serial},
 };
 
 use super::{DndFocus, Source};

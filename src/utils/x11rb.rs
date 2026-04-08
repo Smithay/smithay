@@ -5,22 +5,22 @@
 
 use std::{
     sync::Arc,
-    thread::{spawn, JoinHandle},
+    thread::{JoinHandle, spawn},
 };
 
 use tracing::{error, warn};
 use x11rb::{
     connection::Connection as _,
     protocol::{
-        xproto::{Atom, ClientMessageEvent, ConnectionExt as _, EventMask, Window, CLIENT_MESSAGE_EVENT},
         Event,
+        xproto::{Atom, CLIENT_MESSAGE_EVENT, ClientMessageEvent, ConnectionExt as _, EventMask, Window},
     },
     rust_connection::RustConnection,
 };
 
 use calloop::{
-    channel::{channel, Channel, ChannelError, Event as ChannelEvent, Sender},
     EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
+    channel::{Channel, ChannelError, Event as ChannelEvent, Sender, channel},
 };
 
 /// Integration of an x11rb X11 connection with calloop.

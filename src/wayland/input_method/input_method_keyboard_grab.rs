@@ -6,15 +6,15 @@ use std::{
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::{
     self, ZwpInputMethodKeyboardGrabV2,
 };
-use wayland_server::backend::ClientId;
 use wayland_server::Dispatch;
+use wayland_server::backend::ClientId;
 
 use crate::input::{
+    SeatHandler,
     keyboard::{
         GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
         ModifiersState,
     },
-    SeatHandler,
 };
 use crate::wayland::text_input::TextInputHandle;
 use crate::{

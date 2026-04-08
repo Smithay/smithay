@@ -3,8 +3,8 @@ use std::cell::RefCell;
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_device_v1::{
     self, ExtDataControlDeviceV1,
 };
-use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::Resource;
+use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::{Client, Dispatch, DisplayHandle};
 
 use crate::input::Seat;

@@ -1,18 +1,18 @@
 //! EGL context related structs
 use std::{
     os::raw::c_int,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
 };
 
 use libc::c_void;
 
-use super::{ffi, wrap_egl_call_bool, wrap_egl_call_ptr, EGLError, Error, MakeCurrentError};
+use super::{EGLError, Error, MakeCurrentError, ffi, wrap_egl_call_bool, wrap_egl_call_ptr};
 use crate::{
     backend::{
         allocator::format::FormatSet,
         egl::{
-            display::{EGLDisplay, PixelFormat},
             EGLSurface,
+            display::{EGLDisplay, PixelFormat},
         },
     },
     utils::user_data::UserDataMap,

@@ -1,11 +1,11 @@
 use crate::{
     backend::renderer::{
+        Color32F, Frame, Renderer,
         element::{Element, Id, RenderElement},
         utils::{CommitCounter, DamageSet, OpaqueRegions},
-        Color32F, Frame, Renderer,
     },
     render_elements,
-    utils::{user_data::UserDataMap, Buffer, Physical, Rectangle, Scale, Transform},
+    utils::{Buffer, Physical, Rectangle, Scale, Transform, user_data::UserDataMap},
 };
 
 render_elements! {

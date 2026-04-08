@@ -7,8 +7,8 @@ use wayland_server::protocol::wl_surface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak};
 
 use crate::utils::{
-    alive_tracker::{AliveTracker, IsAlive},
     Serial,
+    alive_tracker::{AliveTracker, IsAlive},
 };
 use crate::wayland::shell::xdg::XdgPopupSurfaceData;
 use crate::wayland::{compositor, shell::wlr_layer::Layer};

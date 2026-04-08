@@ -1,11 +1,11 @@
 #[cfg(feature = "xwayland")]
 use crate::{desktop::space::SpaceElement, xwayland::X11Surface};
 use crate::{
-    desktop::{space::RenderZindex, utils::*, PopupManager},
+    desktop::{PopupManager, space::RenderZindex, utils::*},
     output::Output,
-    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle},
+    utils::{IsAlive, Logical, Point, Rectangle, user_data::UserDataMap},
     wayland::{
-        compositor::{with_states, SurfaceData},
+        compositor::{SurfaceData, with_states},
         dmabuf::DmabufFeedback,
         seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
@@ -15,8 +15,8 @@ use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
     sync::{
-        atomic::{AtomicU8, Ordering},
         Arc, Mutex, Weak,
+        atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };

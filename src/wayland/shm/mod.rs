@@ -102,13 +102,13 @@ use std::{
 };
 
 use wayland_server::{
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
     backend::GlobalId,
     protocol::{
         wl_buffer,
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
     },
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
 };
 
 mod handlers;
@@ -116,7 +116,7 @@ mod pool;
 
 use crate::{
     backend::allocator::format::get_bpp,
-    utils::{hook::Hook, HookId, UnmanagedResource},
+    utils::{HookId, UnmanagedResource, hook::Hook},
 };
 
 use self::pool::Pool;

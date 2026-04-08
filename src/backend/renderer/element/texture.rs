@@ -202,13 +202,13 @@ use crate::{
     backend::{
         allocator::Fourcc,
         renderer::{
-            utils::{DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
             ContextId, Frame, ImportMem, Renderer, Texture,
+            utils::{DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
         },
     },
     utils::{
-        user_data::UserDataMap, Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size,
-        Transform,
+        Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
+        user_data::UserDataMap,
     },
 };
 

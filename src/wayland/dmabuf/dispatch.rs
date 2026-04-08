@@ -1,15 +1,15 @@
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
-    backend::ClientId, protocol::wl_buffer, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
+    protocol::wl_buffer,
 };
 
 use crate::{
-    backend::allocator::dmabuf::{Dmabuf, Plane, MAX_PLANES},
+    backend::allocator::dmabuf::{Dmabuf, MAX_PLANES, Plane},
     wayland::{buffer::BufferHandler, compositor, dmabuf::SurfaceDmabufFeedbackStateInner},
 };
 

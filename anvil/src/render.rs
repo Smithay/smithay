@@ -1,18 +1,18 @@
 use smithay::{
     backend::renderer::{
+        Color32F, ImportAll, ImportMem, Renderer,
         damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{
+            AsRenderElements, RenderElement, Wrap,
             surface::WaylandSurfaceRenderElement,
             utils::{
                 ConstrainAlign, ConstrainScaleBehavior, CropRenderElement, RelocateRenderElement,
                 RescaleRenderElement,
             },
-            AsRenderElements, RenderElement, Wrap,
         },
-        Color32F, ImportAll, ImportMem, Renderer,
     },
     desktop::space::{
-        constrain_space_element, ConstrainBehavior, ConstrainReference, Space, SpaceRenderElements,
+        ConstrainBehavior, ConstrainReference, Space, SpaceRenderElements, constrain_space_element,
     },
     output::Output,
     utils::{Point, Rectangle, Size},
@@ -21,7 +21,7 @@ use smithay::{
 #[cfg(feature = "debug")]
 use crate::drawing::FpsElement;
 use crate::{
-    drawing::{PointerRenderElement, CLEAR_COLOR, CLEAR_COLOR_FULLSCREEN},
+    drawing::{CLEAR_COLOR, CLEAR_COLOR_FULLSCREEN, PointerRenderElement},
     shell::{FullscreenSurface, WindowElement, WindowRenderElement},
 };
 

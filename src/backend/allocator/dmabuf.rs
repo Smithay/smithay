@@ -22,9 +22,9 @@ use crate::utils::{Buffer as BufferCoords, Size};
 use crate::wayland::compositor::{Blocker, BlockerState};
 use std::hash::{Hash, Hasher};
 use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
-use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "backend_drm")]
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::{error, fmt};
 

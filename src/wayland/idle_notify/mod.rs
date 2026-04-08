@@ -42,21 +42,21 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{self, AtomicBool},
         Mutex,
+        atomic::{self, AtomicBool},
     },
     time::Duration,
 };
 
-use calloop::{timer::TimeoutAction, LoopHandle, RegistrationToken};
+use calloop::{LoopHandle, RegistrationToken, timer::TimeoutAction};
 use wayland_protocols::ext::idle_notify::v1::server::{
     ext_idle_notification_v1::{self, ExtIdleNotificationV1},
     ext_idle_notifier_v1::{self, ExtIdleNotifierV1},
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId},
     protocol::wl_seat::WlSeat,
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::input::{Seat, SeatHandler};

@@ -102,9 +102,9 @@ use wayland_protocols::ext::image_copy_capture::v1::server::{
     ext_image_copy_capture_session_v1::{self, ExtImageCopyCaptureSessionV1},
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
     backend::GlobalId,
     protocol::{wl_buffer::WlBuffer, wl_pointer::WlPointer, wl_shm},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
 };
 
 #[cfg(feature = "backend_drm")]
@@ -112,11 +112,11 @@ use crate::backend::{
     allocator::{Buffer as AllocBuffer, Fourcc, Modifier},
     drm::DrmNode,
 };
-use crate::utils::{user_data::UserDataMap, Buffer as BufferCoords, IsAlive, Rectangle, Size, Transform};
+use crate::utils::{Buffer as BufferCoords, IsAlive, Rectangle, Size, Transform, user_data::UserDataMap};
 use crate::wayland::image_capture_source::ImageCaptureSource;
 
 // Buffer validation imports
-use crate::backend::renderer::{buffer_type, BufferType};
+use crate::backend::renderer::{BufferType, buffer_type};
 #[cfg(feature = "backend_drm")]
 use crate::wayland::dmabuf::get_dmabuf;
 use crate::wayland::shm::with_buffer_contents;

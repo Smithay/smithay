@@ -3,11 +3,11 @@ use std::sync::{Arc, Mutex};
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::{
     self, ZwpInputPopupSurfaceV2,
 };
-use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface, Dispatch, Resource};
+use wayland_server::{Dispatch, Resource, backend::ClientId, protocol::wl_surface::WlSurface};
 
 use crate::utils::{
-    alive_tracker::{AliveTracker, IsAlive},
     Logical, Point, Rectangle,
+    alive_tracker::{AliveTracker, IsAlive},
 };
 
 use super::InputMethodManagerState;

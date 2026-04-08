@@ -96,7 +96,7 @@
 //! delegate_pointer_gestures!(State);
 //! ```
 
-use std::sync::{atomic::Ordering, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use atomic_float::AtomicF64;
 use wayland_protocols::wp::pointer_gestures::zv1::server::{
@@ -106,21 +106,21 @@ use wayland_protocols::wp::pointer_gestures::zv1::server::{
     zwp_pointer_gestures_v1::{self, ZwpPointerGesturesV1},
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId},
     protocol::wl_surface::WlSurface,
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{
     input::{
+        SeatHandler,
         pointer::{
             GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
             GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
             PointerHandle,
         },
-        SeatHandler,
     },
-    utils::{Serial, SERIAL_COUNTER},
+    utils::{SERIAL_COUNTER, Serial},
     wayland::seat::PointerUserData,
 };
 

@@ -1,9 +1,9 @@
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
 use indexmap::IndexSet;
 
 use crate::{
-    utils::{alive_tracker::AliveTracker, IsAlive, Serial},
+    utils::{IsAlive, Serial, alive_tracker::AliveTracker},
     wayland::shell::xdg::XdgShellState,
 };
 
@@ -12,7 +12,7 @@ use wayland_protocols::xdg::shell::server::{
 };
 
 use wayland_server::{
-    backend::ClientId, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak, backend::ClientId,
 };
 
 use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};

@@ -47,20 +47,20 @@
 use std::{
     collections::HashMap,
     ops,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
     time::Instant,
 };
 
 use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
+    Dispatch, DisplayHandle, GlobalDispatch,
     backend::{ClientId, GlobalId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    Dispatch, DisplayHandle, GlobalDispatch,
 };
 
 use rand::distr::{Alphanumeric, SampleString};
 
-use crate::utils::{user_data::UserDataMap, Serial};
+use crate::utils::{Serial, user_data::UserDataMap};
 
 mod dispatch;
 

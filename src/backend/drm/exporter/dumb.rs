@@ -6,9 +6,9 @@ use super::{ExportBuffer, ExportFramebuffer};
 use crate::backend::{
     allocator::dumb::DumbBuffer,
     drm::{
-        dumb::{framebuffer_from_dumb_buffer, DumbFramebuffer},
-        error::AccessError,
         DrmDeviceFd,
+        dumb::{DumbFramebuffer, framebuffer_from_dumb_buffer},
+        error::AccessError,
     },
 };
 

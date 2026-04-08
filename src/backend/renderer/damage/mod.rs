@@ -100,20 +100,20 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use tracing::{info_span, instrument, trace, warn};
 
 use crate::{
-    backend::renderer::{element::RenderElementPresentationState, Frame},
+    backend::renderer::{Frame, element::RenderElementPresentationState},
     output::{Output, OutputModeSource, OutputNoMode},
-    utils::{user_data::UserDataMap, Buffer as BufferCoords, Physical, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoords, Physical, Rectangle, Scale, Size, Transform, user_data::UserDataMap},
 };
 
 use super::{
+    Color32F,
     element::{Element, Id, RenderElement, RenderElementState, RenderElementStates},
     sync::SyncPoint,
     utils::CommitCounter,
-    Color32F,
 };
 
 use super::{Renderer, Texture};
@@ -863,8 +863,7 @@ impl OutputDamageTracker {
 
         trace!(
             "rendering with damage {:?} and opaque regions {:?}",
-            self.damage,
-            self.opaque_regions
+            self.damage, self.opaque_regions
         );
 
         let render_res = (|| {
@@ -907,8 +906,7 @@ impl OutputDamageTracker {
                 if element_damage.is_empty() {
                     trace!(
                         "skipping rendering element {:?} with geometry {:?}, no damage",
-                        element_id,
-                        element_geometry
+                        element_id, element_geometry
                     );
                     continue;
                 }
@@ -926,9 +924,7 @@ impl OutputDamageTracker {
 
                 trace!(
                     "rendering element {:?} with geometry {:?} and damage {:?}",
-                    element_id,
-                    element_geometry,
-                    element_damage,
+                    element_id, element_geometry, element_damage,
                 );
 
                 let element_src = element.src();
