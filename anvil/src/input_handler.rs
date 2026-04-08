@@ -152,8 +152,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             if exclusive {
                 let surface = self.space.outputs().find_map(|o| {
                     let map = layer_map_for_output(o);
-                    let cloned = map.layers().find(|l| l.layer_surface() == &layer).cloned();
-                    cloned
+                    map.layers().find(|l| l.layer_surface() == &layer).cloned()
                 });
                 if let Some(surface) = surface {
                     keyboard.set_focus(self, Some(surface.into()), serial);
