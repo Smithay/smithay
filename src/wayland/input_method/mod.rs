@@ -81,7 +81,7 @@ use crate::{
 };
 
 pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
-pub use input_method_keyboard_grab::{InputMethodKeyboardGrab, InputMethodKeyboardUserData};
+pub use input_method_keyboard_grab::InputMethodKeyboardUserData;
 pub use input_method_popup_surface::InputMethodPopupSurfaceUserData;
 
 use super::text_input::TextInputHandle;
@@ -195,11 +195,11 @@ where
 {
     fn request(
         _state: &mut D,
-        _client: &Client,
+        client: &Client,
         _: &ZwpInputMethodManagerV2,
         request: zwp_input_method_manager_v2::Request,
         _: &(),
-        _dh: &DisplayHandle,
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -227,7 +227,7 @@ where
                         dismiss_popup: D::dismiss_popup,
                     },
                 );
-                handle.add_instance(&instance);
+                handle.add_instance(&instance, client, dh, text_input_handle.clone());
             }
             zwp_input_method_manager_v2::Request::Destroy => {
                 // Nothing to do

@@ -1,71 +1,73 @@
-use std::{
-    fmt,
-    sync::{Arc, Mutex},
-};
+use std::fmt;
 
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::{
     self, ZwpInputMethodKeyboardGrabV2,
 };
 use wayland_server::backend::ClientId;
-use wayland_server::Dispatch;
+use wayland_server::{Dispatch, Resource};
 
-use crate::input::{
-    keyboard::{
-        GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
-        ModifiersState,
-    },
-    SeatHandler,
-};
-use crate::wayland::text_input::TextInputHandle;
 use crate::{
     backend::input::{KeyState, Keycode},
+    input::{
+        keyboard::{
+            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
+            ModifiersState,
+        },
+        SeatHandler,
+    },
     utils::Serial,
 };
 
-use super::InputMethodManagerState;
+use super::{InputMethodHandle, InputMethodManagerState};
 
-#[derive(Default, Debug)]
-pub(crate) struct InputMethodKeyboard {
-    pub grab: Option<ZwpInputMethodKeyboardGrabV2>,
-    pub text_input_handle: TextInputHandle,
-}
-
-/// Handle to an input method instance
-#[derive(Default, Debug, Clone)]
-pub struct InputMethodKeyboardGrab {
-    pub(crate) inner: Arc<Mutex<InputMethodKeyboard>>,
-}
-
-impl<D> KeyboardGrab<D> for InputMethodKeyboardGrab
+impl<D> KeyboardGrab<D> for InputMethodHandle
 where
     D: SeatHandler + 'static,
 {
     fn input(
         &mut self,
-        _data: &mut D,
-        _handle: &mut KeyboardInnerHandle<'_, D>,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
         key_state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
         time: u32,
     ) {
-        let inner = self.inner.lock().unwrap();
-        let keyboard = inner.grab.as_ref().unwrap();
-        inner
-            .text_input_handle
-            .active_text_input_serial_or_default(serial.0, |serial| {
-                keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
-                if let Some(serialized) = modifiers.map(|m| m.serialized) {
-                    keyboard.modifiers(
-                        serial,
-                        serialized.depressed,
-                        serialized.latched,
-                        serialized.locked,
-                        serialized.layout_effective,
-                    )
-                }
-            });
+        // Get the keyboard grab and text input handle from the active instance
+        let grab_info = self.with_instance(|inst| {
+            (
+                inst.keyboard_grab.clone(),
+                inst.text_input_handle.clone(),
+                inst.text_input_handle.has_active_text_input(),
+            )
+        });
+
+        let Some((Some(keyboard), text_input_handle, has_text_input)) = grab_info else {
+            // No active input method, no keyboard grab, or no text input - forward to normal keyboard handling
+            handle.input(data, keycode, key_state, modifiers, serial, time);
+            return;
+        };
+
+        if !has_text_input {
+            // No text input focus, forward to normal keyboard handling
+            handle.input(data, keycode, key_state, modifiers, serial, time);
+            return;
+        }
+
+        // Forward to IME
+        text_input_handle.active_text_input_serial_or_default(serial.0, |serial| {
+            keyboard.key(serial, time, keycode.raw() - 8, key_state.into());
+            if let Some(serialized) = modifiers.map(|m| m.serialized) {
+                keyboard.modifiers(
+                    serial,
+                    serialized.depressed,
+                    serialized.latched,
+                    serialized.locked,
+                    serialized.layout_effective,
+                )
+            }
+        });
     }
 
     fn set_focus(
@@ -73,7 +75,7 @@ where
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
         focus: Option<<D as SeatHandler>::KeyboardFocus>,
-        serial: crate::utils::Serial,
+        serial: Serial,
     ) {
         handle.set_focus(data, focus, serial)
     }
@@ -87,7 +89,7 @@ where
 
 /// User data of ZwpInputKeyboardGrabV2 object
 pub struct InputMethodKeyboardUserData<D: SeatHandler> {
-    pub(super) handle: InputMethodKeyboardGrab,
+    pub(crate) handle: InputMethodHandle,
     pub(crate) keyboard_handle: KeyboardHandle<D>,
 }
 
@@ -109,7 +111,16 @@ impl<D: SeatHandler + 'static> Dispatch<ZwpInputMethodKeyboardGrabV2, InputMetho
         _object: &ZwpInputMethodKeyboardGrabV2,
         data: &InputMethodKeyboardUserData<D>,
     ) {
-        data.handle.inner.lock().unwrap().grab = None;
+        // Clear the grab from the instance
+        let mut inner = data.handle.inner.lock().unwrap();
+        if let Some(inst) = inner
+            .instances
+            .iter_mut()
+            .find(|i| i.keyboard_grab.as_ref().map(|g| g.id()) == Some(_object.id()))
+        {
+            inst.keyboard_grab = None;
+        }
+
         data.keyboard_handle.unset_grab(state);
     }
 
