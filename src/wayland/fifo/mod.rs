@@ -206,7 +206,7 @@ where
 
                 // Make sure we do not install the hook more then once in case the surface is being reused
                 if is_managed && is_initial {
-                    add_pre_commit_hook::<D, _>(&surface, |_, _, surface| {
+                    let _ = add_pre_commit_hook::<D, _>(&surface, |_, _, surface| {
                         let fifo_barrier = with_states(surface, |states| {
                             let fifo_state = *states.cached_state.get::<FifoCachedState>().pending();
 
@@ -253,7 +253,7 @@ where
                             // sync subsurfaces
                             let skip = barrier.is_signaled() || is_sync_subsurface(surface);
                             if !skip {
-                                add_blocker(surface, barrier);
+                                let _ = add_blocker(surface, barrier);
                             }
                         }
                     });

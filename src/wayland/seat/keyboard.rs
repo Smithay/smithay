@@ -210,16 +210,14 @@ pub(crate) fn enter_internal<D: SeatHandler + 'static>(
     keys: impl Iterator<Item = Keycode>,
     serial: Serial,
 ) {
-    *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = Some(serial);
-    let serialized_keys = serialize_pressed_keys(keys);
-    for_each_focused_kbds(seat, surface, |kbd| {
-        kbd.enter(serial.into(), surface, serialized_keys.clone())
-    });
+    let seat_clone = seat.downgrade();
+    let Ok(hook_id) = add_destruction_hook::<D, _>(surface, move |_, surface| {
+        let Some(seat) = seat_clone.upgrade() else {
+            return;
+        };
 
-    let seat_clone = seat.clone();
-    let hook_id = add_destruction_hook::<D, _>(surface, move |_, surface| {
         if let Some(client) = surface.client() {
-            let keyboard = seat_clone.get_keyboard().unwrap();
+            let keyboard = seat.get_keyboard().unwrap();
             let inner = keyboard.arc.known_kbds.lock().unwrap();
             for kbd in &*inner {
                 let Ok(kbd) = kbd.upgrade() else {
@@ -231,7 +229,16 @@ pub(crate) fn enter_internal<D: SeatHandler + 'static>(
                 }
             }
         }
+    }) else {
+        return;
+    };
+
+    *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = Some(serial);
+    let serialized_keys = serialize_pressed_keys(keys);
+    for_each_focused_kbds(seat, surface, |kbd| {
+        kbd.enter(serial.into(), surface, serialized_keys.clone())
     });
+
     if let Some(old_hook_id) = with_states(surface, |states| {
         states
             .data_map
