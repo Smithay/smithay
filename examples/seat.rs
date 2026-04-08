@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use smithay::input::{keyboard::FilterResult, Seat, SeatHandler, SeatState};
+use smithay::input::{Seat, SeatHandler, SeatState, keyboard::FilterResult};
 use smithay::reexports::wayland_server::{
+    Display, ListeningSocket,
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::wl_surface::WlSurface,
-    Display, ListeningSocket,
 };
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
 use smithay::{delegate_compositor, delegate_seat};

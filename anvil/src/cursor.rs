@@ -2,8 +2,8 @@ use std::{io::Read, time::Duration};
 
 use tracing::warn;
 use xcursor::{
-    parser::{parse_xcursor, Image},
     CursorTheme,
+    parser::{Image, parse_xcursor},
 };
 
 static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");

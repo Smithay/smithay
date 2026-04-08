@@ -14,8 +14,8 @@ use x11rb::{
         xfixes::{ConnectionExt as _, SelectionEventMask},
         xproto::{
             Atom, AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, GetPropertyReply, PropMode,
-            Screen, SelectionNotifyEvent, SelectionRequestEvent, Window as X11Window, WindowClass,
-            SELECTION_NOTIFY_EVENT,
+            SELECTION_NOTIFY_EVENT, Screen, SelectionNotifyEvent, SelectionRequestEvent, Window as X11Window,
+            WindowClass,
         },
     },
     rust_connection::RustConnection,
@@ -280,8 +280,7 @@ pub fn read_selection_callback(
     };
     trace!(
         requestor = transfer.request.requestor,
-        "Transfer became readable, read {} bytes",
-        len
+        "Transfer became readable, read {} bytes", len
     );
 
     transfer.source_data.extend_from_slice(&buf[..len]);
@@ -312,8 +311,7 @@ pub fn read_selection_callback(
             let len = transfer.flush_data()?;
             trace!(
                 requestor = transfer.request.requestor,
-                "Send data chunk: {} bytes",
-                len
+                "Send data chunk: {} bytes", len
             );
         }
     }
@@ -325,8 +323,7 @@ pub fn read_selection_callback(
                 let len = transfer.flush_data()?;
                 trace!(
                     requestor = transfer.request.requestor,
-                    "Send data chunk: {} bytes",
-                    len
+                    "Send data chunk: {} bytes", len
                 );
             }
             transfer.flush_property_on_delete = true;

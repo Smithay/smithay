@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use drm::control::{connector, Device as ControlDevice};
+use drm::control::{Device as ControlDevice, connector};
 
 /// Responsible for tracking connected/disconnected events.
 ///

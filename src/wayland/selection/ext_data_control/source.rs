@@ -5,10 +5,10 @@ use wayland_server::backend::ClientId;
 use wayland_server::{Dispatch, DisplayHandle};
 
 use crate::input::Seat;
+use crate::wayland::selection::SelectionTarget;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;
-use crate::wayland::selection::SelectionTarget;
 
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1::{
     self, ExtDataControlSourceV1,

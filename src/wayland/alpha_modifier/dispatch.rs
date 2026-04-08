@@ -4,7 +4,7 @@ use wayland_protocols::wp::alpha_modifier::v1::server::{
 };
 
 use wayland_server::{
-    backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
 };
 
 use super::{

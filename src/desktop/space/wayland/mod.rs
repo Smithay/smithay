@@ -7,7 +7,7 @@ use crate::{
     backend::renderer::utils::RendererSurfaceStateUserData,
     output::{Output, WeakOutput},
     utils::{Logical, Point, Rectangle},
-    wayland::compositor::{with_surface_tree_downward, TraversalAction},
+    wayland::compositor::{TraversalAction, with_surface_tree_downward},
 };
 
 mod layer;

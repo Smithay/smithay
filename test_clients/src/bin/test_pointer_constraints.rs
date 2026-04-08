@@ -15,25 +15,25 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
+        Capability, SeatHandler, SeatState,
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
         pointer_constraints::{PointerConstraintsHandler, PointerConstraintsState},
-        Capability, SeatHandler, SeatState,
     },
     shell::{
-        xdg::{
-            window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
-            XdgShell,
-        },
         WaylandSurface,
+        xdg::{
+            XdgShell,
+            window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
+        },
     },
     shm::{
-        slot::{Buffer, SlotPool},
         Shm, ShmHandler,
+        slot::{Buffer, SlotPool},
     },
 };
 
 use wayland_client::{
-    delegate_noop,
+    Connection, QueueHandle, delegate_noop,
     protocol::{
         wl_output::{self, WlOutput},
         wl_pointer::WlPointer,
@@ -41,7 +41,6 @@ use wayland_client::{
         wl_seat,
         wl_surface::{self, WlSurface},
     },
-    Connection, QueueHandle,
 };
 
 use tracing::{info, warn};

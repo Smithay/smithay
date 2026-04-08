@@ -2,12 +2,12 @@
 
 use smithay::{
     backend::renderer::{
+        Color32F, ImportAll, ImportMem, Renderer, Texture,
         element::{
+            AsRenderElements, Kind,
             memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
             surface::WaylandSurfaceRenderElement,
-            AsRenderElements, Kind,
         },
-        Color32F, ImportAll, ImportMem, Renderer, Texture,
     },
     input::pointer::CursorImageStatus,
     render_elements,
@@ -16,11 +16,11 @@ use smithay::{
 #[cfg(feature = "debug")]
 use smithay::{
     backend::renderer::{
+        Frame,
         element::{Element, Id, RenderElement},
         utils::CommitCounter,
-        Frame,
     },
-    utils::{user_data::UserDataMap, Buffer, Logical, Rectangle, Size, Transform},
+    utils::{Buffer, Logical, Rectangle, Size, Transform, user_data::UserDataMap},
 };
 
 pub static CLEAR_COLOR: Color32F = Color32F::new(0.8, 0.8, 0.9, 1.0);
@@ -86,19 +86,21 @@ where
             // Always render `Default` for a named shape.
             CursorImageStatus::Named(_) => {
                 if let Some(buffer) = self.buffer.as_ref() {
-                    vec![PointerRenderElement::<R>::from(
-                        MemoryRenderBufferRenderElement::from_buffer(
-                            renderer,
-                            location.to_f64(),
-                            buffer,
-                            None,
-                            None,
-                            None,
-                            Kind::Cursor,
+                    vec![
+                        PointerRenderElement::<R>::from(
+                            MemoryRenderBufferRenderElement::from_buffer(
+                                renderer,
+                                location.to_f64(),
+                                buffer,
+                                None,
+                                None,
+                                None,
+                                Kind::Cursor,
+                            )
+                            .expect("Lost system pointer buffer"),
                         )
-                        .expect("Lost system pointer buffer"),
-                    )
-                    .into()]
+                        .into(),
+                    ]
                 } else {
                     vec![]
                 }

@@ -2,11 +2,11 @@
 
 use crate::{
     backend::renderer::{
+        Renderer,
         element::{AsRenderElements, Element, Id, Kind, RenderElement, UnderlyingStorage},
         utils::{DamageSet, OpaqueRegions},
-        Renderer,
     },
-    utils::{user_data::UserDataMap, Buffer, Physical, Point, Rectangle, Scale},
+    utils::{Buffer, Physical, Point, Rectangle, Scale, user_data::UserDataMap},
 };
 
 /// A element that allows to re-scale another element

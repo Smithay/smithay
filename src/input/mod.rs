@@ -136,7 +136,7 @@ use self::{
     pointer::{CursorImageStatus, PointerHandle, PointerTarget},
     touch::TouchGrab,
 };
-use crate::utils::{user_data::UserDataMap, Serial};
+use crate::utils::{Serial, user_data::UserDataMap};
 
 pub mod dnd;
 pub mod keyboard;

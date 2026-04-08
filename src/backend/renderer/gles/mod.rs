@@ -1,6 +1,6 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
-use cgmath::{prelude::*, Matrix3, Vector2};
+use cgmath::{Matrix3, Vector2, prelude::*};
 use core::slice;
 use std::{
     collections::HashMap,
@@ -12,12 +12,12 @@ use std::{
     ptr,
     rc::Rc,
     sync::{
+        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{self, Sender},
-        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
     },
 };
-use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
+use tracing::{Level, debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn};
 
 pub mod element;
 mod error;
@@ -40,20 +40,20 @@ use profiler::SpanLocation;
 use self::version::GlVersion;
 
 use super::{
-    sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma,
-    ImportMem, Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
+    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping, sync::SyncPoint,
 };
 use crate::{
     backend::{
         allocator::{
-            dmabuf::{Dmabuf, WeakDmabuf},
-            format::{get_bpp, get_opaque, has_alpha, FormatSet},
             Buffer, Format, Fourcc,
+            dmabuf::{Dmabuf, WeakDmabuf},
+            format::{FormatSet, get_bpp, get_opaque, has_alpha},
         },
         egl::{
+            EGLContext, EGLDevice, EGLSurface, MakeCurrentError,
             fence::EGLFence,
             ffi::egl::{self as ffi_egl, types::EGLImage},
-            EGLContext, EGLDevice, EGLSurface, MakeCurrentError,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -64,7 +64,7 @@ use super::ImportEgl;
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
+use crate::backend::egl::{Format as EGLFormat, display::EGLBufferReader};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::shm::shm_format_to_fourcc;
 #[cfg(feature = "wayland_frontend")]
@@ -245,9 +245,7 @@ impl GlesTargetInternal<'_> {
             } else {
                 egl.make_current()?;
                 match self {
-                    GlesTargetInternal::Image { buf, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo)
-                    }
+                    GlesTargetInternal::Image { buf, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo),
                     GlesTargetInternal::Texture { fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
                     GlesTargetInternal::Renderbuffer { fbo, .. } => {
                         gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)

@@ -51,12 +51,12 @@ use wayland_protocols::wp::linux_drm_syncobj::v1::server::{
     wp_linux_drm_syncobj_timeline_v1::{self, WpLinuxDrmSyncobjTimelineV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
-    GlobalDispatch, New, Resource, Weak as WlWeak,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak as WlWeak,
+    backend::GlobalId, protocol::wl_surface::WlSurface,
 };
 
 use super::{
-    compositor::{self, with_states, BufferAssignment, Cacheable, HookId, SurfaceAttributes},
+    compositor::{self, BufferAssignment, Cacheable, HookId, SurfaceAttributes, with_states},
     dmabuf::get_dmabuf,
 };
 use crate::backend::drm::DrmDeviceFd;

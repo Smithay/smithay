@@ -1,13 +1,13 @@
 use crate::{
     backend::renderer::{
-        element::{
-            utils::{
-                constrain_as_render_elements, ConstrainAlign, ConstrainScaleBehavior, CropRenderElement,
-                RelocateRenderElement, RescaleRenderElement,
-            },
-            AsRenderElements,
-        },
         Renderer,
+        element::{
+            AsRenderElements,
+            utils::{
+                ConstrainAlign, ConstrainScaleBehavior, CropRenderElement, RelocateRenderElement,
+                RescaleRenderElement, constrain_as_render_elements,
+            },
+        },
     },
     utils::{Logical, Point, Rectangle, Scale},
 };
@@ -56,7 +56,7 @@ where
         >,
     >,
     L: Into<Point<i32, Logical>>,
-    S: Into<Scale<f64>>
+    S: Into<Scale<f64>>,
 {
     let location = location.into();
     let scale = scale.into();

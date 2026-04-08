@@ -5,8 +5,8 @@ use wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buff
     self, WpSinglePixelBufferManagerV1,
 };
 use wayland_server::{
-    protocol::wl_buffer::{self, WlBuffer},
     DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
+    protocol::wl_buffer::{self, WlBuffer},
 };
 
 impl<D> GlobalDispatch<WpSinglePixelBufferManagerV1, (), D> for SinglePixelBufferState

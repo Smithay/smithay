@@ -87,7 +87,7 @@ mod imp {
 
     use tracing::warn;
 
-    use super::{ffi, GpuSpan, SpanLocation};
+    use super::{GpuSpan, SpanLocation, ffi};
 
     // Number of timestamp queries in the pool. Limited by Tracy's use of u16 for query IDs.
     const MAX_QUERIES: usize = u16::MAX as usize;
@@ -288,7 +288,7 @@ mod imp {
 
 #[cfg(not(feature = "tracy_gpu_profiling"))]
 mod imp {
-    use super::{ffi, GpuSpan, SpanLocation};
+    use super::{GpuSpan, SpanLocation, ffi};
 
     pub struct GpuProfiler(());
 

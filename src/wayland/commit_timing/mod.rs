@@ -87,8 +87,8 @@ use wayland_protocols::wp::commit_timing::v1::server::{
     wp_commit_timing_manager_v1::{self, WpCommitTimingManagerV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, DataInit, Dispatch, DisplayHandle, GlobalDispatch,
-    New, Resource, Weak,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 use crate::{
@@ -96,7 +96,7 @@ use crate::{
     wayland::compositor::{add_blocker, add_pre_commit_hook},
 };
 
-use super::compositor::{with_states, Barrier};
+use super::compositor::{Barrier, with_states};
 
 /// State for the [`WpCommitTimingManagerV1`] global
 #[derive(Debug)]

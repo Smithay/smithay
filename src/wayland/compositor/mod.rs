@@ -111,8 +111,8 @@ mod transaction;
 mod tree;
 
 use std::cell::RefCell;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::{any::Any, sync::Mutex};
 
 pub use self::cache::{Cacheable, CachedState, MultiCache};
@@ -121,9 +121,9 @@ use self::transaction::TransactionQueue;
 pub use self::transaction::{Barrier, Blocker, BlockerState};
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
-pub use crate::utils::hook::HookId;
 use crate::utils::Transform;
-use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
+pub use crate::utils::hook::HookId;
+use crate::utils::{Buffer, Logical, Point, Rectangle, user_data::UserDataMap};
 use atomic_float::AtomicF64;
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;

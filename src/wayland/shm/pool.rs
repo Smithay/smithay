@@ -7,8 +7,8 @@ use std::{
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     ptr,
     sync::{
-        mpsc::{channel, Sender},
         LazyLock, OnceLock, RwLock,
+        mpsc::{Sender, channel},
     },
     thread,
 };

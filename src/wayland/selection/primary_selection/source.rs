@@ -3,7 +3,7 @@ use std::{cell::RefCell, sync::Mutex};
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::{
     self as primary_source, ZwpPrimarySelectionSourceV1 as PrimarySource,
 };
-use wayland_server::{backend::ClientId, Dispatch, DisplayHandle};
+use wayland_server::{Dispatch, DisplayHandle, backend::ClientId};
 
 use crate::{
     input::Seat,

@@ -4,18 +4,18 @@ use tracing::debug;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::{
     self as primary_device, ZwpPrimarySelectionDeviceV1 as PrimaryDevice,
 };
-use wayland_server::{protocol::wl_seat::WlSeat, Client, DataInit, Dispatch, DisplayHandle, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, protocol::wl_seat::WlSeat};
 
 use crate::{
     input::{Seat, SeatHandler},
     wayland::{
         seat::WaylandFocus,
         selection::{
+            SelectionHandler, SelectionTarget,
             device::SelectionDevice,
             offer::OfferReplySource,
             seat_data::SeatData,
             source::{SelectionSource, SelectionSourceProvider},
-            SelectionHandler, SelectionTarget,
         },
     },
 };

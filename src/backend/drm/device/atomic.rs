@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, RwLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 use drm::control::atomic::AtomicModeReq;
 use drm::control::{
-    connector, crtc, framebuffer, plane, property, AtomicCommitFlags, Device as ControlDevice,
-    PropertyValueSet, ResourceHandle,
+    AtomicCommitFlags, Device as ControlDevice, PropertyValueSet, ResourceHandle, connector, crtc,
+    framebuffer, plane, property,
 };
 
 use super::DrmDeviceFd;

@@ -46,20 +46,12 @@ pub trait Coordinate:
     /// Compare and return the smaller one
     #[must_use = "this returns the result of the operation, without modifying the original"]
     fn min(self, other: Self) -> Self {
-        if self < other {
-            self
-        } else {
-            other
-        }
+        if self < other { self } else { other }
     }
     /// Compare and return the larger one
     #[must_use = "this returns the result of the operation, without modifying the original"]
     fn max(self, other: Self) -> Self {
-        if self > other {
-            self
-        } else {
-            other
-        }
+        if self > other { self } else { other }
     }
     /// Test if the coordinate is not negative
     fn non_negative(self) -> bool;

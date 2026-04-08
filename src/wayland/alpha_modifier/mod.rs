@@ -52,16 +52,16 @@
 //! ```
 
 use std::sync::{
-    atomic::{self, AtomicBool},
     Mutex,
+    atomic::{self, AtomicBool},
 };
 
 use wayland_protocols::wp::alpha_modifier::v1::server::{
     wp_alpha_modifier_surface_v1::WpAlphaModifierSurfaceV1, wp_alpha_modifier_v1::WpAlphaModifierV1,
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
-    Weak,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 use super::compositor::Cacheable;

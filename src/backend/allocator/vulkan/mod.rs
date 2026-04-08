@@ -24,7 +24,7 @@ use std::{
     ffi::CStr,
     fmt,
     os::unix::io::{FromRawFd, OwnedFd},
-    sync::{mpsc, Arc, Weak},
+    sync::{Arc, Weak, mpsc},
 };
 
 use ash::{ext, khr, vk};
@@ -37,14 +37,14 @@ use crate::backend::drm::DrmNode;
 use crate::{
     backend::{
         allocator::dmabuf::DmabufFlags,
-        vulkan::{version::Version, PhysicalDevice},
+        vulkan::{PhysicalDevice, version::Version},
     },
     utils::{Buffer as BufferCoord, Size},
 };
 
 use super::{
-    dmabuf::{AsDmabuf, Dmabuf, MAX_PLANES},
     Allocator, Buffer,
+    dmabuf::{AsDmabuf, Dmabuf, MAX_PLANES},
 };
 
 bitflags! {

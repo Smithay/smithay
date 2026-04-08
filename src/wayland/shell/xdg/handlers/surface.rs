@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use indexmap::IndexSet;
 
@@ -10,7 +10,7 @@ use crate::{
     utils::{Rectangle, Serial},
     wayland::{
         compositor,
-        shell::xdg::{PopupState, XdgShellState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
+        shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE, XdgShellState},
     },
 };
 
@@ -22,7 +22,7 @@ use wayland_protocols::{
     },
 };
 
-use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, Weak};
+use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource, Weak, protocol::wl_surface};
 
 use super::{
     PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,

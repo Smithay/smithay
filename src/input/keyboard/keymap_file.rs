@@ -3,7 +3,7 @@ use std::os::unix::io::{AsFd, BorrowedFd};
 
 use sha2::{Digest, Sha256};
 use tracing::error;
-use xkbcommon::xkb::{self, Keymap, KEYMAP_FORMAT_TEXT_V1};
+use xkbcommon::xkb::{self, KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 use crate::utils::SealedFile;
 
@@ -91,7 +91,7 @@ impl KeymapFile {
         &self,
         keyboard: &wayland_server::protocol::wl_keyboard::WlKeyboard,
     ) -> Result<(), std::io::Error> {
-        use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
+        use wayland_server::{Resource, protocol::wl_keyboard::KeymapFormat};
 
         self.with_fd(keyboard.version() >= 7, |fd, size| {
             keyboard.keymap(KeymapFormat::XkbV1, fd, size as u32);

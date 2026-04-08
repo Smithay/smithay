@@ -3,15 +3,15 @@ use std::os::unix::io::{AsFd, OwnedFd};
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1::ExtDataControlSourceV1;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
-use wayland_server::{protocol::wl_data_source::WlDataSource, Resource};
+use wayland_server::{Resource, protocol::wl_data_source::WlDataSource};
 
 use crate::wayland::selection::primary_selection::PrimarySourceUserData;
 
+use super::SelectionTarget;
 use super::data_device::DataSourceUserData;
 use super::ext_data_control::ExtDataControlSourceUserData;
 use super::private::selection_dispatch;
 use super::wlr_data_control::DataControlSourceUserData;
-use super::SelectionTarget;
 
 /// The source of the selection data.
 #[derive(Debug, Clone, PartialEq, Eq)]

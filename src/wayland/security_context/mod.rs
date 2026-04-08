@@ -10,8 +10,8 @@ use wayland_protocols::wp::security_context::v1::server::{
     wp_security_context_v1::{self, WpSecurityContextV1},
 };
 use wayland_server::{
-    backend::{ClientId, GlobalId},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    backend::{ClientId, GlobalId},
 };
 
 mod listener_source;

@@ -9,22 +9,22 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_v2::{self, ZwpInputMethodV2},
     zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
 };
-use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface};
 use wayland_server::{
-    protocol::wl_keyboard::KeymapFormat, Client, DataInit, Dispatch, DisplayHandle, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, Resource, protocol::wl_keyboard::KeymapFormat,
 };
+use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface};
 
 use crate::{
-    input::{keyboard::KeyboardHandle, SeatHandler},
-    utils::{alive_tracker::AliveTracker, Logical, Rectangle, SERIAL_COUNTER},
+    input::{SeatHandler, keyboard::KeyboardHandle},
+    utils::{Logical, Rectangle, SERIAL_COUNTER, alive_tracker::AliveTracker},
     wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
+    INPUT_POPUP_SURFACE_ROLE, InputMethodHandler, InputMethodKeyboardUserData, InputMethodManagerState,
+    InputMethodPopupSurfaceUserData,
     input_method_keyboard_grab::InputMethodKeyboardGrab,
     input_method_popup_surface::{PopupHandle, PopupParent, PopupSurface},
-    InputMethodHandler, InputMethodKeyboardUserData, InputMethodManagerState,
-    InputMethodPopupSurfaceUserData, INPUT_POPUP_SURFACE_ROLE,
 };
 
 #[derive(Default, Debug)]

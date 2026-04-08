@@ -62,8 +62,8 @@ mod source;
 pub use device::DataControlDeviceUserData;
 pub use source::DataControlSourceUserData;
 
-use super::primary_selection::PrimarySelectionState;
 use super::SelectionHandler;
+use super::primary_selection::PrimarySelectionState;
 
 /// Access the data control state.
 pub trait DataControlHandler: Sized + SelectionHandler {
@@ -144,9 +144,9 @@ mod handlers {
     use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch};
 
     use crate::input::Seat;
+    use crate::wayland::selection::SelectionTarget;
     use crate::wayland::selection::device::SelectionDevice;
     use crate::wayland::selection::seat_data::SeatData;
-    use crate::wayland::selection::SelectionTarget;
 
     use super::DataControlDeviceUserData;
     use super::DataControlHandler;

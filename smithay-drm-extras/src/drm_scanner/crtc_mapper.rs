@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use drm::control::{connector, crtc, Device as ControlDevice};
+use drm::control::{Device as ControlDevice, connector, crtc};
 
 /// CRTC Mapper trait
 ///

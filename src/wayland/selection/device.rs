@@ -1,10 +1,10 @@
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_device_v1::ExtDataControlDeviceV1;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
+use wayland_server::Resource;
 use wayland_server::backend::ObjectId;
 use wayland_server::protocol::wl_data_device::WlDataDevice;
 use wayland_server::protocol::wl_seat::WlSeat;
-use wayland_server::Resource;
 
 use super::data_device::DataDeviceUserData;
 use super::ext_data_control::ExtDataControlDeviceUserData;

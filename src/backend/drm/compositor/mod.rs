@@ -134,31 +134,32 @@ use std::{
 };
 
 use drm::{
-    control::{connector, crtc, framebuffer, plane, Device as _, Mode, PlaneType},
     Device, DriverCapability,
+    control::{Device as _, Mode, PlaneType, connector, crtc, framebuffer, plane},
 };
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::{IndexMap, IndexSet};
 use smallvec::SmallVec;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
-use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
+use wayland_server::{Resource, protocol::wl_buffer::WlBuffer};
 
 #[cfg(feature = "renderer_pixman")]
 use crate::backend::renderer::{
-    pixman::{PixmanError, PixmanRenderer, PixmanTexture},
     Frame as _, ImportAll,
+    pixman::{PixmanError, PixmanRenderer, PixmanTexture},
 };
 use crate::{
     backend::{
+        SwapBuffersError,
         allocator::{
+            Allocator, Buffer, Slot, Swapchain,
             dmabuf::{AsDmabuf, Dmabuf},
             format::{get_opaque, has_alpha},
             gbm::{GbmAllocator, GbmBuffer, GbmBufferFlags, GbmDevice},
-            Allocator, Buffer, Slot, Swapchain,
         },
-        drm::{plane_has_property, DrmError, PlaneDamageClips},
+        drm::{DrmError, PlaneDamageClips, plane_has_property},
         renderer::{
-            buffer_y_inverted,
+            Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture, buffer_y_inverted,
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{
                 Element, Id, Kind, RenderElement, RenderElementPresentationState, RenderElementState,
@@ -166,9 +167,7 @@ use crate::{
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag},
-            Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture,
         },
-        SwapBuffersError,
     },
     output::OutputModeSource,
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -176,10 +175,10 @@ use crate::{
 };
 
 use super::{
-    error::AccessError,
-    exporter::{gbm::GbmFramebufferExporter, gbm::NodeFilter, ExportBuffer, ExportFramebuffer},
-    surface::VrrSupport,
     DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes,
+    error::AccessError,
+    exporter::{ExportBuffer, ExportFramebuffer, gbm::GbmFramebufferExporter, gbm::NodeFilter},
+    surface::VrrSupport,
 };
 
 mod elements;
@@ -3513,8 +3512,7 @@ where
         if cached_fb.is_none() {
             trace!(
                 "no cached fb, exporting new fb for element {:?} underlying storage {:?}",
-                element_id,
-                &underlying_storage
+                element_id, &underlying_storage
             );
 
             let fb = self
@@ -3532,8 +3530,7 @@ where
             if fb.is_err() {
                 trace!(
                     "could not import framebuffer for element {:?} underlying storage {:?}",
-                    element_id,
-                    &underlying_storage
+                    element_id, &underlying_storage
                 );
             }
 
@@ -3541,8 +3538,7 @@ where
         } else {
             trace!(
                 "using cached fb for element {:?} underlying storage {:?}",
-                element_id,
-                &underlying_storage
+                element_id, &underlying_storage
             );
         }
 
@@ -3808,9 +3804,7 @@ where
             if frame_state.is_assigned(plane.handle) {
                 trace!(
                     "skipping {:?} with zpos {:?} for element {:?}, already has element assigned, skipping",
-                    plane.handle,
-                    plane.zpos,
-                    element_id,
+                    plane.handle, plane.zpos, element_id,
                 );
                 return Err(None);
             }
@@ -3822,9 +3816,7 @@ where
             if is_underlay && !(element_is_opaque && primary_plane_has_alpha) {
                 trace!(
                     "skipping direct scan-out on underlay {:?} with zpos {:?}, element {:?} is not opaque or primary plane has no alpha channel",
-                    plane.handle,
-                    plane.zpos,
-                    element_id
+                    plane.handle, plane.zpos, element_id
                 );
                 return Err(None);
             }
@@ -3834,7 +3826,8 @@ where
             // we can not assign it to any overlay plane
             if overlaps_with_primary_plane_element && !is_underlay {
                 trace!(
-                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
+                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} overlaps with element on primary plane",
+                    plane.handle, plane.zpos, element_id,
                 );
                 return Err(None);
             }
@@ -3856,7 +3849,8 @@ where
             // plane for direct scan-out
             if overlaps_with_plane_underneath {
                 trace!(
-                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} geometry {:?} overlaps with plane underneath", plane.handle, plane.zpos, element_id, element_config.geometry,
+                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} geometry {:?} overlaps with plane underneath",
+                    plane.handle, plane.zpos, element_id, element_config.geometry,
                 );
                 return Err(None);
             }
@@ -3870,10 +3864,7 @@ where
             if let Ok(plane_assignment) = test_overlay_plane(plane, &element_config) {
                 trace!(
                     "assigned element {:?} geometry {:?} to compatible {:?} with zpos {:?}",
-                    element_id,
-                    element_config.geometry,
-                    plane.handle,
-                    plane.zpos,
+                    element_id, element_config.geometry, plane.handle, plane.zpos,
                 );
                 return Ok(plane_assignment);
             }
@@ -3885,7 +3876,8 @@ where
             // if the tested element state already tells us that this failed skip the test
             if element_config.failed_planes.overlay_bitmask & (1 << index) != 0 {
                 trace!(
-                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} geometry {:?}, test already known to fail", plane.handle, plane.zpos, element_id, element_config.geometry,
+                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} geometry {:?}, test already known to fail",
+                    plane.handle, plane.zpos, element_id, element_config.geometry,
                 );
                 rendering_reason = rendering_reason.or(Some(RenderingReason::ScanoutFailed));
                 continue;
@@ -3937,15 +3929,15 @@ where
         };
 
         // Try to assign the element to a plane
-        trace!("testing direct scan-out for element {:?} on {:?} with zpos {:?}: fb: {:?}, element_geometry: {:?}", element_id, plane.handle, plane.zpos, &element_config.buffer.fb, element_config.geometry);
+        trace!(
+            "testing direct scan-out for element {:?} on {:?} with zpos {:?}: fb: {:?}, element_geometry: {:?}",
+            element_id, plane.handle, plane.zpos, &element_config.buffer.fb, element_config.geometry
+        );
 
         if !plane.formats.contains(&element_config.properties.format) {
             trace!(
                 "skipping direct scan-out on {:?} with zpos {:?} for element {:?}, format {:?} not supported",
-                plane.handle,
-                plane.zpos,
-                element_id,
-                element_config.properties.format,
+                plane.handle, plane.zpos, element_id, element_config.properties.format,
             );
             return Err(Some(RenderingReason::FormatUnsupported));
         }
@@ -4035,9 +4027,7 @@ where
         let res = if is_compatible {
             trace!(
                 "skipping atomic test for compatible element {:?} on {:?} with zpos {:?}",
-                element_id,
-                plane.handle,
-                plane.zpos,
+                element_id, plane.handle, plane.zpos,
             );
             frame_state.set_state(plane.handle, plane_state);
             true
@@ -4056,18 +4046,14 @@ where
         if res {
             trace!(
                 "successfully assigned element {:?} to {:?} with zpos {:?} for direct scan-out",
-                element_id,
-                plane.handle,
-                plane.zpos,
+                element_id, plane.handle, plane.zpos,
             );
 
             Ok(plane.into())
         } else {
             trace!(
                 "skipping direct scan-out on {:?} with zpos {:?} for element {:?}, test failed",
-                plane.handle,
-                plane.zpos,
-                element_id
+                plane.handle, plane.zpos, element_id
             );
 
             Err(Some(RenderingReason::ScanoutFailed))
@@ -4394,10 +4380,10 @@ where
 }
 
 impl<
-        A: std::error::Error + Send + Sync + 'static,
-        B: std::error::Error + Send + Sync + 'static,
-        F: std::error::Error + Send + Sync + 'static,
-    > From<FrameError<A, B, F>> for SwapBuffersError
+    A: std::error::Error + Send + Sync + 'static,
+    B: std::error::Error + Send + Sync + 'static,
+    F: std::error::Error + Send + Sync + 'static,
+> From<FrameError<A, B, F>> for SwapBuffersError
 {
     #[inline]
     fn from(err: FrameError<A, B, F>) -> SwapBuffersError {

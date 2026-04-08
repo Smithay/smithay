@@ -8,8 +8,8 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_v2::{self, ZwpTabletV2},
 };
 use wayland_server::{
-    backend::ClientId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, Resource,
-    Weak,
+    Client, DataInit, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId,
+    protocol::wl_surface::WlSurface,
 };
 
 use crate::backend::input::Device;

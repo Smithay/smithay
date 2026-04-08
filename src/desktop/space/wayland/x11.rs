@@ -1,17 +1,17 @@
 use crate::{
     backend::renderer::{
-        element::{
-            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            Kind,
-        },
         ImportAll, Renderer,
+        element::{
+            Kind,
+            surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
+        },
     },
-    desktop::{space::SpaceElement, WindowSurfaceType},
+    desktop::{WindowSurfaceType, space::SpaceElement},
     utils::{Logical, Physical, Point, Rectangle, Scale},
     xwayland::X11Surface,
 };
 
-use super::{output_update, WindowOutputUserData};
+use super::{WindowOutputUserData, output_update};
 
 impl SpaceElement for X11Surface {
     fn bbox(&self) -> Rectangle<i32, Logical> {

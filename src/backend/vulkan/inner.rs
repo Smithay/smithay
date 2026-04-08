@@ -5,7 +5,7 @@ use std::{
 
 use ash::{ext, vk};
 
-use super::{version::Version, LoadError, LIBRARY};
+use super::{LIBRARY, LoadError, version::Version};
 
 pub struct InstanceInner {
     pub instance: ash::Instance,

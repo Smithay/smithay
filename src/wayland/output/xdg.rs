@@ -3,11 +3,11 @@
 //! This protocol is meant for describing outputs in a way
 //! which is more in line with the concept of an output on desktop oriented systems.
 
-use std::sync::{atomic::Ordering, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use tracing::trace;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
-use wayland_server::{protocol::wl_output::WlOutput, Resource, Weak};
+use wayland_server::{Resource, Weak, protocol::wl_output::WlOutput};
 
 use crate::utils::{Logical, Physical, Point, Size, Transform};
 

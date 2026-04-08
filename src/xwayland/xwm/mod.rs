@@ -125,18 +125,18 @@
 
 use crate::{
     input::{
-        dnd::{DndFocus, DndGrabHandler},
         SeatHandler,
+        dnd::{DndFocus, DndGrabHandler},
     },
     output::Output,
-    utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
+    utils::{Client, Logical, Point, Rectangle, Size, x11rb::X11Source},
     wayland::{
         selection::SelectionTarget,
         xwayland_shell::{self, XWaylandShellHandler},
     },
 };
 use atomic_float::AtomicF64;
-use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction};
+use calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic};
 use rustix::fs::OFlags;
 use std::{
     cmp::Reverse,
@@ -146,31 +146,31 @@ use std::{
         io::{AsFd, OwnedFd},
         net::UnixStream,
     },
-    sync::{atomic::Ordering, Arc, Weak},
+    sync::{Arc, Weak, atomic::Ordering},
 };
 use tracing::{debug, debug_span, info, trace, warn};
 use wayland_server::{DisplayHandle, Resource};
 
 pub use x11rb::protocol::xproto::Window as X11Window;
 use x11rb::{
+    COPY_DEPTH_FROM_PARENT,
     connection::Connection as _,
     errors::{ReplyError, ReplyOrIdError},
     protocol::{
+        Event,
         composite::{ConnectionExt as _, Redirect},
         randr::{ConnectionExt as _, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
         xfixes::ConnectionExt as _,
         xproto::{
-            AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux,
-            ConnectionExt, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper,
-            GcontextWrapper, ImageFormat, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
-            StackMode, WindowClass, CONFIGURE_NOTIFY_EVENT,
+            AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent,
+            ConfigureWindowAux, ConnectionExt, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask,
+            FontWrapper, GcontextWrapper, ImageFormat, PixmapWrapper, PropMode, Property,
+            QueryExtensionReply, Screen, StackMode, WindowClass,
         },
-        Event,
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
     wrapper::ConnectionExt as _,
-    COPY_DEPTH_FROM_PARENT,
 };
 
 mod dnd;
@@ -446,7 +446,9 @@ pub trait XwmHandler {
     /// The given selection is being read by an X client and needs to be written to the provided file descriptor
     fn send_selection(&mut self, xwm: XwmId, selection: SelectionTarget, mime_type: String, fd: OwnedFd) {
         let _ = (xwm, selection, mime_type, fd);
-        panic!("`allow_selection_access` returned true without `send_selection` implementation to handle transfers.");
+        panic!(
+            "`allow_selection_access` returned true without `send_selection` implementation to handle transfers."
+        );
     }
 
     /// A new selection was set by an X client with provided mime_types
@@ -1689,10 +1691,10 @@ where
                                     if let Some(transfer) = selection.incoming.get_mut(&incoming_window) {
                                         match write_selection_callback(fd.as_fd(), conn, atoms, transfer) {
                                             Ok(IncomingAction::WaitForWritable) => {
-                                                return Ok(PostAction::Continue)
+                                                return Ok(PostAction::Continue);
                                             }
                                             Ok(IncomingAction::WaitForProperty) if !transfer.incr_done => {
-                                                return Ok(PostAction::Disable)
+                                                return Ok(PostAction::Disable);
                                             }
                                             Ok(_) | Err(_) => {
                                                 selection

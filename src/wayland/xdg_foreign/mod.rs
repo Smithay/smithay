@@ -38,7 +38,7 @@ use rand::distr::{Alphanumeric, SampleString};
 use wayland_protocols::xdg::foreign::zv2::server::{
     zxdg_exporter_v2::ZxdgExporterV2, zxdg_imported_v2::ZxdgImportedV2, zxdg_importer_v2::ZxdgImporterV2,
 };
-use wayland_server::{backend::GlobalId, protocol::wl_surface::WlSurface, DisplayHandle, GlobalDispatch};
+use wayland_server::{DisplayHandle, GlobalDispatch, backend::GlobalId, protocol::wl_surface::WlSurface};
 
 mod handlers;
 

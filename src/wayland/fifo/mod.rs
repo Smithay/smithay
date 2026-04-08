@@ -86,13 +86,13 @@ use wayland_protocols::wp::fifo::v1::server::{
     wp_fifo_v1::{self, WpFifoV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, DataInit, Dispatch, DisplayHandle, GlobalDispatch,
-    New, Resource, Weak,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 use crate::wayland::compositor::{add_blocker, add_pre_commit_hook};
 
-use super::compositor::{is_sync_subsurface, with_states, Barrier, Cacheable};
+use super::compositor::{Barrier, Cacheable, is_sync_subsurface, with_states};
 
 /// State for the [`WpFifoManagerV1`] global
 #[derive(Debug)]

@@ -1,10 +1,10 @@
 use smithay::{
     backend::renderer::{
-        element::{
-            solid::{SolidColorBuffer, SolidColorRenderElement},
-            AsRenderElements, Kind,
-        },
         Renderer,
+        element::{
+            AsRenderElements, Kind,
+            solid::{SolidColorBuffer, SolidColorRenderElement},
+        },
     },
     desktop::WindowSurface,
     input::Seat,
@@ -14,7 +14,7 @@ use smithay::{
 
 use std::cell::{RefCell, RefMut};
 
-use crate::{state::Backend, AnvilState};
+use crate::{AnvilState, state::Backend};
 
 use super::WindowElement;
 

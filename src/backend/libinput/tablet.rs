@@ -4,7 +4,7 @@ use crate::backend::input::{
 
 use input as libinput;
 use input::event;
-use input::event::{tablet_tool, EventTrait};
+use input::event::{EventTrait, tablet_tool};
 
 use super::LibinputInputBackend;
 

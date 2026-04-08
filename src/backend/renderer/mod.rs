@@ -7,7 +7,7 @@
 //!
 //! - Raw OpenGL ES 2
 
-use crate::utils::{ids::id_gen, Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
+use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform, ids::id_gen};
 use cgmath::Matrix3;
 use std::{
     any::TypeId,
@@ -36,15 +36,15 @@ pub mod pixman;
 mod color;
 pub use color::Color32F;
 
-use crate::backend::allocator::{dmabuf::Dmabuf, Format, Fourcc};
+use crate::backend::allocator::{Format, Fourcc, dmabuf::Dmabuf};
 #[cfg(all(
     feature = "wayland_frontend",
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
 use crate::backend::egl::{
-    display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
+    display::{BUFFER_READER, EGLBufferReader},
 };
 
 use super::allocator::format::FormatSet;
@@ -786,7 +786,7 @@ pub trait ExportMem: Renderer {
     /// This function *may* fail, if (but not limited to):
     /// - There is not enough space in memory
     fn map_texture<'a>(&mut self, texture_mapping: &'a Self::TextureMapping)
-        -> Result<&'a [u8], Self::Error>;
+    -> Result<&'a [u8], Self::Error>;
 }
 
 /// Trait for renderers supporting blitting contents from one framebuffer to another.

@@ -1,8 +1,9 @@
 use std::{ffi::CStr, os::raw::c_void, path::PathBuf, ptr};
 
 use super::{
+    EGLDisplay, EGLError, Error,
     ffi::{self, egl::types::EGLDeviceEXT},
-    wrap_egl_call_bool, wrap_egl_call_ptr, EGLDisplay, EGLError, Error,
+    wrap_egl_call_bool, wrap_egl_call_ptr,
 };
 
 #[cfg(feature = "backend_drm")]

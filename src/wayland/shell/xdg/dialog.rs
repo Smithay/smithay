@@ -79,8 +79,8 @@ use wayland_protocols::xdg::dialog::v1::server::{
     xdg_wm_dialog_v1::{self, XdgWmDialogV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
-    GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 use super::{ToplevelSurface, XdgShellHandler};

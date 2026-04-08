@@ -84,7 +84,7 @@
 //! delegate_relative_pointer!(State);
 //! ```
 
-use std::sync::{atomic::Ordering, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use atomic_float::AtomicF64;
 use wayland_protocols::wp::relative_pointer::zv1::server::{
@@ -92,15 +92,15 @@ use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId},
     protocol::wl_surface::WlSurface,
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{
     input::{
-        pointer::{PointerHandle, RelativeMotionEvent},
         SeatHandler,
+        pointer::{PointerHandle, RelativeMotionEvent},
     },
     wayland::seat::PointerUserData,
 };

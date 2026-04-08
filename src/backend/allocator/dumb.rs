@@ -4,11 +4,11 @@ use std::fmt;
 use std::io;
 
 use drm::buffer::Buffer as DrmBuffer;
-use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
+use drm::control::{Device as ControlDevice, dumbbuffer::DumbBuffer as Handle};
 use tracing::instrument;
 
 use super::dmabuf::{AsDmabuf, Dmabuf, DmabufFlags};
-use super::{format::get_bpp, Allocator, Buffer, Format, Fourcc, Modifier};
+use super::{Allocator, Buffer, Format, Fourcc, Modifier, format::get_bpp};
 use crate::backend::drm::DrmDeviceFd;
 use crate::backend::drm::DrmNode;
 use crate::utils::{Buffer as BufferCoords, Size};

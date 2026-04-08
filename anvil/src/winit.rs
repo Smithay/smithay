@@ -1,5 +1,5 @@
 use std::{
-    sync::{atomic::Ordering, Mutex},
+    sync::{Mutex, atomic::Ordering},
     time::Duration,
 };
 
@@ -13,16 +13,16 @@ use smithay::{
 
 use smithay::{
     backend::{
+        SwapBuffersError,
         allocator::dmabuf::Dmabuf,
         egl::EGLDevice,
         renderer::{
+            ImportDma, ImportMemWl,
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
             gles::GlesRenderer,
-            ImportDma, ImportMemWl,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
-        SwapBuffersError,
     },
     delegate_dmabuf,
     input::{
@@ -33,7 +33,7 @@ use smithay::{
     reexports::{
         calloop::EventLoop,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
-        wayland_server::{protocol::wl_surface, Display},
+        wayland_server::{Display, protocol::wl_surface},
         winit::platform::pump_events::PumpStatus,
     },
     utils::{IsAlive, Scale, Transform},
@@ -47,7 +47,7 @@ use smithay::{
 };
 use tracing::{error, info, warn};
 
-use crate::state::{take_presentation_feedback, AnvilState, Backend};
+use crate::state::{AnvilState, Backend, take_presentation_feedback};
 use crate::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";

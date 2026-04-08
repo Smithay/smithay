@@ -7,19 +7,19 @@ use std::{
 use tracing::{debug, error};
 
 use wayland_server::{
+    Dispatch, DisplayHandle, Resource,
     backend::ClientId,
     protocol::{
         wl_data_source::{self, WlDataSource},
         wl_surface::WlSurface,
     },
-    Dispatch, DisplayHandle, Resource,
 };
 
 use crate::input::{
-    dnd::{DndAction, Source, SourceMetadata},
     Seat,
+    dnd::{DndAction, Source, SourceMetadata},
 };
-use crate::utils::{alive_tracker::AliveTracker, IsAlive};
+use crate::utils::{IsAlive, alive_tracker::AliveTracker};
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;

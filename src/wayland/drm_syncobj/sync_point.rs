@@ -6,8 +6,8 @@ use std::{
     io,
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 

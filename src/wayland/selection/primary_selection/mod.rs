@@ -88,8 +88,8 @@ mod source;
 pub use device::PrimaryDeviceUserData;
 pub use source::{PrimarySourceUserData, SourceMetadata};
 
-use super::source::CompositorSelectionProvider;
 use super::SelectionHandler;
+use super::source::CompositorSelectionProvider;
 use super::{offer::OfferReplySource, seat_data::SeatData};
 
 /// Access the primary selection state.
@@ -274,9 +274,7 @@ where
         .get::<RefCell<SeatData<D::SelectionUserData>>>()
         .unwrap();
     Ref::filter_map(seat_data.borrow(), |data| match data.get_primary_selection() {
-        Some(OfferReplySource::Compositor(CompositorSelectionProvider { user_data, .. })) => {
-            Some(user_data)
-        }
+        Some(OfferReplySource::Compositor(CompositorSelectionProvider { user_data, .. })) => Some(user_data),
         _ => None,
     })
     .ok()
@@ -316,7 +314,7 @@ mod handlers {
     };
 
     use super::{
-        device::PrimaryDeviceUserData, source::PrimarySourceUserData, PrimaryDeviceManagerGlobalData,
+        PrimaryDeviceManagerGlobalData, device::PrimaryDeviceUserData, source::PrimarySourceUserData,
     };
     use super::{PrimarySelectionHandler, PrimarySelectionState};
 

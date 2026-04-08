@@ -2,15 +2,15 @@
 
 use std::fmt;
 use std::sync::{
-    atomic::{AtomicPtr, Ordering},
     Arc,
+    atomic::{AtomicPtr, Ordering},
 };
 
 use crate::backend::egl::{
+    EGLError, SwapBuffersError,
     display::{DamageSupport, EGLDisplay, EGLDisplayHandle, PixelFormat},
     ffi,
     native::EGLNativeSurface,
-    EGLError, SwapBuffersError,
 };
 use crate::utils::{Physical, Rectangle, Size};
 

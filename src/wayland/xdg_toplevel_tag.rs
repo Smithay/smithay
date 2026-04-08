@@ -40,7 +40,7 @@ use wayland_protocols::xdg::{
 };
 
 use wayland_server::{
-    backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::GlobalId,
 };
 
 use crate::wayland::{compositor, shell::xdg::XdgShellSurfaceUserData};

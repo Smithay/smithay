@@ -1,5 +1,5 @@
 use crate::backend::SwapBuffersError;
-use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
+use drm::control::{Mode, RawResourceHandle, connector, crtc, plane};
 use std::{
     io::{self, ErrorKind},
     path::PathBuf,

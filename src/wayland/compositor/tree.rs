@@ -1,25 +1,25 @@
 use crate::{
     utils::{
-        hook::{Hook, HookId},
         Serial,
+        hook::{Hook, HookId},
     },
     wayland::compositor::SUBSURFACE_ROLE,
 };
 
 use super::{
-    cache::MultiCache,
-    handlers::{is_effectively_sync, SurfaceUserData},
-    transaction::{Blocker, PendingTransaction, TransactionQueue},
     BufferAssignment, CompositorHandler, SurfaceAttributes, SurfaceData,
+    cache::MultiCache,
+    handlers::{SurfaceUserData, is_effectively_sync},
+    transaction::{Blocker, PendingTransaction, TransactionQueue},
 };
 use std::{
     any::Any,
     fmt,
-    sync::{atomic::Ordering, Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, atomic::Ordering},
 };
 use wayland_server::{
-    protocol::{wl_output::Transform, wl_surface::WlSurface},
     DisplayHandle, Resource,
+    protocol::{wl_output::Transform, wl_surface::WlSurface},
 };
 
 type CommitHook = dyn Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync;

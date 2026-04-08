@@ -2,8 +2,8 @@
 
 use super::ffi::{self, types::GLenum};
 use crate::backend::allocator::{
-    format::{get_transparent, has_alpha},
     Fourcc,
+    format::{get_transparent, has_alpha},
 };
 
 /// Returns (internal_format, read_format, type)

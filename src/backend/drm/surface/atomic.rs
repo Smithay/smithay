@@ -1,9 +1,9 @@
+use drm::control::Device as ControlDevice;
 use drm::control::atomic::AtomicModeReq;
 use drm::control::connector::Interface;
 use drm::control::property::ValueType;
-use drm::control::Device as ControlDevice;
 use drm::control::{
-    connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType,
+    AtomicCommitFlags, Mode, PlaneType, connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property,
 };
 
 #[cfg(debug_assertions)]
@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::os::unix::io::AsRawFd;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::backend::drm::error::AccessError;
@@ -23,10 +23,11 @@ use crate::{
     backend::{
         allocator::format::{get_bpp, get_depth},
         drm::{
-            device::atomic::{map_props, PropMapping},
+            DrmDeviceFd,
             device::DrmDeviceInternal,
+            device::atomic::{PropMapping, map_props},
             error::Error,
-            plane_type, DrmDeviceFd,
+            plane_type,
         },
     },
     utils::DevPath,

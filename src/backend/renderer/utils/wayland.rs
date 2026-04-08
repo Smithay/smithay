@@ -2,15 +2,15 @@
 use crate::wayland::drm_syncobj::{DrmSyncPoint, DrmSyncobjCachedState};
 use crate::{
     backend::renderer::{
-        buffer_dimensions, buffer_has_alpha, element::RenderElement, ContextId, ErasedContextId, ImportAll,
-        Renderer, Texture,
+        ContextId, ErasedContextId, ImportAll, Renderer, Texture, buffer_dimensions, buffer_has_alpha,
+        element::RenderElement,
     },
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
-            self, add_destruction_hook, is_sync_subsurface, with_surface_tree_downward,
-            with_surface_tree_upward, BufferAssignment, Damage, RectangleKind, SubsurfaceCachedState,
-            SurfaceAttributes, SurfaceData, TraversalAction,
+            self, BufferAssignment, Damage, RectangleKind, SubsurfaceCachedState, SurfaceAttributes,
+            SurfaceData, TraversalAction, add_destruction_hook, is_sync_subsurface,
+            with_surface_tree_downward, with_surface_tree_upward,
         },
         viewporter,
     },
@@ -18,7 +18,7 @@ use crate::{
 
 use std::{
     any::Any,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     sync::{Arc, Mutex},
 };
 

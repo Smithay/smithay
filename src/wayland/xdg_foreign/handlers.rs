@@ -7,14 +7,14 @@ use wayland_protocols::xdg::foreign::zv2::server::{
     zxdg_importer_v2::{self, ZxdgImporterV2},
 };
 use wayland_server::{
-    backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
 };
 
 use crate::wayland::{
     compositor,
     shell::{
         is_valid_parent,
-        xdg::{XdgShellHandler, XdgToplevelSurfaceData, XDG_TOPLEVEL_ROLE},
+        xdg::{XDG_TOPLEVEL_ROLE, XdgShellHandler, XdgToplevelSurfaceData},
     },
 };
 

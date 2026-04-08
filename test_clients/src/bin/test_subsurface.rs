@@ -13,24 +13,24 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
-        xdg::{
-            window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
-            XdgShell,
-        },
         WaylandSurface,
+        xdg::{
+            XdgShell,
+            window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
+        },
     },
     shm::{
-        slot::{Buffer, SlotPool},
         Shm, ShmHandler,
+        slot::{Buffer, SlotPool},
     },
 };
 use tracing::info;
 use wayland_client::{
+    Connection, QueueHandle,
     protocol::{
         wl_output::{self, WlOutput},
         wl_surface::{self, WlSurface},
     },
-    Connection, QueueHandle,
 };
 
 fn main() {

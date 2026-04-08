@@ -11,7 +11,7 @@ use crate::{
     output::{Output, WeakOutput},
     utils::{Logical, Point, Rectangle, Time},
     wayland::{
-        compositor::{with_surface_tree_downward, SurfaceAttributes, SurfaceData, TraversalAction},
+        compositor::{SurfaceAttributes, SurfaceData, TraversalAction, with_surface_tree_downward},
         dmabuf::{DmabufFeedback, SurfaceDmabufFeedbackState},
         presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback, Refresh},
     },

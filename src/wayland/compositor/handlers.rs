@@ -1,9 +1,10 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 
 use wayland_server::{
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
     protocol::{
         wl_callback::{self, WlCallback},
         wl_compositor::{self, WlCompositor},
@@ -12,19 +13,18 @@ use wayland_server::{
         wl_subsurface::{self, WlSubsurface},
         wl_surface::{self, WlSurface},
     },
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 use crate::utils::{
-    alive_tracker::{AliveTracker, IsAlive},
     Client, Logical, Point,
+    alive_tracker::{AliveTracker, IsAlive},
 };
 
 use super::{
-    cache::Cacheable,
-    tree::{Location, PrivateSurfaceData},
     AlreadyHasRole, BufferAssignment, CompositorHandler, CompositorState, Damage, Rectangle, RectangleKind,
     RegionAttributes, SurfaceAttributes,
+    cache::Cacheable,
+    tree::{Location, PrivateSurfaceData},
 };
 
 use tracing::trace;

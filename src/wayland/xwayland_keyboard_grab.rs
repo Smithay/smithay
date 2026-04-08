@@ -42,17 +42,17 @@ use wayland_protocols::xwayland::keyboard_grab::zv1::server::{
     zwp_xwayland_keyboard_grab_v1::{self, ZwpXwaylandKeyboardGrabV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::GlobalId,
+    protocol::wl_surface,
 };
 
 use crate::{
     backend::input::{KeyState, Keycode},
     input::{
-        keyboard::{self, KeyboardGrab, KeyboardInnerHandle},
         Seat, SeatHandler,
+        keyboard::{self, KeyboardGrab, KeyboardInnerHandle},
     },
-    utils::{Serial, SERIAL_COUNTER},
+    utils::{SERIAL_COUNTER, Serial},
     xwayland::XWaylandClientData,
 };
 

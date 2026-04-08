@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
-use drm::control::{connector, crtc, Device as ControlDevice};
+use drm::control::{Device as ControlDevice, connector, crtc};
 
 use super::DrmDeviceFd;
 use crate::backend::drm::error::{AccessError, Error};

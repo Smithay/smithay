@@ -1,4 +1,4 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 use atomic_float::AtomicF64;
 use tracing::{trace, warn, warn_span};
@@ -7,13 +7,13 @@ use wayland_protocols::xdg::xdg_output::zv1::server::{
     zxdg_output_v1::{self, ZxdgOutputV1},
 };
 use wayland_server::{
-    protocol::wl_output::{self, Mode as WMode, WlOutput},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    protocol::wl_output::{self, Mode as WMode, WlOutput},
 };
 
 use crate::wayland::compositor::CompositorHandler;
 
-use super::{xdg::XdgOutput, Output, OutputHandler, OutputManagerState, OutputUserData, WlOutputData};
+use super::{Output, OutputHandler, OutputManagerState, OutputUserData, WlOutputData, xdg::XdgOutput};
 
 /*
  * Wl Output

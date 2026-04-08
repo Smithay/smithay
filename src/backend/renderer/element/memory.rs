@@ -105,7 +105,7 @@
 
 use std::{
     any::Any,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -113,13 +113,13 @@ use tracing::{instrument, trace, warn};
 
 use crate::{
     backend::{
-        allocator::{format::get_bpp, Fourcc},
+        allocator::{Fourcc, format::get_bpp},
         renderer::{
-            utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
             ErasedContextId, Frame, ImportMem, Renderer,
+            utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
         },
     },
-    utils::{user_data::UserDataMap, Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform, user_data::UserDataMap},
 };
 
 use super::{Element, Id, Kind, RenderElement, UnderlyingStorage};

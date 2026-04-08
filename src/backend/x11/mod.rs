@@ -81,10 +81,10 @@ use crate::{
     backend::{
         allocator::{Allocator, Swapchain},
         drm::{CreateDrmNodeError, DrmNode, NodeType},
-        egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
+        egl::{EGLDevice, EGLDisplay, Error as EGLError, native::X11DefaultDisplay},
         input::{Axis, ButtonState, InputEvent, KeyState, Keycode},
     },
-    utils::{x11rb::X11Source, Logical, Size},
+    utils::{Logical, Size, x11rb::X11Source},
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm::node::path_to_type;
@@ -101,8 +101,9 @@ use std::{
     io,
     os::unix::io::OwnedFd,
     sync::{
+        Arc, Mutex, Weak,
         atomic::{AtomicU32, Ordering},
-        mpsc, Arc, Mutex, Weak,
+        mpsc,
     },
 };
 use tracing::{debug_span, error, info, instrument, warn};
@@ -110,11 +111,10 @@ use x11rb::{
     atom_manager,
     connection::Connection,
     protocol::{
-        self as x11,
+        self as x11, ErrorKind,
         dri3::ConnectionExt as _,
         xinput,
         xproto::{ColormapAlloc, ConnectionExt, CreateWindowAux, VisualClass, WindowClass, WindowWrapper},
-        ErrorKind,
     },
     rust_connection::{ReplyError, RustConnection},
 };
@@ -1043,15 +1043,26 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
                 {
                     Some(Ok(fd)) => return Ok((node, fd)),
                     Some(Err(err)) => {
-                        warn!("Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
+                        warn!(
+                            "Could not create render node from existing DRM node ({:?}): {}, falling back to primary node",
+                            dri_node.dev_path().as_ref().map(|x| x.display()),
+                            err
+                        );
                     }
                     None => {
-                        warn!("Could not create render node from existing DRM node ({:?}), falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()));
+                        warn!(
+                            "Could not create render node from existing DRM node ({:?}), falling back to primary node",
+                            dri_node.dev_path().as_ref().map(|x| x.display())
+                        );
                     }
                 }
             }
             Some(Err(err)) => {
-                warn!("Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
+                warn!(
+                    "Could not create render node from existing DRM node ({:?}): {}, falling back to primary node",
+                    dri_node.dev_path().as_ref().map(|x| x.display()),
+                    err
+                );
             }
             None => {
                 warn!(

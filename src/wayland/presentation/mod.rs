@@ -75,12 +75,12 @@ use std::time::Duration;
 
 use wayland_protocols::wp::presentation_time::server::{wp_presentation, wp_presentation_feedback};
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface,
 };
 
 use crate::output::Output;
 
-use super::compositor::{with_states, Cacheable};
+use super::compositor::{Cacheable, with_states};
 
 const EVT_PRESENTED_VARIABLE_SINCE: u32 = 2;
 

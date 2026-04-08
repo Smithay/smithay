@@ -32,8 +32,8 @@
 //! ```
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::wayland::compositor::{self, Cacheable};
@@ -42,8 +42,8 @@ use wayland_protocols::ext::background_effect::v1::server::{
     ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
-    Weak,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId,
+    protocol::wl_surface::WlSurface,
 };
 
 pub use ext_background_effect_manager_v1::Capability;

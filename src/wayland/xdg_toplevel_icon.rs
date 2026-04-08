@@ -20,9 +20,9 @@ use wayland_protocols::xdg::{
 };
 
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId},
     protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{

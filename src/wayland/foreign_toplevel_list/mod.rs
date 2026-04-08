@@ -42,8 +42,8 @@ use wayland_protocols::ext::foreign_toplevel_list::v1::server::{
     ext_foreign_toplevel_list_v1::{self, ExtForeignToplevelListV1},
 };
 use wayland_server::{
-    backend::{ClientId, GlobalId},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
+    backend::{ClientId, GlobalId},
 };
 
 use crate::utils::user_data::UserDataMap;

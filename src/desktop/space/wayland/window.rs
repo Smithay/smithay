@@ -1,18 +1,18 @@
 use crate::{
     backend::renderer::{
-        element::{
-            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            AsRenderElements, Kind,
-        },
         ImportAll, Renderer,
+        element::{
+            AsRenderElements, Kind,
+            surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
+        },
     },
-    desktop::{space::SpaceElement, PopupManager, Window, WindowSurface, WindowSurfaceType},
+    desktop::{PopupManager, Window, WindowSurface, WindowSurfaceType, space::SpaceElement},
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::seat::WaylandFocus,
 };
 
-use super::{output_update, WindowOutputUserData};
+use super::{WindowOutputUserData, output_update};
 
 impl SpaceElement for Window {
     fn geometry(&self) -> Rectangle<i32, Logical> {
