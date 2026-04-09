@@ -114,13 +114,7 @@ impl PopupManager {
             }
         };
 
-        Ok(PopupGrab::new(
-            toplevel_popups,
-            root,
-            serial,
-            previous_serial,
-            seat.get_keyboard(),
-        ))
+        Ok(PopupGrab::new(toplevel_popups, root, serial, previous_serial))
     }
 
     fn add_popup(&mut self, popup: PopupKind) -> Result<(), DeadResource> {
