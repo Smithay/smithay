@@ -35,6 +35,13 @@ use super::{
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
 pub trait PointerGrab<D: SeatHandler>: Send + Downcast {
+    /// The grab should remain active and not be automatically removed.
+    ///
+    /// This may be called frequently, so it should be minimal (like checking a bool).
+    fn alive(&self) -> bool {
+        true
+    }
+
     /// A motion was reported
     ///
     /// This method allows you attach additional behavior to a motion event, possibly altering it.
