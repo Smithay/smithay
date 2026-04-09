@@ -1403,19 +1403,11 @@ where
                     // Per EWMH spec, clients may set _NET_WM_STATE prior to mapping
                     // and the window manager must respect it.
                     if let Ok(reply) = conn
-                        .get_property(
-                            false,
-                            win,
-                            xwm.atoms._NET_WM_STATE,
-                            AtomEnum::ATOM,
-                            0,
-                            1024,
-                        )?
+                        .get_property(false, win, xwm.atoms._NET_WM_STATE, AtomEnum::ATOM, 0, 1024)?
                         .reply()
                     {
                         if let Some(states) = reply.value32() {
-                            let mut state_lock =
-                                surface.state.lock().unwrap();
+                            let mut state_lock = surface.state.lock().unwrap();
                             for atom in states {
                                 state_lock.net_state.insert(atom);
                             }
@@ -2279,34 +2271,30 @@ where
                                     _ => {}
                                 }
                             }
-                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_ABOVE) => {
-                                match data[0] {
-                                    0 => state.unabove_request(xwm_id, surface),
-                                    1 => state.above_request(xwm_id, surface),
-                                    2 => {
-                                        if surface.is_above() {
-                                            state.unabove_request(xwm_id, surface)
-                                        } else {
-                                            state.above_request(xwm_id, surface)
-                                        }
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_ABOVE) => match data[0] {
+                                0 => state.unabove_request(xwm_id, surface),
+                                1 => state.above_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_above() {
+                                        state.unabove_request(xwm_id, surface)
+                                    } else {
+                                        state.above_request(xwm_id, surface)
                                     }
-                                    _ => {}
                                 }
-                            }
-                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_BELOW) => {
-                                match data[0] {
-                                    0 => state.unbelow_request(xwm_id, surface),
-                                    1 => state.below_request(xwm_id, surface),
-                                    2 => {
-                                        if surface.is_below() {
-                                            state.unbelow_request(xwm_id, surface)
-                                        } else {
-                                            state.below_request(xwm_id, surface)
-                                        }
+                                _ => {}
+                            },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_BELOW) => match data[0] {
+                                0 => state.unbelow_request(xwm_id, surface),
+                                1 => state.below_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_below() {
+                                        state.unbelow_request(xwm_id, surface)
+                                    } else {
+                                        state.below_request(xwm_id, surface)
                                     }
-                                    _ => {}
                                 }
-                            }
+                                _ => {}
+                            },
                             _ => {}
                         }
                     }
