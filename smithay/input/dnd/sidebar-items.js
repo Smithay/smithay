@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DndAction","DndTarget","GrabType"],"struct":["DnDGrab","SourceMetadata"],"trait":["DndFocus","DndGrabHandler","OfferData","Source"]};
