@@ -311,7 +311,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some(ref surface) = handler.start_data().focus {
-                    if !surface.alive() {
+                    if !surface.alive() || !handler.alive() {
                         handler.unset(data);
                         self.grab = GrabStatus::None;
                         f(
@@ -597,6 +597,13 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
 pub trait KeyboardGrab<D: SeatHandler>: Downcast {
+    /// The grab should remain active and not be automatically removed.
+    ///
+    /// This may be called frequently, so it should be minimal (like checking a bool).
+    fn alive(&self) -> bool {
+        true
+    }
+
     /// An input was reported.
     ///
     /// `modifiers` are only passed when their state actually changes. The modifier must be
@@ -916,6 +923,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Check if this keyboard is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
         let guard = self.arc.internal.lock().unwrap();
+        if let GrabStatus::Active(_, handler) = &guard.grab {
+            if !handler.alive() {
+                return false;
+            }
+        }
         !matches!(guard.grab, GrabStatus::None)
     }
 
@@ -928,7 +940,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn KeyboardGrab<D>) -> T) -> Option<T> {
         let guard = self.arc.internal.lock().unwrap();
         if let GrabStatus::Active(s, g) = &guard.grab {
-            Some(f(*s, &**g))
+            if g.alive() { Some(f(*s, &**g)) } else { None }
         } else {
             None
         }

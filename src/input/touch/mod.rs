@@ -253,6 +253,11 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// Check if this touch is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
         let guard = self.inner.lock().unwrap();
+        if let GrabStatus::Active(_, handler) = &guard.grab {
+            if !handler.alive() {
+                return false;
+            }
+        }
         !matches!(guard.grab, GrabStatus::None)
     }
 
@@ -265,7 +270,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn TouchGrab<D>) -> T) -> Option<T> {
         let guard = self.inner.lock().unwrap();
         if let GrabStatus::Active(s, g) = &guard.grab {
-            Some(f(*s, &**g))
+            if g.alive() { Some(f(*s, &**g)) } else { None }
         } else {
             None
         }
@@ -653,7 +658,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
+                    if !focus.alive() || !handler.alive() {
                         handler.unset(data);
                         self.grab = GrabStatus::None;
                         let mut default_grab = (self.default_grab)();
