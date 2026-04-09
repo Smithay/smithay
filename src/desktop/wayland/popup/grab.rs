@@ -10,8 +10,7 @@ use crate::{
     input::{
         SeatHandler,
         keyboard::{
-            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
-            ModifiersState,
+            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardInnerHandle, ModifiersState,
         },
         pointer::{
             AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
@@ -234,7 +233,6 @@ where
     serial: Serial,
     previous_serial: Option<Serial>,
     toplevel_grab: PopupGrabInner,
-    keyboard_handle: Option<KeyboardHandle<D>>,
     keyboard_grab_start_data: KeyboardGrabStartData<D>,
     pointer_grab_start_data: PointerGrabStartData<D>,
     touch_grab_start_data: touch::GrabStartData<D>,
@@ -252,7 +250,6 @@ where
             .field("root", &self.root)
             .field("serial", &self.serial)
             .field("previous_serial", &self.previous_serial)
-            .field("keyboard_handle", &self.keyboard_handle)
             .field("keyboard_grab_start_data", &self.keyboard_grab_start_data)
             .field("pointer_grab_start_data", &self.pointer_grab_start_data)
             .field("touch_grab_start_data", &self.touch_grab_start_data)
@@ -273,7 +270,6 @@ where
             serial: self.serial,
             previous_serial: self.previous_serial,
             toplevel_grab: self.toplevel_grab.clone(),
-            keyboard_handle: self.keyboard_handle.clone(),
             keyboard_grab_start_data: self.keyboard_grab_start_data.clone(),
             pointer_grab_start_data: self.pointer_grab_start_data.clone(),
             touch_grab_start_data: self.touch_grab_start_data.clone(),
@@ -293,14 +289,12 @@ where
         root: <D as SeatHandler>::KeyboardFocus,
         serial: Serial,
         previous_serial: Option<Serial>,
-        keyboard_handle: Option<KeyboardHandle<D>>,
     ) -> Self {
         PopupGrab {
             root: root.clone(),
             serial,
             previous_serial,
             toplevel_grab: toplevel_popups,
-            keyboard_handle,
             keyboard_grab_start_data: KeyboardGrabStartData {
                 // We set the focus to root as this will make
                 // sure the grab will stay alive until the
@@ -398,17 +392,6 @@ where
     pub fn touch_grab_start_data(&self) -> &touch::GrabStartData<D> {
         &self.touch_grab_start_data
     }
-
-    fn unset_keyboard_grab(&self, data: &mut D) {
-        if let Some(keyboard) = self.keyboard_handle.as_ref() {
-            if keyboard.is_grabbed()
-                && (keyboard.has_grab(self.serial)
-                    || keyboard.has_grab(self.previous_serial.unwrap_or(self.serial)))
-            {
-                keyboard.unset_grab(data);
-            }
-        }
-    }
 }
 
 /// Default implementation of a [`KeyboardGrab`] for [`PopupGrab`]
@@ -463,6 +446,10 @@ where
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
     <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
+    fn alive(&self) -> bool {
+        !self.popup_grab.has_ended()
+    }
+
     fn input(
         &mut self,
         data: &mut D,
@@ -480,10 +467,6 @@ where
             handle.set_focus(data, Some(focus), serial);
         }
 
-        if self.popup_grab.has_ended() {
-            handle.unset_grab(self, data, serial, false);
-        }
-
         handle.input(data, keycode, state, modifiers, serial, time)
     }
 
@@ -494,13 +477,6 @@ where
         focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: Serial,
     ) {
-        // Ignore focus changes unless the grab has ended
-        if self.popup_grab.has_ended() {
-            handle.set_focus(data, focus, serial);
-            handle.unset_grab(self, data, serial, false);
-            return;
-        }
-
         // Allow to set the focus to the current grab, this can
         // happen if the user initially sets the focus to
         // popup instead of relying on the grab behavior
@@ -578,6 +554,10 @@ where
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
     <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
 {
+    fn alive(&self) -> bool {
+        !self.popup_grab.has_ended()
+    }
+
     fn motion(
         &mut self,
         data: &mut D,
@@ -585,11 +565,6 @@ where
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        if self.popup_grab.has_ended() {
-            handle.unset_grab(self, data, event.serial, event.time, true);
-            return;
-        }
-
         // Check that the focus is of the same client as the grab
         // If yes allow it, if not unset the focus.
         if focus
@@ -623,12 +598,6 @@ where
         let serial = event.serial;
         let time = event.time;
         let state = event.state;
-
-        if self.popup_grab.has_ended() {
-            handle.unset_grab(self, data, serial, time, true);
-            handle.button(data, event);
-            return;
-        }
 
         // Check if the the client of the focused surface is still equal to the grabbed surface client
         // if not the popup will be dismissed
@@ -735,9 +704,7 @@ where
         self.popup_grab.pointer_grab_start_data()
     }
 
-    fn unset(&mut self, data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {
-        self.popup_grab.unset_keyboard_grab(data);
-    }
+    fn unset(&mut self, _data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {}
 }
 
 /// Default implementation of a [`TouchGrab`] for [`PopupGrab`]
@@ -794,6 +761,10 @@ where
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
     <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
+    fn alive(&self) -> bool {
+        !self.popup_grab.has_ended()
+    }
+
     fn down(
         &mut self,
         data: &mut D,
@@ -802,12 +773,6 @@ where
         event: &DownEvent,
         seq: Serial,
     ) {
-        if self.popup_grab.has_ended() {
-            handle.unset_grab(self, data);
-            handle.down(data, focus, event, seq);
-            return;
-        }
-
         if focus
             .as_ref()
             .and_then(|f1| {
@@ -866,7 +831,5 @@ where
         self.popup_grab.touch_grab_start_data()
     }
 
-    fn unset(&mut self, data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {
-        self.popup_grab.unset_keyboard_grab(data);
-    }
+    fn unset(&mut self, _data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {}
 }
