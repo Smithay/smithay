@@ -50,5 +50,6 @@ The currently available backends are:
 | ANVIL_DISABLE_DIRECT_SCANOUT  | any             | tty-udev  |
 | ANVIL_GLES_DISABLE_INSTANCING | any             | tty-udev  |
 | ANVIL_NO_VULKAN               | 1,true,yes,y    | x11       |
+| ANVIL_FORCE_TEARING           | any             | tty-udev  |
 | SMITHAY_USE_LEGACY            | 1,true,yes,y    | tty-udev  |
 | SMITHAY_VK_VERSION            | 1.3             |           |
