@@ -116,7 +116,7 @@ pub trait TouchGrab<D: SeatHandler>: Send + Downcast {
     fn start_data(&self) -> &GrabStartData<D>;
 
     /// The grab has been unset or replaced with another grab.
-    fn unset(&mut self, data: &mut D);
+    fn unset(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>);
 }
 
 impl_downcast!(TouchGrab<D> where D: SeatHandler);
@@ -223,7 +223,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
         unreachable!()
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {}
 }
 
 /// A touch down grab, basic grab started when an user touches a surface
@@ -306,5 +306,5 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {}
 }

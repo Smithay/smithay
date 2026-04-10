@@ -418,7 +418,7 @@ impl<D: SeatHandler + 'static> TouchInnerHandle<'_, D> {
         serial: Serial,
         grab: G,
     ) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner.set_grab(data, self.seat, serial, grab);
     }
 
@@ -427,7 +427,7 @@ impl<D: SeatHandler + 'static> TouchInnerHandle<'_, D> {
     /// This will also restore the focus of the underlying pointer if restore_focus
     /// is [`true`]
     pub fn unset_grab(&mut self, handler: &mut dyn TouchGrab<D>, data: &mut D) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner.unset_grab(data, self.seat);
     }
 
@@ -516,22 +516,16 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         }
     }
 
-    fn set_grab<G: TouchGrab<D> + 'static>(
-        &mut self,
-        data: &mut D,
-        _seat: &Seat<D>,
-        serial: Serial,
-        grab: G,
-    ) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
+    fn set_grab<G: TouchGrab<D> + 'static>(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, grab: G) {
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut self.grab, GrabStatus::Borrowed) {
+            handler.unset(data, &mut TouchInnerHandle { inner: self, seat });
         }
         self.grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
-    fn unset_grab(&mut self, data: &mut D, _seat: &Seat<D>) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
+    fn unset_grab(&mut self, data: &mut D, seat: &Seat<D>) {
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut self.grab, GrabStatus::Borrowed) {
+            handler.unset(data, &mut TouchInnerHandle { inner: self, seat });
         }
         self.grab = GrabStatus::None;
     }
@@ -659,7 +653,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref focus, _)) = handler.start_data().focus {
                     if !focus.alive() || !handler.alive() {
-                        handler.unset(data);
+                        handler.unset(data, &mut TouchInnerHandle { inner: self, seat });
                         self.grab = GrabStatus::None;
                         let mut default_grab = (self.default_grab)();
                         f(
