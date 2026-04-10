@@ -66,6 +66,7 @@ pub use sync_point::*;
 
 /// Test if DRM device supports `syncobj_eventfd`.
 // Similar to test used in Mutter
+#[cfg(not(target_os = "openbsd"))]
 pub fn supports_syncobj_eventfd(device: &DrmDeviceFd) -> bool {
     // Pass device as placeholder for eventfd as well, since `drm_ffi` requires
     // a valid fd.
@@ -73,6 +74,11 @@ pub fn supports_syncobj_eventfd(device: &DrmDeviceFd) -> bool {
         Ok(_) => unreachable!(),
         Err(err) => err.kind() == std::io::ErrorKind::NotFound,
     }
+}
+
+#[cfg(target_os = "openbsd")]
+pub fn supports_syncobj_eventfd(device: &DrmDeviceFd) -> bool {
+    false
 }
 
 /// Handler trait for DRM syncobj protocol.
