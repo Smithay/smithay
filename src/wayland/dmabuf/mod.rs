@@ -839,7 +839,7 @@ pub struct ImportNotifier {
 #[derive(Debug)]
 enum Import {
     /// The import can fail or create a WlBuffer.
-    Falliable,
+    Fallible,
 
     /// A WlBuffer object has already been created. Failure causes client death.
     Infallible(WlBuffer),
@@ -865,7 +865,7 @@ impl ImportNotifier {
         let client = self.inner.client();
 
         let result = match self.import {
-            Import::Falliable => {
+            Import::Fallible => {
                 if let Some(client) = client {
                     match client.create_resource::<wl_buffer::WlBuffer, Dmabuf, D>(
                         &self.display,
@@ -931,7 +931,7 @@ impl ImportNotifier {
 
     /// Import failed for an implementation dependent reason.
     pub fn failed(mut self) {
-        if matches!(self.import, Import::Falliable) {
+        if matches!(self.import, Import::Fallible) {
             self.inner.failed();
         } else {
             self.inner.post_error(
