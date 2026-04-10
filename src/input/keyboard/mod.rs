@@ -312,7 +312,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some(ref surface) = handler.start_data().focus {
                     if !surface.alive() || !handler.alive() {
-                        handler.unset(data);
+                        handler.unset(data, &mut KeyboardInnerHandle { inner: self, seat });
                         self.grab = GrabStatus::None;
                         f(
                             data,
@@ -633,7 +633,7 @@ pub trait KeyboardGrab<D: SeatHandler>: Downcast {
     fn start_data(&self) -> &GrabStartData<D>;
 
     /// The grab has been unset or replaced with another grab.
-    fn unset(&mut self, data: &mut D);
+    fn unset(&mut self, data: &mut D, handle: &mut KeyboardInnerHandle<'_, D>);
 }
 
 impl_downcast!(KeyboardGrab<D> where D: SeatHandler);
@@ -900,8 +900,15 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Overwrites any current grab.
     pub fn set_grab<G: KeyboardGrab<D> + 'static>(&self, data: &mut D, grab: G, serial: Serial) {
         let mut inner = self.arc.internal.lock().unwrap();
-        if let GrabStatus::Active(_, handler) = &mut inner.grab {
-            handler.unset(data);
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut inner.grab, GrabStatus::Borrowed) {
+            let seat = self.get_seat(data);
+            handler.unset(
+                data,
+                &mut KeyboardInnerHandle {
+                    inner: &mut inner,
+                    seat: &seat,
+                },
+            );
         }
         inner.grab = GrabStatus::Active(serial, Box::new(grab));
     }
@@ -909,8 +916,15 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Remove any current grab on this keyboard, resetting it to the default behavior
     pub fn unset_grab(&self, data: &mut D) {
         let mut inner = self.arc.internal.lock().unwrap();
-        if let GrabStatus::Active(_, handler) = &mut inner.grab {
-            handler.unset(data);
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut inner.grab, GrabStatus::Borrowed) {
+            let seat = self.get_seat(data);
+            handler.unset(
+                data,
+                &mut KeyboardInnerHandle {
+                    inner: &mut inner,
+                    seat: &seat,
+                },
+            );
         }
         inner.grab = GrabStatus::None;
     }
@@ -1249,7 +1263,7 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         serial: Serial,
         grab: G,
     ) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner.grab = GrabStatus::Active(serial, Box::new(grab));
     }
 
@@ -1264,7 +1278,7 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         serial: Serial,
         restore_focus: bool,
     ) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner.grab = GrabStatus::None;
         // restore the focus
         if restore_focus {
@@ -1429,5 +1443,5 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
         unreachable!()
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut KeyboardInnerHandle<'_, D>) {}
 }

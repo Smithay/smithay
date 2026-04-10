@@ -520,7 +520,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         focus: Focus,
         grab: G,
     ) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner.set_grab(data, self.seat, serial, grab, focus);
     }
 
@@ -536,7 +536,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         time: u32,
         restore_focus: bool,
     ) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner
             .unset_grab(data, self.seat, serial, time, restore_focus);
     }
@@ -737,8 +737,8 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         grab: G,
         focus: Focus,
     ) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut self.grab, GrabStatus::Borrowed) {
+            handler.unset(data, &mut PointerInnerHandle { inner: self, seat });
         }
         self.grab = GrabStatus::Active(serial, Box::new(grab));
 
@@ -758,8 +758,8 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
     }
 
     fn unset_grab(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, time: u32, restore_focus: bool) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut self.grab, GrabStatus::Borrowed) {
+            handler.unset(data, &mut PointerInnerHandle { inner: self, seat });
         }
         self.grab = GrabStatus::None;
         if restore_focus {
@@ -885,7 +885,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref focus, _)) = handler.start_data().focus {
                     if !focus.alive() || !handler.alive() {
-                        handler.unset(data);
+                        handler.unset(data, &mut PointerInnerHandle { inner: self, seat });
                         self.grab = GrabStatus::None;
                         f(
                             data,
