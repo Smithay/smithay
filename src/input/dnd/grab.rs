@@ -460,7 +460,7 @@ where
         self.pointer_start_data.as_ref().unwrap()
     }
 
-    fn unset(&mut self, data: &mut D) {
+    fn unset(&mut self, data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {
         if self.should_drop {
             self.drop(data, DndTarget::Pointer);
         } else {
@@ -553,7 +553,7 @@ where
         self.touch_start_data.as_ref().unwrap()
     }
 
-    fn unset(&mut self, data: &mut D) {
+    fn unset(&mut self, data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {
         if self.should_drop {
             self.drop(data, DndTarget::Touch);
         } else {

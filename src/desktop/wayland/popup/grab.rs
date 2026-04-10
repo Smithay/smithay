@@ -514,7 +514,7 @@ where
         self.popup_grab.keyboard_grab_start_data()
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut KeyboardInnerHandle<'_, D>) {}
 }
 
 /// Default implementation of a [`PointerGrab`] for [`PopupGrab`]
@@ -733,7 +733,7 @@ where
         self.popup_grab.pointer_grab_start_data()
     }
 
-    fn unset(&mut self, data: &mut D) {
+    fn unset(&mut self, data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {
         let serial = SERIAL_COUNTER.next_serial();
         self.popup_grab.unset_keyboard_grab(data, serial);
     }
@@ -865,7 +865,7 @@ where
         self.popup_grab.touch_grab_start_data()
     }
 
-    fn unset(&mut self, data: &mut D) {
+    fn unset(&mut self, data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {
         let serial = SERIAL_COUNTER.next_serial();
         self.popup_grab.unset_keyboard_grab(data, serial);
     }

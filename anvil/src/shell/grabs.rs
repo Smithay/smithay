@@ -164,7 +164,12 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerMoveS
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut AnvilState<BackendData>) {}
+    fn unset(
+        &mut self,
+        _data: &mut AnvilState<BackendData>,
+        _handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+    ) {
+    }
 }
 
 pub struct TouchMoveSurfaceGrab<BackendData: Backend + 'static> {
@@ -265,7 +270,12 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut AnvilState<BackendData>) {}
+    fn unset(
+        &mut self,
+        _data: &mut AnvilState<BackendData>,
+        _handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
+    ) {
+    }
 }
 
 bitflags::bitflags! {
@@ -622,7 +632,12 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut AnvilState<BackendData>) {}
+    fn unset(
+        &mut self,
+        _data: &mut AnvilState<BackendData>,
+        _handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+    ) {
+    }
 }
 
 pub struct TouchResizeSurfaceGrab<BackendData: Backend + 'static> {
@@ -865,5 +880,10 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut AnvilState<BackendData>) {}
+    fn unset(
+        &mut self,
+        _data: &mut AnvilState<BackendData>,
+        _handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
+    ) {
+    }
 }

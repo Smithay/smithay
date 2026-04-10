@@ -156,5 +156,5 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut Smallvil) {}
+    fn unset(&mut self, _data: &mut Smallvil, _handle: &mut PointerInnerHandle<'_, Smallvil>) {}
 }
