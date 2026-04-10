@@ -611,7 +611,6 @@ where
                 })
                 .unwrap_or(false)
         {
-            let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
             handle.unset_grab(self, data, serial, time, true);
             handle.button(data, event);
             return;
@@ -704,7 +703,9 @@ where
         self.popup_grab.pointer_grab_start_data()
     }
 
-    fn unset(&mut self, _data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {
+        let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
+    }
 }
 
 /// Default implementation of a [`TouchGrab`] for [`PopupGrab`]
