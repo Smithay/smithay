@@ -399,14 +399,13 @@ where
         &self.touch_grab_start_data
     }
 
-    fn unset_keyboard_grab(&self, data: &mut D, serial: Serial) {
+    fn unset_keyboard_grab(&self, data: &mut D) {
         if let Some(keyboard) = self.keyboard_handle.as_ref() {
             if keyboard.is_grabbed()
                 && (keyboard.has_grab(self.serial)
                     || keyboard.has_grab(self.previous_serial.unwrap_or(self.serial)))
             {
                 keyboard.unset_grab(data);
-                keyboard.set_focus(data, Some(self.root.clone()), serial);
             }
         }
     }
@@ -514,7 +513,10 @@ where
         self.popup_grab.keyboard_grab_start_data()
     }
 
-    fn unset(&mut self, _data: &mut D, _handle: &mut KeyboardInnerHandle<'_, D>) {}
+    fn unset(&mut self, data: &mut D, handle: &mut KeyboardInnerHandle<'_, D>) {
+        let serial = SERIAL_COUNTER.next_serial();
+        handle.set_focus(data, Some(self.popup_grab.root.clone()), serial);
+    }
 }
 
 /// Default implementation of a [`PointerGrab`] for [`PopupGrab`]
@@ -734,8 +736,7 @@ where
     }
 
     fn unset(&mut self, data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {
-        let serial = SERIAL_COUNTER.next_serial();
-        self.popup_grab.unset_keyboard_grab(data, serial);
+        self.popup_grab.unset_keyboard_grab(data);
     }
 }
 
@@ -866,7 +867,6 @@ where
     }
 
     fn unset(&mut self, data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {
-        let serial = SERIAL_COUNTER.next_serial();
-        self.popup_grab.unset_keyboard_grab(data, serial);
+        self.popup_grab.unset_keyboard_grab(data);
     }
 }
