@@ -82,7 +82,7 @@ where
         &KeyboardGrabStartData { focus: None }
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut KeyboardInnerHandle<'_, D>) {}
 }
 
 /// User data of ZwpInputKeyboardGrabV2 object
