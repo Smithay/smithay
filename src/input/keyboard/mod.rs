@@ -301,7 +301,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         (modifiers_changed, leds_changed)
     }
 
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
+    pub(super) fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
     where
         F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {

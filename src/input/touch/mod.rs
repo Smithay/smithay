@@ -642,7 +642,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         }
     }
 
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
+    pub(super) fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
     where
         F: FnOnce(&mut D, &mut TouchInnerHandle<'_, D>, &mut dyn TouchGrab<D>),
     {

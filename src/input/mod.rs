@@ -704,6 +704,30 @@ impl<D: SeatHandler + 'static> Seat<D> {
     pub fn name(&self) -> &str {
         &self.arc.name
     }
+
+    pub fn refresh_grabs(&self, data: &mut D) {
+        let inner = self.arc.inner.lock().unwrap();
+        let keyboard = inner.keyboard.clone();
+        let pointer = inner.pointer.clone();
+        let touch = inner.touch.clone();
+        // `Seat` may be used in grab `unset` methods
+        drop(inner);
+
+        if let Some(keyboard) = keyboard {
+            keyboard
+                .arc
+                .internal
+                .lock()
+                .unwrap()
+                .with_grab(data, self, |_, _, _| {});
+        }
+        if let Some(pointer) = pointer {
+            pointer.inner.lock().unwrap().with_grab(data, self, |_, _, _| {});
+        }
+        if let Some(touch) = touch {
+            touch.inner.lock().unwrap().with_grab(data, self, |_, _, _| {});
+        }
+    }
 }
 
 pub(super) enum GrabStatus<G: ?Sized> {
