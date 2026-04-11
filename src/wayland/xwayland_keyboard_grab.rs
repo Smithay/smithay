@@ -104,6 +104,10 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> Clone for XWaylandKeyboardGrab<D>
 }
 
 impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeyboardGrab<D> {
+    fn alive(&self) -> bool {
+        self.grab.is_alive()
+    }
+
     fn input(
         &mut self,
         data: &mut D,
@@ -115,25 +119,16 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
         time: u32,
     ) {
         handle.set_focus(data, self.start_data.focus.clone(), serial);
-
-        if !self.grab.is_alive() {
-            handle.unset_grab(self, data, serial, false);
-        }
-
         handle.input(data, keycode, state, modifiers, serial, time)
     }
 
     fn set_focus(
         &mut self,
-        data: &mut D,
-        handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<<D as SeatHandler>::KeyboardFocus>,
-        serial: Serial,
+        _data: &mut D,
+        _handle: &mut KeyboardInnerHandle<'_, D>,
+        _focus: Option<<D as SeatHandler>::KeyboardFocus>,
+        _serial: Serial,
     ) {
-        if !self.grab.is_alive() {
-            handle.unset_grab(self, data, serial, false);
-            handle.set_focus(data, focus, serial);
-        }
     }
 
     fn start_data(&self) -> &keyboard::GrabStartData<D> {
