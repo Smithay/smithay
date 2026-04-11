@@ -81,7 +81,7 @@ impl ModifiersState {
     /// This method checks if standard modifier names (e.g., Ctrl, Alt, Shift, Caps Lock)
     /// are currently active in the "effective" state and updates the corresponding
     /// boolean fields of the struct.
-    pub fn init_key_val(&mut self, state: &xkb::State) {
+    fn init_key_val(&mut self, state: &xkb::State) {
         self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
         self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
         self.shift = state.mod_name_is_active(&xkb::MOD_NAME_SHIFT, xkb::STATE_MODS_EFFECTIVE);
@@ -99,11 +99,21 @@ impl ModifiersState {
     /// and sets the corresponding internal boolean flags for modifier keys
     /// (Super, Control, Alt, Shift). Finally, it updates the serialized state string.
     pub fn update_with_by_keycode(&mut self, keycode: xkb::Keycode, state: &xkb::State) {
-        // 1. Initialize modifier values based on current state
         self.init_key_val(state);
-        // 2. Identify the specific physical key pressed
+        // reset value false
+        let default= Self {
+            logo_left : false,
+            logo_right : false,
+            ctrl_left : false,
+            ctrl_right : false,
+            alt_left : false,
+            alt_right : false,
+            shift_left : false,
+            shift_right : false,
+            ..*self
+        };
+        *self = default;
         let keysym = state.key_get_one_sym(keycode);
-        // 3. Match specific modifier keys and update their respective flags
         match keysym.into() {
             xkb::keysyms::KEY_Super_L => self.logo_left = true,
             xkb::keysyms::KEY_Super_R => self.logo_right = true,
@@ -115,7 +125,6 @@ impl ModifiersState {
             xkb::keysyms::KEY_Shift_R => self.shift_right = true,
             _ => {} // Ignore non-modifier keys
         }
-        // 4. Synchronize the serialized string representation of active modifiers
         self.serialized = serialize_modifiers(state);
     }
 
