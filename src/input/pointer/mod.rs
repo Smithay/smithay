@@ -874,7 +874,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
     }
 
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
+    pub(super) fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
     where
         F: FnOnce(&mut D, &mut PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
     {
