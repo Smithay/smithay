@@ -295,7 +295,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         let state_components = xkb.state.update_key(keycode, direction);
         let modifiers_changed = state_components != 0;
         if modifiers_changed {
-            self.mods_state.update_with(&xkb.state);
+            self.mods_state.update_with_by_keycode(keycode, &xkb.state);
         }
         let leds_changed = self.led_state.update_with(&xkb.state, &self.led_mapping);
         (modifiers_changed, leds_changed)
