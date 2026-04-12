@@ -3,7 +3,7 @@
 use std::sync::Mutex;
 
 use crate::backend::renderer::buffer_dimensions;
-use crate::utils::{IsAlive, Logical, SERIAL_COUNTER, Serial, Size};
+use crate::utils::{IsAlive, Logical, SERIAL_COUNTER, Serial, Size, hook::HookId};
 use crate::wayland::compositor::{self, BufferAssignment, Cacheable, SurfaceAttributes};
 use crate::wayland::viewporter::{ViewportCachedState, ViewporterSurfaceState};
 use _session_lock::ext_session_lock_surface_v1::{Error, ExtSessionLockSurfaceV1, Request};
@@ -21,6 +21,7 @@ pub struct ExtLockSurfaceUserData {
     // `ExtSessionLockSurfaceV1`. So this reference needs to be weak to avoid a
     // cycle.
     pub(crate) surface: Weak<WlSurface>,
+    pub(crate) commit_hook_id: HookId,
 }
 
 impl<D> Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData, D> for SessionLockManagerState
@@ -71,6 +72,9 @@ where
         data: &ExtLockSurfaceUserData,
     ) {
         if let Ok(surface) = data.surface.upgrade() {
+            // Remove the pre-commit hook so orphaned commits don't trigger post_error
+            compositor::remove_pre_commit_hook(&surface, &data.commit_hook_id);
+
             compositor::with_states(&surface, |states| {
                 let mut attributes = states
                     .data_map
