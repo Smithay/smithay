@@ -1,5 +1,3 @@
-#![forbid(unsafe_op_in_unsafe_fn)]
-
 use std::{
     os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd},
     path::PathBuf,

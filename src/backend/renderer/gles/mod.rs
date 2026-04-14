@@ -1,5 +1,8 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
+// GL calls are all unsafe, so not very helpful in this module.
+#![allow(unsafe_op_in_unsafe_fn)]
+
 use cgmath::{Matrix3, Vector2, prelude::*};
 use core::slice;
 use std::{

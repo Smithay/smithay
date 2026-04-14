@@ -396,7 +396,7 @@ impl XWaylandClientData {
 /// Removes the `O_CLOEXEC` flag from a `RawFd`, causing it to leak when we
 /// `exec` XWayland
 unsafe fn unset_cloexec(fd: RawFd) -> std::io::Result<()> {
-    let fd = BorrowedFd::borrow_raw(fd);
+    let fd = unsafe { BorrowedFd::borrow_raw(fd) };
     rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::empty())?;
     Ok(())
 }
