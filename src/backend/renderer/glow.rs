@@ -1,3 +1,5 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+
 //! Integration for using [`glow`] on top of smithays OpenGL ES 2 renderer
 use tracing::warn;
 

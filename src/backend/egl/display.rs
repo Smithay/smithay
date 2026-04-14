@@ -188,7 +188,7 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
             continue;
         }
 
-        let display = wrap_egl_call_ptr(|| {
+        let display = wrap_egl_call_ptr(|| unsafe {
             ffi::egl::GetPlatformDisplayEXT(
                 platform.platform,
                 platform.native_display,
@@ -344,10 +344,12 @@ impl EGLDisplay {
         debug!("Supported EGL client extensions: {:?}", dp_extensions);
 
         let egl_version = {
-            let p = CStr::from_ptr(
-                wrap_egl_call_ptr(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
-                    .map_err(|_| Error::DisplayQueryResultInvalid)?,
-            );
+            let p = unsafe {
+                CStr::from_ptr(
+                    wrap_egl_call_ptr(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
+                        .map_err(|_| Error::DisplayQueryResultInvalid)?,
+                )
+            };
 
             let version_string = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
             let mut version_iterator = version_string
@@ -376,7 +378,7 @@ impl EGLDisplay {
         let (dmabuf_import_formats, dmabuf_render_formats) =
             get_dmabuf_formats(&display, &extensions).map_err(Error::DisplayCreationError)?;
 
-        let egl_api = ffi::egl::QueryAPI();
+        let egl_api = unsafe { ffi::egl::QueryAPI() };
         if egl_api != ffi::egl::OPENGL_ES_API {
             return Err(Error::OpenGlesNotSupported(None));
         }
@@ -384,7 +386,7 @@ impl EGLDisplay {
         let surface_type = {
             let mut surface_type: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
-            wrap_egl_call_bool(|| {
+            wrap_egl_call_bool(|| unsafe {
                 ffi::egl::GetConfigAttrib(
                     display,
                     config_id,
@@ -394,7 +396,7 @@ impl EGLDisplay {
             })
             .map_err(|_| Error::OpenGlesNotSupported(None))?;
 
-            surface_type.assume_init()
+            unsafe { surface_type.assume_init() }
         };
 
         Ok(EGLDisplay {
@@ -574,7 +576,7 @@ impl EGLDisplay {
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
                 let mut value = MaybeUninit::uninit();
-                wrap_egl_call_bool(|| {
+                wrap_egl_call_bool(|| unsafe {
                     ffi::egl::GetConfigAttrib(
                         **$display,
                         $config,
@@ -583,7 +585,7 @@ impl EGLDisplay {
                     )
                 })
                 .map_err(Error::ConfigFailed)?;
-                value.assume_init()
+                unsafe { value.assume_init() }
             }};
         }
 

@@ -138,7 +138,7 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
 }
 
 /// Module containing raw egl function bindings
-#[allow(clippy::all, missing_debug_implementations)]
+#[allow(clippy::all, missing_debug_implementations, unsafe_op_in_unsafe_fn)]
 pub mod egl {
     use super::*;
     use libloading::Library;
