@@ -48,6 +48,7 @@ To get information about it and how you can run it visit [anvil README](https://
 
 - [Cosmic](https://github.com/pop-os/cosmic-epoch): Next generation Cosmic desktop environment
 - [Catacomb](https://github.com/catacombing/catacomb): A Wayland Mobile Compositor
+- [emskin](https://github.com/emskin/emskin): A nested Wayland compositor for embedding any app inside Emacs
 - [MagmaWM](https://github.com/MagmaWM/MagmaWM): A versatile and customizable Wayland Compositor
 - [Niri](https://github.com/YaLTeR/niri): A scrollable-tiling Wayland compositor
 - [Strata](https://github.com/StrataWM/strata): A cutting-edge, robust and sleek Wayland compositor
