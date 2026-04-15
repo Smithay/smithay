@@ -1,0 +1,54 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Utilities for handling the `wp-fifo` protocol"><title>smithay::wayland::fifo - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="smithay" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module fifo</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../smithay/index.html">smithay</a><span class="version">0.7.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module fifo</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#how-to-use-it" title="How to use it">How to use it</a><ul><li><a href="#initialization" title="Initialization">Initialization</a></li><li><a href="#use-the-fifo-state" title="Use the fifo state">Use the fifo state</a></li><li><a href="#unmanaged-mode" title="Unmanaged mode">Unmanaged mode</a></li></ul></li></ul><h3><a href="#structs">Module Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In smithay::<wbr>wayland</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">smithay</a>::<wbr><a href="../index.html">wayland</a></div><h1>Module <span>fifo</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/smithay/wayland/fifo/mod.rs.html#1-425">Source</a> </span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>wayland_frontend</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Utilities for handling the <code>wp-fifo</code> protocol</p>
+<h3 id="how-to-use-it"><a class="doc-anchor" href="#how-to-use-it">§</a>How to use it</h3><h4 id="initialization"><a class="doc-anchor" href="#initialization">§</a>Initialization</h4>
+<p>To initialize this implementation create the <a href="struct.FifoManagerState.html" title="struct smithay::wayland::fifo::FifoManagerState"><code>FifoManagerState</code></a> and store it inside your <code>State</code> struct.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::delegate_fifo;
+<span class="kw">use </span>smithay::wayland::compositor;
+<span class="kw">use </span>smithay::wayland::fifo::FifoManagerState;
+
+<span class="comment">// Create the compositor state
+</span><span class="kw">let </span>fifo_manager_state = FifoManagerState::new::&lt;State&gt;(
+    <span class="kw-2">&amp;</span>display.handle(),
+);
+
+<span class="comment">// insert the FifoManagerState into your state
+// ..
+
+</span><span class="macro">delegate_fifo!</span>(State);
+
+<span class="comment">// You're now ready to go!</span></code></pre></div><h4 id="use-the-fifo-state"><a class="doc-anchor" href="#use-the-fifo-state">§</a>Use the fifo state</h4>
+<p>Whenever the client commits a surface content update requesting to wait on a previously set barrier
+through <a href="../../../wayland_protocols/wp/fifo/v1/generated/server/wp_fifo_v1/enum.Request.html#variant.WaitBarrier" title="variant wayland_protocols::wp::fifo::v1::generated::server::wp_fifo_v1::Request::WaitBarrier"><code>wp_fifo_v1::Request::WaitBarrier</code></a> the implementation will place a <a href="../compositor/trait.Blocker.html" title="trait smithay::wayland::compositor::Blocker"><code>Blocker</code></a>
+on the surface.
+A surface content update requesting to set a barrier through <a href="../../../wayland_protocols/wp/fifo/v1/generated/server/wp_fifo_v1/enum.Request.html#variant.SetBarrier" title="variant wayland_protocols::wp::fifo::v1::generated::server::wp_fifo_v1::Request::SetBarrier"><code>wp_fifo_v1::Request::SetBarrier</code></a> will update the barrier
+a later commit can use to wait on.</p>
+<p>It is your responsibility to query for a set barrier on a surface and signal it to allow clients to make forward progress.</p>
+<p>You can query the current barrier and signal it as shown in the following example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::wayland::compositor;
+<span class="kw">use </span>smithay::wayland::fifo::FifoBarrierCachedState;
+compositor::with_states(<span class="kw-2">&amp;</span>surface, |states| {
+    <span class="kw">let </span>fifo_barrier = states
+        .cached_state
+        .get::&lt;FifoBarrierCachedState&gt;()
+        .current()
+        .barrier
+        .take();
+     
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(fifo_barrier) = fifo_barrier {
+        fifo_barrier.signal();
+        <span class="comment">// ..signal blocker cleared
+    </span>}
+});</code></pre></div><h4 id="unmanaged-mode"><a class="doc-anchor" href="#unmanaged-mode">§</a>Unmanaged mode</h4>
+<p>If for some reason the integrated solution for fifo does not suit your needs
+you can create an unmanaged version with <a href="struct.FifoManagerState.html#method.unmanaged" title="associated function smithay::wayland::fifo::FifoManagerState::unmanaged"><code>FifoManagerState::unmanaged</code></a>.
+In this case it is your responsibility to listen for surface commits and place blockers
+accordingly to the spec.</p>
+<p>The double buffered fifo state can be retrieved like shown in the following example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>smithay::wayland::compositor;
+<span class="kw">use </span>smithay::wayland::fifo::FifoCachedState;
+
+<span class="kw">let </span>fifo_state = compositor::with_states(<span class="kw-2">&amp;</span>surface, |states| {
+    <span class="kw-2">*</span>states.cached_state.get::&lt;FifoCachedState&gt;().pending()
+});</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.FifoBarrierCachedState.html" title="struct smithay::wayland::fifo::FifoBarrierCachedState">Fifo<wbr>Barrier<wbr>Cached<wbr>State</a></dt><dd>Fifo barrier per surface state</dd><dt><a class="struct" href="struct.FifoCachedState.html" title="struct smithay::wayland::fifo::FifoCachedState">Fifo<wbr>Cached<wbr>State</a></dt><dd>State for the <a href="../../../wayland_protocols/wp/fifo/v1/generated/server/wp_fifo_v1/struct.WpFifoV1.html" title="struct wayland_protocols::wp::fifo::v1::generated::server::wp_fifo_v1::WpFifoV1"><code>WpFifoV1</code></a> object</dd><dt><a class="struct" href="struct.FifoManagerState.html" title="struct smithay::wayland::fifo::FifoManagerState">Fifo<wbr>Manager<wbr>State</a></dt><dd>State for the <a href="../../../wayland_protocols/wp/fifo/v1/generated/server/wp_fifo_manager_v1/struct.WpFifoManagerV1.html" title="struct wayland_protocols::wp::fifo::v1::generated::server::wp_fifo_manager_v1::WpFifoManagerV1"><code>WpFifoManagerV1</code></a> global</dd></dl></section></div></main></body></html>
