@@ -31,6 +31,13 @@ use super::{DownEvent, MotionEvent, OrientationEvent, ShapeEvent, TouchInnerHand
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
 pub trait TouchGrab<D: SeatHandler>: Send + Downcast {
+    /// The grab should remain active and not be automatically removed.
+    ///
+    /// This may be called frequently, so it should be minimal (like checking a bool).
+    fn alive(&self) -> bool {
+        true
+    }
+
     /// A new touch point appeared
     ///
     /// This method allows you attach additional behavior to a down event, possibly altering it.
@@ -109,7 +116,7 @@ pub trait TouchGrab<D: SeatHandler>: Send + Downcast {
     fn start_data(&self) -> &GrabStartData<D>;
 
     /// The grab has been unset or replaced with another grab.
-    fn unset(&mut self, data: &mut D);
+    fn unset(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>);
 }
 
 impl_downcast!(TouchGrab<D> where D: SeatHandler);
@@ -216,7 +223,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
         unreachable!()
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {}
 }
 
 /// A touch down grab, basic grab started when an user touches a surface
@@ -299,5 +306,5 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut TouchInnerHandle<'_, D>) {}
 }
