@@ -35,7 +35,7 @@ use crate::{
 #[cfg(feature = "wayland_frontend")]
 use super::utils::Buffer;
 use super::{
-    Renderer,
+    PresentationMode, Renderer,
     utils::{CommitCounter, DamageSet, OpaqueRegions},
 };
 
@@ -566,6 +566,11 @@ pub trait Element {
     fn is_framebuffer_effect(&self) -> bool {
         false
     }
+
+    /// Hint for DRM backend on how the element should be presented
+    fn presentation_mode(&self) -> PresentationMode {
+        PresentationMode::VSync
+    }
 }
 
 /// A single render element
@@ -669,6 +674,10 @@ where
 
     fn is_framebuffer_effect(&self) -> bool {
         (*self).is_framebuffer_effect()
+    }
+
+    fn presentation_mode(&self) -> PresentationMode {
+        (*self).presentation_mode()
     }
 }
 
@@ -1107,6 +1116,19 @@ macro_rules! render_elements_internal {
                         #[$meta]
                     )*
                     Self::$body(x) => $crate::render_elements_internal!(@call is_framebuffer_effect; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn presentation_mode(&self) -> $crate::backend::renderer::PresentationMode {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call presentation_mode; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1799,6 +1821,10 @@ where
 
     fn is_framebuffer_effect(&self) -> bool {
         self.0.is_framebuffer_effect()
+    }
+
+    fn presentation_mode(&self) -> PresentationMode {
+        self.0.presentation_mode()
     }
 }
 
