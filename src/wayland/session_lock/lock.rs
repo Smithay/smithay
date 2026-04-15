@@ -75,8 +75,13 @@ where
                     return;
                 }
 
+                // Add pre-commit hook for updating surface state (before creating user data).
+                let commit_hook_id =
+                    compositor::add_pre_commit_hook::<D, _>(&surface, LockSurface::pre_commit_hook);
+
                 let data = ExtLockSurfaceUserData {
                     surface: surface.downgrade(),
+                    commit_hook_id,
                 };
                 let lock_surface = data_init.init(id, data);
 
@@ -97,9 +102,6 @@ where
                     }
                 });
 
-                // Add pre-commit hook for updating surface state.
-                compositor::add_pre_commit_hook::<D, _>(&surface, LockSurface::pre_commit_hook);
-
                 // Call compositor handler.
                 let lock_surface = LockSurface::new(surface, lock_surface);
                 state.new_surface(lock_surface.clone(), output);
@@ -111,6 +113,7 @@ where
                 // Ensure session is locked.
                 if !data.lock_status.load(Ordering::Relaxed) {
                     lock.post_error(Error::InvalidUnlock, "Session is not locked.");
+                    return;
                 }
 
                 state.lock_state().locked_outputs.clear();
@@ -120,6 +123,7 @@ where
                 // Ensure session is not locked.
                 if data.lock_status.load(Ordering::Relaxed) {
                     lock.post_error(Error::InvalidDestroy, "Cannot destroy session lock while locked.");
+                    return;
                 }
             }
             _ => unreachable!(),
