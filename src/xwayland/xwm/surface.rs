@@ -577,6 +577,17 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_SKIP_PAGER)
     }
 
+    /// Returns if the window is sticky.
+    ///
+    /// This is usually used to mean that the window should be shown on all workspaces.
+    pub fn is_sticky(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_STICKY)
+    }
+
     /// Returns true if the window is client-side decorated
     pub fn is_decorated(&self) -> bool {
         let state = self.state.lock().unwrap();
@@ -666,6 +677,18 @@ impl X11Surface {
             self.change_net_state(&[self.atoms._NET_WM_STATE_BELOW], &[])?;
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_BELOW])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window's sticky state.
+    ///
+    /// This is usually used to mean that the window should be shown on all workspaces.
+    pub fn set_sticky(&self, sticky: bool) -> Result<(), ConnectionError> {
+        if sticky {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_STICKY], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_STICKY])?;
         }
         Ok(())
     }
