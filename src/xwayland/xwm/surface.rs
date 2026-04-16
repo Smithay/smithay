@@ -577,6 +577,35 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_SKIP_PAGER)
     }
 
+    /// Returns if the window is sticky.
+    ///
+    /// This is usually used to mean that the window should be shown on all workspaces.
+    pub fn is_sticky(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_STICKY)
+    }
+
+    /// Returns if the window is shaded.
+    pub fn is_shaded(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_SHADED)
+    }
+
+    /// Returns if the window demands attention.
+    pub fn demands_attention(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_DEMANDS_ATTENTION)
+    }
+
     /// Returns true if the window is client-side decorated
     pub fn is_decorated(&self) -> bool {
         let state = self.state.lock().unwrap();
@@ -666,6 +695,40 @@ impl X11Surface {
             self.change_net_state(&[self.atoms._NET_WM_STATE_BELOW], &[])?;
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_BELOW])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window's sticky state.
+    ///
+    /// This is usually used to mean that the window should be shown on all workspaces.
+    pub fn set_sticky(&self, sticky: bool) -> Result<(), ConnectionError> {
+        if sticky {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_STICKY], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_STICKY])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window's shaded state.
+    pub fn set_shaded(&self, shaded: bool) -> Result<(), ConnectionError> {
+        if shaded {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_SHADED], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_SHADED])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window's demands-attention state.
+    ///
+    /// A client might flash the client-side decorations when demanding attention.
+    pub fn set_demands_attention(&self, demands_attention: bool) -> Result<(), ConnectionError> {
+        if demands_attention {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_DEMANDS_ATTENTION], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_DEMANDS_ATTENTION])?;
         }
         Ok(())
     }
