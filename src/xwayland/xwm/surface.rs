@@ -588,6 +588,15 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_STICKY)
     }
 
+    /// Returns if the window demands attention.
+    pub fn demands_attention(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_DEMANDS_ATTENTION)
+    }
+
     /// Returns true if the window is client-side decorated
     pub fn is_decorated(&self) -> bool {
         let state = self.state.lock().unwrap();
@@ -689,6 +698,18 @@ impl X11Surface {
             self.change_net_state(&[self.atoms._NET_WM_STATE_STICKY], &[])?;
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_STICKY])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window's demands-attention state.
+    ///
+    /// A client might flash the client-side decorations when demanding attention.
+    pub fn set_demands_attention(&self, demands_attention: bool) -> Result<(), ConnectionError> {
+        if demands_attention {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_DEMANDS_ATTENTION], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_DEMANDS_ATTENTION])?;
         }
         Ok(())
     }

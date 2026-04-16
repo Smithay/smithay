@@ -244,6 +244,7 @@ mod atoms {
             _NET_WM_STATE_MAXIMIZED_HORZ,
             _NET_WM_STATE_HIDDEN,
             _NET_WM_STATE_FULLSCREEN,
+            _NET_WM_STATE_DEMANDS_ATTENTION,
             _NET_WM_STATE_FOCUSED,
             _NET_WM_STATE_ABOVE,
             _NET_WM_STATE_BELOW,
@@ -442,6 +443,14 @@ pub trait XwmHandler {
     }
     /// Window requests to be unstuck.
     fn unstick_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window indicates it requires the user's attention.
+    fn demands_attention_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window no longer indicates it requires the user's attention.
+    fn undemands_attention_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
 
@@ -764,6 +773,7 @@ impl X11Wm {
                 atoms._NET_WM_STATE_SKIP_TASKBAR,
                 atoms._NET_WM_STATE_SKIP_PAGER,
                 atoms._NET_WM_STATE_STICKY,
+                atoms._NET_WM_STATE_DEMANDS_ATTENTION,
                 atoms._NET_ACTIVE_WINDOW,
                 atoms._NET_WM_MOVERESIZE,
                 atoms._NET_CLIENT_LIST,
@@ -2319,6 +2329,20 @@ where
                                 }
                                 _ => {}
                             },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_DEMANDS_ATTENTION) => {
+                                match data[0] {
+                                    0 => state.undemands_attention_request(xwm_id, surface),
+                                    1 => state.demands_attention_request(xwm_id, surface),
+                                    2 => {
+                                        if surface.demands_attention() {
+                                            state.undemands_attention_request(xwm_id, surface)
+                                        } else {
+                                            state.demands_attention_request(xwm_id, surface)
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
                             _ => {}
                         }
                     }
