@@ -588,6 +588,15 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_STICKY)
     }
 
+    /// Returns if the window is shaded.
+    pub fn is_shaded(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_SHADED)
+    }
+
     /// Returns if the window demands attention.
     pub fn demands_attention(&self) -> bool {
         self.state
@@ -698,6 +707,16 @@ impl X11Surface {
             self.change_net_state(&[self.atoms._NET_WM_STATE_STICKY], &[])?;
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_STICKY])?;
+        }
+        Ok(())
+    }
+
+    /// Sets the window's shaded state.
+    pub fn set_shaded(&self, shaded: bool) -> Result<(), ConnectionError> {
+        if shaded {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_SHADED], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_SHADED])?;
         }
         Ok(())
     }

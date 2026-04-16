@@ -248,6 +248,7 @@ mod atoms {
             _NET_WM_STATE_FOCUSED,
             _NET_WM_STATE_ABOVE,
             _NET_WM_STATE_BELOW,
+            _NET_WM_STATE_SHADED,
             _NET_WM_STATE_SKIP_TASKBAR,
             _NET_WM_STATE_SKIP_PAGER,
             _NET_WM_STATE_STICKY,
@@ -443,6 +444,14 @@ pub trait XwmHandler {
     }
     /// Window requests to be unstuck.
     fn unstick_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be shaded.
+    fn shade_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be unshaded.
+    fn unshade_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
     /// Window indicates it requires the user's attention.
@@ -770,6 +779,7 @@ impl X11Wm {
                 atoms._NET_WM_STATE_FOCUSED,
                 atoms._NET_WM_STATE_ABOVE,
                 atoms._NET_WM_STATE_BELOW,
+                atoms._NET_WM_STATE_SHADED,
                 atoms._NET_WM_STATE_SKIP_TASKBAR,
                 atoms._NET_WM_STATE_SKIP_PAGER,
                 atoms._NET_WM_STATE_STICKY,
@@ -2325,6 +2335,18 @@ where
                                         state.unstick_request(xwm_id, surface)
                                     } else {
                                         state.stick_request(xwm_id, surface)
+                                    }
+                                }
+                                _ => {}
+                            },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_SHADED) => match data[0] {
+                                0 => state.unshade_request(xwm_id, surface),
+                                1 => state.shade_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_shaded() {
+                                        state.unshade_request(xwm_id, surface)
+                                    } else {
+                                        state.shade_request(xwm_id, surface)
                                     }
                                 }
                                 _ => {}
