@@ -351,6 +351,13 @@ pub struct XdgShellSurfaceUserData {
     pub(crate) alive_tracker: AliveTracker,
 }
 
+impl XdgShellSurfaceUserData {
+    /// Associated xdg_surface
+    pub fn xdg_surface(&self) -> &xdg_surface::XdgSurface {
+        &self.xdg_surface
+    }
+}
+
 impl IsAlive for XdgToplevel {
     #[inline]
     fn alive(&self) -> bool {
