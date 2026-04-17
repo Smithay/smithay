@@ -195,8 +195,7 @@ pub trait DndGrabHandler: SeatHandler + Sized {
     /// At this point, any icon should be removed.
     ///
     /// * `target` - The target that the contents were dropped on.
-    /// * `validated` - Whether the drop offer was negotiated and accepted. If `false`, the drop
-    ///   was cancelled or otherwise not successful.
+    /// * `validated` - Whether the drop offer was negotiated and accepted.
     /// * `seat` - The seat on which the DnD action was finished.
     /// * `location` - The location the drop was finished at
     fn dropped(
@@ -207,6 +206,12 @@ pub trait DndGrabHandler: SeatHandler + Sized {
         location: Point<f64, Logical>,
     ) {
         let _ = (target, validated, seat, location);
+    }
+
+    /// The grab was cancelled by removing the grab by some means other than releasing the mouse
+    /// button or touch up.
+    fn cancelled(&mut self, seat: Seat<Self>, location: Point<f64, Logical>) {
+        let _ = (seat, location);
     }
 }
 
@@ -284,6 +289,8 @@ where
         }
 
         self.data_source.cancel();
+
+        DndGrabHandler::cancelled(data, self.seat.clone(), self.last_position);
 
         if let Some(ref focus) = self.current_focus {
             focus.leave(data, self.offer_data.as_mut(), &self.seat);
