@@ -486,6 +486,8 @@ where
             return;
         }
 
+        // the user dropped, proceed to the drop
+        self.should_drop = true;
         handle.unset_grab(self, data);
     }
 
@@ -519,7 +521,6 @@ where
     }
 
     fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, _seq: Serial) {
-        // TODO: should we cancel something here?
         handle.unset_grab(self, data);
     }
 
