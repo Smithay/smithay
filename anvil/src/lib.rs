@@ -1,4 +1,5 @@
 #![warn(rust_2018_idioms)]
+#![allow(clippy::collapsible_match)]
 // If no backend is enabled, a large portion of the codebase is unused.
 // So silence this useless warning for the CI.
 #![cfg_attr(

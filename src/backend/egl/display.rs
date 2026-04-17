@@ -980,7 +980,7 @@ fn get_dmabuf_formats(
                 external.set_len(num as usize);
             }
 
-            for (modifier, external_only) in mods.into_iter().zip(external.into_iter()) {
+            for (modifier, external_only) in mods.into_iter().zip(external) {
                 let format = DrmFormat {
                     code: fourcc,
                     modifier: Modifier::from(modifier),

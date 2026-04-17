@@ -385,11 +385,8 @@ impl CommitTimerBarrierState {
         let deadline = deadline.into();
 
         let num_barriers = self.barriers.len();
-        loop {
-            let Some(barrier) = self.barriers.peek() else {
-                break;
-            };
 
+        while let Some(barrier) = self.barriers.peek() {
             if barrier.timestamp > deadline {
                 break;
             }

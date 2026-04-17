@@ -224,8 +224,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         }
 
         self.elements.insert(index, elem);
-        self.elements
-            .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
+        self.elements.sort_by_key(|e1| e1.element.z_index());
     }
 
     /// Changes the location of an already-mapped [`SpaceElement`] in this space
