@@ -344,6 +344,11 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
     pub fn texture(&self) -> &WaylandSurfaceTexture<R> {
         &self.texture
     }
+
+    /// Get the buffer
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
 }
 
 impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
