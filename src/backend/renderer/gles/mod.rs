@@ -1370,7 +1370,7 @@ impl ExportMem for GlesRenderer {
             let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
             let size = (region.size.w * region.size.h * bpp as i32) as isize;
             self.gl
-                .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
+                .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_DRAW);
             self.gl
                 .ReadBuffer(if matches!(target.0, GlesTargetInternal::Surface { .. }) {
                     ffi::BACK
@@ -1434,7 +1434,7 @@ impl ExportMem for GlesRenderer {
                 ffi::PIXEL_PACK_BUFFER,
                 (region.size.w * region.size.h * bpp as i32) as isize,
                 ptr::null(),
-                ffi::STREAM_READ,
+                ffi::STREAM_DRAW,
             );
             self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
             self.gl.ReadPixels(
