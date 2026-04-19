@@ -182,20 +182,73 @@ impl DrmSyncPoint {
     /// timeline point. Symmetric counterpart of
     /// [`DrmSyncPoint::export_sync_file`].
     ///
-    /// Internally creates a temporary binary syncobj from `fd`
-    /// (`drmSyncobjFDToHandle` with `IMPORT_SYNC_FILE`), transfers its
-    /// point 0 to this timeline at `self.point`, and destroys the
-    /// temp. Used by compositors that drive Vulkan explicit sync via
+    /// Internally creates a fresh binary syncobj, imports the sync
+    /// file fence into it via the `IMPORT_SYNC_FILE` ioctl (raw
+    /// because the `drm` crate's public wrapper hardcodes the
+    /// destination handle to `0`, which the kernel rejects with
+    /// `ENOENT` — only the two-step `drmSyncobjCreate` +
+    /// `drmSyncobjImportSyncFile(existing_handle, fd)` pattern is
+    /// supported, mirroring libdrm). Then transfers the temp's
+    /// point 0 into this timeline at `self.point` and destroys the
+    /// temp.
+    ///
+    /// Mirrors `wlr_drm_syncobj_timeline_import_sync_file`. Used by
+    /// compositors that drive Vulkan explicit sync via
     /// `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT` and need to
-    /// inject the resulting sync-file fence into the client's release
-    /// point. Mirrors `wlr_drm_syncobj_timeline_import_sync_file`.
+    /// inject the resulting sync-file fence into the client's
+    /// release point.
     pub fn import_sync_file(&self, fd: BorrowedFd<'_>) -> io::Result<()> {
+        use std::os::fd::AsRawFd;
+
         let ctx = self.timeline.0.dev_ctx.lock().unwrap();
         let Some(device) = ctx.device.upgrade() else {
             return Err(io::ErrorKind::InvalidInput.into());
         };
 
-        let tmp = device.fd_to_syncobj(fd, true)?;
+        let tmp = device.create_syncobj(false)?;
+
+        // DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE with
+        // DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE and a
+        // non-zero existing handle. Computed ioctl number:
+        //   _IOWR('d', 0xC2, drm_syncobj_handle)
+        //     = (3<<30) | (sizeof(24)<<16) | (0x64<<8) | 0xC2
+        //     = 0xC018_64C2
+        const DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE: libc::c_ulong = 0xC018_64C2;
+        const DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE: u32 = 1;
+
+        #[repr(C)]
+        struct DrmSyncobjHandle {
+            handle: u32,
+            flags: u32,
+            fd: i32,
+            pad: u32,
+            point: u64,
+        }
+
+        let mut args = DrmSyncobjHandle {
+            handle: tmp.into(),
+            flags: DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE,
+            fd: fd.as_raw_fd(),
+            pad: 0,
+            point: 0,
+        };
+        // SAFETY: `device.as_raw_fd()` is a valid DRM device fd;
+        // `args` layout matches the kernel's `drm_syncobj_handle`;
+        // the ioctl is a standard `_IOWR` that reads+writes `args`
+        // and returns 0 on success or -1 with errno set.
+        let ret = unsafe {
+            libc::ioctl(
+                device.as_raw_fd(),
+                DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE,
+                &mut args as *mut _,
+            )
+        };
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            let _ = device.destroy_syncobj(tmp);
+            return Err(err);
+        }
+
         let res = device.syncobj_timeline_transfer(tmp, ctx.syncobj, 0, self.point);
         let _ = device.destroy_syncobj(tmp);
         res
