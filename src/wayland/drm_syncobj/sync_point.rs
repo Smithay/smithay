@@ -81,12 +81,6 @@ impl PartialEq for DrmTimeline {
     }
 }
 
-impl AsFd for DrmTimeline {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.0.timeline_fd.as_fd()
-    }
-}
-
 impl DrmTimeline {
     /// Import DRM timeline from file descriptor
     pub fn new(device: &DrmDeviceFd, fd: OwnedFd) -> io::Result<Self> {
@@ -181,6 +175,29 @@ impl DrmSyncPoint {
 
         let res = device.syncobj_to_fd(syncobj, true);
         let _ = device.destroy_syncobj(syncobj);
+        res
+    }
+
+    /// Import a DRM sync file fd as the materialized fence at this
+    /// timeline point. Symmetric counterpart of
+    /// [`DrmSyncPoint::export_sync_file`].
+    ///
+    /// Internally creates a temporary binary syncobj from `fd`
+    /// (`drmSyncobjFDToHandle` with `IMPORT_SYNC_FILE`), transfers its
+    /// point 0 to this timeline at `self.point`, and destroys the
+    /// temp. Used by compositors that drive Vulkan explicit sync via
+    /// `VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT` and need to
+    /// inject the resulting sync-file fence into the client's release
+    /// point. Mirrors `wlr_drm_syncobj_timeline_import_sync_file`.
+    pub fn import_sync_file(&self, fd: BorrowedFd<'_>) -> io::Result<()> {
+        let ctx = self.timeline.0.dev_ctx.lock().unwrap();
+        let Some(device) = ctx.device.upgrade() else {
+            return Err(io::ErrorKind::InvalidInput.into());
+        };
+
+        let tmp = device.fd_to_syncobj(fd, true)?;
+        let res = device.syncobj_timeline_transfer(tmp, ctx.syncobj, 0, self.point);
+        let _ = device.destroy_syncobj(tmp);
         res
     }
 
