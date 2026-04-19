@@ -81,6 +81,12 @@ impl PartialEq for DrmTimeline {
     }
 }
 
+impl AsFd for DrmTimeline {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.timeline_fd.as_fd()
+    }
+}
+
 impl DrmTimeline {
     /// Import DRM timeline from file descriptor
     pub fn new(device: &DrmDeviceFd, fd: OwnedFd) -> io::Result<Self> {
@@ -113,6 +119,16 @@ pub struct DrmSyncPoint {
 }
 
 impl DrmSyncPoint {
+    /// Borrow the [`DrmTimeline`] this point lives on.
+    pub fn timeline(&self) -> &DrmTimeline {
+        &self.timeline
+    }
+
+    /// Numeric timeline value for this point.
+    pub fn point(&self) -> u64 {
+        self.point
+    }
+
     /// Create an eventfd that will be signaled by the syncpoint
     pub fn eventfd(&self) -> io::Result<Arc<OwnedFd>> {
         let fd = rustix::event::eventfd(
