@@ -1303,10 +1303,6 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         serial: Serial,
         time: u32,
     ) {
-        if self.input_model() == WmInputModel::None {
-            return;
-        }
-
         let mut xstate = self.state.lock().unwrap();
         if let Some(surface) = xstate.wl_surface.as_ref() {
             KeyboardTarget::key(surface, seat, data, key, state, serial, time)
@@ -1322,10 +1318,6 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     }
 
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        if self.input_model() == WmInputModel::None {
-            return;
-        }
-
         let mut state = self.state.lock().unwrap();
         if let Some(surface) = state.wl_surface.as_ref() {
             KeyboardTarget::modifiers(surface, seat, data, modifiers, serial);
