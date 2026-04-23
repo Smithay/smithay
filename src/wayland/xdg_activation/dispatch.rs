@@ -12,15 +12,16 @@ use super::{
     ActivationTokenData, TokenBuilder, XdgActivationHandler, XdgActivationState, XdgActivationTokenData,
 };
 
-impl<D> Dispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
+impl<D, F> Dispatch<xdg_activation_v1::XdgActivationV1, (), F, D> for XdgActivationState
 where
-    D: Dispatch<xdg_activation_v1::XdgActivationV1, ()>
-        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData>
-        + XdgActivationHandler
+    D: Dispatch<xdg_activation_v1::XdgActivationV1, (), D>
+        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D>
         + 'static,
+    F: XdgActivationHandler
+        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, D>,
 {
     fn request(
-        state: &mut D,
+        state: &mut F,
         _: &Client,
         _: &xdg_activation_v1::XdgActivationV1,
         request: xdg_activation_v1::Request,
@@ -61,16 +62,16 @@ where
     }
 }
 
-impl<D> GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
+impl<D, F> GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), F, D> for XdgActivationState
 where
-    D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
-        + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
-        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData>
-        + XdgActivationHandler
+    D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D>
+        + Dispatch<xdg_activation_v1::XdgActivationV1, (), D>
+        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D>
         + 'static,
+    F: XdgActivationHandler + Dispatch<xdg_activation_v1::XdgActivationV1, (), F, D>,
 {
     fn bind(
-        _: &mut D,
+        _: &mut F,
         _: &DisplayHandle,
         _: &Client,
         resource: New<xdg_activation_v1::XdgActivationV1>,
@@ -81,12 +82,14 @@ where
     }
 }
 
-impl<D> Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D> for XdgActivationState
+impl<D, F> Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, F, D>
+    for XdgActivationState
 where
-    D: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData> + XdgActivationHandler,
+    D: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D, D>,
+    F: XdgActivationHandler,
 {
     fn request(
-        state: &mut D,
+        state: &mut F,
         client: &Client,
         token: &xdg_activation_token_v1::XdgActivationTokenV1,
         request: xdg_activation_token_v1::Request,
@@ -172,7 +175,7 @@ where
     }
 
     fn destroyed(
-        _: &mut D,
+        _: &mut F,
         _: ClientId,
         _: &xdg_activation_token_v1::XdgActivationTokenV1,
         _: &ActivationTokenData,
