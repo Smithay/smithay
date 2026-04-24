@@ -103,6 +103,10 @@ The following methods are no longer needed as Smithay does them automatically no
 
 You also no longer need to manually set `LayerSurfaceAttributes::initial_configure_sent`, Smithay handles it automatically.
 
+The `delegate_*!` macros have been replaced with a single `delegate_dispatch2!` macro, which implements dispatch in terms
+of new `Dipsatch2` and `GlobalDispatch2` traits. These will replace `Dispatch` and `GlobalDispatch` in a future version of
+`wayland_server`.
+
 ### Additions
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.

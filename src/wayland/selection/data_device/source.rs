@@ -7,7 +7,7 @@ use std::{
 use tracing::{debug, error};
 
 use wayland_server::{
-    Dispatch, DisplayHandle, Resource,
+    DisplayHandle, Resource,
     backend::ClientId,
     protocol::{
         wl_data_source::{self, WlDataSource},
@@ -20,11 +20,12 @@ use crate::input::{
     dnd::{DndAction, Source, SourceMetadata},
 };
 use crate::utils::{IsAlive, alive_tracker::AliveTracker};
+use crate::wayland::Dispatch2;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;
 
-use super::{DataDeviceHandler, DataDeviceState};
+use super::DataDeviceHandler;
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -44,22 +45,21 @@ impl DataSourceUserData {
     }
 }
 
-impl<D> Dispatch<WlDataSource, DataSourceUserData, D> for DataDeviceState
+impl<D> Dispatch2<WlDataSource, D> for DataSourceUserData
 where
-    D: Dispatch<WlDataSource, DataSourceUserData>,
     D: DataDeviceHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlDataSource,
         request: wl_data_source::Request,
-        data: &DataSourceUserData,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let mut data = data.inner.lock().unwrap();
+        let mut data = self.inner.lock().unwrap();
 
         match request {
             wl_data_source::Request::Offer { mime_type } => {
@@ -78,8 +78,8 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _client: ClientId, source: &WlDataSource, data: &DataSourceUserData) {
-        data.alive_tracker.destroy_notify();
+    fn destroyed(&self, state: &mut D, _client: ClientId, source: &WlDataSource) {
+        self.alive_tracker.destroy_notify();
 
         // Remove the source from the used ones.
         let seat = match state
@@ -103,7 +103,7 @@ where
             Some(OfferReplySource::Client(SelectionSourceProvider::DataDevice(set_source)))
                 if set_source == source =>
             {
-                seat_data.set_clipboard_selection::<D>(&data.display_handle, None)
+                seat_data.set_clipboard_selection::<D>(&self.display_handle, None)
             }
             _ => (),
         }

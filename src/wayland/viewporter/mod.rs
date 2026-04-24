@@ -9,8 +9,6 @@
 //!
 //! ```
 //! use smithay::wayland::viewporter::ViewporterState;
-//! use smithay::delegate_viewporter;
-//! # use smithay::delegate_compositor;
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! # use smithay::reexports::wayland_server::{Client, protocol::wl_surface::WlSurface};
 //!
@@ -22,15 +20,13 @@
 //!     &display.handle(), // the display
 //! );
 //!
-//! // implement Dispatch for the Viewporter types
-//! delegate_viewporter!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
-//! # delegate_compositor!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -61,7 +57,10 @@ use wayland_server::{
     Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface,
 };
 
-use crate::utils::{Client, Logical, Rectangle, Size};
+use crate::{
+    utils::{Client, Logical, Rectangle, Size},
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+};
 
 use super::compositor::{self, Cacheable, CompositorHandler, SurfaceData, with_states};
 
@@ -80,13 +79,13 @@ impl ViewporterState {
     /// the event loop in the future.
     pub fn new<D>(display: &DisplayHandle) -> ViewporterState
     where
-        D: GlobalDispatch<wp_viewporter::WpViewporter, ()>
-            + Dispatch<wp_viewporter::WpViewporter, ()>
+        D: GlobalDispatch<wp_viewporter::WpViewporter, GlobalData>
+            + Dispatch<wp_viewporter::WpViewporter, GlobalData>
             + Dispatch<wp_viewport::WpViewport, ViewportState>
             + 'static,
     {
         ViewporterState {
-            global: display.create_global::<D, wp_viewporter::WpViewporter, ()>(1, ()),
+            global: display.create_global::<D, wp_viewporter::WpViewporter, _>(1, GlobalData),
         }
     }
 
@@ -96,36 +95,33 @@ impl ViewporterState {
     }
 }
 
-impl<D> GlobalDispatch<wp_viewporter::WpViewporter, (), D> for ViewporterState
+impl<D> GlobalDispatch2<wp_viewporter::WpViewporter, D> for GlobalData
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
-    D: Dispatch<wp_viewporter::WpViewporter, ()>,
+    D: Dispatch<wp_viewporter::WpViewporter, GlobalData>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: wayland_server::New<wp_viewporter::WpViewporter>,
-        _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<wp_viewporter::WpViewporter, (), D> for ViewporterState
+impl<D> Dispatch2<wp_viewporter::WpViewporter, D> for GlobalData
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
-    D: Dispatch<wp_viewporter::WpViewporter, ()>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &wp_viewporter::WpViewporter,
         request: <wp_viewporter::WpViewporter as wayland_server::Resource>::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -188,25 +184,22 @@ where
     }
 }
 
-impl<D> Dispatch<wp_viewport::WpViewport, ViewportState, D> for ViewportState
+impl<D> Dispatch2<wp_viewport::WpViewport, D> for ViewportState
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
-    D: Dispatch<wp_viewporter::WpViewporter, ()>,
-    D: Dispatch<wp_viewport::WpViewport, ViewportState>,
     D: CompositorHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         client: &wayland_server::Client,
         resource: &wp_viewport::WpViewport,
         request: <wp_viewport::WpViewport as wayland_server::Resource>::Request,
-        data: &ViewportState,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             wp_viewport::Request::Destroy => {
-                if let Ok(surface) = data.surface.upgrade() {
+                if let Ok(surface) = self.surface.upgrade() {
                     with_states(&surface, |states| {
                         states
                             .data_map
@@ -237,7 +230,7 @@ where
 
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
-                let Ok(surface) = data.surface.upgrade() else {
+                let Ok(surface) = self.surface.upgrade() else {
                     resource.post_error(
                         wp_viewport::Error::NoSurface as u32,
                         "the wl_surface was destroyed".to_string(),
@@ -275,7 +268,7 @@ where
 
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
-                let Ok(surface) = data.surface.upgrade() else {
+                let Ok(surface) = self.surface.upgrade() else {
                     resource.post_error(
                         wp_viewport::Error::NoSurface as u32,
                         "the wl_surface was destroyed".to_string(),
@@ -426,37 +419,4 @@ impl Cacheable for ViewportCachedState {
         into.src = self.src;
         into.dst = self.dst;
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_viewporter {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::viewporter::server::{
-                        wp_viewport::WpViewport, wp_viewporter::WpViewporter,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::viewporter::{ViewportState, ViewporterState},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpViewporter: ()] => ViewporterState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpViewporter: ()] => ViewporterState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpViewport: ViewportState] => ViewportState
-            );
-        };
-    };
 }

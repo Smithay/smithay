@@ -2,7 +2,7 @@ use std::{cell::RefCell, fmt};
 
 use tracing::{instrument, trace, warn};
 use wayland_server::{
-    Client, Dispatch, DisplayHandle, Resource,
+    Client, DisplayHandle, Resource,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
@@ -14,11 +14,12 @@ use super::WaylandFocus;
 use crate::{
     backend::input::{KeyState, Keycode},
     input::{
-        Seat, SeatHandler, SeatState, WeakSeat,
+        Seat, SeatHandler, WeakSeat,
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
     },
     utils::{HookId, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
+        Dispatch2,
         compositor::{add_destruction_hook, remove_destruction_hook, with_states},
         input_method::InputMethodSeat,
         text_input::TextInputSeat,
@@ -116,24 +117,24 @@ impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch<WlKeyboard, KeyboardUserData<D>, D> for SeatState<D>
+impl<D> Dispatch2<WlKeyboard, D> for KeyboardUserData<D>
 where
-    D: 'static + Dispatch<WlKeyboard, KeyboardUserData<D>>,
+    D: 'static,
     D: SeatHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlKeyboard,
         _request: wl_keyboard::Request,
-        _data: &KeyboardUserData<D>,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard, data: &KeyboardUserData<D>) {
-        if let Some(ref handle) = data.handle {
+    fn destroyed(&self, _state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard) {
+        if let Some(ref handle) = self.handle {
             handle
                 .arc
                 .known_kbds

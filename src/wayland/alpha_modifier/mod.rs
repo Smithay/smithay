@@ -10,7 +10,6 @@
 //! #
 //! use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 //! use smithay::{
-//!     delegate_alpha_modifier, delegate_compositor,
 //!     wayland::compositor::{self, CompositorState, CompositorClientState, CompositorHandler},
 //!     wayland::alpha_modifier::{AlphaModifierSurfaceCachedState, AlphaModifierState},
 //! };
@@ -21,8 +20,7 @@
 //! struct ClientState { compositor_state: CompositorClientState }
 //! impl wayland_server::backend::ClientData for ClientState {}
 //!
-//! delegate_alpha_modifier!(State);
-//! delegate_compositor!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
@@ -65,6 +63,8 @@ use wayland_server::{
 };
 
 use super::compositor::Cacheable;
+
+use crate::wayland::GlobalData;
 
 mod dispatch;
 
@@ -161,12 +161,12 @@ impl AlphaModifierState {
     /// Regiseter new [WpAlphaModifierV1] global
     pub fn new<D>(display: &DisplayHandle) -> AlphaModifierState
     where
-        D: GlobalDispatch<WpAlphaModifierV1, ()>
-            + Dispatch<WpAlphaModifierV1, ()>
+        D: GlobalDispatch<WpAlphaModifierV1, GlobalData>
+            + Dispatch<WpAlphaModifierV1, GlobalData>
             + Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData>
             + 'static,
     {
-        let global = display.create_global::<D, WpAlphaModifierV1, _>(1, ());
+        let global = display.create_global::<D, WpAlphaModifierV1, _>(1, GlobalData);
 
         AlphaModifierState { global }
     }
@@ -175,33 +175,4 @@ impl AlphaModifierState {
     pub fn global(&self) -> GlobalId {
         self.global.clone()
     }
-}
-
-/// Macro to delegate implementation of the alpha modifier protocol
-#[macro_export]
-macro_rules! delegate_alpha_modifier {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __WpAlphaModifierV1 =
-            $crate::reexports::wayland_protocols::wp::alpha_modifier::v1::server::wp_alpha_modifier_v1::WpAlphaModifierV1;
-        type __WpAlphaModifierSurfaceV1 =
-            $crate::reexports::wayland_protocols::wp::alpha_modifier::v1::server::wp_alpha_modifier_surface_v1::WpAlphaModifierSurfaceV1;
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpAlphaModifierV1: ()
-            ] => $crate::wayland::alpha_modifier::AlphaModifierState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpAlphaModifierV1: ()
-            ] => $crate::wayland::alpha_modifier::AlphaModifierState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpAlphaModifierSurfaceV1: $crate::wayland::alpha_modifier::AlphaModifierSurfaceUserData
-            ] => $crate::wayland::alpha_modifier::AlphaModifierState
-        );
-    };
 }

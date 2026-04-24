@@ -7,7 +7,6 @@
 //! To initialize this implementation create the [`CommitTimingManagerState`] and store it inside your `State` struct.
 //!
 //! ```
-//! use smithay::delegate_commit_timing;
 //! use smithay::wayland::compositor;
 //! use smithay::wayland::commit_timing::CommitTimingManagerState;
 //!
@@ -21,7 +20,7 @@
 //! // insert the CommitTimingManagerState into your state
 //! // ..
 //!
-//! delegate_commit_timing!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -93,7 +92,10 @@ use wayland_server::{
 
 use crate::{
     utils::Time,
-    wayland::compositor::{add_blocker, add_pre_commit_hook},
+    wayland::{
+        Dispatch2, GlobalDispatch2,
+        compositor::{add_blocker, add_pre_commit_hook},
+    },
 };
 
 use super::compositor::{Barrier, with_states};
@@ -112,8 +114,7 @@ impl CommitTimingManagerState {
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpCommitTimingManagerV1, bool>,
-        D: Dispatch<WpCommitTimingManagerV1, bool>,
+        D: GlobalDispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, true)
@@ -125,8 +126,7 @@ impl CommitTimingManagerState {
     /// remove or disable this global in the future.
     pub fn unmanaged<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpCommitTimingManagerV1, bool>,
-        D: Dispatch<WpCommitTimingManagerV1, bool>,
+        D: GlobalDispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, false)
@@ -134,11 +134,11 @@ impl CommitTimingManagerState {
 
     fn new_internal<D>(display: &DisplayHandle, is_managed: bool) -> Self
     where
-        D: GlobalDispatch<WpCommitTimingManagerV1, bool>,
-        D: Dispatch<WpCommitTimingManagerV1, bool>,
+        D: GlobalDispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
         D: 'static,
     {
-        let global = display.create_global::<D, WpCommitTimingManagerV1, _>(1, is_managed);
+        let global =
+            display.create_global::<D, WpCommitTimingManagerV1, _>(1, CommitTimingManagerData { is_managed });
 
         Self { global, is_managed }
     }
@@ -154,41 +154,43 @@ impl CommitTimingManagerState {
     }
 }
 
-impl<D> GlobalDispatch<WpCommitTimingManagerV1, bool, D> for CommitTimingManagerState
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct CommitTimingManagerData {
+    is_managed: bool,
+}
+
+impl<D> GlobalDispatch2<WpCommitTimingManagerV1, D> for CommitTimingManagerData
 where
-    D: GlobalDispatch<WpCommitTimingManagerV1, bool>,
-    D: Dispatch<WpCommitTimingManagerV1, bool>,
+    D: Dispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WpCommitTimingManagerV1>,
-        global_data: &bool,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, *global_data);
+        data_init.init(resource, *self);
     }
 }
 
-impl<D> Dispatch<WpCommitTimingManagerV1, bool, D> for CommitTimingManagerState
+impl<D> Dispatch2<WpCommitTimingManagerV1, D> for CommitTimingManagerData
 where
-    D: Dispatch<WpCommitTimingManagerV1, bool>,
-    D: Dispatch<WpCommitTimerV1, Weak<WlSurface>>,
+    D: Dispatch<WpCommitTimerV1, CommitTimerData>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WpCommitTimingManagerV1,
         request: wp_commit_timing_manager_v1::Request,
-        data: &bool,
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let is_managed = *data;
-
         match request {
             wp_commit_timing_manager_v1::Request::GetTimer { id, surface } => {
                 let (is_initial, has_active_commit_timer) = with_states(&surface, |states| {
@@ -209,7 +211,7 @@ where
                 }
 
                 // Make sure we do not install the hook more then once in case the surface is being reused
-                if is_managed && is_initial {
+                if self.is_managed && is_initial {
                     add_pre_commit_hook::<D, _>(&surface, |_, _, surface| {
                         let timestamp = with_states(surface, |states| {
                             states
@@ -231,7 +233,7 @@ where
                     });
                 }
 
-                let commit_timer: WpCommitTimerV1 = data_init.init(id, surface.downgrade());
+                let commit_timer: WpCommitTimerV1 = data_init.init(id, CommitTimerData(surface.downgrade()));
 
                 with_states(&surface, |states| {
                     states
@@ -251,17 +253,20 @@ where
 // Used to realize the `AlreadyExists` protocol check.
 struct CommitTimerMarker(Option<WpCommitTimerV1>);
 
-impl<D> Dispatch<WpCommitTimerV1, Weak<WlSurface>, D> for CommitTimingManagerState
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct CommitTimerData(Weak<WlSurface>);
+
+impl<D> Dispatch2<WpCommitTimerV1, D> for CommitTimerData
 where
-    D: Dispatch<WpCommitTimerV1, Weak<WlSurface>>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         resource: &WpCommitTimerV1,
         request: wp_commit_timer_v1::Request,
-        data: &Weak<WlSurface>,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -271,7 +276,7 @@ where
                 tv_sec_lo,
                 tv_nsec,
             } => {
-                let Ok(surface) = data.upgrade() else {
+                let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
                         wp_commit_timer_v1::Error::SurfaceDestroyed as u32,
                         "the surface associated with this commit timer object has been destroyed".to_string(),
@@ -308,7 +313,7 @@ where
                 }
             }
             wp_commit_timer_v1::Request::Destroy => {
-                if let Ok(surface) = data.upgrade() {
+                if let Ok(surface) = self.0.upgrade() {
                     with_states(&surface, |states| {
                         states
                             .data_map
@@ -433,21 +438,4 @@ impl std::cmp::PartialOrd for CommitTimerBarrier {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
-}
-
-/// Macro used to delegate [`WpCommitTimingManagerV1`] events
-#[macro_export]
-macro_rules! delegate_commit_timing {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::commit_timing::v1::server::wp_commit_timing_manager_v1::WpCommitTimingManagerV1: bool
-        ] => $crate::wayland::commit_timing::CommitTimingManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::commit_timing::v1::server::wp_commit_timing_manager_v1::WpCommitTimingManagerV1: bool
-        ] => $crate::wayland::commit_timing::CommitTimingManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::commit_timing::v1::server::wp_commit_timer_v1::WpCommitTimerV1: $crate::reexports::wayland_server::Weak<$crate::reexports::wayland_server::protocol::wl_surface::WlSurface>
-        ] => $crate::wayland::commit_timing::CommitTimingManagerState);
-    };
 }

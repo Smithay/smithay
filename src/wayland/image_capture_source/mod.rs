@@ -22,8 +22,6 @@
 //! ### Output Capture Only
 //!
 //! ```no_run
-//! use smithay::delegate_image_capture_source;
-//! use smithay::delegate_output_capture_source;
 //! use smithay::output::Output;
 //! use smithay::wayland::image_capture_source::{
 //!     ImageCaptureSourceState, ImageCaptureSourceHandler, ImageCaptureSource,
@@ -57,16 +55,12 @@
 //! let image_capture_source = ImageCaptureSourceState::new();
 //! let output_capture_source = OutputCaptureSourceState::new::<State>(&display_handle);
 //!
-//! delegate_image_capture_source!(State);
-//! delegate_output_capture_source!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ### With Toplevel Capture
 //!
 //! ```no_run
-//! use smithay::delegate_image_capture_source;
-//! use smithay::delegate_output_capture_source;
-//! use smithay::delegate_toplevel_capture_source;
 //! use smithay::output::Output;
 //! use smithay::wayland::image_capture_source::{
 //!     ImageCaptureSourceState, ImageCaptureSourceHandler, ImageCaptureSource,
@@ -114,9 +108,7 @@
 //! let output_capture_source = OutputCaptureSourceState::new::<State>(&display_handle);
 //! let toplevel_capture_source = ToplevelCaptureSourceState::new::<State>(&display_handle);
 //!
-//! delegate_image_capture_source!(State);
-//! delegate_output_capture_source!(State);
-//! delegate_toplevel_capture_source!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ### Custom Capture Sources
@@ -152,6 +144,7 @@ use wayland_server::{
 use crate::output::Output;
 use crate::utils::user_data::UserDataMap;
 use crate::wayland::foreign_toplevel_list::ForeignToplevelHandle;
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 // ============================================================================
 // Core types
@@ -317,16 +310,16 @@ pub trait ImageCaptureSourceHandler:
 }
 
 // Dispatch for the capture source resource
-impl<D> Dispatch<ExtImageCaptureSourceV1, ImageCaptureSourceData, D> for ImageCaptureSourceState
+impl<D> Dispatch2<ExtImageCaptureSourceV1, D> for ImageCaptureSourceData
 where
     D: ImageCaptureSourceHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &ExtImageCaptureSourceV1,
         request: ext_image_capture_source_v1::Request,
-        _data: &ImageCaptureSourceData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -339,13 +332,13 @@ where
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_server::backend::ClientId,
         _resource: &ExtImageCaptureSourceV1,
-        data: &ImageCaptureSourceData,
     ) {
-        data.source.mark_destroyed();
-        state.source_destroyed(data.source.clone());
+        self.source.mark_destroyed();
+        state.source_destroyed(self.source.clone());
     }
 }
 
@@ -405,7 +398,7 @@ impl OutputCaptureSourceState {
 pub trait OutputCaptureSourceHandler:
     ImageCaptureSourceHandler
     + GlobalDispatch<ExtOutputImageCaptureSourceManagerV1, OutputCaptureSourceGlobalData>
-    + Dispatch<ExtOutputImageCaptureSourceManagerV1, ()>
+    + Dispatch<ExtOutputImageCaptureSourceManagerV1, GlobalData>
 {
     /// Returns a mutable reference to the [`OutputCaptureSourceState`].
     fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState;
@@ -422,37 +415,36 @@ pub trait OutputCaptureSourceHandler:
     }
 }
 
-impl<D> GlobalDispatch<ExtOutputImageCaptureSourceManagerV1, OutputCaptureSourceGlobalData, D>
-    for OutputCaptureSourceState
+impl<D> GlobalDispatch2<ExtOutputImageCaptureSourceManagerV1, D> for OutputCaptureSourceGlobalData
 where
     D: OutputCaptureSourceHandler,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<ExtOutputImageCaptureSourceManagerV1>,
-        _global_data: &OutputCaptureSourceGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 
-    fn can_view(client: Client, global_data: &OutputCaptureSourceGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<ExtOutputImageCaptureSourceManagerV1, (), D> for OutputCaptureSourceState
+impl<D> Dispatch2<ExtOutputImageCaptureSourceManagerV1, D> for GlobalData
 where
     D: OutputCaptureSourceHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _resource: &ExtOutputImageCaptureSourceManagerV1,
         request: ext_output_image_capture_source_manager_v1::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -544,7 +536,7 @@ impl ToplevelCaptureSourceState {
 pub trait ToplevelCaptureSourceHandler:
     ImageCaptureSourceHandler
     + GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelCaptureSourceGlobalData>
-    + Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ()>
+    + Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, GlobalData>
 {
     /// Returns a mutable reference to the [`ToplevelCaptureSourceState`].
     fn toplevel_capture_source_state(&mut self) -> &mut ToplevelCaptureSourceState;
@@ -561,37 +553,36 @@ pub trait ToplevelCaptureSourceHandler:
     }
 }
 
-impl<D> GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelCaptureSourceGlobalData, D>
-    for ToplevelCaptureSourceState
+impl<D> GlobalDispatch2<ExtForeignToplevelImageCaptureSourceManagerV1, D> for ToplevelCaptureSourceGlobalData
 where
     D: ToplevelCaptureSourceHandler,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<ExtForeignToplevelImageCaptureSourceManagerV1>,
-        _global_data: &ToplevelCaptureSourceGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 
-    fn can_view(client: Client, global_data: &ToplevelCaptureSourceGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, (), D> for ToplevelCaptureSourceState
+impl<D> Dispatch2<ExtForeignToplevelImageCaptureSourceManagerV1, D> for GlobalData
 where
     D: ToplevelCaptureSourceHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _resource: &ExtForeignToplevelImageCaptureSourceManagerV1,
         request: ext_foreign_toplevel_image_capture_source_manager_v1::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -620,88 +611,4 @@ where
             _ => unreachable!(),
         }
     }
-}
-
-// ============================================================================
-// Delegate macros
-// ============================================================================
-
-/// Delegate core image capture source handling to [`ImageCaptureSourceState`].
-///
-/// You must implement [`ImageCaptureSourceHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_image_capture_source {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::reexports::wayland_protocols::ext::image_capture_source::v1::server::{
-                ext_image_capture_source_v1::ExtImageCaptureSourceV1,
-            };
-            use $crate::reexports::wayland_server::delegate_dispatch;
-            use $crate::wayland::image_capture_source::{
-                ImageCaptureSourceData, ImageCaptureSourceState,
-            };
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtImageCaptureSourceV1: ImageCaptureSourceData] => ImageCaptureSourceState
-            );
-        };
-    };
-}
-
-/// Delegate output capture source management to [`OutputCaptureSourceState`].
-///
-/// You must implement [`OutputCaptureSourceHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_output_capture_source {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::reexports::wayland_protocols::ext::image_capture_source::v1::server::{
-                ext_output_image_capture_source_manager_v1::ExtOutputImageCaptureSourceManagerV1,
-            };
-            use $crate::reexports::wayland_server::{delegate_dispatch, delegate_global_dispatch};
-            use $crate::wayland::image_capture_source::{
-                OutputCaptureSourceGlobalData, OutputCaptureSourceState,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtOutputImageCaptureSourceManagerV1: OutputCaptureSourceGlobalData] => OutputCaptureSourceState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtOutputImageCaptureSourceManagerV1: ()] => OutputCaptureSourceState
-            );
-        };
-    };
-}
-
-/// Delegate toplevel capture source management to [`ToplevelCaptureSourceState`].
-///
-/// You must implement [`ToplevelCaptureSourceHandler`] to use this.
-///
-/// This uses Smithay's [`ForeignToplevelHandle`]. Compositors with custom
-/// foreign-toplevel implementations should handle the protocol directly instead.
-#[macro_export]
-macro_rules! delegate_toplevel_capture_source {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::reexports::wayland_protocols::ext::image_capture_source::v1::server::{
-                ext_foreign_toplevel_image_capture_source_manager_v1::ExtForeignToplevelImageCaptureSourceManagerV1,
-            };
-            use $crate::reexports::wayland_server::{delegate_dispatch, delegate_global_dispatch};
-            use $crate::wayland::image_capture_source::{
-                ToplevelCaptureSourceGlobalData, ToplevelCaptureSourceState,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtForeignToplevelImageCaptureSourceManagerV1: ToplevelCaptureSourceGlobalData] => ToplevelCaptureSourceState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtForeignToplevelImageCaptureSourceManagerV1: ()] => ToplevelCaptureSourceState
-            );
-        };
-    };
 }

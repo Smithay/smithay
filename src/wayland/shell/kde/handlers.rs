@@ -7,31 +7,29 @@ use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decor
 use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::{
     OrgKdeKwinServerDecorationManager, Request as ManagerRequest,
 };
-use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource};
 
-use crate::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
+use crate::wayland::shell::kde::decoration::KdeDecorationHandler;
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
-use super::decoration::KdeDecorationManagerGlobalData;
+use super::decoration::{KdeDecorationManagerGlobalData, KwinServerDecorationData};
 
-impl<D> GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData, D>
-    for KdeDecorationState
+impl<D> GlobalDispatch2<OrgKdeKwinServerDecorationManager, D> for KdeDecorationManagerGlobalData
 where
-    D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
-        + Dispatch<OrgKdeKwinServerDecorationManager, ()>
-        + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
+    D: Dispatch<OrgKdeKwinServerDecorationManager, GlobalData>
+        + Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData>
         + KdeDecorationHandler
         + 'static,
 {
     fn bind(
+        &self,
         state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<OrgKdeKwinServerDecorationManager>,
-        _global_data: &KdeDecorationManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let kde_decoration_manager = data_init.init(resource, ());
+        let kde_decoration_manager = data_init.init(resource, GlobalData);
 
         // Set default decoration mode.
         let default_mode = state.kde_decoration_state().default_mode;
@@ -40,25 +38,21 @@ where
         trace!("Bound decoration manager global");
     }
 
-    fn can_view(client: Client, global_data: &KdeDecorationManagerGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<OrgKdeKwinServerDecorationManager, (), D> for KdeDecorationState
+impl<D> Dispatch2<OrgKdeKwinServerDecorationManager, D> for GlobalData
 where
-    D: Dispatch<OrgKdeKwinServerDecorationManager, ()>
-        + Dispatch<OrgKdeKwinServerDecorationManager, ()>
-        + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
-        + KdeDecorationHandler
-        + 'static,
+    D: Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData> + KdeDecorationHandler + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _kde_decoration_manager: &OrgKdeKwinServerDecorationManager,
         request: ManagerRequest,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -67,28 +61,30 @@ where
             _ => unreachable!(),
         };
 
-        let kde_decoration = data_init.init(id, surface);
+        let kde_decoration = data_init.init(id, KwinServerDecorationData(surface));
 
-        let surface = kde_decoration.data().unwrap();
+        let surface = &kde_decoration.data::<KwinServerDecorationData>().unwrap().0;
         state.new_decoration(surface, &kde_decoration);
 
         trace!(surface = ?surface, "Created decoration object for surface");
     }
 }
 
-impl<D> Dispatch<OrgKdeKwinServerDecoration, WlSurface, D> for KdeDecorationState
+impl<D> Dispatch2<OrgKdeKwinServerDecoration, D> for KwinServerDecorationData
 where
-    D: Dispatch<OrgKdeKwinServerDecoration, WlSurface> + KdeDecorationHandler + 'static,
+    D: KdeDecorationHandler + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         kde_decoration: &OrgKdeKwinServerDecoration,
         request: Request,
-        surface: &WlSurface,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
+        let surface = &self.0;
+
         trace!(
             surface = ?surface,
             request = ?request,

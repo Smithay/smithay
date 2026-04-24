@@ -16,9 +16,11 @@ use wayland_server::Weak;
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId};
 
-use crate::{utils::Serial, wayland::compositor};
+use crate::{
+    utils::Serial,
+    wayland::{Dispatch2, compositor},
+};
 
-use super::TabletManagerState;
 use super::tablet::TabletHandle;
 use super::tablet_seat::TabletSeatHandler;
 
@@ -468,17 +470,16 @@ impl fmt::Debug for TabletToolUserData {
     }
 }
 
-impl<D> Dispatch<ZwpTabletToolV2, TabletToolUserData, D> for TabletManagerState
+impl<D> Dispatch2<ZwpTabletToolV2, D> for TabletToolUserData
 where
-    D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
     D: TabletSeatHandler + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         tool: &ZwpTabletToolV2,
         request: zwp_tablet_tool_v2::Request,
-        data: &TabletToolUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -489,7 +490,7 @@ where
                 hotspot_y,
                 ..
             } => {
-                let focus = data.handle.inner.lock().unwrap().focus.clone();
+                let focus = self.handle.inner.lock().unwrap().focus.clone();
 
                 if let Some(focus) = focus {
                     if focus.id().same_client_as(&tool.id()) {
@@ -529,9 +530,9 @@ where
                                     .hotspot = hotspot;
                             });
 
-                            state.tablet_tool_image(&data.desc, CursorImageStatus::Surface(surface));
+                            state.tablet_tool_image(&self.desc, CursorImageStatus::Surface(surface));
                         } else {
-                            state.tablet_tool_image(&data.desc, CursorImageStatus::Hidden);
+                            state.tablet_tool_image(&self.desc, CursorImageStatus::Hidden);
                         };
                     }
                 }
@@ -543,8 +544,8 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, resource: &ZwpTabletToolV2, data: &TabletToolUserData) {
-        data.handle
+    fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ZwpTabletToolV2) {
+        self.handle
             .inner
             .lock()
             .unwrap()

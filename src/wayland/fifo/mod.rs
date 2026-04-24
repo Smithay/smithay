@@ -7,7 +7,6 @@
 //! To initialize this implementation create the [`FifoManagerState`] and store it inside your `State` struct.
 //!
 //! ```
-//! use smithay::delegate_fifo;
 //! use smithay::wayland::compositor;
 //! use smithay::wayland::fifo::FifoManagerState;
 //!
@@ -21,7 +20,7 @@
 //! // insert the FifoManagerState into your state
 //! // ..
 //!
-//! delegate_fifo!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -90,7 +89,10 @@ use wayland_server::{
     protocol::wl_surface::WlSurface,
 };
 
-use crate::wayland::compositor::{add_blocker, add_pre_commit_hook};
+use crate::wayland::{
+    Dispatch2, GlobalDispatch2,
+    compositor::{add_blocker, add_pre_commit_hook},
+};
 
 use super::compositor::{Barrier, Cacheable, is_sync_subsurface, with_states};
 
@@ -108,8 +110,8 @@ impl FifoManagerState {
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpFifoManagerV1, bool>,
-        D: Dispatch<WpFifoManagerV1, bool>,
+        D: GlobalDispatch<WpFifoManagerV1, FifoManagerData>,
+        D: Dispatch<WpFifoManagerV1, FifoManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, true)
@@ -121,8 +123,8 @@ impl FifoManagerState {
     /// remove or disable this global in the future.
     pub fn unmanaged<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpFifoManagerV1, bool>,
-        D: Dispatch<WpFifoManagerV1, bool>,
+        D: GlobalDispatch<WpFifoManagerV1, FifoManagerData>,
+        D: Dispatch<WpFifoManagerV1, FifoManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, false)
@@ -130,11 +132,10 @@ impl FifoManagerState {
 
     fn new_internal<D>(display: &DisplayHandle, is_managed: bool) -> Self
     where
-        D: GlobalDispatch<WpFifoManagerV1, bool>,
-        D: Dispatch<WpFifoManagerV1, bool>,
+        D: GlobalDispatch<WpFifoManagerV1, FifoManagerData>,
         D: 'static,
     {
-        let global = display.create_global::<D, WpFifoManagerV1, _>(1, is_managed);
+        let global = display.create_global::<D, WpFifoManagerV1, _>(1, FifoManagerData { is_managed });
 
         Self { global, is_managed }
     }
@@ -150,41 +151,43 @@ impl FifoManagerState {
     }
 }
 
-impl<D> GlobalDispatch<WpFifoManagerV1, bool, D> for FifoManagerState
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct FifoManagerData {
+    is_managed: bool,
+}
+
+impl<D> GlobalDispatch2<WpFifoManagerV1, D> for FifoManagerData
 where
-    D: GlobalDispatch<WpFifoManagerV1, bool>,
-    D: Dispatch<WpFifoManagerV1, bool>,
+    D: Dispatch<WpFifoManagerV1, FifoManagerData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WpFifoManagerV1>,
-        global_data: &bool,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, *global_data);
+        data_init.init(resource, *self);
     }
 }
 
-impl<D> Dispatch<WpFifoManagerV1, bool, D> for FifoManagerState
+impl<D> Dispatch2<WpFifoManagerV1, D> for FifoManagerData
 where
-    D: Dispatch<WpFifoManagerV1, bool>,
-    D: Dispatch<WpFifoV1, Weak<WlSurface>>,
+    D: Dispatch<WpFifoV1, FifoData>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WpFifoManagerV1,
         request: wp_fifo_manager_v1::Request,
-        data: &bool,
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let is_managed = *data;
-
         match request {
             wp_fifo_manager_v1::Request::GetFifo { id, surface } => {
                 let (is_initial, has_active_fifo) = with_states(&surface, |states| {
@@ -205,7 +208,7 @@ where
                 }
 
                 // Make sure we do not install the hook more then once in case the surface is being reused
-                if is_managed && is_initial {
+                if self.is_managed && is_initial {
                     add_pre_commit_hook::<D, _>(&surface, |_, _, surface| {
                         let fifo_barrier = with_states(surface, |states| {
                             let fifo_state = *states.cached_state.get::<FifoCachedState>().pending();
@@ -259,7 +262,7 @@ where
                     });
                 }
 
-                let fifo: WpFifoV1 = data_init.init(id, surface.downgrade());
+                let fifo: WpFifoV1 = data_init.init(id, FifoData(surface.downgrade()));
 
                 with_states(&surface, |states| {
                     states
@@ -279,23 +282,26 @@ where
 // Used to realize the `AlreadyExists` protocol check.
 struct FifoMarker(Option<WpFifoV1>);
 
-impl<D> Dispatch<WpFifoV1, Weak<WlSurface>, D> for FifoManagerState
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct FifoData(Weak<WlSurface>);
+
+impl<D> Dispatch2<WpFifoV1, D> for FifoData
 where
-    D: Dispatch<WpFifoV1, Weak<WlSurface>>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         resource: &WpFifoV1,
         request: wp_fifo_v1::Request,
-        data: &Weak<WlSurface>,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             wp_fifo_v1::Request::SetBarrier => {
-                let Ok(surface) = data.upgrade() else {
+                let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
                         wp_fifo_v1::Error::SurfaceDestroyed as u32,
                         "the surface associated with this fifo object has been destroyed".to_string(),
@@ -307,7 +313,7 @@ where
                 });
             }
             wp_fifo_v1::Request::WaitBarrier => {
-                let Ok(surface) = data.upgrade() else {
+                let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
                         wp_fifo_v1::Error::SurfaceDestroyed as u32,
                         "the surface associated with this fifo object has been destroyed".to_string(),
@@ -323,7 +329,7 @@ where
                 });
             }
             wp_fifo_v1::Request::Destroy => {
-                if let Ok(surface) = data.upgrade() {
+                if let Ok(surface) = self.0.upgrade() {
                     with_states(&surface, |states| {
                         states
                             .data_map
@@ -387,39 +393,4 @@ impl Cacheable for FifoBarrierCachedState {
             barrier.signal();
         }
     }
-}
-
-/// Macro used to delegate [`WpFifoManagerV1`] events
-#[macro_export]
-macro_rules! delegate_fifo {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::fifo::v1::server::{
-                        wp_fifo_manager_v1::WpFifoManagerV1, wp_fifo_v1::WpFifoV1,
-                    },
-                    wayland_server::{
-                        delegate_dispatch, delegate_global_dispatch, protocol::wl_buffer::WlBuffer,
-                        protocol::wl_surface::WlSurface, Weak,
-                    },
-                },
-                wayland::fifo::FifoManagerState,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpFifoManagerV1: bool] => FifoManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpFifoManagerV1: bool] => FifoManagerState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpFifoV1: Weak<WlSurface>] => FifoManagerState
-            );
-        };
-    };
 }

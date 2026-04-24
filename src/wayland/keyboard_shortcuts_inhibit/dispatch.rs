@@ -8,14 +8,17 @@ use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::{
     zwp_keyboard_shortcuts_inhibitor_v1::{self, ZwpKeyboardShortcutsInhibitorV1},
 };
 use wayland_server::{
-    Dispatch, GlobalDispatch, Resource,
+    Dispatch, Resource,
     backend::{ClientId, ObjectId},
     protocol::wl_surface::WlSurface,
 };
 
-use crate::input::{Seat, SeatHandler};
+use crate::{
+    input::{Seat, SeatHandler},
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+};
 
-use super::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState};
+use super::KeyboardShortcutsInhibitHandler;
 
 /// User data of [ZwpKeyboardShortcutsInhibitorV1] object
 #[derive(Debug)]
@@ -27,37 +30,36 @@ pub struct KeyboardShortcutsInhibitorUserData {
     pub(crate) is_active: AtomicBool,
 }
 
-impl<D> GlobalDispatch<ZwpKeyboardShortcutsInhibitManagerV1, (), D> for KeyboardShortcutsInhibitState
+impl<D> GlobalDispatch2<ZwpKeyboardShortcutsInhibitManagerV1, D> for GlobalData
 where
     D: KeyboardShortcutsInhibitHandler,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()>,
+    D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, GlobalData>,
     D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &wayland_server::DisplayHandle,
         _client: &wayland_server::Client,
         resource: wayland_server::New<ZwpKeyboardShortcutsInhibitManagerV1>,
-        _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, (), D> for KeyboardShortcutsInhibitState
+impl<D> Dispatch2<ZwpKeyboardShortcutsInhibitManagerV1, D> for GlobalData
 where
     D: KeyboardShortcutsInhibitHandler,
     D: SeatHandler,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()>,
     D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
 {
     fn request(
+        &self,
         handler: &mut D,
         _client: &wayland_server::Client,
         resource: &ZwpKeyboardShortcutsInhibitManagerV1,
         request: zwp_keyboard_shortcuts_inhibit_manager_v1::Request,
-        _data: &(),
         _dhandle: &wayland_server::DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -109,17 +111,16 @@ where
     }
 }
 
-impl<D> Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData, D>
-    for KeyboardShortcutsInhibitState
+impl<D> Dispatch2<ZwpKeyboardShortcutsInhibitorV1, D> for KeyboardShortcutsInhibitorUserData
 where
     D: KeyboardShortcutsInhibitHandler,
 {
     fn request(
+        &self,
         _handler: &mut D,
         _client: &wayland_server::Client,
         _inhibitor: &ZwpKeyboardShortcutsInhibitorV1,
         request: zwp_keyboard_shortcuts_inhibitor_v1::Request,
-        _data: &KeyboardShortcutsInhibitorUserData,
         _dhandle: &wayland_server::DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -129,17 +130,12 @@ where
         }
     }
 
-    fn destroyed(
-        handler: &mut D,
-        _client: ClientId,
-        wl_inhibitor: &ZwpKeyboardShortcutsInhibitorV1,
-        data: &KeyboardShortcutsInhibitorUserData,
-    ) {
-        data.is_active.store(false, atomic::Ordering::Release);
+    fn destroyed(&self, handler: &mut D, _client: ClientId, wl_inhibitor: &ZwpKeyboardShortcutsInhibitorV1) {
+        self.is_active.store(false, atomic::Ordering::Release);
 
         let state = handler.keyboard_shortcuts_inhibit_state();
 
-        if let Entry::Occupied(mut entry) = state.inhibitors.entry(data.seat.clone()) {
+        if let Entry::Occupied(mut entry) = state.inhibitors.entry(self.seat.clone()) {
             let inhibitor = entry.get_mut().borrow_mut().remove(wl_inhibitor.id());
 
             if entry.get().borrow().is_empty() {

@@ -54,6 +54,8 @@ pub mod commit_timing;
 pub mod compositor;
 pub mod content_type;
 pub mod cursor_shape;
+mod dispatch2;
+pub use dispatch2::{Dispatch2, GlobalDispatch2};
 pub mod dmabuf;
 #[cfg(feature = "backend_drm")]
 pub mod drm_lease;
@@ -96,3 +98,7 @@ pub mod xdg_toplevel_tag;
 pub mod xwayland_keyboard_grab;
 #[cfg(feature = "xwayland")]
 pub mod xwayland_shell;
+
+/// Empty user-data
+#[derive(Debug)]
+pub struct GlobalData;

@@ -6,13 +6,11 @@ use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{
     self, ChangeCause, ContentHint, ContentPurpose, ZwpTextInputV3,
 };
 use wayland_server::backend::{ClientId, ObjectId};
-use wayland_server::{Dispatch, Resource, protocol::wl_surface::WlSurface};
+use wayland_server::{Resource, protocol::wl_surface::WlSurface};
 
 use crate::input::SeatHandler;
 use crate::utils::{Logical, Rectangle};
-use crate::wayland::input_method::InputMethodHandle;
-
-use super::TextInputManagerState;
+use crate::wayland::{Dispatch2, input_method::InputMethodHandle};
 
 #[derive(Default, Debug)]
 pub(crate) struct TextInput {
@@ -188,33 +186,32 @@ pub struct TextInputUserData {
     pub(crate) input_method_handle: InputMethodHandle,
 }
 
-impl<D> Dispatch<ZwpTextInputV3, TextInputUserData, D> for TextInputManagerState
+impl<D> Dispatch2<ZwpTextInputV3, D> for TextInputUserData
 where
-    D: Dispatch<ZwpTextInputV3, TextInputUserData>,
     D: SeatHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         resource: &ZwpTextInputV3,
         request: zwp_text_input_v3::Request,
-        data: &TextInputUserData,
         _dhandle: &wayland_server::DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         // Always increment serial to not desync with clients.
         if matches!(request, zwp_text_input_v3::Request::Commit) {
-            data.handle.increment_serial(resource);
+            self.handle.increment_serial(resource);
         }
 
         // Discard requests without any active input method instance.
-        if !data.input_method_handle.has_instance() {
+        if !self.input_method_handle.has_instance() {
             debug!("discarding text-input request without IME running");
             return;
         }
 
-        let focus = match data.handle.focus() {
+        let focus = match self.handle.focus() {
             Some(focus) if focus.id().same_client_as(&resource.id()) => focus,
             _ => {
                 debug!("discarding text-input request for unfocused client");
@@ -222,7 +219,7 @@ where
             }
         };
 
-        let mut guard = data.handle.inner.lock().unwrap();
+        let mut guard = self.handle.inner.lock().unwrap();
         let pending_state = match guard.instances.iter_mut().find_map(|instance| {
             if instance.instance == *resource {
                 Some(&mut instance.pending_state)
@@ -276,13 +273,13 @@ where
                         *active_text_input_id = Some(resource.id());
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        data.input_method_handle.activate_input_method(state, &focus);
+                        self.input_method_handle.activate_input_method(state, &focus);
                     }
                     Some(false) => {
                         *active_text_input_id = None;
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
-                        data.input_method_handle.deactivate_input_method(state);
+                        self.input_method_handle.deactivate_input_method(state);
                         return;
                     }
                     None => {
@@ -297,29 +294,29 @@ where
                 }
 
                 if let Some((text, cursor, anchor)) = new_state.surrounding_text.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
+                    self.input_method_handle.with_instance(move |input_method| {
                         input_method.object.surrounding_text(text, cursor, anchor)
                     });
                 }
 
                 if let Some(cause) = new_state.text_change_cause.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
+                    self.input_method_handle.with_instance(move |input_method| {
                         input_method.object.text_change_cause(cause);
                     });
                 }
 
                 if let Some((hint, purpose)) = new_state.content_type.take() {
-                    data.input_method_handle.with_instance(move |input_method| {
+                    self.input_method_handle.with_instance(move |input_method| {
                         input_method.object.content_type(hint, purpose);
                     });
                 }
 
                 if let Some(rect) = new_state.cursor_rectangle.take() {
-                    data.input_method_handle
+                    self.input_method_handle
                         .set_text_input_rectangle::<D>(state, rect);
                 }
 
-                data.input_method_handle.with_instance(|input_method| {
+                self.input_method_handle.with_instance(|input_method| {
                     input_method.done();
                 });
             }
@@ -330,10 +327,10 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _client: ClientId, text_input: &ZwpTextInputV3, data: &TextInputUserData) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, text_input: &ZwpTextInputV3) {
         let destroyed_id = text_input.id();
         let deactivate_im = {
-            let mut inner = data.handle.inner.lock().unwrap();
+            let mut inner = self.handle.inner.lock().unwrap();
             inner.instances.retain(|inst| inst.instance.id() != destroyed_id);
             let destroyed_focused = inner
                 .focus
@@ -351,7 +348,7 @@ where
         };
 
         if deactivate_im {
-            data.input_method_handle.deactivate_input_method(state);
+            self.input_method_handle.deactivate_input_method(state);
         }
     }
 }

@@ -4,30 +4,32 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
-    protocol::wl_buffer,
+    Client, DataInit, Dispatch, DisplayHandle, New, Resource, backend::ClientId, protocol::wl_buffer,
 };
 
 use crate::{
     backend::allocator::dmabuf::{Dmabuf, MAX_PLANES, Plane},
-    wayland::{buffer::BufferHandler, compositor, dmabuf::SurfaceDmabufFeedbackStateInner},
+    wayland::{
+        Dispatch2, GlobalDispatch2, buffer::BufferHandler, compositor,
+        dmabuf::SurfaceDmabufFeedbackStateInner,
+    },
 };
 
 use super::{
-    DmabufData, DmabufFeedbackData, DmabufGlobal, DmabufGlobalData, DmabufHandler, DmabufParamsData,
-    DmabufState, Import, ImportNotifier, Modifier, SurfaceDmabufFeedbackState,
+    DmabufData, DmabufFeedbackData, DmabufGlobal, DmabufGlobalData, DmabufHandler, DmabufParamsData, Import,
+    ImportNotifier, Modifier, SurfaceDmabufFeedbackState,
 };
 
-impl<D> Dispatch<wl_buffer::WlBuffer, Dmabuf, D> for DmabufState
+impl<D> Dispatch2<wl_buffer::WlBuffer, D> for Dmabuf
 where
-    D: Dispatch<wl_buffer::WlBuffer, Dmabuf> + BufferHandler,
+    D: BufferHandler,
 {
     fn request(
+        &self,
         _data: &mut D,
         _client: &Client,
         _buffer: &wl_buffer::WlBuffer,
         request: wl_buffer::Request,
-        _udata: &Dmabuf,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -40,25 +42,24 @@ where
         }
     }
 
-    fn destroyed(data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer, _udata: &Dmabuf) {
+    fn destroyed(&self, data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer) {
         data.buffer_destroyed(buffer);
     }
 }
 
-impl<D> Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData, D> for DmabufState
+impl<D> Dispatch2<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufData
 where
-    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
+    D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
         + Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData>
         + DmabufHandler
         + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _resource: &zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
         request: zwp_linux_dmabuf_v1::Request,
-        data: &DmabufData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -69,9 +70,9 @@ where
                 data_init.init(
                     params_id,
                     DmabufParamsData {
-                        id: data.id,
+                        id: self.id,
                         used: AtomicBool::new(false),
-                        formats: data.formats.clone(),
+                        formats: self.formats.clone(),
                         modifier: Mutex::new(None),
                         planes: Mutex::new(Vec::with_capacity(MAX_PLANES)),
                     },
@@ -82,17 +83,17 @@ where
                 let feedback = data_init.init(
                     id,
                     DmabufFeedbackData {
-                        known_default_feedbacks: data.known_default_feedbacks.clone(),
+                        known_default_feedbacks: self.known_default_feedbacks.clone(),
                         surface: None,
                     },
                 );
 
-                data.known_default_feedbacks
+                self.known_default_feedbacks
                     .lock()
                     .unwrap()
                     .push(feedback.downgrade());
 
-                data.default_feedback
+                self.default_feedback
                     .as_ref()
                     .unwrap()
                     .lock()
@@ -104,7 +105,7 @@ where
                 let feedback = data_init.init(
                     id,
                     DmabufFeedbackData {
-                        known_default_feedbacks: data.known_default_feedbacks.clone(),
+                        known_default_feedbacks: self.known_default_feedbacks.clone(),
                         surface: Some(surface.downgrade()),
                     },
                 );
@@ -113,8 +114,8 @@ where
                     states.data_map.get::<SurfaceDmabufFeedbackState>().is_none()
                 }) {
                     let new_feedback = state
-                        .new_surface_feedback(&surface, &DmabufGlobal { id: data.id })
-                        .unwrap_or_else(|| data.default_feedback.as_ref().unwrap().lock().unwrap().clone());
+                        .new_surface_feedback(&surface, &DmabufGlobal { id: self.id })
+                        .unwrap_or_else(|| self.default_feedback.as_ref().unwrap().lock().unwrap().clone());
                     compositor::with_states(&surface, |states| {
                         states
                             .data_map
@@ -140,31 +141,24 @@ where
     }
 }
 
-impl<D> Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData, D>
-    for DmabufState
-where
-    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData>
-        + 'static,
-{
+impl<D> Dispatch2<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, D> for DmabufFeedbackData {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         resource: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1,
         request: <zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1 as Resource>::Request,
-        data: &DmabufFeedbackData,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             zwp_linux_dmabuf_feedback_v1::Request::Destroy => {
-                data.known_default_feedbacks
+                self.known_default_feedbacks
                     .lock()
                     .unwrap()
                     .retain(|feedback| feedback != resource);
 
-                if let Some(surface) = data.surface.as_ref().and_then(|s| s.upgrade().ok()) {
+                if let Some(surface) = self.surface.as_ref().and_then(|s| s.upgrade().ok()) {
                     compositor::with_states(&surface, |states| {
                         if let Some(surface_state) = states.data_map.get::<SurfaceDmabufFeedbackState>() {
                             surface_state.remove_instance(resource);
@@ -177,26 +171,23 @@ where
     }
 }
 
-impl<D> GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData, D> for DmabufState
+impl<D> GlobalDispatch2<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufGlobalData
 where
-    D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-        + Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + 'static,
+    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData> + 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>,
-        global_data: &DmabufGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
         let data = DmabufData {
-            formats: global_data.formats.clone(),
-            id: global_data.id,
-            default_feedback: global_data.default_feedback.clone(),
-            known_default_feedbacks: global_data.known_default_feedbacks.clone(),
+            formats: self.formats.clone(),
+            id: self.id,
+            default_feedback: self.default_feedback.clone(),
+            known_default_feedbacks: self.known_default_feedbacks.clone(),
         };
 
         let zwp_dmabuf = data_init.init(resource, data);
@@ -205,7 +196,7 @@ where
         //
         // These events are deprecated in version 4 of the protocol.
         if zwp_dmabuf.version() < zwp_linux_dmabuf_v1::REQ_GET_DEFAULT_FEEDBACK_SINCE {
-            for (fourcc, modifiers) in &*global_data.formats {
+            for (fourcc, modifiers) in &*self.formats {
                 // Modifier support got added in version 3
                 if zwp_dmabuf.version() < zwp_linux_dmabuf_v1::EVT_MODIFIER_SINCE {
                     if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
@@ -223,24 +214,21 @@ where
         }
     }
 
-    fn can_view(client: Client, global_data: &DmabufGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData, D> for DmabufState
+impl<D> Dispatch2<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, D> for DmabufParamsData
 where
-    D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + Dispatch<wl_buffer::WlBuffer, Dmabuf>
-        + BufferHandler
-        + DmabufHandler,
+    D: Dispatch<wl_buffer::WlBuffer, Dmabuf> + BufferHandler + DmabufHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
         request: zwp_linux_buffer_params_v1::Request,
-        data: &DmabufParamsData,
         dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -255,7 +243,7 @@ where
                 modifier_hi,
                 modifier_lo,
             } => {
-                if !data.ensure_unused(params) {
+                if !self.ensure_unused(params) {
                     return;
                 }
 
@@ -268,7 +256,7 @@ where
                     return;
                 }
 
-                let mut planes = data.planes.lock().unwrap();
+                let mut planes = self.planes.lock().unwrap();
 
                 // Is the index already set?
                 if planes.iter().any(|plane| plane.plane_idx == plane_idx) {
@@ -287,7 +275,7 @@ where
                 });
 
                 let modifier = Modifier::from(((modifier_hi as u64) << 32) + (modifier_lo as u64));
-                let mut data_modifier = data.modifier.lock().unwrap();
+                let mut data_modifier = self.modifier.lock().unwrap();
                 if let Some(data_modifier) = *data_modifier {
                     if params.version() >= 5 && modifier != data_modifier {
                         params.post_error(
@@ -307,15 +295,15 @@ where
                 flags,
             } => {
                 // create_dmabuf performs an implicit ensure_unused function call.
-                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags, None) {
-                    if state.dmabuf_state().globals.contains_key(&data.id) {
+                if let Some(dmabuf) = self.create_dmabuf(params, width, height, format, flags, None) {
+                    if state.dmabuf_state().globals.contains_key(&self.id) {
                         let notifier = ImportNotifier::new(
                             params.clone(),
                             dh.clone(),
                             dmabuf.clone(),
                             Import::Falliable,
                         );
-                        state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf, notifier);
+                        state.dmabuf_imported(&DmabufGlobal { id: self.id }, dmabuf, notifier);
                     } else {
                         // If the dmabuf global was destroyed, we cannot import any buffers.
                         params.failed();
@@ -332,8 +320,8 @@ where
             } => {
                 // Client is killed if the if statement is not taken.
                 // create_dmabuf performs an implicit ensure_unused function call.
-                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags, None) {
-                    if state.dmabuf_state().globals.contains_key(&data.id) {
+                if let Some(dmabuf) = self.create_dmabuf(params, width, height, format, flags, None) {
+                    if state.dmabuf_state().globals.contains_key(&self.id) {
                         // The buffer isn't technically valid during data_init, but the client is not allowed to use the buffer until ready.
                         let buffer = data_init.init(buffer_id, dmabuf.clone());
                         let notifier = ImportNotifier::new(
@@ -342,7 +330,7 @@ where
                             dmabuf.clone(),
                             Import::Infallible(buffer),
                         );
-                        state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf, notifier);
+                        state.dmabuf_imported(&DmabufGlobal { id: self.id }, dmabuf, notifier);
                     } else {
                         // Buffer import failed. The protocol documentation heavily implies killing the
                         // client is the right thing to do here.

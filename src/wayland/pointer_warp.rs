@@ -3,14 +3,12 @@
 //! This global interface allows applications to request the pointer to be moved to a position
 //! relative to a wl_surface.
 //!
-//! In order to advertise pointer warp global call [PointerWarpManager::new] and delegate
-//! events to it with [`delegate_pointer_warp`](crate::delegate_pointer_warp).
+//! In order to advertise pointer warp global call [PointerWarpManager::new].
 //!
 //! ```
 //! use smithay::wayland::pointer_warp::{PointerWarpManager, PointerWarpHandler};
 //! use wayland_server::protocol::wl_surface::WlSurface;
 //! use wayland_server::protocol::wl_pointer::WlPointer;
-//! use smithay::delegate_pointer_warp;
 //! use smithay::utils::{Serial, Logical, Point};
 //!
 //! # struct State;
@@ -23,7 +21,6 @@
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
-//! # smithay::delegate_compositor!(State);
 //! #
 //! # impl smithay::input::SeatHandler for State {
 //! #     type KeyboardFocus = WlSurface;
@@ -33,7 +30,6 @@
 //! #         todo!()
 //! #     }
 //! # }
-//! # smithay::delegate_seat!(State);
 //!
 //! PointerWarpManager::new::<State>(
 //!     &display.handle(),
@@ -45,7 +41,7 @@
 //!     }
 //! }
 //!
-//! delegate_pointer_warp!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::atomic::Ordering;
@@ -60,13 +56,11 @@ use wayland_server::{
 use crate::{
     input::SeatHandler,
     utils::{Client as ClientCords, Logical, Point, Serial},
-    wayland::seat::PointerUserData,
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
 };
 
 /// Handler trait for pointer warp events.
-pub trait PointerWarpHandler:
-    SeatHandler + GlobalDispatch<WpPointerWarpV1, ()> + Dispatch<WpPointerWarpV1, ()> + 'static
-{
+pub trait PointerWarpHandler: SeatHandler + 'static {
     /// Request the compositor to move the pointer to a surface-local position.
     /// Whether or not the compositor honors the request is implementation defined, but it should
     /// - honor it if the surface has pointer focus, including when it has an implicit pointer grab
@@ -95,8 +89,11 @@ pub struct PointerWarpManager {
 
 impl PointerWarpManager {
     /// Creates a new delegate type for handling [WpPointerWarpV1] events.
-    pub fn new<D: PointerWarpHandler>(display: &DisplayHandle) -> Self {
-        let global = display.create_global::<D, WpPointerWarpV1, _>(1, ());
+    pub fn new<D>(display: &DisplayHandle) -> Self
+    where
+        D: PointerWarpHandler + GlobalDispatch<WpPointerWarpV1, GlobalData>,
+    {
+        let global = display.create_global::<D, WpPointerWarpV1, _>(1, GlobalData);
         Self { global }
     }
 
@@ -106,26 +103,29 @@ impl PointerWarpManager {
     }
 }
 
-impl<D: PointerWarpHandler> GlobalDispatch<WpPointerWarpV1, (), D> for PointerWarpManager {
+impl<D: PointerWarpHandler> GlobalDispatch2<WpPointerWarpV1, D> for GlobalData
+where
+    D: Dispatch<WpPointerWarpV1, GlobalData>,
+{
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &Client,
         resource: New<WpPointerWarpV1>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D: PointerWarpHandler> Dispatch<WpPointerWarpV1, (), D> for PointerWarpManager {
+impl<D: PointerWarpHandler> Dispatch2<WpPointerWarpV1, D> for GlobalData {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _resource: &WpPointerWarpV1,
         request: wp_pointer_warp_v1::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -152,58 +152,5 @@ impl<D: PointerWarpHandler> Dispatch<WpPointerWarpV1, (), D> for PointerWarpMana
             Request::Destroy => {}
             _ => unreachable!(),
         }
-    }
-}
-
-/// Macro to delegate implementation of the pointer warp protocol to [`PointerWarpManager`].
-///
-/// You must also implement [`PointerWarpHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_pointer_warp {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::pointer_warp::v1::server::wp_pointer_warp_v1::WpPointerWarpV1,
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::pointer_warp::PointerWarpManager,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpPointerWarpV1: ()] => PointerWarpManager
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpPointerWarpV1: ()] => PointerWarpManager
-            );
-        };
-    };
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn delegate_pointer_warp_macro() {
-        struct State;
-        delegate_pointer_warp!(State);
-
-        impl SeatHandler for State {
-            type KeyboardFocus = WlSurface;
-            type PointerFocus = WlSurface;
-            type TouchFocus = WlSurface;
-            fn seat_state(&mut self) -> &mut crate::input::SeatState<Self> {
-                todo!()
-            }
-        }
-
-        // `PointerWarpHandler` can only be implemented if the macro works
-        impl PointerWarpHandler for State {}
-        fn is_delegated<T: PointerWarpHandler>() {}
-        is_delegated::<State>();
     }
 }
