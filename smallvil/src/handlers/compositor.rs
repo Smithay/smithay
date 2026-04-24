@@ -1,7 +1,6 @@
 use crate::{Smallvil, grabs::resize_grab, state::ClientState};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
-    delegate_compositor, delegate_shm,
     reexports::wayland_server::{
         Client,
         protocol::{wl_buffer, wl_surface::WlSurface},
@@ -56,6 +55,3 @@ impl ShmHandler for Smallvil {
         &self.shm_state
     }
 }
-
-delegate_compositor!(Smallvil);
-delegate_shm!(Smallvil);

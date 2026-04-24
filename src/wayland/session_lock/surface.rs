@@ -10,9 +10,10 @@ use _session_lock::ext_session_lock_surface_v1::{Error, ExtSessionLockSurfaceV1,
 use tracing::trace_span;
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
+use wayland_server::{Client, DataInit, DisplayHandle, Resource, Weak};
 
-use crate::wayland::session_lock::{SessionLockHandler, SessionLockManagerState};
+use crate::wayland::Dispatch2;
+use crate::wayland::session_lock::SessionLockHandler;
 
 /// User data for ext-session-lock surfaces.
 #[derive(Debug)]
@@ -23,24 +24,23 @@ pub struct ExtLockSurfaceUserData {
     pub(crate) surface: Weak<WlSurface>,
 }
 
-impl<D> Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData, D> for SessionLockManagerState
+impl<D> Dispatch2<ExtSessionLockSurfaceV1, D> for ExtLockSurfaceUserData
 where
-    D: Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData>,
     D: SessionLockHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         lock_surface: &ExtSessionLockSurfaceV1,
         request: Request,
-        data: &ExtLockSurfaceUserData,
         _display: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             Request::AckConfigure { serial } => {
-                let Ok(surface) = data.surface.upgrade() else {
+                let Ok(surface) = self.surface.upgrade() else {
                     return;
                 };
 
@@ -65,12 +65,12 @@ where
     }
 
     fn destroyed(
+        &self,
         _state: &mut D,
         _client: wayland_server::backend::ClientId,
         _resource: &ExtSessionLockSurfaceV1,
-        data: &ExtLockSurfaceUserData,
     ) {
-        if let Ok(surface) = data.surface.upgrade() {
+        if let Ok(surface) = self.surface.upgrade() {
             compositor::with_states(&surface, |states| {
                 let mut attributes = states
                     .data_map

@@ -39,7 +39,8 @@
 //!     fn data_control_state(&mut self) -> &mut DataControlState { &mut self.data_control_state }
 //!     // ... override default implementations here to customize handling ...
 //! }
-//! delegate_data_control!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -141,23 +142,22 @@ mod handlers {
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1;
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
-    use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch};
+    use wayland_server::{Client, Dispatch, DisplayHandle};
 
     use crate::input::Seat;
     use crate::wayland::selection::SelectionTarget;
     use crate::wayland::selection::device::SelectionDevice;
     use crate::wayland::selection::seat_data::SeatData;
+    use crate::wayland::{Dispatch2, GlobalDispatch2};
 
     use super::DataControlDeviceUserData;
     use super::DataControlHandler;
     use super::DataControlManagerGlobalData;
     use super::DataControlManagerUserData;
     use super::DataControlSourceUserData;
-    use super::DataControlState;
 
-    impl<D> GlobalDispatch<ZwlrDataControlManagerV1, DataControlManagerGlobalData, D> for DataControlState
+    impl<D> GlobalDispatch2<ZwlrDataControlManagerV1, D> for DataControlManagerGlobalData
     where
-        D: GlobalDispatch<ZwlrDataControlManagerV1, DataControlManagerGlobalData>,
         D: Dispatch<ZwlrDataControlManagerV1, DataControlManagerUserData>,
         D: Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData>,
         D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
@@ -165,40 +165,39 @@ mod handlers {
         D: 'static,
     {
         fn bind(
+            &self,
             _state: &mut D,
             _handle: &DisplayHandle,
             _client: &wayland_server::Client,
             resource: wayland_server::New<ZwlrDataControlManagerV1>,
-            global_data: &DataControlManagerGlobalData,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
             data_init.init(
                 resource,
                 DataControlManagerUserData {
-                    primary_selection_filter: Arc::clone(&global_data.primary_selection_filter),
+                    primary_selection_filter: Arc::clone(&self.primary_selection_filter),
                 },
             );
         }
 
-        fn can_view(client: Client, global_data: &DataControlManagerGlobalData) -> bool {
-            (global_data.filter)(&client)
+        fn can_view(&self, client: &Client) -> bool {
+            (self.filter)(client)
         }
     }
 
-    impl<D> Dispatch<ZwlrDataControlManagerV1, DataControlManagerUserData, D> for DataControlState
+    impl<D> Dispatch2<ZwlrDataControlManagerV1, D> for DataControlManagerUserData
     where
-        D: Dispatch<ZwlrDataControlManagerV1, DataControlManagerUserData>,
         D: Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData>,
         D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
         D: DataControlHandler,
         D: 'static,
     {
         fn request(
+            &self,
             _handler: &mut D,
             client: &wayland_server::Client,
             _resource: &ZwlrDataControlManagerV1,
             request: <ZwlrDataControlManagerV1 as wayland_server::Resource>::Request,
-            data: &DataControlManagerUserData,
             dh: &DisplayHandle,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
@@ -216,7 +215,7 @@ mod handlers {
                                 id,
                                 DataControlDeviceUserData {
                                     wl_seat,
-                                    primary_selection_filter: Arc::clone(&data.primary_selection_filter),
+                                    primary_selection_filter: Arc::clone(&self.primary_selection_filter),
                                 },
                             ));
 
@@ -231,7 +230,7 @@ mod handlers {
                             // NOTE: broadcast selection only to the newly created device.
                             let device = Some(&device);
                             seat_data.send_selection::<D>(dh, SelectionTarget::Clipboard, device, true);
-                            if (*data.primary_selection_filter)(client) {
+                            if (*self.primary_selection_filter)(client) {
                                 seat_data.send_selection::<D>(dh, SelectionTarget::Primary, device, true);
                             }
                         }
@@ -249,47 +248,4 @@ mod handlers {
             }
         }
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_data_control {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols_wlr::data_control::v1::server::{
-                        zwlr_data_control_device_v1::ZwlrDataControlDeviceV1,
-                        zwlr_data_control_manager_v1::ZwlrDataControlManagerV1,
-                        zwlr_data_control_source_v1::ZwlrDataControlSourceV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::selection::wlr_data_control::{
-                    DataControlDeviceUserData, DataControlManagerGlobalData, DataControlManagerUserData,
-                    DataControlSourceUserData, DataControlState,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwlrDataControlManagerV1: DataControlManagerGlobalData] => DataControlState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwlrDataControlManagerV1: DataControlManagerUserData] => DataControlState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwlrDataControlDeviceV1: DataControlDeviceUserData] => DataControlState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwlrDataControlSourceV1: DataControlSourceUserData] => DataControlState
-            );
-        };
-    };
 }

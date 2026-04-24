@@ -27,7 +27,6 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::delegate_data_device;
 //! use smithay::wayland::selection::SelectionHandler;
 //! use smithay::wayland::selection::data_device::{WaylandDndGrabHandler, DataDeviceState, DataDeviceHandler};
 //! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
@@ -62,7 +61,8 @@
 //!     fn data_device_state(&mut self) -> &mut DataDeviceState { &mut self.data_device_state }
 //!     // ... override default implementations here to customize handling ...
 //! }
-//! delegate_data_device!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -94,6 +94,7 @@ use crate::{
         dnd::{DndAction, DndFocus, GrabType, OfferData, Source},
     },
     utils::{Logical, Point, Serial},
+    wayland::GlobalData,
 };
 
 mod device;
@@ -566,10 +567,10 @@ impl DataDeviceState {
     /// Regiseter new [WlDataDeviceManager] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlDataDeviceManager, ()> + 'static,
+        D: GlobalDispatch<WlDataDeviceManager, GlobalData> + 'static,
         D: DataDeviceHandler,
     {
-        let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, ());
+        let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, GlobalData);
 
         Self {
             manager_global,
@@ -745,7 +746,7 @@ mod handlers {
 
     use tracing::error;
     use wayland_server::{
-        Dispatch, DisplayHandle, GlobalDispatch,
+        Dispatch, DisplayHandle,
         protocol::{
             wl_data_device::WlDataDevice,
             wl_data_device_manager::{self, WlDataDeviceManager},
@@ -756,46 +757,45 @@ mod handlers {
     use crate::{
         input::Seat,
         wayland::selection::{device::SelectionDevice, seat_data::SeatData},
+        wayland::{Dispatch2, GlobalData, GlobalDispatch2},
     };
 
-    use super::{DataDeviceHandler, DataDeviceState};
+    use super::DataDeviceHandler;
     use super::{device::DataDeviceUserData, source::DataSourceUserData};
 
-    impl<D> GlobalDispatch<WlDataDeviceManager, (), D> for DataDeviceState
+    impl<D> GlobalDispatch2<WlDataDeviceManager, D> for GlobalData
     where
-        D: GlobalDispatch<WlDataDeviceManager, ()>,
-        D: Dispatch<WlDataDeviceManager, ()>,
+        D: Dispatch<WlDataDeviceManager, GlobalData>,
         D: Dispatch<WlDataSource, DataSourceUserData>,
         D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
         D: 'static,
     {
         fn bind(
+            &self,
             _state: &mut D,
             _handle: &DisplayHandle,
             _client: &wayland_server::Client,
             resource: wayland_server::New<WlDataDeviceManager>,
-            _global_data: &(),
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
-            data_init.init(resource, ());
+            data_init.init(resource, GlobalData);
         }
     }
 
-    impl<D> Dispatch<WlDataDeviceManager, (), D> for DataDeviceState
+    impl<D> Dispatch2<WlDataDeviceManager, D> for GlobalData
     where
-        D: Dispatch<WlDataDeviceManager, ()>,
         D: Dispatch<WlDataSource, DataSourceUserData>,
         D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
         D: 'static,
     {
         fn request(
+            &self,
             _state: &mut D,
             client: &wayland_server::Client,
             _resource: &WlDataDeviceManager,
             request: wl_data_device_manager::Request,
-            _data: &(),
             dhandle: &DisplayHandle,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
@@ -828,43 +828,4 @@ mod handlers {
             }
         }
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_data_device {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::wayland_server::{
-                    delegate_dispatch, delegate_global_dispatch,
-                    protocol::{
-                        wl_data_device::WlDataDevice, wl_data_device_manager::WlDataDeviceManager,
-                        wl_data_source::WlDataSource,
-                    },
-                },
-                wayland::selection::data_device::{DataDeviceState, DataDeviceUserData, DataSourceUserData},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlDataDeviceManager: ()] => DataDeviceState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlDataDeviceManager: ()] => DataDeviceState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlDataDevice: DataDeviceUserData] => DataDeviceState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlDataSource: DataSourceUserData] => DataDeviceState
-            );
-        };
-    };
 }

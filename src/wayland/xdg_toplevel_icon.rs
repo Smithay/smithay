@@ -2,8 +2,7 @@
 //!
 //! This protocol allows clients to set icons for their toplevel surfaces either via the XDG icon stock (using an icon name), or from pixel data.
 //!
-//! In order to advertise toplevel icon global call [XdgToplevelIconManager::new] and delegate
-//! events to it with [`delegate_xdg_toplevel_icon`][crate::delegate_xdg_toplevel_icon].
+//! In order to advertise toplevel icon global call [XdgToplevelIconManager::new].
 //! Currently attached icon is available in double-buffered [ToplevelIconCachedState]
 //!
 //! ```
@@ -24,7 +23,7 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_xdg_toplevel_icon!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::{
@@ -49,6 +48,7 @@ use wayland_server::{
 use crate::{
     utils::HookId,
     wayland::{
+        Dispatch2, GlobalData, GlobalDispatch2,
         compositor::{self, Cacheable},
         shell::xdg::XdgShellSurfaceUserData,
         shm::ShmBufferUserData,
@@ -56,12 +56,7 @@ use crate::{
 };
 
 /// Handler trait for xdg toplevel icon events.
-pub trait XdgToplevelIconHandler:
-    GlobalDispatch<XdgToplevelIconManagerV1, XdgToplevelIconManagerUserData>
-    + Dispatch<XdgToplevelIconManagerV1, ()>
-    + Dispatch<XdgToplevelIconV1, XdgToplevelIconUserData>
-    + 'static
-{
+pub trait XdgToplevelIconHandler: 'static {
     /// Called when icon becomes pending, and awaits surface commit.
     /// Icon is stored in wl_surface [ToplevelIconCachedState]
     fn set_icon(&mut self, toplevel: XdgToplevel, wl_surface: WlSurface) {
@@ -238,7 +233,10 @@ pub struct XdgToplevelIconManager {
 
 impl XdgToplevelIconManager {
     /// Creates a new delegate type for handling xdg toplevel icon events.
-    pub fn new<D: XdgToplevelIconHandler>(display: &DisplayHandle) -> Self {
+    pub fn new<D>(display: &DisplayHandle) -> Self
+    where
+        D: XdgToplevelIconHandler + GlobalDispatch<XdgToplevelIconManagerV1, XdgToplevelIconManagerUserData>,
+    {
         let data = Arc::new(Mutex::new(ManagerGlobalData::default()));
         let global = display
             .create_global::<D, XdgToplevelIconManagerV1, _>(1, XdgToplevelIconManagerUserData(data.clone()));
@@ -269,33 +267,38 @@ impl XdgToplevelIconManager {
     }
 }
 
-impl<D: XdgToplevelIconHandler> GlobalDispatch<XdgToplevelIconManagerV1, XdgToplevelIconManagerUserData, D>
-    for XdgToplevelIconManager
+impl<D: XdgToplevelIconHandler> GlobalDispatch2<XdgToplevelIconManagerV1, D>
+    for XdgToplevelIconManagerUserData
+where
+    D: Dispatch<XdgToplevelIconManagerV1, GlobalData>,
 {
     fn bind(
+        &self,
         _: &mut D,
         _: &DisplayHandle,
         _: &Client,
         resource: New<XdgToplevelIconManagerV1>,
-        data: &XdgToplevelIconManagerUserData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let manager = data_init.init(resource, ());
+        let manager = data_init.init(resource, GlobalData);
 
-        for size in data.0.lock().unwrap().sizes.iter() {
+        for size in self.0.lock().unwrap().sizes.iter() {
             manager.icon_size(*size);
         }
         manager.done();
     }
 }
 
-impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconManagerV1, (), D> for XdgToplevelIconManager {
+impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconManagerV1, D> for GlobalData
+where
+    D: Dispatch<XdgToplevelIconV1, XdgToplevelIconUserData>,
+{
     fn request(
+        &self,
         state: &mut D,
         _: &Client,
         _resource: &XdgToplevelIconManagerV1,
         request: xdg_toplevel_icon_manager_v1::Request,
-        _: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -332,15 +335,13 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconManagerV1, (), D> for Xd
     }
 }
 
-impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, XdgToplevelIconUserData, D>
-    for XdgToplevelIconManager
-{
+impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelIconUserData {
     fn request(
+        &self,
         _state: &mut D,
         _: &Client,
         icon: &XdgToplevelIconV1,
         request: xdg_toplevel_icon_v1::Request,
-        data: &XdgToplevelIconUserData,
         dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
@@ -348,7 +349,7 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, XdgToplevelIconUserD
 
         match request {
             Request::SetName { icon_name } => {
-                if data.is_immutable() {
+                if self.is_immutable() {
                     dh.post_error(
                         icon,
                         xdg_toplevel_icon_v1::Error::Immutable as u32,
@@ -357,10 +358,10 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, XdgToplevelIconUserD
                     );
                 }
 
-                data.set_icon_name(icon_name);
+                self.set_icon_name(icon_name);
             }
             Request::AddBuffer { buffer, scale } => {
-                if data.is_immutable() {
+                if self.is_immutable() {
                     dh.post_error(
                         icon,
                         xdg_toplevel_icon_v1::Error::Immutable as u32,
@@ -389,7 +390,7 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, XdgToplevelIconUserD
 
                 // Let's listen for buffer destruction event to catch no_buffer protocol error
                 // This hook has to be unregistered once the icon is destroyed
-                data.register_buffer_destruction_hook(buffer.clone(), shm, {
+                self.register_buffer_destruction_hook(buffer.clone(), shm, {
                     let icon = icon.clone();
                     move || {
                         icon.post_error(
@@ -398,57 +399,14 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, XdgToplevelIconUserD
                         )
                     }
                 });
-                data.add_buffer(buffer.clone(), scale, shm);
+                self.add_buffer(buffer.clone(), scale, shm);
             }
             Request::Destroy => {}
             _ => unreachable!(),
         }
     }
 
-    fn destroyed(
-        _state: &mut D,
-        _client: ClientId,
-        _resource: &XdgToplevelIconV1,
-        data: &XdgToplevelIconUserData,
-    ) {
-        data.unregister_all_hooks();
+    fn destroyed(&self, _state: &mut D, _client: ClientId, _resource: &XdgToplevelIconV1) {
+        self.unregister_all_hooks();
     }
-}
-
-/// Macro to delegate implementation of the xdg toplevel icon to [`XdgToplevelIconManager`].
-///
-/// You must also implement [`XdgToplevelIconHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_xdg_toplevel_icon {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::xdg::toplevel_icon::v1::server::{
-                        xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1,
-                        xdg_toplevel_icon_v1::XdgToplevelIconV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::xdg_toplevel_icon::{
-                    XdgToplevelIconManager, XdgToplevelIconManagerUserData, XdgToplevelIconUserData,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgToplevelIconManagerV1: XdgToplevelIconManagerUserData] => XdgToplevelIconManager
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgToplevelIconManagerV1: ()] => XdgToplevelIconManager
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgToplevelIconV1: XdgToplevelIconUserData] => XdgToplevelIconManager
-            );
-        };
-    };
 }

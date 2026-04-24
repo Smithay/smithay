@@ -8,7 +8,6 @@
 //! and implement the [`FractionalScaleHandler`], as shown in this example:
 //!
 //! ```
-//! use smithay::delegate_fractional_scale;
 //! use smithay::wayland::compositor;
 //! use smithay::reexports::wayland_server::protocol::wl_surface;
 //! use smithay::wayland::fractional_scale::{
@@ -34,7 +33,8 @@
 //!        // then you don't need to do anything here.
 //!    }
 //! }
-//! delegate_fractional_scale!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -71,6 +71,8 @@ use wayland_server::{
 
 use super::compositor::{SurfaceData, with_states};
 
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+
 /// State of the wp_fractional_scale_manager_v1 Global
 #[derive(Debug)]
 pub struct FractionalScaleManagerState {
@@ -81,15 +83,17 @@ impl FractionalScaleManagerState {
     /// Create new [`wp_fraction_scale_manager`](wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_manager_v1) global.
     pub fn new<D>(display: &DisplayHandle) -> FractionalScaleManagerState
     where
-        D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-            + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-            + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>
+        D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
+            + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
+            + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>
             + 'static,
         D: FractionalScaleHandler,
     {
         FractionalScaleManagerState {
             global: display
-                .create_global::<D, wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>(1, ()),
+                .create_global::<D, wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, _>(
+                    1, GlobalData,
+                ),
         }
     }
 
@@ -99,40 +103,35 @@ impl FractionalScaleManagerState {
     }
 }
 
-impl<D> GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, (), D>
-    for FractionalScaleManagerState
+impl<D> GlobalDispatch2<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, D> for GlobalData
 where
-    D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-        + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-        + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>,
+    D: Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
+        + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>,
     D: FractionalScaleHandler,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: wayland_server::New<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1>,
-        _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, (), D>
-    for FractionalScaleManagerState
+impl<D> Dispatch2<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, D> for GlobalData
 where
-    D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-        + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-        + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>,
+    D: Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>,
     D: FractionalScaleHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         _resource: &wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
         request: <wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1 as Resource>::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -158,7 +157,7 @@ where
                 }
 
                 let fractional_scale: wp_fractional_scale_v1::WpFractionalScaleV1 =
-                    data_init.init(id, surface.downgrade());
+                    data_init.init(id, FractionalScaleData(surface.downgrade()));
 
                 with_states(&surface, move |states| {
                     with_fractional_scale(states, move |data| {
@@ -176,26 +175,26 @@ where
     }
 }
 
-impl<D> Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>, D>
-    for FractionalScaleManagerState
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct FractionalScaleData(Weak<wl_surface::WlSurface>);
+
+impl<D> Dispatch2<wp_fractional_scale_v1::WpFractionalScaleV1, D> for FractionalScaleData
 where
-    D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-        + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
-        + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>,
     D: FractionalScaleHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &wp_fractional_scale_v1::WpFractionalScaleV1,
         request: <wp_fractional_scale_v1::WpFractionalScaleV1 as Resource>::Request,
-        data: &Weak<wl_surface::WlSurface>,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             wp_fractional_scale_v1::Request::Destroy => {
-                if let Ok(surface) = data.upgrade() {
+                if let Ok(surface) = self.0.upgrade() {
                     with_states(&surface, |states| {
                         states
                             .data_map
@@ -261,40 +260,4 @@ where
         .borrow_mut();
 
     f(&mut fractional_scale)
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_fractional_scale {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::fractional_scale::v1::server::{
-                        wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
-                        wp_fractional_scale_v1::WpFractionalScaleV1,
-                    },
-                    wayland_server::{
-                        delegate_dispatch, delegate_global_dispatch, protocol::wl_surface::WlSurface, Weak,
-                    },
-                },
-                wayland::fractional_scale::FractionalScaleManagerState,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpFractionalScaleManagerV1: ()] => FractionalScaleManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpFractionalScaleManagerV1: ()] => FractionalScaleManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpFractionalScaleV1: Weak<WlSurface>] => FractionalScaleManagerState
-            );
-        };
-    };
 }

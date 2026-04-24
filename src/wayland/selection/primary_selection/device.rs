@@ -4,11 +4,12 @@ use tracing::debug;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::{
     self as primary_device, ZwpPrimarySelectionDeviceV1 as PrimaryDevice,
 };
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, protocol::wl_seat::WlSeat};
+use wayland_server::{Client, DataInit, DisplayHandle, Resource, protocol::wl_seat::WlSeat};
 
 use crate::{
     input::{Seat, SeatHandler},
     wayland::{
+        Dispatch2,
         seat::WaylandFocus,
         selection::{
             SelectionHandler, SelectionTarget,
@@ -20,7 +21,7 @@ use crate::{
     },
 };
 
-use super::{PrimarySelectionHandler, PrimarySelectionState};
+use super::PrimarySelectionHandler;
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -28,24 +29,24 @@ pub struct PrimaryDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch<PrimaryDevice, PrimaryDeviceUserData, D> for PrimarySelectionState
+impl<D> Dispatch2<PrimaryDevice, D> for PrimaryDeviceUserData
 where
-    D: Dispatch<PrimaryDevice, PrimaryDeviceUserData> + PrimarySelectionHandler,
+    D: PrimarySelectionHandler,
     D: SelectionHandler,
     D: SeatHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
+        &self,
         handler: &mut D,
         client: &Client,
         resource: &PrimaryDevice,
         request: primary_device::Request,
-        data: &PrimaryDeviceUserData,
         dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let seat = match Seat::<D>::from_resource(&data.wl_seat) {
+        let seat = match Seat::<D>::from_resource(&self.wl_seat) {
             Some(seat) => seat,
             None => return,
         };
@@ -73,7 +74,7 @@ where
                     handler
                         .primary_selection_state()
                         .used_sources
-                        .insert(source.clone(), data.wl_seat.clone());
+                        .insert(source.clone(), self.wl_seat.clone());
                 }
 
                 let source = source.map(SelectionSourceProvider::Primary);
@@ -103,12 +104,12 @@ where
     }
 
     fn destroyed(
+        &self,
         _state: &mut D,
         _client: wayland_server::backend::ClientId,
         resource: &PrimaryDevice,
-        data: &PrimaryDeviceUserData,
     ) {
-        if let Some(seat) = Seat::<D>::from_resource(&data.wl_seat) {
+        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
             if let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>() {
                 seat_data.borrow_mut().retain_devices(|ndd| match ndd {
                     SelectionDevice::Primary(ndd) => ndd != resource,

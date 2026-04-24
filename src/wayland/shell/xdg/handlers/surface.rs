@@ -9,8 +9,8 @@ use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
     utils::{Rectangle, Serial},
     wayland::{
-        compositor,
-        shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE, XdgShellState},
+        Dispatch2, compositor,
+        shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
     },
 };
 
@@ -45,44 +45,43 @@ pub struct XdgSurfaceUserData {
     pub(crate) has_active_role: AtomicBool,
 }
 
-impl<D> Dispatch<XdgSurface, XdgSurfaceUserData, D> for XdgShellState
+impl<D> Dispatch2<XdgSurface, D> for XdgSurfaceUserData
 where
-    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
     D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,
     D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         xdg_surface: &XdgSurface,
         request: xdg_surface::Request,
-        data: &XdgSurfaceUserData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             xdg_surface::Request::Destroy => {
-                data.known_surfaces
+                self.known_surfaces
                     .lock()
                     .unwrap()
                     .swap_remove(&xdg_surface.downgrade());
 
-                if !data.wl_surface.alive() {
+                if !self.wl_surface.alive() {
                     // the wl_surface is destroyed, this means the client is not
                     // trying to change the role but it's a cleanup (possibly a
                     // disconnecting client), ignore the protocol check.
                     return;
                 }
 
-                if compositor::get_role(&data.wl_surface).is_none() {
+                if compositor::get_role(&self.wl_surface).is_none() {
                     // No role assigned to the surface, we can exit early.
                     return;
                 }
 
-                if data.has_active_role.load(Ordering::Acquire) {
-                    data.wm_base.post_error(
+                if self.has_active_role.load(Ordering::Acquire) {
+                    self.wm_base.post_error(
                         xdg_wm_base::Error::Role,
                         "xdg_surface was destroyed before its role object",
                     );
@@ -90,15 +89,15 @@ where
             }
             xdg_surface::Request::GetToplevel { id } => {
                 // We now can assign a role to the surface
-                let surface = &data.wl_surface;
-                let shell = &data.wm_base;
+                let surface = &self.wl_surface;
+                let shell = &self.wm_base;
 
                 if compositor::give_role(surface, XDG_TOPLEVEL_ROLE).is_err() {
                     shell.post_error(xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
                 }
 
-                data.has_active_role.store(true, Ordering::Release);
+                self.has_active_role.store(true, Ordering::Release);
 
                 let initial = compositor::with_states(surface, |states| {
                     let initial = states.data_map.insert_if_missing_threadsafe(|| {
@@ -133,9 +132,9 @@ where
                 let toplevel = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        wl_surface: data.wl_surface.clone(),
+                        wl_surface: self.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
-                        wm_base: data.wm_base.clone(),
+                        wm_base: self.wm_base.clone(),
                         decoration: Default::default(),
                         dialog: Default::default(),
                         alive_tracker: Default::default(),
@@ -169,8 +168,8 @@ where
                 });
 
                 // We now can assign a role to the surface
-                let surface = &data.wl_surface;
-                let shell = &data.wm_base;
+                let surface = &self.wl_surface;
+                let shell = &self.wm_base;
 
                 let attributes = XdgPopupSurfaceRoleAttributes {
                     parent: parent_surface,
@@ -186,7 +185,7 @@ where
                     return;
                 }
 
-                data.has_active_role.store(true, Ordering::Release);
+                self.has_active_role.store(true, Ordering::Release);
 
                 let initial = compositor::with_states(surface, |states| {
                     let inserted = states.data_map.insert_if_missing_threadsafe(|| {
@@ -211,9 +210,9 @@ where
                 let popup = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        wl_surface: data.wl_surface.clone(),
+                        wl_surface: self.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
-                        wm_base: data.wm_base.clone(),
+                        wm_base: self.wm_base.clone(),
                         decoration: Default::default(),
                         dialog: Default::default(),
                         alive_tracker: Default::default(),
@@ -233,7 +232,7 @@ where
                 // Check the role of the surface, this can be either xdg_toplevel
                 // or xdg_popup. If none of the role matches the xdg_surface has no role set
                 // which is a protocol error.
-                let surface = &data.wl_surface;
+                let surface = &self.wl_surface;
 
                 let role = compositor::get_role(surface);
 
@@ -246,7 +245,7 @@ where
                 }
 
                 if role != Some(XDG_TOPLEVEL_ROLE) && role != Some(XDG_POPUP_ROLE) {
-                    data.wm_base.post_error(
+                    self.wm_base.post_error(
                         xdg_wm_base::Error::Role,
                         "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                     );
@@ -267,7 +266,7 @@ where
             }
             xdg_surface::Request::AckConfigure { serial } => {
                 let serial = Serial::from(serial);
-                let surface = &data.wl_surface;
+                let surface = &self.wl_surface;
 
                 // Check the role of the surface, this can be either xdg_toplevel
                 // or xdg_popup. If none of the role matches the xdg_surface has no role set
@@ -317,14 +316,14 @@ where
                 let configure = match found_configure {
                     Ok(Some(configure)) => configure,
                     Ok(None) => {
-                        data.wm_base.post_error(
+                        self.wm_base.post_error(
                             xdg_wm_base::Error::InvalidSurfaceState,
                             format!("wrong configure serial: {}", <u32>::from(serial)),
                         );
                         return;
                     }
                     Err(()) => {
-                        data.wm_base.post_error(
+                        self.wm_base.post_error(
                             xdg_wm_base::Error::Role as u32,
                             "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                         );

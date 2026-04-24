@@ -15,7 +15,6 @@ use smithay::{
         },
         winit::{self, WinitEvent},
     },
-    delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
     input::{Seat, SeatHandler, SeatState, keyboard::FilterResult},
     reexports::wayland_server::{Display, protocol::wl_seat},
     utils::{Rectangle, Serial, Transform},
@@ -290,9 +289,4 @@ impl ClientData for ClientState {
     }
 }
 
-// Macros used to delegate protocol handling to types in the app state.
-delegate_xdg_shell!(App);
-delegate_compositor!(App);
-delegate_shm!(App);
-delegate_seat!(App);
-delegate_data_device!(App);
+smithay::delegate_dispatch2!(App);

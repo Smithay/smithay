@@ -5,7 +5,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::{delegate_xdg_dialog, delegate_xdg_shell};
 //! use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellHandler};
 //! # use smithay::utils::Serial;
 //! # use smithay::wayland::shell::xdg::{XdgShellState, PopupSurface, PositionerState};
@@ -69,8 +68,8 @@
 //!         // handle new images for the cursor ...
 //!     }
 //! }
-//! delegate_xdg_shell!(State);
-//! delegate_xdg_dialog!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You are ready to go!  
 
@@ -85,7 +84,7 @@ use wayland_server::{
 
 use super::{ToplevelSurface, XdgShellHandler};
 use crate::wayland::{
-    compositor,
+    Dispatch2, GlobalData, GlobalDispatch2, compositor,
     shell::xdg::{XdgShellSurfaceUserData, XdgToplevelSurfaceData},
 };
 
@@ -101,9 +100,9 @@ impl XdgDialogState {
     /// A global id is also returned to allow destroying the global in the future.
     pub fn new<D>(display: &DisplayHandle) -> XdgDialogState
     where
-        D: GlobalDispatch<XdgWmDialogV1, ()> + Dispatch<XdgWmDialogV1, ()> + 'static,
+        D: GlobalDispatch<XdgWmDialogV1, GlobalData> + Dispatch<XdgWmDialogV1, GlobalData> + 'static,
     {
-        let global = display.create_global::<D, XdgWmDialogV1, _>(1, ());
+        let global = display.create_global::<D, XdgWmDialogV1, _>(1, GlobalData);
         XdgDialogState { global }
     }
 
@@ -114,12 +113,7 @@ impl XdgDialogState {
 }
 
 /// Handler trait for xdg dialog events.
-pub trait XdgDialogHandler:
-    XdgShellHandler
-    + GlobalDispatch<XdgWmDialogV1, ()>
-    + Dispatch<XdgWmDialogV1, ()>
-    + Dispatch<XdgDialogV1, ToplevelSurface>
-{
+pub trait XdgDialogHandler: XdgShellHandler {
     /// The client has changed the dialog hint associated with the toplevel
     fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, hint: ToplevelDialogHint) {
         let _ = toplevel;
@@ -127,47 +121,34 @@ pub trait XdgDialogHandler:
     }
 }
 
-/// Macro to delegate implementation of the xdg dialog to [`XdgDialogState`].
-///
-/// You must also implement [`XdgDialogHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_xdg_dialog {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::dialog::v1::server::xdg_wm_dialog_v1::XdgWmDialogV1: ()
-        ] => $crate::wayland::shell::xdg::dialog::XdgDialogState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::dialog::v1::server::xdg_wm_dialog_v1::XdgWmDialogV1: ()
-        ] => $crate::wayland::shell::xdg::dialog::XdgDialogState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::dialog::v1::server::xdg_dialog_v1::XdgDialogV1: $crate::wayland::shell::xdg::ToplevelSurface
-        ] => $crate::wayland::shell::xdg::dialog::XdgDialogState);
-    };
-}
-
 // xdg_wm_dialog_v1
 
-impl<D: XdgDialogHandler> GlobalDispatch<XdgWmDialogV1, (), D> for XdgDialogState {
+impl<D: XdgDialogHandler> GlobalDispatch2<XdgWmDialogV1, D> for GlobalData
+where
+    D: Dispatch<XdgWmDialogV1, GlobalData>,
+{
     fn bind(
+        &self,
         _: &mut D,
         _: &DisplayHandle,
         _: &Client,
         resource: New<XdgWmDialogV1>,
-        _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D: XdgDialogHandler> Dispatch<XdgWmDialogV1, (), D> for XdgDialogState {
+impl<D: XdgDialogHandler> Dispatch2<XdgWmDialogV1, D> for GlobalData
+where
+    D: Dispatch<XdgDialogV1, ToplevelSurface>,
+{
     fn request(
+        &self,
         state: &mut D,
         _: &Client,
         resource: &XdgWmDialogV1,
         request: xdg_wm_dialog_v1::Request,
-        _: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -207,13 +188,13 @@ impl<D: XdgDialogHandler> Dispatch<XdgWmDialogV1, (), D> for XdgDialogState {
 
 // xdg_dialog_v1
 
-impl<D: XdgDialogHandler> Dispatch<XdgDialogV1, ToplevelSurface, D> for XdgDialogState {
+impl<D: XdgDialogHandler> Dispatch2<XdgDialogV1, D> for ToplevelSurface {
     fn request(
+        &self,
         state: &mut D,
         _: &Client,
         _: &XdgDialogV1,
         request: xdg_dialog_v1::Request,
-        toplevel: &ToplevelSurface,
         _dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
@@ -221,23 +202,23 @@ impl<D: XdgDialogHandler> Dispatch<XdgDialogV1, ToplevelSurface, D> for XdgDialo
 
         match request {
             Request::SetModal => {
-                if set_dialog_hint(toplevel.wl_surface(), ToplevelDialogHint::Modal) {
-                    state.dialog_hint_changed(toplevel.clone(), ToplevelDialogHint::Modal);
+                if set_dialog_hint(self.wl_surface(), ToplevelDialogHint::Modal) {
+                    state.dialog_hint_changed(self.clone(), ToplevelDialogHint::Modal);
                 }
             }
 
             Request::UnsetModal => {
-                if set_dialog_hint(toplevel.wl_surface(), ToplevelDialogHint::Dialog) {
-                    state.dialog_hint_changed(toplevel.clone(), ToplevelDialogHint::Dialog);
+                if set_dialog_hint(self.wl_surface(), ToplevelDialogHint::Dialog) {
+                    state.dialog_hint_changed(self.clone(), ToplevelDialogHint::Dialog);
                 }
             }
 
             Request::Destroy => {
-                if set_dialog_hint(toplevel.wl_surface(), ToplevelDialogHint::Unknown) {
-                    state.dialog_hint_changed(toplevel.clone(), ToplevelDialogHint::Unknown);
+                if set_dialog_hint(self.wl_surface(), ToplevelDialogHint::Unknown) {
+                    state.dialog_hint_changed(self.clone(), ToplevelDialogHint::Unknown);
                 }
 
-                if let Some(data) = toplevel.xdg_toplevel().data::<XdgShellSurfaceUserData>() {
+                if let Some(data) = self.xdg_toplevel().data::<XdgShellSurfaceUserData>() {
                     data.dialog.lock().unwrap().take();
                 }
             }

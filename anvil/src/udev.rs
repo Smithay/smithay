@@ -57,7 +57,6 @@ use smithay::{
         },
         udev::{UdevBackend, UdevEvent, all_gpus, primary_gpu},
     },
-    delegate_dmabuf, delegate_drm_lease,
     desktop::{
         space::{Space, SurfaceTree},
         utils::OutputPresentationFeedback,
@@ -183,7 +182,6 @@ impl DmabufHandler for AnvilState<UdevData> {
         }
     }
 }
-delegate_dmabuf!(AnvilState<UdevData>);
 
 impl Backend for UdevData {
     const HAS_RELATIVE_MOTION: bool = true;
@@ -613,14 +611,11 @@ impl DrmLeaseHandler for AnvilState<UdevData> {
     }
 }
 
-delegate_drm_lease!(AnvilState<UdevData>);
-
 impl DrmSyncobjHandler for AnvilState<UdevData> {
     fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
         self.backend_data.syncobj_state.as_mut()
     }
 }
-smithay::delegate_drm_syncobj!(AnvilState<UdevData>);
 
 pub type RenderSurface = GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
 

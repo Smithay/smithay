@@ -3,14 +3,17 @@ use std::{cell::RefCell, sync::Mutex};
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::{
     self as primary_source, ZwpPrimarySelectionSourceV1 as PrimarySource,
 };
-use wayland_server::{Dispatch, DisplayHandle, backend::ClientId};
+use wayland_server::{DisplayHandle, backend::ClientId};
 
 use crate::{
     input::Seat,
-    wayland::selection::{offer::OfferReplySource, seat_data::SeatData, source::SelectionSourceProvider},
+    wayland::{
+        Dispatch2,
+        selection::{offer::OfferReplySource, seat_data::SeatData, source::SelectionSourceProvider},
+    },
 };
 
-use super::{PrimarySelectionHandler, PrimarySelectionState};
+use super::PrimarySelectionHandler;
 
 /// The metadata describing a data source
 #[derive(Debug, Default, Clone)]
@@ -35,23 +38,22 @@ impl PrimarySourceUserData {
     }
 }
 
-impl<D> Dispatch<PrimarySource, PrimarySourceUserData, D> for PrimarySelectionState
+impl<D> Dispatch2<PrimarySource, D> for PrimarySourceUserData
 where
-    D: Dispatch<PrimarySource, PrimarySourceUserData>,
     D: PrimarySelectionHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         _resource: &PrimarySource,
         request: primary_source::Request,
-        data: &PrimarySourceUserData,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         let _primary_selection_state = state.primary_selection_state();
-        let mut data = data.inner.lock().unwrap();
+        let mut data = self.inner.lock().unwrap();
 
         match request {
             primary_source::Request::Offer { mime_type } => {
@@ -62,7 +64,7 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _client: ClientId, source: &PrimarySource, data: &PrimarySourceUserData) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, source: &PrimarySource) {
         // Remove the source from the used ones.
         let seat = match state
             .primary_selection_state()
@@ -85,7 +87,7 @@ where
             Some(OfferReplySource::Client(SelectionSourceProvider::Primary(set_source)))
                 if set_source == source =>
             {
-                seat_data.set_primary_selection::<D>(&data.display_handle, None)
+                seat_data.set_primary_selection::<D>(&self.display_handle, None)
             }
             _ => (),
         }

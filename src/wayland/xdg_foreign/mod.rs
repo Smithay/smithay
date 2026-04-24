@@ -40,6 +40,8 @@ use wayland_protocols::xdg::foreign::zv2::server::{
 };
 use wayland_server::{DisplayHandle, GlobalDispatch, backend::GlobalId, protocol::wl_surface::WlSurface};
 
+use crate::wayland::GlobalData;
+
 mod handlers;
 
 /// A trait implemented to be notified of activation requests using the xdg foreign protocol.
@@ -105,11 +107,11 @@ impl XdgForeignState {
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
         D: XdgForeignHandler,
-        D: GlobalDispatch<ZxdgExporterV2, ()>,
-        D: GlobalDispatch<ZxdgImporterV2, ()>,
+        D: GlobalDispatch<ZxdgExporterV2, GlobalData>,
+        D: GlobalDispatch<ZxdgImporterV2, GlobalData>,
     {
-        let exporter = display.create_global::<D, ZxdgExporterV2, _>(1, ());
-        let importer = display.create_global::<D, ZxdgImporterV2, _>(1, ());
+        let exporter = display.create_global::<D, ZxdgExporterV2, _>(1, GlobalData);
+        let importer = display.create_global::<D, ZxdgImporterV2, _>(1, GlobalData);
 
         Self {
             exported: HashMap::new(),
@@ -127,56 +129,4 @@ impl XdgForeignState {
     pub fn importer_global(&self) -> GlobalId {
         self.importer.clone()
     }
-}
-
-/// Macro to delegate implementation of the xdg foreign to [`XdgForeignState`].
-///
-/// You must also implement [`XdgForeignHandler`] and
-/// [`XdgShellHandler`](crate::wayland::shell::xdg::XdgShellHandler) to use this.
-#[macro_export]
-macro_rules! delegate_xdg_foreign {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::xdg::foreign::zv2::server::{
-                        zxdg_exported_v2::ZxdgExportedV2, zxdg_exporter_v2::ZxdgExporterV2,
-                        zxdg_imported_v2::ZxdgImportedV2, zxdg_importer_v2::ZxdgImporterV2,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::xdg_foreign::{XdgExportedUserData, XdgForeignState, XdgImportedUserData},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgExporterV2: ()] => XdgForeignState
-            );
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgImporterV2: ()] => XdgForeignState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgExporterV2: ()] => XdgForeignState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgImporterV2: ()] => XdgForeignState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgExportedV2: XdgExportedUserData] => XdgForeignState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgImportedV2: XdgImportedUserData] => XdgForeignState
-            );
-        };
-    };
 }

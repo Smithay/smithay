@@ -9,7 +9,7 @@
 //!     foreign_toplevel_list: ForeignToplevelListState,
 //! }
 //!
-//! smithay::delegate_foreign_toplevel_list!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! impl ForeignToplevelListHandler for State {
 //!     fn foreign_toplevel_list_state(&mut self) -> &mut ForeignToplevelListState {
@@ -46,15 +46,13 @@ use wayland_server::{
     backend::{ClientId, GlobalId},
 };
 
-use crate::utils::user_data::UserDataMap;
+use crate::{
+    utils::user_data::UserDataMap,
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+};
 
 /// Handler for foreign toplevel list protocol
-pub trait ForeignToplevelListHandler:
-    GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>
-    + Dispatch<ExtForeignToplevelListV1, ()>
-    + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>
-    + 'static
-{
+pub trait ForeignToplevelListHandler: 'static {
     /// [ForeignToplevelListState] getter
     fn foreign_toplevel_list_state(&mut self) -> &mut ForeignToplevelListState;
 }
@@ -292,15 +290,23 @@ pub struct ForeignToplevelListState {
 
 impl ForeignToplevelListState {
     /// Register new [ExtForeignToplevelListV1] global
-    pub fn new<D: ForeignToplevelListHandler>(dh: &DisplayHandle) -> Self {
+    pub fn new<D>(dh: &DisplayHandle) -> Self
+    where
+        D: ForeignToplevelListHandler
+            + GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>,
+    {
         Self::new_with_filter::<D>(dh, |_| true)
     }
 
     /// Register new [ExtForeignToplevelListV1] global with filter
-    pub fn new_with_filter<D: ForeignToplevelListHandler>(
+    pub fn new_with_filter<D>(
         dh: &DisplayHandle,
         can_view: impl Fn(&Client) -> bool + Send + Sync + 'static,
-    ) -> Self {
+    ) -> Self
+    where
+        D: ForeignToplevelListHandler
+            + GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>,
+    {
         let global = dh.create_global::<D, ExtForeignToplevelListV1, _>(
             1,
             ForeignToplevelListGlobalData {
@@ -323,11 +329,14 @@ impl ForeignToplevelListState {
 
     /// This event is emitted whenever a new toplevel window is created.
     /// It is emitted for all toplevels, regardless of the app that has created them.
-    pub fn new_toplevel<D: ForeignToplevelListHandler>(
+    pub fn new_toplevel<D>(
         &mut self,
         title: impl Into<String>,
         app_id: impl Into<String>,
-    ) -> ForeignToplevelHandle {
+    ) -> ForeignToplevelHandle
+    where
+        D: ForeignToplevelListHandler + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
+    {
         let handle = ForeignToplevelHandle::new(
             title.into(),
             app_id.into(),
@@ -398,18 +407,21 @@ impl std::fmt::Debug for ForeignToplevelListGlobalData {
     }
 }
 
-impl<D: ForeignToplevelListHandler> GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData, D>
-    for ForeignToplevelListState
+impl<D: ForeignToplevelListHandler> GlobalDispatch2<ExtForeignToplevelListV1, D>
+    for ForeignToplevelListGlobalData
+where
+    D: Dispatch<ExtForeignToplevelListV1, GlobalData>
+        + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
 {
     fn bind(
+        &self,
         state: &mut D,
         dh: &DisplayHandle,
         client: &Client,
         resource: New<ExtForeignToplevelListV1>,
-        _global_data: &ForeignToplevelListGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let instance = data_init.init(resource, ());
+        let instance = data_init.init(resource, GlobalData);
 
         let state = state.foreign_toplevel_list_state();
 
@@ -439,24 +451,24 @@ impl<D: ForeignToplevelListHandler> GlobalDispatch<ExtForeignToplevelListV1, For
         state.list_instances.push(instance);
     }
 
-    fn can_view(client: Client, global_data: &ForeignToplevelListGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelListV1, (), D> for ForeignToplevelListState {
+impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelListV1, D> for GlobalData {
     fn request(
+        &self,
         state: &mut D,
         client: &wayland_server::Client,
         manager: &ExtForeignToplevelListV1,
         request: ext_foreign_toplevel_list_v1::Request,
-        data: &(),
         _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             ext_foreign_toplevel_list_v1::Request::Stop => {
-                Self::destroyed(state, client.id(), manager, data);
+                self.destroyed(state, client.id(), manager);
                 manager.finished();
             }
             ext_foreign_toplevel_list_v1::Request::Destroy => {}
@@ -464,7 +476,7 @@ impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelListV1, (), D> fo
         }
     }
 
-    fn destroyed(state: &mut D, _client: ClientId, resource: &ExtForeignToplevelListV1, _data: &()) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtForeignToplevelListV1) {
         state
             .foreign_toplevel_list_state()
             .list_instances
@@ -472,15 +484,13 @@ impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelListV1, (), D> fo
     }
 }
 
-impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle, D>
-    for ForeignToplevelListState
-{
+impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelHandleV1, D> for ForeignToplevelHandle {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _context: &ExtForeignToplevelHandleV1,
         request: ext_foreign_toplevel_handle_v1::Request,
-        _data: &ForeignToplevelHandle,
         _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -490,48 +500,7 @@ impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelHandleV1, Foreign
         }
     }
 
-    fn destroyed(
-        _state: &mut D,
-        _client: ClientId,
-        resource: &ExtForeignToplevelHandleV1,
-        handle: &ForeignToplevelHandle,
-    ) {
-        handle.remove_instance(resource);
+    fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ExtForeignToplevelHandleV1) {
+        self.remove_instance(resource);
     }
-}
-
-/// Macro to delegate implementation of the xdg toplevel icon to [ForeignToplevelListState].
-///
-/// You must also implement [ForeignToplevelListHandler] to use this.
-#[macro_export]
-macro_rules! delegate_foreign_toplevel_list {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::ext::foreign_toplevel_list::v1::server::{
-                        ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
-                        ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::foreign_toplevel_list::{
-                    ForeignToplevelHandle, ForeignToplevelListGlobalData, ForeignToplevelListState,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtForeignToplevelListV1: ForeignToplevelListGlobalData] => ForeignToplevelListState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtForeignToplevelListV1: ()] => ForeignToplevelListState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtForeignToplevelHandleV1: ForeignToplevelHandle] => ForeignToplevelListState
-            );
-        };
-    };
 }

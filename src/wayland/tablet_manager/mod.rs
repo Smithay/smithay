@@ -3,8 +3,6 @@
 //! This module provides helpers to handle graphics tablets.
 //!
 //! ```
-//! use smithay::{delegate_seat, delegate_tablet_manager};
-//! # use smithay::delegate_compositor;
 //! use smithay::backend::input::TabletToolDescriptor;
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
@@ -55,21 +53,20 @@
 //!         // ...
 //!     }
 //! }
-//! delegate_seat!(State);
 //!
 //! impl TabletSeatHandler for State {
 //!     fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
 //!         // ...
 //!     }
 //! }
-//! delegate_tablet_manager!(State);
 //!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
-//! # delegate_compositor!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //! ```
 //! ```ignore
 //! // Init the manager global
@@ -96,7 +93,10 @@
 //!    );
 //! ```
 
-use crate::input::{Seat, SeatHandler};
+use crate::{
+    input::{Seat, SeatHandler},
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+};
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
@@ -141,13 +141,13 @@ impl TabletManagerState {
     /// Initialize a tablet manager global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpTabletManagerV2, ()>,
-        D: Dispatch<ZwpTabletManagerV2, ()>,
+        D: GlobalDispatch<ZwpTabletManagerV2, GlobalData>,
+        D: Dispatch<ZwpTabletManagerV2, GlobalData>,
         D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: 'static,
     {
-        let global = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, ());
+        let global = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, GlobalData);
 
         Self { global }
     }
@@ -158,28 +158,26 @@ impl TabletManagerState {
     }
 }
 
-impl<D> GlobalDispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
+impl<D> GlobalDispatch2<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: GlobalDispatch<ZwpTabletManagerV2, ()>,
-    D: Dispatch<ZwpTabletManagerV2, ()>,
+    D: Dispatch<ZwpTabletManagerV2, GlobalData>,
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _: &mut D,
         _: &DisplayHandle,
         _: &Client,
         resource: New<ZwpTabletManagerV2>,
-        _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
+impl<D> Dispatch2<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpTabletManagerV2, ()>,
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
@@ -187,11 +185,11 @@ where
     D: CompositorHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         client: &Client,
         _: &ZwpTabletManagerV2,
         request: zwp_tablet_manager_v2::Request,
-        _: &(),
         dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -218,50 +216,4 @@ where
             _ => unreachable!(),
         }
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_tablet_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::tablet::zv2::server::{
-                        zwp_tablet_manager_v2::ZwpTabletManagerV2, zwp_tablet_seat_v2::ZwpTabletSeatV2,
-                        zwp_tablet_tool_v2::ZwpTabletToolV2, zwp_tablet_v2::ZwpTabletV2,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::tablet_manager::{
-                    TabletManagerState, TabletSeatUserData, TabletToolUserData, TabletUserData,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpTabletManagerV2: ()] => TabletManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpTabletManagerV2: ()] => TabletManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpTabletSeatV2: TabletSeatUserData] => TabletManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpTabletToolV2: TabletToolUserData] => TabletManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpTabletV2: TabletUserData] => TabletManagerState
-            );
-        };
-    };
 }

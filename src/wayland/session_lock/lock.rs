@@ -10,8 +10,9 @@ use _session_lock::ext_session_lock_v1::{Error, ExtSessionLockV1, Request};
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock};
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource};
 
+use crate::wayland::Dispatch2;
+use crate::wayland::session_lock::SessionLockHandler;
 use crate::wayland::session_lock::surface::{ExtLockSurfaceUserData, LockSurface, LockSurfaceAttributes};
-use crate::wayland::session_lock::{SessionLockHandler, SessionLockManagerState};
 
 /// Surface role for ext-session-lock surfaces.
 const LOCK_SURFACE_ROLE: &str = "ext_session_lock_surface_v1";
@@ -30,19 +31,18 @@ impl SessionLockState {
     }
 }
 
-impl<D> Dispatch<ExtSessionLockV1, SessionLockState, D> for SessionLockManagerState
+impl<D> Dispatch2<ExtSessionLockV1, D> for SessionLockState
 where
-    D: Dispatch<ExtSessionLockV1, SessionLockState>,
     D: Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData>,
     D: SessionLockHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         lock: &ExtSessionLockV1,
         request: Request,
-        data: &SessionLockState,
         _display: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -109,7 +109,7 @@ where
             }
             Request::UnlockAndDestroy => {
                 // Ensure session is locked.
-                if !data.lock_status.load(Ordering::Relaxed) {
+                if !self.lock_status.load(Ordering::Relaxed) {
                     lock.post_error(Error::InvalidUnlock, "Session is not locked.");
                 }
 
@@ -118,7 +118,7 @@ where
             }
             Request::Destroy => {
                 // Ensure session is not locked.
-                if data.lock_status.load(Ordering::Relaxed) {
+                if self.lock_status.load(Ordering::Relaxed) {
                     lock.post_error(Error::InvalidDestroy, "Cannot destroy session lock while locked.");
                 }
             }

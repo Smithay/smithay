@@ -4,22 +4,19 @@ use indexmap::IndexSet;
 
 use crate::{
     utils::{IsAlive, Serial, alive_tracker::AliveTracker},
-    wayland::shell::xdg::XdgShellState,
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
 };
 
 use wayland_protocols::xdg::shell::server::{
     xdg_positioner::XdgPositioner, xdg_surface, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
 };
 
-use wayland_server::{
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak, backend::ClientId,
-};
+use wayland_server::{DataInit, Dispatch, DisplayHandle, New, Resource, Weak, backend::ClientId};
 
 use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};
 
-impl<D> GlobalDispatch<XdgWmBase, (), D> for XdgShellState
+impl<D> GlobalDispatch2<XdgWmBase, D> for GlobalData
 where
-    D: GlobalDispatch<XdgWmBase, ()>,
     D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
     D: Dispatch<XdgSurface, XdgSurfaceUserData>,
     D: Dispatch<XdgPositioner, XdgPositionerUserData>,
@@ -27,11 +24,11 @@ where
     D: 'static,
 {
     fn bind(
+        &self,
         state: &mut D,
         _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<XdgWmBase>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
         let shell = data_init.init(resource, XdgWmBaseUserData::default());
@@ -40,20 +37,19 @@ where
     }
 }
 
-impl<D> Dispatch<XdgWmBase, XdgWmBaseUserData, D> for XdgShellState
+impl<D> Dispatch2<XdgWmBase, D> for XdgWmBaseUserData
 where
-    D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
     D: Dispatch<XdgSurface, XdgSurfaceUserData>,
     D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         wm_base: &XdgWmBase,
         request: xdg_wm_base::Request,
-        data: &XdgWmBaseUserData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -68,13 +64,13 @@ where
                 let xdg_surface = data_init.init(
                     id,
                     XdgSurfaceUserData {
-                        known_surfaces: data.known_surfaces.clone(),
+                        known_surfaces: self.known_surfaces.clone(),
                         wl_surface: surface,
                         wm_base: wm_base.clone(),
                         has_active_role: AtomicBool::new(false),
                     },
                 );
-                data.known_surfaces
+                self.known_surfaces
                     .lock()
                     .unwrap()
                     .insert(xdg_surface.downgrade());
@@ -82,7 +78,7 @@ where
             xdg_wm_base::Request::Pong { serial } => {
                 let serial = Serial::from(serial);
                 let valid = {
-                    let mut guard = data.client_data.lock().unwrap();
+                    let mut guard = self.client_data.lock().unwrap();
                     if guard.pending_ping == Some(serial) {
                         guard.pending_ping = None;
                         true
@@ -95,7 +91,7 @@ where
                 }
             }
             xdg_wm_base::Request::Destroy => {
-                if !data.known_surfaces.lock().unwrap().is_empty() {
+                if !self.known_surfaces.lock().unwrap().is_empty() {
                     wm_base.post_error(
                         xdg_wm_base::Error::DefunctSurfaces,
                         "xdg_wm_base was destroyed before children",
@@ -106,9 +102,9 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _client_id: ClientId, wm_base: &XdgWmBase, data: &XdgWmBaseUserData) {
+    fn destroyed(&self, state: &mut D, _client_id: ClientId, wm_base: &XdgWmBase) {
         XdgShellHandler::client_destroyed(state, ShellClient::new(wm_base));
-        data.alive_tracker.destroy_notify();
+        self.alive_tracker.destroy_notify();
     }
 }
 

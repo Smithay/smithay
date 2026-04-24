@@ -3,47 +3,39 @@ use wayland_protocols::wp::alpha_modifier::v1::server::{
     wp_alpha_modifier_v1::{self, WpAlphaModifierV1},
 };
 
-use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
-};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource, backend::ClientId};
 
-use super::{
-    AlphaModifierState, AlphaModifierSurfaceCachedState, AlphaModifierSurfaceData,
-    AlphaModifierSurfaceUserData,
-};
-use crate::wayland::compositor;
+use super::{AlphaModifierSurfaceCachedState, AlphaModifierSurfaceData, AlphaModifierSurfaceUserData};
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor};
 
-impl<D> GlobalDispatch<WpAlphaModifierV1, (), D> for AlphaModifierState
+impl<D> GlobalDispatch2<WpAlphaModifierV1, D> for GlobalData
 where
-    D: GlobalDispatch<WpAlphaModifierV1, ()>,
-    D: Dispatch<WpAlphaModifierV1, ()>,
-    D: Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData>,
+    D: Dispatch<WpAlphaModifierV1, GlobalData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _: &DisplayHandle,
         _: &Client,
         resource: New<WpAlphaModifierV1>,
-        _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<WpAlphaModifierV1, (), D> for AlphaModifierState
+impl<D> Dispatch2<WpAlphaModifierV1, D> for GlobalData
 where
-    D: Dispatch<WpAlphaModifierV1, ()>,
     D: Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _: &Client,
         manager: &WpAlphaModifierV1,
         request: wp_alpha_modifier_v1::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -80,22 +72,19 @@ where
     }
 }
 
-impl<D> Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData, D> for AlphaModifierState
-where
-    D: Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData>,
-{
+impl<D> Dispatch2<WpAlphaModifierSurfaceV1, D> for AlphaModifierSurfaceUserData {
     fn request(
+        &self,
         _state: &mut D,
         _: &Client,
         obj: &WpAlphaModifierSurfaceV1,
         request: wp_alpha_modifier_surface_v1::Request,
-        data: &AlphaModifierSurfaceUserData,
         _dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
         match request {
             wp_alpha_modifier_surface_v1::Request::SetMultiplier { factor } => {
-                let Some(surface) = data.wl_surface() else {
+                let Some(surface) = self.wl_surface() else {
                     obj.post_error(
                         wp_alpha_modifier_surface_v1::Error::NoSurface,
                         "wl_surface was destroyed",
@@ -113,7 +102,7 @@ where
             }
             // Switch back to not specifying the alpha multiplier of this surface.
             wp_alpha_modifier_surface_v1::Request::Destroy => {
-                let Some(surface) = data.wl_surface() else {
+                let Some(surface) = self.wl_surface() else {
                     obj.post_error(
                         wp_alpha_modifier_surface_v1::Error::NoSurface,
                         "wl_surface was destroyed",
@@ -139,12 +128,7 @@ where
         }
     }
 
-    fn destroyed(
-        _state: &mut D,
-        _client: ClientId,
-        _object: &WpAlphaModifierSurfaceV1,
-        _data: &AlphaModifierSurfaceUserData,
-    ) {
+    fn destroyed(&self, _state: &mut D, _client: ClientId, _object: &WpAlphaModifierSurfaceV1) {
         // Nothing to do here, graceful Destroy is already handled with double buffering
         // and in case of client close WlSurface destroyed handler will clean up the data anyway,
         // so there is no point in queuing new update
