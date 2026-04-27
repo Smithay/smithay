@@ -139,6 +139,7 @@ use atomic_float::AtomicF64;
 use calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic};
 use rustix::fs::OFlags;
 use std::{
+    cell::RefCell,
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
     ops::Deref,
@@ -153,7 +154,6 @@ use wayland_server::{DisplayHandle, Resource};
 
 pub use x11rb::protocol::xproto::Window as X11Window;
 use x11rb::{
-    COPY_DEPTH_FROM_PARENT,
     connection::Connection as _,
     errors::{ReplyError, ReplyOrIdError},
     protocol::{
@@ -163,10 +163,10 @@ use x11rb::{
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
         xfixes::ConnectionExt as _,
         xproto::{
-            AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent,
-            ConfigureWindowAux, ConnectionExt, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask,
-            FontWrapper, GcontextWrapper, ImageFormat, PixmapWrapper, PropMode, Property,
-            QueryExtensionReply, Screen, StackMode, WindowClass,
+            AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
+            ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
+            CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat,
+            PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen, StackMode, Visualid, WindowClass,
         },
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
@@ -534,6 +534,7 @@ pub struct X11Wm {
 
     pub(crate) unpaired_surfaces: HashMap<u64, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
+    colormaps: RefCell<HashMap<Visualid, Colormap>>,
 
     // selections
     _xfixes_data: QueryExtensionReply,
@@ -876,6 +877,7 @@ impl X11Wm {
             dnd,
             unpaired_surfaces: Default::default(),
             sequences_to_ignore: Default::default(),
+            colormaps: Default::default(),
             windows: Vec::new(),
             client_list: Vec::new(),
             client_list_stacking: Vec::new(),
@@ -1279,6 +1281,19 @@ impl X11Wm {
 
         Err(PrimaryOutputError::OutputUnknown)
     }
+
+    fn colormap_for_visual(&self, visual: Visualid) -> Result<Colormap, ReplyOrIdError> {
+        if let Some(colormap) = self.colormaps.borrow().get(&visual) {
+            Ok(*colormap)
+        } else {
+            let colormap = self.conn.generate_id()?;
+            self.conn
+                .create_colormap(ColormapAlloc::NONE, colormap, self.screen.root, visual)?
+                .check()?;
+            self.colormaps.borrow_mut().insert(visual, colormap);
+            Ok(colormap)
+        }
+    }
 }
 
 fn handle_event<D>(
@@ -1381,14 +1396,23 @@ where
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
                 if surface.state.lock().unwrap().mapped_onto.is_none() {
                     // we reparent windows, because a lot of stuff expects, that we do
-                    let geo = conn.get_geometry(r.window)?.reply()?;
+                    let geo_cookie = conn.get_geometry(r.window)?;
+                    let attrs_cookie = conn.get_window_attributes(r.window)?;
+                    let geo = geo_cookie.reply()?;
+                    let attrs = attrs_cookie.reply()?;
+                    let colormap = xwm.colormap_for_visual(attrs.visual)?;
+
                     let win = r.window;
                     let frame_win = conn.generate_id()?;
-                    let win_aux = CreateWindowAux::new().event_mask(
-                        EventMask::SUBSTRUCTURE_NOTIFY
-                            | EventMask::SUBSTRUCTURE_REDIRECT
-                            | EventMask::PROPERTY_CHANGE,
-                    );
+                    let win_aux = CreateWindowAux::new()
+                        .event_mask(
+                            EventMask::SUBSTRUCTURE_NOTIFY
+                                | EventMask::SUBSTRUCTURE_REDIRECT
+                                | EventMask::PROPERTY_CHANGE,
+                        )
+                        .colormap(colormap)
+                        .background_pixmap(x11rb::NONE)
+                        .border_pixel(0);
 
                     {
                         let _guard = scopeguard::guard((), |_| {
@@ -1397,7 +1421,7 @@ where
 
                         conn.grab_server()?;
                         let cookie1 = conn.create_window(
-                            COPY_DEPTH_FROM_PARENT,
+                            geo.depth,
                             frame_win,
                             xwm.screen.root,
                             geo.x,
@@ -1406,7 +1430,7 @@ where
                             geo.height,
                             0,
                             WindowClass::INPUT_OUTPUT,
-                            x11rb::COPY_FROM_PARENT,
+                            attrs.visual,
                             &win_aux,
                         )?;
                         let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
