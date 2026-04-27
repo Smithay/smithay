@@ -364,7 +364,10 @@ impl Dmabuf {
             offsets[i] = offset as i32;
         }
 
-        if self.has_modifier() || self.num_planes() > 1 || self.offsets().next().unwrap() != 0 {
+        if (self.has_modifier() && self.format().modifier != Modifier::Linear)
+            || self.num_planes() > 1
+            || self.offsets().next().unwrap() != 0
+        {
             gbm.import_buffer_object_from_dma_buf_with_modifiers(
                 self.num_planes() as u32,
                 handles,
