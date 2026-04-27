@@ -252,6 +252,7 @@ mod atoms {
             _NET_WM_STATE_SKIP_TASKBAR,
             _NET_WM_STATE_SKIP_PAGER,
             _NET_WM_STATE_STICKY,
+            _NET_SHOWING_DESKTOP,
             _NET_SUPPORTING_WM_CHECK,
             _XSETTINGS_SETTINGS,
 
@@ -516,6 +517,16 @@ pub trait XwmHandler {
         let _ = (xwm, output_name);
     }
 
+    /// Application requests enabling "show desktop" mode
+    fn show_desktop_request(&mut self, xwm: XwmId) {
+        let _ = xwm;
+    }
+
+    /// Application requests disabling "show desktop" mode
+    fn unshow_desktop_request(&mut self, xwm: XwmId) {
+        let _ = xwm;
+    }
+
     /// WM has lost connection to X server
     fn disconnected(&mut self, _xwm: XwmId) {}
 }
@@ -547,6 +558,8 @@ pub struct X11Wm {
     client_list: Vec<X11Window>,
     // bottom -> top
     client_list_stacking: Vec<X11Window>,
+
+    is_showing_desktop: bool,
 
     span: tracing::Span,
 }
@@ -789,6 +802,7 @@ impl X11Wm {
                 atoms._NET_WM_MOVERESIZE,
                 atoms._NET_CLIENT_LIST,
                 atoms._NET_CLIENT_LIST_STACKING,
+                atoms._NET_SHOWING_DESKTOP,
             ],
         )?;
         conn.change_property32(
@@ -810,6 +824,13 @@ impl X11Wm {
             screen.root,
             atoms._NET_ACTIVE_WINDOW,
             AtomEnum::WINDOW,
+            &[0],
+        )?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            screen.root,
+            atoms._NET_SHOWING_DESKTOP,
+            AtomEnum::CARDINAL,
             &[0],
         )?;
         conn.change_property32(
@@ -881,6 +902,7 @@ impl X11Wm {
             windows: Vec::new(),
             client_list: Vec::new(),
             client_list_stacking: Vec::new(),
+            is_showing_desktop: false,
             span,
         };
 
@@ -1280,6 +1302,35 @@ impl X11Wm {
         }
 
         Err(PrimaryOutputError::OutputUnknown)
+    }
+
+    /// Sets the state of the "showing desktop" flag
+    ///
+    /// This updates the `_NET_SHOWING_DESKTOP` property on the root window to reflect whether or
+    /// not the compositor is in "show desktop" mode.  This mode is usually used to temporarily
+    /// hide all windows so the user can see the desktop.
+    ///
+    /// Note that this function does not show or hide any windows; the compositor is expected to
+    /// manage window state itself.
+    pub fn set_showing_desktop(&mut self, is_showing_desktop: bool) -> Result<(), ReplyOrIdError> {
+        if self.is_showing_desktop != is_showing_desktop {
+            let value = if is_showing_desktop { 1 } else { 0 };
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.screen.root,
+                self.atoms._NET_SHOWING_DESKTOP,
+                AtomEnum::CARDINAL,
+                &[value],
+            )?;
+            self.is_showing_desktop = is_showing_desktop;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the state of the "showing desktop" flag
+    pub fn is_showing_desktop(&self) -> bool {
+        self.is_showing_desktop
     }
 
     fn colormap_for_visual(&self, visual: Visualid) -> Result<Colormap, ReplyOrIdError> {
@@ -2425,6 +2476,17 @@ where
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
                         drop(_guard);
                         state.active_window_request(xwm_id, surface, timestamp, currently_active_window);
+                    }
+                }
+                x if x == xwm.atoms._NET_SHOWING_DESKTOP => {
+                    let data = msg.data.as_data32();
+                    let show_desktop = data[0];
+                    if show_desktop == 1 && !xwm.is_showing_desktop {
+                        drop(_guard);
+                        state.show_desktop_request(xwm_id);
+                    } else if show_desktop == 0 && xwm.is_showing_desktop {
+                        drop(_guard);
+                        state.unshow_desktop_request(xwm_id);
                     }
                 }
                 // Dnd events incoming
