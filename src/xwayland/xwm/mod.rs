@@ -1322,6 +1322,7 @@ impl X11Wm {
                 AtomEnum::CARDINAL,
                 &[value],
             )?;
+            self.conn.flush()?;
             self.is_showing_desktop = is_showing_desktop;
         }
 
