@@ -367,6 +367,12 @@ fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + SeatHandler + 'stat
                     XWaylandShellHandler::xwayland_shell_state(state)
                         .by_serial
                         .insert(serial, surface.clone());
+
+                    compositor::add_destruction_hook::<D, _>(surface, move |state, _| {
+                        XWaylandShellHandler::xwayland_shell_state(state)
+                            .by_serial
+                            .remove(&serial);
+                    });
                 }
             }
         }
