@@ -10,9 +10,9 @@ use crate::{
         },
         touch::TouchTarget,
     },
-    utils::{Client, IsAlive, Logical, Rectangle, Serial, Size, user_data::UserDataMap},
+    utils::{Client, HookId, IsAlive, Logical, Physical, Rectangle, Serial, Size, user_data::UserDataMap},
     wayland::{
-        compositor,
+        compositor::{self, RectangleKind, RegionAttributes, SurfaceAttributes},
         seat::{WaylandFocus, keyboard::enter_internal},
     },
 };
@@ -81,6 +81,7 @@ pub(crate) struct SharedSurfaceState {
 
     // The associated wl_surface.
     wl_surface: Option<WlSurface>,
+    pre_commit_hook_id: Option<HookId>,
 
     title: String,
     class: String,
@@ -95,6 +96,7 @@ pub(crate) struct SharedSurfaceState {
     motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
     pub(crate) opacity: Option<u32>,
+    opaque_region: Option<RegionAttributes>,
     pending_enter: Option<(
         Box<dyn std::any::Any + Send + 'static>,
         Vec<Keycode>,
@@ -117,6 +119,16 @@ impl PartialEq for X11Surface {
         let self_alive = self.state.lock().unwrap().alive;
         let other_alive = other.state.lock().unwrap().alive;
         self.xwm == other.xwm && self.window == other.window && self_alive && other_alive
+    }
+}
+
+impl Drop for SharedSurfaceState {
+    fn drop(&mut self) {
+        if let Some(hook_id) = self.pre_commit_hook_id.take() {
+            if let Some(wl_surface) = self.wl_surface.as_ref() {
+                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
+            }
+        }
     }
 }
 
@@ -214,6 +226,7 @@ impl X11Surface {
                 wl_surface_id: None,
                 wl_surface_serial: None,
                 wl_surface: None,
+                pre_commit_hook_id: None,
                 mapped_onto: None,
                 geometry,
                 override_redirect,
@@ -230,6 +243,7 @@ impl X11Surface {
                 motif_hints: vec![0; 5],
                 window_type: Vec::new(),
                 opacity: None,
+                opaque_region: None,
                 pending_enter: None,
             })),
             xdnd_active,
@@ -384,6 +398,13 @@ impl X11Surface {
 
     pub(crate) fn set_wl_surface<D: SeatHandler + 'static>(&self, data: &mut D, surface: Option<WlSurface>) {
         let mut state = self.state.lock().unwrap();
+
+        if let Some(hook_id) = state.pre_commit_hook_id.take() {
+            if let Some(wl_surface) = state.wl_surface.as_ref() {
+                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
+            }
+        }
+
         if let (Some(surface), None) = (surface.as_ref(), state.wl_surface.as_ref()) {
             if let Some((seat, keys, mods, serial)) = state.pending_enter.take() {
                 if let Ok(seat) = seat.downcast::<Seat<D>>() {
@@ -395,6 +416,23 @@ impl X11Surface {
             }
         }
         state.wl_surface = surface;
+
+        if let Some(wl_surface) = state.wl_surface.as_ref() {
+            let hook_id = {
+                let state = Arc::downgrade(&self.state);
+                compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, wl_surface| {
+                    if let Some(state) = state.upgrade() {
+                        let opaque_region = state.lock().unwrap().opaque_region.clone();
+                        compositor::with_states(wl_surface, |states| {
+                            let mut guard = states.cached_state.get::<SurfaceAttributes>();
+                            let attrs = guard.pending();
+                            attrs.opaque_region = opaque_region;
+                        });
+                    }
+                })
+            };
+            state.pre_commit_hook_id = Some(hook_id);
+        }
     }
 
     /// Returns the current geometry of the underlying X11 window
@@ -824,6 +862,7 @@ impl X11Surface {
         self.update_startup_id()?;
         self.update_pid()?;
         self.update_opacity()?;
+        self.update_opaque_regions()?;
         Ok(())
     }
 
@@ -872,6 +911,10 @@ impl X11Surface {
             atom if atom == self.atoms._NET_WM_WINDOW_OPACITY => {
                 self.update_opacity()?;
                 Ok(Some(WmWindowProperty::Opacity))
+            }
+            atom if atom == self.atoms._NET_WM_OPAQUE_REGION => {
+                self.update_opaque_regions()?;
+                Ok(None)
             }
 
             _ => Ok(None), // unknown
@@ -968,6 +1011,55 @@ impl X11Surface {
             let mut state = self.state.lock().unwrap();
             state.opacity = Some(opacity);
         }
+        Ok(())
+    }
+
+    fn update_opaque_regions(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let reply = conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._NET_WM_OPAQUE_REGION,
+                AtomEnum::CARDINAL,
+                0,
+                u32::MAX,
+            )?
+            .reply_unchecked()?;
+
+        let opaque_region = reply
+            .and_then(|reply| {
+                reply.value32().map(|values| {
+                    let client_scale = self
+                        .client_scale
+                        .as_ref()
+                        .map(|s| s.load(Ordering::Acquire))
+                        .unwrap_or(1.);
+
+                    values
+                        .collect::<Vec<_>>()
+                        .chunks_exact(4)
+                        .flat_map(|rect_values| {
+                            let phys_rect = Rectangle::<i32, Physical>::new(
+                                (rect_values[0] as i32, rect_values[1] as i32).into(),
+                                ((rect_values[2] as i32).max(0), (rect_values[3] as i32).max(0)).into(),
+                            );
+                            if phys_rect.is_empty() {
+                                None
+                            } else {
+                                Some((
+                                    RectangleKind::Add,
+                                    phys_rect.to_f64().to_logical(client_scale).to_i32_round::<i32>(),
+                                ))
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .map(|rects| RegionAttributes { rects });
+
+        self.state.lock().unwrap().opaque_region = opaque_region;
+
         Ok(())
     }
 

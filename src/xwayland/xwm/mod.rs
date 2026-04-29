@@ -227,6 +227,7 @@ mod atoms {
             _NET_WM_WINDOW_TYPE_TOOLTIP,
             _NET_WM_WINDOW_TYPE_UTILITY,
             _NET_WM_STATE_MODAL,
+            _NET_WM_OPAQUE_REGION,
             _MOTIF_WM_HINTS,
             _NET_STARTUP_ID,
 
@@ -803,6 +804,7 @@ impl X11Wm {
                 atoms._NET_CLIENT_LIST,
                 atoms._NET_CLIENT_LIST_STACKING,
                 atoms._NET_SHOWING_DESKTOP,
+                atoms._NET_WM_OPAQUE_REGION,
             ],
         )?;
         conn.change_property32(
