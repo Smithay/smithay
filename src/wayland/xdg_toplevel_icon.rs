@@ -5,6 +5,27 @@
 //! In order to advertise toplevel icon global call [XdgToplevelIconManager::new] and delegate
 //! events to it with [`delegate_xdg_toplevel_icon`][crate::delegate_xdg_toplevel_icon].
 //! Currently attached icon is available in double-buffered [ToplevelIconCachedState]
+//!
+//! ```
+//! use smithay::wayland::xdg_toplevel_icon::{XdgToplevelIconManager, XdgToplevelIconHandler};
+//! use wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
+//! use wayland_server::protocol::wl_surface::WlSurface;
+//!
+//! # struct State;
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//!
+//! XdgToplevelIconManager::new::<State>(
+//!     &display.handle(),
+//! );
+//!
+//! impl XdgToplevelIconHandler for State {
+//!     fn set_icon(&mut self, toplevel: XdgToplevel, wl_surface: WlSurface) {
+//!         dbg!(wl_surface);
+//!     }
+//! }
+//!
+//! smithay::delegate_xdg_toplevel_icon!(State);
+//! ```
 
 use std::{
     collections::HashSet,
