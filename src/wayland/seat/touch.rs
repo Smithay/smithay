@@ -13,7 +13,7 @@ use crate::input::{
     Seat,
     touch::{MotionEvent, OrientationEvent, ShapeEvent, UpEvent},
 };
-use crate::wayland::Dispatch2;
+use crate::wayland::Dispatch;
 use crate::{input::touch::DownEvent, wayland::seat::wl_surface::WlSurface};
 use crate::{input::touch::TouchHandle, utils::Serial};
 
@@ -136,7 +136,7 @@ pub struct TouchUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch2<WlTouch, D> for TouchUserData<D>
+impl<D> Dispatch<WlTouch, D> for TouchUserData<D>
 where
     D: SeatHandler,
     D: 'static,

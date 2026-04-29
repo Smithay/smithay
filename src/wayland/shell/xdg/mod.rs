@@ -1218,7 +1218,7 @@ impl XdgShellState {
     /// Create a new `xdg_shell` global with all [`WmCapabilities`](xdg_toplevel::WmCapabilities)
     pub fn new<D>(display: &DisplayHandle) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, GlobalData> + 'static,
+        D: XdgShellHandler + 'static,
     {
         Self::new_with_capabilities::<D>(
             display,
@@ -1237,7 +1237,7 @@ impl XdgShellState {
         capabilities: impl Into<WmCapabilitySet>,
     ) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, GlobalData> + 'static,
+        D: XdgShellHandler + 'static,
     {
         let global = display.create_global::<D, XdgWmBase, _>(7, GlobalData);
 

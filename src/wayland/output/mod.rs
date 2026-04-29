@@ -93,7 +93,7 @@ use wayland_server::{
 
 use crate::{
     utils::{Logical, Point},
-    wayland::GlobalData,
+    wayland::{GlobalData, compositor::CompositorHandler},
 };
 
 pub use self::handlers::XdgOutputUserData;
@@ -111,7 +111,7 @@ pub struct WlOutputData {
 }
 
 /// Events initiated by the clients interacting with outputs
-pub trait OutputHandler {
+pub trait OutputHandler: CompositorHandler {
     /// A client bound a new `wl_output` instance.
     fn output_bound(&mut self, _output: Output, _wl_output: WlOutput) {}
 }
@@ -127,9 +127,7 @@ impl OutputManagerState {
     /// Create new output manager with xdg output support
     pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlOutput, WlOutputData>,
-        D: GlobalDispatch<ZxdgOutputManagerV1, GlobalData>,
-        D: 'static,
+        D: OutputHandler + 'static,
     {
         let xdg_output_manager = display.create_global::<D, ZxdgOutputManagerV1, _>(3, GlobalData);
 
@@ -202,8 +200,7 @@ impl Output {
     /// multiple times.
     pub fn create_global<D>(&self, display: &DisplayHandle) -> GlobalId
     where
-        D: GlobalDispatch<WlOutput, WlOutputData>,
-        D: 'static,
+        D: OutputHandler + 'static,
     {
         info!(output = self.name(), "Creating new wl_output");
         self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());

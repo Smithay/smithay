@@ -50,7 +50,7 @@ use wayland_server::{
     Dispatch, DisplayHandle, GlobalDispatch, Resource, backend::GlobalId, protocol::wl_buffer::WlBuffer,
 };
 
-use crate::wayland::GlobalData;
+use crate::wayland::{GlobalData, buffer::BufferHandler};
 
 mod handlers;
 
@@ -67,9 +67,7 @@ impl SinglePixelBufferState {
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpSinglePixelBufferManagerV1, GlobalData>,
-        D: Dispatch<WpSinglePixelBufferManagerV1, GlobalData>,
-        D: 'static,
+        D: BufferHandler + 'static,
     {
         let global = display.create_global::<D, WpSinglePixelBufferManagerV1, _>(1, GlobalData);
 

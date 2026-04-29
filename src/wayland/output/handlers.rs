@@ -7,11 +7,11 @@ use wayland_protocols::xdg::xdg_output::zv1::server::{
     zxdg_output_v1::{self, ZxdgOutputV1},
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     protocol::wl_output::{self, Mode as WMode, WlOutput},
 };
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor::CompositorHandler};
+use crate::wayland::{GlobalData, compositor::CompositorHandler};
 
 use super::{Output, OutputHandler, OutputUserData, WlOutputData, xdg::XdgOutput};
 
@@ -19,9 +19,8 @@ use super::{Output, OutputHandler, OutputUserData, WlOutputData, xdg::XdgOutput}
  * Wl Output
  */
 
-impl<D> GlobalDispatch2<WlOutput, D> for WlOutputData
+impl<D> GlobalDispatch<WlOutput, D> for WlOutputData
 where
-    D: Dispatch<WlOutput, OutputUserData>,
     D: OutputHandler,
     D: CompositorHandler,
     D: 'static,
@@ -100,7 +99,7 @@ where
     }
 }
 
-impl<D> Dispatch2<WlOutput, D> for OutputUserData {
+impl<D> Dispatch<WlOutput, D> for OutputUserData {
     fn request(
         &self,
         _state: &mut D,
@@ -128,10 +127,9 @@ impl<D> Dispatch2<WlOutput, D> for OutputUserData {
  * XDG Output
  */
 
-impl<D> GlobalDispatch2<ZxdgOutputManagerV1, D> for GlobalData
+impl<D> GlobalDispatch<ZxdgOutputManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZxdgOutputManagerV1, GlobalData>,
-    D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
+    D: OutputHandler,
     D: 'static,
 {
     fn bind(
@@ -146,9 +144,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZxdgOutputManagerV1, D> for GlobalData
+impl<D> Dispatch<ZxdgOutputManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
+    D: OutputHandler,
     D: CompositorHandler,
     D: 'static,
 {
@@ -201,7 +199,7 @@ pub struct XdgOutputUserData {
     pub(super) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch2<ZxdgOutputV1, D> for XdgOutputUserData {
+impl<D> Dispatch<ZxdgOutputV1, D> for XdgOutputUserData {
     fn request(
         &self,
         _state: &mut D,

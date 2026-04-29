@@ -9,7 +9,7 @@ use wayland_server::{Client, DataInit, DisplayHandle, Resource, protocol::wl_sea
 use crate::{
     input::{Seat, SeatHandler},
     wayland::{
-        Dispatch2,
+        Dispatch,
         seat::WaylandFocus,
         selection::{
             SelectionHandler, SelectionTarget,
@@ -29,7 +29,7 @@ pub struct PrimaryDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch2<PrimaryDevice, D> for PrimaryDeviceUserData
+impl<D> Dispatch<PrimaryDevice, D> for PrimaryDeviceUserData
 where
     D: PrimarySelectionHandler,
     D: SelectionHandler,

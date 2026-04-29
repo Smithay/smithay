@@ -15,7 +15,6 @@ use smithay::{
             RenderElementStates, default_primary_scanout_output_compare, utils::select_dmabuf_feedback,
         },
     },
-    delegate_dispatch2,
     desktop::{
         PopupKind, PopupManager, Space,
         space::SpaceElement,
@@ -606,8 +605,6 @@ impl<BackendData: Backend> ImageCopyCaptureHandler for AnvilState<BackendData> {
         frame.fail(smithay::wayland::image_copy_capture::CaptureFailureReason::Unknown);
     }
 }
-
-delegate_dispatch2!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(

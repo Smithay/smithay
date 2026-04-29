@@ -58,10 +58,7 @@ use super::{
     compositor::{self, BufferAssignment, Cacheable, HookId, SurfaceAttributes, with_states},
     dmabuf::get_dmabuf,
 };
-use crate::{
-    backend::drm::DrmDeviceFd,
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
-};
+use crate::{backend::drm::DrmDeviceFd, wayland::GlobalData};
 
 mod sync_point;
 pub use sync_point::*;
@@ -133,8 +130,7 @@ impl DrmSyncobjState {
     /// The `import_device` will be used to import the syncobj fds, and wait on them.
     pub fn new<D>(display: &DisplayHandle, import_device: DrmDeviceFd) -> Self
     where
-        D: GlobalDispatch<WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>,
-        D: 'static,
+        D: DrmSyncobjHandler + 'static,
     {
         Self::new_with_filter::<D, _>(display, import_device, |_| true)
     }
@@ -144,8 +140,7 @@ impl DrmSyncobjState {
     /// The `import_device` will be used to import the syncobj fds, and wait on them.
     pub fn new_with_filter<D, F>(display: &DisplayHandle, import_device: DrmDeviceFd, filter: F) -> Self
     where
-        D: GlobalDispatch<WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>,
-        D: 'static,
+        D: DrmSyncobjHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let global = display.create_global::<D, WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>(
@@ -187,9 +182,9 @@ impl DrmSyncobjState {
     }
 }
 
-impl<D> GlobalDispatch2<WpLinuxDrmSyncobjManagerV1, D> for DrmSyncobjGlobalData
+impl<D> GlobalDispatch<WpLinuxDrmSyncobjManagerV1, D> for DrmSyncobjGlobalData
 where
-    D: Dispatch<WpLinuxDrmSyncobjManagerV1, GlobalData>,
+    D: DrmSyncobjHandler,
 {
     fn bind(
         &self,
@@ -279,10 +274,8 @@ fn destruction_hook<D: DrmSyncobjHandler>(_data: &mut D, surface: &WlSurface) {
     });
 }
 
-impl<D> Dispatch2<WpLinuxDrmSyncobjManagerV1, D> for GlobalData
+impl<D> Dispatch<WpLinuxDrmSyncobjManagerV1, D> for GlobalData
 where
-    D: Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData>,
-    D: Dispatch<WpLinuxDrmSyncobjTimelineV1, DrmSyncobjTimelineData>,
     D: DrmSyncobjHandler,
 {
     fn request(
@@ -362,7 +355,7 @@ pub struct DrmSyncobjSurfaceData {
     destruction_hook_id: HookId,
 }
 
-impl<D> Dispatch2<WpLinuxDrmSyncobjSurfaceV1, D> for DrmSyncobjSurfaceData
+impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, D> for DrmSyncobjSurfaceData
 where
     D: DrmSyncobjHandler,
 {
@@ -463,7 +456,7 @@ pub struct DrmSyncobjTimelineData {
     timeline: DrmTimeline,
 }
 
-impl<D: DrmSyncobjHandler> Dispatch2<WpLinuxDrmSyncobjTimelineV1, D> for DrmSyncobjTimelineData {
+impl<D: DrmSyncobjHandler> Dispatch<WpLinuxDrmSyncobjTimelineV1, D> for DrmSyncobjTimelineData {
     fn request(
         &self,
         _state: &mut D,

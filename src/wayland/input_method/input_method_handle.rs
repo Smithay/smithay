@@ -17,7 +17,7 @@ use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface};
 use crate::{
     input::{SeatHandler, keyboard::KeyboardHandle},
     utils::{Logical, Rectangle, SERIAL_COUNTER, alive_tracker::AliveTracker},
-    wayland::{Dispatch2, compositor, seat::WaylandFocus, text_input::TextInputHandle},
+    wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
@@ -185,10 +185,8 @@ impl<D: SeatHandler> fmt::Debug for InputMethodUserData<D> {
     }
 }
 
-impl<D> Dispatch2<ZwpInputMethodV2, D> for InputMethodUserData<D>
+impl<D> Dispatch<ZwpInputMethodV2, D> for InputMethodUserData<D>
 where
-    D: Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData>,
-    D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>>,
     D: SeatHandler,
     D: InputMethodHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,

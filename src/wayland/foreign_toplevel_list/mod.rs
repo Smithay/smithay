@@ -46,10 +46,7 @@ use wayland_server::{
     backend::{ClientId, GlobalId},
 };
 
-use crate::{
-    utils::user_data::UserDataMap,
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
-};
+use crate::{utils::user_data::UserDataMap, wayland::GlobalData};
 
 /// Handler for foreign toplevel list protocol
 pub trait ForeignToplevelListHandler: 'static {
@@ -292,8 +289,7 @@ impl ForeignToplevelListState {
     /// Register new [ExtForeignToplevelListV1] global
     pub fn new<D>(dh: &DisplayHandle) -> Self
     where
-        D: ForeignToplevelListHandler
-            + GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>,
+        D: ForeignToplevelListHandler,
     {
         Self::new_with_filter::<D>(dh, |_| true)
     }
@@ -304,8 +300,7 @@ impl ForeignToplevelListState {
         can_view: impl Fn(&Client) -> bool + Send + Sync + 'static,
     ) -> Self
     where
-        D: ForeignToplevelListHandler
-            + GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>,
+        D: ForeignToplevelListHandler,
     {
         let global = dh.create_global::<D, ExtForeignToplevelListV1, _>(
             1,
@@ -335,7 +330,7 @@ impl ForeignToplevelListState {
         app_id: impl Into<String>,
     ) -> ForeignToplevelHandle
     where
-        D: ForeignToplevelListHandler + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
+        D: ForeignToplevelListHandler,
     {
         let handle = ForeignToplevelHandle::new(
             title.into(),
@@ -407,11 +402,10 @@ impl std::fmt::Debug for ForeignToplevelListGlobalData {
     }
 }
 
-impl<D: ForeignToplevelListHandler> GlobalDispatch2<ExtForeignToplevelListV1, D>
+impl<D: ForeignToplevelListHandler> GlobalDispatch<ExtForeignToplevelListV1, D>
     for ForeignToplevelListGlobalData
 where
-    D: Dispatch<ExtForeignToplevelListV1, GlobalData>
-        + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
+    D: ForeignToplevelListHandler,
 {
     fn bind(
         &self,
@@ -456,7 +450,7 @@ where
     }
 }
 
-impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelListV1, D> for GlobalData {
+impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelListV1, D> for GlobalData {
     fn request(
         &self,
         state: &mut D,
@@ -484,7 +478,7 @@ impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelListV1, D> for G
     }
 }
 
-impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelHandleV1, D> for ForeignToplevelHandle {
+impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelHandleV1, D> for ForeignToplevelHandle {
     fn request(
         &self,
         _state: &mut D,

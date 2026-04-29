@@ -25,7 +25,7 @@ use super::compositor::{self, RegionAttributes};
 use crate::{
     input::{SeatHandler, pointer::PointerHandle},
     utils::{Logical, Point},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
+    wayland::{GlobalData, seat::PointerUserData},
 };
 
 const VERSION: u32 = 1;
@@ -220,12 +220,7 @@ impl PointerConstraintsState {
     /// Create a new pointer constraints global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpPointerConstraintsV1, GlobalData>,
-        D: Dispatch<ZwpPointerConstraintsV1, GlobalData>,
-        D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
-        D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
-        D: SeatHandler,
-        D: 'static,
+        D: PointerConstraintsHandler + 'static,
     {
         let global = display.create_global::<D, ZwpPointerConstraintsV1, _>(VERSION, GlobalData);
 
@@ -352,13 +347,9 @@ fn remove_constraint<D: SeatHandler + 'static>(surface: &WlSurface, pointer: &Po
     });
 }
 
-impl<D> Dispatch2<ZwpPointerConstraintsV1, D> for GlobalData
+impl<D> Dispatch<ZwpPointerConstraintsV1, D> for GlobalData
 where
-    D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
-    D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
-    D: SeatHandler,
-    D: PointerConstraintsHandler,
-    D: 'static,
+    D: PointerConstraintsHandler + 'static,
 {
     fn request(
         &self,
@@ -442,9 +433,9 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<ZwpPointerConstraintsV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpPointerConstraintsV1, D> for GlobalData
 where
-    D: Dispatch<ZwpPointerConstraintsV1, GlobalData> + SeatHandler + 'static,
+    D: PointerConstraintsHandler + 'static,
 {
     fn bind(
         &self,
@@ -458,10 +449,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpConfinedPointerV1, D> for PointerConstraintUserData<D>
+impl<D> Dispatch<ZwpConfinedPointerV1, D> for PointerConstraintUserData<D>
 where
-    D: SeatHandler,
-    D: 'static,
+    D: PointerConstraintsHandler + 'static,
 {
     fn request(
         &self,
@@ -505,10 +495,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpLockedPointerV1, D> for PointerConstraintUserData<D>
+impl<D> Dispatch<ZwpLockedPointerV1, D> for PointerConstraintUserData<D>
 where
-    D: SeatHandler,
-    D: 'static,
+    D: PointerConstraintsHandler + 'static,
 {
     fn request(
         &self,

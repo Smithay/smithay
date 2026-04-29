@@ -58,7 +58,7 @@ use wayland_server::protocol::wl_output::WlOutput;
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
 mod lock;
 mod surface;
@@ -81,11 +81,7 @@ impl SessionLockManagerState {
     /// Create new [`ExtSessionLockManagerV1`] global.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData>,
-        D: Dispatch<ExtSessionLockManagerV1, GlobalData>,
-        D: Dispatch<ExtSessionLockV1, SessionLockState>,
-        D: SessionLockHandler,
-        D: 'static,
+        D: SessionLockHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = SessionLockManagerGlobalData {
@@ -106,11 +102,9 @@ pub struct SessionLockManagerGlobalData {
     filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
 }
 
-impl<D> GlobalDispatch2<ExtSessionLockManagerV1, D> for SessionLockManagerGlobalData
+impl<D> GlobalDispatch<ExtSessionLockManagerV1, D> for SessionLockManagerGlobalData
 where
-    D: Dispatch<ExtSessionLockManagerV1, GlobalData>,
-    D: SessionLockHandler,
-    D: 'static,
+    D: SessionLockHandler + 'static,
 {
     fn bind(
         &self,
@@ -128,11 +122,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtSessionLockManagerV1, D> for GlobalData
+impl<D> Dispatch<ExtSessionLockManagerV1, D> for GlobalData
 where
-    D: Dispatch<ExtSessionLockV1, SessionLockState>,
-    D: SessionLockHandler,
-    D: 'static,
+    D: SessionLockHandler + 'static,
 {
     fn request(
         &self,

@@ -40,12 +40,12 @@ use wayland_protocols::xdg::foreign::zv2::server::{
 };
 use wayland_server::{DisplayHandle, GlobalDispatch, backend::GlobalId, protocol::wl_surface::WlSurface};
 
-use crate::wayland::GlobalData;
+use crate::wayland::{GlobalData, shell::xdg::XdgShellHandler};
 
 mod handlers;
 
 /// A trait implemented to be notified of activation requests using the xdg foreign protocol.
-pub trait XdgForeignHandler: 'static {
+pub trait XdgForeignHandler: XdgShellHandler + 'static {
     /// Returns the xdg foreign state.
     fn xdg_foreign_state(&mut self) -> &mut XdgForeignState;
 }
@@ -107,8 +107,6 @@ impl XdgForeignState {
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
         D: XdgForeignHandler,
-        D: GlobalDispatch<ZxdgExporterV2, GlobalData>,
-        D: GlobalDispatch<ZxdgImporterV2, GlobalData>,
     {
         let exporter = display.create_global::<D, ZxdgExporterV2, _>(1, GlobalData);
         let importer = display.create_global::<D, ZxdgImporterV2, _>(1, GlobalData);

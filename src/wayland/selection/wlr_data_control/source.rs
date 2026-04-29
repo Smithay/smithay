@@ -8,7 +8,7 @@ use wayland_server::DisplayHandle;
 use wayland_server::backend::ClientId;
 
 use crate::input::Seat;
-use crate::wayland::Dispatch2;
+use crate::wayland::Dispatch;
 use crate::wayland::selection::SelectionTarget;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
@@ -39,7 +39,7 @@ pub struct SourceMetadata {
     pub mime_types: Vec<String>,
 }
 
-impl<D> Dispatch2<ZwlrDataControlSourceV1, D> for DataControlSourceUserData
+impl<D> Dispatch<ZwlrDataControlSourceV1, D> for DataControlSourceUserData
 where
     D: DataControlHandler,
     D: 'static,

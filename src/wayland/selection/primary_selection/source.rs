@@ -8,7 +8,7 @@ use wayland_server::{DisplayHandle, backend::ClientId};
 use crate::{
     input::Seat,
     wayland::{
-        Dispatch2,
+        Dispatch,
         selection::{offer::OfferReplySource, seat_data::SeatData, source::SelectionSourceProvider},
     },
 };
@@ -38,7 +38,7 @@ impl PrimarySourceUserData {
     }
 }
 
-impl<D> Dispatch2<PrimarySource, D> for PrimarySourceUserData
+impl<D> Dispatch<PrimarySource, D> for PrimarySourceUserData
 where
     D: PrimarySelectionHandler,
     D: 'static,

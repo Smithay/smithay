@@ -52,7 +52,7 @@ use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, 
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 
 pub use text_input_handle::TextInputHandle;
@@ -88,10 +88,7 @@ impl TextInputManagerState {
     /// Initialize a text input manager global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpTextInputManagerV3, GlobalData>,
-        D: Dispatch<ZwpTextInputManagerV3, GlobalData>,
-        D: Dispatch<ZwpTextInputV3, TextInputUserData>,
-        D: 'static,
+        D: SeatHandler + 'static,
     {
         let global = display.create_global::<D, ZwpTextInputManagerV3, _>(MANAGER_VERSION, GlobalData);
 
@@ -104,11 +101,9 @@ impl TextInputManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpTextInputManagerV3, D> for GlobalData
+impl<D> GlobalDispatch<ZwpTextInputManagerV3, D> for GlobalData
 where
-    D: Dispatch<ZwpTextInputManagerV3, GlobalData>,
-    D: Dispatch<ZwpTextInputV3, TextInputUserData>,
-    D: 'static,
+    D: SeatHandler + 'static,
 {
     fn bind(
         &self,
@@ -122,11 +117,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpTextInputManagerV3, D> for GlobalData
+impl<D> Dispatch<ZwpTextInputManagerV3, D> for GlobalData
 where
-    D: Dispatch<ZwpTextInputV3, TextInputUserData>,
-    D: SeatHandler,
-    D: 'static,
+    D: SeatHandler + 'static,
 {
     fn request(
         &self,

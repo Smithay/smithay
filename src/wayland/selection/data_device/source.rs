@@ -20,7 +20,7 @@ use crate::input::{
     dnd::{DndAction, Source, SourceMetadata},
 };
 use crate::utils::{IsAlive, alive_tracker::AliveTracker};
-use crate::wayland::Dispatch2;
+use crate::wayland::Dispatch;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;
@@ -45,7 +45,7 @@ impl DataSourceUserData {
     }
 }
 
-impl<D> Dispatch2<WlDataSource, D> for DataSourceUserData
+impl<D> Dispatch<WlDataSource, D> for DataSourceUserData
 where
     D: DataDeviceHandler,
     D: 'static,

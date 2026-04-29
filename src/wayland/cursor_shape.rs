@@ -103,18 +103,17 @@ use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::
 use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::Request as ManagerRequest;
 use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1 as CursorShapeManager;
 use wayland_protocols::wp::tablet::zv2::server::zwp_tablet_tool_v2::ZwpTabletToolV2;
-use wayland_server::GlobalDispatch;
 use wayland_server::Resource;
 use wayland_server::WEnum;
 use wayland_server::Weak;
-use wayland_server::{Dispatch, DisplayHandle, backend::GlobalId};
+use wayland_server::{Dispatch, DisplayHandle, GlobalDispatch, backend::GlobalId};
 
 use crate::input::SeatHandler;
 use crate::input::WeakSeat;
 use crate::input::pointer::{CursorIcon, CursorImageStatus};
 use crate::utils::Serial;
+use crate::wayland::GlobalData;
 use crate::wayland::seat::{WaylandFocus, pointer::allow_setting_cursor};
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 use super::seat::PointerUserData;
 use super::tablet_manager::{TabletSeatHandler, TabletToolUserData};
@@ -129,9 +128,8 @@ impl CursorShapeManagerState {
     /// Register new [CursorShapeManager] global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<CursorShapeManager, GlobalData>,
-        D: Dispatch<CursorShapeManager, GlobalData>,
-        D: SeatHandler,
+        D: TabletSeatHandler,
+        <D as SeatHandler>::PointerFocus: WaylandFocus,
         D: 'static,
     {
         let global = display.create_global::<D, CursorShapeManager, _>(2, GlobalData);
@@ -144,10 +142,10 @@ impl CursorShapeManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<CursorShapeManager, D> for GlobalData
+impl<D> GlobalDispatch<CursorShapeManager, D> for GlobalData
 where
-    D: Dispatch<CursorShapeManager, GlobalData>,
-    D: SeatHandler,
+    D: TabletSeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn bind(
@@ -162,10 +160,10 @@ where
     }
 }
 
-impl<D> Dispatch2<CursorShapeManager, D> for GlobalData
+impl<D> Dispatch<CursorShapeManager, D> for GlobalData
 where
-    D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData<D>>,
-    D: SeatHandler,
+    D: TabletSeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
@@ -234,7 +232,7 @@ pub(crate) enum CursorShapeDeviceUserDataInner<D: SeatHandler> {
     Tablet(Weak<ZwpTabletToolV2>),
 }
 
-impl<D> Dispatch2<CursorShapeDevice, D> for CursorShapeDeviceUserData<D>
+impl<D> Dispatch<CursorShapeDevice, D> for CursorShapeDeviceUserData<D>
 where
     D: SeatHandler + TabletSeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
