@@ -71,7 +71,6 @@ mod touch;
 use std::{borrow::Cow, fmt, sync::Arc};
 
 use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
-use crate::wayland::{Dispatch2, GlobalDispatch2};
 
 pub use self::{
     keyboard::KeyboardUserData,
@@ -83,11 +82,8 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId, ObjectId},
     protocol::{
-        wl_keyboard::WlKeyboard,
-        wl_pointer::WlPointer,
         wl_seat::{self, WlSeat},
         wl_surface,
-        wl_touch::WlTouch,
     },
 };
 
@@ -165,7 +161,7 @@ impl<D: SeatHandler + 'static> SeatState<D> {
     /// in case you want to remove it.
     pub fn new_wl_seat<N>(&mut self, display: &DisplayHandle, name: N) -> Seat<D>
     where
-        D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + SeatHandler + 'static,
+        D: SeatHandler + CompositorHandler + 'static,
         <D as SeatHandler>::PointerFocus: WaylandFocus,
         <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         N: Into<String>,
@@ -223,15 +219,11 @@ impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
     }
 }
 
-impl<D> Dispatch2<WlSeat, D> for SeatUserData<D>
+impl<D> Dispatch<WlSeat, D> for SeatUserData<D>
 where
-    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
-    D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData<D>>,
-    D: SeatHandler,
-    D: CompositorHandler,
+    D: SeatHandler + CompositorHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
-    D: 'static,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
 {
     fn request(
         &self,
@@ -313,14 +305,11 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<WlSeat, D> for SeatGlobalData<D>
+impl<D> GlobalDispatch<WlSeat, D> for SeatGlobalData<D>
 where
-    D: Dispatch<WlSeat, SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
-    D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData<D>>,
-    D: SeatHandler,
-    D: 'static,
+    D: SeatHandler + CompositorHandler + 'static,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn bind(
         &self,

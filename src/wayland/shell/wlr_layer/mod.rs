@@ -51,7 +51,7 @@ use wayland_protocols_wlr::layer_shell::v1::server::{
     zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1,
 };
 use wayland_server::{
-    Client, DisplayHandle, GlobalDispatch, Resource as _,
+    Client, DisplayHandle, Resource as _,
     backend::GlobalId,
     protocol::{wl_output::WlOutput, wl_surface},
 };
@@ -216,8 +216,7 @@ impl WlrLayerShellState {
     /// Create a new `wlr_layer_shell` global
     pub fn new<D>(display: &DisplayHandle) -> WlrLayerShellState
     where
-        D: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
-        D: 'static,
+        D: WlrLayerShellHandler + 'static,
     {
         Self::new_with_filter::<D, _>(display, |_| true)
     }
@@ -225,8 +224,7 @@ impl WlrLayerShellState {
     /// Create a new `wlr_layer_shell` global with a client filter
     pub fn new_with_filter<D, F>(display: &DisplayHandle, filter: F) -> WlrLayerShellState
     where
-        D: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
-        D: 'static,
+        D: WlrLayerShellHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let shell_global = display.create_global::<D, ZwlrLayerShellV1, WlrLayerShellGlobalData>(

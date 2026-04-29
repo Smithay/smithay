@@ -5,12 +5,11 @@ use std::{
 };
 
 use tracing::debug;
-use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::Error::NoKeymap;
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::{
     self, ZwpVirtualKeyboardV1,
 };
 use wayland_server::{
-    Client, DataInit, DisplayHandle, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
     protocol::wl_keyboard::{KeyState, KeymapFormat},
 };
 use xkbcommon::xkb;
@@ -19,10 +18,7 @@ use crate::input::keyboard::{KeyboardTarget, KeymapFile, ModifiersState};
 use crate::{
     input::{Seat, SeatHandler},
     utils::SERIAL_COUNTER,
-    wayland::{
-        Dispatch2,
-        seat::{WaylandFocus, keyboard::for_each_focused_kbds},
-    },
+    wayland::seat::{WaylandFocus, keyboard::for_each_focused_kbds},
 };
 
 #[derive(Debug, Default)]
@@ -71,7 +67,7 @@ impl<D: SeatHandler> fmt::Debug for VirtualKeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch2<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData<D>
+impl<D> Dispatch<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData<D>
 where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
@@ -95,7 +91,10 @@ where
                 let vk_state = match virtual_data.state.as_mut() {
                     Some(vk_state) => vk_state,
                     None => {
-                        virtual_keyboard.post_error(NoKeymap, "`key` sent before keymap.");
+                        virtual_keyboard.post_error(
+                            zwp_virtual_keyboard_v1::Error::NoKeymap,
+                            "`key` sent before keymap.",
+                        );
                         return;
                     }
                 };
@@ -131,7 +130,10 @@ where
                 let state = match virtual_data.state.as_mut() {
                     Some(state) => state,
                     None => {
-                        virtual_keyboard.post_error(NoKeymap, "`modifiers` sent before keymap.");
+                        virtual_keyboard.post_error(
+                            zwp_virtual_keyboard_v1::Error::NoKeymap,
+                            "`modifiers` sent before keymap.",
+                        );
                         return;
                     }
                 };
@@ -172,7 +174,7 @@ where
     D: SeatHandler + 'static,
 {
     // Only libxkbcommon compatible keymaps are supported.
-    if format != KeymapFormat::XkbV1 as u32 {
+    if format != u32::from(KeymapFormat::XkbV1) {
         debug!("Unsupported keymap format: {format:?}");
         return;
     }

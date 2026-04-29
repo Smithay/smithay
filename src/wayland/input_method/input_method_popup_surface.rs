@@ -3,14 +3,11 @@ use std::sync::{Arc, Mutex};
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::{
     self, ZwpInputPopupSurfaceV2,
 };
-use wayland_server::{Resource, backend::ClientId, protocol::wl_surface::WlSurface};
+use wayland_server::{Dispatch, Resource, backend::ClientId, protocol::wl_surface::WlSurface};
 
-use crate::{
-    utils::{
-        Logical, Point, Rectangle,
-        alive_tracker::{AliveTracker, IsAlive},
-    },
-    wayland::Dispatch2,
+use crate::utils::{
+    Logical, Point, Rectangle,
+    alive_tracker::{AliveTracker, IsAlive},
 };
 
 /// Handle to a popup surface
@@ -130,7 +127,7 @@ pub struct InputMethodPopupSurfaceUserData {
     pub(super) alive_tracker: AliveTracker,
 }
 
-impl<D> Dispatch2<ZwpInputPopupSurfaceV2, D> for InputMethodPopupSurfaceUserData {
+impl<D> Dispatch<ZwpInputPopupSurfaceV2, D> for InputMethodPopupSurfaceUserData {
     fn request(
         &self,
         _state: &mut D,

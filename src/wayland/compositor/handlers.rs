@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use wayland_server::{
-    DataInit, Dispatch, DisplayHandle, New, Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     protocol::{
         wl_callback::{self, WlCallback},
         wl_compositor::{self, WlCompositor},
@@ -20,7 +20,7 @@ use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
 };
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
 use super::{
     AlreadyHasRole, BufferAssignment, CompositorHandler, Damage, Rectangle, RectangleKind, RegionAttributes,
@@ -35,11 +35,8 @@ use tracing::trace;
  * wl_compositor
  */
 
-impl<D> GlobalDispatch2<WlCompositor, D> for GlobalData
+impl<D> GlobalDispatch<WlCompositor, D> for GlobalData
 where
-    D: Dispatch<WlCompositor, GlobalData>,
-    D: Dispatch<WlSurface, SurfaceUserData>,
-    D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
     D: 'static,
 {
@@ -55,10 +52,8 @@ where
     }
 }
 
-impl<D> Dispatch2<WlCompositor, D> for GlobalData
+impl<D> Dispatch<WlCompositor, D> for GlobalData
 where
-    D: Dispatch<WlSurface, SurfaceUserData>,
-    D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
     D: 'static,
 {
@@ -156,9 +151,8 @@ pub struct SurfaceUserData {
     pub(super) user_state_type: (std::any::TypeId, &'static str),
 }
 
-impl<D> Dispatch2<WlSurface, D> for SurfaceUserData
+impl<D> Dispatch<WlSurface, D> for SurfaceUserData
 where
-    D: Dispatch<WlCallback, GlobalData>,
     D: CompositorHandler,
     D: 'static,
 {
@@ -278,15 +272,13 @@ where
                 PrivateSurfaceData::commit(surface, handle, state);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
-                if let WEnum::Value(transform) = transform {
-                    PrivateSurfaceData::with_states(surface, |states| {
-                        states
-                            .cached_state
-                            .get::<SurfaceAttributes>()
-                            .pending()
-                            .buffer_transform = transform;
-                    });
-                }
+                PrivateSurfaceData::with_states(surface, |states| {
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .buffer_transform = transform;
+                });
             }
             wl_surface::Request::SetBufferScale { scale } => {
                 if scale >= 1 {
@@ -373,7 +365,7 @@ pub struct RegionUserData {
     pub(crate) inner: Mutex<RegionAttributes>,
 }
 
-impl<D> Dispatch2<WlRegion, D> for RegionUserData
+impl<D> Dispatch<WlRegion, D> for RegionUserData
 where
     D: CompositorHandler,
 {
@@ -416,10 +408,8 @@ where
  * wl_subcompositor
  */
 
-impl<D> GlobalDispatch2<WlSubcompositor, D> for GlobalData
+impl<D> GlobalDispatch<WlSubcompositor, D> for GlobalData
 where
-    D: Dispatch<WlSubcompositor, GlobalData>,
-    D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
     D: 'static,
 {
@@ -435,9 +425,8 @@ where
     }
 }
 
-impl<D> Dispatch2<WlSubcompositor, D> for GlobalData
+impl<D> Dispatch<WlSubcompositor, D> for GlobalData
 where
-    D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
     D: 'static,
 {
@@ -552,7 +541,7 @@ pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
     }
 }
 
-impl<D> Dispatch2<WlSubsurface, D> for SubsurfaceUserData
+impl<D> Dispatch<WlSubsurface, D> for SubsurfaceUserData
 where
     D: CompositorHandler,
     D: 'static,
@@ -641,7 +630,7 @@ where
     }
 }
 
-impl<D> Dispatch2<WlCallback, D> for GlobalData
+impl<D> Dispatch<WlCallback, D> for GlobalData
 where
     D: CompositorHandler,
     D: 'static,

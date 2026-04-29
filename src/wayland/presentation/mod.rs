@@ -76,10 +76,7 @@ use wayland_server::{
     Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface,
 };
 
-use crate::{
-    output::Output,
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
-};
+use crate::{output::Output, wayland::GlobalData};
 
 use super::compositor::{Cacheable, with_states};
 
@@ -98,10 +95,7 @@ impl PresentationState {
     /// the event loop in the future.
     pub fn new<D>(display: &DisplayHandle, clk_id: u32) -> Self
     where
-        D: GlobalDispatch<wp_presentation::WpPresentation, PresentationData>
-            + Dispatch<wp_presentation::WpPresentation, PresentationData>
-            + Dispatch<wp_presentation_feedback::WpPresentationFeedback, GlobalData>
-            + 'static,
+        D: 'static,
     {
         PresentationState {
             global: display
@@ -121,11 +115,7 @@ pub struct PresentationData {
     clk_id: u32,
 }
 
-impl<D> GlobalDispatch2<wp_presentation::WpPresentation, D> for PresentationData
-where
-    D: Dispatch<wp_presentation::WpPresentation, PresentationData>,
-    D: Dispatch<wp_presentation_feedback::WpPresentationFeedback, GlobalData>,
-{
+impl<D> GlobalDispatch<wp_presentation::WpPresentation, D> for PresentationData {
     fn bind(
         &self,
         _state: &mut D,
@@ -139,10 +129,7 @@ where
     }
 }
 
-impl<D> Dispatch2<wp_presentation::WpPresentation, D> for PresentationData
-where
-    D: Dispatch<wp_presentation_feedback::WpPresentationFeedback, GlobalData>,
-{
+impl<D> Dispatch<wp_presentation::WpPresentation, D> for PresentationData {
     fn request(
         &self,
         _state: &mut D,
@@ -173,7 +160,7 @@ where
     }
 }
 
-impl<D> Dispatch2<wp_presentation_feedback::WpPresentationFeedback, D> for GlobalData {
+impl<D> Dispatch<wp_presentation_feedback::WpPresentationFeedback, D> for GlobalData {
     fn request(
         &self,
         _state: &mut D,

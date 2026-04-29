@@ -4,17 +4,15 @@ use std::sync::{
 };
 
 use wayland_protocols::xdg::activation::v1::server::{xdg_activation_token_v1, xdg_activation_v1};
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
 
 use super::{ActivationTokenData, TokenBuilder, XdgActivationHandler, XdgActivationTokenData};
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
-impl<D> Dispatch2<xdg_activation_v1::XdgActivationV1, D> for GlobalData
+impl<D> Dispatch<xdg_activation_v1::XdgActivationV1, D> for GlobalData
 where
-    D: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData>
-        + XdgActivationHandler
-        + 'static,
+    D: XdgActivationHandler + 'static,
 {
     fn request(
         &self,
@@ -58,12 +56,9 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<xdg_activation_v1::XdgActivationV1, D> for GlobalData
+impl<D> GlobalDispatch<xdg_activation_v1::XdgActivationV1, D> for GlobalData
 where
-    D: Dispatch<xdg_activation_v1::XdgActivationV1, GlobalData>
-        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData>
-        + XdgActivationHandler
-        + 'static,
+    D: XdgActivationHandler + 'static,
 {
     fn bind(
         &self,
@@ -77,7 +72,7 @@ where
     }
 }
 
-impl<D> Dispatch2<xdg_activation_token_v1::XdgActivationTokenV1, D> for ActivationTokenData
+impl<D> Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, D> for ActivationTokenData
 where
     D: XdgActivationHandler,
 {

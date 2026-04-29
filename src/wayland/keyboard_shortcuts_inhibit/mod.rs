@@ -10,7 +10,7 @@ use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::{
     zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1,
 };
 use wayland_server::{
-    Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    DisplayHandle, Resource,
     backend::{GlobalId, ObjectId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
 };
@@ -71,10 +71,7 @@ impl KeyboardShortcutsInhibitState {
     /// Regiseter new [ZwpKeyboardShortcutsInhibitManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpKeyboardShortcutsInhibitManagerV1, GlobalData>,
-        D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, GlobalData>,
-        D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
-        D: 'static,
+        D: KeyboardShortcutsInhibitHandler + 'static,
     {
         let manager_global =
             display.create_global::<D, ZwpKeyboardShortcutsInhibitManagerV1, _>(1, GlobalData);
@@ -233,7 +230,7 @@ where
 
 /// WP Keyboard shortcuts inhibit handler
 #[allow(unused_variables)]
-pub trait KeyboardShortcutsInhibitHandler {
+pub trait KeyboardShortcutsInhibitHandler: SeatHandler {
     /// [KeyboardShortcutsInhibitState] getter
     fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState;
 

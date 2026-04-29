@@ -58,7 +58,7 @@ use crate::{
         keyboard::{self, KeyboardGrab, KeyboardInnerHandle},
     },
     utils::{SERIAL_COUNTER, Serial},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
     xwayland::XWaylandClientData,
 };
 
@@ -159,9 +159,7 @@ impl XWaylandKeyboardGrabState {
     /// Register new [ZwpXwaylandKeyboardGrabManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpXwaylandKeyboardGrabManagerV1, GlobalData>,
-        D: Dispatch<ZwpXwaylandKeyboardGrabManagerV1, GlobalData>,
-        D: Dispatch<ZwpXwaylandKeyboardGrabV1, GlobalData>,
+        D: XWaylandKeyboardGrabHandler,
         D: 'static,
     {
         let global =
@@ -176,9 +174,9 @@ impl XWaylandKeyboardGrabState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpXwaylandKeyboardGrabManagerV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpXwaylandKeyboardGrabManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpXwaylandKeyboardGrabManagerV1, GlobalData> + 'static,
+    D: XWaylandKeyboardGrabHandler + 'static,
 {
     fn bind(
         &self,
@@ -196,10 +194,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpXwaylandKeyboardGrabManagerV1, D> for GlobalData
+impl<D> Dispatch<ZwpXwaylandKeyboardGrabManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpXwaylandKeyboardGrabV1, GlobalData> + 'static,
-    D: XWaylandKeyboardGrabHandler,
+    D: XWaylandKeyboardGrabHandler + 'static,
 {
     fn request(
         &self,
@@ -228,7 +225,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpXwaylandKeyboardGrabV1, D> for GlobalData {
+impl<D> Dispatch<ZwpXwaylandKeyboardGrabV1, D> for GlobalData {
     fn request(
         &self,
         _state: &mut D,

@@ -41,9 +41,7 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::GlobalId,
 };
 
-use crate::wayland::{
-    Dispatch2, GlobalData, GlobalDispatch2, compositor, shell::xdg::XdgShellSurfaceUserData,
-};
+use crate::wayland::{GlobalData, compositor, shell::xdg::XdgShellSurfaceUserData};
 
 /// Data associated with WlSurface
 /// Represents the client pending state
@@ -106,7 +104,7 @@ impl XdgToplevelTagManager {
     /// Creates a new delegate type for handling xdg toplevel tag events.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: XdgToplevelTagHandler + GlobalDispatch<XdgToplevelTagManagerV1, GlobalData>,
+        D: XdgToplevelTagHandler,
     {
         let global = display.create_global::<D, XdgToplevelTagManagerV1, _>(1, GlobalData);
         XdgToplevelTagManager { global }
@@ -118,9 +116,9 @@ impl XdgToplevelTagManager {
     }
 }
 
-impl<D: XdgToplevelTagHandler> GlobalDispatch2<XdgToplevelTagManagerV1, D> for GlobalData
+impl<D: XdgToplevelTagHandler> GlobalDispatch<XdgToplevelTagManagerV1, D> for GlobalData
 where
-    D: Dispatch<XdgToplevelTagManagerV1, GlobalData>,
+    D: XdgToplevelTagHandler,
 {
     fn bind(
         &self,
@@ -134,7 +132,7 @@ where
     }
 }
 
-impl<D: XdgToplevelTagHandler> Dispatch2<XdgToplevelTagManagerV1, D> for GlobalData {
+impl<D: XdgToplevelTagHandler> Dispatch<XdgToplevelTagManagerV1, D> for GlobalData {
     fn request(
         &self,
         state: &mut D,

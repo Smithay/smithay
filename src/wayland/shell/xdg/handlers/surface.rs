@@ -9,7 +9,7 @@ use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
     utils::{Rectangle, Serial},
     wayland::{
-        Dispatch2, compositor,
+        compositor,
         shell::xdg::{PopupState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
     },
 };
@@ -45,10 +45,8 @@ pub struct XdgSurfaceUserData {
     pub(crate) has_active_role: AtomicBool,
 }
 
-impl<D> Dispatch2<XdgSurface, D> for XdgSurfaceUserData
+impl<D> Dispatch<XdgSurface, D> for XdgSurfaceUserData
 where
-    D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,
-    D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
     D: 'static,
 {

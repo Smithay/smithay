@@ -38,9 +38,7 @@ use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decor
 };
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch, WEnum};
-
-use crate::wayland::GlobalData;
+use wayland_server::{Client, DisplayHandle};
 
 /// KDE server decoration handler.
 pub trait KdeDecorationHandler {
@@ -61,15 +59,8 @@ pub trait KdeDecorationHandler {
     /// **It is up to the compositor to prevent feedback loops**, a client is free to ignore modes
     /// suggested by [`OrgKdeKwinServerDecoration::mode`] and instead request their preferred mode
     /// instead.
-    fn request_mode(
-        &mut self,
-        _surface: &WlSurface,
-        decoration: &OrgKdeKwinServerDecoration,
-        mode: WEnum<Mode>,
-    ) {
-        if let WEnum::Value(mode) = mode {
-            decoration.mode(mode);
-        }
+    fn request_mode(&mut self, _surface: &WlSurface, decoration: &OrgKdeKwinServerDecoration, mode: Mode) {
+        decoration.mode(mode);
     }
 
     /// Handle decoration object removal for a surface.
@@ -98,11 +89,7 @@ impl KdeDecorationState {
     /// Create a new KDE server decoration global.
     pub fn new<D>(display: &DisplayHandle, default_mode: DefaultMode) -> Self
     where
-        D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
-            + Dispatch<OrgKdeKwinServerDecorationManager, GlobalData>
-            + Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData>
-            + KdeDecorationHandler
-            + 'static,
+        D: KdeDecorationHandler + 'static,
     {
         Self::new_with_filter::<D, _>(display, default_mode, |_| true)
     }
@@ -112,11 +99,7 @@ impl KdeDecorationState {
     /// Filters can be used to limit visibility of a global to certain clients.
     pub fn new_with_filter<D, F>(display: &DisplayHandle, default_mode: DefaultMode, filter: F) -> Self
     where
-        D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
-            + Dispatch<OrgKdeKwinServerDecorationManager, GlobalData>
-            + Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData>
-            + KdeDecorationHandler
-            + 'static,
+        D: KdeDecorationHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = KdeDecorationManagerGlobalData {

@@ -142,7 +142,7 @@ use wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase;
 use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
 use wayland_server::backend::GlobalId;
 use wayland_server::{
-    DisplayHandle, GlobalDispatch, Resource,
+    DisplayHandle, Resource,
     protocol::{wl_output, wl_seat, wl_surface},
 };
 
@@ -952,7 +952,7 @@ impl ToplevelStateSet {
         }
 
         fn version_needed_for_state(state: &xdg_toplevel::State) -> u32 {
-            match state {
+            match *state {
                 xdg_toplevel::State::TiledLeft
                 | xdg_toplevel::State::TiledRight
                 | xdg_toplevel::State::TiledTop
@@ -1224,7 +1224,7 @@ impl XdgShellState {
     /// Create a new `xdg_shell` global with all [`WmCapabilities`](xdg_toplevel::WmCapabilities)
     pub fn new<D>(display: &DisplayHandle) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, GlobalData> + 'static,
+        D: XdgShellHandler + 'static,
     {
         Self::new_with_capabilities::<D>(
             display,
@@ -1243,7 +1243,7 @@ impl XdgShellState {
         capabilities: impl Into<WmCapabilitySet>,
     ) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, GlobalData> + 'static,
+        D: XdgShellHandler + 'static,
     {
         let global = display.create_global::<D, XdgWmBase, _>(7, GlobalData);
 

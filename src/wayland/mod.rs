@@ -54,8 +54,6 @@ pub mod commit_timing;
 pub mod compositor;
 pub mod content_type;
 pub mod cursor_shape;
-mod dispatch2;
-pub use dispatch2::{Dispatch2, GlobalDispatch2};
 pub mod dmabuf;
 #[cfg(feature = "backend_drm")]
 pub mod drm_lease;

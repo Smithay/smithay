@@ -14,7 +14,7 @@ use wayland_server::{
     backend::{ClientId, GlobalId},
 };
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
 mod listener_source;
 pub use listener_source::SecurityContextListenerSource;
@@ -69,10 +69,7 @@ impl SecurityContextState {
     /// created through a security context for the protocol to be correct and secure.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData>,
-        D: Dispatch<WpSecurityContextManagerV1, GlobalData>,
-        D: Dispatch<WpSecurityContextV1, SecurityContextUserData>,
-        D: 'static,
+        D: SecurityContextHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let global_data = SecurityContextGlobalData {
@@ -95,10 +92,9 @@ pub struct SecurityContextGlobalData {
     filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
 }
 
-impl<D> GlobalDispatch2<WpSecurityContextManagerV1, D> for SecurityContextGlobalData
+impl<D> GlobalDispatch<WpSecurityContextManagerV1, D> for SecurityContextGlobalData
 where
-    D: Dispatch<WpSecurityContextManagerV1, GlobalData>,
-    D: 'static,
+    D: SecurityContextHandler + 'static,
 {
     fn bind(
         &self,
@@ -116,10 +112,9 @@ where
     }
 }
 
-impl<D> Dispatch2<WpSecurityContextManagerV1, D> for GlobalData
+impl<D> Dispatch<WpSecurityContextManagerV1, D> for GlobalData
 where
-    D: Dispatch<WpSecurityContextV1, SecurityContextUserData>,
-    D: 'static,
+    D: SecurityContextHandler + 'static,
 {
     fn request(
         &self,
@@ -151,7 +146,7 @@ where
     }
 }
 
-impl<D> Dispatch2<WpSecurityContextV1, D> for SecurityContextUserData
+impl<D> Dispatch<WpSecurityContextV1, D> for SecurityContextUserData
 where
     D: SecurityContextHandler + 'static,
 {
