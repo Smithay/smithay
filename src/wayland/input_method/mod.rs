@@ -68,7 +68,7 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
 use crate::{
     input::{Seat, SeatHandler},
     utils::{Logical, Rectangle},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::{GlobalData, seat::WaylandFocus},
 };
 
 pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
@@ -88,7 +88,7 @@ mod input_method_popup_surface;
 pub use input_method_popup_surface::{PopupParent, PopupSurface};
 
 /// Adds input method popup to compositor state
-pub trait InputMethodHandler {
+pub trait InputMethodHandler: SeatHandler {
     /// Add a popup surface to compositor state.
     fn new_popup(&mut self, surface: PopupSurface);
 
@@ -132,11 +132,8 @@ impl InputMethodManagerState {
     /// Initialize a text input manager global.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ZwpInputMethodManagerV2, InputMethodManagerGlobalData>,
-        D: Dispatch<ZwpInputMethodManagerV2, GlobalData>,
-        D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
-        D: SeatHandler,
-        D: 'static,
+        D: InputMethodHandler + 'static,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = InputMethodManagerGlobalData {
@@ -153,12 +150,10 @@ impl InputMethodManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpInputMethodManagerV2, D> for InputMethodManagerGlobalData
+impl<D> GlobalDispatch<ZwpInputMethodManagerV2, D> for InputMethodManagerGlobalData
 where
-    D: Dispatch<ZwpInputMethodManagerV2, GlobalData>,
-    D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
-    D: SeatHandler,
-    D: 'static,
+    D: InputMethodHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn bind(
         &self,
@@ -176,11 +171,10 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpInputMethodManagerV2, D> for GlobalData
+impl<D> Dispatch<ZwpInputMethodManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
-    D: SeatHandler + InputMethodHandler,
-    D: 'static,
+    D: InputMethodHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
         &self,

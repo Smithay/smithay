@@ -1,7 +1,7 @@
 use crate::wayland::background_effect::{BackgroundEffectSurfaceData, ExtBackgroundEffectHandler};
 use crate::wayland::compositor;
 use crate::wayland::{
-    Dispatch2, GlobalData, GlobalDispatch2,
+    GlobalData,
     background_effect::{BackgroundEffectSurfaceCachedState, BackgroundEffectSurfaceUserData},
     compositor::with_states,
 };
@@ -13,12 +13,9 @@ use wayland_protocols::ext::background_effect::v1::server::{
         Error as SurfaceError, ExtBackgroundEffectSurfaceV1, Request as SurfaceRequest,
     },
 };
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
 
-impl<D: ExtBackgroundEffectHandler> GlobalDispatch2<ExtBackgroundEffectManagerV1, D> for GlobalData
-where
-    D: Dispatch<ExtBackgroundEffectManagerV1, GlobalData>,
-{
+impl<D: ExtBackgroundEffectHandler> GlobalDispatch<ExtBackgroundEffectManagerV1, D> for GlobalData {
     fn bind(
         &self,
         state: &mut D,
@@ -32,10 +29,7 @@ where
     }
 }
 
-impl<D: ExtBackgroundEffectHandler> Dispatch2<ExtBackgroundEffectManagerV1, D> for GlobalData
-where
-    D: Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData>,
-{
+impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectManagerV1, D> for GlobalData {
     fn request(
         &self,
         _state: &mut D,
@@ -73,7 +67,7 @@ where
     }
 }
 
-impl<D: ExtBackgroundEffectHandler> Dispatch2<ExtBackgroundEffectSurfaceV1, D>
+impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, D>
     for BackgroundEffectSurfaceUserData
 {
     fn request(

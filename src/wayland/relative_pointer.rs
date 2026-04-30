@@ -101,7 +101,7 @@ use crate::{
         SeatHandler,
         pointer::{PointerHandle, RelativeMotionEvent},
     },
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
+    wayland::{GlobalData, seat::PointerUserData},
 };
 
 const MANAGER_VERSION: u32 = 1;
@@ -170,9 +170,6 @@ impl RelativePointerManagerState {
     /// Register new [ZwpRelativePointerV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpRelativePointerManagerV1, GlobalData>,
-        D: Dispatch<ZwpRelativePointerManagerV1, GlobalData>,
-        D: Dispatch<ZwpRelativePointerV1, RelativePointerUserData<D>>,
         D: SeatHandler,
         D: 'static,
     {
@@ -187,9 +184,8 @@ impl RelativePointerManagerState {
     }
 }
 
-impl<D> Dispatch2<ZwpRelativePointerManagerV1, D> for GlobalData
+impl<D> Dispatch<ZwpRelativePointerManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpRelativePointerV1, RelativePointerUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {
@@ -220,9 +216,9 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<ZwpRelativePointerManagerV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpRelativePointerManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpRelativePointerManagerV1, GlobalData> + SeatHandler + 'static,
+    D: SeatHandler + 'static,
 {
     fn bind(
         &self,
@@ -236,7 +232,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpRelativePointerV1, D> for RelativePointerUserData<D>
+impl<D> Dispatch<ZwpRelativePointerV1, D> for RelativePointerUserData<D>
 where
     D: SeatHandler,
     D: 'static,

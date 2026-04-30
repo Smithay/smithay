@@ -20,7 +20,7 @@ use crate::{
     input::{Seat, SeatHandler},
     utils::SERIAL_COUNTER,
     wayland::{
-        Dispatch2,
+        Dispatch,
         seat::{WaylandFocus, keyboard::for_each_focused_kbds},
     },
 };
@@ -71,7 +71,7 @@ impl<D: SeatHandler> fmt::Debug for VirtualKeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch2<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData<D>
+impl<D> Dispatch<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData<D>
 where
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,

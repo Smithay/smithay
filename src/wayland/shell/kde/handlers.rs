@@ -7,19 +7,16 @@ use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decor
 use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::{
     OrgKdeKwinServerDecorationManager, Request as ManagerRequest,
 };
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
 
+use crate::wayland::GlobalData;
 use crate::wayland::shell::kde::decoration::KdeDecorationHandler;
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 use super::decoration::{KdeDecorationManagerGlobalData, KwinServerDecorationData};
 
-impl<D> GlobalDispatch2<OrgKdeKwinServerDecorationManager, D> for KdeDecorationManagerGlobalData
+impl<D> GlobalDispatch<OrgKdeKwinServerDecorationManager, D> for KdeDecorationManagerGlobalData
 where
-    D: Dispatch<OrgKdeKwinServerDecorationManager, GlobalData>
-        + Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData>
-        + KdeDecorationHandler
-        + 'static,
+    D: KdeDecorationHandler + 'static,
 {
     fn bind(
         &self,
@@ -43,9 +40,9 @@ where
     }
 }
 
-impl<D> Dispatch2<OrgKdeKwinServerDecorationManager, D> for GlobalData
+impl<D> Dispatch<OrgKdeKwinServerDecorationManager, D> for GlobalData
 where
-    D: Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData> + KdeDecorationHandler + 'static,
+    D: KdeDecorationHandler + 'static,
 {
     fn request(
         &self,
@@ -70,7 +67,7 @@ where
     }
 }
 
-impl<D> Dispatch2<OrgKdeKwinServerDecoration, D> for KwinServerDecorationData
+impl<D> Dispatch<OrgKdeKwinServerDecoration, D> for KwinServerDecorationData
 where
     D: KdeDecorationHandler + 'static,
 {

@@ -8,7 +8,7 @@ use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak, 
 use crate::input::pointer::CursorImageStatus;
 use crate::{
     backend::input::TabletToolDescriptor,
-    wayland::{Dispatch2, compositor::CompositorHandler},
+    wayland::{compositor::CompositorHandler, tablet_manager::SeatHandler},
 };
 
 use super::tablet::{TabletDescriptor, TabletHandle};
@@ -39,7 +39,7 @@ impl fmt::Debug for TabletSeat {
 }
 
 /// Handler trait for Tablet Seats
-pub trait TabletSeatHandler {
+pub trait TabletSeatHandler: SeatHandler + CompositorHandler {
     /// Callback that will be notified whenever a client requests to set a custom tool image.
     fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
         let _ = tool;
@@ -65,8 +65,6 @@ impl TabletSeatHandle {
         seat: &ZwpTabletSeatV2,
         client: &Client,
     ) where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: TabletSeatHandler + 'static,
         D: CompositorHandler,
     {
@@ -93,8 +91,7 @@ impl TabletSeatHandle {
     /// Returns new [TabletHandle] if tablet was not know by this seat, if tablet was already know it returns existing handle.
     pub fn add_tablet<D>(&self, dh: &DisplayHandle, tablet_desc: &TabletDescriptor) -> TabletHandle
     where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
-        D: 'static,
+        D: TabletSeatHandler + 'static,
     {
         let inner = &mut *self.inner.lock().unwrap();
 
@@ -155,9 +152,7 @@ impl TabletSeatHandle {
         tool_desc: &TabletToolDescriptor,
     ) -> TabletToolHandle
     where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: TabletSeatHandler + 'static,
-        D: CompositorHandler,
     {
         let inner = &mut *self.inner.lock().unwrap();
 
@@ -213,7 +208,7 @@ pub struct TabletSeatUserData {
     pub(super) handle: TabletSeatHandle,
 }
 
-impl<D> Dispatch2<ZwpTabletSeatV2, D> for TabletSeatUserData
+impl<D> Dispatch<ZwpTabletSeatV2, D> for TabletSeatUserData
 where
     D: 'static,
 {

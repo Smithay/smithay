@@ -8,14 +8,14 @@ use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::{
     zwp_keyboard_shortcuts_inhibitor_v1::{self, ZwpKeyboardShortcutsInhibitorV1},
 };
 use wayland_server::{
-    Dispatch, Resource,
+    Dispatch, GlobalDispatch, Resource,
     backend::{ClientId, ObjectId},
     protocol::wl_surface::WlSurface,
 };
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 
 use super::KeyboardShortcutsInhibitHandler;
@@ -30,11 +30,9 @@ pub struct KeyboardShortcutsInhibitorUserData {
     pub(crate) is_active: AtomicBool,
 }
 
-impl<D> GlobalDispatch2<ZwpKeyboardShortcutsInhibitManagerV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpKeyboardShortcutsInhibitManagerV1, D> for GlobalData
 where
     D: KeyboardShortcutsInhibitHandler,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, GlobalData>,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
 {
     fn bind(
         &self,
@@ -48,11 +46,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpKeyboardShortcutsInhibitManagerV1, D> for GlobalData
+impl<D> Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, D> for GlobalData
 where
     D: KeyboardShortcutsInhibitHandler,
-    D: SeatHandler,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
 {
     fn request(
         &self,
@@ -111,7 +107,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpKeyboardShortcutsInhibitorV1, D> for KeyboardShortcutsInhibitorUserData
+impl<D> Dispatch<ZwpKeyboardShortcutsInhibitorV1, D> for KeyboardShortcutsInhibitorUserData
 where
     D: KeyboardShortcutsInhibitHandler,
 {

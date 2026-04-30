@@ -98,11 +98,7 @@ impl KdeDecorationState {
     /// Create a new KDE server decoration global.
     pub fn new<D>(display: &DisplayHandle, default_mode: DefaultMode) -> Self
     where
-        D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
-            + Dispatch<OrgKdeKwinServerDecorationManager, GlobalData>
-            + Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData>
-            + KdeDecorationHandler
-            + 'static,
+        D: KdeDecorationHandler + 'static,
     {
         Self::new_with_filter::<D, _>(display, default_mode, |_| true)
     }
@@ -112,11 +108,7 @@ impl KdeDecorationState {
     /// Filters can be used to limit visibility of a global to certain clients.
     pub fn new_with_filter<D, F>(display: &DisplayHandle, default_mode: DefaultMode, filter: F) -> Self
     where
-        D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
-            + Dispatch<OrgKdeKwinServerDecorationManager, GlobalData>
-            + Dispatch<OrgKdeKwinServerDecoration, KwinServerDecorationData>
-            + KdeDecorationHandler
-            + 'static,
+        D: KdeDecorationHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = KdeDecorationManagerGlobalData {

@@ -19,7 +19,7 @@ use crate::{
     },
     utils::{HookId, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
-        Dispatch2,
+        Dispatch,
         compositor::{add_destruction_hook, remove_destruction_hook, with_states},
         input_method::InputMethodSeat,
         text_input::TextInputSeat,
@@ -117,7 +117,7 @@ impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch2<WlKeyboard, D> for KeyboardUserData<D>
+impl<D> Dispatch<WlKeyboard, D> for KeyboardUserData<D>
 where
     D: 'static,
     D: SeatHandler,
