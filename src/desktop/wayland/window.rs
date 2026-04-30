@@ -161,6 +161,11 @@ impl Window {
         }))
     }
 
+    /// Returns the window ID
+    pub fn id(&self) -> usize {
+        self.0.id
+    }
+
     /// Checks if the window is a wayland one.
     #[inline]
     pub fn is_wayland(&self) -> bool {
