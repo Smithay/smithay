@@ -274,6 +274,41 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         })
     }
 
+    fn new_from_keymap_string(
+        keymap_str: String,
+        repeat_rate: i32,
+        repeat_delay: i32,
+    ) -> Result<KbdInternal<D>, ()> {
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_string(
+            &context,
+            keymap_str,
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .ok_or(())?;
+        let state = xkb::State::new(&keymap);
+        let led_mapping = LedMapping::from_keymap(&keymap);
+        let led_state = LedState::from_state(&state, &led_mapping);
+        Ok(KbdInternal {
+            focus: None,
+            pending_focus: None,
+            pressed_keys: HashSet::new(),
+            forwarded_pressed_keys: HashSet::new(),
+            mods_state: ModifiersState::default(),
+            xkb: Arc::new(Mutex::new(Xkb {
+                context,
+                keymap,
+                state,
+            })),
+            repeat_rate,
+            repeat_delay,
+            led_mapping,
+            led_state,
+            grab: GrabStatus::None,
+        })
+    }
+
     // returns whether the modifiers or led state has changed
     fn key_input(&mut self, keycode: Keycode, state: KeyState) -> (bool, bool) {
         // track pressed keys as xkbcommon does not seem to expose it :(
@@ -683,6 +718,49 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let internal =
             KbdInternal::new(xkb_config, repeat_rate, repeat_delay, context_flags).map_err(|_| {
                 debug!("Loading keymap failed");
+                Error::BadKeymap
+            })?;
+
+        let xkb = internal.xkb.lock().unwrap();
+
+        info!(name = xkb.keymap.layouts().next(), "Loaded Keymap");
+
+        #[cfg(feature = "wayland_frontend")]
+        let keymap_file = KeymapFile::new(&xkb.keymap);
+        #[cfg(feature = "wayland_frontend")]
+        let active_keymap = keymap_file.id();
+
+        drop(xkb);
+        drop(_guard);
+        Ok(Self {
+            arc: Arc::new(KbdRc {
+                #[cfg(feature = "wayland_frontend")]
+                keymap: Mutex::new(keymap_file),
+                internal: Mutex::new(internal),
+                #[cfg(feature = "wayland_frontend")]
+                known_kbds: Mutex::new(Vec::new()),
+                #[cfg(feature = "wayland_frontend")]
+                last_enter: Mutex::new(None),
+                #[cfg(feature = "wayland_frontend")]
+                active_keymap: RwLock::new(active_keymap),
+                span,
+            }),
+        })
+    }
+
+    /// Create a keyboard handler from a pre-compiled keymap string
+    pub(crate) fn new_from_keymap_string(
+        keymap_str: String,
+        repeat_delay: i32,
+        repeat_rate: i32,
+    ) -> Result<Self, Error> {
+        let span = info_span!("input_keyboard");
+        let _guard = span.enter();
+
+        info!("Initializing a xkbcommon handler with keymap string");
+        let internal =
+            KbdInternal::new_from_keymap_string(keymap_str, repeat_rate, repeat_delay).map_err(|_| {
+                debug!("Loading keymap from string failed");
                 Error::BadKeymap
             })?;
 
