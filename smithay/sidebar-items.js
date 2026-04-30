@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["delegate_dispatch2","egl_platform","gpu_span_location","render_elements","space_elements"],"mod":["backend","desktop","input","output","reexports","utils","wayland","xwayland"]};

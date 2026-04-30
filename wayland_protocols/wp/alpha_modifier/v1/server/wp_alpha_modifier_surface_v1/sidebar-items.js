@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REQ_DESTROY_OPCODE","REQ_DESTROY_SINCE","REQ_SET_MULTIPLIER_OPCODE","REQ_SET_MULTIPLIER_SINCE"],"enum":["Error","Event","Request"],"struct":["WpAlphaModifierSurfaceV1"]};
