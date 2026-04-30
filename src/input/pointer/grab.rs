@@ -35,6 +35,13 @@ use super::{
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
 pub trait PointerGrab<D: SeatHandler>: Send + Downcast {
+    /// The grab should remain active and not be automatically removed.
+    ///
+    /// This may be called frequently, so it should be minimal (like checking a bool).
+    fn alive(&self) -> bool {
+        true
+    }
+
     /// A motion was reported
     ///
     /// This method allows you attach additional behavior to a motion event, possibly altering it.
@@ -169,7 +176,7 @@ pub trait PointerGrab<D: SeatHandler>: Send + Downcast {
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData<D>;
     /// The grab has been unset or replaced with another grab.
-    fn unset(&mut self, data: &mut D);
+    fn unset(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>);
 }
 
 impl_downcast!(PointerGrab<D> where D: SeatHandler);
@@ -333,7 +340,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         unreachable!()
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {}
 }
 
 /// A click grab, basic grab started when an user clicks a surface
@@ -466,5 +473,5 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut D) {}
+    fn unset(&mut self, _data: &mut D, _handle: &mut PointerInnerHandle<'_, D>) {}
 }
