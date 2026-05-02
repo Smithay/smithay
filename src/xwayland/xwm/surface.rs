@@ -15,6 +15,7 @@ use crate::{
         compositor::{self, RectangleKind, RegionAttributes, SurfaceAttributes},
         seat::{WaylandFocus, keyboard::enter_internal},
     },
+    xwayland::xwm::xsync_value,
 };
 #[cfg(feature = "desktop")]
 use crate::{
@@ -28,7 +29,7 @@ use std::{
     borrow::Cow,
     collections::HashSet,
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Mutex, MutexGuard, Weak,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -38,9 +39,11 @@ use xkbcommon::xkb::Keycode;
 
 use x11rb::{
     connection::Connection as _,
+    errors::ReplyOrIdError,
     properties::{WmClass, WmHints, WmSizeHints},
     protocol::{
         res::{ClientIdSpec, query_client_ids},
+        sync::{Alarm, ConnectionExt as _, Counter, CreateAlarmAux, Int64, TESTTYPE, VALUETYPE},
         xproto::{
             Atom, AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask,
             InputFocus, PropMode, Window as X11Window,
@@ -70,6 +73,18 @@ const MWM_HINTS_FLAGS_FIELD: usize = 0;
 const MWM_HINTS_DECORATIONS_FIELD: usize = 2;
 const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
 
+// From http://fishsoup.net/misc/wm-spec-synchronization.html
+//   "If the client is continually redrawing, then the last seen value may be out of date when the
+//   window manager sends the message. Picking a number that is 240 later would allow for 1 second
+//   of frames at 60fps."
+const SYNC_REQUEST_INCREMENT: i64 = 240;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncRequestCounter {
+    Basic(Counter),
+    Extended(Counter),
+}
+
 #[derive(Debug)]
 pub(crate) struct SharedSurfaceState {
     pub(super) alive: bool,
@@ -82,6 +97,12 @@ pub(crate) struct SharedSurfaceState {
     // The associated wl_surface.
     wl_surface: Option<WlSurface>,
     pre_commit_hook_id: Option<HookId>,
+
+    // _NET_WM_SYNC_REQUEST
+    sync_counter: Option<SyncRequestCounter>,
+    pub(super) sync_alarm: Option<Alarm>,
+    pub(super) counter_value: Int64,
+    next_counter_value: Int64,
 
     title: String,
     class: String,
@@ -111,6 +132,7 @@ pub(super) type Protocols = Vec<WMProtocol>;
 pub(super) enum WMProtocol {
     TakeFocus,
     DeleteWindow,
+    NetSyncRequest,
 }
 
 impl PartialEq for X11Surface {
@@ -227,6 +249,10 @@ impl X11Surface {
                 wl_surface_serial: None,
                 wl_surface: None,
                 pre_commit_hook_id: None,
+                sync_counter: None,
+                sync_alarm: None,
+                counter_value: Default::default(),
+                next_counter_value: Default::default(),
                 mapped_onto: None,
                 geometry,
                 override_redirect,
@@ -1089,10 +1115,113 @@ impl X11Surface {
             .filter_map(|atom| match atom {
                 x if x == self.atoms.WM_TAKE_FOCUS => Some(WMProtocol::TakeFocus),
                 x if x == self.atoms.WM_DELETE_WINDOW => Some(WMProtocol::DeleteWindow),
+                x if x == self.atoms._NET_WM_SYNC_REQUEST => Some(WMProtocol::NetSyncRequest),
                 _ => None,
             })
             .collect::<Vec<_>>();
+
+        self.init_net_wm_sync_request()?;
+
         Ok(())
+    }
+
+    pub(super) fn init_net_wm_sync_request(&self) -> Result<(), ConnectionError> {
+        let mut state = self.state.lock().unwrap();
+        if state.protocols.contains(&WMProtocol::NetSyncRequest) {
+            let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+            let counters_reply = conn
+                .get_property(
+                    false,
+                    self.window,
+                    self.atoms._NET_WM_SYNC_REQUEST_COUNTER,
+                    AtomEnum::CARDINAL,
+                    0,
+                    2,
+                )?
+                .reply_unchecked()?;
+
+            let counter = counters_reply.and_then(|reply| {
+                reply
+                    .value32()
+                    .and_then(|mut values| match (values.next(), values.next()) {
+                        (_, Some(extended)) => Some(SyncRequestCounter::Extended(extended)),
+                        (Some(basic), _) => Some(SyncRequestCounter::Basic(basic)),
+                        _ => None,
+                    })
+            });
+
+            if counter != state.sync_counter {
+                state.sync_counter = counter;
+                self.destroy_sync_alarm(&mut state);
+            }
+
+            if let Err(err) = self.init_sync_alarm(&mut state) {
+                self.state.lock().unwrap().sync_counter = None;
+                match err {
+                    ReplyOrIdError::ConnectionError(err) => Err(err),
+                    _ => Err(ConnectionError::UnknownError),
+                }
+            } else {
+                Ok(())
+            }
+        } else {
+            state.sync_counter = None;
+            let _ = self.init_sync_alarm(&mut state);
+            Ok(())
+        }
+    }
+
+    fn init_sync_alarm(&self, state: &mut MutexGuard<'_, SharedSurfaceState>) -> Result<(), ReplyOrIdError> {
+        if let Some(counter) = &state.sync_counter {
+            if state.sync_alarm.is_none() {
+                let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+
+                let (counter, is_extended) = match counter {
+                    SyncRequestCounter::Basic(counter) => (*counter, false),
+                    SyncRequestCounter::Extended(counter) => (*counter, true),
+                };
+
+                if is_extended {
+                    state.counter_value = conn
+                        .sync_query_counter(counter)?
+                        .reply_unchecked()?
+                        .ok_or(ConnectionError::UnknownError)?
+                        .counter_value;
+                } else {
+                    state.counter_value = Int64 { hi: 0, lo: 0 };
+                    conn.sync_set_counter(counter, state.counter_value)?;
+                }
+
+                state.next_counter_value = state.counter_value;
+                if !is_extended || state.next_counter_value.lo % 2 == 0 {
+                    state.next_counter_value = add_xsync_value(state.next_counter_value, 1);
+                }
+
+                let aux = CreateAlarmAux::new()
+                    .counter(counter)
+                    .delta(Int64 { hi: 0, lo: 1 })
+                    .value_type(VALUETYPE::RELATIVE)
+                    .value(Int64 { hi: 0, lo: 1 })
+                    .test_type(TESTTYPE::POSITIVE_COMPARISON)
+                    .events(1);
+                let alarm = conn.generate_id()?;
+                conn.sync_create_alarm(alarm, &aux)?.check()?;
+                state.sync_alarm = Some(alarm);
+            }
+        } else {
+            self.destroy_sync_alarm(state);
+        }
+
+        Ok(())
+    }
+
+    fn destroy_sync_alarm(&self, state: &mut MutexGuard<'_, SharedSurfaceState>) {
+        if let Some(sync_alarm) = state.sync_alarm.take() {
+            if let Some(conn) = self.conn.upgrade() {
+                let _ = conn.sync_destroy_alarm(sync_alarm);
+                let _ = conn.flush();
+            }
+        }
     }
 
     fn update_transient_for(&self) -> Result<(), ConnectionError> {
@@ -1284,6 +1413,98 @@ impl X11Surface {
         }
 
         None
+    }
+
+    /// Returns whether or not the `_NET_WM_SYNC_REQUEST` protocol is supported.
+    ///
+    /// The `_NET_WM_SYNC_REQUEST` protocol is used to allow the compositor to synchronize
+    /// frame/decorations resize with the client's window repaint during interactive resizes.
+    pub fn sync_request_supported(&self) -> bool {
+        self.state.lock().unwrap().sync_counter.is_some()
+    }
+
+    /// Sends a sync request to the client.
+    ///
+    /// This increments a counter used in the `_NET_WM_SYNC_REQUEST` protocol and sends a client
+    /// message to the surface's X11 window, which will notify the client that the compositor wants
+    /// to change the size of the client's window during a resize operation.
+    ///
+    /// When the client has finished repainting at the new size,
+    /// [`XwmHandler::sync_request_acked()`](super::XwmHandler::sync_request_acked) will be called
+    /// with the new value of the counter.
+    ///
+    /// This returns the value of the counter that was sent to the client, or `None` if the client
+    /// does not support the protocol.
+    pub fn send_sync_request(&self, timestamp: u32) -> Result<Option<i64>, ConnectionError> {
+        let mut state = self.state.lock().unwrap();
+        if let Some(counter) = &state.sync_counter {
+            let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+            let is_extended = matches!(counter, SyncRequestCounter::Extended(_));
+
+            let next = add_xsync_value(state.next_counter_value, SYNC_REQUEST_INCREMENT);
+            state.next_counter_value = next;
+            drop(state);
+
+            let msg_data = [
+                self.atoms._NET_WM_SYNC_REQUEST,
+                timestamp,
+                next.lo,
+                next.hi as u32,
+                if is_extended { 1 } else { 0 },
+            ];
+            let event = ClientMessageEvent::new(32, self.window, self.atoms.WM_PROTOCOLS, msg_data);
+            conn.send_event(false, self.window, EventMask::NO_EVENT, event)?;
+            conn.flush()?;
+
+            Ok(Some(xsync_value(next)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Cancels a pending sync.
+    ///
+    /// Call this if the reason for the initial sync request is no longer valid.  For example, if a
+    /// resize operation was cancelled, or if the compositor implements a timeout, and the timeout
+    /// was reached.
+    pub fn cancel_pending_sync(&self) {
+        let mut state = self.state.lock().unwrap();
+        let current = state.counter_value;
+        state.next_counter_value =
+            if matches!(state.sync_counter, Some(SyncRequestCounter::Extended(_))) && current.lo % 2 == 0 {
+                add_xsync_value(current, 1)
+            } else {
+                current
+            };
+    }
+
+    pub(super) fn sync_update_counter_value(&self, new_value: Int64) {
+        let mut state = self.state.lock().unwrap();
+        state.counter_value = new_value;
+        state.next_counter_value = if matches!(state.sync_counter, Some(SyncRequestCounter::Extended(_)))
+            && state.counter_value.lo % 2 == 0
+        {
+            add_xsync_value(new_value, 1)
+        } else {
+            new_value
+        }
+    }
+
+    pub(super) fn handle_destroyed(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.alive = false;
+        self.destroy_sync_alarm(&mut state);
+        // Counter is owned by the client; do not destroy it.
+        state.sync_counter = None;
+    }
+}
+
+fn add_xsync_value(value: Int64, amount: i64) -> Int64 {
+    let v = xsync_value(value);
+    let v = v.wrapping_add(amount);
+    Int64 {
+        hi: ((v >> 32) & 0xffffffff) as i32,
+        lo: (v & 0xffffffff) as u32,
     }
 }
 
