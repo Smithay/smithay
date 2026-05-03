@@ -97,6 +97,7 @@ pub(crate) struct SharedSurfaceState {
     window_type: Vec<Atom>,
     pub(crate) opacity: Option<u32>,
     opaque_region: Option<RegionAttributes>,
+    opaque_region_dirty: bool,
     pending_enter: Option<(
         Box<dyn std::any::Any + Send + 'static>,
         Vec<Keycode>,
@@ -244,6 +245,7 @@ impl X11Surface {
                 window_type: Vec::new(),
                 opacity: None,
                 opaque_region: None,
+                opaque_region_dirty: true,
                 pending_enter: None,
             })),
             xdnd_active,
@@ -420,9 +422,35 @@ impl X11Surface {
         if let Some(wl_surface) = state.wl_surface.as_ref() {
             let hook_id = {
                 let state = Arc::downgrade(&self.state);
+                let conn = self.conn.clone();
+                let window = self.window;
+                let property_atom = self.atoms._NET_WM_OPAQUE_REGION;
+                let client_scale = self.client_scale.clone();
+
                 compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, wl_surface| {
                     if let Some(state) = state.upgrade() {
-                        let opaque_region = state.lock().unwrap().opaque_region.clone();
+                        let update_opaque_region_if_needed = || {
+                            if state.lock().unwrap().opaque_region_dirty {
+                                if let Some(conn) = conn.upgrade() {
+                                    if let Ok(opaque_region) = fetch_opaque_regions(
+                                        &conn,
+                                        window,
+                                        property_atom,
+                                        client_scale.as_ref(),
+                                    ) {
+                                        let mut state = state.lock().unwrap();
+                                        state.opaque_region = opaque_region;
+                                        state.opaque_region_dirty = false;
+                                        return Some(state.opaque_region.clone());
+                                    }
+                                }
+                            }
+                            None
+                        };
+
+                        let opaque_region = update_opaque_region_if_needed()
+                            .unwrap_or_else(|| state.lock().unwrap().opaque_region.clone());
+
                         compositor::with_states(wl_surface, |states| {
                             let mut guard = states.cached_state.get::<SurfaceAttributes>();
                             let attrs = guard.pending();
@@ -862,7 +890,16 @@ impl X11Surface {
         self.update_startup_id()?;
         self.update_pid()?;
         self.update_opacity()?;
-        self.update_opaque_regions()?;
+        if let Some(conn) = self.conn.upgrade() {
+            let mut state = self.state.lock().unwrap();
+            state.opaque_region = fetch_opaque_regions(
+                &conn,
+                self.window,
+                self.atoms._NET_WM_OPAQUE_REGION,
+                self.client_scale.as_ref(),
+            )?;
+            state.opaque_region_dirty = false;
+        }
         Ok(())
     }
 
@@ -913,7 +950,9 @@ impl X11Surface {
                 Ok(Some(WmWindowProperty::Opacity))
             }
             atom if atom == self.atoms._NET_WM_OPAQUE_REGION => {
-                self.update_opaque_regions()?;
+                let mut state = self.state.lock().unwrap();
+                state.opaque_region = None;
+                state.opaque_region_dirty = true;
                 Ok(None)
             }
 
@@ -1011,55 +1050,6 @@ impl X11Surface {
             let mut state = self.state.lock().unwrap();
             state.opacity = Some(opacity);
         }
-        Ok(())
-    }
-
-    fn update_opaque_regions(&self) -> Result<(), ConnectionError> {
-        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let reply = conn
-            .get_property(
-                false,
-                self.window,
-                self.atoms._NET_WM_OPAQUE_REGION,
-                AtomEnum::CARDINAL,
-                0,
-                u32::MAX,
-            )?
-            .reply_unchecked()?;
-
-        let opaque_region = reply
-            .and_then(|reply| {
-                reply.value32().map(|values| {
-                    let client_scale = self
-                        .client_scale
-                        .as_ref()
-                        .map(|s| s.load(Ordering::Acquire))
-                        .unwrap_or(1.);
-
-                    values
-                        .collect::<Vec<_>>()
-                        .chunks_exact(4)
-                        .flat_map(|rect_values| {
-                            let phys_rect = Rectangle::<i32, Physical>::new(
-                                (rect_values[0] as i32, rect_values[1] as i32).into(),
-                                ((rect_values[2] as i32).max(0), (rect_values[3] as i32).max(0)).into(),
-                            );
-                            if phys_rect.is_empty() {
-                                None
-                            } else {
-                                Some((
-                                    RectangleKind::Add,
-                                    phys_rect.to_f64().to_logical(client_scale).to_i32_round::<i32>(),
-                                ))
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .map(|rects| RegionAttributes { rects });
-
-        self.state.lock().unwrap().opaque_region = opaque_region;
-
         Ok(())
     }
 
@@ -1566,4 +1556,47 @@ impl WaylandFocus for X11Surface {
     fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
         X11Surface::wl_surface(self).map(Cow::Owned)
     }
+}
+
+fn fetch_opaque_regions(
+    conn: &Arc<RustConnection>,
+    window: X11Window,
+    property_atom: Atom,
+    client_scale: Option<&Arc<AtomicF64>>,
+) -> Result<Option<RegionAttributes>, ConnectionError> {
+    let reply = conn
+        .get_property(false, window, property_atom, AtomEnum::CARDINAL, 0, u32::MAX)?
+        .reply_unchecked()?;
+
+    let opaque_region = reply
+        .and_then(|reply| {
+            reply.value32().map(|values| {
+                let client_scale = client_scale
+                    .as_ref()
+                    .map(|s| s.load(Ordering::Acquire))
+                    .unwrap_or(1.);
+
+                values
+                    .collect::<Vec<_>>()
+                    .chunks_exact(4)
+                    .flat_map(|rect_values| {
+                        let phys_rect = Rectangle::<i32, Physical>::new(
+                            (rect_values[0] as i32, rect_values[1] as i32).into(),
+                            ((rect_values[2] as i32).max(0), (rect_values[3] as i32).max(0)).into(),
+                        );
+                        if phys_rect.is_empty() {
+                            None
+                        } else {
+                            Some((
+                                RectangleKind::Add,
+                                phys_rect.to_f64().to_logical(client_scale).to_i32_round::<i32>(),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+        })
+        .map(|rects| RegionAttributes { rects });
+
+    Ok(opaque_region)
 }
