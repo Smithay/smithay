@@ -489,6 +489,11 @@ pub trait XwmHandler {
         let _ = (xwm, window, timestamp, currently_active_window);
     }
 
+    /// Window has responded to a `_NET_WM_PING` request.
+    fn ping_acked(&mut self, xwm: XwmId, window: X11Surface, timestamp: u32) {
+        let _ = (xwm, window, timestamp);
+    }
+
     /// Window requests access to the given selection.
     fn allow_selection_access(&mut self, xwm: XwmId, selection: SelectionTarget) -> bool {
         let _ = (xwm, selection);
@@ -805,6 +810,7 @@ impl X11Wm {
                 atoms._NET_CLIENT_LIST_STACKING,
                 atoms._NET_SHOWING_DESKTOP,
                 atoms._NET_WM_OPAQUE_REGION,
+                atoms._NET_WM_PING,
             ],
         )?;
         conn.change_property32(
@@ -2479,6 +2485,47 @@ where
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
                         drop(_guard);
                         state.active_window_request(xwm_id, surface, timestamp, currently_active_window);
+                    }
+                }
+                x if x == xwm.atoms.WM_PROTOCOLS => {
+                    let data = msg.data.as_data32();
+
+                    match data[0] {
+                        x if x == xwm.atoms._NET_WM_PING => {
+                            let timestamp = data[1];
+                            // Some older clients will not faithfully copy the data back to us, and
+                            // will only set the timestamp, so `data[2]` may be zero or unreliable.
+                            let window_id = data[2];
+
+                            let surface = (window_id != x11rb::NONE)
+                                .then(|| xwm.windows.iter().find(|x| x.window_id() == window_id))
+                                .flatten()
+                                .filter(|surface| {
+                                    surface.state.lock().unwrap().pending_ping_timestamp == Some(timestamp)
+                                })
+                                .or_else(|| {
+                                    xwm.windows.iter().find(|x| {
+                                        x.state.lock().unwrap().pending_ping_timestamp == Some(timestamp)
+                                    })
+                                })
+                                .cloned();
+
+                            if let Some(surface) = surface {
+                                surface.state.lock().unwrap().pending_ping_timestamp = None;
+                                drop(_guard);
+                                state.ping_acked(xwm_id, surface.clone(), timestamp);
+                            }
+                        }
+
+                        _ => {
+                            debug!(
+                                "Unhandled WM_PROTOCOLS client msg of type {:?}",
+                                String::from_utf8(
+                                    conn.get_atom_name(data[0])?.reply_unchecked()?.unwrap().name
+                                )
+                                .ok()
+                            )
+                        }
                     }
                 }
                 x if x == xwm.atoms._NET_SHOWING_DESKTOP => {
