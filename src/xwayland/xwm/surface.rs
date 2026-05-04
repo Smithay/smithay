@@ -66,6 +66,23 @@ pub struct X11Surface {
     user_data: Arc<UserDataMap>,
 }
 
+/// Possible errors when calling [X11Surface::send_ping]
+#[derive(Debug, thiserror::Error)]
+pub enum PingError {
+    /// Not supported
+    #[error("Ping protocol is not supported for this window")]
+    NotSupported,
+    /// Invalid timestamp (must not be `0`/`CURRENT_TIME`)
+    #[error("Invalid timestamp provided")]
+    InvalidTimestamp,
+    /// Another ping is already in flight.
+    #[error("Ping with timestamp {0} is still in flight")]
+    PingAlreadyPending(u32),
+    /// Error on the underlying X11 Connection
+    #[error(transparent)]
+    Connection(#[from] ConnectionError),
+}
+
 const MWM_HINTS_FLAGS_FIELD: usize = 0;
 const MWM_HINTS_DECORATIONS_FIELD: usize = 2;
 const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
@@ -104,6 +121,7 @@ pub(crate) struct SharedSurfaceState {
         Option<ModifiersState>,
         Serial,
     )>,
+    pub(super) pending_ping_timestamp: Option<u32>,
 }
 
 pub(super) type Protocols = Vec<WMProtocol>;
@@ -112,6 +130,7 @@ pub(super) type Protocols = Vec<WMProtocol>;
 pub(super) enum WMProtocol {
     TakeFocus,
     DeleteWindow,
+    NetWmPing,
 }
 
 impl PartialEq for X11Surface {
@@ -247,6 +266,7 @@ impl X11Surface {
                 opaque_region: None,
                 opaque_region_dirty: true,
                 pending_enter: None,
+                pending_ping_timestamp: None,
             })),
             xdnd_active,
             user_data: Arc::new(UserDataMap::new()),
@@ -1079,6 +1099,7 @@ impl X11Surface {
             .filter_map(|atom| match atom {
                 x if x == self.atoms.WM_TAKE_FOCUS => Some(WMProtocol::TakeFocus),
                 x if x == self.atoms.WM_DELETE_WINDOW => Some(WMProtocol::DeleteWindow),
+                x if x == self.atoms._NET_WM_PING => Some(WMProtocol::NetWmPing),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1193,6 +1214,42 @@ impl X11Surface {
     /// Retrieve user_data associated with this X11 window
     pub fn user_data(&self) -> &UserDataMap {
         &self.user_data
+    }
+
+    /// Sends a `_NET_WM_PING` message to the window.
+    ///
+    /// The passed `timestamp` must be unique, as older clients may only send the timestamp in the
+    /// ping reply for use in matching the reply to the correct window.  In particular, do not pass
+    /// `x11rb::CURRENT_TIME`.
+    ///
+    /// You can implement the
+    /// [`XwmHandler::ping_acked()`](crate::xwayland::xwm::XwmHandler::ping_acked) trait item in
+    /// order to be notified when the client responds.
+    pub fn send_ping(&self, timestamp: u32) -> Result<(), PingError> {
+        if timestamp == x11rb::CURRENT_TIME {
+            Err(PingError::InvalidTimestamp)
+        } else {
+            let mut state = self.state.lock().unwrap();
+            if let Some(timestamp) = &state.pending_ping_timestamp {
+                Err(PingError::PingAlreadyPending(*timestamp))
+            } else {
+                let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+                if state.protocols.contains(&WMProtocol::NetWmPing) && timestamp != x11rb::CURRENT_TIME {
+                    let event = ClientMessageEvent::new(
+                        32,
+                        self.window,
+                        self.atoms.WM_PROTOCOLS,
+                        [self.atoms._NET_WM_PING, timestamp, self.window, 0, 0],
+                    );
+                    conn.send_event(false, self.window, EventMask::NO_EVENT, event)?;
+                    conn.flush()?;
+                    state.pending_ping_timestamp = Some(timestamp);
+                    Ok(())
+                } else {
+                    Err(PingError::NotSupported)
+                }
+            }
+        }
     }
 
     /// Send a close request to this window.
