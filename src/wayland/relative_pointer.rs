@@ -128,7 +128,7 @@ impl WpRelativePointerHandle {
                 .client_scale
                 .load(Ordering::Acquire);
             let delta = event.delta.to_client(client_scale);
-            let delta_unaccel = event.delta_unaccel.to_client(client_scale);
+            let delta_unaccel = event.delta_unaccel;
 
             let utime_hi = (event.utime >> 32) as u32;
             let utime_lo = (event.utime & 0xffffffff) as u32;
