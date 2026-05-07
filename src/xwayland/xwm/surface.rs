@@ -299,29 +299,14 @@ impl X11Surface {
         if let Some(conn) = self.conn.upgrade() {
             if let Some(frame) = self.state.lock().unwrap().mapped_onto {
                 if mapped {
-                    let property = [1u32 /*NormalState*/, 0 /*WINDOW_NONE*/];
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        self.window,
-                        self.atoms.WM_STATE,
-                        self.atoms.WM_STATE,
-                        &property,
-                    )?;
                     conn.map_window(frame)?;
                 } else {
-                    let property = [3u32 /*IconicState*/, 0 /*WINDOW_NONE*/];
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        self.window,
-                        self.atoms.WM_STATE,
-                        self.atoms.WM_STATE,
-                        &property,
-                    )?;
                     conn.unmap_window(frame)?;
                 }
                 conn.flush()?;
             }
         }
+
         Ok(())
     }
 
@@ -875,6 +860,19 @@ impl X11Surface {
                 self.atoms._NET_WM_STATE,
                 AtomEnum::ATOM,
                 &new_props,
+            )?;
+
+            let wm_state = if state.net_state.contains(&self.atoms._NET_WM_STATE_HIDDEN) {
+                [3u32 /*IconicState*/, 0 /*WINDOW_NONE*/]
+            } else {
+                [1u32 /*NormalState*/, 0 /*WINDOW_NONE*/]
+            };
+            conn.change_property32(
+                PropMode::REPLACE,
+                self.window,
+                self.atoms.WM_STATE,
+                self.atoms.WM_STATE,
+                &wm_state,
             )?;
         }
 
