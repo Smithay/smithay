@@ -123,7 +123,7 @@ impl Cacheable for DrmSyncobjCachedState {
 #[derive(Debug)]
 pub struct DrmSyncobjState {
     global: GlobalId,
-    import_device: DrmDeviceFd,
+    import_device: Option<DrmDeviceFd>,
     known_timelines: Vec<Weak<DrmTimelineInner>>,
 }
 
@@ -157,22 +157,25 @@ impl DrmSyncobjState {
 
         Self {
             global,
-            import_device,
+            import_device: Some(import_device),
             known_timelines: Vec::new(),
         }
     }
 
+    /// Closes the current `import_device`, allowing compositors to acquire a new fd.
+    pub fn close_device<'a>(&'a mut self) -> CloseGuard<'a> {
+        self.import_device.take();
+        CloseGuard { state: self }
+    }
+
     /// Sets a new `import_device` to import the syncobj fds and wait on them.
-    ///
-    /// Note: This will not update already existing timeline objects,
-    /// which will continue to use the previous device.
     pub fn update_device(&mut self, import_device: DrmDeviceFd) {
         for timeline in self.known_timelines.iter().filter_map(Weak::upgrade) {
             if let Err(err) = timeline.update_device(&import_device) {
                 warn!(?err, "Failed to update existing timeline");
             }
         }
-        self.import_device = import_device;
+        self.import_device = Some(import_device);
     }
 
     /// Destroys the state and returns the `GlobalId` for compositors to disable/destroy.
@@ -184,6 +187,20 @@ impl DrmSyncobjState {
             timeline.invalidate();
         }
         self.global
+    }
+}
+
+/// Guard returned by [`DrmSyncobjState::close_device`] to allow temporarily closing the import device.
+#[derive(Debug)]
+#[must_use = "You need to assign a new import device to not break the drm_syncobj global."]
+pub struct CloseGuard<'a> {
+    state: &'a mut DrmSyncobjState,
+}
+
+impl<'a> CloseGuard<'a> {
+    /// Sets a new `import_device` to import the syncobj fds and wait on them.
+    pub fn update_device(self, import_device: DrmDeviceFd) {
+        self.state.update_device(import_device);
     }
 }
 
@@ -329,15 +346,21 @@ where
             }
             wp_linux_drm_syncobj_manager_v1::Request::ImportTimeline { id, fd } => {
                 if let Some(state) = state.drm_syncobj_state() {
-                    match DrmTimeline::new(&state.import_device, fd) {
-                        Ok(timeline) => {
+                    match state.import_device.as_ref().map(|dev| DrmTimeline::new(dev, fd)) {
+                        Some(Ok(timeline)) => {
                             state.known_timelines.push(Arc::downgrade(&timeline.0));
                             data_init.init::<_, _>(id, DrmSyncobjTimelineData { timeline });
                         }
-                        Err(err) => {
+                        Some(Err(err)) => {
                             resource.post_error(
                                 wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
                                 format!("failed to import syncobj timeline: {err}"),
+                            );
+                        }
+                        None => {
+                            resource.post_error(
+                                wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
+                                "failed to import syncobj timeline: No device".to_string(),
                             );
                         }
                     }
