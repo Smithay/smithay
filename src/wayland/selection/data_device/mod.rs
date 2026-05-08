@@ -350,7 +350,9 @@ fn handle_dnd<D, S>(
                 );
                 if chosen_action != data.chosen_action {
                     data.chosen_action = chosen_action;
-                    offer.action(chosen_action);
+                    if offer.version() >= wl_data_offer::EVT_ACTION_SINCE {
+                        offer.action(chosen_action);
+                    }
                     source.choose_action(
                         DndAction::unwrap_single(&DndAction::vec_from_wl(chosen_action))
                             .expect("We have selected a single value at this point."),
@@ -467,7 +469,9 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
                 for mime_type in metadata.mime_types.iter().cloned() {
                     offer.offer(mime_type);
                 }
-                offer.source_actions(DndAction::convert_slice(&metadata.dnd_actions));
+                if offer.version() >= wl_data_offer::EVT_SOURCE_ACTIONS_SINCE {
+                    offer.source_actions(DndAction::convert_slice(&metadata.dnd_actions));
+                }
 
                 device.enter((*serial).into(), self, location.x, location.y, Some(&offer));
 
@@ -503,7 +507,9 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             if let Some(new_metadata) = offer.source.metadata() {
                 if offer.last_source_actions != new_metadata.dnd_actions {
                     for wl_offer in &offer.wl_offers {
-                        wl_offer.source_actions(DndAction::convert_slice(&new_metadata.dnd_actions));
+                        if wl_offer.version() >= wl_data_offer::EVT_SOURCE_ACTIONS_SINCE {
+                            wl_offer.source_actions(DndAction::convert_slice(&new_metadata.dnd_actions));
+                        }
                     }
 
                     offer.last_source_actions = new_metadata.dnd_actions;
