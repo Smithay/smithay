@@ -172,6 +172,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub seat: Seat<AnvilState<BackendData>>,
     pub clock: Clock<Monotonic>,
     pub pointer: PointerHandle<AnvilState<BackendData>>,
+    pub cursor_position_hint: Option<(WlSurface, Point<f64, Logical>)>,
 
     #[cfg(feature = "xwayland")]
     pub xwm: Option<X11Wm>,
@@ -376,6 +377,25 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         }
     }
 
+    fn remove_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>) {
+        if with_pointer_constraint(surface, pointer, |constraint| constraint.is_none()) {
+            if let Some((hint_surface, hint_location)) = &self.cursor_position_hint {
+                let origin = self
+                    .space
+                    .elements()
+                    .find_map(|window| {
+                        (window.wl_surface().as_deref() == Some(hint_surface)).then(|| window.geometry())
+                    })
+                    .unwrap_or_default()
+                    .loc
+                    .to_f64();
+
+                pointer.set_location(origin + *hint_location);
+            }
+            self.cursor_position_hint = None;
+        }
+    }
+
     fn cursor_position_hint(
         &mut self,
         surface: &WlSurface,
@@ -385,17 +405,7 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         if with_pointer_constraint(surface, pointer, |constraint| {
             constraint.is_some_and(|c| c.is_active())
         }) {
-            let origin = self
-                .space
-                .elements()
-                .find_map(|window| {
-                    (window.wl_surface().as_deref() == Some(surface)).then(|| window.geometry())
-                })
-                .unwrap_or_default()
-                .loc
-                .to_f64();
-
-            pointer.set_location(origin + location);
+            self.cursor_position_hint = Some((surface.clone(), location));
         }
     }
 }
@@ -749,6 +759,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             seat_name,
             seat,
             pointer,
+            cursor_position_hint: None,
             clock,
 
             #[cfg(feature = "xwayland")]
