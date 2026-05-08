@@ -37,6 +37,11 @@ pub trait PointerConstraintsHandler: SeatHandler {
     /// Use [`with_pointer_constraint`] to access the constraint.
     fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>);
 
+    /// Constraint removed for `pointer` on `surface`
+    ///
+    /// Use [`with_pointer_constraint`] to access the constraint.
+    fn remove_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>);
+
     /// The client holding a LockedPointer has committed a cursor position hint.
     ///
     /// This is emitted upon a surface commit if the cursor position hint has been updated.
@@ -344,12 +349,23 @@ fn add_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
     }
 }
 
-fn remove_constraint<D: SeatHandler + 'static>(surface: &WlSurface, pointer: &PointerHandle<D>) {
-    with_constraint_data::<D, _, _>(surface, |data| {
+fn remove_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
+    state: &mut D,
+    surface: &WlSurface,
+    pointer: &PointerHandle<D>,
+) {
+    let was_active = with_constraint_data::<D, _, _>(surface, |data| {
         if let Some(data) = data {
-            data.constraints.remove(pointer);
+            if let Some(constraint) = data.constraints.remove(pointer) {
+                return constraint.is_active();
+            }
         }
+        false
     });
+
+    if was_active {
+        state.remove_constraint(surface, pointer);
+    }
 }
 
 impl<D> Dispatch2<ZwpPointerConstraintsV1, D> for GlobalData
@@ -460,7 +476,7 @@ where
 
 impl<D> Dispatch2<ZwpConfinedPointerV1, D> for PointerConstraintUserData<D>
 where
-    D: SeatHandler,
+    D: SeatHandler + PointerConstraintsHandler,
     D: 'static,
 {
     fn request(
@@ -493,7 +509,7 @@ where
 
     fn destroyed(
         &self,
-        _state: &mut D,
+        state: &mut D,
         _client: wayland_server::backend::ClientId,
         _resource: &ZwpConfinedPointerV1,
     ) {
@@ -501,13 +517,13 @@ where
             return;
         };
 
-        remove_constraint(&self.surface, pointer);
+        remove_constraint(state, &self.surface, pointer);
     }
 }
 
 impl<D> Dispatch2<ZwpLockedPointerV1, D> for PointerConstraintUserData<D>
 where
-    D: SeatHandler,
+    D: SeatHandler + PointerConstraintsHandler,
     D: 'static,
 {
     fn request(
@@ -545,7 +561,7 @@ where
 
     fn destroyed(
         &self,
-        _state: &mut D,
+        state: &mut D,
         _client: wayland_server::backend::ClientId,
         _resource: &ZwpLockedPointerV1,
     ) {
@@ -553,6 +569,6 @@ where
             return;
         };
 
-        remove_constraint(&self.surface, pointer);
+        remove_constraint(state, &self.surface, pointer);
     }
 }
