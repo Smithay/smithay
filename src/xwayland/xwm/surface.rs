@@ -58,6 +58,7 @@ pub struct X11Surface {
     xwm: Option<XwmId>,
     client_scale: Option<Arc<AtomicF64>>,
     window: X11Window,
+    focus_release: Option<super::FocusReleaseHandle>,
     pub(super) conn: Weak<RustConnection>,
     pub(super) atoms: super::Atoms,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
@@ -269,6 +270,7 @@ impl X11Surface {
                 pending_ping_timestamp: None,
             })),
             xdnd_active,
+            focus_release: xwm.map(|wm| wm.focus_release.clone()),
             user_data: Arc::new(UserDataMap::new()),
         }
     }
@@ -1375,6 +1377,10 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             WmInputModel::GloballyActive => (false, true),
         };
 
+        if let Some(release) = &self.focus_release {
+            release.cancel();
+        }
+
         if let Some(conn) = self.conn.upgrade() {
             if set_input_focus {
                 if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME) {
@@ -1417,11 +1423,10 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
         if self.input_model() == WmInputModel::None {
             return;
-        } else if let Some(conn) = self.conn.upgrade() {
-            if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
-                warn!("Unable to unfocus X11Surface ({:?}): {}", self.window, err);
-            }
-            let _ = conn.flush();
+        }
+
+        if let Some(release) = &self.focus_release {
+            release.schedule();
         }
 
         let mut state = self.state.lock().unwrap();

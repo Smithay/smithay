@@ -136,7 +136,7 @@ use crate::{
     },
 };
 use atomic_float::AtomicF64;
-use calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic};
+use calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic, ping};
 use rustix::fs::OFlags;
 use std::{
     cell::RefCell,
@@ -147,7 +147,10 @@ use std::{
         io::{AsFd, OwnedFd},
         net::UnixStream,
     },
-    sync::{Arc, Weak, atomic::Ordering},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tracing::{debug, debug_span, info, trace, warn};
 use wayland_server::{DisplayHandle, Resource};
@@ -163,9 +166,9 @@ use x11rb::{
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
         xfixes::ConnectionExt as _,
         xproto::{
-            AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
+            Atom, AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
             ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
-            CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat,
+            CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat, InputFocus,
             PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen, StackMode, Visualid, WindowClass,
         },
     },
@@ -567,12 +570,72 @@ pub struct X11Wm {
 
     is_showing_desktop: bool,
 
+    pub(super) focus_release: FocusReleaseHandle,
+
     span: tracing::Span,
 }
 
 impl Drop for X11Wm {
     fn drop(&mut self) {
         xwm_id::remove(self.id.0);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct FocusReleaseHandle {
+    pending: Arc<AtomicBool>,
+    signal: ping::Ping,
+    conn: Weak<RustConnection>,
+    root: X11Window,
+    active_window: Atom,
+}
+
+impl FocusReleaseHandle {
+    fn new(
+        conn: &Arc<RustConnection>,
+        root: X11Window,
+        active_window: Atom,
+    ) -> std::io::Result<(Self, ping::PingSource)> {
+        let (signal, source) = ping::make_ping()?;
+        Ok((
+            Self {
+                pending: Arc::new(AtomicBool::new(false)),
+                signal,
+                conn: Arc::downgrade(conn),
+                root,
+                active_window,
+            },
+            source,
+        ))
+    }
+
+    fn schedule(&self) {
+        self.pending.store(true, Ordering::Release);
+        self.signal.ping();
+    }
+
+    fn cancel(&self) {
+        self.pending.store(false, Ordering::Release);
+    }
+
+    fn dispatch(&self) {
+        if !self.pending.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let Some(conn) = self.conn.upgrade() else { return };
+        if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
+            warn!("Unable to release X11 keyboard focus: {}", err);
+        }
+        if let Err(err) = conn.change_property32(
+            PropMode::REPLACE,
+            self.root,
+            self.active_window,
+            AtomEnum::WINDOW,
+            &[x11rb::NONE],
+        ) {
+            warn!("Unable to clear _NET_ACTIVE_WINDOW: {}", err);
+        }
+        let _ = conn.flush();
     }
 }
 
@@ -890,6 +953,13 @@ impl X11Wm {
         let dnd = XWmDnd::new(&conn, &screen, &atoms)?;
         let wm_window = OwnedX11Window::new(win, &conn);
 
+        let (focus_release, focus_release_source) =
+            FocusReleaseHandle::new(&conn, screen.root, atoms._NET_ACTIVE_WINDOW)?;
+        {
+            let release = focus_release.clone();
+            handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
+        }
+
         drop(_guard);
         let wm = Self {
             id,
@@ -911,6 +981,7 @@ impl X11Wm {
             client_list: Vec::new(),
             client_list_stacking: Vec::new(),
             is_showing_desktop: false,
+            focus_release,
             span,
         };
 
@@ -2224,17 +2295,6 @@ where
                     xwm.atoms._NET_ACTIVE_WINDOW,
                     AtomEnum::WINDOW,
                     &[n.event],
-                )?;
-            }
-        }
-        Event::FocusOut(n) => {
-            if xwm.windows.iter().any(|x| x.window_id() == n.event) {
-                conn.change_property32(
-                    PropMode::REPLACE,
-                    xwm.screen.root,
-                    xwm.atoms._NET_ACTIVE_WINDOW,
-                    AtomEnum::WINDOW,
-                    &[x11rb::NONE],
                 )?;
             }
         }
