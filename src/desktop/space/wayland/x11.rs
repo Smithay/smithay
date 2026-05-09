@@ -5,9 +5,11 @@ use crate::{
             Kind,
             surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
         },
+        utils::RendererSurfaceStateUserData,
     },
     desktop::{WindowSurfaceType, space::SpaceElement},
     utils::{Logical, Physical, Point, Rectangle, Scale},
+    wayland::compositor,
     xwayland::X11Surface,
 };
 
@@ -15,8 +17,17 @@ use super::{WindowOutputUserData, output_update};
 
 impl SpaceElement for X11Surface {
     fn bbox(&self) -> Rectangle<i32, Logical> {
-        let geo = X11Surface::geometry(self);
-        Rectangle::from_size(geo.size)
+        let size = X11Surface::wl_surface(self)
+            .and_then(|surface| {
+                compositor::with_states(&surface, |states| {
+                    states
+                        .data_map
+                        .get::<RendererSurfaceStateUserData>()
+                        .and_then(|s| s.lock().unwrap().surface_size())
+                })
+            })
+            .unwrap_or_else(|| X11Surface::geometry(self).size);
+        Rectangle::from_size(size)
     }
 
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
