@@ -424,48 +424,53 @@ impl X11Surface {
         }
         state.wl_surface = surface;
 
-        if let Some(wl_surface) = state.wl_surface.as_ref() {
-            let hook_id = {
-                let state = Arc::downgrade(&self.state);
-                let conn = self.conn.clone();
-                let window = self.window;
-                let property_atom = self.atoms._NET_WM_OPAQUE_REGION;
-                let client_scale = self.client_scale.clone();
+        if let Some(wl_surface) = state.wl_surface.clone() {
+            self.register_opaque_regions_hook::<D>(&mut state, &wl_surface);
+        }
+    }
 
-                compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, wl_surface| {
-                    if let Some(state) = state.upgrade() {
-                        let update_opaque_region_if_needed = || {
-                            if state.lock().unwrap().opaque_region_dirty {
-                                if let Some(conn) = conn.upgrade() {
-                                    if let Ok(opaque_region) = fetch_opaque_regions(
-                                        &conn,
-                                        window,
-                                        property_atom,
-                                        client_scale.as_ref(),
-                                    ) {
-                                        let mut state = state.lock().unwrap();
-                                        state.opaque_region = opaque_region;
-                                        state.opaque_region_dirty = false;
-                                        return Some(state.opaque_region.clone());
-                                    }
+    fn register_opaque_regions_hook<D: 'static>(
+        &self,
+        state: &mut SharedSurfaceState,
+        wl_surface: &WlSurface,
+    ) {
+        let hook_id = {
+            let state = Arc::downgrade(&self.state);
+            let conn = self.conn.clone();
+            let window = self.window;
+            let property_atom = self.atoms._NET_WM_OPAQUE_REGION;
+            let client_scale = self.client_scale.clone();
+
+            compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, wl_surface| {
+                if let Some(state) = state.upgrade() {
+                    let update_opaque_region_if_needed = || {
+                        if state.lock().unwrap().opaque_region_dirty {
+                            if let Some(conn) = conn.upgrade() {
+                                if let Ok(opaque_region) =
+                                    fetch_opaque_regions(&conn, window, property_atom, client_scale.as_ref())
+                                {
+                                    let mut state = state.lock().unwrap();
+                                    state.opaque_region = opaque_region;
+                                    state.opaque_region_dirty = false;
+                                    return Some(state.opaque_region.clone());
                                 }
                             }
-                            None
-                        };
+                        }
+                        None
+                    };
 
-                        let opaque_region = update_opaque_region_if_needed()
-                            .unwrap_or_else(|| state.lock().unwrap().opaque_region.clone());
+                    let opaque_region = update_opaque_region_if_needed()
+                        .unwrap_or_else(|| state.lock().unwrap().opaque_region.clone());
 
-                        compositor::with_states(wl_surface, |states| {
-                            let mut guard = states.cached_state.get::<SurfaceAttributes>();
-                            let attrs = guard.pending();
-                            attrs.opaque_region = opaque_region;
-                        });
-                    }
-                })
-            };
-            state.pre_commit_hook_id = Some(hook_id);
-        }
+                    compositor::with_states(wl_surface, |states| {
+                        let mut guard = states.cached_state.get::<SurfaceAttributes>();
+                        let attrs = guard.pending();
+                        attrs.opaque_region = opaque_region;
+                    });
+                }
+            })
+        };
+        state.pre_commit_hook_id = Some(hook_id);
     }
 
     /// Returns the current geometry of the underlying X11 window
