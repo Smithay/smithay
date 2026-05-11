@@ -145,3 +145,8 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch.crates-io]
+drm = { git = "https://github.com/Smithay/drm-rs.git", branch = "test/reset-flag" }
+drm-ffi = { git = "https://github.com/Smithay/drm-rs.git", branch = "test/reset-flag" }
+drm-sys = { git = "https://github.com/Smithay/drm-rs.git", branch = "test/reset-flag" }

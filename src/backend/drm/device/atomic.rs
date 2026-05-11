@@ -161,6 +161,17 @@ impl AtomicDrmDevice {
     }
 
     pub(super) fn reset_state(&self) -> Result<(), Error> {
+        let mut req = AtomicModeReq::new();
+        self.fd
+            .atomic_commit(AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::RESET, req)
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to disable connectors",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
+            })?;
+        /*
         // reset state sets the connectors into a known state (all disabled),
         // for the same reasons we do this on device creation.
         //
@@ -230,6 +241,7 @@ impl AtomicDrmDevice {
                     source,
                 })
             })?;
+        */
 
         Ok(())
     }
