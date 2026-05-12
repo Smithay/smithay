@@ -166,10 +166,11 @@ use x11rb::{
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
         xfixes::ConnectionExt as _,
         xproto::{
-            Atom, AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
+            AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
             ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
             CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat, InputFocus,
-            PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen, StackMode, Visualid, WindowClass,
+            NotifyDetail, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen, StackMode,
+            Visualid, WindowClass,
         },
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
@@ -586,24 +587,16 @@ pub(super) struct FocusReleaseHandle {
     pending: Arc<AtomicBool>,
     signal: ping::Ping,
     conn: Weak<RustConnection>,
-    root: X11Window,
-    active_window: Atom,
 }
 
 impl FocusReleaseHandle {
-    fn new(
-        conn: &Arc<RustConnection>,
-        root: X11Window,
-        active_window: Atom,
-    ) -> std::io::Result<(Self, ping::PingSource)> {
+    fn new(conn: &Arc<RustConnection>) -> std::io::Result<(Self, ping::PingSource)> {
         let (signal, source) = ping::make_ping()?;
         Ok((
             Self {
                 pending: Arc::new(AtomicBool::new(false)),
                 signal,
                 conn: Arc::downgrade(conn),
-                root,
-                active_window,
             },
             source,
         ))
@@ -625,15 +618,6 @@ impl FocusReleaseHandle {
         let Some(conn) = self.conn.upgrade() else { return };
         if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
             warn!("Unable to release X11 keyboard focus: {}", err);
-        }
-        if let Err(err) = conn.change_property32(
-            PropMode::REPLACE,
-            self.root,
-            self.active_window,
-            AtomEnum::WINDOW,
-            &[x11rb::NONE],
-        ) {
-            warn!("Unable to clear _NET_ACTIVE_WINDOW: {}", err);
         }
         let _ = conn.flush();
     }
@@ -953,8 +937,7 @@ impl X11Wm {
         let dnd = XWmDnd::new(&conn, &screen, &atoms)?;
         let wm_window = OwnedX11Window::new(win, &conn);
 
-        let (focus_release, focus_release_source) =
-            FocusReleaseHandle::new(&conn, screen.root, atoms._NET_ACTIVE_WINDOW)?;
+        let (focus_release, focus_release_source) = FocusReleaseHandle::new(&conn)?;
         {
             let release = focus_release.clone();
             handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
@@ -2295,6 +2278,17 @@ where
                     xwm.atoms._NET_ACTIVE_WINDOW,
                     AtomEnum::WINDOW,
                     &[n.event],
+                )?;
+            }
+        }
+        Event::FocusOut(n) if n.detail == NotifyDetail::NONE => {
+            if xwm.windows.iter().any(|x| x.window_id() == n.event) {
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    xwm.screen.root,
+                    xwm.atoms._NET_ACTIVE_WINDOW,
+                    AtomEnum::WINDOW,
+                    &[x11rb::NONE],
                 )?;
             }
         }
