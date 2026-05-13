@@ -112,10 +112,10 @@ use crate::wayland::image_capture_source::ImageCaptureSource;
 
 // Buffer validation imports
 use crate::backend::renderer::{BufferType, buffer_type};
+use crate::wayland::GlobalData;
 #[cfg(feature = "backend_drm")]
 use crate::wayland::dmabuf::get_dmabuf;
 use crate::wayland::shm::with_buffer_contents;
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 // Re-export FailureReason for convenience
 pub use wayland_protocols::ext::image_copy_capture::v1::server::ext_image_copy_capture_frame_v1::FailureReason as CaptureFailureReason;
@@ -755,15 +755,7 @@ impl Drop for Frame {
 /// Handler trait for the image copy capture protocol.
 ///
 /// Implement this on your compositor's state type to handle capture requests.
-pub trait ImageCopyCaptureHandler:
-    GlobalDispatch<ExtImageCopyCaptureManagerV1, ImageCopyCaptureGlobalData>
-    + Dispatch<ExtImageCopyCaptureManagerV1, GlobalData>
-    + Dispatch<ExtImageCopyCaptureSessionV1, SessionData>
-    + Dispatch<ExtImageCopyCaptureSessionV1, CursorSessionData>
-    + Dispatch<ExtImageCopyCaptureCursorSessionV1, CursorSessionData>
-    + Dispatch<ExtImageCopyCaptureFrameV1, FrameData>
-    + 'static
-{
+pub trait ImageCopyCaptureHandler: 'static {
     /// Returns a mutable reference to the [`ImageCopyCaptureState`] delegate type.
     fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState;
 
@@ -940,7 +932,7 @@ impl ImageCopyCaptureState {
 // Dispatch implementations
 // ============================================================================
 
-impl<D> GlobalDispatch2<ExtImageCopyCaptureManagerV1, D> for ImageCopyCaptureGlobalData
+impl<D> GlobalDispatch<ExtImageCopyCaptureManagerV1, D> for ImageCopyCaptureGlobalData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -960,7 +952,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureManagerV1, D> for GlobalData
+impl<D> Dispatch<ExtImageCopyCaptureManagerV1, D> for GlobalData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1093,7 +1085,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for SessionData
+impl<D> Dispatch<ExtImageCopyCaptureSessionV1, D> for SessionData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1138,7 +1130,7 @@ where
 }
 
 // Dispatch for session created from cursor session's get_capture_session
-impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for CursorSessionData
+impl<D> Dispatch<ExtImageCopyCaptureSessionV1, D> for CursorSessionData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1168,7 +1160,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureCursorSessionV1, D> for CursorSessionData
+impl<D> Dispatch<ExtImageCopyCaptureCursorSessionV1, D> for CursorSessionData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1242,7 +1234,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureFrameV1, D> for FrameData
+impl<D> Dispatch<ExtImageCopyCaptureFrameV1, D> for FrameData
 where
     D: ImageCopyCaptureHandler,
 {

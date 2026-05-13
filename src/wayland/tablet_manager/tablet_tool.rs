@@ -16,10 +16,7 @@ use wayland_server::Weak;
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId};
 
-use crate::{
-    utils::Serial,
-    wayland::{Dispatch2, compositor},
-};
+use crate::{utils::Serial, wayland::compositor};
 
 use super::tablet::TabletHandle;
 use super::tablet_seat::TabletSeatHandler;
@@ -258,9 +255,7 @@ impl TabletToolHandle {
         seat: &ZwpTabletSeatV2,
         tool: &TabletToolDescriptor,
     ) where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: TabletSeatHandler + 'static,
-        D: CompositorHandler,
     {
         let desc = tool.clone();
 
@@ -470,7 +465,7 @@ impl fmt::Debug for TabletToolUserData {
     }
 }
 
-impl<D> Dispatch2<ZwpTabletToolV2, D> for TabletToolUserData
+impl<D> Dispatch<ZwpTabletToolV2, D> for TabletToolUserData
 where
     D: TabletSeatHandler + 'static,
 {

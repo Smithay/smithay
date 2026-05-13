@@ -84,7 +84,7 @@ use wayland_server::{
 
 use super::{ToplevelSurface, XdgShellHandler};
 use crate::wayland::{
-    Dispatch2, GlobalData, GlobalDispatch2, compositor,
+    GlobalData, compositor,
     shell::xdg::{XdgShellSurfaceUserData, XdgToplevelSurfaceData},
 };
 
@@ -100,7 +100,7 @@ impl XdgDialogState {
     /// A global id is also returned to allow destroying the global in the future.
     pub fn new<D>(display: &DisplayHandle) -> XdgDialogState
     where
-        D: GlobalDispatch<XdgWmDialogV1, GlobalData> + Dispatch<XdgWmDialogV1, GlobalData> + 'static,
+        D: XdgDialogHandler + 'static,
     {
         let global = display.create_global::<D, XdgWmDialogV1, _>(1, GlobalData);
         XdgDialogState { global }
@@ -123,10 +123,7 @@ pub trait XdgDialogHandler: XdgShellHandler {
 
 // xdg_wm_dialog_v1
 
-impl<D: XdgDialogHandler> GlobalDispatch2<XdgWmDialogV1, D> for GlobalData
-where
-    D: Dispatch<XdgWmDialogV1, GlobalData>,
-{
+impl<D: XdgDialogHandler> GlobalDispatch<XdgWmDialogV1, D> for GlobalData {
     fn bind(
         &self,
         _: &mut D,
@@ -139,10 +136,7 @@ where
     }
 }
 
-impl<D: XdgDialogHandler> Dispatch2<XdgWmDialogV1, D> for GlobalData
-where
-    D: Dispatch<XdgDialogV1, ToplevelSurface>,
-{
+impl<D: XdgDialogHandler> Dispatch<XdgWmDialogV1, D> for GlobalData {
     fn request(
         &self,
         state: &mut D,
@@ -188,7 +182,7 @@ where
 
 // xdg_dialog_v1
 
-impl<D: XdgDialogHandler> Dispatch2<XdgDialogV1, D> for ToplevelSurface {
+impl<D: XdgDialogHandler> Dispatch<XdgDialogV1, D> for ToplevelSurface {
     fn request(
         &self,
         state: &mut D,

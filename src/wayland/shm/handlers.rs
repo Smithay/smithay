@@ -1,5 +1,5 @@
 use crate::wayland::{
-    Dispatch2, GlobalData, GlobalDispatch2,
+    GlobalData,
     buffer::BufferHandler,
     shm::{ShmBufferUserData, wl_bytes_per_pixel},
 };
@@ -11,7 +11,7 @@ use super::{
 
 use std::{num::NonZeroUsize, os::unix::io::AsRawFd, sync::Arc};
 use wayland_server::{
-    DataInit, Dispatch, DisplayHandle, New, Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
     backend::ClientId,
     protocol::{
         wl_buffer,
@@ -20,10 +20,8 @@ use wayland_server::{
     },
 };
 
-impl<D> GlobalDispatch2<WlShm, D> for GlobalData
+impl<D> GlobalDispatch<WlShm, D> for GlobalData
 where
-    D: Dispatch<WlShm, GlobalData>,
-    D: Dispatch<WlShmPool, ShmPoolUserData>,
     D: ShmHandler,
     D: 'static,
 {
@@ -44,9 +42,9 @@ where
     }
 }
 
-impl<D> Dispatch2<WlShm, D> for GlobalData
+impl<D> Dispatch<WlShm, D> for GlobalData
 where
-    D: Dispatch<WlShmPool, ShmPoolUserData> + ShmHandler + 'static,
+    D: ShmHandler + 'static,
 {
     fn request(
         &self,
@@ -94,9 +92,9 @@ where
  * wl_shm_pool
  */
 
-impl<D> Dispatch2<WlShmPool, D> for ShmPoolUserData
+impl<D> Dispatch<WlShmPool, D> for ShmPoolUserData
 where
-    D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler + ShmHandler + 'static,
+    D: ShmHandler + 'static,
 {
     fn request(
         &self,
@@ -207,7 +205,7 @@ where
     }
 }
 
-impl<D> Dispatch2<wl_buffer::WlBuffer, D> for ShmBufferUserData
+impl<D> Dispatch<wl_buffer::WlBuffer, D> for ShmBufferUserData
 where
     D: BufferHandler,
     D: 'static,

@@ -93,7 +93,7 @@ impl DataControlState {
         filter: F,
     ) -> Self
     where
-        D: GlobalDispatch<ZwlrDataControlManagerV1, DataControlManagerGlobalData> + 'static,
+        D: DataControlHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = DataControlManagerGlobalData {
@@ -142,13 +142,12 @@ mod handlers {
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1;
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
     use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
-    use wayland_server::{Client, Dispatch, DisplayHandle};
+    use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch};
 
     use crate::input::Seat;
     use crate::wayland::selection::SelectionTarget;
     use crate::wayland::selection::device::SelectionDevice;
     use crate::wayland::selection::seat_data::SeatData;
-    use crate::wayland::{Dispatch2, GlobalDispatch2};
 
     use super::DataControlDeviceUserData;
     use super::DataControlHandler;
@@ -156,11 +155,8 @@ mod handlers {
     use super::DataControlManagerUserData;
     use super::DataControlSourceUserData;
 
-    impl<D> GlobalDispatch2<ZwlrDataControlManagerV1, D> for DataControlManagerGlobalData
+    impl<D> GlobalDispatch<ZwlrDataControlManagerV1, D> for DataControlManagerGlobalData
     where
-        D: Dispatch<ZwlrDataControlManagerV1, DataControlManagerUserData>,
-        D: Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData>,
-        D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
         D: DataControlHandler,
         D: 'static,
     {
@@ -185,10 +181,8 @@ mod handlers {
         }
     }
 
-    impl<D> Dispatch2<ZwlrDataControlManagerV1, D> for DataControlManagerUserData
+    impl<D> Dispatch<ZwlrDataControlManagerV1, D> for DataControlManagerUserData
     where
-        D: Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData>,
-        D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
         D: DataControlHandler,
         D: 'static,
     {

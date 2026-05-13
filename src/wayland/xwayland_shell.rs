@@ -138,7 +138,7 @@ use wayland_server::{
 
 use crate::{
     input::SeatHandler,
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor},
+    wayland::{GlobalData, compositor},
     xwayland::{X11Surface, XWaylandClientData, XwmHandler, xwm::XwmId},
 };
 
@@ -159,9 +159,7 @@ impl XWaylandShellState {
     /// able to bind it.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<XwaylandShellV1, GlobalData>,
-        D: Dispatch<XwaylandShellV1, GlobalData>,
-        D: Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>,
+        D: XWaylandShellHandler,
         D: 'static,
     {
         let global = display.create_global::<D, XwaylandShellV1, _>(VERSION, GlobalData);
@@ -189,7 +187,7 @@ pub struct XWaylandSurfaceUserData {
 }
 
 /// Handler for the xwayland shell protocol.
-pub trait XWaylandShellHandler {
+pub trait XWaylandShellHandler: XwmHandler + SeatHandler {
     /// Retrieves the global state.
     fn xwayland_shell_state(&mut self) -> &mut XWaylandShellState;
 
@@ -218,9 +216,9 @@ impl compositor::Cacheable for XWaylandShellCachedState {
     }
 }
 
-impl<D> GlobalDispatch2<XwaylandShellV1, D> for GlobalData
+impl<D> GlobalDispatch<XwaylandShellV1, D> for GlobalData
 where
-    D: Dispatch<XwaylandShellV1, GlobalData>,
+    D: XWaylandShellHandler,
     D: 'static,
 {
     fn bind(
@@ -239,10 +237,9 @@ where
     }
 }
 
-impl<D> Dispatch2<XwaylandShellV1, D> for GlobalData
+impl<D> Dispatch<XwaylandShellV1, D> for GlobalData
 where
-    D: Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>,
-    D: XWaylandShellHandler + XwmHandler + SeatHandler,
+    D: XWaylandShellHandler,
     D: 'static,
 {
     fn request(
@@ -274,11 +271,10 @@ where
     }
 }
 
-impl<D> Dispatch2<XwaylandSurfaceV1, D> for XWaylandSurfaceUserData
+impl<D> Dispatch<XwaylandSurfaceV1, D> for XWaylandSurfaceUserData
 where
     D: XWaylandShellHandler,
     D: 'static,
-    D: XwmHandler,
 {
     fn request(
         &self,
@@ -312,7 +308,7 @@ where
     }
 }
 
-fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + SeatHandler + 'static>(
+fn serial_commit_hook<D: XWaylandShellHandler + 'static>(
     state: &mut D,
     _dh: &DisplayHandle,
     surface: &WlSurface,

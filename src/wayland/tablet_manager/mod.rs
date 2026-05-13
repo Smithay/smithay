@@ -95,7 +95,7 @@
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
@@ -141,11 +141,7 @@ impl TabletManagerState {
     /// Initialize a tablet manager global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpTabletManagerV2, GlobalData>,
-        D: Dispatch<ZwpTabletManagerV2, GlobalData>,
-        D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-        D: 'static,
+        D: TabletSeatHandler + 'static,
     {
         let global = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, GlobalData);
 
@@ -158,11 +154,9 @@ impl TabletManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpTabletManagerV2, D> for GlobalData
+impl<D> GlobalDispatch<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpTabletManagerV2, GlobalData>,
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-    D: 'static,
+    D: TabletSeatHandler + 'static,
 {
     fn bind(
         &self,
@@ -176,13 +170,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpTabletManagerV2, D> for GlobalData
+impl<D> Dispatch<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-    D: Dispatch<ZwpTabletV2, TabletUserData>,
-    D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-    D: SeatHandler + TabletSeatHandler + 'static,
-    D: CompositorHandler,
+    D: TabletSeatHandler + 'static,
 {
     fn request(
         &self,

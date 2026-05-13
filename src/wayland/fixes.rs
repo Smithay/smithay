@@ -6,7 +6,7 @@ use wayland_server::{
     protocol::wl_fixes,
 };
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
 /// Delegate type for handling wl fixes requests.
 #[derive(Debug, Clone)]
@@ -18,8 +18,6 @@ impl FixesState {
     /// Creates a new delegate type for handling [`wl_fixes::WlFixes`] events.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<wl_fixes::WlFixes, GlobalData>,
-        D: Dispatch<wl_fixes::WlFixes, GlobalData>,
         D: 'static,
     {
         let global = display.create_global::<D, wl_fixes::WlFixes, _>(1, GlobalData);
@@ -32,9 +30,8 @@ impl FixesState {
     }
 }
 
-impl<D> GlobalDispatch2<wl_fixes::WlFixes, D> for GlobalData
+impl<D> GlobalDispatch<wl_fixes::WlFixes, D> for GlobalData
 where
-    D: Dispatch<wl_fixes::WlFixes, GlobalData>,
     D: 'static,
 {
     fn bind(
@@ -49,7 +46,7 @@ where
     }
 }
 
-impl<D> Dispatch2<wl_fixes::WlFixes, D> for GlobalData
+impl<D> Dispatch<wl_fixes::WlFixes, D> for GlobalData
 where
     D: 'static,
 {

@@ -161,10 +161,7 @@ impl AlphaModifierState {
     /// Regiseter new [WpAlphaModifierV1] global
     pub fn new<D>(display: &DisplayHandle) -> AlphaModifierState
     where
-        D: GlobalDispatch<WpAlphaModifierV1, GlobalData>
-            + Dispatch<WpAlphaModifierV1, GlobalData>
-            + Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData>
-            + 'static,
+        D: 'static,
     {
         let global = display.create_global::<D, WpAlphaModifierV1, _>(1, GlobalData);
 

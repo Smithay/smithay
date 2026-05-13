@@ -144,7 +144,7 @@ impl BackgroundEffectState {
     /// Regiseter new [ExtBackgroundEffectManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> BackgroundEffectState
     where
-        D: ExtBackgroundEffectHandler + GlobalDispatch<ExtBackgroundEffectManagerV1, GlobalData>,
+        D: ExtBackgroundEffectHandler,
     {
         let global = display.create_global::<D, ExtBackgroundEffectManagerV1, _>(1, GlobalData);
         BackgroundEffectState { global }

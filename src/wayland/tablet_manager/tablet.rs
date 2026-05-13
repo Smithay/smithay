@@ -12,7 +12,7 @@ use wayland_server::{
     protocol::wl_surface::WlSurface,
 };
 
-use crate::{backend::input::Device, wayland::Dispatch2};
+use crate::backend::input::Device;
 
 /// Description of graphics tablet device
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -57,7 +57,6 @@ impl TabletHandle {
         seat: &ZwpTabletSeatV2,
         tablet: &TabletDescriptor,
     ) where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: 'static,
     {
         let wl_tablet = client
@@ -105,7 +104,7 @@ pub struct TabletUserData {
     handle: TabletHandle,
 }
 
-impl<D> Dispatch2<ZwpTabletV2, D> for TabletUserData
+impl<D> Dispatch<ZwpTabletV2, D> for TabletUserData
 where
     D: 'static,
 {

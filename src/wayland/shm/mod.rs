@@ -142,12 +142,7 @@ impl ShmState {
     /// remove this global in the future.
     pub fn new<D>(display: &DisplayHandle, formats: impl IntoIterator<Item = wl_shm::Format>) -> ShmState
     where
-        D: GlobalDispatch<WlShm, GlobalData>
-            + Dispatch<WlShm, GlobalData>
-            + Dispatch<WlShmPool, ShmPoolUserData>
-            + BufferHandler
-            + ShmHandler
-            + 'static,
+        D: ShmHandler + 'static,
     {
         let mut formats = formats.into_iter().collect::<HashSet<_>>();
 
@@ -182,7 +177,7 @@ impl ShmState {
 }
 
 /// Shm global handler
-pub trait ShmHandler {
+pub trait ShmHandler: BufferHandler {
     /// Return the Shm global state
     fn shm_state(&self) -> &ShmState;
 }

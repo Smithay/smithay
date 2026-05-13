@@ -156,7 +156,7 @@ impl ContentTypeState {
     /// Regiseter new [WpContentTypeManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> ContentTypeState
     where
-        D: GlobalDispatch<WpContentTypeManagerV1, GlobalData> + 'static,
+        D: 'static,
     {
         let global = display.create_global::<D, WpContentTypeManagerV1, _>(1, GlobalData);
 

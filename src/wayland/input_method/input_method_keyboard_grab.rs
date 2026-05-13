@@ -19,7 +19,7 @@ use crate::wayland::text_input::TextInputHandle;
 use crate::{
     backend::input::{KeyState, Keycode},
     utils::Serial,
-    wayland::Dispatch2,
+    wayland::Dispatch,
 };
 
 #[derive(Default, Debug)]
@@ -98,7 +98,7 @@ impl<D: SeatHandler> fmt::Debug for InputMethodKeyboardUserData<D> {
     }
 }
 
-impl<D: SeatHandler + 'static> Dispatch2<ZwpInputMethodKeyboardGrabV2, D> for InputMethodKeyboardUserData<D> {
+impl<D: SeatHandler + 'static> Dispatch<ZwpInputMethodKeyboardGrabV2, D> for InputMethodKeyboardUserData<D> {
     fn destroyed(&self, state: &mut D, _client: ClientId, _object: &ZwpInputMethodKeyboardGrabV2) {
         self.handle.inner.lock().unwrap().grab = None;
         self.keyboard_handle.unset_grab(state);

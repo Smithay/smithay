@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use crate::{
     utils::Serial,
     wayland::{
-        Dispatch2, compositor,
+        Dispatch, compositor,
         shell::{
             is_valid_parent,
             xdg::{ToplevelCachedState, XdgToplevelSurfaceData},
@@ -23,7 +23,7 @@ use super::{
     XdgToplevelSurfaceRoleAttributes,
 };
 
-impl<D> Dispatch2<XdgToplevel, D> for XdgShellSurfaceUserData
+impl<D> Dispatch<XdgToplevel, D> for XdgShellSurfaceUserData
 where
     D: XdgShellHandler,
     D: 'static,

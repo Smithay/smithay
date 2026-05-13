@@ -10,7 +10,7 @@ use crate::{
         Logical, Point, Rectangle,
         alive_tracker::{AliveTracker, IsAlive},
     },
-    wayland::Dispatch2,
+    wayland::Dispatch,
 };
 
 /// Handle to a popup surface
@@ -130,7 +130,7 @@ pub struct InputMethodPopupSurfaceUserData {
     pub(super) alive_tracker: AliveTracker,
 }
 
-impl<D> Dispatch2<ZwpInputPopupSurfaceV2, D> for InputMethodPopupSurfaceUserData {
+impl<D> Dispatch<ZwpInputPopupSurfaceV2, D> for InputMethodPopupSurfaceUserData {
     fn request(
         &self,
         _state: &mut D,

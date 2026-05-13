@@ -8,7 +8,7 @@ use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::{Client, DisplayHandle, Resource};
 
 use crate::input::Seat;
-use crate::wayland::Dispatch2;
+use crate::wayland::Dispatch;
 use crate::wayland::selection::device::SelectionDevice;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
@@ -24,7 +24,7 @@ pub struct DataControlDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch2<ZwlrDataControlDeviceV1, D> for DataControlDeviceUserData
+impl<D> Dispatch<ZwlrDataControlDeviceV1, D> for DataControlDeviceUserData
 where
     D: DataControlHandler,
     D: 'static,

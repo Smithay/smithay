@@ -12,7 +12,7 @@ use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ex
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, DisplayHandle, Resource, Weak};
 
-use crate::wayland::Dispatch2;
+use crate::wayland::Dispatch;
 use crate::wayland::session_lock::SessionLockHandler;
 
 /// User data for ext-session-lock surfaces.
@@ -24,7 +24,7 @@ pub struct ExtLockSurfaceUserData {
     pub(crate) surface: Weak<WlSurface>,
 }
 
-impl<D> Dispatch2<ExtSessionLockSurfaceV1, D> for ExtLockSurfaceUserData
+impl<D> Dispatch<ExtSessionLockSurfaceV1, D> for ExtLockSurfaceUserData
 where
     D: SessionLockHandler,
     D: 'static,
