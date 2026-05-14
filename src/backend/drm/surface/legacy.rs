@@ -462,6 +462,7 @@ impl LegacyDrmSurface {
         } else {
             State::current_state(&*self.fd, self.crtc)?
         };
+        *self.pending.write().unwrap() = self.state.read().unwrap().clone();
         Ok(())
     }
 
