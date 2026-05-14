@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/x11rb-0.13.2/src/resource_manager/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="x11rb" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0-nightly (7ac0330c6 2025-09-25)" data-channel="nightly" data-search-js="search-e256b49e.js" data-stringdex-js="stringdex-061df703.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">x11rb/resource_manager/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-2"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! X11 resource manager library.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! Usage example (please cache the database returned by [`new_from_default`] in real applications
+<a href=#4 id=4 data-nosnippet>4</a>//! instead of re-opening it whenever a value is needed):
+<a href=#5 id=5 data-nosnippet>5</a>//! ```
+<a href=#6 id=6 data-nosnippet>6</a>//! use x11rb::{connection::Connection, errors::ReplyError, resource_manager::new_from_default};
+<a href=#7 id=7 data-nosnippet>7</a>//! fn get_xft_dpi(conn: &amp;impl Connection) -&gt; Result&lt;Option&lt;u32&gt;, ReplyError&gt; {
+<a href=#8 id=8 data-nosnippet>8</a>//!     let db = new_from_default(conn)?;
+<a href=#9 id=9 data-nosnippet>9</a>//!     let value = db.get_value("Xft.dpi", "");
+<a href=#10 id=10 data-nosnippet>10</a>//!     Ok(value.ok().flatten())
+<a href=#11 id=11 data-nosnippet>11</a>//! }
+<a href=#12 id=12 data-nosnippet>12</a>//! ```
+<a href=#13 id=13 data-nosnippet>13</a>//!
+<a href=#14 id=14 data-nosnippet>14</a>//! This functionality is similar to what is available to C code through xcb-util-xrm and Xlib's
+<a href=#15 id=15 data-nosnippet>15</a>//! `Xrm*` function family. Not all their functionality is available in this library. Please open a
+<a href=#16 id=16 data-nosnippet>16</a>//! feature request if you need something that is not available.
+<a href=#17 id=17 data-nosnippet>17</a>//!
+<a href=#18 id=18 data-nosnippet>18</a>//! The code in this module is only available when the `resource_manager` feature of the library is
+<a href=#19 id=19 data-nosnippet>19</a>//! enabled.
+<a href=#20 id=20 data-nosnippet>20</a>
+<a href=#21 id=21 data-nosnippet>21</a></span><span class="kw">use </span><span class="kw">crate</span>::connection::Connection;
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span><span class="kw">crate</span>::errors::ReplyError;
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><span class="kw">crate</span>::protocol::xproto::GetPropertyReply;
+<a href=#24 id=24 data-nosnippet>24</a>
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">pub use </span>x11rb_protocol::resource_manager::Database;
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">fn </span>send_request(conn: <span class="kw-2">&amp;</span><span class="kw">impl </span>Connection) -&gt; <span class="prelude-ty">Result</span>&lt;GetPropertyReply, ReplyError&gt; {
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="kw">let </span><span class="kw-2">mut </span>request = Database::GET_RESOURCE_DATABASE;
+<a href=#29 id=29 data-nosnippet>29</a>    request.window = conn.setup().roots[<span class="number">0</span>].root;
+<a href=#30 id=30 data-nosnippet>30</a>    conn.send_trait_request_with_reply(request)<span class="question-mark">?</span>.reply()
+<a href=#31 id=31 data-nosnippet>31</a>}
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a><span class="doccomment">/// Create a new X11 resource database from the `RESOURCE_MANAGER` property of the first
+<a href=#34 id=34 data-nosnippet>34</a>/// screen's root window.
+<a href=#35 id=35 data-nosnippet>35</a>///
+<a href=#36 id=36 data-nosnippet>36</a>/// This function returns an error if the `GetProperty` request to get the `RESOURCE_MANAGER`
+<a href=#37 id=37 data-nosnippet>37</a>/// property fails. It returns `Ok(None)` if the property does not exist, has the wrong format,
+<a href=#38 id=38 data-nosnippet>38</a>/// or is empty.
+<a href=#39 id=39 data-nosnippet>39</a></span><span class="kw">pub fn </span>new_from_resource_manager(conn: <span class="kw-2">&amp;</span><span class="kw">impl </span>Connection) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;Database&gt;, ReplyError&gt; {
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="prelude-val">Ok</span>(Database::new_from_get_property_reply(<span class="kw-2">&amp;</span>send_request(conn)<span class="question-mark">?</span>))
+<a href=#41 id=41 data-nosnippet>41</a>}
+<a href=#42 id=42 data-nosnippet>42</a>
+<a href=#43 id=43 data-nosnippet>43</a><span class="doccomment">/// Create a new X11 resource database from the default locations.
+<a href=#44 id=44 data-nosnippet>44</a>///
+<a href=#45 id=45 data-nosnippet>45</a>/// The default location is a combination of two places. First, the following places are
+<a href=#46 id=46 data-nosnippet>46</a>/// searched for data:
+<a href=#47 id=47 data-nosnippet>47</a>/// - The `RESOURCE_MANAGER` property of the first screen's root window (See
+<a href=#48 id=48 data-nosnippet>48</a>///   [`new_from_resource_manager`]).
+<a href=#49 id=49 data-nosnippet>49</a>/// - If not found, the file `$HOME/.Xresources` is loaded.
+<a href=#50 id=50 data-nosnippet>50</a>/// - If not found, the file `$HOME/.Xdefaults` is loaded.
+<a href=#51 id=51 data-nosnippet>51</a>///
+<a href=#52 id=52 data-nosnippet>52</a>/// The result of the above search of the above search is combined with:
+<a href=#53 id=53 data-nosnippet>53</a>/// - The contents of the file `$XENVIRONMENT`, if this environment variable is set.
+<a href=#54 id=54 data-nosnippet>54</a>/// - Otherwise, the contents of `$HOME/.Xdefaults-[hostname]`.
+<a href=#55 id=55 data-nosnippet>55</a>///
+<a href=#56 id=56 data-nosnippet>56</a>/// This function only returns an error if communication with the X11 server fails. All other
+<a href=#57 id=57 data-nosnippet>57</a>/// errors are ignored. It might be that an empty database is returned.
+<a href=#58 id=58 data-nosnippet>58</a>///
+<a href=#59 id=59 data-nosnippet>59</a>/// The behaviour of this function is mostly equivalent to Xlib's `XGetDefault()`. The
+<a href=#60 id=60 data-nosnippet>60</a>/// exception is that `XGetDefault()` does not load `$HOME/.Xresources`.
+<a href=#61 id=61 data-nosnippet>61</a>///
+<a href=#62 id=62 data-nosnippet>62</a>/// The behaviour of this function is equivalent to xcb-util-xrm's
+<a href=#63 id=63 data-nosnippet>63</a>/// `xcb_xrm_database_from_default()`.
+<a href=#64 id=64 data-nosnippet>64</a></span><span class="kw">pub fn </span>new_from_default(conn: <span class="kw-2">&amp;</span><span class="kw">impl </span>Connection) -&gt; <span class="prelude-ty">Result</span>&lt;Database, ReplyError&gt; {
+<a href=#65 id=65 data-nosnippet>65</a>    <span class="prelude-val">Ok</span>(Database::new_from_default(
+<a href=#66 id=66 data-nosnippet>66</a>        <span class="kw-2">&amp;</span>send_request(conn)<span class="question-mark">?</span>,
+<a href=#67 id=67 data-nosnippet>67</a>        gethostname::gethostname(),
+<a href=#68 id=68 data-nosnippet>68</a>    ))
+<a href=#69 id=69 data-nosnippet>69</a>}</code></pre></div></section></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["supports_syncobj_eventfd"],"struct":["CloseGuard","DrmSyncPoint","DrmSyncPointBlocker","DrmSyncPointSource","DrmSyncobjCachedState","DrmSyncobjGlobalData","DrmSyncobjState","DrmSyncobjSurfaceData","DrmSyncobjTimelineData","DrmTimeline"],"trait":["DrmSyncobjHandler"]};
