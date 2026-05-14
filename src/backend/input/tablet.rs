@@ -314,7 +314,7 @@ pub trait TabletToolButtonEvent<B: InputBackend>: TabletToolEvent<B> + Event<B> 
     fn button(&self) -> u32;
 
     /// For the button of a TabletToolButtonEvent,
-    /// return the total number of buttons pressed on all devices on the associated seat after the the event was triggered.
+    /// return the total number of buttons pressed on all devices on the associated seat after the event was triggered.
     fn seat_button_count(&self) -> u32;
 
     /// Return the button state of the event.
