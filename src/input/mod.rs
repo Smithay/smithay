@@ -608,6 +608,33 @@ impl<D: SeatHandler + 'static> Seat<D> {
         Ok(keyboard)
     }
 
+    /// Add a keyboard with a pre-compiled keymap string (XKB_KEYMAP_FORMAT_TEXT_V1).
+    ///
+    /// This bypasses the RMLVO rules lookup, so it does not require xkeyboard-config
+    /// data files on disk.
+    pub fn add_keyboard_from_keymap_string(
+        &mut self,
+        keymap_str: String,
+        repeat_delay: i32,
+        repeat_rate: i32,
+    ) -> Result<KeyboardHandle<D>, KeyboardError> {
+        let mut inner = self.arc.inner.lock().unwrap();
+        let keyboard = self::keyboard::KeyboardHandle::new_from_keymap_string(
+            keymap_str,
+            repeat_delay,
+            repeat_rate,
+        )?;
+        if inner.keyboard.is_some() {
+            inner.keyboard = None;
+            #[cfg(feature = "wayland_frontend")]
+            inner.send_all_caps();
+        }
+        inner.keyboard = Some(keyboard.clone());
+        #[cfg(feature = "wayland_frontend")]
+        inner.send_all_caps();
+        Ok(keyboard)
+    }
+
     /// Access the keyboard of this seat if any
     pub fn get_keyboard(&self) -> Option<KeyboardHandle<D>> {
         self.arc.inner.lock().unwrap().keyboard.clone()
