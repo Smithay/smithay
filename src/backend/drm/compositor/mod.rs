@@ -3312,45 +3312,55 @@ where
                 }
             }?;
 
-            let ret = cursor_buffer
-                .map_mut::<_, Result<_, PixmanError>>(
-                    0,
-                    0,
-                    cursor_buffer_size.w as u32,
-                    cursor_buffer_size.h as u32,
-                    |mbo| {
-                        let plane_pixman_format = pixman::FormatCode::try_from(DrmFourcc::Argb8888).unwrap();
-                        let mut cursor_dst = unsafe {
-                            pixman::Image::from_raw_mut(
-                                plane_pixman_format,
-                                mbo.width() as usize,
-                                mbo.height() as usize,
-                                mbo.buffer_mut().as_mut_ptr() as *mut u32,
-                                mbo.stride() as usize,
-                                false,
-                            )
-                        }
-                        .map_err(|_| PixmanError::ImportFailed)?;
-                        let mut framebuffer = pixman_renderer.bind(&mut cursor_dst)?;
-                        let mut frame =
-                            pixman_renderer.render(&mut framebuffer, cursor_plane_size, output_transform)?;
-                        frame.clear(Color32F::TRANSPARENT, &[Rectangle::from_size(cursor_plane_size)])?;
-                        let src = element.src();
-                        let dst = Rectangle::from_size(element_geometry.size);
-                        frame.render_texture_from_to(
-                            &cursor_texture,
-                            src,
-                            dst,
-                            &[dst],
-                            &[],
-                            element.transform(),
-                            element.alpha(),
-                        )?;
-                        let _ = frame.finish()?.wait(); // what can we do?
-                        Ok(())
-                    },
-                )
-                .expect("Lost track of cursor device");
+            let map_result = cursor_buffer.map_mut::<_, Result<_, PixmanError>>(
+                0,
+                0,
+                cursor_buffer_size.w as u32,
+                cursor_buffer_size.h as u32,
+                |mbo| {
+                    let plane_pixman_format = pixman::FormatCode::try_from(DrmFourcc::Argb8888).unwrap();
+                    let mut cursor_dst = unsafe {
+                        pixman::Image::from_raw_mut(
+                            plane_pixman_format,
+                            mbo.width() as usize,
+                            mbo.height() as usize,
+                            mbo.buffer_mut().as_mut_ptr() as *mut u32,
+                            mbo.stride() as usize,
+                            false,
+                        )
+                    }
+                    .map_err(|_| PixmanError::ImportFailed)?;
+                    let mut framebuffer = pixman_renderer.bind(&mut cursor_dst)?;
+                    let mut frame =
+                        pixman_renderer.render(&mut framebuffer, cursor_plane_size, output_transform)?;
+                    frame.clear(Color32F::TRANSPARENT, &[Rectangle::from_size(cursor_plane_size)])?;
+                    let src = element.src();
+                    let dst = Rectangle::from_size(element_geometry.size);
+                    frame.render_texture_from_to(
+                        &cursor_texture,
+                        src,
+                        dst,
+                        &[dst],
+                        &[],
+                        element.transform(),
+                        element.alpha(),
+                    )?;
+                    let _ = frame.finish()?.wait(); // what can we do?
+                    Ok(())
+                },
+            );
+            // The map itself can fail (e.g. the device went away, or — on NVIDIA — a
+            // transient ENOMEM from the kernel allocator after a GPU-memory leak in
+            // another client). Skip the cursor plane on any such failure so the cursor
+            // falls back to being composited on the primary plane, matching how every
+            // other failure point above this one recovers.
+            let ret = match map_result {
+                Ok(ret) => ret,
+                Err(err) => {
+                    debug!("failed to map cursor buffer for rendering: {err}");
+                    return None;
+                }
+            };
 
             if let Err(err) = ret {
                 debug!("{err}");
