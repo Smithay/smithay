@@ -72,7 +72,7 @@ pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logi
                     output.leave(wl_surface);
                 }
             } else {
-                // Maybe the the surface got unmapped, send leave on output
+                // Maybe the surface got unmapped, send leave on output
                 output.leave(wl_surface);
             }
         },
