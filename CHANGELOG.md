@@ -111,6 +111,8 @@ of new `Dipsatch2` and `GlobalDispatch2` traits. These will replace `Dispatch` a
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
 
+- `DrmDevice::tile_info` exposes the parsed DRM `TILE` connector property as a new `backend::drm::TileInfo` struct, allowing compositors to identify connectors that belong to the same DisplayID-tiled monitor.
+
 `crate::input::dnd` was introduced to enable implementation of Drag&Drop operations on custom types.
 Internally the same types and traits are used to implement `wayland::data_device` dnd-operations and XDND
 operations (see below).
