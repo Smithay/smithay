@@ -1161,7 +1161,7 @@ impl DmabufParamsData {
 
             None => {
                 params.post_error(
-                    zwp_linux_buffer_params_v1::Error::Incomplete as u32,
+                    zwp_linux_buffer_params_v1::Error::Incomplete,
                     "Provided buffer is incomplete, it has zero planes",
                 );
                 return None;

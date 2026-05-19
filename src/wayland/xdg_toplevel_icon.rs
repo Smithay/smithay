@@ -342,7 +342,7 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
         _: &Client,
         icon: &XdgToplevelIconV1,
         request: xdg_toplevel_icon_v1::Request,
-        dh: &DisplayHandle,
+        _: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
         use xdg_toplevel_icon_v1::Request;
@@ -350,9 +350,8 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
         match request {
             Request::SetName { icon_name } => {
                 if self.is_immutable() {
-                    dh.post_error(
-                        icon,
-                        xdg_toplevel_icon_v1::Error::Immutable as u32,
+                    icon.post_error(
+                        xdg_toplevel_icon_v1::Error::Immutable,
                         "Request made after the icon has been assigned to a toplevel via 'set_icon'"
                             .to_string(),
                     );
@@ -362,27 +361,24 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
             }
             Request::AddBuffer { buffer, scale } => {
                 if self.is_immutable() {
-                    dh.post_error(
-                        icon,
-                        xdg_toplevel_icon_v1::Error::Immutable as u32,
+                    icon.post_error(
+                        xdg_toplevel_icon_v1::Error::Immutable,
                         "Request made after the icon has been assigned to a toplevel via 'set_icon'"
                             .to_string(),
                     );
                 }
 
                 let Some(shm) = buffer.data::<ShmBufferUserData>() else {
-                    dh.post_error(
-                        icon,
-                        xdg_toplevel_icon_v1::Error::InvalidBuffer as u32,
+                    icon.post_error(
+                        xdg_toplevel_icon_v1::Error::InvalidBuffer,
                         "The wl_buffer must be backed by wl_shm".to_string(),
                     );
                     return;
                 };
 
                 if shm.data.width != shm.data.height {
-                    dh.post_error(
-                        icon,
-                        xdg_toplevel_icon_v1::Error::InvalidBuffer as u32,
+                    icon.post_error(
+                        xdg_toplevel_icon_v1::Error::InvalidBuffer,
                         "The wl_buffer must be a square".to_string(),
                     );
                     return;

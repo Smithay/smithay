@@ -324,7 +324,7 @@ where
                     }
                     Err(()) => {
                         self.wm_base.post_error(
-                            xdg_wm_base::Error::Role as u32,
+                            xdg_wm_base::Error::Role,
                             "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                         );
                         return;
