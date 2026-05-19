@@ -137,7 +137,7 @@ where
 
                 if already_has_viewport {
                     surface.post_error(
-                        wp_viewporter::Error::ViewportExists as u32,
+                        wp_viewporter::Error::ViewportExists,
                         "the surface already has a viewport object associated".to_string(),
                     );
                     return;
@@ -222,7 +222,7 @@ where
 
                 if !is_unset && !is_valid_src {
                     resource.post_error(
-                        wp_viewport::Error::BadValue as u32,
+                        wp_viewport::Error::BadValue,
                         "negative or zero values in width or height or negative values in x or y".to_string(),
                     );
                     return;
@@ -232,7 +232,7 @@ where
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
                 let Ok(surface) = self.surface.upgrade() else {
                     resource.post_error(
-                        wp_viewport::Error::NoSurface as u32,
+                        wp_viewport::Error::NoSurface,
                         "the wl_surface was destroyed".to_string(),
                     );
                     return;
@@ -260,7 +260,7 @@ where
 
                 if !is_unset && !is_valid_size {
                     resource.post_error(
-                        wp_viewport::Error::BadValue as u32,
+                        wp_viewport::Error::BadValue,
                         "negative or zero values in width or height".to_string(),
                     );
                     return;
@@ -270,7 +270,7 @@ where
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
                 let Ok(surface) = self.surface.upgrade() else {
                     resource.post_error(
-                        wp_viewport::Error::NoSurface as u32,
+                        wp_viewport::Error::NoSurface,
                         "the wl_surface was destroyed".to_string(),
                     );
                     return;
@@ -333,7 +333,7 @@ fn viewport_pre_commit_hook<D: 'static>(
             {
                 if let Ok(viewport) = viewport.0.upgrade() {
                     viewport.post_error(
-                        wp_viewport::Error::BadSize as u32,
+                        wp_viewport::Error::BadSize,
                         "destination size is not integer".to_string(),
                     );
                 }
@@ -367,7 +367,7 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
         if !valid {
             if let Ok(viewport) = viewport.0.upgrade() {
                 viewport.post_error(
-                    wp_viewport::Error::OutOfBuffer as u32,
+                    wp_viewport::Error::OutOfBuffer,
                     format!(
                         "source rectangle x={},y={},w={},h={} extends outside of the content area x={},y={},w={},h={}", 
                         src.loc.x, src.loc.y, src.size.w, src.size.h,

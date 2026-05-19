@@ -241,17 +241,17 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                 let pending = cached.pending();
                 if pending.acquire_point.is_some() && new_buffer.is_none() {
                     syncobj_surface.post_error(
-                        wp_linux_drm_syncobj_surface_v1::Error::NoBuffer as u32,
+                        wp_linux_drm_syncobj_surface_v1::Error::NoBuffer,
                         "acquire point without buffer".to_string(),
                     );
                 } else if pending.acquire_point.is_some() && pending.release_point.is_none() {
                     syncobj_surface.post_error(
-                        wp_linux_drm_syncobj_surface_v1::Error::NoReleasePoint as u32,
+                        wp_linux_drm_syncobj_surface_v1::Error::NoReleasePoint,
                         "acquire point without release point".to_string(),
                     );
                 } else if pending.acquire_point.is_none() && pending.release_point.is_some() {
                     syncobj_surface.post_error(
-                        wp_linux_drm_syncobj_surface_v1::Error::NoAcquirePoint as u32,
+                        wp_linux_drm_syncobj_surface_v1::Error::NoAcquirePoint,
                         "release point without acquire point".to_string(),
                     );
                 } else if let (Some(acquire), Some(release)) =
@@ -259,7 +259,7 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                 {
                     if acquire.timeline == release.timeline && release.point <= acquire.point {
                         syncobj_surface.post_error(
-                            wp_linux_drm_syncobj_surface_v1::Error::ConflictingPoints as u32,
+                            wp_linux_drm_syncobj_surface_v1::Error::ConflictingPoints,
                             format!(
                                 "release point {} is not greater than acquire point {}",
                                 release.point, acquire.point
@@ -269,7 +269,7 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                     if let Some(buffer) = new_buffer {
                         if get_dmabuf(buffer).is_err() {
                             syncobj_surface.post_error(
-                                wp_linux_drm_syncobj_surface_v1::Error::UnsupportedBuffer as u32,
+                                wp_linux_drm_syncobj_surface_v1::Error::UnsupportedBuffer,
                                 "sync points with non-dmabuf buffer".to_string(),
                             );
                         }
@@ -322,7 +322,7 @@ where
                 });
                 if already_exists {
                     resource.post_error(
-                        wp_linux_drm_syncobj_manager_v1::Error::SurfaceExists as u32,
+                        wp_linux_drm_syncobj_manager_v1::Error::SurfaceExists,
                         "the surface already has a syncobj_surface object associated".to_string(),
                     );
                     return;
@@ -353,20 +353,20 @@ where
                         }
                         Some(Err(err)) => {
                             resource.post_error(
-                                wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
+                                wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline,
                                 format!("failed to import syncobj timeline: {err}"),
                             );
                         }
                         None => {
                             resource.post_error(
-                                wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
+                                wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline,
                                 "failed to import syncobj timeline: No device".to_string(),
                             );
                         }
                     }
                 } else {
                     resource.post_error(
-                        wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline as u32,
+                        wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline,
                         "global orphaned",
                     )
                 }

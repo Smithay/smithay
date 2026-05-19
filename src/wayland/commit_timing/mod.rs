@@ -278,7 +278,7 @@ where
             } => {
                 let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
-                        wp_commit_timer_v1::Error::SurfaceDestroyed as u32,
+                        wp_commit_timer_v1::Error::SurfaceDestroyed,
                         "the surface associated with this commit timer object has been destroyed".to_string(),
                     );
                     return;
@@ -307,7 +307,7 @@ where
 
                 if already_has_timestamp {
                     resource.post_error(
-                        wp_commit_timer_v1::Error::TimestampExists as u32,
+                        wp_commit_timer_v1::Error::TimestampExists,
                         "the surface already has a timestamp associated for this commit".to_string(),
                     );
                 }

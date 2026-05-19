@@ -150,7 +150,7 @@ where
 
                 if already_has_fractional_scale {
                     surface.post_error(
-                        wp_fractional_scale_manager_v1::Error::FractionalScaleExists as u32,
+                        wp_fractional_scale_manager_v1::Error::FractionalScaleExists,
                         "the surface already has a fractional_scale object associated".to_string(),
                     );
                     return;

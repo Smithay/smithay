@@ -303,7 +303,7 @@ where
             wp_fifo_v1::Request::SetBarrier => {
                 let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
-                        wp_fifo_v1::Error::SurfaceDestroyed as u32,
+                        wp_fifo_v1::Error::SurfaceDestroyed,
                         "the surface associated with this fifo object has been destroyed".to_string(),
                     );
                     return;
@@ -315,7 +315,7 @@ where
             wp_fifo_v1::Request::WaitBarrier => {
                 let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
-                        wp_fifo_v1::Error::SurfaceDestroyed as u32,
+                        wp_fifo_v1::Error::SurfaceDestroyed,
                         "the surface associated with this fifo object has been destroyed".to_string(),
                     );
                     return;
