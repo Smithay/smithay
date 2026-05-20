@@ -180,7 +180,7 @@ impl App {
 
         match self.step {
             TestStep::WaitForMap => {
-                info!("Window mapped — jumping cursor to top-left corner");
+                info!("Window mapped - jumping cursor to top-left corner");
                 self.step = TestStep::AbsoluteMotion;
                 self.step_due = Instant::now();
                 self.advance(qh);
@@ -192,7 +192,7 @@ impl App {
                 vp.motion_absolute(time, 0, 0, 1, 1);
                 vp.frame();
                 self.window.wl_surface().commit();
-                info!("Cursor at top-left — sweeping diagonally for ~2 seconds");
+                info!("Cursor at top-left - sweeping diagonally for ~2 seconds");
                 self.step = TestStep::Sweep;
                 // ~120 frames × 4px right + 3px down ≈ 480×360 px diagonal sweep
                 self.sweep_remaining = 120;
@@ -205,7 +205,7 @@ impl App {
                 self.window.wl_surface().commit();
                 self.sweep_remaining -= 1;
                 if self.sweep_remaining == 0 {
-                    info!("Sweep done — pausing 1 second so cursor is visible");
+                    info!("Sweep done - pausing 1 second so cursor is visible");
                     self.step = TestStep::Pause;
                     self.step_due = Instant::now() + Duration::from_secs(1);
                 }
@@ -226,7 +226,7 @@ impl App {
                 vp.button(time, BTN_LEFT, wl_pointer::ButtonState::Released);
                 vp.frame();
                 self.window.wl_surface().commit();
-                info!("Click sent — waiting 2 seconds then scrolling");
+                info!("Click sent - waiting 2 seconds then scrolling");
                 self.step = TestStep::Scroll;
                 self.step_due = Instant::now() + Duration::from_secs(2);
             }
@@ -237,13 +237,13 @@ impl App {
                 vp.axis_discrete(time, wl_pointer::Axis::VerticalScroll, 30.0, 3);
                 vp.frame();
                 self.window.wl_surface().commit();
-                info!("Scroll sent — done in 2 seconds");
+                info!("Scroll sent - done in 2 seconds");
                 self.step = TestStep::Done;
                 self.step_due = Instant::now() + Duration::from_secs(2);
             }
 
             TestStep::Done => {
-                info!("All virtual pointer events sent — stopping");
+                info!("All virtual pointer events sent - stopping");
                 if let Some(vp) = self.virtual_pointer.take() {
                     vp.destroy();
                 }

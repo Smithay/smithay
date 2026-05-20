@@ -316,7 +316,7 @@ where
                         );
                     }
                 } else {
-                    warn!("virtual_pointer: button event dropped — no seat associated with virtual pointer and no default seat provided");
+                    warn!("virtual_pointer: button event dropped - no seat associated with virtual pointer and no default seat provided");
                 }
             }
 
@@ -347,7 +347,7 @@ where
                         ptr.frame(state);
                     }
                 } else if frame.is_some() {
-                    warn!("virtual_pointer: axis frame dropped — no seat associated with virtual pointer and no default seat provided");
+                    warn!("virtual_pointer: axis frame dropped - no seat associated with virtual pointer and no default seat provided");
                 }
             }
 
