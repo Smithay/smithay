@@ -1531,6 +1531,11 @@ where
                 return Ok(());
             }
 
+            let attrs = conn.get_window_attributes(n.window)?.reply()?;
+            if attrs.class != WindowClass::INPUT_OUTPUT {
+                return Ok(());
+            }
+
             xwm.conn.change_window_attributes(
                 n.window,
                 &ChangeWindowAttributesAux::new()
