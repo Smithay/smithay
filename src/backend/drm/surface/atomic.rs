@@ -924,6 +924,129 @@ impl AtomicDrmSurface {
         res
     }
 
+    /// Append this surface's scan-out state for the next frame into a shared
+    /// atomic request, without committing.
+    ///
+    /// Several surfaces driving CRTCs on the *same* device can append into one
+    /// request and then be committed together by [`commit_request`](Self::commit_request),
+    /// so they flip in a single atomic commit and stay frame-locked (used for
+    /// tiled outputs). `allow_modeset` selects a full modeset (mode blob +
+    /// connectors, like [`commit`](Self::commit)) over a page-flip (like
+    /// [`page_flip`](Self::page_flip)).
+    pub(in crate::backend::drm) fn append_to_request<'b>(
+        &self,
+        req: &mut AtomicModeReq,
+        planes: impl IntoIterator<Item = PlaneState<'b>>,
+        allow_modeset: bool,
+    ) -> Result<(), Error> {
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
+        let mapping = self.prop_mapping.read().unwrap();
+
+        if allow_modeset {
+            let current = self.state.read().unwrap();
+            let pending = self.pending.read().unwrap();
+            for conn in &pending.connectors {
+                req_set_connector(&mapping, req, *conn, self.crtc)?;
+            }
+            for conn in current.connectors.difference(&pending.connectors) {
+                req_reset_connector(&mapping, req, *conn)?;
+            }
+            req_set_crtc(&mapping, req, self.crtc, Some(pending.blob), pending.vrr)?;
+        } else {
+            let vrr = self.state.read().unwrap().vrr;
+            req_set_crtc(&mapping, req, self.crtc, None, vrr)?;
+        }
+
+        let planes = planes.into_iter().collect::<Vec<_>>();
+        for plane in &planes {
+            req_set_plane(&mapping, req, self.crtc, plane)?;
+        }
+
+        // Track plane usage so a later `clear`/`reset_state` resets these planes.
+        // Done optimistically (before the shared commit): the set is only
+        // consulted when clearing, where an over-inclusive entry is harmless.
+        let mut used_planes = self.used_planes.lock().unwrap();
+        for plane in &planes {
+            if plane.config.is_some() {
+                used_planes.insert(plane.handle);
+            } else {
+                used_planes.remove(&plane.handle);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Commit a request previously assembled with [`append_to_request`](Self::append_to_request)
+    /// (from this and possibly other surfaces on the same device) as one atomic
+    /// commit. For a modeset it is validated with a `TEST_ONLY` commit first, as
+    /// a multi-CRTC commit can be rejected even when each CRTC passes alone.
+    pub(in crate::backend::drm) fn commit_request(
+        &self,
+        req: AtomicModeReq,
+        event: bool,
+        allow_modeset: bool,
+    ) -> Result<(), Error> {
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
+        if allow_modeset {
+            if let Err(err) = self.fd.atomic_commit(
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
+                req.clone(),
+            ) {
+                warn!("Tiled screen configuration invalid: {}", err);
+                return Err(Error::TestFailed(self.crtc));
+            }
+        }
+
+        // Commit synchronously (no NONBLOCK). A NONBLOCK commit spanning several
+        // CRTCs is rejected with EBUSY whenever they are not vblank-co-timed: the
+        // next combined flip is queued (on the primary CRTC's event) while
+        // another CRTC's previous flip is still pending. On a DisplayID-tiled
+        // output whose DP streams are not phase-locked at the source this happens
+        // on essentially every frame, so the async path is unusable here. A
+        // blocking commit lets the kernel apply all CRTCs together and serializes
+        // frames at vblank. (A non-blocking path would need per-CRTC flip-done
+        // tracking across the whole group.)
+        let mut flags = AtomicCommitFlags::empty();
+        if event {
+            flags |= AtomicCommitFlags::PAGE_FLIP_EVENT;
+        }
+        if allow_modeset {
+            flags |= AtomicCommitFlags::ALLOW_MODESET;
+        }
+
+        self.fd.atomic_commit(flags, req).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Failed to commit tiled atomic request",
+                dev: self.fd.dev_path(),
+                source,
+            })
+        })
+    }
+
+    /// Advance this surface's state after a successful tiled commit that
+    /// included it. A modeset makes `pending` current (so later frames page-flip
+    /// instead of re-running the modeset) and frees the previous mode blob.
+    pub(in crate::backend::drm) fn mark_request_submitted(&self, did_modeset: bool) {
+        if !did_modeset {
+            return;
+        }
+        let mut current = self.state.write().unwrap();
+        let pending = self.pending.read().unwrap();
+        if current.mode != pending.mode {
+            if let Err(err) = self.fd.destroy_property_blob(current.blob.into()) {
+                warn!("Failed to destroy old mode property blob: {}", err);
+            }
+        }
+        *current = pending.clone();
+    }
+
     // this helper function disconnects the plane.
     // this is mostly used to remove the contents quickly, e.g. on tty switch,
     // as other compositors might not make use of other planes,
@@ -1354,21 +1477,11 @@ impl<'a> AtomicRequest<'a> {
     }
 
     fn set_connector(&mut self, conn: connector::Handle, crtc: crtc::Handle) -> Result<(), Error> {
-        self.request.add_property(
-            conn,
-            self.mapping.conn_prop_handle(conn, "CRTC_ID")?,
-            property::Value::CRTC(Some(crtc)),
-        );
-        Ok(())
+        req_set_connector(self.mapping, &mut self.request, conn, crtc)
     }
 
     fn reset_connector(&mut self, conn: connector::Handle) -> Result<(), Error> {
-        self.request.add_property(
-            conn,
-            self.mapping.conn_prop_handle(conn, "CRTC_ID")?,
-            property::Value::CRTC(None),
-        );
-        Ok(())
+        req_reset_connector(self.mapping, &mut self.request, conn)
     }
 
     fn set_crtc(
@@ -1377,28 +1490,7 @@ impl<'a> AtomicRequest<'a> {
         mode: Option<property::Value<'static>>,
         vrr: bool,
     ) -> Result<(), Error> {
-        if let Some(blob) = mode {
-            self.request
-                .add_property(crtc, self.mapping.crtc_prop_handle(crtc, "MODE_ID")?, blob);
-        }
-
-        self.request.add_property(
-            crtc,
-            self.mapping.crtc_prop_handle(crtc, "ACTIVE")?,
-            property::Value::Boolean(true),
-        );
-
-        if let Ok(vrr_prop) = self.mapping.crtc_prop_handle(crtc, "VRR_ENABLED") {
-            self.request
-                .add_property(crtc, vrr_prop, property::Value::Boolean(vrr));
-        } else if vrr {
-            return Err(Error::UnknownProperty {
-                handle: crtc.into(),
-                name: "VRR_ENABLED",
-            });
-        }
-
-        Ok(())
+        req_set_crtc(self.mapping, &mut self.request, crtc, mode, vrr)
     }
 
     fn reset_crtc(&mut self, crtc: crtc::Handle) -> Result<(), Error> {
@@ -1420,202 +1512,11 @@ impl<'a> AtomicRequest<'a> {
     }
 
     fn set_plane(&mut self, crtc: crtc::Handle, plane_state: &PlaneState<'_>) -> Result<(), Error> {
-        let handle = plane_state.handle;
-        if let Some(config) = plane_state.config.as_ref() {
-            // connect the plane to the CRTC
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "CRTC_ID")?,
-                property::Value::CRTC(Some(crtc)),
-            );
-
-            // Set the fb for the plane
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "FB_ID")?,
-                property::Value::Framebuffer(Some(config.fb)),
-            );
-
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "SRC_X")?,
-                // these are 16.16. fixed point
-                property::Value::UnsignedRange(to_fixed(config.src.loc.x) as u64),
-            );
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "SRC_Y")?,
-                // these are 16.16. fixed point
-                property::Value::UnsignedRange(to_fixed(config.src.loc.y) as u64),
-            );
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "SRC_W")?,
-                // these are 16.16. fixed point
-                property::Value::UnsignedRange(to_fixed(config.src.size.w) as u64),
-            );
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "SRC_H")?,
-                // these are 16.16. fixed point
-                property::Value::UnsignedRange(to_fixed(config.src.size.h) as u64),
-            );
-
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "CRTC_X")?,
-                property::Value::SignedRange(config.dst.loc.x as i64),
-            );
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "CRTC_Y")?,
-                property::Value::SignedRange(config.dst.loc.y as i64),
-            );
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "CRTC_W")?,
-                property::Value::UnsignedRange(config.dst.size.w as u64),
-            );
-            self.request.add_property(
-                handle,
-                self.mapping.plane_prop_handle(handle, "CRTC_H")?,
-                property::Value::UnsignedRange(config.dst.size.h as u64),
-            );
-            if let Ok(prop) = self.mapping.plane_prop_handle(handle, "rotation") {
-                self.request.add_property(
-                    handle,
-                    prop,
-                    property::Value::Bitmask(DrmRotation::from(config.transform).bits() as u64),
-                );
-            } else if config.transform != Transform::Normal {
-                // if we are missing the rotation property we can no rely on
-                // the driver to report a non working configuration and can
-                // only guarantee that Transform::Normal (no rotation) will
-                // work
-                return Err(Error::UnknownProperty {
-                    handle: handle.into(),
-                    name: "rotation",
-                });
-            }
-            if let Ok(prop) = self.mapping.plane_prop_handle(handle, "alpha") {
-                self.request.add_property(
-                    handle,
-                    prop,
-                    property::Value::UnsignedRange((config.alpha * u16::MAX as f32).round() as u64),
-                );
-            } else if config.alpha != 1.0 {
-                // if we are missing the alpha property we can not display any transparent alpha values
-                return Err(Error::UnknownProperty {
-                    handle: handle.into(),
-                    name: "alpha",
-                });
-            }
-            if let Ok(prop) = self.mapping.plane_prop_handle(handle, "FB_DAMAGE_CLIPS") {
-                if let Some(damage) = config.damage_clips.as_ref() {
-                    self.request.add_property(handle, prop, *damage);
-                } else {
-                    self.request.add_property(handle, prop, property::Value::Blob(0));
-                }
-            }
-            if let Ok(prop) = self.mapping.plane_prop_handle(handle, "IN_FENCE_FD") {
-                if let Some(fence) = config.fence.as_ref().map(|f| f.as_raw_fd()) {
-                    self.request
-                        .add_property(handle, prop, property::Value::SignedRange(fence as i64));
-                } else {
-                    self.request
-                        .add_property(handle, prop, property::Value::SignedRange(-1));
-                }
-            } else if config.fence.is_some() {
-                return Err(Error::UnknownProperty {
-                    handle: handle.into(),
-                    name: "IN_FENCE_FD",
-                });
-            }
-        } else {
-            self.reset_plane(handle)?;
-        }
-
-        Ok(())
+        req_set_plane(self.mapping, &mut self.request, crtc, plane_state)
     }
 
     fn reset_plane(&mut self, plane: plane::Handle) -> Result<(), Error> {
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_ID")?,
-            property::Value::CRTC(None),
-        );
-
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "FB_ID")?,
-            property::Value::Framebuffer(None),
-        );
-
-        // reset the plane properties
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "SRC_X")?,
-            // these are 16.16. fixed point
-            property::Value::UnsignedRange(0u64),
-        );
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "SRC_Y")?,
-            // these are 16.16. fixed point
-            property::Value::UnsignedRange(0u64),
-        );
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "SRC_W")?,
-            // these are 16.16. fixed point
-            property::Value::UnsignedRange(0u64),
-        );
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "SRC_H")?,
-            // these are 16.16. fixed point
-            property::Value::UnsignedRange(0u64),
-        );
-
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_X")?,
-            property::Value::SignedRange(0i64),
-        );
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_Y")?,
-            property::Value::SignedRange(0i64),
-        );
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_W")?,
-            property::Value::UnsignedRange(0u64),
-        );
-        self.request.add_property(
-            plane,
-            self.mapping.plane_prop_handle(plane, "CRTC_H")?,
-            property::Value::UnsignedRange(0u64),
-        );
-        if let Ok(prop) = self.mapping.plane_prop_handle(plane, "rotation") {
-            self.request.add_property(
-                plane,
-                prop,
-                property::Value::Bitmask(DrmRotation::from(Transform::Normal).bits() as u64),
-            );
-        }
-        if let Ok(prop) = self.mapping.plane_prop_handle(plane, "alpha") {
-            self.request
-                .add_property(plane, prop, property::Value::UnsignedRange(0xffff));
-        }
-        if let Ok(prop) = self.mapping.plane_prop_handle(plane, "FB_DAMAGE_CLIPS") {
-            self.request.add_property(plane, prop, property::Value::Blob(0));
-        }
-        if let Ok(prop) = self.mapping.plane_prop_handle(plane, "IN_FENCE_FD") {
-            self.request
-                .add_property(plane, prop, property::Value::SignedRange(-1));
-        }
-        Ok(())
+        req_reset_plane(self.mapping, &mut self.request, plane)
     }
 
     fn build(&self) -> Result<AtomicModeReq, Error> {
@@ -1660,4 +1561,255 @@ impl<'a> AtomicRequest<'a> {
 
         Ok(req)
     }
+}
+
+// The property-emitting logic below is shared between the per-surface
+// `AtomicRequest` (release builds delegate to it) and the multi-surface tiled
+// commit, which appends several CRTCs' state into one `AtomicModeReq`. It
+// resolves property handles through `mapping` — which, on a single device, is
+// the same `Arc<RwLock<PropMapping>>` for every surface and covers all objects,
+// so one request can carry every tile's properties.
+
+fn req_set_connector(
+    mapping: &PropMapping,
+    req: &mut AtomicModeReq,
+    conn: connector::Handle,
+    crtc: crtc::Handle,
+) -> Result<(), Error> {
+    req.add_property(
+        conn,
+        mapping.conn_prop_handle(conn, "CRTC_ID")?,
+        property::Value::CRTC(Some(crtc)),
+    );
+    Ok(())
+}
+
+fn req_reset_connector(
+    mapping: &PropMapping,
+    req: &mut AtomicModeReq,
+    conn: connector::Handle,
+) -> Result<(), Error> {
+    req.add_property(
+        conn,
+        mapping.conn_prop_handle(conn, "CRTC_ID")?,
+        property::Value::CRTC(None),
+    );
+    Ok(())
+}
+
+fn req_set_crtc(
+    mapping: &PropMapping,
+    req: &mut AtomicModeReq,
+    crtc: crtc::Handle,
+    mode: Option<property::Value<'static>>,
+    vrr: bool,
+) -> Result<(), Error> {
+    if let Some(blob) = mode {
+        req.add_property(crtc, mapping.crtc_prop_handle(crtc, "MODE_ID")?, blob);
+    }
+
+    req.add_property(
+        crtc,
+        mapping.crtc_prop_handle(crtc, "ACTIVE")?,
+        property::Value::Boolean(true),
+    );
+
+    if let Ok(vrr_prop) = mapping.crtc_prop_handle(crtc, "VRR_ENABLED") {
+        req.add_property(crtc, vrr_prop, property::Value::Boolean(vrr));
+    } else if vrr {
+        return Err(Error::UnknownProperty {
+            handle: crtc.into(),
+            name: "VRR_ENABLED",
+        });
+    }
+
+    Ok(())
+}
+
+fn req_set_plane(
+    mapping: &PropMapping,
+    req: &mut AtomicModeReq,
+    crtc: crtc::Handle,
+    plane_state: &PlaneState<'_>,
+) -> Result<(), Error> {
+    let handle = plane_state.handle;
+    if let Some(config) = plane_state.config.as_ref() {
+        // connect the plane to the CRTC
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "CRTC_ID")?,
+            property::Value::CRTC(Some(crtc)),
+        );
+        // Set the fb for the plane
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "FB_ID")?,
+            property::Value::Framebuffer(Some(config.fb)),
+        );
+        // these are 16.16. fixed point
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "SRC_X")?,
+            property::Value::UnsignedRange(to_fixed(config.src.loc.x) as u64),
+        );
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "SRC_Y")?,
+            property::Value::UnsignedRange(to_fixed(config.src.loc.y) as u64),
+        );
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "SRC_W")?,
+            property::Value::UnsignedRange(to_fixed(config.src.size.w) as u64),
+        );
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "SRC_H")?,
+            property::Value::UnsignedRange(to_fixed(config.src.size.h) as u64),
+        );
+
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "CRTC_X")?,
+            property::Value::SignedRange(config.dst.loc.x as i64),
+        );
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "CRTC_Y")?,
+            property::Value::SignedRange(config.dst.loc.y as i64),
+        );
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "CRTC_W")?,
+            property::Value::UnsignedRange(config.dst.size.w as u64),
+        );
+        req.add_property(
+            handle,
+            mapping.plane_prop_handle(handle, "CRTC_H")?,
+            property::Value::UnsignedRange(config.dst.size.h as u64),
+        );
+        if let Ok(prop) = mapping.plane_prop_handle(handle, "rotation") {
+            req.add_property(
+                handle,
+                prop,
+                property::Value::Bitmask(DrmRotation::from(config.transform).bits() as u64),
+            );
+        } else if config.transform != Transform::Normal {
+            // if we are missing the rotation property we can no rely on
+            // the driver to report a non working configuration and can
+            // only guarantee that Transform::Normal (no rotation) will
+            // work
+            return Err(Error::UnknownProperty {
+                handle: handle.into(),
+                name: "rotation",
+            });
+        }
+        if let Ok(prop) = mapping.plane_prop_handle(handle, "alpha") {
+            req.add_property(
+                handle,
+                prop,
+                property::Value::UnsignedRange((config.alpha * u16::MAX as f32).round() as u64),
+            );
+        } else if config.alpha != 1.0 {
+            // if we are missing the alpha property we can not display any transparent alpha values
+            return Err(Error::UnknownProperty {
+                handle: handle.into(),
+                name: "alpha",
+            });
+        }
+        if let Ok(prop) = mapping.plane_prop_handle(handle, "FB_DAMAGE_CLIPS") {
+            if let Some(damage) = config.damage_clips.as_ref() {
+                req.add_property(handle, prop, *damage);
+            } else {
+                req.add_property(handle, prop, property::Value::Blob(0));
+            }
+        }
+        if let Ok(prop) = mapping.plane_prop_handle(handle, "IN_FENCE_FD") {
+            if let Some(fence) = config.fence.as_ref().map(|f| f.as_raw_fd()) {
+                req.add_property(handle, prop, property::Value::SignedRange(fence as i64));
+            } else {
+                req.add_property(handle, prop, property::Value::SignedRange(-1));
+            }
+        } else if config.fence.is_some() {
+            return Err(Error::UnknownProperty {
+                handle: handle.into(),
+                name: "IN_FENCE_FD",
+            });
+        }
+    } else {
+        req_reset_plane(mapping, req, handle)?;
+    }
+
+    Ok(())
+}
+
+fn req_reset_plane(mapping: &PropMapping, req: &mut AtomicModeReq, plane: plane::Handle) -> Result<(), Error> {
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "CRTC_ID")?,
+        property::Value::CRTC(None),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "FB_ID")?,
+        property::Value::Framebuffer(None),
+    );
+    // these are 16.16. fixed point
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "SRC_X")?,
+        property::Value::UnsignedRange(0u64),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "SRC_Y")?,
+        property::Value::UnsignedRange(0u64),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "SRC_W")?,
+        property::Value::UnsignedRange(0u64),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "SRC_H")?,
+        property::Value::UnsignedRange(0u64),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "CRTC_X")?,
+        property::Value::SignedRange(0i64),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "CRTC_Y")?,
+        property::Value::SignedRange(0i64),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "CRTC_W")?,
+        property::Value::UnsignedRange(0u64),
+    );
+    req.add_property(
+        plane,
+        mapping.plane_prop_handle(plane, "CRTC_H")?,
+        property::Value::UnsignedRange(0u64),
+    );
+    if let Ok(prop) = mapping.plane_prop_handle(plane, "rotation") {
+        req.add_property(
+            plane,
+            prop,
+            property::Value::Bitmask(DrmRotation::from(Transform::Normal).bits() as u64),
+        );
+    }
+    if let Ok(prop) = mapping.plane_prop_handle(plane, "alpha") {
+        req.add_property(plane, prop, property::Value::UnsignedRange(0xffff));
+    }
+    if let Ok(prop) = mapping.plane_prop_handle(plane, "FB_DAMAGE_CLIPS") {
+        req.add_property(plane, prop, property::Value::Blob(0));
+    }
+    if let Ok(prop) = mapping.plane_prop_handle(plane, "IN_FENCE_FD") {
+        req.add_property(plane, prop, property::Value::SignedRange(-1));
+    }
+    Ok(())
 }

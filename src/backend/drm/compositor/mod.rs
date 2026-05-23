@@ -135,7 +135,7 @@ use std::{
 
 use drm::{
     Device, DriverCapability,
-    control::{Device as _, Mode, PlaneType, connector, crtc, framebuffer, plane},
+    control::{Device as _, Mode, PlaneType, atomic::AtomicModeReq, connector, crtc, framebuffer, plane},
 };
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::{IndexMap, IndexSet};
@@ -1171,6 +1171,11 @@ pub enum TileConfigError {
     /// a single device so all its CRTCs can share one atomic commit.
     #[error("tile surfaces span multiple drm devices")]
     MultipleDevices,
+    /// A runtime mode change was requested on a tiled output. Its logical size is
+    /// fixed by the tile geometry passed to [`DrmCompositor::new_tiled`], so
+    /// changing it through [`DrmCompositor::use_mode`] is not supported.
+    #[error("changing the mode of a tiled output is not supported")]
+    ModeChangeUnsupported,
 }
 
 /// Validate that `regions` exactly tile a rectangle anchored at `(0, 0)` with no
@@ -1634,6 +1639,12 @@ where
         let dev = tiles_in[0].surface.dev_path();
         if tiles_in.iter().any(|p| p.surface.dev_path() != dev) {
             return Err(TileConfigError::MultipleDevices.into());
+        }
+
+        // The frame-locked commit relies on the atomic API; legacy surfaces have
+        // no way to flip several CRTCs together.
+        if tiles_in.iter().any(|p| p.surface.is_legacy()) {
+            return Err(FrameError::DrmError(DrmError::AtomicUnsupported));
         }
 
         let output_mode_source = output_mode_source.into();
@@ -2273,7 +2284,7 @@ where
 
         // Common case: a single CRTC drives the whole output, no relocation.
         if self.tiles.len() == 1 {
-            return self.render_tile(0, renderer, elements, clear_color, frame_flags);
+            return self.render_tile(0, renderer, elements, clear_color, frame_flags, false);
         }
 
         // Tiled output. Relocate the elements into each tile's framebuffer space
@@ -2319,7 +2330,7 @@ where
                     .iter()
                     .map(|element| RelocateRenderElement::from_element(element, offset, Relocate::Relative)),
             );
-            let result = self.render_tile(0, renderer, &scratch, clear_color, frame_flags)?;
+            let result = self.render_tile(0, renderer, &scratch, clear_color, frame_flags, true)?;
             (
                 match result.primary_element {
                     PrimaryPlaneElement::Swapchain(element) => PrimaryPlaneElement::Swapchain(element),
@@ -2345,7 +2356,7 @@ where
                     .iter()
                     .map(|element| RelocateRenderElement::from_element(element, offset, Relocate::Relative)),
             );
-            let result = self.render_tile(index, renderer, &scratch, clear_color, frame_flags)?;
+            let result = self.render_tile(index, renderer, &scratch, clear_color, frame_flags, true)?;
             all_empty &= result.is_empty;
             merge_render_element_states(&mut states, result.states);
         }
@@ -2379,6 +2390,7 @@ where
         elements: &'a [E],
         clear_color: Color32F,
         frame_flags: FrameFlags,
+        store_empty: bool,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
@@ -3106,8 +3118,13 @@ where
 
         // We only store the next frame if it actually contains any changes or if a commit is pending
         // Storing the (empty) frame could keep a reference to wayland buffers which
-        // could otherwise be potentially released on `frame_submitted`
-        if !next_frame.is_empty() {
+        // could otherwise be potentially released on `frame_submitted`.
+        //
+        // A tiled compositor (`store_empty`) always stores it: the tiles flip
+        // together in one atomic commit, so even an unchanged tile must re-state
+        // its planes in that commit (in particular the primary tile, whose vblank
+        // is the group's frame-completion signal).
+        if store_empty || !next_frame.is_empty() {
             tile.next_frame = Some(next_frame);
         }
 
@@ -3132,6 +3149,10 @@ where
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]
     #[profiling::function]
     pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
+        if self.tiles.len() > 1 {
+            return self.queue_frame_tiled(user_data);
+        }
+
         if !self.tiles[0].surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
@@ -3176,6 +3197,10 @@ where
     /// *Note*: This function should not be followed up with [`DrmCompositor::frame_submitted`]
     /// and will not generate a vblank event on the underlying device.
     pub fn commit_frame(&mut self) -> FrameResult<(), A, F> {
+        if self.tiles.len() > 1 {
+            return self.commit_frame_tiled();
+        }
+
         if !self.tiles[0].surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
@@ -3222,13 +3247,21 @@ where
     /// the state of the crtc is modified elsewhere, you may call this function
     /// to reset it's internal state.
     pub fn reset_state(&mut self) -> Result<(), DrmError> {
-        self.tiles[0].surface.reset_state()?;
-        self.tiles[0].reset_pending = true;
+        // Every tile's CRTC is part of the group's atomic commit, so all of them
+        // must have their state re-read after a VT switch, not just the primary.
+        for tile in &mut self.tiles {
+            tile.surface.reset_state()?;
+            tile.reset_pending = true;
+        }
         Ok(())
     }
 
     #[profiling::function]
     fn submit(&mut self) -> FrameResult<(), A, F> {
+        if self.tiles.len() > 1 {
+            return self.submit_tiled();
+        }
+
         let QueuedFrame { mut prepared_frame } = self.tiles[0].queued_frame.take().unwrap();
         let user_data = self.queued_user_data.take();
 
@@ -3311,6 +3344,10 @@ where
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     #[profiling::function]
     pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
+        if self.tiles.len() > 1 {
+            return self.frame_submitted_tiled();
+        }
+
         if let Some(PendingFrame { mut frame }) = self.tiles[0].pending_frame.take() {
             std::mem::swap(&mut frame, &mut self.tiles[0].current_frame);
             // Take the in-flight `user_data` before `submit` repopulates it from
@@ -3325,9 +3362,172 @@ where
         }
     }
 
+    // Tiled (multi-CRTC) frame lifecycle.
+    //
+    // A tiled `DrmCompositor` drives several CRTCs as one logical output, flipped
+    // together in a single atomic commit (see `DrmSurface::append_to_request` /
+    // `commit_request`) so they stay frame-locked. Because the flip is atomic,
+    // the primary tile's vblank stands in for the whole group: when it arrives,
+    // every tile has flipped, so the caller — which routes that one CRTC's vblank
+    // to `frame_submitted` — advances the entire group exactly once. The other
+    // CRTCs' redundant vblanks belong to no logical output and are ignored.
+
+    fn queue_frame_tiled(&mut self, user_data: U) -> FrameResult<(), A, F> {
+        if !self.tiles[0].surface.is_active() {
+            return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
+        }
+
+        // Every tile rendered a frame (`render_frame` stores even unchanged tiles
+        // for a tiled output), so they queue and flip together.
+        for tile in self.tiles.iter_mut() {
+            let prepared = tile.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+            if let Some(plane_state) = prepared.frame.plane_state(tile.surface.plane()) {
+                if !plane_state.skip {
+                    let slot = plane_state.buffer().and_then(|config| match &config.buffer {
+                        ScanoutBuffer::Swapchain(slot) => Some(slot),
+                        _ => None,
+                    });
+                    if let Some(slot) = slot {
+                        tile.swapchain.submitted(slot);
+                    }
+                }
+            }
+            tile.queued_frame = Some(QueuedFrame { prepared_frame: prepared });
+        }
+
+        self.queued_user_data = Some(user_data);
+        if self.tiles[0].pending_frame.is_none() {
+            self.submit_tiled()?;
+        }
+        Ok(())
+    }
+
+    fn submit_tiled(&mut self) -> FrameResult<(), A, F> {
+        let user_data = self.queued_user_data.take();
+        // A pending modeset on any tile forces the whole commit through the
+        // modeset path (the single atomic commit is all-or-nothing).
+        let modeset = self.tiles.iter().any(|tile| tile.surface.commit_pending());
+
+        // Assemble every tile's planes into one request. Each tile's queued
+        // `FrameState` stays in place (and keeps its fences alive) until the
+        // commit below has consumed the request.
+        let mut req = AtomicModeReq::new();
+        for tile in self.tiles.iter_mut() {
+            let prepared = &mut tile
+                .queued_frame
+                .as_mut()
+                .expect("all tiles queued together")
+                .prepared_frame;
+            let allow_partial = !modeset && prepared.kind == PreparedFrameKind::Partial;
+            let planes = prepared
+                .frame
+                .build_planes(&tile.surface, tile.supports_fencing, allow_partial)
+                .into_iter()
+                .collect::<SmallVec<[_; 8]>>();
+            tile.surface
+                .append_to_request(&mut req, planes, modeset)
+                .map_err(FrameError::DrmError)?;
+        }
+
+        // One atomic commit flips every tile together; the page-flip event on the
+        // primary CRTC is the group's frame-completion signal.
+        let flip = self.tiles[0].surface.commit_request(req, true, modeset);
+
+        let has_user_data = user_data.is_some();
+        if flip.is_ok() {
+            for tile in self.tiles.iter_mut() {
+                tile.surface.mark_request_submitted(modeset);
+                let prepared = tile.queued_frame.take().expect("queued before submit").prepared_frame;
+                if prepared.kind == PreparedFrameKind::Full {
+                    tile.reset_pending = false;
+                }
+                tile.pending_frame = has_user_data.then_some(PendingFrame { frame: prepared.frame });
+            }
+            self.pending_user_data = user_data;
+        } else {
+            // Drop the queued frames so the next `render_frame` produces a fresh
+            // set rather than retrying this (failed) one.
+            for tile in self.tiles.iter_mut() {
+                tile.queued_frame = None;
+            }
+        }
+
+        flip.map_err(FrameError::DrmError)
+    }
+
+    fn commit_frame_tiled(&mut self) -> FrameResult<(), A, F> {
+        if !self.tiles[0].surface.is_active() {
+            return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
+        }
+
+        let modeset = self.tiles.iter().any(|tile| tile.surface.commit_pending());
+
+        let mut req = AtomicModeReq::new();
+        for tile in self.tiles.iter_mut() {
+            let prepared = tile.next_frame.as_mut().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+            if let Some(plane_state) = prepared.frame.plane_state(tile.surface.plane()) {
+                if !plane_state.skip {
+                    let slot = plane_state.buffer().and_then(|config| match &config.buffer {
+                        ScanoutBuffer::Swapchain(slot) => Some(slot),
+                        _ => None,
+                    });
+                    if let Some(slot) = slot {
+                        tile.swapchain.submitted(slot);
+                    }
+                }
+            }
+            let allow_partial = !modeset && prepared.kind == PreparedFrameKind::Partial;
+            let planes = prepared
+                .frame
+                .build_planes(&tile.surface, tile.supports_fencing, allow_partial)
+                .into_iter()
+                .collect::<SmallVec<[_; 8]>>();
+            tile.surface
+                .append_to_request(&mut req, planes, modeset)
+                .map_err(FrameError::DrmError)?;
+        }
+
+        // Blocking commit, no page-flip event (mirrors single-tile `commit_frame`).
+        let flip = self.tiles[0].surface.commit_request(req, false, modeset);
+
+        if flip.is_ok() {
+            for tile in self.tiles.iter_mut() {
+                tile.surface.mark_request_submitted(modeset);
+                tile.next_frame = None;
+                tile.queued_frame = None;
+                tile.pending_frame = None;
+            }
+            self.queued_user_data = None;
+            self.pending_user_data = None;
+        }
+
+        flip.map_err(FrameError::DrmError)
+    }
+
+    fn frame_submitted_tiled(&mut self) -> FrameResult<Option<U>, A, F> {
+        if self.tiles[0].pending_frame.is_none() {
+            return Ok(None);
+        }
+
+        // The whole group flipped in one atomic commit, so advance every tile.
+        for tile in self.tiles.iter_mut() {
+            if let Some(PendingFrame { mut frame }) = tile.pending_frame.take() {
+                std::mem::swap(&mut frame, &mut tile.current_frame);
+            }
+        }
+
+        let user_data = self.pending_user_data.take();
+        if self.tiles[0].queued_frame.is_some() {
+            self.submit_tiled()?;
+        }
+        Ok(user_data)
+    }
+
     /// Reset the underlying buffers
     pub fn reset_buffers(&mut self) {
-        self.tiles[0].swapchain.reset_buffers();
+        for tile in &mut self.tiles {
+            tile.swapchain.reset_buffers();
+        }
     }
 
     /// Reset the age for all buffers.
@@ -3335,7 +3535,9 @@ where
     /// This can be used to efficiently clear the damage history without having to
     /// modify the damage for each surface.
     pub fn reset_buffer_ages(&mut self) {
-        self.tiles[0].swapchain.reset_buffer_ages();
+        for tile in &mut self.tiles {
+            tile.swapchain.reset_buffer_ages();
+        }
     }
 
     /// Returns the underlying [`crtc`] of this surface
@@ -3415,7 +3617,14 @@ where
     /// Fails if the mode is not compatible with the underlying
     /// [`crtc`] or any of the
     /// pending [`connector`]s.
+    ///
+    /// Errors with [`TileConfigError::ModeChangeUnsupported`] on a tiled output:
+    /// its mode is fixed by the tile geometry, and a coordinated per-tile mode
+    /// change is not supported.
     pub fn use_mode(&mut self, mode: Mode) -> FrameResult<(), A, F> {
+        if self.tiles.len() > 1 {
+            return Err(FrameError::InvalidTileConfig(TileConfigError::ModeChangeUnsupported));
+        }
         self.tiles[0].surface.use_mode(mode).map_err(FrameError::DrmError)?;
         let (w, h) = mode.size();
         self.tiles[0].swapchain.resize(w as _, h as _);
@@ -3440,7 +3649,22 @@ where
     /// Check [`DrmCompositor::vrr_supported`], which indicates if VRR can be
     /// used without a modeset on the attached connectors.
     pub fn use_vrr(&mut self, vrr: bool) -> FrameResult<(), A, F> {
-        self.tiles[0].surface.use_vrr(vrr).map_err(FrameError::DrmError)
+        // VRR is a per-CRTC property carried in the group's combined commit, so
+        // every tile must agree. `use_vrr` mutates each surface's pending state on
+        // success, so a failure partway through would leave earlier tiles changed
+        // and let the next commit carry a half-applied VRR state. Roll those tiles
+        // back to the previous value (all tiles share it — they commit together)
+        // before returning the error.
+        let previous = self.tiles[0].surface.vrr_enabled();
+        for i in 0..self.tiles.len() {
+            if let Err(err) = self.tiles[i].surface.use_vrr(vrr) {
+                for j in 0..i {
+                    let _ = self.tiles[j].surface.use_vrr(previous);
+                }
+                return Err(FrameError::DrmError(err));
+            }
+        }
+        Ok(())
     }
 
     /// Set the [`DebugFlags`] to use
@@ -3450,7 +3674,9 @@ where
     pub fn set_debug_flags(&mut self, flags: DebugFlags) {
         if self.debug_flags != flags {
             self.debug_flags = flags;
-            self.tiles[0].swapchain.reset_buffers();
+            for tile in &mut self.tiles {
+                tile.swapchain.reset_buffers();
+            }
         }
     }
 
@@ -4788,15 +5014,19 @@ where
     ///
     /// Calling [`queue_frame`][Self::queue_frame] will re-enable.
     pub fn clear(&mut self) -> Result<(), DrmError> {
-        self.tiles[0].surface.clear()?;
+        // Disable and clear every tile's CRTC, not just the primary, or the rest
+        // of a tiled monitor stays lit after a DPMS-off / clear.
+        for tile in &mut self.tiles {
+            tile.surface.clear()?;
 
-        self.tiles[0].current_frame
-            .planes
-            .iter_mut()
-            .for_each(|(_, state)| *state = Default::default());
-        self.tiles[0].pending_frame = None;
-        self.tiles[0].queued_frame = None;
-        self.tiles[0].next_frame = None;
+            tile.current_frame
+                .planes
+                .iter_mut()
+                .for_each(|(_, state)| *state = Default::default());
+            tile.pending_frame = None;
+            tile.queued_frame = None;
+            tile.next_frame = None;
+        }
         self.queued_user_data = None;
         self.pending_user_data = None;
 

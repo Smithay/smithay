@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use drm::Device as BasicDevice;
+use drm::control::atomic::AtomicModeReq;
 use drm::control::{Device as ControlDevice, Mode, connector, crtc, framebuffer, plane};
 
 use libc::dev_t;
@@ -436,6 +437,56 @@ impl DrmSurface {
                 let fb = ensure_legacy_planes(self, planes)?;
                 surf.page_flip(fb, event)
             }
+        }
+    }
+
+    /// Append this surface's scan-out state for the next frame into a shared
+    /// atomic request, without committing it.
+    ///
+    /// Several surfaces driving CRTCs on the **same** device can append into one
+    /// request and be committed together by [`commit_request`](DrmSurface::commit_request),
+    /// so they flip in a single atomic commit and stay frame-locked — this is how
+    /// a tiled output ([`DrmCompositor::new_tiled`](crate::backend::drm::compositor::DrmCompositor::new_tiled))
+    /// drives its CRTCs. `allow_modeset` selects a full modeset over a page-flip.
+    ///
+    /// Only supported on the atomic API; returns [`Error::AtomicUnsupported`] for
+    /// legacy devices.
+    pub(crate) fn append_to_request<'b>(
+        &self,
+        req: &mut AtomicModeReq,
+        planes: impl IntoIterator<Item = PlaneState<'b>>,
+        allow_modeset: bool,
+    ) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.append_to_request(req, planes, allow_modeset),
+            DrmSurfaceInternal::Legacy(_) => Err(Error::AtomicUnsupported),
+        }
+    }
+
+    /// Commit a request assembled with [`append_to_request`](DrmSurface::append_to_request)
+    /// (possibly from several surfaces on this device) as one atomic commit.
+    ///
+    /// `event` requests a page-flip event; `allow_modeset` permits (and, for a
+    /// multi-CRTC request, first test-commits) a modeset. Only supported on the
+    /// atomic API.
+    pub(crate) fn commit_request(
+        &self,
+        req: AtomicModeReq,
+        event: bool,
+        allow_modeset: bool,
+    ) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.commit_request(req, event, allow_modeset),
+            DrmSurfaceInternal::Legacy(_) => Err(Error::AtomicUnsupported),
+        }
+    }
+
+    /// Advance this surface's state after a successful commit that included a
+    /// request it contributed to via [`append_to_request`](DrmSurface::append_to_request).
+    /// A no-op on legacy devices and for non-modeset commits.
+    pub(crate) fn mark_request_submitted(&self, did_modeset: bool) {
+        if let DrmSurfaceInternal::Atomic(surf) = &*self.internal {
+            surf.mark_request_submitted(did_modeset);
         }
     }
 
