@@ -1041,18 +1041,20 @@ bitflags::bitflags! {
     }
 }
 
-/// Composite an output using a combination of planes and rendering
+/// Per-CRTC state of a [`DrmCompositor`].
 ///
-/// see the [`module docs`](crate::backend::drm::compositor) for more information
-#[derive(Debug)]
-pub struct DrmCompositor<A, F, U, G>
+/// A `DrmCompositor` holds one `TileState` per CRTC it drives — exactly one in
+/// the common case, several when compositing a tiled output (see
+/// [`DrmCompositor::new_tiled`]). Everything that belongs to a single scan-out
+/// pipeline (the surface, its planes, swapchain and frame-state machine) lives
+/// here; the logical output state stays on `DrmCompositor`.
+struct TileState<A, F, U, G>
 where
     A: Allocator,
     F: ExportFramebuffer<A::Buffer>,
     <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
-    output_mode_source: OutputModeSource,
     surface: Arc<DrmSurface>,
     planes: Planes,
     overlay_plane_element_ids: OverlayPlaneElementIds,
@@ -1063,26 +1065,61 @@ where
     supports_fencing: bool,
     reset_pending: bool,
     signaled_fence: Option<Arc<OwnedFd>>,
-
-    framebuffer_exporter: F,
-
     current_frame: CompositorFrameState<A, F>,
     pending_frame: Option<PendingFrame<A, F, U>>,
     queued_frame: Option<QueuedFrame<A, F, U>>,
     next_frame: Option<PreparedFrame<A, F>>,
-
     swapchain: Swapchain<A>,
-
-    cursor_size: Size<i32, Physical>,
     cursor_state: Option<CursorState<G>>,
-
     element_states: IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
     previous_element_states: IndexMap<Id, ElementState<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
     opaque_regions: Vec<Rectangle<i32, Physical>>,
     element_opaque_regions_workhouse: Vec<Rectangle<i32, Physical>>,
+}
 
+/// Composite an output using a combination of planes and rendering
+///
+/// see the [`module docs`](crate::backend::drm::compositor) for more information
+pub struct DrmCompositor<A, F, U, G>
+where
+    A: Allocator,
+    F: ExportFramebuffer<A::Buffer>,
+    <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
+    G: AsFd + 'static,
+{
+    output_mode_source: OutputModeSource,
+    framebuffer_exporter: F,
+    cursor_size: Size<i32, Physical>,
+    // `tiles[0]` is the primary: its CRTC's vblank drives the group's
+    // presentation, its surface carries the atomic commit, and it seeds the
+    // aggregated frame result. The rest are secondary. (Positional, by
+    // convention; the constructor takes the primary placement first.)
+    //
+    // Inline capacity 1: a single-CRTC output is the common case and stays
+    // heap-free. A tiled output (several CRTCs) spills to one heap allocation.
+    // Kept at 1 because TileState is large, so extra inline slots would bloat
+    // every (mostly single-tile) compositor just for the rare tiled case.
+    tiles: SmallVec<[TileState<A, F, U, G>; 1]>,
     debug_flags: DebugFlags,
     span: tracing::Span,
+}
+
+impl<A, F, U, G> std::fmt::Debug for DrmCompositor<A, F, U, G>
+where
+    A: Allocator,
+    F: ExportFramebuffer<A::Buffer>,
+    <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
+    G: AsFd + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DrmCompositor")
+            .field("output_mode_source", &self.output_mode_source)
+            .field("cursor_size", &self.cursor_size)
+            .field("tiles", &self.tiles.len())
+            .field("debug_flags", &self.debug_flags)
+            .field("span", &self.span)
+            .finish_non_exhaustive()
+    }
 }
 
 /// One CRTC's contribution to a tiled [`DrmCompositor`].
@@ -1526,31 +1563,33 @@ where
                     let current_frame = FrameState::from_planes(surface.plane(), &planes);
 
                     let drm_renderer = DrmCompositor {
-                        primary_plane_element_id: Id::new(),
-                        primary_plane_damage_bag: DamageBag::new(4),
-                        primary_is_opaque: is_opaque,
-                        reset_pending: true,
-                        signaled_fence,
-                        current_frame,
-                        pending_frame: None,
-                        queued_frame: None,
-                        next_frame: None,
-                        swapchain,
                         framebuffer_exporter,
                         cursor_size,
-                        cursor_state,
-                        surface,
-                        damage_tracker,
                         output_mode_source,
-                        planes,
-                        overlay_plane_element_ids,
-                        element_states: IndexMap::new(),
-                        previous_element_states: IndexMap::new(),
-                        opaque_regions: Vec::new(),
-                        element_opaque_regions_workhouse: Vec::new(),
-                        supports_fencing,
                         debug_flags: DebugFlags::empty(),
                         span,
+                        tiles: SmallVec::from_buf([TileState {
+                            primary_plane_element_id: Id::new(),
+                            primary_plane_damage_bag: DamageBag::new(4),
+                            primary_is_opaque: is_opaque,
+                            reset_pending: true,
+                            signaled_fence,
+                            current_frame,
+                            pending_frame: None,
+                            queued_frame: None,
+                            next_frame: None,
+                            swapchain,
+                            cursor_state,
+                            surface,
+                            damage_tracker,
+                            planes,
+                            overlay_plane_element_ids,
+                            element_states: IndexMap::new(),
+                            previous_element_states: IndexMap::new(),
+                            opaque_regions: Vec::new(),
+                            element_opaque_regions_workhouse: Vec::new(),
+                            supports_fencing,
+                        }]),
                     };
 
                     return Ok(drm_renderer);
@@ -1708,31 +1747,33 @@ where
         let current_frame = FrameState::from_planes(surface.plane(), &planes);
 
         let drm_renderer = DrmCompositor {
-            primary_plane_element_id: Id::new(),
-            primary_plane_damage_bag: DamageBag::new(4),
-            primary_is_opaque: is_opaque,
-            reset_pending: true,
-            signaled_fence,
-            current_frame,
-            pending_frame: None,
-            queued_frame: None,
-            next_frame: None,
-            swapchain,
             framebuffer_exporter,
             cursor_size,
-            cursor_state,
-            surface,
-            damage_tracker,
             output_mode_source,
-            planes,
-            overlay_plane_element_ids,
-            element_states: IndexMap::new(),
-            previous_element_states: IndexMap::new(),
-            opaque_regions: Vec::new(),
-            element_opaque_regions_workhouse: Vec::new(),
-            supports_fencing,
             debug_flags: DebugFlags::empty(),
             span,
+            tiles: SmallVec::from_buf([TileState {
+                primary_plane_element_id: Id::new(),
+                primary_plane_damage_bag: DamageBag::new(4),
+                primary_is_opaque: is_opaque,
+                reset_pending: true,
+                signaled_fence,
+                current_frame,
+                pending_frame: None,
+                queued_frame: None,
+                next_frame: None,
+                swapchain,
+                cursor_state,
+                surface,
+                damage_tracker,
+                planes,
+                overlay_plane_element_ids,
+                element_states: IndexMap::new(),
+                previous_element_states: IndexMap::new(),
+                opaque_regions: Vec::new(),
+                element_opaque_regions_workhouse: Vec::new(),
+                supports_fencing,
+            }]),
         };
 
         Ok(drm_renderer)
@@ -1979,7 +2020,7 @@ where
     {
         let mut clear_color = clear_color.into();
 
-        if !self.surface.is_active() {
+        if !self.tiles[0].surface.is_active() {
             return Err(RenderFrameErrorType::<A, F, R>::PrepareFrame(
                 FrameError::DrmError(DrmError::DeviceInactive),
             ));
@@ -1987,12 +2028,12 @@ where
 
         // Just reset any next state, this will put
         // any already acquired slot back to the swapchain
-        std::mem::drop(self.next_frame.take());
+        std::mem::drop(self.tiles[0].next_frame.take());
 
         // If a commit is pending we may still be able to just use a previous
         // state, but we want to queue a frame so we just fake the damage to
         // make sure queue_frame won't be skipped because of no damage
-        let allow_partial_update = !self.reset_pending && !self.surface.commit_pending();
+        let allow_partial_update = !self.tiles[0].reset_pending && !self.tiles[0].surface.commit_pending();
 
         let (current_size, output_scale, output_transform) = (&self.output_mode_source)
             .try_into()
@@ -2013,7 +2054,7 @@ where
         // if we could end up doing direct scan-out on the primary plane.
         // The reason is that we can't know upfront and we need a framebuffer
         // on the primary plane to test overlay/cursor planes
-        let primary_plane_buffer = self
+        let primary_plane_buffer = self.tiles[0]
             .swapchain
             .acquire()
             .map_err(FrameError::Allocator)?
@@ -2031,9 +2072,9 @@ where
             let fb_buffer = self
                 .framebuffer_exporter
                 .add_framebuffer(
-                    self.surface.device_fd(),
+                    self.tiles[0].surface.device_fd(),
                     ExportBuffer::Allocator(&primary_plane_buffer),
-                    self.primary_is_opaque,
+                    self.tiles[0].primary_is_opaque,
                 )
                 .map_err(FrameError::FramebufferExport)?
                 .ok_or(FrameError::NoFramebuffer)?;
@@ -2049,10 +2090,11 @@ where
             .unwrap()
             .clone();
 
-        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = std::mem::take(&mut self.opaque_regions);
-        std::mem::swap(&mut self.previous_element_states, &mut self.element_states);
-        let mut element_states = std::mem::take(&mut self.element_states);
-        element_states.reserve(std::cmp::min(elements.len(), self.planes.overlay.len()));
+        let tile = &mut self.tiles[0];
+        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = std::mem::take(&mut tile.opaque_regions);
+        std::mem::swap(&mut tile.previous_element_states, &mut tile.element_states);
+        let mut element_states = std::mem::take(&mut tile.element_states);
+        element_states.reserve(std::cmp::min(elements.len(), tile.planes.overlay.len()));
         let mut render_element_states = RenderElementStates {
             states: HashMap::with_capacity(elements.len()),
         };
@@ -2063,14 +2105,14 @@ where
             <A as Allocator>::Buffer,
             <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
         > = {
-            let previous_state = self
+            let previous_state = self.tiles[0]
                 .pending_frame
                 .as_ref()
                 .map(|pending| &pending.frame)
-                .unwrap_or(&self.current_frame);
+                .unwrap_or(&self.tiles[0].current_frame);
 
             // This will create an empty frame state, all planes are skipped by default
-            let mut next_frame_state = FrameState::from_planes(self.surface.plane(), &self.planes);
+            let mut next_frame_state = FrameState::from_planes(self.tiles[0].surface.plane(), &self.tiles[0].planes);
 
             // We want to set skip to false on all planes that previously had something assigned so that
             // they get cleared when they are not longer used
@@ -2090,7 +2132,7 @@ where
 
         // We want to make sure we can actually scan-out the primary plane, so
         // explicitly set skip to false
-        let plane_claim = self.surface.claim_plane(self.surface.plane()).ok_or_else(|| {
+        let plane_claim = self.tiles[0].surface.claim_plane(self.tiles[0].surface.plane()).ok_or_else(|| {
             error!("failed to claim primary plane");
             FrameError::PrimaryPlaneClaimFailed
         })?;
@@ -2122,7 +2164,7 @@ where
 
         // unconditionally set the primary plane state
         // if this would fail the test we are screwed anyway
-        next_frame_state.set_state(self.surface.plane(), primary_plane_state.clone());
+        next_frame_state.set_state(self.tiles[0].surface.plane(), primary_plane_state.clone());
 
         // This holds all elements that are visible on the output
         // A element is considered visible if it intersects with the output geometry
@@ -2130,7 +2172,7 @@ where
         let mut output_elements: Vec<(&'a E, Rectangle<i32, Physical>, usize, bool)> =
             Vec::with_capacity(elements.len());
 
-        let mut element_opaque_regions_workhouse = std::mem::take(&mut self.element_opaque_regions_workhouse);
+        let mut element_opaque_regions_workhouse = std::mem::take(&mut self.tiles[0].element_opaque_regions_workhouse);
         for (index, element) in elements.iter().enumerate() {
             let element_id = element.id();
             let element_geometry = element.geometry(output_scale);
@@ -2244,7 +2286,7 @@ where
 
             output_elements.push((element, element_geometry, element_visible_area, element_is_opaque));
         }
-        self.element_opaque_regions_workhouse = element_opaque_regions_workhouse;
+        self.tiles[0].element_opaque_regions_workhouse = element_opaque_regions_workhouse;
 
         // This will hold the element that has been selected for direct scan-out on
         // the primary plane if any
@@ -2255,7 +2297,7 @@ where
         // This will hold the element per plane that has been assigned to a overlay/underlay
         // plane for direct scan-out
         let mut overlay_plane_elements: IndexMap<plane::Handle, &'a E> =
-            IndexMap::with_capacity(self.planes.overlay.len());
+            IndexMap::with_capacity(self.tiles[0].planes.overlay.len());
         // This will hold the element assigned on the cursor plane if any
         let mut cursor_plane_element: Option<&'a E> = None;
 
@@ -2279,12 +2321,12 @@ where
                     (clear_color.r() == 0f32 && clear_color.g() == 0f32 && clear_color.b() == 0f32)
                         || clear_color.a() == 0f32;
                 let element_spans_complete_output = element_geometry.contains_rect(output_geometry);
-                let overlaps_with_underlay = self
+                let overlaps_with_underlay = self.tiles[0]
                     .planes
                     .overlay
                     .iter()
                     .filter(|p| {
-                        p.zpos.unwrap_or_default() < self.surface.plane_info().zpos.unwrap_or_default()
+                        p.zpos.unwrap_or_default() < self.tiles[0].surface.plane_info().zpos.unwrap_or_default()
                     })
                     .any(|p| next_frame_state.overlaps(p.handle, element_geometry));
                 !overlaps_with_underlay
@@ -2347,16 +2389,17 @@ where
         for element_state in element_states.values_mut() {
             element_state.fb_cache.cleanup();
         }
-        self.element_states = element_states;
-        self.previous_element_states.clear();
+        self.tiles[0].element_states = element_states;
+        self.tiles[0].previous_element_states.clear();
         opaque_regions.clear();
-        self.opaque_regions = opaque_regions;
+        self.tiles[0].opaque_regions = opaque_regions;
 
-        let previous_state = self
+        let tile = &mut self.tiles[0];
+        let previous_state = tile
             .pending_frame
             .as_ref()
             .map(|pending| &pending.frame)
-            .unwrap_or(&self.current_frame);
+            .unwrap_or(&tile.current_frame);
 
         // Check if the next frame state is fully compatible with the previous frame state.
         // If not do a single atomic commit test and when that fails render everything that failed
@@ -2365,8 +2408,8 @@ where
         if next_frame_state
             .test_state_complete(
                 previous_state,
-                &self.surface,
-                self.supports_fencing,
+                &tile.surface,
+                tile.supports_fencing,
                 false,
                 allow_partial_update,
             )
@@ -2389,9 +2432,9 @@ where
 
                 // Check if the element we are potentially going to remove is
                 // on the primary plane, cursor plane or an overlay plane
-                let element = if *plane == self.surface.plane() {
+                let element = if *plane == tile.surface.plane() {
                     primary_plane_scanout_element.take()
-                } else if self.planes.cursor.iter().any(|p| *plane == p.handle) {
+                } else if tile.planes.cursor.iter().any(|p| *plane == p.handle) {
                     cursor_plane_element.take()
                 } else {
                     overlay_plane_elements.shift_remove(plane)
@@ -2419,7 +2462,7 @@ where
             // to make sure we actually have a slot on the primary
             // plane we can render into
             if !removed_overlay_elements.is_empty() {
-                next_frame_state.set_state(self.surface.plane(), primary_plane_state);
+                next_frame_state.set_state(tile.surface.plane(), primary_plane_state);
             }
 
             removed_overlay_elements.sort_by_key(|(z_index, _)| *z_index);
@@ -2440,12 +2483,12 @@ where
                     .and_then(|state| state.config.as_ref())
                     .is_none()
             {
-                self.overlay_plane_element_ids.remove_plane(handle);
+                tile.overlay_plane_element_ids.remove_plane(handle);
             }
         }
 
         let render = next_frame_state
-            .plane_buffer(self.surface.plane())
+            .plane_buffer(tile.surface.plane())
             .map(|config| matches!(config.buffer, ScanoutBuffer::Swapchain(_)))
             .unwrap_or(false);
 
@@ -2453,10 +2496,10 @@ where
             trace!(
                 "rendering {} elements on the primary {:?}",
                 primary_plane_elements.len(),
-                self.surface.plane(),
+                tile.surface.plane(),
             );
             let (mut dmabuf, age) = {
-                let primary_plane_state = next_frame_state.plane_state(self.surface.plane()).unwrap();
+                let primary_plane_state = next_frame_state.plane_state(tile.surface.plane()).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
                 let slot = match &config.buffer.buffer {
                     ScanoutBuffer::Swapchain(slot) => slot,
@@ -2487,11 +2530,11 @@ where
             // So we use an Id per plane for as long as we have the same element
             // on that plane.
             let overlay_plane_elements = overlay_plane_elements.iter().filter_map(|(p, element)| {
-                let id = self
+                let id = tile
                     .overlay_plane_element_ids
                     .plane_id_for_element_id(p, element.id());
 
-                let plane_z_pos = self
+                let plane_z_pos = tile
                     .planes
                     .overlay
                     .iter()
@@ -2503,7 +2546,7 @@ where
                         }
                     })
                     .unwrap_or_default();
-                let is_underlay = plane_z_pos < self.surface.plane_info().zpos.unwrap_or_default();
+                let is_underlay = plane_z_pos < tile.surface.plane_info().zpos.unwrap_or_default();
                 if is_underlay {
                     Some(HolepunchRenderElement::from_render_element(id, element, output_scale).into())
                 } else {
@@ -2524,7 +2567,7 @@ where
                 .bind(&mut dmabuf)
                 .map_err(|err| RenderFrameError::RenderFrame(OutputDamageTrackerError::Rendering(err)))?;
             let render_res =
-                self.damage_tracker
+                tile.damage_tracker
                     .render_output(renderer, &mut framebuffer, age, &elements, clear_color);
 
             // restore the renderer debug flags
@@ -2541,7 +2584,7 @@ where
 
                     for (id, state) in render_output_result.states.states.into_iter() {
                         // Skip the state for our fake elements
-                        if self.overlay_plane_element_ids.contains_plane_id(&id) {
+                        if tile.overlay_plane_element_ids.contains_plane_id(&id) {
                             continue;
                         }
 
@@ -2563,18 +2606,18 @@ where
                     // but now use it for rendering we do not replace the damage which is
                     // the whole plane initially.
                     let had_direct_scan_out = previous_state
-                        .plane_state(self.surface.plane())
+                        .plane_state(tile.surface.plane())
                         .map(|state| state.element_state.is_some())
                         .unwrap_or(true);
 
-                    let primary_plane_state = next_frame_state.plane_state_mut(self.surface.plane()).unwrap();
+                    let primary_plane_state = next_frame_state.plane_state_mut(tile.surface.plane()).unwrap();
                     let config = primary_plane_state.config.as_mut().unwrap();
 
                     if !had_direct_scan_out {
                         if let Some(render_damage) = render_output_result.damage {
                             trace!("rendering damage: {:?}", render_damage);
 
-                            self.primary_plane_damage_bag.add(render_damage.iter().map(|d| {
+                            tile.primary_plane_damage_bag.add(render_damage.iter().map(|d| {
                                 d.to_logical(1).to_buffer(
                                     1,
                                     Transform::Normal,
@@ -2582,7 +2625,7 @@ where
                                 )
                             }));
                             config.damage_clips = PlaneDamageClips::from_damage(
-                                self.surface.device_fd(),
+                                tile.surface.device_fd(),
                                 config.properties.src,
                                 config.properties.dst,
                                 render_damage.iter().copied(),
@@ -2595,7 +2638,7 @@ where
 
                             primary_plane_state.skip = true;
                             *config = previous_state
-                                .plane_state(self.surface.plane())
+                                .plane_state(tile.surface.plane())
                                 .and_then(|state| state.config.as_ref().cloned())
                                 .unwrap_or_else(|| config.clone());
                         }
@@ -2603,7 +2646,7 @@ where
                         trace!(
                             "clearing previous direct scan-out on primary plane, damaging complete output"
                         );
-                        self.primary_plane_damage_bag
+                        tile.primary_plane_damage_bag
                             .add([output_geometry.to_logical(1).to_buffer(
                                 1,
                                 Transform::Normal,
@@ -2616,7 +2659,7 @@ where
                 Err(err) => {
                     // Rendering failed at some point, reset the buffers
                     // as we probably now have some half drawn buffer
-                    self.swapchain.reset_buffers();
+                    tile.swapchain.reset_buffers();
                     return Err(RenderFrameError::from(err));
                 }
             }
@@ -2629,7 +2672,7 @@ where
 
         let primary_plane_element = if render {
             let (slot, sync) = {
-                let primary_plane_state = next_frame_state.plane_state(self.surface.plane()).unwrap();
+                let primary_plane_state = next_frame_state.plane_state(tile.surface.plane()).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
                 (
                     config.buffer.clone(),
@@ -2644,7 +2687,7 @@ where
             PrimaryPlaneElement::Swapchain(PrimarySwapchainElement {
                 slot,
                 transform: output_transform,
-                damage: self.primary_plane_damage_bag.snapshot(),
+                damage: tile.primary_plane_damage_bag.snapshot(),
                 sync,
             })
         } else {
@@ -2656,12 +2699,12 @@ where
             && allow_partial_update
             && next_frame_state.planes.iter().all(|(plane, state)| {
                 state.skip
-                    || (self.planes.cursor.iter().any(|p| *plane == p.handle)
+                    || (tile.planes.cursor.iter().any(|p| *plane == p.handle)
                         && state.buffer().map(|b| &b.fb)
                             == previous_state.plane_buffer(*plane).map(|b| &b.fb))
             })
         {
-            for plane in self.planes.cursor.iter() {
+            for plane in tile.planes.cursor.iter() {
                 let Some(state) = next_frame_state.plane_state_mut(plane.handle) else {
                     continue;
                 };
@@ -2683,15 +2726,15 @@ where
             overlay_elements: overlay_plane_elements.into_values().collect(),
             cursor_element: cursor_plane_element,
             states: render_element_states,
-            primary_plane_element_id: self.primary_plane_element_id.clone(),
-            supports_fencing: self.supports_fencing,
+            primary_plane_element_id: tile.primary_plane_element_id.clone(),
+            supports_fencing: tile.supports_fencing,
         };
 
         // We only store the next frame if it actually contains any changes or if a commit is pending
         // Storing the (empty) frame could keep a reference to wayland buffers which
         // could otherwise be potentially released on `frame_submitted`
         if !next_frame.is_empty() {
-            self.next_frame = Some(next_frame);
+            tile.next_frame = Some(next_frame);
         }
 
         Ok(frame_reference)
@@ -2715,16 +2758,16 @@ where
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]
     #[profiling::function]
     pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
-        if !self.surface.is_active() {
+        if !self.tiles[0].surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
 
-        let prepared_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        let prepared_frame = self.tiles[0].next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
         if prepared_frame.is_empty() {
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
 
-        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane()) {
+        if let Some(plane_state) = prepared_frame.frame.plane_state(self.tiles[0].surface.plane()) {
             if !plane_state.skip {
                 let slot = plane_state.buffer().and_then(|config| match &config.buffer {
                     ScanoutBuffer::Swapchain(slot) => Some(slot),
@@ -2732,16 +2775,16 @@ where
                 });
 
                 if let Some(slot) = slot {
-                    self.swapchain.submitted(slot);
+                    self.tiles[0].swapchain.submitted(slot);
                 }
             }
         }
 
-        self.queued_frame = Some(QueuedFrame {
+        self.tiles[0].queued_frame = Some(QueuedFrame {
             prepared_frame,
             user_data,
         });
-        if self.pending_frame.is_none() {
+        if self.tiles[0].pending_frame.is_none() {
             self.submit()?;
         }
         Ok(())
@@ -2761,16 +2804,16 @@ where
     /// *Note*: This function should not be followed up with [`DrmCompositor::frame_submitted`]
     /// and will not generate a vblank event on the underlying device.
     pub fn commit_frame(&mut self) -> FrameResult<(), A, F> {
-        if !self.surface.is_active() {
+        if !self.tiles[0].surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
 
-        let mut prepared_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        let mut prepared_frame = self.tiles[0].next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
         if prepared_frame.is_empty() {
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
 
-        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane()) {
+        if let Some(plane_state) = prepared_frame.frame.plane_state(self.tiles[0].surface.plane()) {
             if !plane_state.skip {
                 let slot = plane_state.buffer().and_then(|config| match &config.buffer {
                     ScanoutBuffer::Swapchain(slot) => Some(slot),
@@ -2778,18 +2821,18 @@ where
                 });
 
                 if let Some(slot) = slot {
-                    self.swapchain.submitted(slot);
+                    self.tiles[0].swapchain.submitted(slot);
                 }
             }
         }
 
         let flip = prepared_frame
             .frame
-            .commit(&self.surface, self.supports_fencing, false, false);
+            .commit(&self.tiles[0].surface, self.tiles[0].supports_fencing, false, false);
 
         if flip.is_ok() {
-            self.queued_frame = None;
-            self.pending_frame = None;
+            self.tiles[0].queued_frame = None;
+            self.tiles[0].pending_frame = None;
         }
 
         self.handle_flip(prepared_frame, None, flip)
@@ -2805,8 +2848,8 @@ where
     /// the state of the crtc is modified elsewhere, you may call this function
     /// to reset it's internal state.
     pub fn reset_state(&mut self) -> Result<(), DrmError> {
-        self.surface.reset_state()?;
-        self.reset_pending = true;
+        self.tiles[0].surface.reset_state()?;
+        self.tiles[0].reset_pending = true;
         Ok(())
     }
 
@@ -2815,17 +2858,17 @@ where
         let QueuedFrame {
             mut prepared_frame,
             user_data,
-        } = self.queued_frame.take().unwrap();
+        } = self.tiles[0].queued_frame.take().unwrap();
 
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
-        let flip = if self.surface.commit_pending() {
+        let flip = if self.tiles[0].surface.commit_pending() {
             prepared_frame
                 .frame
-                .commit(&self.surface, self.supports_fencing, allow_partial_update, true)
+                .commit(&self.tiles[0].surface, self.tiles[0].supports_fencing, allow_partial_update, true)
         } else {
             prepared_frame
                 .frame
-                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
+                .page_flip(&self.tiles[0].surface, self.tiles[0].supports_fencing, allow_partial_update, true)
         };
 
         self.handle_flip(prepared_frame, Some(user_data), flip)
@@ -2840,10 +2883,10 @@ where
         match flip {
             Ok(_) => {
                 if prepared_frame.kind == PreparedFrameKind::Full {
-                    self.reset_pending = false;
+                    self.tiles[0].reset_pending = false;
                 }
 
-                self.pending_frame = user_data.map(|user_data| PendingFrame {
+                self.tiles[0].pending_frame = user_data.map(|user_data| PendingFrame {
                     frame: prepared_frame.frame,
                     user_data,
                 });
@@ -2856,7 +2899,7 @@ where
                 // the next call to render_frame
                 let primary_plane_element_state = prepared_frame
                     .frame
-                    .plane_state(self.surface.plane())
+                    .plane_state(self.tiles[0].surface.plane())
                     .and_then(|plane_state| {
                         plane_state
                             .element_state
@@ -2864,7 +2907,7 @@ where
                             .map(|element_state| &element_state.id)
                     })
                     .and_then(|primary_plane_element_id| {
-                        self.element_states.get_mut(primary_plane_element_id)
+                        self.tiles[0].element_states.get_mut(primary_plane_element_id)
                     });
 
                 if let Some(primary_plane_element_state) = primary_plane_element_state {
@@ -2886,9 +2929,9 @@ where
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     #[profiling::function]
     pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
-        if let Some(PendingFrame { mut frame, user_data }) = self.pending_frame.take() {
-            std::mem::swap(&mut frame, &mut self.current_frame);
-            if self.queued_frame.is_some() {
+        if let Some(PendingFrame { mut frame, user_data }) = self.tiles[0].pending_frame.take() {
+            std::mem::swap(&mut frame, &mut self.tiles[0].current_frame);
+            if self.tiles[0].queued_frame.is_some() {
                 self.submit()?;
             }
             Ok(Some(user_data))
@@ -2899,7 +2942,7 @@ where
 
     /// Reset the underlying buffers
     pub fn reset_buffers(&mut self) {
-        self.swapchain.reset_buffers();
+        self.tiles[0].swapchain.reset_buffers();
     }
 
     /// Reset the age for all buffers.
@@ -2907,28 +2950,28 @@ where
     /// This can be used to efficiently clear the damage history without having to
     /// modify the damage for each surface.
     pub fn reset_buffer_ages(&mut self) {
-        self.swapchain.reset_buffer_ages();
+        self.tiles[0].swapchain.reset_buffer_ages();
     }
 
     /// Returns the underlying [`crtc`] of this surface
     pub fn crtc(&self) -> crtc::Handle {
-        self.surface.crtc()
+        self.tiles[0].surface.crtc()
     }
 
     /// Returns the underlying [`plane`] of this surface
     pub fn plane(&self) -> plane::Handle {
-        self.surface.plane()
+        self.tiles[0].surface.plane()
     }
 
     /// Currently used [`connector`]s of this `Surface`
     pub fn current_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
-        self.surface.current_connectors()
+        self.tiles[0].surface.current_connectors()
     }
 
     /// Returns the pending [`connector`]s
     /// used for the next frame queued via [`queue_frame`](DrmCompositor::queue_frame).
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
-        self.surface.pending_connectors()
+        self.tiles[0].surface.pending_connectors()
     }
 
     /// Tries to add a new [`connector`]
@@ -2944,7 +2987,7 @@ where
     /// or is not compatible with the currently pending
     /// [`Mode`].
     pub fn add_connector(&self, connector: connector::Handle) -> FrameResult<(), A, F> {
-        self.surface
+        self.tiles[0].surface
             .add_connector(connector)
             .map_err(FrameError::DrmError)
     }
@@ -2952,7 +2995,7 @@ where
     /// Tries to mark a [`connector`]
     /// for removal on the next commit.
     pub fn remove_connector(&self, connector: connector::Handle) -> FrameResult<(), A, F> {
-        self.surface
+        self.tiles[0].surface
             .remove_connector(connector)
             .map_err(FrameError::DrmError)
     }
@@ -2964,7 +3007,7 @@ where
     /// or is not compatible with the currently pending
     /// [`Mode`].
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> FrameResult<(), A, F> {
-        self.surface
+        self.tiles[0].surface
             .set_connectors(connectors)
             .map_err(FrameError::DrmError)
     }
@@ -2972,13 +3015,13 @@ where
     /// Returns the currently active [`Mode`]
     /// of the underlying [`crtc`]
     pub fn current_mode(&self) -> Mode {
-        self.surface.current_mode()
+        self.tiles[0].surface.current_mode()
     }
 
     /// Returns the currently pending [`Mode`]
     /// to be used after the next commit.
     pub fn pending_mode(&self) -> Mode {
-        self.surface.pending_mode()
+        self.tiles[0].surface.pending_mode()
     }
 
     /// Tries to set a new [`Mode`]
@@ -2988,9 +3031,9 @@ where
     /// [`crtc`] or any of the
     /// pending [`connector`]s.
     pub fn use_mode(&mut self, mode: Mode) -> FrameResult<(), A, F> {
-        self.surface.use_mode(mode).map_err(FrameError::DrmError)?;
+        self.tiles[0].surface.use_mode(mode).map_err(FrameError::DrmError)?;
         let (w, h) = mode.size();
-        self.swapchain.resize(w as _, h as _);
+        self.tiles[0].swapchain.resize(w as _, h as _);
         Ok(())
     }
 
@@ -2998,12 +3041,12 @@ where
     ///
     /// See [`DrmSurface::vrr_supported`] for more details.
     pub fn vrr_supported(&self, conn: connector::Handle) -> FrameResult<VrrSupport, A, F> {
-        self.surface.vrr_supported(conn).map_err(FrameError::DrmError)
+        self.tiles[0].surface.vrr_supported(conn).map_err(FrameError::DrmError)
     }
 
     /// Returns if Variable Refresh Rate is currently enabled for frames composed by this [`DrmCompositor`].
     pub fn vrr_enabled(&self) -> bool {
-        self.surface.vrr_enabled()
+        self.tiles[0].surface.vrr_enabled()
     }
 
     /// Tries to set variable refresh rate (VRR) for the next frame.
@@ -3012,7 +3055,7 @@ where
     /// Check [`DrmCompositor::vrr_supported`], which indicates if VRR can be
     /// used without a modeset on the attached connectors.
     pub fn use_vrr(&mut self, vrr: bool) -> FrameResult<(), A, F> {
-        self.surface.use_vrr(vrr).map_err(FrameError::DrmError)
+        self.tiles[0].surface.use_vrr(vrr).map_err(FrameError::DrmError)
     }
 
     /// Set the [`DebugFlags`] to use
@@ -3022,7 +3065,7 @@ where
     pub fn set_debug_flags(&mut self, flags: DebugFlags) {
         if self.debug_flags != flags {
             self.debug_flags = flags;
-            self.swapchain.reset_buffers();
+            self.tiles[0].swapchain.reset_buffers();
         }
     }
 
@@ -3033,17 +3076,17 @@ where
 
     /// Returns a reference to the underlying drm surface
     pub fn surface(&self) -> &DrmSurface {
-        &self.surface
+        &self.tiles[0].surface
     }
 
     /// Get the format of the underlying swapchain
     pub fn format(&self) -> DrmFourcc {
-        self.swapchain.format()
+        self.tiles[0].swapchain.format()
     }
 
     /// Get the allowed modifiers of the underlying swapchain
     pub fn modifiers(&self) -> &[DrmModifier] {
-        self.swapchain.modifiers()
+        self.tiles[0].swapchain.modifiers()
     }
 
     /// Reset the underlying swapchain and assign a new color format.
@@ -3054,9 +3097,9 @@ where
         modifiers: impl IntoIterator<Item = DrmModifier>,
     ) -> Result<(), FrameErrorType<A, F>> {
         let (swapchain, is_oapque) = Self::test_format(
-            &self.surface,
-            self.supports_fencing,
-            &self.planes,
+            &self.tiles[0].surface,
+            self.tiles[0].supports_fencing,
+            &self.tiles[0].planes,
             allocator,
             &self.framebuffer_exporter,
             code,
@@ -3064,8 +3107,8 @@ where
         )
         .map_err(|(_, err)| err)?;
 
-        self.swapchain = swapchain;
-        self.primary_is_opaque = is_oapque;
+        self.tiles[0].swapchain = swapchain;
+        self.tiles[0].primary_is_opaque = is_oapque;
 
         Ok(())
     }
@@ -3077,7 +3120,7 @@ where
             return;
         }
 
-        self.damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
+        self.tiles[0].damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
         self.output_mode_source = output_mode_source;
     }
 
@@ -3135,7 +3178,7 @@ where
                     trace!(
                         "assigned element {:?} to primary {:?}",
                         element.id(),
-                        self.surface.plane()
+                        self.tiles[0].surface.plane()
                     );
                     return Ok(plane);
                 }
@@ -3213,7 +3256,7 @@ where
         }
 
         if frame_state
-            .plane_state(self.surface.plane())
+            .plane_state(self.tiles[0].surface.plane())
             .map(|state| state.element_state.is_some())
             .unwrap_or(true)
         {
@@ -3233,7 +3276,7 @@ where
         )?;
 
         if let ScanoutBuffer::Swapchain(slot) = &frame_state
-            .plane_buffer(self.surface.plane())
+            .plane_buffer(self.tiles[0].surface.plane())
             .expect("We have a buffer for the primary plane")
             .buffer
         {
@@ -3243,18 +3286,18 @@ where
                 trace!(
                     "failed to assign element {:?} to primary {:?}, format doesn't match",
                     element.id(),
-                    self.surface.plane()
+                    self.tiles[0].surface.plane()
                 );
                 return Err(None);
             }
         }
 
-        let has_underlay = self
+        let has_underlay = self.tiles[0]
             .planes
             .overlay
             .iter()
             .filter(|plane| {
-                self.surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default()
+                self.tiles[0].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default()
             })
             .any(|plane| frame_state.is_assigned(plane.handle));
 
@@ -3262,7 +3305,7 @@ where
             trace!(
                 "failed to assign element {:?} to primary {:?}, already has underlay",
                 element.id(),
-                self.surface.plane()
+                self.tiles[0].surface.plane()
             );
             return Err(None);
         }
@@ -3274,7 +3317,7 @@ where
         let res = self.try_assign_plane(
             element,
             &element_config,
-            self.surface.plane_info(),
+            self.tiles[0].surface.plane_info(),
             scale,
             frame_state,
         );
@@ -3309,7 +3352,8 @@ where
             return None;
         }
 
-        let Some(cursor_state) = self.cursor_state.as_mut() else {
+        let tile = &mut self.tiles[0];
+        let Some(cursor_state) = tile.cursor_state.as_mut() else {
             trace!("no cursor state, skipping cursor rendering");
             return None;
         };
@@ -3334,7 +3378,7 @@ where
 
         // For now we only support a single cursor plane, so first test if we already
         // assigned something to any cursor plane
-        if let Some(plane_info) = self
+        if let Some(plane_info) = tile
             .planes
             .cursor
             .iter()
@@ -3348,23 +3392,23 @@ where
             return None;
         }
 
-        let previous_state = self
+        let previous_state = tile
             .pending_frame
             .as_ref()
             .map(|pending| &pending.frame)
-            .unwrap_or(&self.current_frame);
+            .unwrap_or(&tile.current_frame);
 
         // In case we have multiple cursor planes we will try to keep using
         // the same cursor plane for as long as possible.
         // So first we test the previous state for an assigned cursor plane and
         // if that fails we will try to pick the first unclaimed cursor plane.
-        let Some((plane_info, plane_claim)) = self
+        let Some((plane_info, plane_claim)) = tile
             .planes
             .cursor
             .iter()
             .find_map(|plane_info: &PlaneInfo| {
                 if previous_state.is_assigned(plane_info.handle) {
-                    self.surface
+                    tile.surface
                         .claim_plane(plane_info.handle)
                         .map(|claim| (plane_info, claim))
                 } else {
@@ -3372,8 +3416,8 @@ where
                 }
             })
             .or_else(|| {
-                self.planes.cursor.iter().find_map(|plane_info| {
-                    self.surface
+                tile.planes.cursor.iter().find_map(|plane_info| {
+                    tile.surface
                         .claim_plane(plane_info.handle)
                         .map(|claim| (plane_info, claim))
                 })
@@ -3407,11 +3451,11 @@ where
             .transform_point_in(element.location(scale), &output_geometry.size)
             - output_transform.transform_point_in(Point::default(), &cursor_plane_size);
 
-        let previous_state = self
+        let previous_state = tile
             .pending_frame
             .as_ref()
             .map(|pending| &pending.frame)
-            .unwrap_or(&self.current_frame);
+            .unwrap_or(&tile.current_frame);
 
         let previous_element_state = previous_state
             .plane_state(plane_info.handle)
@@ -3505,7 +3549,7 @@ where
 
         // if we fail to export a framebuffer for our buffer we can skip the rest
         let framebuffer = match cursor_state.framebuffer_exporter.add_framebuffer(
-            self.surface.device_fd(),
+            tile.surface.device_fd(),
             ExportBuffer::Allocator(&cursor_buffer),
             false,
         ) {
@@ -3701,8 +3745,8 @@ where
         } else {
             frame_state
                 .test_state(
-                    &self.surface,
-                    self.supports_fencing,
+                    &tile.surface,
+                    tile.supports_fencing,
                     plane_info.handle,
                     plane_state,
                     false,
@@ -3764,7 +3808,7 @@ where
         // we got the same id multiple times. If we can't find it we use the previous
         // state if available
         if !element_states.contains_key(element_id) {
-            let previous_fb_cache = self
+            let previous_fb_cache = self.tiles[0]
                 .previous_element_states
                 .get_mut(element_id)
                 // Note: We can mem::take the old fb_cache here here as we guarantee that
@@ -3799,7 +3843,7 @@ where
 
             let fb = self
                 .framebuffer_exporter
-                .add_framebuffer(self.surface.device_fd(), export_buffer, allow_opaque_fallback)
+                .add_framebuffer(self.tiles[0].surface.device_fd(), export_buffer, allow_opaque_fallback)
                 .map_err(|err| {
                     trace!("failed to add framebuffer: {:?}", err);
                     ExportBufferError::ExportFailed
@@ -3862,7 +3906,7 @@ where
             .any(|i| i.properties == properties)
         {
             let overlay_bitmask =
-                self.planes
+                self.tiles[0].planes
                     .overlay
                     .iter()
                     .enumerate()
@@ -3873,7 +3917,7 @@ where
                         acc
                     });
             let cursor_bitmask =
-                self.planes
+                self.tiles[0].planes
                     .cursor
                     .iter()
                     .enumerate()
@@ -3884,7 +3928,7 @@ where
                         acc
                     });
             let current_plane_snapshot = PlanesSnapshot {
-                primary: frame_state.is_assigned(self.surface.plane()),
+                primary: frame_state.is_assigned(self.tiles[0].surface.plane()),
                 cursor_bitmask,
                 overlay_bitmask,
             };
@@ -3896,7 +3940,7 @@ where
                 failed_planes: Default::default(),
             });
 
-            if let Some(previous_state) = self.previous_element_states.get(element_id) {
+            if let Some(previous_state) = self.tiles[0].previous_element_states.get(element_id) {
                 // lets look if we find a previous instance with exactly the same properties.
                 // if we find one we can test if nothing changed and re-use the failed tests
                 let matching_instance = previous_state
@@ -3906,11 +3950,11 @@ where
 
                 if let Some(matching_instance) = matching_instance {
                     if current_plane_snapshot == matching_instance.active_planes {
-                        let previous_frame_state = self
+                        let previous_frame_state = self.tiles[0]
                             .pending_frame
                             .as_ref()
                             .map(|pending| &pending.frame)
-                            .unwrap_or(&self.current_frame);
+                            .unwrap_or(&self.tiles[0].current_frame);
 
                         // Note: we ignore the cursor plane here as this would result
                         // in constant re-tests of cursor moves and we do not expect
@@ -3918,14 +3962,14 @@ where
                         // Adding or removing cursor can influence the other planes, but
                         // is already covered in the active planes check.
                         let primary_plane_changed = if current_plane_snapshot.primary {
-                            frame_state.plane_properties(self.surface.plane())
-                                != previous_frame_state.plane_properties(self.surface.plane())
+                            frame_state.plane_properties(self.tiles[0].surface.plane())
+                                != previous_frame_state.plane_properties(self.tiles[0].surface.plane())
                         } else {
                             false
                         };
 
                         let overlay_plane_changed =
-                            self.planes.overlay.iter().enumerate().any(|(index, plane)| {
+                            self.tiles[0].planes.overlay.iter().enumerate().any(|(index, plane)| {
                                 // we only want to test planes that are currently in use
                                 if current_plane_snapshot.overlay_bitmask & (1 << index) == 0 {
                                     return false;
@@ -4011,7 +4055,7 @@ where
         let element_id = element.id();
 
         // Check if we have a free plane, otherwise we can exit early
-        if self
+        if self.tiles[0]
             .planes
             .overlay
             .iter()
@@ -4042,15 +4086,15 @@ where
         });
 
         let primary_plane_has_alpha = frame_state
-            .plane_buffer(self.surface.plane())
+            .plane_buffer(self.tiles[0].surface.plane())
             .map(|state| has_alpha(state.format().code))
             .unwrap_or(false);
 
-        let previous_frame_state = self
+        let previous_frame_state = self.tiles[0]
             .pending_frame
             .as_ref()
             .map(|pending| &pending.frame)
-            .unwrap_or(&self.current_frame);
+            .unwrap_or(&self.tiles[0].current_frame);
 
         // We consider a plane compatible if the z-index of the previous assigned
         // element is or equal to our z-index and the properties (src/dst/format/...)
@@ -4093,7 +4137,7 @@ where
 
             // test if the plane represents an underlay
             let is_underlay =
-                self.surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
+                self.tiles[0].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
 
             if is_underlay && !(element_is_opaque && primary_plane_has_alpha) {
                 trace!(
@@ -4114,7 +4158,7 @@ where
                 return Err(None);
             }
 
-            let overlaps_with_plane_underneath = self
+            let overlaps_with_plane_underneath = self.tiles[0]
                 .planes
                 .overlay
                 .iter()
@@ -4142,7 +4186,7 @@ where
 
         // First try to assign the element to a compatible plane, this can save us
         // from some atomic testing
-        for plane in self.planes.overlay.iter().filter(is_plane_compatible) {
+        for plane in self.tiles[0].planes.overlay.iter().filter(is_plane_compatible) {
             if let Ok(plane_assignment) = test_overlay_plane(plane, &element_config) {
                 trace!(
                     "assigned element {:?} geometry {:?} to compatible {:?} with zpos {:?}",
@@ -4154,7 +4198,7 @@ where
 
         // If we found no compatible plane fall back to walk all available planes
         let mut rendering_reason: Option<RenderingReason> = None;
-        for (index, plane) in self.planes.overlay.iter().enumerate() {
+        for (index, plane) in self.tiles[0].planes.overlay.iter().enumerate() {
             // if the tested element state already tells us that this failed skip the test
             if element_config.failed_planes.overlay_bitmask & (1 << index) != 0 {
                 trace!(
@@ -4202,7 +4246,7 @@ where
     {
         let element_id = element.id();
 
-        let plane_claim = match self.surface.claim_plane(plane.handle) {
+        let plane_claim = match self.tiles[0].surface.claim_plane(plane.handle) {
             Some(claim) => claim,
             None => {
                 trace!("failed to claim {:?} for element {:?}", plane.handle, element_id);
@@ -4224,11 +4268,11 @@ where
             return Err(Some(RenderingReason::FormatUnsupported));
         }
 
-        let previous_state = self
+        let previous_state = self.tiles[0]
             .pending_frame
             .as_ref()
             .map(|pending| &pending.frame)
-            .unwrap_or(&self.current_frame);
+            .unwrap_or(&self.tiles[0].current_frame);
 
         let previous_commit = previous_state.plane_state(plane.handle).and_then(|state| {
             state.element_state.as_ref().and_then(|state| {
@@ -4245,7 +4289,7 @@ where
 
         let damage_clips = if has_element_damage {
             PlaneDamageClips::from_damage(
-                self.surface.device_fd(),
+                self.tiles[0].surface.device_fd(),
                 element_config.properties.src,
                 element_config.geometry,
                 element_damage,
@@ -4264,7 +4308,7 @@ where
             sync: element_config
                 .buffer
                 .buffer
-                .acquire_point(self.signaled_fence.as_ref()),
+                .acquire_point(self.tiles[0].signaled_fence.as_ref()),
         };
 
         let is_compatible = previous_state
@@ -4316,8 +4360,8 @@ where
         } else {
             frame_state
                 .test_state(
-                    &self.surface,
-                    self.supports_fencing,
+                    &self.tiles[0].surface,
+                    self.tiles[0].supports_fencing,
                     plane.handle,
                     plane_state,
                     false,
@@ -4347,15 +4391,15 @@ where
     ///
     /// Calling [`queue_frame`][Self::queue_frame] will re-enable.
     pub fn clear(&mut self) -> Result<(), DrmError> {
-        self.surface.clear()?;
+        self.tiles[0].surface.clear()?;
 
-        self.current_frame
+        self.tiles[0].current_frame
             .planes
             .iter_mut()
             .for_each(|(_, state)| *state = Default::default());
-        self.pending_frame = None;
-        self.queued_frame = None;
-        self.next_frame = None;
+        self.tiles[0].pending_frame = None;
+        self.tiles[0].queued_frame = None;
+        self.tiles[0].next_frame = None;
 
         Ok(())
     }
