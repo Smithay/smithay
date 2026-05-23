@@ -1085,6 +1085,177 @@ where
     span: tracing::Span,
 }
 
+/// One CRTC's contribution to a tiled [`DrmCompositor`].
+///
+/// A tiled compositor drives several CRTCs as a single logical output, each
+/// scanning out a sub-rect of that output. A `TilePlacement` pairs one
+/// [`DrmSurface`] (one CRTC) with the planes it may use and the sub-rect it
+/// covers. See [`DrmCompositor::new_tiled`].
+#[derive(Debug)]
+pub struct TilePlacement {
+    /// The surface (exactly one CRTC) backing this tile.
+    pub surface: DrmSurface,
+    /// Planes this tile may use for direct scan-out, with the same meaning as
+    /// the `planes` argument of [`DrmCompositor::new`]: `None` uses all planes
+    /// reported by [`DrmSurface::planes`]. Planes belong to a CRTC, so they are
+    /// configured per tile.
+    pub planes: Option<Planes>,
+    /// The sub-rect of the logical output this tile scans out, in the output's
+    /// untransformed (mode) coordinate space. The offset positions the tile
+    /// within the logical framebuffer; the size is expected to match
+    /// `surface`'s scan-out mode.
+    pub region: Rectangle<i32, Physical>,
+}
+
+/// Reason a set of tile regions does not form a valid logical output.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum TileConfigError {
+    /// There must be at least one tile.
+    #[error("a tiled output must contain at least one tile")]
+    Empty,
+    /// A tile region has a non-positive width or height.
+    #[error("tile region {0:?} has a non-positive size")]
+    NonPositiveRegion(Rectangle<i32, Physical>),
+    /// Two tile regions overlap.
+    #[error("tile regions {0:?} and {1:?} overlap")]
+    OverlappingRegions(Rectangle<i32, Physical>, Rectangle<i32, Physical>),
+    /// The tile regions leave a gap or are not anchored at the origin, so they
+    /// do not cover a single rectangular logical output.
+    #[error("tile regions do not cover the logical output without gaps")]
+    NotContiguous,
+}
+
+/// Validate that `regions` exactly tile a rectangle anchored at `(0, 0)` with no
+/// gaps or overlaps, returning that rectangle's size.
+///
+/// Pure geometry, independent of any DRM state, so it is unit-testable.
+// First non-test caller is `new_tiled`, added in a following commit.
+#[allow(dead_code)]
+fn validate_tile_regions(
+    regions: impl IntoIterator<Item = Rectangle<i32, Physical>>,
+) -> Result<Size<i32, Physical>, TileConfigError> {
+    let regions: SmallVec<[_; 4]> = regions.into_iter().collect();
+    let Some(first) = regions.first() else {
+        return Err(TileConfigError::Empty);
+    };
+
+    // Bounding box of all regions, rejecting any non-positive tile on the way.
+    let mut bbox = *first;
+    let mut covered: i64 = 0;
+    for region in &regions {
+        if region.size.w <= 0 || region.size.h <= 0 {
+            return Err(TileConfigError::NonPositiveRegion(*region));
+        }
+        bbox = bbox.merge(*region);
+        covered += i64::from(region.size.w) * i64::from(region.size.h);
+    }
+
+    // The logical output starts at the origin.
+    if bbox.loc != Point::from((0, 0)) {
+        return Err(TileConfigError::NotContiguous);
+    }
+
+    // No two tiles may overlap (O(n²); tile counts are tiny). `overlaps` is
+    // exclusive, so tiles sharing an edge are adjacent, not overlapping.
+    for (i, a) in regions.iter().enumerate() {
+        for b in &regions[i + 1..] {
+            if a.overlaps(*b) {
+                return Err(TileConfigError::OverlappingRegions(*a, *b));
+            }
+        }
+    }
+
+    // With overlaps ruled out, the tiles cover the bounding box exactly iff
+    // their areas sum to the box area — otherwise there is a gap.
+    let bbox_area = i64::from(bbox.size.w) * i64::from(bbox.size.h);
+    if covered != bbox_area {
+        return Err(TileConfigError::NotContiguous);
+    }
+
+    Ok(bbox.size)
+}
+
+#[cfg(test)]
+mod tiled_tests {
+    use super::{TileConfigError, validate_tile_regions};
+    use crate::utils::{Physical, Point, Rectangle, Size};
+
+    fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Physical> {
+        Rectangle::new(Point::from((x, y)), Size::from((w, h)))
+    }
+
+    #[test]
+    fn single_tile_is_the_whole_output() {
+        assert_eq!(
+            validate_tile_regions([rect(0, 0, 5120, 2880)]),
+            Ok(Size::from((5120, 2880)))
+        );
+    }
+
+    #[test]
+    fn two_tiles_side_by_side() {
+        // LG UltraFine 5K: two 2560×2880 halves.
+        assert_eq!(
+            validate_tile_regions([rect(0, 0, 2560, 2880), rect(2560, 0, 2560, 2880)]),
+            Ok(Size::from((5120, 2880)))
+        );
+    }
+
+    #[test]
+    fn two_by_two_grid() {
+        assert_eq!(
+            validate_tile_regions([
+                rect(0, 0, 1920, 1080),
+                rect(1920, 0, 1920, 1080),
+                rect(0, 1080, 1920, 1080),
+                rect(1920, 1080, 1920, 1080),
+            ]),
+            Ok(Size::from((3840, 2160)))
+        );
+    }
+
+    #[test]
+    fn empty_is_rejected() {
+        assert_eq!(validate_tile_regions([]), Err(TileConfigError::Empty));
+    }
+
+    #[test]
+    fn overlapping_tiles_are_rejected() {
+        let a = rect(0, 0, 2600, 2880);
+        let b = rect(2560, 0, 2560, 2880);
+        assert_eq!(
+            validate_tile_regions([a, b]),
+            Err(TileConfigError::OverlappingRegions(a, b))
+        );
+    }
+
+    #[test]
+    fn gap_between_tiles_is_rejected() {
+        // 40px gap between the two halves.
+        assert_eq!(
+            validate_tile_regions([rect(0, 0, 2560, 2880), rect(2600, 0, 2560, 2880)]),
+            Err(TileConfigError::NotContiguous)
+        );
+    }
+
+    #[test]
+    fn not_anchored_at_origin_is_rejected() {
+        assert_eq!(
+            validate_tile_regions([rect(10, 0, 2560, 2880), rect(2570, 0, 2560, 2880)]),
+            Err(TileConfigError::NotContiguous)
+        );
+    }
+
+    #[test]
+    fn non_positive_region_is_rejected() {
+        let bad = rect(0, 0, 0, 2880);
+        assert_eq!(
+            validate_tile_regions([bad]),
+            Err(TileConfigError::NonPositiveRegion(bad))
+        );
+    }
+}
+
 impl<A, F, U, G> DrmCompositor<A, F, U, G>
 where
     A: Allocator,
