@@ -2481,6 +2481,7 @@ where
             };
 
             match self.try_assign_element(
+                0,
                 renderer,
                 *element,
                 index,
@@ -3273,6 +3274,7 @@ where
     #[profiling::function]
     fn try_assign_element<'a, R, E>(
         &mut self,
+        tile: usize,
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
@@ -3307,6 +3309,7 @@ where
 
         if try_assign_primary_plane {
             match self.try_assign_primary_plane(
+                tile,
                 renderer,
                 element,
                 element_zindex,
@@ -3322,7 +3325,7 @@ where
                     trace!(
                         "assigned element {:?} to primary {:?}",
                         element.id(),
-                        self.tiles[0].surface.plane()
+                        self.tiles[tile].surface.plane()
                     );
                     return Ok(plane);
                 }
@@ -3331,6 +3334,7 @@ where
         }
 
         if let Some(plane) = self.try_assign_cursor_plane(
+            tile,
             renderer,
             element,
             element_zindex,
@@ -3346,6 +3350,7 @@ where
         }
 
         match self.try_assign_overlay_plane(
+            tile,
             renderer,
             element,
             element_zindex,
@@ -3378,6 +3383,7 @@ where
     #[profiling::function]
     fn try_assign_primary_plane<'a, R, E>(
         &mut self,
+        tile: usize,
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
@@ -3400,7 +3406,7 @@ where
         }
 
         if frame_state
-            .plane_state(self.tiles[0].surface.plane())
+            .plane_state(self.tiles[tile].surface.plane())
             .map(|state| state.element_state.is_some())
             .unwrap_or(true)
         {
@@ -3408,6 +3414,7 @@ where
         }
 
         let element_config = self.element_config(
+            tile,
             renderer,
             element,
             element_zindex,
@@ -3420,7 +3427,7 @@ where
         )?;
 
         if let ScanoutBuffer::Swapchain(slot) = &frame_state
-            .plane_buffer(self.tiles[0].surface.plane())
+            .plane_buffer(self.tiles[tile].surface.plane())
             .expect("We have a buffer for the primary plane")
             .buffer
         {
@@ -3430,18 +3437,18 @@ where
                 trace!(
                     "failed to assign element {:?} to primary {:?}, format doesn't match",
                     element.id(),
-                    self.tiles[0].surface.plane()
+                    self.tiles[tile].surface.plane()
                 );
                 return Err(None);
             }
         }
 
-        let has_underlay = self.tiles[0]
+        let has_underlay = self.tiles[tile]
             .planes
             .overlay
             .iter()
             .filter(|plane| {
-                self.tiles[0].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default()
+                self.tiles[tile].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default()
             })
             .any(|plane| frame_state.is_assigned(plane.handle));
 
@@ -3449,7 +3456,7 @@ where
             trace!(
                 "failed to assign element {:?} to primary {:?}, already has underlay",
                 element.id(),
-                self.tiles[0].surface.plane()
+                self.tiles[tile].surface.plane()
             );
             return Err(None);
         }
@@ -3459,9 +3466,10 @@ where
         }
 
         let res = self.try_assign_plane(
+            tile,
             element,
             &element_config,
-            self.tiles[0].surface.plane_info(),
+            self.tiles[tile].surface.plane_info(),
             scale,
             frame_state,
         );
@@ -3478,6 +3486,7 @@ where
     #[profiling::function]
     fn try_assign_cursor_plane<R, E>(
         &mut self,
+        tile: usize,
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
@@ -3496,7 +3505,7 @@ where
             return None;
         }
 
-        let tile = &mut self.tiles[0];
+        let tile = &mut self.tiles[tile];
         let Some(cursor_state) = tile.cursor_state.as_mut() else {
             trace!("no cursor state, skipping cursor rendering");
             return None;
@@ -3913,6 +3922,7 @@ where
     #[profiling::function]
     fn element_config<'a, R, E>(
         &mut self,
+        tile: usize,
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
@@ -3952,7 +3962,7 @@ where
         // we got the same id multiple times. If we can't find it we use the previous
         // state if available
         if !element_states.contains_key(element_id) {
-            let previous_fb_cache = self.tiles[0]
+            let previous_fb_cache = self.tiles[tile]
                 .previous_element_states
                 .get_mut(element_id)
                 // Note: We can mem::take the old fb_cache here here as we guarantee that
@@ -3987,7 +3997,7 @@ where
 
             let fb = self
                 .framebuffer_exporter
-                .add_framebuffer(self.tiles[0].surface.device_fd(), export_buffer, allow_opaque_fallback)
+                .add_framebuffer(self.tiles[tile].surface.device_fd(), export_buffer, allow_opaque_fallback)
                 .map_err(|err| {
                     trace!("failed to add framebuffer: {:?}", err);
                     ExportBufferError::ExportFailed
@@ -4050,7 +4060,7 @@ where
             .any(|i| i.properties == properties)
         {
             let overlay_bitmask =
-                self.tiles[0].planes
+                self.tiles[tile].planes
                     .overlay
                     .iter()
                     .enumerate()
@@ -4061,7 +4071,7 @@ where
                         acc
                     });
             let cursor_bitmask =
-                self.tiles[0].planes
+                self.tiles[tile].planes
                     .cursor
                     .iter()
                     .enumerate()
@@ -4072,7 +4082,7 @@ where
                         acc
                     });
             let current_plane_snapshot = PlanesSnapshot {
-                primary: frame_state.is_assigned(self.tiles[0].surface.plane()),
+                primary: frame_state.is_assigned(self.tiles[tile].surface.plane()),
                 cursor_bitmask,
                 overlay_bitmask,
             };
@@ -4084,7 +4094,7 @@ where
                 failed_planes: Default::default(),
             });
 
-            if let Some(previous_state) = self.tiles[0].previous_element_states.get(element_id) {
+            if let Some(previous_state) = self.tiles[tile].previous_element_states.get(element_id) {
                 // lets look if we find a previous instance with exactly the same properties.
                 // if we find one we can test if nothing changed and re-use the failed tests
                 let matching_instance = previous_state
@@ -4094,11 +4104,11 @@ where
 
                 if let Some(matching_instance) = matching_instance {
                     if current_plane_snapshot == matching_instance.active_planes {
-                        let previous_frame_state = self.tiles[0]
+                        let previous_frame_state = self.tiles[tile]
                             .pending_frame
                             .as_ref()
                             .map(|pending| &pending.frame)
-                            .unwrap_or(&self.tiles[0].current_frame);
+                            .unwrap_or(&self.tiles[tile].current_frame);
 
                         // Note: we ignore the cursor plane here as this would result
                         // in constant re-tests of cursor moves and we do not expect
@@ -4106,14 +4116,14 @@ where
                         // Adding or removing cursor can influence the other planes, but
                         // is already covered in the active planes check.
                         let primary_plane_changed = if current_plane_snapshot.primary {
-                            frame_state.plane_properties(self.tiles[0].surface.plane())
-                                != previous_frame_state.plane_properties(self.tiles[0].surface.plane())
+                            frame_state.plane_properties(self.tiles[tile].surface.plane())
+                                != previous_frame_state.plane_properties(self.tiles[tile].surface.plane())
                         } else {
                             false
                         };
 
                         let overlay_plane_changed =
-                            self.tiles[0].planes.overlay.iter().enumerate().any(|(index, plane)| {
+                            self.tiles[tile].planes.overlay.iter().enumerate().any(|(index, plane)| {
                                 // we only want to test planes that are currently in use
                                 if current_plane_snapshot.overlay_bitmask & (1 << index) == 0 {
                                     return false;
@@ -4166,6 +4176,7 @@ where
     #[profiling::function]
     fn try_assign_overlay_plane<'a, R, E>(
         &mut self,
+        tile: usize,
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
@@ -4199,7 +4210,7 @@ where
         let element_id = element.id();
 
         // Check if we have a free plane, otherwise we can exit early
-        if self.tiles[0]
+        if self.tiles[tile]
             .planes
             .overlay
             .iter()
@@ -4213,6 +4224,7 @@ where
         }
 
         let element_config = self.element_config(
+            tile,
             renderer,
             element,
             element_zindex,
@@ -4230,15 +4242,15 @@ where
         });
 
         let primary_plane_has_alpha = frame_state
-            .plane_buffer(self.tiles[0].surface.plane())
+            .plane_buffer(self.tiles[tile].surface.plane())
             .map(|state| has_alpha(state.format().code))
             .unwrap_or(false);
 
-        let previous_frame_state = self.tiles[0]
+        let previous_frame_state = self.tiles[tile]
             .pending_frame
             .as_ref()
             .map(|pending| &pending.frame)
-            .unwrap_or(&self.tiles[0].current_frame);
+            .unwrap_or(&self.tiles[tile].current_frame);
 
         // We consider a plane compatible if the z-index of the previous assigned
         // element is or equal to our z-index and the properties (src/dst/format/...)
@@ -4281,7 +4293,7 @@ where
 
             // test if the plane represents an underlay
             let is_underlay =
-                self.tiles[0].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
+                self.tiles[tile].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
 
             if is_underlay && !(element_is_opaque && primary_plane_has_alpha) {
                 trace!(
@@ -4302,7 +4314,7 @@ where
                 return Err(None);
             }
 
-            let overlaps_with_plane_underneath = self.tiles[0]
+            let overlaps_with_plane_underneath = self.tiles[tile]
                 .planes
                 .overlay
                 .iter()
@@ -4325,12 +4337,12 @@ where
                 return Err(None);
             }
 
-            self.try_assign_plane(element, element_config, plane, scale, frame_state)
+            self.try_assign_plane(tile, element, element_config, plane, scale, frame_state)
         };
 
         // First try to assign the element to a compatible plane, this can save us
         // from some atomic testing
-        for plane in self.tiles[0].planes.overlay.iter().filter(is_plane_compatible) {
+        for plane in self.tiles[tile].planes.overlay.iter().filter(is_plane_compatible) {
             if let Ok(plane_assignment) = test_overlay_plane(plane, &element_config) {
                 trace!(
                     "assigned element {:?} geometry {:?} to compatible {:?} with zpos {:?}",
@@ -4342,7 +4354,7 @@ where
 
         // If we found no compatible plane fall back to walk all available planes
         let mut rendering_reason: Option<RenderingReason> = None;
-        for (index, plane) in self.tiles[0].planes.overlay.iter().enumerate() {
+        for (index, plane) in self.tiles[tile].planes.overlay.iter().enumerate() {
             // if the tested element state already tells us that this failed skip the test
             if element_config.failed_planes.overlay_bitmask & (1 << index) != 0 {
                 trace!(
@@ -4374,6 +4386,7 @@ where
     #[profiling::function]
     fn try_assign_plane<R, E>(
         &self,
+        tile: usize,
         element: &E,
         element_config: &ElementPlaneConfig<
             '_,
@@ -4390,7 +4403,7 @@ where
     {
         let element_id = element.id();
 
-        let plane_claim = match self.tiles[0].surface.claim_plane(plane.handle) {
+        let plane_claim = match self.tiles[tile].surface.claim_plane(plane.handle) {
             Some(claim) => claim,
             None => {
                 trace!("failed to claim {:?} for element {:?}", plane.handle, element_id);
@@ -4412,11 +4425,11 @@ where
             return Err(Some(RenderingReason::FormatUnsupported));
         }
 
-        let previous_state = self.tiles[0]
+        let previous_state = self.tiles[tile]
             .pending_frame
             .as_ref()
             .map(|pending| &pending.frame)
-            .unwrap_or(&self.tiles[0].current_frame);
+            .unwrap_or(&self.tiles[tile].current_frame);
 
         let previous_commit = previous_state.plane_state(plane.handle).and_then(|state| {
             state.element_state.as_ref().and_then(|state| {
@@ -4433,7 +4446,7 @@ where
 
         let damage_clips = if has_element_damage {
             PlaneDamageClips::from_damage(
-                self.tiles[0].surface.device_fd(),
+                self.tiles[tile].surface.device_fd(),
                 element_config.properties.src,
                 element_config.geometry,
                 element_damage,
@@ -4452,7 +4465,7 @@ where
             sync: element_config
                 .buffer
                 .buffer
-                .acquire_point(self.tiles[0].signaled_fence.as_ref()),
+                .acquire_point(self.tiles[tile].signaled_fence.as_ref()),
         };
 
         let is_compatible = previous_state
@@ -4504,8 +4517,8 @@ where
         } else {
             frame_state
                 .test_state(
-                    &self.tiles[0].surface,
-                    self.tiles[0].supports_fencing,
+                    &self.tiles[tile].surface,
+                    self.tiles[tile].supports_fencing,
                     plane.handle,
                     plane_state,
                     false,
