@@ -942,44 +942,40 @@ impl From<&PlaneInfo> for PlaneAssignment {
     }
 }
 
-struct PendingFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
+// The frame lifecycle (`queued`/`pending`) tracks the per-tile scan-out
+// `FrameState` here, but the caller's `user_data` is one token per *frame* — a
+// tiled output flips all its tiles in a single atomic commit — so it lives on
+// the `DrmCompositor`, not in these per-tile wrappers.
+struct PendingFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> {
     frame: CompositorFrameState<A, F>,
-    user_data: U,
 }
 
-impl<A, F, U> std::fmt::Debug for PendingFrame<A, F, U>
+impl<A, F> std::fmt::Debug for PendingFrame<A, F>
 where
     A: Allocator,
     <A as Allocator>::Buffer: std::fmt::Debug,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug,
-    U: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PendingFrame")
-            .field("frame", &self.frame)
-            .field("user_data", &self.user_data)
-            .finish()
+        f.debug_struct("PendingFrame").field("frame", &self.frame).finish()
     }
 }
 
-struct QueuedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
+struct QueuedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> {
     prepared_frame: PreparedFrame<A, F>,
-    user_data: U,
 }
 
-impl<A, F, U> std::fmt::Debug for QueuedFrame<A, F, U>
+impl<A, F> std::fmt::Debug for QueuedFrame<A, F>
 where
     A: Allocator,
     <A as Allocator>::Buffer: std::fmt::Debug,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug,
-    U: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QueuedFrame")
             .field("prepared_frame", &self.prepared_frame)
-            .field("user_data", &self.user_data)
             .finish()
     }
 }
@@ -1049,7 +1045,7 @@ bitflags::bitflags! {
 /// [`DrmCompositor::new_tiled`]). Everything that belongs to a single scan-out
 /// pipeline (the surface, its planes, swapchain and frame-state machine) lives
 /// here; the logical output state stays on `DrmCompositor`.
-struct TileState<A, F, U, G>
+struct TileState<A, F, G>
 where
     A: Allocator,
     F: ExportFramebuffer<A::Buffer>,
@@ -1071,8 +1067,8 @@ where
     reset_pending: bool,
     signaled_fence: Option<Arc<OwnedFd>>,
     current_frame: CompositorFrameState<A, F>,
-    pending_frame: Option<PendingFrame<A, F, U>>,
-    queued_frame: Option<QueuedFrame<A, F, U>>,
+    pending_frame: Option<PendingFrame<A, F>>,
+    queued_frame: Option<QueuedFrame<A, F>>,
     next_frame: Option<PreparedFrame<A, F>>,
     swapchain: Swapchain<A>,
     cursor_state: Option<CursorState<G>>,
@@ -1104,7 +1100,13 @@ where
     // heap-free. A tiled output (several CRTCs) spills to one heap allocation.
     // Kept at 1 because TileState is large, so extra inline slots would bloat
     // every (mostly single-tile) compositor just for the rare tiled case.
-    tiles: SmallVec<[TileState<A, F, U, G>; 1]>,
+    tiles: SmallVec<[TileState<A, F, G>; 1]>,
+    /// `user_data` for the frame queued via [`queue_frame`](DrmCompositor::queue_frame)
+    /// but not yet submitted, and for the in-flight frame awaiting its vblank,
+    /// respectively. These are per-frame (one atomic commit across all tiles),
+    /// hence held here rather than per-tile.
+    queued_user_data: Option<U>,
+    pending_user_data: Option<U>,
     debug_flags: DebugFlags,
     span: tracing::Span,
 }
@@ -1584,6 +1586,8 @@ where
             output_mode_source,
             framebuffer_exporter,
             cursor_size,
+            queued_user_data: None,
+            pending_user_data: None,
             debug_flags: DebugFlags::empty(),
             span,
             tiles: SmallVec::from_buf([tile]),
@@ -1678,6 +1682,8 @@ where
             output_mode_source,
             framebuffer_exporter,
             cursor_size,
+            queued_user_data: None,
+            pending_user_data: None,
             debug_flags: DebugFlags::empty(),
             span,
             tiles,
@@ -1699,7 +1705,7 @@ where
         color_formats: impl IntoIterator<Item = DrmFourcc>,
         renderer_formats: Vec<DrmFormat>,
         gbm: Option<GbmDevice<G>>,
-    ) -> FrameResult<TileState<A, F, U, G>, A, F> {
+    ) -> FrameResult<TileState<A, F, G>, A, F> {
         let signaled_fence = match surface.create_syncobj(true) {
             Ok(signaled_syncobj) => match surface.syncobj_to_fd(signaled_syncobj, true) {
                 Ok(signaled_fence) => {
@@ -1984,6 +1990,8 @@ where
             framebuffer_exporter,
             cursor_size,
             output_mode_source,
+            queued_user_data: None,
+            pending_user_data: None,
             debug_flags: DebugFlags::empty(),
             span,
             tiles: SmallVec::from_buf([TileState {
@@ -3146,10 +3154,8 @@ where
             }
         }
 
-        self.tiles[0].queued_frame = Some(QueuedFrame {
-            prepared_frame,
-            user_data,
-        });
+        self.tiles[0].queued_frame = Some(QueuedFrame { prepared_frame });
+        self.queued_user_data = Some(user_data);
         if self.tiles[0].pending_frame.is_none() {
             self.submit()?;
         }
@@ -3199,6 +3205,8 @@ where
         if flip.is_ok() {
             self.tiles[0].queued_frame = None;
             self.tiles[0].pending_frame = None;
+            self.queued_user_data = None;
+            self.pending_user_data = None;
         }
 
         self.handle_flip(prepared_frame, None, flip)
@@ -3221,10 +3229,8 @@ where
 
     #[profiling::function]
     fn submit(&mut self) -> FrameResult<(), A, F> {
-        let QueuedFrame {
-            mut prepared_frame,
-            user_data,
-        } = self.tiles[0].queued_frame.take().unwrap();
+        let QueuedFrame { mut prepared_frame } = self.tiles[0].queued_frame.take().unwrap();
+        let user_data = self.queued_user_data.take();
 
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.tiles[0].surface.commit_pending() {
@@ -3237,7 +3243,7 @@ where
                 .page_flip(&self.tiles[0].surface, self.tiles[0].supports_fencing, allow_partial_update, true)
         };
 
-        self.handle_flip(prepared_frame, Some(user_data), flip)
+        self.handle_flip(prepared_frame, user_data, flip)
     }
 
     fn handle_flip(
@@ -3252,10 +3258,20 @@ where
                     self.tiles[0].reset_pending = false;
                 }
 
-                self.tiles[0].pending_frame = user_data.map(|user_data| PendingFrame {
-                    frame: prepared_frame.frame,
-                    user_data,
-                });
+                // A pending frame is only tracked when there is `user_data` to
+                // return on its vblank (i.e. for `queue_frame`, not `commit_frame`).
+                match user_data {
+                    Some(user_data) => {
+                        self.tiles[0].pending_frame = Some(PendingFrame {
+                            frame: prepared_frame.frame,
+                        });
+                        self.pending_user_data = Some(user_data);
+                    }
+                    None => {
+                        self.tiles[0].pending_frame = None;
+                        self.pending_user_data = None;
+                    }
+                }
             }
             Err(crate::backend::drm::error::Error::Access(ref access))
                 if access.source.kind() == ErrorKind::InvalidInput =>
@@ -3295,12 +3311,15 @@ where
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     #[profiling::function]
     pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
-        if let Some(PendingFrame { mut frame, user_data }) = self.tiles[0].pending_frame.take() {
+        if let Some(PendingFrame { mut frame }) = self.tiles[0].pending_frame.take() {
             std::mem::swap(&mut frame, &mut self.tiles[0].current_frame);
+            // Take the in-flight `user_data` before `submit` repopulates it from
+            // the next queued frame.
+            let user_data = self.pending_user_data.take();
             if self.tiles[0].queued_frame.is_some() {
                 self.submit()?;
             }
-            Ok(Some(user_data))
+            Ok(user_data)
         } else {
             Ok(None)
         }
@@ -4778,6 +4797,8 @@ where
         self.tiles[0].pending_frame = None;
         self.tiles[0].queued_frame = None;
         self.tiles[0].next_frame = None;
+        self.queued_user_data = None;
+        self.pending_user_data = None;
 
         Ok(())
     }
