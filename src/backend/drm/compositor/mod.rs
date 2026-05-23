@@ -164,6 +164,7 @@ use crate::{
             element::{
                 Element, Id, Kind, RenderElement, RenderElementPresentationState, RenderElementState,
                 RenderElementStates, RenderingReason, UnderlyingStorage,
+                utils::{Relocate, RelocateRenderElement},
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag},
@@ -1058,8 +1059,6 @@ where
     /// Sub-rect of the logical output this tile scans out, in the output's
     /// untransformed (mode) coordinate space. The whole output for a
     /// single-tile compositor; one slice of the grid for a tiled one.
-    // Read by the multi-tile render path (added in a following commit).
-    #[allow(dead_code)]
     region: Rectangle<i32, Physical>,
     surface: Arc<DrmSurface>,
     planes: Planes,
@@ -1228,8 +1227,6 @@ fn validate_tile_regions(
 /// transform is applied to the whole logical scene *before* tiles are sliced, so
 /// to place a tile we map its fixed region *through* the transform. This is what
 /// keeps tiling correct under rotation/flip.
-// First used by `render_frame`, added in a following commit.
-#[allow(dead_code)]
 fn tile_logical_region(
     region: Rectangle<i32, Physical>,
     size: Size<i32, Physical>,
@@ -1244,8 +1241,6 @@ fn tile_logical_region(
 /// Equal to `−tile_logical_region(..).loc`. Because it is derived through
 /// `transform`, the per-CRTC render stays correct at every orientation — unlike
 /// a raw framebuffer-space offset, which is only correct at [`Transform::Normal`].
-// First used by `render_frame`, added in a following commit.
-#[allow(dead_code)]
 fn tile_render_offset(
     region: Rectangle<i32, Physical>,
     size: Size<i32, Physical>,
@@ -1263,6 +1258,27 @@ fn single_tile_region(output_mode_source: &OutputModeSource) -> Rectangle<i32, P
     <&OutputModeSource as TryInto<(Size<i32, Physical>, Scale<f64>, Transform)>>::try_into(output_mode_source)
         .map(|(size, _, _)| Rectangle::from_size(size))
         .unwrap_or_default()
+}
+
+/// Merge the per-element render states of one tile (`from`) into the running
+/// total (`acc`) for a tiled frame.
+///
+/// An element can be visible on several tiles. This mirrors how a single render
+/// already folds an element seen on several planes: a non-skipped state wins
+/// over a skipped one, otherwise the visible areas add up.
+#[allow(clippy::mutable_key_type)]
+fn merge_render_element_states(acc: &mut RenderElementStates, from: RenderElementStates) {
+    for (id, state) in from.states {
+        match acc.states.get_mut(&id) {
+            Some(existing) if existing.presentation_state != RenderElementPresentationState::Skipped => {
+                existing.visible_area += state.visible_area;
+            }
+            Some(existing) => *existing = state,
+            None => {
+                acc.states.insert(id, state);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1418,6 +1434,81 @@ mod tiled_tests {
                 Ok(transform.transform_size(full())),
                 "tiles must partition the logical output under {transform:?}",
             );
+        }
+    }
+
+    mod merge_states {
+        use super::super::merge_render_element_states;
+        use crate::backend::renderer::element::{
+            Id, RenderElementPresentationState, RenderElementState, RenderElementStates,
+        };
+
+        fn rendered(visible_area: usize) -> RenderElementState {
+            RenderElementState {
+                visible_area,
+                presentation_state: RenderElementPresentationState::Rendering { reason: None },
+                needs_capture: false,
+            }
+        }
+
+        fn skipped() -> RenderElementState {
+            RenderElementState {
+                visible_area: 0,
+                presentation_state: RenderElementPresentationState::Skipped,
+                needs_capture: false,
+            }
+        }
+
+        fn states(entries: impl IntoIterator<Item = (Id, RenderElementState)>) -> RenderElementStates {
+            RenderElementStates {
+                states: entries.into_iter().collect(),
+            }
+        }
+
+        #[test]
+        fn disjoint_elements_are_unioned() {
+            let a = Id::new();
+            let b = Id::new();
+            let mut acc = states([(a.clone(), rendered(10))]);
+            merge_render_element_states(&mut acc, states([(b.clone(), rendered(20))]));
+            assert_eq!(acc.states[&a].visible_area, 10);
+            assert_eq!(acc.states[&b].visible_area, 20);
+        }
+
+        #[test]
+        fn visible_on_two_tiles_sums_area() {
+            // The same element rendered on both tiles: its visible areas add up.
+            let id = Id::new();
+            let mut acc = states([(id.clone(), rendered(10))]);
+            merge_render_element_states(&mut acc, states([(id.clone(), rendered(20))]));
+            assert_eq!(acc.states[&id].visible_area, 30);
+        }
+
+        #[test]
+        fn rendered_replaces_skipped() {
+            // Skipped on the first tile, rendered on the second: rendered wins.
+            let id = Id::new();
+            let mut acc = states([(id.clone(), skipped())]);
+            merge_render_element_states(&mut acc, states([(id.clone(), rendered(15))]));
+            assert_eq!(
+                acc.states[&id].presentation_state,
+                RenderElementPresentationState::Rendering { reason: None }
+            );
+            assert_eq!(acc.states[&id].visible_area, 15);
+        }
+
+        #[test]
+        fn skipped_does_not_override_rendered() {
+            // Rendered on the first tile, skipped on the second: stays rendered,
+            // area unchanged (a skipped state contributes zero).
+            let id = Id::new();
+            let mut acc = states([(id.clone(), rendered(15))]);
+            merge_render_element_states(&mut acc, states([(id.clone(), skipped())]));
+            assert_eq!(
+                acc.states[&id].presentation_state,
+                RenderElementPresentationState::Rendering { reason: None }
+            );
+            assert_eq!(acc.states[&id].visible_area, 15);
         }
     }
 }
@@ -2148,6 +2239,14 @@ where
     ///
     /// - `elements` for this frame in front-to-back order
     /// - `frame_flags` specifies techniques allowed to realize the frame
+    ///
+    /// For a tiled compositor (see [`new_tiled`](Self::new_tiled)) every tile is
+    /// rendered into its own framebuffer from the same `elements`, each relocated
+    /// so the tile draws its slice of the logical output. The returned
+    /// [`RenderFrameResult`] is frame-locked across the tiles: it reports
+    /// `is_empty` only when *no* tile changed — so a change confined to one tile
+    /// still queues the whole group — and merges every tile's
+    /// [`RenderElementStates`]. Its plane elements describe the primary tile.
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     #[profiling::function]
     pub fn render_frame<'a, R, E>(
@@ -2162,9 +2261,125 @@ where
         R: Renderer + Bind<Dmabuf>,
         R::TextureId: Texture + 'static,
     {
-        let mut clear_color = clear_color.into();
+        let clear_color = clear_color.into();
 
-        if !self.tiles[0].surface.is_active() {
+        // Common case: a single CRTC drives the whole output, no relocation.
+        if self.tiles.len() == 1 {
+            return self.render_tile(0, renderer, elements, clear_color, frame_flags);
+        }
+
+        // Tiled output. Relocate the elements into each tile's framebuffer space
+        // and render every tile. The offset is derived through the output
+        // transform (`tile_render_offset`) so it stays correct under rotation.
+        let (output_size, output_scale, output_transform): (Size<i32, Physical>, Scale<f64>, Transform) =
+            (&self.output_mode_source)
+                .try_into()
+                .map_err(OutputDamageTrackerError::OutputNoMode)?;
+
+        // Keep each tile's per-CRTC mode source in step with the output's live
+        // scale/transform. A tile renders with this source's transform, while the
+        // relocation offset below uses the output transform directly; if the
+        // output is rotated/rescaled after construction the two must stay in
+        // agreement or the tiles render upright into a rotated layout. The tile's
+        // framebuffer-space region is fixed, so only scale/transform track.
+        for tile in self.tiles.iter_mut() {
+            let mode = OutputModeSource::Static {
+                size: tile.region.size,
+                scale: output_scale,
+                transform: output_transform,
+            };
+            if *tile.damage_tracker.mode() != mode {
+                tile.damage_tracker = OutputDamageTracker::from_mode_source(mode);
+            }
+        }
+
+        // One reusable scratch buffer holds the elements relocated into the
+        // current tile's framebuffer space; it is refilled per tile rather than
+        // allocating a vec per tile. The offset is derived through the output
+        // transform (`tile_render_offset`) so it stays correct under rotation.
+        let mut scratch: Vec<RelocateRenderElement<&E>> = Vec::with_capacity(elements.len());
+
+        // The primary tile (index 0) seeds the frame result. Its plane elements
+        // are recovered as references into the original `elements` via
+        // `RelocateRenderElement::element`, so they do not borrow `scratch` and
+        // it can be refilled for the next tile.
+        let (primary_element, overlay_elements, cursor_element, mut all_empty, mut states) = {
+            let offset = tile_render_offset(self.tiles[0].region, output_size, output_transform);
+            scratch.clear();
+            scratch.extend(
+                elements
+                    .iter()
+                    .map(|element| RelocateRenderElement::from_element(element, offset, Relocate::Relative)),
+            );
+            let result = self.render_tile(0, renderer, &scratch, clear_color, frame_flags)?;
+            (
+                match result.primary_element {
+                    PrimaryPlaneElement::Swapchain(element) => PrimaryPlaneElement::Swapchain(element),
+                    PrimaryPlaneElement::Element(wrapped) => PrimaryPlaneElement::Element(*wrapped.inner()),
+                },
+                result
+                    .overlay_elements
+                    .into_iter()
+                    .map(|wrapped| *wrapped.inner())
+                    .collect::<Vec<_>>(),
+                result.cursor_element.map(|wrapped| *wrapped.inner()),
+                result.is_empty,
+                result.states,
+            )
+        };
+
+        // The remaining tiles only contribute to frame-locking and element states.
+        for index in 1..self.tiles.len() {
+            let offset = tile_render_offset(self.tiles[index].region, output_size, output_transform);
+            scratch.clear();
+            scratch.extend(
+                elements
+                    .iter()
+                    .map(|element| RelocateRenderElement::from_element(element, offset, Relocate::Relative)),
+            );
+            let result = self.render_tile(index, renderer, &scratch, clear_color, frame_flags)?;
+            all_empty &= result.is_empty;
+            merge_render_element_states(&mut states, result.states);
+        }
+
+        Ok(RenderFrameResult {
+            is_empty: all_empty,
+            states,
+            primary_element,
+            overlay_elements,
+            cursor_element,
+            primary_plane_element_id: self.tiles[0].primary_plane_element_id.clone(),
+            supports_fencing: self.tiles[0].supports_fencing,
+        })
+    }
+
+    /// Render `tile`'s slice of the logical output into its own swapchain
+    /// buffer using that tile's [`OutputDamageTracker`], stashing the prepared
+    /// frame in `self.tiles[tile].next_frame`.
+    ///
+    /// `elements` are expected to already live in the tile's framebuffer space:
+    /// for a single-tile compositor that is just the output's elements, for a
+    /// tiled one they are relocated by [`render_frame`](Self::render_frame) so
+    /// the tile's slice sits at the framebuffer origin. The returned
+    /// [`RenderFrameResult`] describes this tile alone.
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
+    #[profiling::function]
+    fn render_tile<'a, R, E>(
+        &mut self,
+        tile: usize,
+        renderer: &mut R,
+        elements: &'a [E],
+        clear_color: Color32F,
+        frame_flags: FrameFlags,
+    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
+    where
+        E: RenderElement<R>,
+        R: Renderer + Bind<Dmabuf>,
+        R::TextureId: Texture + 'static,
+    {
+        let mut clear_color = clear_color;
+
+        if !self.tiles[tile].surface.is_active() {
             return Err(RenderFrameErrorType::<A, F, R>::PrepareFrame(
                 FrameError::DrmError(DrmError::DeviceInactive),
             ));
@@ -2172,14 +2387,20 @@ where
 
         // Just reset any next state, this will put
         // any already acquired slot back to the swapchain
-        std::mem::drop(self.tiles[0].next_frame.take());
+        std::mem::drop(self.tiles[tile].next_frame.take());
 
         // If a commit is pending we may still be able to just use a previous
         // state, but we want to queue a frame so we just fake the damage to
         // make sure queue_frame won't be skipped because of no damage
-        let allow_partial_update = !self.tiles[0].reset_pending && !self.tiles[0].surface.commit_pending();
+        let allow_partial_update = !self.tiles[tile].reset_pending && !self.tiles[tile].surface.commit_pending();
 
-        let (current_size, output_scale, output_transform) = (&self.output_mode_source)
+        // Derive the mode from this tile's own damage tracker: for a single-tile
+        // compositor it mirrors `output_mode_source`; for a tiled one it is the
+        // tile's `Static` slice (its framebuffer size with the output's
+        // scale/transform), which is what the render below targets.
+        let (current_size, output_scale, output_transform) = self.tiles[tile]
+            .damage_tracker
+            .mode()
             .try_into()
             .map_err(OutputDamageTrackerError::OutputNoMode)?;
 
@@ -2198,7 +2419,7 @@ where
         // if we could end up doing direct scan-out on the primary plane.
         // The reason is that we can't know upfront and we need a framebuffer
         // on the primary plane to test overlay/cursor planes
-        let primary_plane_buffer = self.tiles[0]
+        let primary_plane_buffer = self.tiles[tile]
             .swapchain
             .acquire()
             .map_err(FrameError::Allocator)?
@@ -2216,9 +2437,9 @@ where
             let fb_buffer = self
                 .framebuffer_exporter
                 .add_framebuffer(
-                    self.tiles[0].surface.device_fd(),
+                    self.tiles[tile].surface.device_fd(),
                     ExportBuffer::Allocator(&primary_plane_buffer),
-                    self.tiles[0].primary_is_opaque,
+                    self.tiles[tile].primary_is_opaque,
                 )
                 .map_err(FrameError::FramebufferExport)?
                 .ok_or(FrameError::NoFramebuffer)?;
@@ -2234,11 +2455,11 @@ where
             .unwrap()
             .clone();
 
-        let tile = &mut self.tiles[0];
-        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = std::mem::take(&mut tile.opaque_regions);
-        std::mem::swap(&mut tile.previous_element_states, &mut tile.element_states);
-        let mut element_states = std::mem::take(&mut tile.element_states);
-        element_states.reserve(std::cmp::min(elements.len(), tile.planes.overlay.len()));
+        let tile_state = &mut self.tiles[tile];
+        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = std::mem::take(&mut tile_state.opaque_regions);
+        std::mem::swap(&mut tile_state.previous_element_states, &mut tile_state.element_states);
+        let mut element_states = std::mem::take(&mut tile_state.element_states);
+        element_states.reserve(std::cmp::min(elements.len(), tile_state.planes.overlay.len()));
         let mut render_element_states = RenderElementStates {
             states: HashMap::with_capacity(elements.len()),
         };
@@ -2249,14 +2470,14 @@ where
             <A as Allocator>::Buffer,
             <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
         > = {
-            let previous_state = self.tiles[0]
+            let previous_state = self.tiles[tile]
                 .pending_frame
                 .as_ref()
                 .map(|pending| &pending.frame)
-                .unwrap_or(&self.tiles[0].current_frame);
+                .unwrap_or(&self.tiles[tile].current_frame);
 
             // This will create an empty frame state, all planes are skipped by default
-            let mut next_frame_state = FrameState::from_planes(self.tiles[0].surface.plane(), &self.tiles[0].planes);
+            let mut next_frame_state = FrameState::from_planes(self.tiles[tile].surface.plane(), &self.tiles[tile].planes);
 
             // We want to set skip to false on all planes that previously had something assigned so that
             // they get cleared when they are not longer used
@@ -2276,7 +2497,7 @@ where
 
         // We want to make sure we can actually scan-out the primary plane, so
         // explicitly set skip to false
-        let plane_claim = self.tiles[0].surface.claim_plane(self.tiles[0].surface.plane()).ok_or_else(|| {
+        let plane_claim = self.tiles[tile].surface.claim_plane(self.tiles[tile].surface.plane()).ok_or_else(|| {
             error!("failed to claim primary plane");
             FrameError::PrimaryPlaneClaimFailed
         })?;
@@ -2308,7 +2529,7 @@ where
 
         // unconditionally set the primary plane state
         // if this would fail the test we are screwed anyway
-        next_frame_state.set_state(self.tiles[0].surface.plane(), primary_plane_state.clone());
+        next_frame_state.set_state(self.tiles[tile].surface.plane(), primary_plane_state.clone());
 
         // This holds all elements that are visible on the output
         // A element is considered visible if it intersects with the output geometry
@@ -2316,7 +2537,7 @@ where
         let mut output_elements: Vec<(&'a E, Rectangle<i32, Physical>, usize, bool)> =
             Vec::with_capacity(elements.len());
 
-        let mut element_opaque_regions_workhouse = std::mem::take(&mut self.tiles[0].element_opaque_regions_workhouse);
+        let mut element_opaque_regions_workhouse = std::mem::take(&mut self.tiles[tile].element_opaque_regions_workhouse);
         for (index, element) in elements.iter().enumerate() {
             let element_id = element.id();
             let element_geometry = element.geometry(output_scale);
@@ -2430,7 +2651,7 @@ where
 
             output_elements.push((element, element_geometry, element_visible_area, element_is_opaque));
         }
-        self.tiles[0].element_opaque_regions_workhouse = element_opaque_regions_workhouse;
+        self.tiles[tile].element_opaque_regions_workhouse = element_opaque_regions_workhouse;
 
         // This will hold the element that has been selected for direct scan-out on
         // the primary plane if any
@@ -2441,7 +2662,7 @@ where
         // This will hold the element per plane that has been assigned to a overlay/underlay
         // plane for direct scan-out
         let mut overlay_plane_elements: IndexMap<plane::Handle, &'a E> =
-            IndexMap::with_capacity(self.tiles[0].planes.overlay.len());
+            IndexMap::with_capacity(self.tiles[tile].planes.overlay.len());
         // This will hold the element assigned on the cursor plane if any
         let mut cursor_plane_element: Option<&'a E> = None;
 
@@ -2465,12 +2686,12 @@ where
                     (clear_color.r() == 0f32 && clear_color.g() == 0f32 && clear_color.b() == 0f32)
                         || clear_color.a() == 0f32;
                 let element_spans_complete_output = element_geometry.contains_rect(output_geometry);
-                let overlaps_with_underlay = self.tiles[0]
+                let overlaps_with_underlay = self.tiles[tile]
                     .planes
                     .overlay
                     .iter()
                     .filter(|p| {
-                        p.zpos.unwrap_or_default() < self.tiles[0].surface.plane_info().zpos.unwrap_or_default()
+                        p.zpos.unwrap_or_default() < self.tiles[tile].surface.plane_info().zpos.unwrap_or_default()
                     })
                     .any(|p| next_frame_state.overlaps(p.handle, element_geometry));
                 !overlaps_with_underlay
@@ -2481,7 +2702,7 @@ where
             };
 
             match self.try_assign_element(
-                0,
+                tile,
                 renderer,
                 *element,
                 index,
@@ -2534,12 +2755,12 @@ where
         for element_state in element_states.values_mut() {
             element_state.fb_cache.cleanup();
         }
-        self.tiles[0].element_states = element_states;
-        self.tiles[0].previous_element_states.clear();
+        self.tiles[tile].element_states = element_states;
+        self.tiles[tile].previous_element_states.clear();
         opaque_regions.clear();
-        self.tiles[0].opaque_regions = opaque_regions;
+        self.tiles[tile].opaque_regions = opaque_regions;
 
-        let tile = &mut self.tiles[0];
+        let tile = &mut self.tiles[tile];
         let previous_state = tile
             .pending_frame
             .as_ref()
