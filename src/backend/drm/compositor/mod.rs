@@ -1175,10 +1175,49 @@ fn validate_tile_regions(
     Ok(bbox.size)
 }
 
+/// Map a tile's framebuffer-space `region` into the logical (post-transform)
+/// coordinate space that render elements live in, given the output's full
+/// framebuffer `size` and `transform`.
+///
+/// Tile regions are fixed in framebuffer space and do not rotate. The render
+/// transform is applied to the whole logical scene *before* tiles are sliced, so
+/// to place a tile we map its fixed region *through* the transform. This is what
+/// keeps tiling correct under rotation/flip.
+// First used by `render_frame`, added in a following commit.
+#[allow(dead_code)]
+fn tile_logical_region(
+    region: Rectangle<i32, Physical>,
+    size: Size<i32, Physical>,
+    transform: Transform,
+) -> Rectangle<i32, Physical> {
+    transform.transform_rect_in(region, &size)
+}
+
+/// Offset to relocate render elements by (in logical space) so that a tile's
+/// `region` slice of the logical output lands at the tile framebuffer's origin.
+///
+/// Equal to `−tile_logical_region(..).loc`. Because it is derived through
+/// `transform`, the per-CRTC render stays correct at every orientation — unlike
+/// a raw framebuffer-space offset, which is only correct at [`Transform::Normal`].
+// First used by `render_frame`, added in a following commit.
+#[allow(dead_code)]
+fn tile_render_offset(
+    region: Rectangle<i32, Physical>,
+    size: Size<i32, Physical>,
+    transform: Transform,
+) -> Point<i32, Physical> {
+    let loc = tile_logical_region(region, size, transform).loc;
+    Point::from((-loc.x, -loc.y))
+}
+
 #[cfg(test)]
 mod tiled_tests {
-    use super::{TileConfigError, validate_tile_regions};
-    use crate::utils::{Physical, Point, Rectangle, Size};
+    use super::{TileConfigError, tile_logical_region, tile_render_offset, validate_tile_regions};
+    use crate::utils::{Physical, Point, Rectangle, Size, Transform};
+
+    fn full() -> Size<i32, Physical> {
+        Size::from((5120, 2880))
+    }
 
     fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Physical> {
         Rectangle::new(Point::from((x, y)), Size::from((w, h)))
@@ -1253,6 +1292,78 @@ mod tiled_tests {
             validate_tile_regions([bad]),
             Err(TileConfigError::NonPositiveRegion(bad))
         );
+    }
+
+    #[test]
+    fn render_offset_normal_is_negative_region_loc() {
+        // At Normal the relocate is just −region.loc.
+        assert_eq!(
+            tile_render_offset(rect(0, 0, 2560, 2880), full(), Transform::Normal),
+            Point::from((0, 0))
+        );
+        assert_eq!(
+            tile_render_offset(rect(2560, 0, 2560, 2880), full(), Transform::Normal),
+            Point::from((-2560, 0))
+        );
+    }
+
+    #[test]
+    fn render_offset_180_swaps_halves() {
+        // 180° puts the right half at the logical origin and the left half at +2560.
+        assert_eq!(
+            tile_render_offset(rect(2560, 0, 2560, 2880), full(), Transform::_180),
+            Point::from((0, 0))
+        );
+        assert_eq!(
+            tile_render_offset(rect(0, 0, 2560, 2880), full(), Transform::_180),
+            Point::from((-2560, 0))
+        );
+    }
+
+    #[test]
+    fn render_offset_90_stacks_halves_vertically() {
+        // 90° turns the side-by-side halves into a vertical stack in the
+        // 2880×5120 logical space — proof the offset is *not* the raw physical
+        // offset (which would still be on the X axis).
+        assert_eq!(
+            tile_render_offset(rect(0, 0, 2560, 2880), full(), Transform::_90),
+            Point::from((0, 0))
+        );
+        assert_eq!(
+            tile_render_offset(rect(2560, 0, 2560, 2880), full(), Transform::_90),
+            Point::from((0, -2560))
+        );
+    }
+
+    #[test]
+    fn tiles_partition_logical_output_under_every_transform() {
+        // The core rotation-correctness property: for *every* orientation, the
+        // two fixed framebuffer-space halves still tile the (rotated) logical
+        // output with no gaps or overlaps, anchored at the origin. A raw
+        // framebuffer-space offset would break this for non-Normal transforms —
+        // that was the bug class in the earlier prototype.
+        let left = rect(0, 0, 2560, 2880);
+        let right = rect(2560, 0, 2560, 2880);
+        for transform in [
+            Transform::Normal,
+            Transform::_90,
+            Transform::_180,
+            Transform::_270,
+            Transform::Flipped,
+            Transform::Flipped90,
+            Transform::Flipped180,
+            Transform::Flipped270,
+        ] {
+            let logical = [
+                tile_logical_region(left, full(), transform),
+                tile_logical_region(right, full(), transform),
+            ];
+            assert_eq!(
+                validate_tile_regions(logical),
+                Ok(transform.transform_size(full())),
+                "tiles must partition the logical output under {transform:?}",
+            );
+        }
     }
 }
 
