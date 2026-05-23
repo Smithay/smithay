@@ -1055,6 +1055,12 @@ where
     <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
+    /// Sub-rect of the logical output this tile scans out, in the output's
+    /// untransformed (mode) coordinate space. The whole output for a
+    /// single-tile compositor; one slice of the grid for a tiled one.
+    // Read by the multi-tile render path (added in a following commit).
+    #[allow(dead_code)]
+    region: Rectangle<i32, Physical>,
     surface: Arc<DrmSurface>,
     planes: Planes,
     overlay_plane_element_ids: OverlayPlaneElementIds,
@@ -1160,14 +1166,16 @@ pub enum TileConfigError {
     /// do not cover a single rectangular logical output.
     #[error("tile regions do not cover the logical output without gaps")]
     NotContiguous,
+    /// The tile surfaces span multiple DRM devices. A tiled compositor requires
+    /// a single device so all its CRTCs can share one atomic commit.
+    #[error("tile surfaces span multiple drm devices")]
+    MultipleDevices,
 }
 
 /// Validate that `regions` exactly tile a rectangle anchored at `(0, 0)` with no
 /// gaps or overlaps, returning that rectangle's size.
 ///
 /// Pure geometry, independent of any DRM state, so it is unit-testable.
-// First non-test caller is `new_tiled`, added in a following commit.
-#[allow(dead_code)]
 fn validate_tile_regions(
     regions: impl IntoIterator<Item = Rectangle<i32, Physical>>,
 ) -> Result<Size<i32, Physical>, TileConfigError> {
@@ -1245,6 +1253,16 @@ fn tile_render_offset(
 ) -> Point<i32, Physical> {
     let loc = tile_logical_region(region, size, transform).loc;
     Point::from((-loc.x, -loc.y))
+}
+
+/// The [`region`](TileState::region) for a single-tile compositor: the whole
+/// logical output. Resolved from `output_mode_source`'s current mode, falling
+/// back to a zero rect when no mode is set yet (the single-tile render path
+/// does not slice, so the value is unused until a mode exists).
+fn single_tile_region(output_mode_source: &OutputModeSource) -> Rectangle<i32, Physical> {
+    <&OutputModeSource as TryInto<(Size<i32, Physical>, Scale<f64>, Transform)>>::try_into(output_mode_source)
+        .map(|(size, _, _)| Rectangle::from_size(size))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1439,13 +1457,158 @@ where
         output_mode_source: impl Into<OutputModeSource> + Debug,
         surface: DrmSurface,
         planes: Option<Planes>,
-        mut allocator: A,
+        allocator: A,
         framebuffer_exporter: F,
         color_formats: impl IntoIterator<Item = DrmFourcc>,
         renderer_formats: impl IntoIterator<Item = DrmFormat>,
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
     ) -> FrameResult<Self, A, F> {
+        let output_mode_source = output_mode_source.into();
+        let renderer_formats = renderer_formats.into_iter().collect::<Vec<_>>();
+        let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
+
+        // Single-tile compositor: the one tile covers the whole logical output.
+        let region = single_tile_region(&output_mode_source);
+        let span = info_span!(
+            parent: None,
+            "drm_compositor",
+            device = ?surface.dev_path(),
+            crtc = ?surface.crtc(),
+        );
+
+        let tile = Self::build_tile(
+            surface,
+            region,
+            output_mode_source.clone(),
+            planes,
+            allocator,
+            &framebuffer_exporter,
+            color_formats,
+            renderer_formats,
+            gbm,
+        )?;
+
+        Ok(DrmCompositor {
+            output_mode_source,
+            framebuffer_exporter,
+            cursor_size,
+            debug_flags: DebugFlags::empty(),
+            span,
+            tiles: SmallVec::from_buf([tile]),
+        })
+    }
+
+    /// Initialize a [`DrmCompositor`] that drives several CRTCs as one logical,
+    /// frame-locked output — e.g. a DisplayID-tiled 5K monitor carried over two
+    /// DisplayPort streams, or a single-GPU video wall.
+    ///
+    /// `placements` provides one [`TilePlacement`] per CRTC; the surfaces must all
+    /// belong to the **same DRM device** (so their page-flips can share a single
+    /// atomic commit) and their regions must tile a gap-free rectangle anchored
+    /// at the origin, matching the logical output's mode.
+    ///
+    /// List the primary tile first. `tiles[0]`'s CRTC carries the atomic commit
+    /// and its page-flip event signals the group's completed frame. The other
+    /// tiles flip in that same commit, so the whole group stays frame-locked.
+    ///
+    /// The remaining arguments are device-wide and shared across all tiles,
+    /// exactly as in [`new`](Self::new) — of which this is the multi-CRTC
+    /// generalization.
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
+    pub fn new_tiled(
+        output_mode_source: impl Into<OutputModeSource> + Debug,
+        placements: impl IntoIterator<Item = TilePlacement>,
+        allocator: A,
+        framebuffer_exporter: F,
+        color_formats: impl IntoIterator<Item = DrmFourcc> + Clone,
+        renderer_formats: impl IntoIterator<Item = DrmFormat>,
+        cursor_size: Size<u32, BufferCoords>,
+        gbm: Option<GbmDevice<G>>,
+    ) -> FrameResult<Self, A, F>
+    where
+        A: Clone,
+    {
+        let tiles_in: SmallVec<[TilePlacement; 4]> = placements.into_iter().collect();
+        // Geometry: the regions must tile a gap-free rectangle at the origin.
+        validate_tile_regions(tiles_in.iter().map(|p| p.region))?;
+
+        // All tiles must live on one DRM device, otherwise they cannot share a
+        // single atomic commit (and would not stay frame-locked).
+        let dev = tiles_in[0].surface.dev_path();
+        if tiles_in.iter().any(|p| p.surface.dev_path() != dev) {
+            return Err(TileConfigError::MultipleDevices.into());
+        }
+
+        let output_mode_source = output_mode_source.into();
+        let renderer_formats = renderer_formats.into_iter().collect::<Vec<_>>();
+        let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
+
+        // Each tile renders with the logical output's scale/transform into its
+        // own tile-sized framebuffer; refreshed each frame from the source.
+        let (scale, transform) =
+            match <&OutputModeSource as TryInto<(Size<i32, Physical>, Scale<f64>, Transform)>>::try_into(
+                &output_mode_source,
+            ) {
+                Ok((_, scale, transform)) => (scale, transform),
+                Err(_) => (1.0f64.into(), Transform::Normal),
+            };
+
+        let span = info_span!(
+            parent: None,
+            "drm_compositor",
+            device = ?tiles_in[0].surface.dev_path(),
+            crtc = ?tiles_in[0].surface.crtc(),
+        );
+
+        let mut tiles = SmallVec::with_capacity(tiles_in.len());
+        for placement in tiles_in {
+            let tile_mode = OutputModeSource::Static {
+                size: placement.region.size,
+                scale,
+                transform,
+            };
+            let tile = Self::build_tile(
+                placement.surface,
+                placement.region,
+                tile_mode,
+                placement.planes,
+                allocator.clone(),
+                &framebuffer_exporter,
+                color_formats.clone(),
+                renderer_formats.clone(),
+                gbm.clone(),
+            )?;
+            tiles.push(tile);
+        }
+
+        Ok(DrmCompositor {
+            output_mode_source,
+            framebuffer_exporter,
+            cursor_size,
+            debug_flags: DebugFlags::empty(),
+            span,
+            tiles,
+        })
+    }
+
+    /// Build the per-CRTC [`TileState`] for one surface, selecting a working
+    /// format from `color_formats`. Shared by [`new`](Self::new) and
+    /// [`new_tiled`](Self::new_tiled); `mode_source` is the whole output for the
+    /// former and the tile's slice for the latter.
+    #[allow(clippy::too_many_arguments)]
+    fn build_tile(
+        surface: DrmSurface,
+        region: Rectangle<i32, Physical>,
+        mode_source: OutputModeSource,
+        planes: Option<Planes>,
+        mut allocator: A,
+        framebuffer_exporter: &F,
+        color_formats: impl IntoIterator<Item = DrmFourcc>,
+        renderer_formats: Vec<DrmFormat>,
+        gbm: Option<GbmDevice<G>>,
+    ) -> FrameResult<TileState<A, F, U, G>, A, F> {
         let signaled_fence = match surface.create_syncobj(true) {
             Ok(signaled_syncobj) => match surface.syncobj_to_fd(signaled_syncobj, true) {
                 Ok(signaled_fence) => {
@@ -1464,30 +1627,17 @@ where
             }
         };
 
-        let span = info_span!(
-            parent: None,
-            "drm_compositor",
-            device = ?surface.dev_path(),
-            crtc = ?surface.crtc(),
-        );
-
-        let output_mode_source = output_mode_source.into();
-        let renderer_formats = renderer_formats.into_iter().collect::<Vec<_>>();
-
-        let mut error = None;
         let surface = Arc::new(surface);
         let mut planes = match planes {
             Some(planes) => planes,
             None => surface.planes().clone(),
         };
-
         // We do not support direct scan-out on legacy
         if surface.is_legacy() {
             planes.cursor.clear();
             planes.overlay.clear();
         }
-
-        // The selection algorithm expects the planes to be ordered form front to back
+        // The selection algorithm expects the planes to be ordered from front to back
         planes
             .overlay
             .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
@@ -1508,8 +1658,7 @@ where
                 .to_lowercase()
                 .contains("nvidia");
 
-        let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
-        let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
+        let damage_tracker = OutputDamageTracker::from_mode_source(mode_source);
         let supports_fencing = !surface.is_legacy()
             && surface
                 .get_driver_capability(DriverCapability::SyncObj)
@@ -1524,6 +1673,7 @@ where
             && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?
             && !(is_nvidia && nvidia_drm_version().unwrap_or((0, 0, 0)) < (560, 35, 3));
 
+        let mut error = None;
         for format in color_formats {
             debug!("Testing color format: {}", format);
             match Self::find_supported_format(
@@ -1531,7 +1681,7 @@ where
                 supports_fencing,
                 &planes,
                 allocator,
-                &framebuffer_exporter,
+                framebuffer_exporter,
                 renderer_formats.clone(),
                 format,
             ) {
@@ -1562,37 +1712,29 @@ where
                     let overlay_plane_element_ids = OverlayPlaneElementIds::from_planes(&planes);
                     let current_frame = FrameState::from_planes(surface.plane(), &planes);
 
-                    let drm_renderer = DrmCompositor {
-                        framebuffer_exporter,
-                        cursor_size,
-                        output_mode_source,
-                        debug_flags: DebugFlags::empty(),
-                        span,
-                        tiles: SmallVec::from_buf([TileState {
-                            primary_plane_element_id: Id::new(),
-                            primary_plane_damage_bag: DamageBag::new(4),
-                            primary_is_opaque: is_opaque,
-                            reset_pending: true,
-                            signaled_fence,
-                            current_frame,
-                            pending_frame: None,
-                            queued_frame: None,
-                            next_frame: None,
-                            swapchain,
-                            cursor_state,
-                            surface,
-                            damage_tracker,
-                            planes,
-                            overlay_plane_element_ids,
-                            element_states: IndexMap::new(),
-                            previous_element_states: IndexMap::new(),
-                            opaque_regions: Vec::new(),
-                            element_opaque_regions_workhouse: Vec::new(),
-                            supports_fencing,
-                        }]),
-                    };
-
-                    return Ok(drm_renderer);
+                    return Ok(TileState {
+                        region,
+                        primary_plane_element_id: Id::new(),
+                        primary_plane_damage_bag: DamageBag::new(4),
+                        primary_is_opaque: is_opaque,
+                        reset_pending: true,
+                        signaled_fence,
+                        current_frame,
+                        pending_frame: None,
+                        queued_frame: None,
+                        next_frame: None,
+                        swapchain,
+                        cursor_state,
+                        surface,
+                        damage_tracker,
+                        planes,
+                        overlay_plane_element_ids,
+                        element_states: IndexMap::new(),
+                        previous_element_states: IndexMap::new(),
+                        opaque_regions: Vec::new(),
+                        element_opaque_regions_workhouse: Vec::new(),
+                        supports_fencing,
+                    });
                 }
                 Err((alloc, err)) => {
                     warn!("Preferred format {} not available: {:?}", format, err);
@@ -1745,6 +1887,7 @@ where
 
         let overlay_plane_element_ids = OverlayPlaneElementIds::from_planes(&planes);
         let current_frame = FrameState::from_planes(surface.plane(), &planes);
+        let primary_region = single_tile_region(&output_mode_source);
 
         let drm_renderer = DrmCompositor {
             framebuffer_exporter,
@@ -1753,6 +1896,7 @@ where
             debug_flags: DebugFlags::empty(),
             span,
             tiles: SmallVec::from_buf([TileState {
+                region: primary_region,
                 primary_plane_element_id: Id::new(),
                 primary_plane_damage_bag: DamageBag::new(4),
                 primary_is_opaque: is_opaque,
@@ -4672,6 +4816,9 @@ pub enum FrameError<
     /// `queue_frame` or trying to queue a frame without changes.
     #[error("No frame has been prepared or it does not contain any changes")]
     EmptyFrame,
+    /// The tile configuration passed to [`DrmCompositor::new_tiled`] is invalid
+    #[error("Invalid tile configuration: {0}")]
+    InvalidTileConfig(#[from] TileConfigError),
 }
 
 /// Error returned from [`DrmCompositor::render_frame`]
@@ -4717,6 +4864,7 @@ impl<
             x @ FrameError::NoSupportedPlaneFormat
             | x @ FrameError::NoSupportedRendererFormat
             | x @ FrameError::PrimaryPlaneClaimFailed
+            | x @ FrameError::InvalidTileConfig(_)
             | x @ FrameError::NoFramebuffer => SwapBuffersError::ContextLost(Box::new(x)),
             x @ FrameError::NoFreeSlotsError | x @ FrameError::EmptyFrame => {
                 SwapBuffersError::TemporaryFailure(Box::new(x))
