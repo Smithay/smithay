@@ -401,11 +401,20 @@ impl X11Surface {
 
         if let Some(conn) = self.conn.upgrade() {
             if let Some(frame) = self.state.lock().unwrap().mapped_onto {
-                if mapped {
+                let wm_state = if mapped {
                     conn.map_window(frame)?;
+                    1u32 /*NormalState*/
                 } else {
                     conn.unmap_window(frame)?;
-                }
+                    3u32 /*IconicState*/
+                };
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    self.window,
+                    self.atoms.WM_STATE,
+                    self.atoms.WM_STATE,
+                    &[wm_state, 0 /*WINDOW_NONE*/],
+                )?;
                 conn.flush()?;
             }
         }
@@ -1276,6 +1285,21 @@ impl X11Surface {
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_HIDDEN])?;
         }
+
+        if let Some(conn) = self.conn.upgrade() {
+            let wm_state = if suspended {
+                3u32 /*IconicState*/
+            } else {
+                1u32 /*NormalState*/
+            };
+            conn.change_property32(
+                PropMode::REPLACE,
+                self.window,
+                self.atoms.WM_STATE,
+                self.atoms.WM_STATE,
+                &[wm_state, 0 /*WINDOW_NONE*/],
+            )?;
+        }
         Ok(())
     }
 
@@ -1405,19 +1429,6 @@ impl X11Surface {
                 self.atoms._NET_WM_STATE,
                 AtomEnum::ATOM,
                 &new_props,
-            )?;
-
-            let wm_state = if state.net_state.contains(&self.atoms._NET_WM_STATE_HIDDEN) {
-                [3u32 /*IconicState*/, 0 /*WINDOW_NONE*/]
-            } else {
-                [1u32 /*NormalState*/, 0 /*WINDOW_NONE*/]
-            };
-            conn.change_property32(
-                PropMode::REPLACE,
-                self.window,
-                self.atoms.WM_STATE,
-                self.atoms.WM_STATE,
-                &wm_state,
             )?;
         }
 
