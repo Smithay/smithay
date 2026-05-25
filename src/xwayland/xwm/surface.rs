@@ -10,7 +10,10 @@ use crate::{
         },
         touch::TouchTarget,
     },
-    utils::{Client, HookId, IsAlive, Logical, Physical, Rectangle, Serial, Size, user_data::UserDataMap},
+    utils::{
+        Client, FrameExtents, HookId, IsAlive, Logical, Physical, Rectangle, Serial, Size,
+        user_data::UserDataMap,
+    },
     wayland::{
         compositor::{self, RectangleKind, RegionAttributes, SurfaceAttributes},
         seat::{WaylandFocus, keyboard::enter_internal},
@@ -127,6 +130,7 @@ pub(crate) struct SharedSurfaceState {
     pub(super) wl_surface_serial: Option<u64>,
     pub(super) mapped_onto: Option<X11Window>,
     pub(super) geometry: Rectangle<i32, Logical>,
+    frame_extents: FrameExtents<i32, Physical>,
     pub(super) override_redirect: bool,
 
     // The associated wl_surface.
@@ -351,6 +355,7 @@ impl X11Surface {
                 buffered_geometry: None,
                 mapped_onto: None,
                 geometry,
+                frame_extents: Default::default(),
                 override_redirect,
                 title: String::from(""),
                 class: String::from(""),
@@ -1463,6 +1468,7 @@ impl X11Surface {
             )?;
             state.opaque_region_dirty = false;
         }
+        self.update_toolkit_frame_extents()?;
         Ok(())
     }
 
@@ -1516,6 +1522,10 @@ impl X11Surface {
                 let mut state = self.state.lock().unwrap();
                 state.opaque_region = None;
                 state.opaque_region_dirty = true;
+                Ok(None)
+            }
+            atom if atom == self.atoms._GTK_FRAME_EXTENTS => {
+                self.update_toolkit_frame_extents()?;
                 Ok(None)
             }
 
@@ -1614,6 +1624,55 @@ impl X11Surface {
             state.opacity = Some(opacity);
         }
         Ok(())
+    }
+
+    fn fetch_gtk_frame_extents(&self) -> Result<Option<FrameExtents<i32, Physical>>, ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        conn.get_property(
+            false,
+            self.window,
+            self.atoms._GTK_FRAME_EXTENTS,
+            AtomEnum::CARDINAL,
+            0,
+            4,
+        )?
+        .reply_unchecked()
+        .map(|reply| {
+            reply.and_then(|reply| {
+                reply.value32().and_then(|mut values| {
+                    Some(FrameExtents::new(
+                        (values.next()? as i32).max(0),
+                        (values.next()? as i32).max(0),
+                        (values.next()? as i32).max(0),
+                        (values.next()? as i32).max(0),
+                    ))
+                })
+            })
+        })
+    }
+
+    fn update_toolkit_frame_extents(&self) -> Result<(), ConnectionError> {
+        let frame_extents = self.fetch_gtk_frame_extents()?.unwrap_or_default();
+        self.state.lock().unwrap().frame_extents = frame_extents;
+        Ok(())
+    }
+
+    /// Returns the logical pixel widths of the surface's frame
+    ///
+    /// This is usually the width of the drop shadows at the edges of the surface.
+    pub fn frame_extents(&self) -> FrameExtents<i32, Logical> {
+        let scale = self
+            .client_scale
+            .as_ref()
+            .map(|scale| scale.load(Ordering::Acquire))
+            .unwrap_or(1.);
+        self.state
+            .lock()
+            .unwrap()
+            .frame_extents
+            .to_f64()
+            .to_logical(scale)
+            .to_i32_round()
     }
 
     fn update_protocols(&self) -> Result<(), ConnectionError> {

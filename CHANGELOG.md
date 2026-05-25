@@ -107,6 +107,9 @@ The `delegate_*!` macros have been replaced with a single `delegate_dispatch2!` 
 of new `Dipsatch2` and `GlobalDispatch2` traits. These will replace `Dispatch` and `GlobalDispatch` in a future version of
 `wayland_server`.
 
+The `SpaceElement::geometry` impl for `X11Surface` is no longer equivalent to its bbox.  For clients that set
+`_GTK_FRAME_EXTENTS`, the shadow extents are subtracted from the bbox to give the geometry.
+
 ### Additions
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
