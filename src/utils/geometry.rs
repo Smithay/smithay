@@ -1708,6 +1708,161 @@ impl<N: Default, Kind> Default for Rectangle<N, Kind> {
     }
 }
 
+/// Extra pixels around a window/surface, such as for a decorations frame or drop shadow
+#[repr(C)]
+pub struct FrameExtents<N, Kind> {
+    /// Frame pixels on the left
+    pub left: N,
+    /// Frame pixels on the right
+    pub right: N,
+    /// Frame pixels on top
+    pub top: N,
+    /// Frame pixels on the bottom
+    pub bottom: N,
+    _kind: std::marker::PhantomData<Kind>,
+}
+
+impl<N, Kind> FrameExtents<N, Kind> {
+    /// Create a new FrameExtents
+    pub const fn new(left: N, right: N, top: N, bottom: N) -> Self {
+        Self {
+            left,
+            right,
+            top,
+            bottom,
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Coordinate, Kind> FrameExtents<N, Kind> {
+    /// Convert the underlying numerical type to f64 for floating point manipulations
+    #[inline]
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    pub fn to_f64(self) -> FrameExtents<f64, Kind> {
+        FrameExtents {
+            left: self.left.to_f64(),
+            right: self.right.to_f64(),
+            top: self.top.to_f64(),
+            bottom: self.bottom.to_f64(),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Coordinate> FrameExtents<N, Physical> {
+    /// Convert this physical rectangle to logical coordinate space according to given scale factor
+    #[inline]
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    pub fn to_logical(&self, scale: impl Into<Scale<N>>) -> FrameExtents<N, Logical> {
+        let scale = scale.into();
+        FrameExtents {
+            left: self.left.downscale(scale.x),
+            right: self.right.downscale(scale.x),
+            top: self.top.downscale(scale.y),
+            bottom: self.bottom.downscale(scale.y),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Kind> FrameExtents<f64, Kind> {
+    /// Convert to i32 for integer-space manipulations by rounding float values
+    #[inline]
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    pub fn to_i32_round<N: Coordinate>(self) -> FrameExtents<N, Kind> {
+        FrameExtents {
+            left: N::from_f64(self.left.round()),
+            right: N::from_f64(self.right.round()),
+            top: N::from_f64(self.top.round()),
+            bottom: N::from_f64(self.bottom.round()),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Default, Kind> Default for FrameExtents<N, Kind> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            left: N::default(),
+            right: N::default(),
+            top: N::default(),
+            bottom: N::default(),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: fmt::Debug, S> fmt::Debug for FrameExtents<N, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("FrameExtents<{}>", std::any::type_name::<S>()))?;
+        f.debug_struct("")
+            .field("left", &self.left)
+            .field("right", &self.right)
+            .field("top", &self.top)
+            .field("bottom", &self.bottom)
+            .finish()
+    }
+}
+
+impl<N: Clone, Kind> Clone for FrameExtents<N, Kind> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            left: self.left.clone(),
+            right: self.right.clone(),
+            top: self.top.clone(),
+            bottom: self.bottom.clone(),
+            _kind: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Copy, Kind> Copy for FrameExtents<N, Kind> {}
+
+impl<N: PartialEq, Kind> PartialEq for FrameExtents<N, Kind> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.left == other.left
+            && self.right == other.right
+            && self.top == other.top
+            && self.bottom == other.bottom
+    }
+}
+
+impl<N: Eq, Kind> Eq for FrameExtents<N, Kind> {}
+
+impl<N: Coordinate, Kind> Add<FrameExtents<N, Kind>> for Rectangle<N, Kind> {
+    type Output = Rectangle<N, Kind>;
+
+    fn add(self, rhs: FrameExtents<N, Kind>) -> Self::Output {
+        Rectangle::new(
+            (self.loc.x - rhs.left, self.loc.y - rhs.top).into(),
+            (
+                (self.size.w + rhs.left + rhs.right).max(N::ZERO),
+                (self.size.h + rhs.top + rhs.bottom).max(N::ZERO),
+            )
+                .into(),
+        )
+    }
+}
+
+impl<N: Coordinate, Kind> Sub<FrameExtents<N, Kind>> for Rectangle<N, Kind> {
+    type Output = Rectangle<N, Kind>;
+
+    fn sub(self, rhs: FrameExtents<N, Kind>) -> Self::Output {
+        Rectangle::new(
+            (self.loc.x + rhs.left, self.loc.y + rhs.top).into(),
+            (
+                (self.size.w - rhs.left - rhs.right).max(N::ZERO),
+                (self.size.h - rhs.top - rhs.bottom).max(N::ZERO),
+            )
+                .into(),
+        )
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
 #[derive(Default)]

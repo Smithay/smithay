@@ -24,7 +24,7 @@ pub use sealed_file::SealedFile;
 #[cfg(feature = "wayland_frontend")]
 pub(crate) use self::geometry::Client;
 pub use self::geometry::{
-    Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform,
+    Buffer, Coordinate, FrameExtents, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform,
 };
 
 mod serial;

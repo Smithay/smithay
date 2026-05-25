@@ -235,6 +235,7 @@ mod atoms {
             _NET_WM_OPAQUE_REGION,
             _MOTIF_WM_HINTS,
             _NET_STARTUP_ID,
+            _GTK_FRAME_EXTENTS,
 
             // server -> client
             WM_S0,
@@ -900,6 +901,7 @@ impl X11Wm {
             atoms._NET_SHOWING_DESKTOP,
             atoms._NET_WM_OPAQUE_REGION,
             atoms._NET_WM_PING,
+            atoms._GTK_FRAME_EXTENTS,
         ];
         let net_supported = if sync_supported {
             net_supported_base

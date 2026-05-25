@@ -30,6 +30,12 @@ impl SpaceElement for X11Surface {
         Rectangle::from_size(size)
     }
 
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        let bbox = SpaceElement::bbox(self);
+        let frame_extents = self.frame_extents();
+        bbox - frame_extents
+    }
+
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
         X11Surface::surface_under(self, *point, (0, 0), WindowSurfaceType::all()).is_some()
     }
