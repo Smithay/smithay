@@ -8,6 +8,7 @@ use drm::control::atomic::AtomicModeReq;
 use drm::control::{Device as ControlDevice, Mode, connector, crtc, framebuffer, plane};
 
 use libc::dev_t;
+use smallvec::SmallVec;
 
 pub(super) mod atomic;
 #[cfg(feature = "backend_gbm")]
@@ -188,6 +189,62 @@ impl BasicDevice for DrmSurface {}
 impl ControlDevice for DrmSurface {}
 
 impl DrmSurface {
+    /// Start assembling one atomic commit that includes this surface.
+    ///
+    /// The returned [`DrmAtomicCommit`] owns the atomic request and records this
+    /// surface as the primary one used to submit it. Additional surfaces can be
+    /// appended with [`DrmAtomicCommit::add_surface`]; all appended surfaces are
+    /// marked as submitted only if [`DrmAtomicCommit::commit`] succeeds.
+    ///
+    /// Callers must serialize commits, page-flips, and pending-state changes for
+    /// all participating surfaces while the [`DrmAtomicCommit`] is alive.
+    ///
+    /// Only supported on the atomic API; returns [`Error::AtomicUnsupported`] for
+    /// legacy surfaces.
+    ///
+    /// ```no_run
+    /// # use smithay::backend::drm::{DrmSurface, PlaneState};
+    /// # fn queue_atomic_commit<'a>(
+    /// #     surface_a: &'a DrmSurface,
+    /// #     planes_a: Vec<PlaneState<'a>>,
+    /// #     surface_b: &'a DrmSurface,
+    /// #     planes_b: Vec<PlaneState<'a>>,
+    /// # ) -> Result<(), smithay::backend::drm::DrmError> {
+    /// let mut commit = surface_a.begin_atomic_commit(planes_a, true, false)?;
+    /// commit.add_surface(surface_b, planes_b)?;
+    /// commit.commit()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ```no_run
+    /// # use smithay::backend::drm::{DrmSurface, PlaneState};
+    /// # fn rollback_atomic_commit<'a>(
+    /// #     surface_a: &'a DrmSurface,
+    /// #     planes_a: Vec<PlaneState<'a>>,
+    /// # ) -> Result<(), smithay::backend::drm::DrmError> {
+    /// let commit = surface_a.begin_atomic_commit(planes_a, false, true)?;
+    /// commit.rollback();
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn begin_atomic_commit<'a, 'b>(
+        &'a self,
+        planes: impl IntoIterator<Item = PlaneState<'b>>,
+        event: bool,
+        allow_modeset: bool,
+    ) -> Result<DrmAtomicCommit<'a>, Error> {
+        let mut commit = DrmAtomicCommit {
+            primary: self,
+            contributors: SmallVec::new(),
+            req: AtomicModeReq::new(),
+            event,
+            allow_modeset,
+        };
+        commit.add_surface(self, planes)?;
+        Ok(commit)
+    }
+
     /// Returns the underlying [`DrmDeviceFd`]
     pub fn device_fd(&self) -> &DrmDeviceFd {
         match &*self.internal {
@@ -551,6 +608,63 @@ impl DrmSurface {
             DrmSurfaceInternal::Legacy(surf) => surf.clear(),
         }
     }
+}
+
+/// A shared atomic commit assembled from one or more [`DrmSurface`]s.
+///
+/// A `DrmAtomicCommit` starts from a primary surface via
+/// [`DrmSurface::begin_atomic_commit`]. The primary surface is included in the
+/// request immediately and is later used to submit the request. Additional
+/// same-device surfaces can be appended with [`add_surface`](Self::add_surface).
+///
+/// This type encodes the request lifecycle: callers can append surfaces, then
+/// either [`commit`](Self::commit) the request or [`rollback`](Self::rollback)
+/// it. Successful commits advance the submitted state of all participating
+/// surfaces; dropped or rolled-back commits do not.
+///
+/// Callers must serialize commits, page-flips, and pending-state changes for all
+/// participating surfaces while the `DrmAtomicCommit` is alive.
+#[derive(Debug)]
+pub struct DrmAtomicCommit<'a> {
+    primary: &'a DrmSurface,
+    contributors: SmallVec<[&'a DrmSurface; 4]>,
+    req: AtomicModeReq,
+    event: bool,
+    allow_modeset: bool,
+}
+
+impl<'a> DrmAtomicCommit<'a> {
+    /// Append another surface's scan-out state to this atomic commit.
+    ///
+    /// The surface must belong to the same DRM device as the primary surface.
+    /// It is recorded as a contributor only after its state has been appended
+    /// successfully.
+    pub fn add_surface<'b>(
+        &mut self,
+        surface: &'a DrmSurface,
+        planes: impl IntoIterator<Item = PlaneState<'b>>,
+    ) -> Result<(), Error> {
+        if surface.device_fd().dev_path() != self.primary.device_fd().dev_path() {
+            return Err(Error::AtomicDeviceMismatch);
+        }
+
+        surface.append_to_request(&mut self.req, planes, self.allow_modeset)?;
+        self.contributors.push(surface);
+        Ok(())
+    }
+
+    /// Commit the assembled request through the primary surface.
+    pub fn commit(self) -> Result<(), Error> {
+        self.primary
+            .commit_request(self.req, self.event, self.allow_modeset)?;
+        for surface in self.contributors {
+            surface.mark_request_submitted(self.allow_modeset);
+        }
+        Ok(())
+    }
+
+    /// Abandon the assembled request without committing it.
+    pub fn rollback(self) {}
 }
 
 fn ensure_legacy_planes<'a>(

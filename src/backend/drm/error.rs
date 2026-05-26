@@ -90,6 +90,9 @@ pub enum Error {
     /// legacy device, which has no atomic modesetting API.
     #[error("Atomic commits spanning multiple crtcs are not supported on legacy devices")]
     AtomicUnsupported,
+    /// A shared atomic commit was requested for surfaces on different DRM devices.
+    #[error("Atomic commits spanning multiple drm devices are not supported")]
+    AtomicDeviceMismatch,
 }
 
 impl From<Error> for SwapBuffersError {

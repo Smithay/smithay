@@ -135,7 +135,7 @@ use std::{
 
 use drm::{
     Device, DriverCapability,
-    control::{Device as _, Mode, PlaneType, atomic::AtomicModeReq, connector, crtc, framebuffer, plane},
+    control::{Device as _, Mode, PlaneType, connector, crtc, framebuffer, plane},
 };
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::{IndexMap, IndexSet};
@@ -3393,10 +3393,28 @@ where
         // modeset path; the shared atomic commit is all-or-nothing.
         let modeset = self.tiles.iter().any(|tile| tile.surface.commit_pending());
 
+        let [primary, rest @ ..] = &mut self.tiles[..] else {
+            unreachable!("DrmCompositor always has at least one tile");
+        };
+        let prepared = &mut primary
+            .queued_frame
+            .as_mut()
+            .expect("all tiles queued together")
+            .prepared_frame;
+        let allow_partial = !modeset && prepared.kind == PreparedFrameKind::Partial;
+        let planes = prepared
+            .frame
+            .build_planes(&primary.surface, primary.supports_fencing, allow_partial)
+            .into_iter()
+            .collect::<SmallVec<[_; 8]>>();
+        let mut commit = primary
+            .surface
+            .begin_atomic_commit(planes, true, modeset)
+            .map_err(FrameError::DrmError)?;
+
         // Keep each queued `FrameState` in place until the commit consumes the
         // request, so its fences remain alive.
-        let mut req = AtomicModeReq::new();
-        for tile in self.tiles.iter_mut() {
+        for tile in rest {
             let prepared = &mut tile
                 .queued_frame
                 .as_mut()
@@ -3408,17 +3426,16 @@ where
                 .build_planes(&tile.surface, tile.supports_fencing, allow_partial)
                 .into_iter()
                 .collect::<SmallVec<[_; 8]>>();
-            tile.surface
-                .append_to_request(&mut req, planes, modeset)
+            commit
+                .add_surface(&tile.surface, planes)
                 .map_err(FrameError::DrmError)?;
         }
 
-        let flip = self.tiles[0].surface.commit_request(req, true, modeset);
+        let flip = commit.commit();
 
         let has_user_data = user_data.is_some();
         if flip.is_ok() {
             for tile in self.tiles.iter_mut() {
-                tile.surface.mark_request_submitted(modeset);
                 let prepared = tile.queued_frame.take().expect("queued before submit").prepared_frame;
                 if prepared.kind == PreparedFrameKind::Full {
                     tile.reset_pending = false;
@@ -3444,8 +3461,33 @@ where
 
         let modeset = self.tiles.iter().any(|tile| tile.surface.commit_pending());
 
-        let mut req = AtomicModeReq::new();
-        for tile in self.tiles.iter_mut() {
+        let [primary, rest @ ..] = &mut self.tiles[..] else {
+            unreachable!("DrmCompositor always has at least one tile");
+        };
+        let prepared = primary.next_frame.as_mut().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        if let Some(plane_state) = prepared.frame.plane_state(primary.surface.plane()) {
+            if !plane_state.skip {
+                let slot = plane_state.buffer().and_then(|config| match &config.buffer {
+                    ScanoutBuffer::Swapchain(slot) => Some(slot),
+                    _ => None,
+                });
+                if let Some(slot) = slot {
+                    primary.swapchain.submitted(slot);
+                }
+            }
+        }
+        let allow_partial = !modeset && prepared.kind == PreparedFrameKind::Partial;
+        let planes = prepared
+            .frame
+            .build_planes(&primary.surface, primary.supports_fencing, allow_partial)
+            .into_iter()
+            .collect::<SmallVec<[_; 8]>>();
+        let mut commit = primary
+            .surface
+            .begin_atomic_commit(planes, false, modeset)
+            .map_err(FrameError::DrmError)?;
+
+        for tile in rest {
             let prepared = tile.next_frame.as_mut().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
             if let Some(plane_state) = prepared.frame.plane_state(tile.surface.plane()) {
                 if !plane_state.skip {
@@ -3464,17 +3506,16 @@ where
                 .build_planes(&tile.surface, tile.supports_fencing, allow_partial)
                 .into_iter()
                 .collect::<SmallVec<[_; 8]>>();
-            tile.surface
-                .append_to_request(&mut req, planes, modeset)
+            commit
+                .add_surface(&tile.surface, planes)
                 .map_err(FrameError::DrmError)?;
         }
 
         // Blocking commit, no page-flip event (mirrors single-tile `commit_frame`).
-        let flip = self.tiles[0].surface.commit_request(req, false, modeset);
+        let flip = commit.commit();
 
         if flip.is_ok() {
             for tile in self.tiles.iter_mut() {
-                tile.surface.mark_request_submitted(modeset);
                 tile.next_frame = None;
                 tile.queued_frame = None;
                 tile.pending_frame = None;
