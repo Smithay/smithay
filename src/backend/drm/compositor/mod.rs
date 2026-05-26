@@ -942,10 +942,9 @@ impl From<&PlaneInfo> for PlaneAssignment {
     }
 }
 
-// The frame lifecycle (`queued`/`pending`) tracks the per-tile scan-out
-// `FrameState` here, but the caller's `user_data` is one token per *frame* — a
-// tiled output flips all its tiles in a single atomic commit — so it lives on
-// the `DrmCompositor`, not in these per-tile wrappers.
+// The frame lifecycle (`queued`/`pending`) tracks per-CRTC scan-out state here,
+// but the caller's `user_data` is one token per logical frame. Keep it on the
+// `DrmCompositor` so a tiled output submits presentation feedback once.
 struct PendingFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> {
     frame: CompositorFrameState<A, F>,
 }
@@ -1040,11 +1039,8 @@ bitflags::bitflags! {
 
 /// Per-CRTC state of a [`DrmCompositor`].
 ///
-/// A `DrmCompositor` holds one `TileState` per CRTC it drives — exactly one in
-/// the common case, several when compositing a tiled output (see
-/// [`DrmCompositor::new_tiled`]). Everything that belongs to a single scan-out
-/// pipeline (the surface, its planes, swapchain and frame-state machine) lives
-/// here; the logical output state stays on `DrmCompositor`.
+/// A `DrmCompositor` holds one `TileState` per CRTC it drives. Per-CRTC scan-out
+/// state lives here; logical output state stays on `DrmCompositor`.
 struct TileState<A, F, G>
 where
     A: Allocator,
@@ -1052,9 +1048,8 @@ where
     <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     G: AsFd + 'static,
 {
-    /// Sub-rect of the logical output this tile scans out, in the output's
-    /// untransformed (mode) coordinate space. The whole output for a
-    /// single-tile compositor; one slice of the grid for a tiled one.
+    /// Sub-rect of the logical output this CRTC scans out, in untransformed
+    /// output coordinates.
     region: Rectangle<i32, Physical>,
     surface: Arc<DrmSurface>,
     planes: Planes,
@@ -1091,20 +1086,18 @@ where
     output_mode_source: OutputModeSource,
     framebuffer_exporter: F,
     cursor_size: Size<i32, Physical>,
-    // `tiles[0]` is the primary: its CRTC's vblank drives the group's
-    // presentation, its surface carries the atomic commit, and it seeds the
-    // aggregated frame result. The rest are secondary. (Positional, by
-    // convention; the constructor takes the primary placement first.)
+    // `tiles[0]` is the primary: its CRTC's vblank drives presentation for the
+    // logical output, its surface carries the atomic commit, and it seeds the
+    // aggregated frame result. The constructor takes the primary placement first.
     //
     // Inline capacity 1: a single-CRTC output is the common case and stays
     // heap-free. A tiled output (several CRTCs) spills to one heap allocation.
     // Kept at 1 because TileState is large, so extra inline slots would bloat
     // every (mostly single-tile) compositor just for the rare tiled case.
     tiles: SmallVec<[TileState<A, F, G>; 1]>,
-    /// `user_data` for the frame queued via [`queue_frame`](DrmCompositor::queue_frame)
-    /// but not yet submitted, and for the in-flight frame awaiting its vblank,
-    /// respectively. These are per-frame (one atomic commit across all tiles),
-    /// hence held here rather than per-tile.
+    /// `user_data` for the queued and in-flight logical frames, respectively.
+    /// Held here, rather than per tile, because one atomic commit presents one
+    /// logical frame.
     queued_user_data: Option<U>,
     pending_user_data: Option<U>,
     debug_flags: DebugFlags,
@@ -1129,25 +1122,22 @@ where
     }
 }
 
-/// One CRTC's contribution to a tiled [`DrmCompositor`].
+/// One CRTC's placement in a tiled [`DrmCompositor`].
 ///
-/// A tiled compositor drives several CRTCs as a single logical output, each
-/// scanning out a sub-rect of that output. A `TilePlacement` pairs one
-/// [`DrmSurface`] (one CRTC) with the planes it may use and the sub-rect it
-/// covers. See [`DrmCompositor::new_tiled`].
+/// A `TilePlacement` pairs a [`DrmSurface`] with the planes it may use and the
+/// sub-rect of the logical output it scans out.
 #[derive(Debug)]
 pub struct TilePlacement {
-    /// The surface (exactly one CRTC) backing this tile.
+    /// The surface backing this CRTC.
     pub surface: DrmSurface,
     /// Planes this tile may use for direct scan-out, with the same meaning as
     /// the `planes` argument of [`DrmCompositor::new`]: `None` uses all planes
     /// reported by [`DrmSurface::planes`]. Planes belong to a CRTC, so they are
     /// configured per tile.
     pub planes: Option<Planes>,
-    /// The sub-rect of the logical output this tile scans out, in the output's
-    /// untransformed (mode) coordinate space. The offset positions the tile
-    /// within the logical framebuffer; the size is expected to match
-    /// `surface`'s scan-out mode.
+    /// The sub-rect of the logical output this CRTC scans out, in untransformed
+    /// output coordinates. The size is expected to match `surface`'s scan-out
+    /// mode.
     pub region: Rectangle<i32, Physical>,
 }
 
@@ -1599,22 +1589,23 @@ where
         })
     }
 
-    /// Initialize a [`DrmCompositor`] that drives several CRTCs as one logical,
-    /// frame-locked output — e.g. a DisplayID-tiled 5K monitor carried over two
-    /// DisplayPort streams, or a single-GPU video wall.
+    /// Initialize a [`DrmCompositor`] that drives several CRTCs as one logical
+    /// output.
     ///
-    /// `placements` provides one [`TilePlacement`] per CRTC; the surfaces must all
-    /// belong to the **same DRM device** (so their page-flips can share a single
-    /// atomic commit) and their regions must tile a gap-free rectangle anchored
-    /// at the origin, matching the logical output's mode.
+    /// This is the multi-CRTC generalization of [`new`](Self::new). It is not
+    /// tied to the DRM `TILE` property: callers may use it for DisplayID-tiled
+    /// monitors, a same-device video wall, or any other layout where several
+    /// CRTCs scan out rectangular parts of one logical output.
     ///
-    /// List the primary tile first. `tiles[0]`'s CRTC carries the atomic commit
-    /// and its page-flip event signals the group's completed frame. The other
-    /// tiles flip in that same commit, so the whole group stays frame-locked.
+    /// `placements` provides one [`TilePlacement`] per CRTC. The surfaces must
+    /// all belong to the same DRM device, and their regions must tile a gap-free
+    /// rectangle anchored at the origin, matching the logical output's mode.
     ///
-    /// The remaining arguments are device-wide and shared across all tiles,
-    /// exactly as in [`new`](Self::new) — of which this is the multi-CRTC
-    /// generalization.
+    /// List the primary tile first. `tiles[0]`'s CRTC carries the atomic commit,
+    /// and its page-flip event signals the group's completed frame.
+    ///
+    /// The remaining arguments are device-wide and shared across all tiles, as
+    /// in [`new`](Self::new).
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip_all)]
     pub fn new_tiled(
@@ -1635,14 +1626,13 @@ where
         validate_tile_regions(tiles_in.iter().map(|p| p.region))?;
 
         // All tiles must live on one DRM device, otherwise they cannot share a
-        // single atomic commit (and would not stay frame-locked).
+        // single atomic commit.
         let dev = tiles_in[0].surface.dev_path();
         if tiles_in.iter().any(|p| p.surface.dev_path() != dev) {
             return Err(TileConfigError::MultipleDevices.into());
         }
 
-        // The frame-locked commit relies on the atomic API; legacy surfaces have
-        // no way to flip several CRTCs together.
+        // Legacy surfaces have no way to flip several CRTCs together.
         if tiles_in.iter().any(|p| p.surface.is_legacy()) {
             return Err(FrameError::DrmError(DrmError::AtomicUnsupported));
         }
@@ -1651,8 +1641,6 @@ where
         let renderer_formats = renderer_formats.into_iter().collect::<Vec<_>>();
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
 
-        // Each tile renders with the logical output's scale/transform into its
-        // own tile-sized framebuffer; refreshed each frame from the source.
         let (scale, transform) =
             match <&OutputModeSource as TryInto<(Size<i32, Physical>, Scale<f64>, Transform)>>::try_into(
                 &output_mode_source,
@@ -3364,21 +3352,18 @@ where
 
     // Tiled (multi-CRTC) frame lifecycle.
     //
-    // A tiled `DrmCompositor` drives several CRTCs as one logical output, flipped
-    // together in a single atomic commit (see `DrmSurface::append_to_request` /
-    // `commit_request`) so they stay frame-locked. Because the flip is atomic,
-    // the primary tile's vblank stands in for the whole group: when it arrives,
-    // every tile has flipped, so the caller — which routes that one CRTC's vblank
-    // to `frame_submitted` — advances the entire group exactly once. The other
-    // CRTCs' redundant vblanks belong to no logical output and are ignored.
+    // A tiled `DrmCompositor` flips several CRTCs together in one atomic commit.
+    // The primary CRTC's page-flip event is the logical output's completion
+    // signal; the other CRTCs are advanced from the same `frame_submitted_tiled`
+    // call.
 
     fn queue_frame_tiled(&mut self, user_data: U) -> FrameResult<(), A, F> {
         if !self.tiles[0].surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
 
-        // Every tile rendered a frame (`render_frame` stores even unchanged tiles
-        // for a tiled output), so they queue and flip together.
+        // `render_frame` stores a frame for every tile, even unchanged ones, so
+        // the group always queues and flips together.
         for tile in self.tiles.iter_mut() {
             let prepared = tile.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
             if let Some(plane_state) = prepared.frame.plane_state(tile.surface.plane()) {
@@ -3405,12 +3390,11 @@ where
     fn submit_tiled(&mut self) -> FrameResult<(), A, F> {
         let user_data = self.queued_user_data.take();
         // A pending modeset on any tile forces the whole commit through the
-        // modeset path (the single atomic commit is all-or-nothing).
+        // modeset path; the shared atomic commit is all-or-nothing.
         let modeset = self.tiles.iter().any(|tile| tile.surface.commit_pending());
 
-        // Assemble every tile's planes into one request. Each tile's queued
-        // `FrameState` stays in place (and keeps its fences alive) until the
-        // commit below has consumed the request.
+        // Keep each queued `FrameState` in place until the commit consumes the
+        // request, so its fences remain alive.
         let mut req = AtomicModeReq::new();
         for tile in self.tiles.iter_mut() {
             let prepared = &mut tile
@@ -3429,8 +3413,6 @@ where
                 .map_err(FrameError::DrmError)?;
         }
 
-        // One atomic commit flips every tile together; the page-flip event on the
-        // primary CRTC is the group's frame-completion signal.
         let flip = self.tiles[0].surface.commit_request(req, true, modeset);
 
         let has_user_data = user_data.is_some();
@@ -3446,7 +3428,7 @@ where
             self.pending_user_data = user_data;
         } else {
             // Drop the queued frames so the next `render_frame` produces a fresh
-            // set rather than retrying this (failed) one.
+            // set rather than retrying this failed one.
             for tile in self.tiles.iter_mut() {
                 tile.queued_frame = None;
             }
@@ -3509,7 +3491,6 @@ where
             return Ok(None);
         }
 
-        // The whole group flipped in one atomic commit, so advance every tile.
         for tile in self.tiles.iter_mut() {
             if let Some(PendingFrame { mut frame }) = tile.pending_frame.take() {
                 std::mem::swap(&mut frame, &mut tile.current_frame);

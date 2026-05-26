@@ -508,18 +508,18 @@ where
         })
     }
 
-    /// Create a tiled [`DrmOutput`]: several CRTCs of this device driven as one
-    /// logical, frame-locked output (e.g. a DisplayID-tiled monitor carried over
-    /// several DisplayPort streams). The CRTCs flip together in a single atomic
-    /// commit — see [`DrmCompositor::new_tiled`], the multi-CRTC generalization
-    /// of [`initialize_output`](Self::initialize_output).
+    /// Create a [`DrmOutput`] that drives several CRTCs on this device as one
+    /// logical output.
     ///
-    /// `tiles` lists one [`DrmTilePlacement`] per CRTC; `tiles[0]` is the primary
-    /// tile, whose CRTC keys the resulting output (and whose vblank the caller
-    /// should treat as the group's frame-completion signal). The placements'
-    /// regions must tile a gap-free rectangle anchored at the origin matching
-    /// `output_mode_source`'s size, and all CRTCs must belong to this device and
-    /// be unused.
+    /// This wraps [`DrmCompositor::new_tiled`] for callers that want one logical
+    /// output backed by multiple same-device CRTCs, whether that layout comes
+    /// from a DisplayID-tiled monitor or from compositor policy.
+    ///
+    /// `tiles` lists one [`DrmTilePlacement`] per CRTC. `tiles[0]` is the
+    /// primary tile; its CRTC keys the resulting output and provides the
+    /// page-flip event for the logical frame. The regions must tile a gap-free
+    /// rectangle anchored at the origin matching `output_mode_source`'s size, and
+    /// all CRTCs must be unused.
     #[allow(clippy::too_many_arguments)]
     pub fn initialize_tiled_output<R, E>(
         &mut self,
@@ -545,9 +545,6 @@ where
 
         let mut seen = HashSet::new();
         for tile in &tiles {
-            // Reject a CRTC repeated within this list, or one already driven by
-            // another compositor / reserved by another tiled output — each would
-            // otherwise create a second surface for a CRTC already in use.
             if !seen.insert(tile.crtc)
                 || self.compositor.contains_key(&tile.crtc)
                 || self.reserved_crtcs.read().unwrap().contains(&tile.crtc)
@@ -556,7 +553,6 @@ where
             }
         }
 
-        // Create a surface per tile and pair it with its sub-rect of the output.
         let mut placements = Vec::with_capacity(tiles.len());
         for tile in &tiles {
             let surface = self
