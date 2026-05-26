@@ -553,36 +553,126 @@ where
             }
         }
 
-        let mut placements = Vec::with_capacity(tiles.len());
-        for tile in &tiles {
-            let surface = self
-                .device
-                .create_surface(tile.crtc, tile.mode, &tile.connectors)
-                .map_err(|err| DrmOutputManagerError::Frame(FrameError::DrmError(err)))?;
-            placements.push(TilePlacement {
-                surface,
-                planes: tile.planes.clone(),
-                region: tile.region,
-            });
-        }
+        let mut create_compositor =
+            |implicit_modifiers: bool| -> FrameResult<DrmCompositor<A, F, U, G>, A, F> {
+                let mut placements = Vec::with_capacity(tiles.len());
+                for tile in &tiles {
+                    let surface = self
+                        .device
+                        .create_surface(tile.crtc, tile.mode, &tile.connectors)?;
+                    placements.push(TilePlacement {
+                        surface,
+                        planes: tile.planes.clone(),
+                        region: tile.region,
+                    });
+                }
 
-        // NOTE: unlike `initialize_output`, this does not yet retry under
-        // bandwidth pressure (disabling overlay planes / implicit modifiers). A
-        // tiled output is a single dedicated monitor, so the simple path is used
-        // for now.
-        let compositor = DrmCompositor::<A, F, U, G>::new_tiled(
-            output_mode_source,
-            placements,
-            self.allocator.clone(),
-            self.exporter.clone(),
-            self.color_formats.iter().copied(),
-            self.renderer_formats.iter().copied(),
-            self.device.cursor_size(),
-            self.gbm.clone(),
-        )
-        .map_err(DrmOutputManagerError::Frame)?;
+                if implicit_modifiers {
+                    DrmCompositor::<A, F, U, G>::new_tiled(
+                        output_mode_source.clone(),
+                        placements,
+                        self.allocator.clone(),
+                        self.exporter.clone(),
+                        self.color_formats.iter().copied(),
+                        self.renderer_formats
+                            .iter()
+                            .filter(|f| f.modifier == DrmModifier::Invalid)
+                            .copied(),
+                        self.device.cursor_size(),
+                        self.gbm.clone(),
+                    )
+                } else {
+                    DrmCompositor::<A, F, U, G>::new_tiled(
+                        output_mode_source.clone(),
+                        placements,
+                        self.allocator.clone(),
+                        self.exporter.clone(),
+                        self.color_formats.iter().copied(),
+                        self.renderer_formats.iter().copied(),
+                        self.device.cursor_size(),
+                        self.gbm.clone(),
+                    )
+                }
+            };
 
-        self.compositor.insert(primary_crtc, Mutex::new(compositor));
+        match create_compositor(false) {
+            Ok(compositor) => {
+                self.compositor.insert(primary_crtc, Mutex::new(compositor));
+            }
+            Err(err) => {
+                tracing::warn!(
+                    ?primary_crtc,
+                    ?err,
+                    "failed to initialize tiled output, trying to lower bandwidth"
+                );
+
+                for compositor in self.compositor.values_mut() {
+                    let compositor = compositor.get_mut().unwrap();
+                    if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+                        if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
+                            return Err(err);
+                        }
+                    }
+                }
+
+                match create_compositor(false) {
+                    Ok(compositor) => {
+                        self.compositor.insert(primary_crtc, Mutex::new(compositor));
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?primary_crtc,
+                            ?err,
+                            "failed to initialize tiled output, trying implicit modifiers"
+                        );
+
+                        for compositor in self.compositor.values_mut() {
+                            let compositor = compositor.get_mut().unwrap();
+
+                            let current_format = compositor.format();
+                            if let Err(err) = compositor.set_format(
+                                self.allocator.clone(),
+                                current_format,
+                                [DrmModifier::Invalid],
+                            ) {
+                                tracing::warn!(?err, "failed to set new format");
+                                continue;
+                            }
+
+                            render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                        }
+
+                        match create_compositor(true) {
+                            Ok(compositor) => {
+                                self.compositor.insert(primary_crtc, Mutex::new(compositor));
+                            }
+                            Err(err) => {
+                                for compositor in self.compositor.values_mut() {
+                                    let compositor = compositor.get_mut().unwrap();
+
+                                    let current_format = compositor.format();
+                                    if let Err(err) = compositor.set_format(
+                                        self.allocator.clone(),
+                                        current_format,
+                                        self.renderer_formats
+                                            .iter()
+                                            .filter(|f| f.code == current_format)
+                                            .map(|f| f.modifier),
+                                    ) {
+                                        tracing::warn!(?err, "failed to reset format");
+                                        continue;
+                                    }
+
+                                    render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                                }
+
+                                return Err(DrmOutputManagerError::Frame(err));
+                            }
+                        }
+                    }
+                }
+            }
+        };
 
         // Render once to lock in the primary plane with the chosen format (see
         // `initialize_output`).
