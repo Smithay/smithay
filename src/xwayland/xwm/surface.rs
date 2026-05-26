@@ -290,6 +290,7 @@ pub enum WmWindowProperty {
     StartupId,
     Pid,
     Opacity,
+    FrameExtents,
 }
 
 /// https://x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#input_focus
@@ -1544,7 +1545,7 @@ impl X11Surface {
             }
             atom if atom == self.atoms._GTK_FRAME_EXTENTS => {
                 self.update_toolkit_frame_extents()?;
-                Ok(None)
+                Ok(Some(WmWindowProperty::FrameExtents))
             }
 
             _ => Ok(None), // unknown
