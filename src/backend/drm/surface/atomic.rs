@@ -1743,7 +1743,11 @@ fn req_set_plane(
     Ok(())
 }
 
-fn req_reset_plane(mapping: &PropMapping, req: &mut AtomicModeReq, plane: plane::Handle) -> Result<(), Error> {
+fn req_reset_plane(
+    mapping: &PropMapping,
+    req: &mut AtomicModeReq,
+    plane: plane::Handle,
+) -> Result<(), Error> {
     req.add_property(
         plane,
         mapping.plane_prop_handle(plane, "CRTC_ID")?,

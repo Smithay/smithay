@@ -957,7 +957,9 @@ where
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PendingFrame").field("frame", &self.frame).finish()
+        f.debug_struct("PendingFrame")
+            .field("frame", &self.frame)
+            .finish()
     }
 }
 
@@ -2400,7 +2402,8 @@ where
         // If a commit is pending we may still be able to just use a previous
         // state, but we want to queue a frame so we just fake the damage to
         // make sure queue_frame won't be skipped because of no damage
-        let allow_partial_update = !self.tiles[tile].reset_pending && !self.tiles[tile].surface.commit_pending();
+        let allow_partial_update =
+            !self.tiles[tile].reset_pending && !self.tiles[tile].surface.commit_pending();
 
         // Derive the mode from this tile's own damage tracker: for a single-tile
         // compositor it mirrors `output_mode_source`; for a tiled one it is the
@@ -2464,8 +2467,12 @@ where
             .clone();
 
         let tile_state = &mut self.tiles[tile];
-        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = std::mem::take(&mut tile_state.opaque_regions);
-        std::mem::swap(&mut tile_state.previous_element_states, &mut tile_state.element_states);
+        let mut opaque_regions: Vec<Rectangle<i32, Physical>> =
+            std::mem::take(&mut tile_state.opaque_regions);
+        std::mem::swap(
+            &mut tile_state.previous_element_states,
+            &mut tile_state.element_states,
+        );
         let mut element_states = std::mem::take(&mut tile_state.element_states);
         element_states.reserve(std::cmp::min(elements.len(), tile_state.planes.overlay.len()));
         let mut render_element_states = RenderElementStates {
@@ -2485,7 +2492,8 @@ where
                 .unwrap_or(&self.tiles[tile].current_frame);
 
             // This will create an empty frame state, all planes are skipped by default
-            let mut next_frame_state = FrameState::from_planes(self.tiles[tile].surface.plane(), &self.tiles[tile].planes);
+            let mut next_frame_state =
+                FrameState::from_planes(self.tiles[tile].surface.plane(), &self.tiles[tile].planes);
 
             // We want to set skip to false on all planes that previously had something assigned so that
             // they get cleared when they are not longer used
@@ -2505,10 +2513,13 @@ where
 
         // We want to make sure we can actually scan-out the primary plane, so
         // explicitly set skip to false
-        let plane_claim = self.tiles[tile].surface.claim_plane(self.tiles[tile].surface.plane()).ok_or_else(|| {
-            error!("failed to claim primary plane");
-            FrameError::PrimaryPlaneClaimFailed
-        })?;
+        let plane_claim = self.tiles[tile]
+            .surface
+            .claim_plane(self.tiles[tile].surface.plane())
+            .ok_or_else(|| {
+                error!("failed to claim primary plane");
+                FrameError::PrimaryPlaneClaimFailed
+            })?;
         let primary_plane_state: PlaneState<
             <A as Allocator>::Buffer,
             <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
@@ -2545,7 +2556,8 @@ where
         let mut output_elements: Vec<(&'a E, Rectangle<i32, Physical>, usize, bool)> =
             Vec::with_capacity(elements.len());
 
-        let mut element_opaque_regions_workhouse = std::mem::take(&mut self.tiles[tile].element_opaque_regions_workhouse);
+        let mut element_opaque_regions_workhouse =
+            std::mem::take(&mut self.tiles[tile].element_opaque_regions_workhouse);
         for (index, element) in elements.iter().enumerate() {
             let element_id = element.id();
             let element_geometry = element.geometry(output_scale);
@@ -2699,7 +2711,8 @@ where
                     .overlay
                     .iter()
                     .filter(|p| {
-                        p.zpos.unwrap_or_default() < self.tiles[tile].surface.plane_info().zpos.unwrap_or_default()
+                        p.zpos.unwrap_or_default()
+                            < self.tiles[tile].surface.plane_info().zpos.unwrap_or_default()
                     })
                     .any(|p| next_frame_state.overlaps(p.handle, element_geometry));
                 !overlaps_with_underlay
@@ -3145,7 +3158,10 @@ where
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
 
-        let prepared_frame = self.tiles[0].next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        let prepared_frame = self.tiles[0]
+            .next_frame
+            .take()
+            .ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
         if prepared_frame.is_empty() {
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
@@ -3193,7 +3209,10 @@ where
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
 
-        let mut prepared_frame = self.tiles[0].next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        let mut prepared_frame = self.tiles[0]
+            .next_frame
+            .take()
+            .ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
         if prepared_frame.is_empty() {
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
@@ -3211,9 +3230,12 @@ where
             }
         }
 
-        let flip = prepared_frame
-            .frame
-            .commit(&self.tiles[0].surface, self.tiles[0].supports_fencing, false, false);
+        let flip = prepared_frame.frame.commit(
+            &self.tiles[0].surface,
+            self.tiles[0].supports_fencing,
+            false,
+            false,
+        );
 
         if flip.is_ok() {
             self.tiles[0].queued_frame = None;
@@ -3255,13 +3277,19 @@ where
 
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.tiles[0].surface.commit_pending() {
-            prepared_frame
-                .frame
-                .commit(&self.tiles[0].surface, self.tiles[0].supports_fencing, allow_partial_update, true)
+            prepared_frame.frame.commit(
+                &self.tiles[0].surface,
+                self.tiles[0].supports_fencing,
+                allow_partial_update,
+                true,
+            )
         } else {
-            prepared_frame
-                .frame
-                .page_flip(&self.tiles[0].surface, self.tiles[0].supports_fencing, allow_partial_update, true)
+            prepared_frame.frame.page_flip(
+                &self.tiles[0].surface,
+                self.tiles[0].supports_fencing,
+                allow_partial_update,
+                true,
+            )
         };
 
         self.handle_flip(prepared_frame, user_data, flip)
@@ -3377,7 +3405,9 @@ where
                     }
                 }
             }
-            tile.queued_frame = Some(QueuedFrame { prepared_frame: prepared });
+            tile.queued_frame = Some(QueuedFrame {
+                prepared_frame: prepared,
+            });
         }
 
         self.queued_user_data = Some(user_data);
@@ -3436,11 +3466,17 @@ where
         let has_user_data = user_data.is_some();
         if flip.is_ok() {
             for tile in self.tiles.iter_mut() {
-                let prepared = tile.queued_frame.take().expect("queued before submit").prepared_frame;
+                let prepared = tile
+                    .queued_frame
+                    .take()
+                    .expect("queued before submit")
+                    .prepared_frame;
                 if prepared.kind == PreparedFrameKind::Full {
                     tile.reset_pending = false;
                 }
-                tile.pending_frame = has_user_data.then_some(PendingFrame { frame: prepared.frame });
+                tile.pending_frame = has_user_data.then_some(PendingFrame {
+                    frame: prepared.frame,
+                });
             }
             self.pending_user_data = user_data;
         } else {
@@ -3464,7 +3500,10 @@ where
         let [primary, rest @ ..] = &mut self.tiles[..] else {
             unreachable!("DrmCompositor always has at least one tile");
         };
-        let prepared = primary.next_frame.as_mut().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        let prepared = primary
+            .next_frame
+            .as_mut()
+            .ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
         if let Some(plane_state) = prepared.frame.plane_state(primary.surface.plane()) {
             if !plane_state.skip {
                 let slot = plane_state.buffer().and_then(|config| match &config.buffer {
@@ -3488,7 +3527,10 @@ where
             .map_err(FrameError::DrmError)?;
 
         for tile in rest {
-            let prepared = tile.next_frame.as_mut().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+            let prepared = tile
+                .next_frame
+                .as_mut()
+                .ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
             if let Some(plane_state) = prepared.frame.plane_state(tile.surface.plane()) {
                 if !plane_state.skip {
                     let slot = plane_state.buffer().and_then(|config| match &config.buffer {
@@ -3596,7 +3638,8 @@ where
     /// or is not compatible with the currently pending
     /// [`Mode`].
     pub fn add_connector(&self, connector: connector::Handle) -> FrameResult<(), A, F> {
-        self.tiles[0].surface
+        self.tiles[0]
+            .surface
             .add_connector(connector)
             .map_err(FrameError::DrmError)
     }
@@ -3604,7 +3647,8 @@ where
     /// Tries to mark a [`connector`]
     /// for removal on the next commit.
     pub fn remove_connector(&self, connector: connector::Handle) -> FrameResult<(), A, F> {
-        self.tiles[0].surface
+        self.tiles[0]
+            .surface
             .remove_connector(connector)
             .map_err(FrameError::DrmError)
     }
@@ -3616,7 +3660,8 @@ where
     /// or is not compatible with the currently pending
     /// [`Mode`].
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> FrameResult<(), A, F> {
-        self.tiles[0].surface
+        self.tiles[0]
+            .surface
             .set_connectors(connectors)
             .map_err(FrameError::DrmError)
     }
@@ -3645,9 +3690,14 @@ where
     /// change is not supported.
     pub fn use_mode(&mut self, mode: Mode) -> FrameResult<(), A, F> {
         if self.tiles.len() > 1 {
-            return Err(FrameError::InvalidTileConfig(TileConfigError::ModeChangeUnsupported));
+            return Err(FrameError::InvalidTileConfig(
+                TileConfigError::ModeChangeUnsupported,
+            ));
         }
-        self.tiles[0].surface.use_mode(mode).map_err(FrameError::DrmError)?;
+        self.tiles[0]
+            .surface
+            .use_mode(mode)
+            .map_err(FrameError::DrmError)?;
         let (w, h) = mode.size();
         self.tiles[0].swapchain.resize(w as _, h as _);
         Ok(())
@@ -3657,7 +3707,10 @@ where
     ///
     /// See [`DrmSurface::vrr_supported`] for more details.
     pub fn vrr_supported(&self, conn: connector::Handle) -> FrameResult<VrrSupport, A, F> {
-        self.tiles[0].surface.vrr_supported(conn).map_err(FrameError::DrmError)
+        self.tiles[0]
+            .surface
+            .vrr_supported(conn)
+            .map_err(FrameError::DrmError)
     }
 
     /// Returns if Variable Refresh Rate is currently enabled for frames composed by this [`DrmCompositor`].
@@ -3936,7 +3989,8 @@ where
             .overlay
             .iter()
             .filter(|plane| {
-                self.tiles[tile].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default()
+                self.tiles[tile].surface.plane_info().zpos.unwrap_or_default()
+                    > plane.zpos.unwrap_or_default()
             })
             .any(|plane| frame_state.is_assigned(plane.handle));
 
@@ -4485,7 +4539,11 @@ where
 
             let fb = self
                 .framebuffer_exporter
-                .add_framebuffer(self.tiles[tile].surface.device_fd(), export_buffer, allow_opaque_fallback)
+                .add_framebuffer(
+                    self.tiles[tile].surface.device_fd(),
+                    export_buffer,
+                    allow_opaque_fallback,
+                )
                 .map_err(|err| {
                     trace!("failed to add framebuffer: {:?}", err);
                     ExportBufferError::ExportFailed
@@ -4548,7 +4606,8 @@ where
             .any(|i| i.properties == properties)
         {
             let overlay_bitmask =
-                self.tiles[tile].planes
+                self.tiles[tile]
+                    .planes
                     .overlay
                     .iter()
                     .enumerate()
@@ -4559,7 +4618,8 @@ where
                         acc
                     });
             let cursor_bitmask =
-                self.tiles[tile].planes
+                self.tiles[tile]
+                    .planes
                     .cursor
                     .iter()
                     .enumerate()
@@ -4611,15 +4671,20 @@ where
                         };
 
                         let overlay_plane_changed =
-                            self.tiles[tile].planes.overlay.iter().enumerate().any(|(index, plane)| {
-                                // we only want to test planes that are currently in use
-                                if current_plane_snapshot.overlay_bitmask & (1 << index) == 0 {
-                                    return false;
-                                }
+                            self.tiles[tile]
+                                .planes
+                                .overlay
+                                .iter()
+                                .enumerate()
+                                .any(|(index, plane)| {
+                                    // we only want to test planes that are currently in use
+                                    if current_plane_snapshot.overlay_bitmask & (1 << index) == 0 {
+                                        return false;
+                                    }
 
-                                frame_state.plane_properties(plane.handle)
-                                    != previous_frame_state.plane_properties(plane.handle)
-                            });
+                                    frame_state.plane_properties(plane.handle)
+                                        != previous_frame_state.plane_properties(plane.handle)
+                                });
 
                         if !(primary_plane_changed || overlay_plane_changed) {
                             // we now know that nothing changed and we can assume any previously failed
@@ -4780,8 +4845,8 @@ where
             }
 
             // test if the plane represents an underlay
-            let is_underlay =
-                self.tiles[tile].surface.plane_info().zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
+            let is_underlay = self.tiles[tile].surface.plane_info().zpos.unwrap_or_default()
+                > plane.zpos.unwrap_or_default();
 
             if is_underlay && !(element_is_opaque && primary_plane_has_alpha) {
                 trace!(
