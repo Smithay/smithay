@@ -227,21 +227,23 @@ impl Window {
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let bbox = self.bbox();
+        match self.underlying_surface() {
+            WindowSurface::Wayland(s) => {
+                let bbox = self.bbox();
+                // It's the set geometry clamped to the bounding box with the full bounding box as the fallback.
+                with_states(s.wl_surface(), |states| {
+                    states
+                        .cached_state
+                        .get::<SurfaceCachedState>()
+                        .current()
+                        .geometry
+                        .and_then(|geo| geo.intersection(bbox))
+                })
+                .unwrap_or(bbox)
+            }
 
-        if let Some(surface) = self.wl_surface() {
-            // It's the set geometry clamped to the bounding box with the full bounding box as the fallback.
-            with_states(&surface, |states| {
-                states
-                    .cached_state
-                    .get::<SurfaceCachedState>()
-                    .current()
-                    .geometry
-                    .and_then(|geo| geo.intersection(bbox))
-            })
-            .unwrap_or(bbox)
-        } else {
-            bbox
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => SpaceElement::geometry(s),
         }
     }
 
