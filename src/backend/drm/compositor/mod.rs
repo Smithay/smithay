@@ -1192,7 +1192,7 @@ fn validate_tile_regions(
     }
 
     // The logical output starts at the origin.
-    if bbox.loc != Point::from((0, 0)) {
+    if bbox.loc != Point::new(0, 0) {
         return Err(TileConfigError::NotContiguous);
     }
 
