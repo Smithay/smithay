@@ -400,13 +400,18 @@ impl X11Surface {
         }
 
         if let Some(conn) = self.conn.upgrade() {
-            if let Some(frame) = self.state.lock().unwrap().mapped_onto {
+            let state = self.state.lock().unwrap();
+            if let Some(frame) = state.mapped_onto {
                 let wm_state = if mapped {
                     conn.map_window(frame)?;
-                    1u32 /*NormalState*/
+                    if state.net_state.contains(&self.atoms._NET_WM_STATE_HIDDEN) {
+                        3u32 /*IconicState*/
+                    } else {
+                        1u32 /*NormalState*/
+                    }
                 } else {
                     conn.unmap_window(frame)?;
-                    3u32 /*IconicState*/
+                    0u32 /*WithdrawnState*/
                 };
                 conn.change_property32(
                     PropMode::REPLACE,
@@ -1287,18 +1292,20 @@ impl X11Surface {
         }
 
         if let Some(conn) = self.conn.upgrade() {
-            let wm_state = if suspended {
-                3u32 /*IconicState*/
-            } else {
-                1u32 /*NormalState*/
-            };
-            conn.change_property32(
-                PropMode::REPLACE,
-                self.window,
-                self.atoms.WM_STATE,
-                self.atoms.WM_STATE,
-                &[wm_state, 0 /*WINDOW_NONE*/],
-            )?;
+            if self.state.lock().unwrap().mapped_onto.is_some() {
+                let wm_state = if suspended {
+                    3u32 /*IconicState*/
+                } else {
+                    1u32 /*NormalState*/
+                };
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    self.window,
+                    self.atoms.WM_STATE,
+                    self.atoms.WM_STATE,
+                    &[wm_state, 0 /*WINDOW_NONE*/],
+                )?;
+            }
         }
         Ok(())
     }
