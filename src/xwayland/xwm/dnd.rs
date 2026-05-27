@@ -339,7 +339,7 @@ impl XWmDnd {
                     .take()
                     .or(pos_update.then_some(offer_state.last_pos))
                 {
-                    let location = (window.geometry().loc + pos.to_i32_round())
+                    let location = (window.last_configure().loc + pos.to_i32_round())
                         .to_client_precise_round::<_, i32>(client_scale.load(Ordering::Acquire));
 
                     let data = [
@@ -1098,7 +1098,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
 
         let Some(xwm_id) = self.xwm_id() else { return };
         let xwm = data.xwm_state(xwm_id);
-        let location = (self.geometry().loc + location.to_i32_round())
+        let location = (self.last_configure().loc + location.to_i32_round())
             .to_client_precise_round::<_, i32>(xwm.client_scale.load(Ordering::Acquire));
 
         let data = [

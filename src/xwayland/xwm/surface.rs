@@ -1,5 +1,5 @@
 use crate::{
-    backend::input::KeyState,
+    backend::{input::KeyState, renderer::utils::RendererSurfaceStateUserData},
     input::{
         Seat, SeatHandler,
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
@@ -129,8 +129,7 @@ pub(crate) struct SharedSurfaceState {
     pub(super) wl_surface_id: Option<u32>,
     pub(super) wl_surface_serial: Option<u64>,
     pub(super) mapped_onto: Option<X11Window>,
-    pub(super) geometry: Rectangle<i32, Logical>,
-    frame_extents: FrameExtents<i32, Physical>,
+    pub(super) last_configure: Rectangle<i32, Logical>,
     pub(super) override_redirect: bool,
 
     // The associated wl_surface.
@@ -148,10 +147,10 @@ pub(crate) struct SharedSurfaceState {
     next_counter_value: Int64,
     pending_sync_wait_value: Option<Int64>,
 
-    // Geometry to set after we receive an ACK for the in-flight sync request.
-    pending_geometry: Option<Rectangle<i32, Logical>>,
-    // Geometry update deferred while a sync request is in progress.
-    buffered_geometry: Option<Rectangle<i32, Logical>>,
+    // Configure to set after we receive an ACK for the in-flight sync request.
+    pending_configure: Option<Rectangle<i32, Logical>>,
+    // Configure update deferred while a sync request is in progress.
+    buffered_configure: Option<Rectangle<i32, Logical>>,
 
     title: String,
     class: String,
@@ -168,6 +167,7 @@ pub(crate) struct SharedSurfaceState {
     pub(crate) opacity: Option<u32>,
     opaque_region: Option<RegionAttributes>,
     opaque_region_dirty: bool,
+    frame_extents: FrameExtents<i32, Physical>,
     pending_enter: Option<(
         Box<dyn std::any::Any + Send + 'static>,
         Vec<Keycode>,
@@ -352,11 +352,10 @@ impl X11Surface {
                 counter_value: Default::default(),
                 next_counter_value: Default::default(),
                 pending_sync_wait_value: None,
-                pending_geometry: None,
-                buffered_geometry: None,
+                pending_configure: None,
+                buffered_configure: None,
                 mapped_onto: None,
-                geometry,
-                frame_extents: Default::default(),
+                last_configure: geometry,
                 override_redirect,
                 title: String::from(""),
                 class: String::from(""),
@@ -373,6 +372,7 @@ impl X11Surface {
                 opacity: None,
                 opaque_region: None,
                 opaque_region_dirty: true,
+                frame_extents: Default::default(),
                 pending_enter: None,
                 pending_ping_timestamp: None,
             })),
@@ -449,7 +449,7 @@ impl X11Surface {
                 .as_ref()
                 .map(|s| s.load(Ordering::Acquire))
                 .unwrap_or(1.);
-            let logical_rect = rect.unwrap_or(state.geometry);
+            let logical_rect = rect.unwrap_or(state.last_configure);
             let rect = logical_rect.to_client_precise_round(client_scale);
             let aux = ConfigureWindowAux::default()
                 .x(rect.loc.x)
@@ -489,15 +489,15 @@ impl X11Surface {
             Err(X11SurfaceError::UnsupportedForOverrideRedirect)
         } else {
             let mut state = self.state.lock().unwrap();
-            let rect = rect.or(state.pending_geometry);
+            let rect = rect.or(state.pending_configure);
 
             if state.pending_sync_wait_value.is_some() {
                 self.finish_pending_sync(&mut state);
             }
-            state.buffered_geometry = None;
+            state.buffered_configure = None;
 
             let new_geometry = self.send_configure(&mut state, rect)?;
-            state.geometry = new_geometry;
+            state.last_configure = new_geometry;
 
             Ok(())
         }
@@ -513,7 +513,7 @@ impl X11Surface {
     /// (with a new sync request) after the in-progress sync is finished and the client has
     /// committed a new buffer.
     ///
-    /// Until the client ACKs the sync request, the surface's geometry remains frozen at the
+    /// Until the client ACKs the sync request, the surface's last configure remains frozen at the
     /// previous value.  When the ACK is received,
     /// [`XwmHandler::sync_request_acked`](super::XwmHandler::sync_request_acked) is called.
     ///
@@ -522,7 +522,7 @@ impl X11Surface {
     /// [`XwmHandler::sync_request_timeout`](super::XwmHandler::sync_request_timeout) is called.
     ///
     /// If the client does not support the `_NET_WM_SYNC_REQUEST` protocol, or if `rect` has the
-    /// same size as the current geometry and there is no sync in progress, a regular configure
+    /// same size as the current configure and there is no sync in progress, a regular configure
     /// sequence is initiated (as if [`X11Surface::configure`] was called).
     ///
     /// This configure method is most useful during interactive window resizes, as it avoids
@@ -541,7 +541,7 @@ impl X11Surface {
             let rect = rect.into();
             let mut state = self.state.lock().unwrap();
 
-            if rect.size == state.geometry.size && state.pending_geometry.is_none() {
+            if rect.size == state.last_configure.size && state.pending_configure.is_none() {
                 // If the passed size is the same as our stored geometry's size, and there's no
                 // in-flight sync request, we send a normal configure without a sync request.  Some
                 // clients, when they get a configure-notify with the same size as their current
@@ -557,7 +557,7 @@ impl X11Surface {
                         self.configure(rect)
                     }
                     Err(SyncRequestError::RequestPending) => {
-                        state.buffered_geometry = Some(rect);
+                        state.buffered_configure = Some(rect);
                         Ok(())
                     }
                     Ok(_) => match self.send_configure(&mut state, rect) {
@@ -565,9 +565,9 @@ impl X11Surface {
                             self.finish_pending_sync(&mut state);
                             Err(err)
                         }
-                        Ok(pending_geometry) => {
-                            state.pending_geometry = Some(pending_geometry);
-                            state.buffered_geometry = None;
+                        Ok(pending_configure) => {
+                            state.pending_configure = Some(pending_configure);
+                            state.buffered_configure = None;
                             Ok(())
                         }
                     },
@@ -731,7 +731,7 @@ impl X11Surface {
     /// Handles a sync alarm for the sync counter for this surface.
     ///
     /// If `new_value` is a valid ACK for the currently in-flight sync request, the pending
-    /// geometry is applied.
+    /// configure is applied.
     ///
     /// The caller is responsible for notifying the compositor that the sync was ACKed, and of the
     /// new in-flight request, if any.
@@ -835,12 +835,12 @@ impl X11Surface {
 
     /// Finishes an in-flight sync request.
     ///
-    /// Promotes the pending geometry to the active geometry, unregisters the sync timeout, and
+    /// Promotes the pending configure to the active configure, unregisters the sync timeout, and
     /// tells the XWayland server to start committing buffers again.
     fn finish_pending_sync(&self, state: &mut SharedSurfaceState) {
         state.pending_sync_wait_value = None;
-        if let Some(pending_geometry) = state.pending_geometry.take() {
-            state.geometry = pending_geometry;
+        if let Some(pending_configure) = state.pending_configure.take() {
+            state.last_configure = pending_configure;
         }
         self.destroy_sync_timeout(state);
         self.set_allow_commits(state, true);
@@ -965,23 +965,25 @@ impl X11Surface {
             let surface = self.clone();
 
             compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, _| {
-                let (buffered_geometry, timeout) = {
+                let (buffered_configure, timeout) = {
                     let mut state = surface.state.lock().unwrap();
-                    let buffered_geometry = if state.pending_sync_wait_value.is_none()
-                        && state.buffered_geometry.is_some_and(|geom| geom != state.geometry)
+                    let buffered_configure = if state.pending_sync_wait_value.is_none()
+                        && state
+                            .buffered_configure
+                            .is_some_and(|geom| geom != state.last_configure)
                     {
                         // We only send a new configure if:
                         //   1) there is no sync currently in progress, and
-                        //   2) if the buffered geometry is not the current geometry.
-                        state.buffered_geometry.take()
+                        //   2) if the buffered configure is not the current configure.
+                        state.buffered_configure.take()
                     } else {
                         None
                     };
-                    (buffered_geometry, state.last_set_sync_timeout)
+                    (buffered_configure, state.last_set_sync_timeout)
                 };
 
-                if let Some(buffered_geometry) = buffered_geometry {
-                    if let Err(err) = surface.configure_with_sync(buffered_geometry, Some(timeout)) {
+                if let Some(buffered_configure) = buffered_configure {
+                    if let Err(err) = surface.configure_with_sync(buffered_configure, Some(timeout)) {
                         tracing::info!(
                             "Failed to send buffered surface configure/sync for window 0x{:08x}: {err}",
                             surface.window
@@ -993,35 +995,67 @@ impl X11Surface {
         state.deferred_sync_hook_id = Some(hook_id);
     }
 
-    /// Returns the current geometry of the underlying X11 window
-    pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        self.state.lock().unwrap().geometry
+    /// Returns the last configure set on the underlying X11 window
+    pub fn last_configure(&self) -> Rectangle<i32, Logical> {
+        self.state.lock().unwrap().last_configure
     }
 
-    /// Returns the pending geometry, if any
+    /// Returns the pending configure, if any
     ///
-    /// The pending geometry has already been sent to the X server and client as a part of
+    /// The pending configure has already been sent to the X server and client as a part of
     /// [`configure_with_sync`](X11Surface::configure_with_sync), but the client has not yet
     /// acknowledged the corresponding sync request.
     ///
-    /// The pending geometry is promoted to [`geometry`](X11Surface::geometry) after the sync
-    /// request has been acknowledged.
-    pub fn pending_geometry(&self) -> Option<Rectangle<i32, Logical>> {
-        self.state.lock().unwrap().pending_geometry
+    /// The pending configure is promoted to [`last_configure`](X11Surface::last_configure) after
+    /// the sync request has been acknowledged.
+    pub fn pending_configure(&self) -> Option<Rectangle<i32, Logical>> {
+        self.state.lock().unwrap().pending_configure
     }
 
-    /// Returns the buffered geometry, if any
+    /// Returns the buffered configure, if any
     ///
-    /// The buffered geometry is the most recent rect passed to
+    /// The buffered configure is the most recent rect passed to
     /// [`configure_with_sync`](X11Surface::configure_with_sync).  It has not yet been sent to the
     /// X server or client because an older sync request is still in progress.  Once the client
-    /// acknowledges the in-progress sync request and commits a buffer, the buffered geometry will
+    /// acknowledges the in-progress sync request and commits a buffer, the buffered configure will
     /// be sent to the client as part of a new sync request.
     ///
-    /// The buffered geometry is promoted to [`pending_geometry`](X11Surface::pending_geometry)
+    /// The buffered configure is promoted to [`pending_configure`](X11Surface::pending_configure)
     /// once it has been sent to the client.
-    pub fn buffered_geometry(&self) -> Option<Rectangle<i32, Logical>> {
-        self.state.lock().unwrap().buffered_geometry
+    pub fn buffered_configure(&self) -> Option<Rectangle<i32, Logical>> {
+        self.state.lock().unwrap().buffered_configure
+    }
+
+    /// Returns the bounding box of this surface
+    ///
+    /// This corresponds to the last committed buffer size from the XWayland server.
+    ///
+    /// If no buffer has been committed, returns [`last_configure`](X11Surface::last_configure).
+    pub fn bbox(&self) -> Rectangle<i32, Logical> {
+        let state = self.state.lock().unwrap();
+
+        let size = state
+            .wl_surface
+            .as_ref()
+            .and_then(|surface| {
+                compositor::with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<RendererSurfaceStateUserData>()
+                        .and_then(|s| s.lock().unwrap().surface_size())
+                })
+            })
+            .unwrap_or_else(|| state.last_configure.size);
+        Rectangle::from_size(size)
+    }
+
+    /// Returns the user-visible area of the surface
+    ///
+    /// This corresponds to the surface's bounding box, minus any frame elements like drop shadows.
+    /// Note that not all clients will advertise the sizes of frame elements, even if they are
+    /// present on the window.
+    pub fn geometry(&self) -> Rectangle<i32, Logical> {
+        self.bbox() - self.frame_extents()
     }
 
     /// Returns the current title of the underlying X11 window
