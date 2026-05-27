@@ -110,6 +110,9 @@ of new `Dipsatch2` and `GlobalDispatch2` traits. These will replace `Dispatch` a
 The `SpaceElement::geometry` impl for `X11Surface` is no longer equivalent to its bbox.  For clients that set
 `_GTK_FRAME_EXTENTS`, the shadow extents are subtracted from the bbox to give the geometry.
 
+`X11Surface::geometry` has been renamed to `X11Surface::last_configure`. `X11Surface::geometry` now returns the bounding
+box minus the surface's frame extents.
+
 ### Additions
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.

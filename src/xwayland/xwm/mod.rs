@@ -1790,7 +1790,7 @@ where
                 );
             } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
                 if surface.is_override_redirect() {
-                    surface.state.lock().unwrap().geometry = geometry;
+                    surface.state.lock().unwrap().last_configure = geometry;
                     drop(_guard);
                     state.configure_notify(
                         xwm_id,
@@ -1833,8 +1833,8 @@ where
                         conn.reparent_window(
                             n.window,
                             xwm.screen.root,
-                            state.geometry.loc.x as i16,
-                            state.geometry.loc.y as i16,
+                            state.last_configure.loc.x as i16,
+                            state.last_configure.loc.y as i16,
                         )?;
                         if let Some(frame) = state.mapped_onto.take() {
                             conn.destroy_window(frame)?;

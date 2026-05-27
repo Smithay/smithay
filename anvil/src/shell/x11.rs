@@ -72,7 +72,7 @@ impl<BackendData: Backend> XwmHandler for AnvilState<BackendData> {
     }
 
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
-        let location = window.geometry().loc;
+        let location = window.last_configure().loc;
         let window = WindowElement(Window::new_x11_window(window));
         self.space.map_element(window, location, true);
     }
@@ -104,7 +104,7 @@ impl<BackendData: Backend> XwmHandler for AnvilState<BackendData> {
         _reorder: Option<Reorder>,
     ) {
         // we just set the new size, but don't let windows move themselves around freely
-        let mut geo = window.geometry();
+        let mut geo = window.last_configure();
         if let Some(w) = w {
             geo.size.w = w as i32;
         }
