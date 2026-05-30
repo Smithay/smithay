@@ -2557,7 +2557,10 @@ where
             prepared_frame,
             user_data,
         });
-        if self.pending_frame.is_none() {
+
+        let can_submit = self.pending_frame.is_none() || self.pending_frame.as_ref().is_some_and(|f| f.presentation_mode == PresentationMode::Async);
+
+        if can_submit {
             self.submit()?;
         }
         Ok(())
