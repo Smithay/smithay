@@ -1,6 +1,6 @@
 use super::{
     PopupConfigure, PositionerState, ShellClient, ShellClientData, SurfaceCachedState, ToplevelConfigure,
-    XdgPopupSurfaceRoleAttributes, XdgShellHandler, XdgShellState, XdgToplevelSurfaceRoleAttributes,
+    XdgPopupSurfaceRoleAttributes, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
 };
 
 mod wm_base;

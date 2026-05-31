@@ -1,10 +1,11 @@
 use std::cell::RefCell;
 use std::sync::Mutex;
 
+use wayland_server::DisplayHandle;
 use wayland_server::backend::ClientId;
-use wayland_server::{Dispatch, DisplayHandle};
 
 use crate::input::Seat;
+use crate::wayland::Dispatch2;
 use crate::wayland::selection::SelectionTarget;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
@@ -14,7 +15,7 @@ use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1
     self, ExtDataControlSourceV1,
 };
 
-use super::{DataControlHandler, DataControlState};
+use super::DataControlHandler;
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -39,24 +40,23 @@ pub struct SourceMetadata {
     pub mime_types: Vec<String>,
 }
 
-impl<D> Dispatch<ExtDataControlSourceV1, ExtDataControlSourceUserData, D> for DataControlState
+impl<D> Dispatch2<ExtDataControlSourceV1, D> for ExtDataControlSourceUserData
 where
-    D: Dispatch<ExtDataControlSourceV1, ExtDataControlSourceUserData>,
     D: DataControlHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &ExtDataControlSourceV1,
         request: <ExtDataControlSourceV1 as wayland_server::Resource>::Request,
-        data: &ExtDataControlSourceUserData,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             ext_data_control_source_v1::Request::Offer { mime_type } => {
-                let mut data = data.inner.lock().unwrap();
+                let mut data = self.inner.lock().unwrap();
                 data.mime_types.push(mime_type);
             }
             ext_data_control_source_v1::Request::Destroy => (),
@@ -64,12 +64,7 @@ where
         }
     }
 
-    fn destroyed(
-        state: &mut D,
-        _client: ClientId,
-        source: &ExtDataControlSourceV1,
-        data: &ExtDataControlSourceUserData,
-    ) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, source: &ExtDataControlSourceV1) {
         // Remove the source from the used ones.
         let seat = match state
             .data_control_state()
@@ -100,10 +95,10 @@ where
                 {
                     match target {
                         SelectionTarget::Primary => {
-                            seat_data.set_primary_selection::<D>(&data.display_handle, None)
+                            seat_data.set_primary_selection::<D>(&self.display_handle, None)
                         }
                         SelectionTarget::Clipboard => {
-                            seat_data.set_clipboard_selection::<D>(&data.display_handle, None)
+                            seat_data.set_clipboard_selection::<D>(&self.display_handle, None)
                         }
                     }
                 }

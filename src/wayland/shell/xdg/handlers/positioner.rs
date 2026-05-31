@@ -1,12 +1,12 @@
 use std::sync::Mutex;
 
-use crate::{utils::Rectangle, utils::Serial};
+use crate::{utils::Rectangle, utils::Serial, wayland::Dispatch2};
 
 use wayland_protocols::xdg::shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 
-use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource, WEnum};
+use wayland_server::{DataInit, DisplayHandle, Resource, WEnum};
 
-use super::{PositionerState, XdgShellHandler, XdgShellState};
+use super::{PositionerState, XdgShellHandler};
 
 /*
  * xdg_positioner
@@ -18,22 +18,21 @@ pub struct XdgPositionerUserData {
     pub(crate) inner: Mutex<PositionerState>,
 }
 
-impl<D> Dispatch<XdgPositioner, XdgPositionerUserData, D> for XdgShellState
+impl<D> Dispatch2<XdgPositioner, D> for XdgPositionerUserData
 where
-    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         positioner: &XdgPositioner,
         request: xdg_positioner::Request,
-        data: &XdgPositionerUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let mut state = data.inner.lock().unwrap();
+        let mut state = self.inner.lock().unwrap();
         match request {
             xdg_positioner::Request::SetSize { width, height } => {
                 if width < 1 || height < 1 {

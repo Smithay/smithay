@@ -8,8 +8,6 @@
 //! ### Initialization
 //!
 //! ```
-//! use smithay::delegate_seat;
-//! # use smithay::delegate_compositor;
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
@@ -44,14 +42,14 @@
 //!         // ...
 //!     }
 //! }
-//! delegate_seat!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
-//! # delegate_compositor!(State);
 //! ```
 //!
 //! ### Run usage
@@ -73,6 +71,7 @@ mod touch;
 use std::{borrow::Cow, fmt, sync::Arc};
 
 use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
+use crate::wayland::{Dispatch2, GlobalDispatch2};
 
 pub use self::{
     keyboard::KeyboardUserData,
@@ -224,55 +223,8 @@ impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
     }
 }
 
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_seat {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                input::SeatState,
-                reexports::wayland_server::{
-                    delegate_dispatch, delegate_global_dispatch,
-                    protocol::{
-                        wl_keyboard::WlKeyboard, wl_pointer::WlPointer, wl_seat::WlSeat, wl_touch::WlTouch,
-                    },
-                },
-                wayland::seat::{
-                    KeyboardUserData, PointerUserData, SeatGlobalData, SeatUserData, TouchUserData,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlSeat: SeatGlobalData<$ty>] => SeatState<$ty>
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlSeat: SeatUserData<$ty>] => SeatState<$ty>
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlPointer: PointerUserData<$ty>] => SeatState<$ty>
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlKeyboard: KeyboardUserData<$ty>] => SeatState<$ty>
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlTouch: TouchUserData<$ty>] => SeatState<$ty>
-            );
-        };
-    };
-}
-
-impl<D> Dispatch<WlSeat, SeatUserData<D>, D> for SeatState<D>
+impl<D> Dispatch2<WlSeat, D> for SeatUserData<D>
 where
-    D: Dispatch<WlSeat, SeatUserData<D>>,
     D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
     D: Dispatch<WlPointer, PointerUserData<D>>,
     D: Dispatch<WlTouch, TouchUserData<D>>,
@@ -282,17 +234,17 @@ where
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         client: &wayland_server::Client,
         _resource: &WlSeat,
         request: wl_seat::Request,
-        data: &SeatUserData<D>,
         _dh: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let inner = data.arc.inner.lock().unwrap();
+                let inner = self.arc.inner.lock().unwrap();
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
                 let pointer = data_init.init(
@@ -311,7 +263,7 @@ where
                 }
             }
             wl_seat::Request::GetKeyboard { id } => {
-                let inner = data.arc.inner.lock().unwrap();
+                let inner = self.arc.inner.lock().unwrap();
 
                 let keyboard = data_init.init(
                     id,
@@ -327,7 +279,7 @@ where
                 }
             }
             wl_seat::Request::GetTouch { id } => {
-                let inner = data.arc.inner.lock().unwrap();
+                let inner = self.arc.inner.lock().unwrap();
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
                 let touch = data_init.init(
@@ -351,8 +303,8 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, seat: &WlSeat, data: &SeatUserData<D>) {
-        data.arc
+    fn destroyed(&self, _state: &mut D, _: ClientId, seat: &WlSeat) {
+        self.arc
             .inner
             .lock()
             .unwrap()
@@ -361,9 +313,8 @@ where
     }
 }
 
-impl<D> GlobalDispatch<WlSeat, SeatGlobalData<D>, D> for SeatState<D>
+impl<D> GlobalDispatch2<WlSeat, D> for SeatGlobalData<D>
 where
-    D: GlobalDispatch<WlSeat, SeatGlobalData<D>>,
     D: Dispatch<WlSeat, SeatUserData<D>>,
     D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
     D: Dispatch<WlPointer, PointerUserData<D>>,
@@ -372,24 +323,24 @@ where
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WlSeat>,
-        global_data: &SeatGlobalData<D>,
         data_init: &mut DataInit<'_, D>,
     ) {
         let data = SeatUserData {
-            arc: global_data.arc.clone(),
+            arc: self.arc.clone(),
         };
 
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
-            resource.name(global_data.arc.name.clone());
+            resource.name(self.arc.name.clone());
         }
 
-        let mut inner = global_data.arc.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         resource.capabilities(inner.compute_caps());
         inner.known_seats.push(resource.downgrade());
     }

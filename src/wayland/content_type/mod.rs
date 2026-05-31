@@ -7,7 +7,6 @@
 //! #
 //! use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 //! use smithay::{
-//!     delegate_content_type, delegate_compositor,
 //!     wayland::compositor::{self, CompositorState, CompositorClientState, CompositorHandler},
 //!     wayland::content_type::{ContentTypeSurfaceCachedState, ContentTypeState},
 //! };
@@ -18,8 +17,7 @@
 //! struct ClientState { compositor_state: CompositorClientState }
 //! impl wayland_server::backend::ClientData for ClientState {}
 //!
-//! delegate_content_type!(State);
-//! delegate_compositor!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
@@ -55,15 +53,15 @@ use std::sync::{
 };
 
 use wayland_protocols::wp::content_type::v1::server::{
-    wp_content_type_manager_v1::WpContentTypeManagerV1,
-    wp_content_type_v1::{self, WpContentTypeV1},
+    wp_content_type_manager_v1::WpContentTypeManagerV1, wp_content_type_v1,
 };
 use wayland_server::{
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId,
-    protocol::wl_surface::WlSurface,
+    DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface::WlSurface,
 };
 
 use super::compositor::Cacheable;
+
+use crate::wayland::GlobalData;
 
 mod dispatch;
 
@@ -158,12 +156,9 @@ impl ContentTypeState {
     /// Regiseter new [WpContentTypeManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> ContentTypeState
     where
-        D: GlobalDispatch<WpContentTypeManagerV1, ()>
-            + Dispatch<WpContentTypeManagerV1, ()>
-            + Dispatch<WpContentTypeV1, ContentTypeUserData>
-            + 'static,
+        D: GlobalDispatch<WpContentTypeManagerV1, GlobalData> + 'static,
     {
-        let global = display.create_global::<D, WpContentTypeManagerV1, _>(1, ());
+        let global = display.create_global::<D, WpContentTypeManagerV1, _>(1, GlobalData);
 
         ContentTypeState { global }
     }
@@ -172,38 +167,4 @@ impl ContentTypeState {
     pub fn global(&self) -> GlobalId {
         self.global.clone()
     }
-}
-
-/// Macro to delegate implementation of the wp content type protocol
-#[macro_export]
-macro_rules! delegate_content_type {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::content_type::v1::server::{
-                        wp_content_type_manager_v1::WpContentTypeManagerV1,
-                        wp_content_type_v1::WpContentTypeV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::content_type::{ContentTypeState, ContentTypeUserData},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpContentTypeManagerV1: ()] => ContentTypeState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpContentTypeManagerV1: ()] => ContentTypeState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpContentTypeV1: ContentTypeUserData] => ContentTypeState
-            );
-        };
-    };
 }

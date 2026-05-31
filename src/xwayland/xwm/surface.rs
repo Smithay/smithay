@@ -1,5 +1,5 @@
 use crate::{
-    backend::input::KeyState,
+    backend::{input::KeyState, renderer::utils::RendererSurfaceStateUserData},
     input::{
         Seat, SeatHandler,
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
@@ -10,9 +10,12 @@ use crate::{
         },
         touch::TouchTarget,
     },
-    utils::{Client, IsAlive, Logical, Rectangle, Serial, Size, user_data::UserDataMap},
+    utils::{
+        Client, FrameExtents, HookId, IsAlive, Logical, Physical, Rectangle, Serial, Size,
+        user_data::UserDataMap,
+    },
     wayland::{
-        compositor,
+        compositor::{self, RectangleKind, RegionAttributes, SurfaceAttributes},
         seat::{WaylandFocus, keyboard::enter_internal},
     },
 };
@@ -28,9 +31,10 @@ use std::{
     borrow::Cow,
     collections::HashSet,
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Mutex, MutexGuard, Weak,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 use tracing::warn;
 use wayland_server::protocol::wl_surface::WlSurface;
@@ -38,9 +42,11 @@ use xkbcommon::xkb::Keycode;
 
 use x11rb::{
     connection::Connection as _,
+    errors::{ReplyError, ReplyOrIdError},
     properties::{WmClass, WmHints, WmSizeHints},
     protocol::{
         res::{ClientIdSpec, query_client_ids},
+        sync::{Alarm, ConnectionExt as _, Counter, CreateAlarmAux, Int64, TESTTYPE, VALUETYPE},
         xproto::{
             Atom, AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask,
             InputFocus, PropMode, Window as X11Window,
@@ -48,6 +54,7 @@ use x11rb::{
     },
     rust_connection::{ConnectionError, RustConnection},
     wrapper::ConnectionExt,
+    x11_utils::X11Error,
 };
 
 use super::{X11Wm, XwmId, send_configure_notify};
@@ -58,17 +65,63 @@ pub struct X11Surface {
     xwm: Option<XwmId>,
     client_scale: Option<Arc<AtomicF64>>,
     window: X11Window,
+    focus_release: Option<super::FocusReleaseHandle>,
     pub(super) conn: Weak<RustConnection>,
     pub(super) atoms: super::Atoms,
+    servertime_counter: Option<Counter>,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
     #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
     pub(super) xdnd_active: Arc<AtomicBool>,
     user_data: Arc<UserDataMap>,
 }
 
+/// Possible errors when calling [X11Surface::send_ping]
+#[derive(Debug, thiserror::Error)]
+pub enum PingError {
+    /// Not supported
+    #[error("Ping protocol is not supported for this window")]
+    NotSupported,
+    /// Invalid timestamp (must not be `0`/`CURRENT_TIME`)
+    #[error("Invalid timestamp provided")]
+    InvalidTimestamp,
+    /// Another ping is already in flight.
+    #[error("Ping with timestamp {0} is still in flight")]
+    PingAlreadyPending(u32),
+    /// Error on the underlying X11 Connection
+    #[error(transparent)]
+    Connection(#[from] ConnectionError),
+}
+
 const MWM_HINTS_FLAGS_FIELD: usize = 0;
 const MWM_HINTS_DECORATIONS_FIELD: usize = 2;
 const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
+
+const DEFAULT_SYNC_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
+// From http://fishsoup.net/misc/wm-spec-synchronization.html
+//   "If the client is continually redrawing, then the last seen value may be out of date when the
+//   window manager sends the message. Picking a number that is 240 later would allow for 1 second
+//   of frames at 60fps."
+const SYNC_REQUEST_INCREMENT: i64 = 240;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncRequestCounter {
+    Basic(Counter),
+    Extended(Counter),
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SyncRequestError {
+    #[error("sync request protocol not supported")]
+    NotSupported,
+    #[error("sync request already in flight")]
+    RequestPending,
+    #[error("no more XIDs")]
+    IdsExhausted,
+    #[error(transparent)]
+    Connection(#[from] ConnectionError),
+    #[error("X11 protocol error: {0:?}")]
+    X11(X11Error),
+}
 
 #[derive(Debug)]
 pub(crate) struct SharedSurfaceState {
@@ -76,11 +129,28 @@ pub(crate) struct SharedSurfaceState {
     pub(super) wl_surface_id: Option<u32>,
     pub(super) wl_surface_serial: Option<u64>,
     pub(super) mapped_onto: Option<X11Window>,
-    pub(super) geometry: Rectangle<i32, Logical>,
+    pub(super) last_configure: Rectangle<i32, Logical>,
     pub(super) override_redirect: bool,
 
     // The associated wl_surface.
     wl_surface: Option<WlSurface>,
+    opaque_regions_hook_id: Option<HookId>,
+    deferred_sync_hook_id: Option<HookId>,
+
+    // State for _NET_WM_SYNC_REQUEST.
+    sync_counter: Option<SyncRequestCounter>,
+    pub(super) sync_alarm: Option<Alarm>,
+    last_set_sync_timeout: Duration,
+    pub(super) sync_timeout_alarm: Option<Alarm>,
+    counter_value: Int64,
+    // Highest counter value seen or sent.
+    next_counter_value: Int64,
+    pending_sync_wait_value: Option<Int64>,
+
+    // Configure to set after we receive an ACK for the in-flight sync request.
+    pending_configure: Option<Rectangle<i32, Logical>>,
+    // Configure update deferred while a sync request is in progress.
+    buffered_configure: Option<Rectangle<i32, Logical>>,
 
     title: String,
     class: String,
@@ -95,12 +165,16 @@ pub(crate) struct SharedSurfaceState {
     motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
     pub(crate) opacity: Option<u32>,
+    opaque_region: Option<RegionAttributes>,
+    opaque_region_dirty: bool,
+    frame_extents: FrameExtents<i32, Physical>,
     pending_enter: Option<(
         Box<dyn std::any::Any + Send + 'static>,
         Vec<Keycode>,
         Option<ModifiersState>,
         Serial,
     )>,
+    pub(super) pending_ping_timestamp: Option<u32>,
 }
 
 pub(super) type Protocols = Vec<WMProtocol>;
@@ -109,6 +183,8 @@ pub(super) type Protocols = Vec<WMProtocol>;
 pub(super) enum WMProtocol {
     TakeFocus,
     DeleteWindow,
+    NetWmPing,
+    NetWmSyncRequest,
 }
 
 impl PartialEq for X11Surface {
@@ -120,15 +196,63 @@ impl PartialEq for X11Surface {
     }
 }
 
+impl Drop for SharedSurfaceState {
+    fn drop(&mut self) {
+        if let Some(wl_surface) = self.wl_surface.as_ref() {
+            if let Some(hook_id) = self.opaque_regions_hook_id.take() {
+                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
+            }
+
+            if let Some(hook_id) = self.deferred_sync_hook_id.take() {
+                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
+            }
+        }
+    }
+}
+
+impl From<ReplyError> for SyncRequestError {
+    fn from(value: ReplyError) -> Self {
+        match value {
+            ReplyError::X11Error(err) => err.into(),
+            ReplyError::ConnectionError(err) => err.into(),
+        }
+    }
+}
+
+impl From<ReplyOrIdError> for SyncRequestError {
+    fn from(value: ReplyOrIdError) -> Self {
+        match value {
+            ReplyOrIdError::IdsExhausted => Self::IdsExhausted,
+            ReplyOrIdError::X11Error(err) => err.into(),
+            ReplyOrIdError::ConnectionError(err) => err.into(),
+        }
+    }
+}
+
+impl From<X11Error> for SyncRequestError {
+    fn from(value: X11Error) -> Self {
+        Self::X11(value)
+    }
+}
+
 /// Errors that can happen for operations on an [`X11Surface`]
 #[derive(Debug, thiserror::Error)]
 pub enum X11SurfaceError {
     /// Error on the underlying X11 Connection
     #[error(transparent)]
     Connection(#[from] ConnectionError),
+    /// X11 protocol error
+    #[error("X11 protocol error: {0:?}")]
+    X11(X11Error),
     /// Operation was unsupported for an override_redirect window
     #[error("Operation was unsupported for an override_redirect window")]
     UnsupportedForOverrideRedirect,
+}
+
+impl From<X11Error> for X11SurfaceError {
+    fn from(value: X11Error) -> Self {
+        Self::X11(value)
+    }
 }
 
 /// Window types of [`X11Surface`]s
@@ -166,6 +290,7 @@ pub enum WmWindowProperty {
     StartupId,
     Pid,
     Opacity,
+    FrameExtents,
 }
 
 /// https://x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#input_focus
@@ -192,14 +317,17 @@ impl X11Surface {
     /// - `window` X11 window id
     /// - `override_redirect` set if the X11 window has the override redirect flag set
     /// - `conn` Weak reference on the X11 connection
+    /// - `servertime_counter` the XID of the server's SERVERTIME counter, or `None`
     /// - `atoms` Atoms struct as defined by the [xwm module](super).
     /// - `geometry` Initial geometry of the window
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         xwm: Option<&X11Wm>,
         window: u32,
         override_redirect: bool,
         conn: Weak<RustConnection>,
         atoms: super::Atoms,
+        servertime_counter: Option<Counter>,
         geometry: Rectangle<i32, Logical>,
         xdnd_active: Arc<AtomicBool>,
     ) -> X11Surface {
@@ -209,13 +337,25 @@ impl X11Surface {
             window,
             conn,
             atoms,
+            servertime_counter,
             state: Arc::new(Mutex::new(SharedSurfaceState {
                 alive: true,
                 wl_surface_id: None,
                 wl_surface_serial: None,
                 wl_surface: None,
+                opaque_regions_hook_id: None,
+                deferred_sync_hook_id: None,
+                sync_counter: None,
+                sync_alarm: None,
+                last_set_sync_timeout: DEFAULT_SYNC_REQUEST_TIMEOUT,
+                sync_timeout_alarm: None,
+                counter_value: Default::default(),
+                next_counter_value: Default::default(),
+                pending_sync_wait_value: None,
+                pending_configure: None,
+                buffered_configure: None,
                 mapped_onto: None,
-                geometry,
+                last_configure: geometry,
                 override_redirect,
                 title: String::from(""),
                 class: String::from(""),
@@ -230,9 +370,14 @@ impl X11Surface {
                 motif_hints: vec![0; 5],
                 window_type: Vec::new(),
                 opacity: None,
+                opaque_region: None,
+                opaque_region_dirty: true,
+                frame_extents: Default::default(),
                 pending_enter: None,
+                pending_ping_timestamp: None,
             })),
             xdnd_active,
+            focus_release: xwm.map(|wm| wm.focus_release.clone()),
             user_data: Arc::new(UserDataMap::new()),
         }
     }
@@ -261,31 +406,30 @@ impl X11Surface {
         }
 
         if let Some(conn) = self.conn.upgrade() {
-            if let Some(frame) = self.state.lock().unwrap().mapped_onto {
-                if mapped {
-                    let property = [1u32 /*NormalState*/, 0 /*WINDOW_NONE*/];
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        self.window,
-                        self.atoms.WM_STATE,
-                        self.atoms.WM_STATE,
-                        &property,
-                    )?;
+            let state = self.state.lock().unwrap();
+            if let Some(frame) = state.mapped_onto {
+                let wm_state = if mapped {
                     conn.map_window(frame)?;
+                    if state.net_state.contains(&self.atoms._NET_WM_STATE_HIDDEN) {
+                        3u32 /*IconicState*/
+                    } else {
+                        1u32 /*NormalState*/
+                    }
                 } else {
-                    let property = [3u32 /*IconicState*/, 0 /*WINDOW_NONE*/];
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        self.window,
-                        self.atoms.WM_STATE,
-                        self.atoms.WM_STATE,
-                        &property,
-                    )?;
                     conn.unmap_window(frame)?;
-                }
+                    0u32 /*WithdrawnState*/
+                };
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    self.window,
+                    self.atoms.WM_STATE,
+                    self.atoms.WM_STATE,
+                    &[wm_state, 0 /*WINDOW_NONE*/],
+                )?;
                 conn.flush()?;
             }
         }
+
         Ok(())
     }
 
@@ -306,24 +450,20 @@ impl X11Surface {
         self.state.lock().unwrap().alive && self.conn.strong_count() != 0
     }
 
-    /// Send a configure to this window.
-    ///
-    /// If `rect` is provided the new state will be send to the window.
-    /// If `rect` is `None` a synthetic configure event with the existing state will be send.
-    pub fn configure(&self, rect: impl Into<Option<Rectangle<i32, Logical>>>) -> Result<(), X11SurfaceError> {
+    /// Unconditionally configures the window and sends a configure notify.
+    fn send_configure(
+        &self,
+        state: &mut SharedSurfaceState,
+        rect: impl Into<Option<Rectangle<i32, Logical>>>,
+    ) -> Result<Rectangle<i32, Logical>, X11SurfaceError> {
         let rect = rect.into();
-        if self.is_override_redirect() && rect.is_some() {
-            return Err(X11SurfaceError::UnsupportedForOverrideRedirect);
-        }
-
         if let Some(conn) = self.conn.upgrade() {
-            let mut state = self.state.lock().unwrap();
             let client_scale = self
                 .client_scale
                 .as_ref()
                 .map(|s| s.load(Ordering::Acquire))
                 .unwrap_or(1.);
-            let logical_rect = rect.unwrap_or(state.geometry);
+            let logical_rect = rect.unwrap_or(state.last_configure);
             let rect = logical_rect.to_client_precise_round(client_scale);
             let aux = ConfigureWindowAux::default()
                 .x(rect.loc.x)
@@ -344,9 +484,380 @@ impl X11Surface {
             }
             conn.flush()?;
 
-            state.geometry = logical_rect;
+            Ok(logical_rect)
+        } else {
+            Err(X11SurfaceError::Connection(ConnectionError::UnknownError))
         }
+    }
+
+    /// Send a configure to this window.
+    ///
+    /// If `rect` is provided the new state will be send to the window.
+    /// If `rect` is `None` a synthetic configure event with the existing state will be send.
+    ///
+    /// If a pending request sync is in progress (see [`X11Surface::configure_with_sync`]), this
+    /// will cancel the sync and send a configure immediately.
+    pub fn configure(&self, rect: impl Into<Option<Rectangle<i32, Logical>>>) -> Result<(), X11SurfaceError> {
+        let rect = rect.into();
+        if self.is_override_redirect() && rect.is_some() {
+            Err(X11SurfaceError::UnsupportedForOverrideRedirect)
+        } else {
+            let mut state = self.state.lock().unwrap();
+            let rect = rect.or(state.pending_configure);
+
+            if state.pending_sync_wait_value.is_some() {
+                self.finish_pending_sync(&mut state);
+            }
+            state.buffered_configure = None;
+
+            let new_geometry = self.send_configure(&mut state, rect)?;
+            state.last_configure = new_geometry;
+
+            Ok(())
+        }
+    }
+
+    /// Configure the window, syncing with the client's repaint.
+    ///
+    /// Sends a `_NET_WM_SYNC_REQUEST` message to this window, and configures it, sending a
+    /// `ConfigureNotify` event to the client.  The client will notify us when it has finished
+    /// painting the window content that corresponds with this configure.
+    ///
+    /// If a pending sync is already in progress, it is buffered and will automatically be sent
+    /// (with a new sync request) after the in-progress sync is finished and the client has
+    /// committed a new buffer.
+    ///
+    /// Until the client ACKs the sync request, the surface's last configure remains frozen at the
+    /// previous value.  When the ACK is received,
+    /// [`XwmHandler::sync_request_acked`](super::XwmHandler::sync_request_acked) is called.
+    ///
+    /// The `timeout` parameter specifies the amount of time before the sync request is considered
+    /// missed.  If not provided, it defaults to one second.  If the sync request times out,
+    /// [`XwmHandler::sync_request_timeout`](super::XwmHandler::sync_request_timeout) is called.
+    ///
+    /// If the client does not support the `_NET_WM_SYNC_REQUEST` protocol, or if `rect` has the
+    /// same size as the current configure and there is no sync in progress, a regular configure
+    /// sequence is initiated (as if [`X11Surface::configure`] was called).
+    ///
+    /// This configure method is most useful during interactive window resizes, as it avoids
+    /// sending configure notify events to the client faster than it can repaint, and also avoids
+    /// artifacts (like black bars or old window content) along the resize edge.  However, in
+    /// principle the sync protocol can be used for *every* configure the compositor does, if it
+    /// wants better-looking size changes, at the expense of some overhead and complexity.
+    pub fn configure_with_sync(
+        &self,
+        rect: impl Into<Rectangle<i32, Logical>>,
+        timeout: Option<Duration>,
+    ) -> Result<(), X11SurfaceError> {
+        if self.is_override_redirect() {
+            Err(X11SurfaceError::UnsupportedForOverrideRedirect)
+        } else {
+            let rect = rect.into();
+            let mut state = self.state.lock().unwrap();
+
+            if rect.size == state.last_configure.size && state.pending_configure.is_none() {
+                // If the passed size is the same as our stored geometry's size, and there's no
+                // in-flight sync request, we send a normal configure without a sync request.  Some
+                // clients, when they get a configure-notify with the same size as their current
+                // geometry, won't paint, and so won't update the sync counter, which will block
+                // further configure events until the timeout.  But we still need to send the
+                // configure, especially if the location has changed.
+                drop(state);
+                self.configure(rect)
+            } else {
+                match self.send_sync_request(&mut state, timeout.unwrap_or(DEFAULT_SYNC_REQUEST_TIMEOUT)) {
+                    Err(SyncRequestError::NotSupported) => {
+                        drop(state);
+                        self.configure(rect)
+                    }
+                    Err(SyncRequestError::RequestPending) => {
+                        state.buffered_configure = Some(rect);
+                        Ok(())
+                    }
+                    Ok(_) => match self.send_configure(&mut state, rect) {
+                        Err(err) => {
+                            self.finish_pending_sync(&mut state);
+                            Err(err)
+                        }
+                        Ok(pending_configure) => {
+                            state.pending_configure = Some(pending_configure);
+                            state.buffered_configure = None;
+                            Ok(())
+                        }
+                    },
+                    Err(SyncRequestError::IdsExhausted) => {
+                        self.set_allow_commits(&state, true);
+                        Err(ConnectionError::UnknownError.into())
+                    }
+                    Err(SyncRequestError::Connection(err)) => {
+                        self.set_allow_commits(&state, true);
+                        Err(err.into())
+                    }
+                    Err(SyncRequestError::X11(err)) => {
+                        self.set_allow_commits(&state, true);
+                        Err(err.into())
+                    }
+                }
+            }
+        }
+    }
+
+    /// Sends a sync request to the client.
+    ///
+    /// This increments a counter used in the `_NET_WM_SYNC_REQUEST` protocol and sends a client
+    /// message to the surface's X11 window, which will notify the client that the compositor wants
+    /// to change the size of the client's window during a resize operation.
+    ///
+    /// When the client has finished repainting at the new size,
+    /// [`XwmHandler::sync_request_acked`](super::XwmHandler::sync_request_acked) will be called.
+    ///
+    /// This also registers a timeout.  If the sync request times out,
+    /// [`XwmHandler::sync_request_timeout`](super::XwmHandler::sync_request_timeout) will be
+    /// called.
+    ///
+    /// This returns the value of the counter that was sent to the client.
+    fn send_sync_request(
+        &self,
+        state: &mut SharedSurfaceState,
+        timeout: Duration,
+    ) -> Result<i64, SyncRequestError> {
+        state.last_set_sync_timeout = timeout;
+
+        if let Some(counter) = state
+            .sync_counter
+            .as_ref()
+            .filter(|_| self.servertime_counter.is_some())
+        {
+            if state.pending_sync_wait_value.is_none() {
+                let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+                let is_extended = matches!(counter, SyncRequestCounter::Extended(_));
+
+                let next = add_xsync_value(state.next_counter_value, SYNC_REQUEST_INCREMENT);
+                state.next_counter_value = next;
+
+                self.set_allow_commits(state, false);
+
+                let msg_data = [
+                    self.atoms._NET_WM_SYNC_REQUEST,
+                    x11rb::CURRENT_TIME,
+                    next.lo,
+                    next.hi as u32,
+                    if is_extended { 1 } else { 0 },
+                ];
+                let event = ClientMessageEvent::new(32, self.window, self.atoms.WM_PROTOCOLS, msg_data);
+                conn.send_event(false, self.window, EventMask::NO_EVENT, event)?;
+
+                self.init_sync_timeout(state, timeout)?;
+
+                conn.flush()?;
+
+                state.pending_sync_wait_value = Some(next);
+
+                Ok(xsync_value(next))
+            } else {
+                Err(SyncRequestError::RequestPending)
+            }
+        } else {
+            Err(SyncRequestError::NotSupported)
+        }
+    }
+
+    /// Clears pending sync after an ACK has been received.
+    ///
+    /// Returns `true` if `value` is valid as an ACK for the pending sync request (or if there is
+    /// no pending sync, or if the protocol is not supported), `false` otherwise.
+    fn take_pending_sync_ack(&self, state: &mut SharedSurfaceState, value: i64) -> bool {
+        if let Some(counter) = &state.sync_counter {
+            let is_extended = matches!(counter, SyncRequestCounter::Extended(_));
+
+            if let Some(pending) = state.pending_sync_wait_value.take() {
+                let pending_v = xsync_value(pending);
+
+                let valid = value >= pending_v && (!is_extended || value % 2 == 0);
+                if !valid {
+                    state.pending_sync_wait_value = Some(pending);
+                }
+                valid
+            } else {
+                true
+            }
+        } else {
+            true
+        }
+    }
+
+    /// Creates a sync alarm for the specified counter.
+    ///
+    /// This causes the X server to send us an X event every time the client increments the
+    /// counter by at least +1.
+    fn init_sync_alarm(&self, state: &mut MutexGuard<'_, SharedSurfaceState>) -> Result<(), ReplyOrIdError> {
+        if let Some(counter) = &state.sync_counter {
+            if state.sync_alarm.is_none() {
+                let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+
+                let (counter, is_extended) = match counter {
+                    SyncRequestCounter::Basic(counter) => (*counter, false),
+                    SyncRequestCounter::Extended(counter) => (*counter, true),
+                };
+
+                if is_extended {
+                    state.counter_value = conn
+                        .sync_query_counter(counter)?
+                        .reply_unchecked()?
+                        .ok_or(ConnectionError::UnknownError)?
+                        .counter_value;
+                } else {
+                    state.counter_value = Int64 { hi: 0, lo: 0 };
+                    conn.sync_set_counter(counter, state.counter_value)?;
+                }
+
+                state.next_counter_value = state.counter_value;
+
+                let aux = CreateAlarmAux::new()
+                    .counter(counter)
+                    .delta(value_to_xsync(1))
+                    .value_type(VALUETYPE::RELATIVE)
+                    .value(value_to_xsync(1))
+                    .test_type(TESTTYPE::POSITIVE_COMPARISON)
+                    .events(1);
+                let alarm = conn.generate_id()?;
+                conn.sync_create_alarm(alarm, &aux)?.check()?;
+                state.sync_alarm = Some(alarm);
+            }
+        } else {
+            self.destroy_sync_alarm(state);
+        }
+
         Ok(())
+    }
+
+    /// Destroys the counter sync alarm and finishes any in-flight sync.
+    fn destroy_sync_alarm(&self, state: &mut MutexGuard<'_, SharedSurfaceState>) {
+        if let Some(sync_alarm) = state.sync_alarm.take() {
+            if let Some(conn) = self.conn.upgrade() {
+                let _ = conn.sync_destroy_alarm(sync_alarm);
+                let _ = conn.flush();
+            }
+        }
+        self.finish_pending_sync(state);
+    }
+
+    /// Handles a sync alarm for the sync counter for this surface.
+    ///
+    /// If `new_value` is a valid ACK for the currently in-flight sync request, the pending
+    /// configure is applied.
+    ///
+    /// The caller is responsible for notifying the compositor that the sync was ACKed, and of the
+    /// new in-flight request, if any.
+    pub(super) fn handle_sync_alarm(&self, new_value: Int64) -> bool {
+        let new_value_raw = xsync_value(new_value);
+
+        let mut state = self.state.lock().unwrap();
+        state.counter_value = new_value;
+        state.next_counter_value = value_to_xsync(new_value_raw.max(xsync_value(state.next_counter_value)));
+
+        if self.take_pending_sync_ack(&mut state, new_value_raw) {
+            self.finish_pending_sync(&mut state);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Fetches the X server time and sets an alarm for that plus `timeout`.
+    fn init_sync_timeout(
+        &self,
+        state: &mut SharedSurfaceState,
+        timeout: Duration,
+    ) -> Result<(), SyncRequestError> {
+        self.destroy_sync_timeout(state);
+
+        if let Some(conn) = self.conn.upgrade() {
+            if let Some(servertime_counter) = self.servertime_counter {
+                let now = xsync_value(
+                    conn.sync_query_counter(servertime_counter)?
+                        .reply_unchecked()?
+                        .ok_or(SyncRequestError::NotSupported)?
+                        .counter_value,
+                ) as u64;
+                // The SERVERTIME counter is an unsigned 64-bit millisecond value.
+                let timeout = value_to_xsync(now.wrapping_add(timeout.as_millis() as u64) as i64);
+
+                let alarm = conn.generate_id()?;
+
+                let aux = CreateAlarmAux::new()
+                    .counter(self.servertime_counter)
+                    .value_type(VALUETYPE::ABSOLUTE)
+                    .value(timeout)
+                    .test_type(TESTTYPE::POSITIVE_COMPARISON)
+                    .delta(value_to_xsync(0))
+                    .events(1);
+                conn.sync_create_alarm(alarm, &aux)?.check()?;
+                conn.flush()?;
+
+                state.sync_timeout_alarm = Some(alarm);
+                Ok(())
+            } else {
+                Err(SyncRequestError::NotSupported)
+            }
+        } else {
+            Err(ConnectionError::UnknownError.into())
+        }
+    }
+
+    fn destroy_sync_timeout(&self, state: &mut SharedSurfaceState) {
+        if let Some(alarm) = state.sync_timeout_alarm.take() {
+            if let Some(conn) = self.conn.upgrade() {
+                if let Err(err) = conn.sync_destroy_alarm(alarm).and_then(|_| conn.flush()) {
+                    tracing::warn!("Failed to unregister sync timeout alarm: {err}");
+                }
+            }
+        }
+    }
+
+    /// Cleans up after a sync request times out.
+    pub(super) fn handle_sync_timeout(&self) {
+        self.finish_pending_sync(&mut self.state.lock().unwrap());
+    }
+
+    /// Tells the X server to enable/disable commits on the window's underlying wl_surface.
+    fn set_allow_commits(&self, state: &SharedSurfaceState, allow_commits: bool) {
+        let result = self
+            .conn
+            .upgrade()
+            .ok_or(ConnectionError::UnknownError)
+            .and_then(|conn| {
+                let window = state.mapped_onto.unwrap_or(self.window);
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    window,
+                    self.atoms._XWAYLAND_ALLOW_COMMITS,
+                    AtomEnum::CARDINAL,
+                    &[if allow_commits { 1 } else { 0 }],
+                )?;
+                conn.flush()?;
+                Ok(())
+            });
+
+        if let Err(err) = result {
+            tracing::warn!(
+                "Failed to update _XWAYLAND_ALLOW_COMMITS to {allow_commits} on window 0x{:08x}: {err}",
+                self.window,
+            );
+        }
+    }
+
+    /// Finishes an in-flight sync request.
+    ///
+    /// Promotes the pending configure to the active configure, unregisters the sync timeout, and
+    /// tells the XWayland server to start committing buffers again.
+    fn finish_pending_sync(&self, state: &mut SharedSurfaceState) {
+        state.pending_sync_wait_value = None;
+        if let Some(pending_configure) = state.pending_configure.take() {
+            state.last_configure = pending_configure;
+        }
+        self.destroy_sync_timeout(state);
+        self.set_allow_commits(state, true);
     }
 
     /// Returns the associated wl_surface.
@@ -384,6 +895,19 @@ impl X11Surface {
 
     pub(crate) fn set_wl_surface<D: SeatHandler + 'static>(&self, data: &mut D, surface: Option<WlSurface>) {
         let mut state = self.state.lock().unwrap();
+
+        if let Some(hook_id) = state.opaque_regions_hook_id.take() {
+            if let Some(wl_surface) = state.wl_surface.as_ref() {
+                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
+            }
+        }
+
+        if let Some(hook_id) = state.deferred_sync_hook_id.take() {
+            if let Some(wl_surface) = state.wl_surface.as_ref() {
+                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
+            }
+        }
+
         if let (Some(surface), None) = (surface.as_ref(), state.wl_surface.as_ref()) {
             if let Some((seat, keys, mods, serial)) = state.pending_enter.take() {
                 if let Ok(seat) = seat.downcast::<Seat<D>>() {
@@ -395,11 +919,157 @@ impl X11Surface {
             }
         }
         state.wl_surface = surface;
+
+        if let Some(wl_surface) = state.wl_surface.clone() {
+            self.register_opaque_regions_hook::<D>(&mut state, &wl_surface);
+            self.register_deferred_sync_hook::<D>(&mut state, &wl_surface);
+        }
     }
 
-    /// Returns the current geometry of the underlying X11 window
+    fn register_opaque_regions_hook<D: 'static>(
+        &self,
+        state: &mut SharedSurfaceState,
+        wl_surface: &WlSurface,
+    ) {
+        let hook_id = {
+            let state = Arc::downgrade(&self.state);
+            let conn = self.conn.clone();
+            let window = self.window;
+            let property_atom = self.atoms._NET_WM_OPAQUE_REGION;
+            let client_scale = self.client_scale.clone();
+
+            compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, wl_surface| {
+                if let Some(state) = state.upgrade() {
+                    let update_opaque_region_if_needed = || {
+                        if state.lock().unwrap().opaque_region_dirty {
+                            if let Some(conn) = conn.upgrade() {
+                                if let Ok(opaque_region) =
+                                    fetch_opaque_regions(&conn, window, property_atom, client_scale.as_ref())
+                                {
+                                    let mut state = state.lock().unwrap();
+                                    state.opaque_region = opaque_region;
+                                    state.opaque_region_dirty = false;
+                                    return Some(state.opaque_region.clone());
+                                }
+                            }
+                        }
+                        None
+                    };
+
+                    let opaque_region = update_opaque_region_if_needed()
+                        .unwrap_or_else(|| state.lock().unwrap().opaque_region.clone());
+
+                    compositor::with_states(wl_surface, |states| {
+                        let mut guard = states.cached_state.get::<SurfaceAttributes>();
+                        let attrs = guard.pending();
+                        attrs.opaque_region = opaque_region;
+                    });
+                }
+            })
+        };
+        state.opaque_regions_hook_id = Some(hook_id);
+    }
+
+    fn register_deferred_sync_hook<D: 'static>(
+        &self,
+        state: &mut SharedSurfaceState,
+        wl_surface: &WlSurface,
+    ) {
+        let hook_id = {
+            let surface = self.clone();
+
+            compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, _| {
+                let (buffered_configure, timeout) = {
+                    let mut state = surface.state.lock().unwrap();
+                    let buffered_configure = if state.pending_sync_wait_value.is_none()
+                        && state
+                            .buffered_configure
+                            .is_some_and(|geom| geom != state.last_configure)
+                    {
+                        // We only send a new configure if:
+                        //   1) there is no sync currently in progress, and
+                        //   2) if the buffered configure is not the current configure.
+                        state.buffered_configure.take()
+                    } else {
+                        None
+                    };
+                    (buffered_configure, state.last_set_sync_timeout)
+                };
+
+                if let Some(buffered_configure) = buffered_configure {
+                    if let Err(err) = surface.configure_with_sync(buffered_configure, Some(timeout)) {
+                        tracing::info!(
+                            "Failed to send buffered surface configure/sync for window 0x{:08x}: {err}",
+                            surface.window
+                        );
+                    }
+                }
+            })
+        };
+        state.deferred_sync_hook_id = Some(hook_id);
+    }
+
+    /// Returns the last configure set on the underlying X11 window
+    pub fn last_configure(&self) -> Rectangle<i32, Logical> {
+        self.state.lock().unwrap().last_configure
+    }
+
+    /// Returns the pending configure, if any
+    ///
+    /// The pending configure has already been sent to the X server and client as a part of
+    /// [`configure_with_sync`](X11Surface::configure_with_sync), but the client has not yet
+    /// acknowledged the corresponding sync request.
+    ///
+    /// The pending configure is promoted to [`last_configure`](X11Surface::last_configure) after
+    /// the sync request has been acknowledged.
+    pub fn pending_configure(&self) -> Option<Rectangle<i32, Logical>> {
+        self.state.lock().unwrap().pending_configure
+    }
+
+    /// Returns the buffered configure, if any
+    ///
+    /// The buffered configure is the most recent rect passed to
+    /// [`configure_with_sync`](X11Surface::configure_with_sync).  It has not yet been sent to the
+    /// X server or client because an older sync request is still in progress.  Once the client
+    /// acknowledges the in-progress sync request and commits a buffer, the buffered configure will
+    /// be sent to the client as part of a new sync request.
+    ///
+    /// The buffered configure is promoted to [`pending_configure`](X11Surface::pending_configure)
+    /// once it has been sent to the client.
+    pub fn buffered_configure(&self) -> Option<Rectangle<i32, Logical>> {
+        self.state.lock().unwrap().buffered_configure
+    }
+
+    /// Returns the bounding box of this surface
+    ///
+    /// This corresponds to the last committed buffer size from the XWayland server.
+    ///
+    /// If no buffer has been committed, returns [`last_configure`](X11Surface::last_configure).
+    pub fn bbox(&self) -> Rectangle<i32, Logical> {
+        let state = self.state.lock().unwrap();
+
+        let size = state
+            .wl_surface
+            .as_ref()
+            .and_then(|surface| {
+                compositor::with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<RendererSurfaceStateUserData>()
+                        .and_then(|s| s.lock().unwrap().surface_size())
+                })
+            })
+            .unwrap_or_else(|| state.last_configure.size);
+        Rectangle::from_size(size)
+    }
+
+    /// Returns the user-visible area of the surface
+    ///
+    /// This corresponds to the surface's bounding box, minus any frame elements like drop shadows.
+    /// Note that not all clients will advertise the sizes of frame elements, even if they are
+    /// present on the window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        self.state.lock().unwrap().geometry
+        self.bbox() - self.frame_extents()
     }
 
     /// Returns the current title of the underlying X11 window
@@ -660,6 +1330,23 @@ impl X11Surface {
         } else {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_HIDDEN])?;
         }
+
+        if let Some(conn) = self.conn.upgrade() {
+            if self.state.lock().unwrap().mapped_onto.is_some() {
+                let wm_state = if suspended {
+                    3u32 /*IconicState*/
+                } else {
+                    1u32 /*NormalState*/
+                };
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    self.window,
+                    self.atoms.WM_STATE,
+                    self.atoms.WM_STATE,
+                    &[wm_state, 0 /*WINDOW_NONE*/],
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -824,6 +1511,17 @@ impl X11Surface {
         self.update_startup_id()?;
         self.update_pid()?;
         self.update_opacity()?;
+        if let Some(conn) = self.conn.upgrade() {
+            let mut state = self.state.lock().unwrap();
+            state.opaque_region = fetch_opaque_regions(
+                &conn,
+                self.window,
+                self.atoms._NET_WM_OPAQUE_REGION,
+                self.client_scale.as_ref(),
+            )?;
+            state.opaque_region_dirty = false;
+        }
+        self.update_toolkit_frame_extents()?;
         Ok(())
     }
 
@@ -872,6 +1570,16 @@ impl X11Surface {
             atom if atom == self.atoms._NET_WM_WINDOW_OPACITY => {
                 self.update_opacity()?;
                 Ok(Some(WmWindowProperty::Opacity))
+            }
+            atom if atom == self.atoms._NET_WM_OPAQUE_REGION => {
+                let mut state = self.state.lock().unwrap();
+                state.opaque_region = None;
+                state.opaque_region_dirty = true;
+                Ok(None)
+            }
+            atom if atom == self.atoms._GTK_FRAME_EXTENTS => {
+                self.update_toolkit_frame_extents()?;
+                Ok(Some(WmWindowProperty::FrameExtents))
             }
 
             _ => Ok(None), // unknown
@@ -971,6 +1679,55 @@ impl X11Surface {
         Ok(())
     }
 
+    fn fetch_gtk_frame_extents(&self) -> Result<Option<FrameExtents<i32, Physical>>, ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        conn.get_property(
+            false,
+            self.window,
+            self.atoms._GTK_FRAME_EXTENTS,
+            AtomEnum::CARDINAL,
+            0,
+            4,
+        )?
+        .reply_unchecked()
+        .map(|reply| {
+            reply.and_then(|reply| {
+                reply.value32().and_then(|mut values| {
+                    Some(FrameExtents::new(
+                        (values.next()? as i32).max(0),
+                        (values.next()? as i32).max(0),
+                        (values.next()? as i32).max(0),
+                        (values.next()? as i32).max(0),
+                    ))
+                })
+            })
+        })
+    }
+
+    fn update_toolkit_frame_extents(&self) -> Result<(), ConnectionError> {
+        let frame_extents = self.fetch_gtk_frame_extents()?.unwrap_or_default();
+        self.state.lock().unwrap().frame_extents = frame_extents;
+        Ok(())
+    }
+
+    /// Returns the logical pixel widths of the surface's frame
+    ///
+    /// This is usually the width of the drop shadows at the edges of the surface.
+    pub fn frame_extents(&self) -> FrameExtents<i32, Logical> {
+        let scale = self
+            .client_scale
+            .as_ref()
+            .map(|scale| scale.load(Ordering::Acquire))
+            .unwrap_or(1.);
+        self.state
+            .lock()
+            .unwrap()
+            .frame_extents
+            .to_f64()
+            .to_logical(scale)
+            .to_i32_round()
+    }
+
     fn update_protocols(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let Some(protocols) = (match conn
@@ -997,10 +1754,62 @@ impl X11Surface {
             .filter_map(|atom| match atom {
                 x if x == self.atoms.WM_TAKE_FOCUS => Some(WMProtocol::TakeFocus),
                 x if x == self.atoms.WM_DELETE_WINDOW => Some(WMProtocol::DeleteWindow),
+                x if x == self.atoms._NET_WM_PING => Some(WMProtocol::NetWmPing),
+                x if x == self.atoms._NET_WM_SYNC_REQUEST => Some(WMProtocol::NetWmSyncRequest),
                 _ => None,
             })
             .collect::<Vec<_>>();
+
+        drop(state);
+        self.init_net_wm_sync_request()?;
+
         Ok(())
+    }
+
+    pub(super) fn init_net_wm_sync_request(&self) -> Result<(), ConnectionError> {
+        let mut state = self.state.lock().unwrap();
+        if state.protocols.contains(&WMProtocol::NetWmSyncRequest) {
+            let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+            let counters_reply = conn
+                .get_property(
+                    false,
+                    self.window,
+                    self.atoms._NET_WM_SYNC_REQUEST_COUNTER,
+                    AtomEnum::CARDINAL,
+                    0,
+                    2,
+                )?
+                .reply_unchecked()?;
+
+            let counter = counters_reply.and_then(|reply| {
+                reply
+                    .value32()
+                    .and_then(|mut values| match (values.next(), values.next()) {
+                        (_, Some(extended)) => Some(SyncRequestCounter::Extended(extended)),
+                        (Some(basic), _) => Some(SyncRequestCounter::Basic(basic)),
+                        _ => None,
+                    })
+            });
+
+            if counter != state.sync_counter {
+                state.sync_counter = counter;
+                self.destroy_sync_alarm(&mut state);
+            }
+
+            if let Err(err) = self.init_sync_alarm(&mut state) {
+                state.sync_counter = None;
+                match err {
+                    ReplyOrIdError::ConnectionError(err) => Err(err),
+                    _ => Err(ConnectionError::UnknownError),
+                }
+            } else {
+                Ok(())
+            }
+        } else {
+            state.sync_counter = None;
+            let _ = self.init_sync_alarm(&mut state);
+            Ok(())
+        }
     }
 
     fn update_transient_for(&self) -> Result<(), ConnectionError> {
@@ -1113,6 +1922,42 @@ impl X11Surface {
         &self.user_data
     }
 
+    /// Sends a `_NET_WM_PING` message to the window.
+    ///
+    /// The passed `timestamp` must be unique, as older clients may only send the timestamp in the
+    /// ping reply for use in matching the reply to the correct window.  In particular, do not pass
+    /// `x11rb::CURRENT_TIME`.
+    ///
+    /// You can implement the
+    /// [`XwmHandler::ping_acked()`](crate::xwayland::xwm::XwmHandler::ping_acked) trait item in
+    /// order to be notified when the client responds.
+    pub fn send_ping(&self, timestamp: u32) -> Result<(), PingError> {
+        if timestamp == x11rb::CURRENT_TIME {
+            Err(PingError::InvalidTimestamp)
+        } else {
+            let mut state = self.state.lock().unwrap();
+            if let Some(timestamp) = &state.pending_ping_timestamp {
+                Err(PingError::PingAlreadyPending(*timestamp))
+            } else {
+                let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+                if state.protocols.contains(&WMProtocol::NetWmPing) && timestamp != x11rb::CURRENT_TIME {
+                    let event = ClientMessageEvent::new(
+                        32,
+                        self.window,
+                        self.atoms.WM_PROTOCOLS,
+                        [self.atoms._NET_WM_PING, timestamp, self.window, 0, 0],
+                    );
+                    conn.send_event(false, self.window, EventMask::NO_EVENT, event)?;
+                    conn.flush()?;
+                    state.pending_ping_timestamp = Some(timestamp);
+                    Ok(())
+                } else {
+                    Err(PingError::NotSupported)
+                }
+            }
+        }
+    }
+
     /// Send a close request to this window.
     ///
     /// Will outright destroy windows that don't support the `NET_DELETE_WINDOW` protocol.
@@ -1193,6 +2038,47 @@ impl X11Surface {
 
         None
     }
+
+    /// Returns whether or not the `_NET_WM_SYNC_REQUEST` protocol is supported.
+    ///
+    /// The `_NET_WM_SYNC_REQUEST` protocol is used to allow the compositor to synchronize
+    /// frame/decorations resize with the client's window repaint during interactive resizes.
+    pub fn sync_request_supported(&self) -> bool {
+        self.servertime_counter.is_some() && self.state.lock().unwrap().sync_counter.is_some()
+    }
+
+    pub(super) fn handle_destroyed(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.alive = false;
+        self.destroy_sync_alarm(&mut state);
+        self.destroy_sync_timeout(&mut state);
+        // Counter is owned by the client; do not destroy it.
+        state.sync_counter = None;
+
+        // Break reference cycle caused by deferred_sync hook
+        if let Some(hook_id) = state.deferred_sync_hook_id.take() {
+            if let Some(wl_surface) = state.wl_surface.as_ref() {
+                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
+            }
+        }
+    }
+}
+
+fn add_xsync_value(value: Int64, amount: i64) -> Int64 {
+    let value = xsync_value(value);
+    let value = value.wrapping_add(amount);
+    value_to_xsync(value)
+}
+
+fn value_to_xsync(value: i64) -> Int64 {
+    Int64 {
+        hi: ((value >> 32) & 0xffffffff) as i32,
+        lo: (value & 0xffffffff) as u32,
+    }
+}
+
+fn xsync_value(value: Int64) -> i64 {
+    (((value.hi as u64) << 32) | (value.lo as u64)) as i64
 }
 
 /// Trait for objects, that represent an x11 window in some shape or form
@@ -1238,6 +2124,10 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             WmInputModel::GloballyActive => (false, true),
         };
 
+        if let Some(release) = &self.focus_release {
+            release.cancel();
+        }
+
         if let Some(conn) = self.conn.upgrade() {
             if set_input_focus {
                 if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME) {
@@ -1280,11 +2170,10 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
         if self.input_model() == WmInputModel::None {
             return;
-        } else if let Some(conn) = self.conn.upgrade() {
-            if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
-                warn!("Unable to unfocus X11Surface ({:?}): {}", self.window, err);
-            }
-            let _ = conn.flush();
+        }
+
+        if let Some(release) = &self.focus_release {
+            release.schedule();
         }
 
         let mut state = self.state.lock().unwrap();
@@ -1303,10 +2192,6 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         serial: Serial,
         time: u32,
     ) {
-        if self.input_model() == WmInputModel::None {
-            return;
-        }
-
         let mut xstate = self.state.lock().unwrap();
         if let Some(surface) = xstate.wl_surface.as_ref() {
             KeyboardTarget::key(surface, seat, data, key, state, serial, time)
@@ -1322,10 +2207,6 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     }
 
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        if self.input_model() == WmInputModel::None {
-            return;
-        }
-
         let mut state = self.state.lock().unwrap();
         if let Some(surface) = state.wl_surface.as_ref() {
             KeyboardTarget::modifiers(surface, seat, data, modifiers, serial);
@@ -1482,4 +2363,47 @@ impl WaylandFocus for X11Surface {
     fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
         X11Surface::wl_surface(self).map(Cow::Owned)
     }
+}
+
+fn fetch_opaque_regions(
+    conn: &Arc<RustConnection>,
+    window: X11Window,
+    property_atom: Atom,
+    client_scale: Option<&Arc<AtomicF64>>,
+) -> Result<Option<RegionAttributes>, ConnectionError> {
+    let reply = conn
+        .get_property(false, window, property_atom, AtomEnum::CARDINAL, 0, u32::MAX)?
+        .reply_unchecked()?;
+
+    let opaque_region = reply
+        .and_then(|reply| {
+            reply.value32().map(|values| {
+                let client_scale = client_scale
+                    .as_ref()
+                    .map(|s| s.load(Ordering::Acquire))
+                    .unwrap_or(1.);
+
+                values
+                    .collect::<Vec<_>>()
+                    .chunks_exact(4)
+                    .flat_map(|rect_values| {
+                        let phys_rect = Rectangle::<i32, Physical>::new(
+                            (rect_values[0] as i32, rect_values[1] as i32).into(),
+                            ((rect_values[2] as i32).max(0), (rect_values[3] as i32).max(0)).into(),
+                        );
+                        if phys_rect.is_empty() {
+                            None
+                        } else {
+                            Some((
+                                RectangleKind::Add,
+                                phys_rect.to_f64().to_logical(client_scale).to_i32_round::<i32>(),
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+        })
+        .map(|rects| RegionAttributes { rects });
+
+    Ok(opaque_region)
 }

@@ -12,7 +12,6 @@
 //!     buffer::BufferHandler,
 //!     single_pixel_buffer::SinglePixelBufferState
 //! };
-//! use smithay::delegate_single_pixel_buffer;
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -31,8 +30,7 @@
 //!     }
 //! }
 //!
-//! // implement Dispatch for the SinglePixelBuffer types
-//! delegate_single_pixel_buffer!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -52,6 +50,8 @@ use wayland_server::{
     Dispatch, DisplayHandle, GlobalDispatch, Resource, backend::GlobalId, protocol::wl_buffer::WlBuffer,
 };
 
+use crate::wayland::GlobalData;
+
 mod handlers;
 
 /// Delegate state of WpSinglePixelBuffer protocol
@@ -67,11 +67,11 @@ impl SinglePixelBufferState {
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpSinglePixelBufferManagerV1, ()>,
-        D: Dispatch<WpSinglePixelBufferManagerV1, ()>,
+        D: GlobalDispatch<WpSinglePixelBufferManagerV1, GlobalData>,
+        D: Dispatch<WpSinglePixelBufferManagerV1, GlobalData>,
         D: 'static,
     {
-        let global = display.create_global::<D, WpSinglePixelBufferManagerV1, _>(1, ());
+        let global = display.create_global::<D, WpSinglePixelBufferManagerV1, _>(1, GlobalData);
 
         Self { global }
     }
@@ -141,36 +141,4 @@ pub fn get_single_pixel_buffer(buffer: &WlBuffer) -> Result<&SinglePixelBufferUs
     buffer
         .data::<SinglePixelBufferUserData>()
         .ok_or(BufferAccessError::NotManaged)
-}
-
-/// Macro used to delegate `WpSinglePixelBuffer` events
-#[macro_export]
-macro_rules! delegate_single_pixel_buffer {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                    wayland_server::protocol::wl_buffer::WlBuffer,
-                    wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1,
-                },
-                wayland::single_pixel_buffer::{SinglePixelBufferState, SinglePixelBufferUserData},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpSinglePixelBufferManagerV1: ()] => SinglePixelBufferState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpSinglePixelBufferManagerV1: ()] => SinglePixelBufferState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlBuffer: SinglePixelBufferUserData] => SinglePixelBufferState
-            );
-        };
-    };
 }

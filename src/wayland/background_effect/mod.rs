@@ -1,13 +1,11 @@
 //! Implementation of `ext_background_effect_manager_v1` protocol
 //!
-//! In order to advertise background effect global call [BackgroundEffectState::new] and delegate
-//! events to it with [`delegate_background_effect`][crate::delegate_background_effect].
+//! In order to advertise background effect global call [BackgroundEffectState::new].
 //! Currently attached effects are available in double-buffered [BackgroundEffectSurfaceCachedState]
 //!
 //! ```
 //! use smithay::wayland::background_effect::{BackgroundEffectState, ExtBackgroundEffectHandler, Capability};
 //! use wayland_server::protocol::wl_surface::WlSurface;
-//! use smithay::delegate_background_effect;
 //! use smithay::wayland::compositor;
 //!
 //! # struct State;
@@ -28,7 +26,7 @@
 //!     }
 //! }
 //!
-//! delegate_background_effect!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::{
@@ -36,14 +34,15 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use crate::wayland::compositor::{self, Cacheable};
-use wayland_protocols::ext::background_effect::v1::server::{
-    ext_background_effect_manager_v1::{self, ExtBackgroundEffectManagerV1},
-    ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
+use crate::wayland::{
+    GlobalData,
+    compositor::{self, Cacheable},
+};
+use wayland_protocols::ext::background_effect::v1::server::ext_background_effect_manager_v1::{
+    self, ExtBackgroundEffectManagerV1,
 };
 use wayland_server::{
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId,
-    protocol::wl_surface::WlSurface,
+    DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface::WlSurface,
 };
 
 pub use ext_background_effect_manager_v1::Capability;
@@ -51,12 +50,7 @@ pub use ext_background_effect_manager_v1::Capability;
 mod dispatch;
 
 /// Handler trait for ext background effect events.
-pub trait ExtBackgroundEffectHandler:
-    GlobalDispatch<ExtBackgroundEffectManagerV1, ()>
-    + Dispatch<ExtBackgroundEffectManagerV1, ()>
-    + Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData>
-    + 'static
-{
+pub trait ExtBackgroundEffectHandler: 'static {
     /// Getter for background-effect capabilities of the compositor
     fn capabilities(&self) -> Capability {
         // For now only blur is supported, so it's safe to assume it's supported by default
@@ -148,8 +142,11 @@ pub struct BackgroundEffectState {
 
 impl BackgroundEffectState {
     /// Regiseter new [ExtBackgroundEffectManagerV1] global
-    pub fn new<D: ExtBackgroundEffectHandler>(display: &DisplayHandle) -> BackgroundEffectState {
-        let global = display.create_global::<D, ExtBackgroundEffectManagerV1, _>(1, ());
+    pub fn new<D>(display: &DisplayHandle) -> BackgroundEffectState
+    where
+        D: ExtBackgroundEffectHandler + GlobalDispatch<ExtBackgroundEffectManagerV1, GlobalData>,
+    {
+        let global = display.create_global::<D, ExtBackgroundEffectManagerV1, _>(1, GlobalData);
         BackgroundEffectState { global }
     }
 
@@ -157,38 +154,4 @@ impl BackgroundEffectState {
     pub fn global(&self) -> GlobalId {
         self.global.clone()
     }
-}
-
-/// Macro to delegate implementation of the background effect protocol
-#[macro_export]
-macro_rules! delegate_background_effect {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::ext::background_effect::v1::server::{
-                        ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1,
-                        ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::background_effect::{BackgroundEffectState, BackgroundEffectSurfaceUserData},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtBackgroundEffectManagerV1: ()] => BackgroundEffectState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtBackgroundEffectManagerV1: ()] => BackgroundEffectState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtBackgroundEffectSurfaceV1: BackgroundEffectSurfaceUserData] => BackgroundEffectState
-            );
-        };
-    };
 }

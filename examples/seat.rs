@@ -7,7 +7,6 @@ use smithay::reexports::wayland_server::{
     protocol::wl_surface::WlSurface,
 };
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
-use smithay::{delegate_compositor, delegate_seat};
 
 struct App {
     compositor_state: CompositorState,
@@ -104,5 +103,4 @@ impl CompositorHandler for App {
     fn commit(&mut self, _surface: &WlSurface) {}
 }
 
-delegate_compositor!(App);
-delegate_seat!(App);
+smithay::delegate_dispatch2!(App);

@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use atomic_float::AtomicF64;
 use wayland_server::{
-    Client, Dispatch, DisplayHandle, Resource, Weak,
+    Client, DisplayHandle, Resource, Weak,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_pointer::{
@@ -25,10 +25,10 @@ use crate::{
         },
     },
     utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
-    wayland::{compositor, pointer_constraints::with_pointer_constraint},
+    wayland::{Dispatch2, compositor, pointer_constraints::with_pointer_constraint},
 };
 
-use super::{SeatHandler, SeatState, WaylandFocus};
+use super::{SeatHandler, WaylandFocus};
 
 // Use to accumulate discrete values for `wl_pointer` < 8
 #[derive(Default)]
@@ -348,19 +348,18 @@ pub struct PointerUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
+impl<D> Dispatch2<WlPointer, D> for PointerUserData<D>
 where
-    D: Dispatch<WlPointer, PointerUserData<D>>,
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         pointer: &WlPointer,
         request: wl_pointer::Request,
-        data: &PointerUserData<D>,
         _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -371,7 +370,7 @@ where
                 hotspot_x,
                 hotspot_y,
             } => {
-                let handle = match &data.handle {
+                let handle = match &self.handle {
                     Some(handle) => handle,
                     None => return,
                 };
@@ -437,8 +436,8 @@ where
         };
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, pointer: &WlPointer, data: &PointerUserData<D>) {
-        if let Some(ref handle) = data.handle {
+    fn destroyed(&self, _state: &mut D, _: ClientId, pointer: &WlPointer) {
+        if let Some(ref handle) = self.handle {
             handle
                 .wl_pointer
                 .known_pointers

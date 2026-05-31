@@ -18,7 +18,6 @@
 //! allows you to add additional needed DRM resources to the lease and accept or decline the request.
 //!
 //! ```no_run
-//! # use smithay::delegate_drm_lease;
 //! # use smithay::wayland::drm_lease::*;
 //! # use smithay::backend::drm::{DrmDevice, DrmNode};
 //!
@@ -50,7 +49,7 @@
 //!   fn lease_destroyed(&mut self, node: DrmNode, lease_id: u32) { self.active_leases.retain(|l| l.id() != lease_id); }
 //! }
 //!
-//! delegate_drm_lease!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
@@ -92,7 +91,10 @@ use wayland_protocols::wp::drm_lease::v1::server::*;
 use wayland_server::backend::GlobalId;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
 
-use crate::backend::drm::{DrmDevice, DrmDeviceFd, DrmNode, NodeType, PlaneClaim};
+use crate::{
+    backend::drm::{DrmDevice, DrmDeviceFd, DrmNode, NodeType, PlaneClaim},
+    wayland::{Dispatch2, GlobalDispatch2},
+};
 
 /// Delegate type for a drm_lease global
 #[derive(Debug)]
@@ -300,14 +302,7 @@ impl LeaseRejected {
 }
 
 /// Handler trait for drm leasing from the compositor.
-pub trait DrmLeaseHandler:
-    GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-    + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, Self>
-    + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, Self>
-    + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, Self>
-    + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, Self>
-    + 'static
-{
+pub trait DrmLeaseHandler {
     /// Returns a mutable reference to the [`DrmLeaseState`] delegate type
     fn drm_lease_state(&mut self, node: DrmNode) -> &mut DrmLeaseState;
     /// A client has issued a new request.
@@ -390,10 +385,6 @@ impl DrmLeaseState {
     where
         D: DrmLeaseHandler
             + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
             + 'static,
     {
         Self::new_with_filter::<D, _>(display, drm_node, |_| true)
@@ -410,10 +401,6 @@ impl DrmLeaseState {
     where
         D: DrmLeaseHandler
             + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
             + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
@@ -446,11 +433,7 @@ impl DrmLeaseState {
     pub fn add_connector<D>(&mut self, connector: connector::Handle, name: String, description: String)
     where
         D: DrmLeaseHandler
-            + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
+            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmLeaseConnectorData>
             + 'static,
     {
         if self.connectors.iter().any(|conn| conn.handle == connector) {
@@ -462,7 +445,9 @@ impl DrmLeaseState {
             if let Ok(client) = self.dh.get_client(instance.id()) {
                 if let Ok(lease_connector) = client
                     .create_resource::<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, _, D>(
-                        &self.dh, 1, self.node,
+                        &self.dh,
+                        1,
+                        DrmLeaseConnectorData { node: self.node },
                     )
                 {
                     instance.connector(&lease_connector);
@@ -546,11 +531,7 @@ impl DrmLeaseState {
     pub fn resume<D>(&mut self)
     where
         D: DrmLeaseHandler
-            + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
+            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmLeaseConnectorData>
             + 'static,
     {
         self.resume_internal::<D>(None);
@@ -559,11 +540,7 @@ impl DrmLeaseState {
     fn resume_internal<D>(&mut self, connectors: Option<&HashSet<connector::Handle>>)
     where
         D: DrmLeaseHandler
-            + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
+            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmLeaseConnectorData>
             + 'static,
     {
         for (instance, client) in self
@@ -599,11 +576,7 @@ impl DrmLeaseState {
     fn remove_lease<D>(&mut self, id: u32) -> Option<DrmLeaseRef>
     where
         D: DrmLeaseHandler
-            + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
+            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmLeaseConnectorData>
             + 'static,
     {
         let lease_ref = {
@@ -631,13 +604,7 @@ impl DrmLeaseState {
     /// Disable the global, it will no longer be advertised to new clients
     pub fn disable_global<D>(&mut self)
     where
-        D: DrmLeaseHandler
-            + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
-            + 'static,
+        D: DrmLeaseHandler + 'static,
     {
         if let Some(global) = self.global.take() {
             self.dh.disable_global::<D>(global);
@@ -672,15 +639,15 @@ impl DrmLeaseConnector {
     ) -> Option<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1>
     where
         D: DrmLeaseHandler
-            + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-            + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-            + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
+            + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmLeaseConnectorData>
             + 'static,
     {
-        if let Ok(lease_connector) =
-            client.create_resource::<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, _, D>(dh, 1, self.node)
+        if let Ok(lease_connector) = client
+            .create_resource::<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, _, D>(
+                dh,
+                1,
+                DrmLeaseConnectorData { node: self.node },
+            )
         {
             self.known_instances.push(lease_connector.clone());
 
@@ -698,29 +665,25 @@ impl DrmLeaseConnector {
     }
 }
 
-impl<D> GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData, D>
-    for DrmLeaseState
+impl<D> GlobalDispatch2<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, D> for DrmLeaseDeviceGlobalData
 where
     D: DrmLeaseHandler
-        + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-        + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-        + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
+        + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmLeaseConnectorData>
+        + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceData>
         + 'static,
 {
     fn bind(
+        &self,
         state: &mut D,
         dh: &DisplayHandle,
         client: &Client,
         resource: New<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1>,
-        global_data: &DrmLeaseDeviceGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let drm_lease_state = state.drm_lease_state(global_data.node);
-        let wp_drm_lease_device = data_init.init(resource, global_data.node);
+        let drm_lease_state = state.drm_lease_state(self.node);
+        let wp_drm_lease_device = data_init.init(resource, DrmLeaseDeviceData { node: self.node });
 
-        let Ok(fd) = get_non_master_fd(&global_data.path) else {
+        let Ok(fd) = get_non_master_fd(&self.path) else {
             // nothing we can do
             wp_drm_lease_device.released();
             return;
@@ -738,27 +701,29 @@ where
         drm_lease_state.known_lease_devices.push(wp_drm_lease_device);
     }
 
-    fn can_view(client: Client, global_data: &DrmLeaseDeviceGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D> for DrmLeaseState
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct DrmLeaseDeviceData {
+    node: DrmNode,
+}
+
+impl<D> Dispatch2<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, D> for DrmLeaseDeviceData
 where
     D: DrmLeaseHandler
-        + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-        + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
         + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-        + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
         + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         resource: &wp_drm_lease_device_v1::WpDrmLeaseDeviceV1,
         request: <wp_drm_lease_device_v1::WpDrmLeaseDeviceV1 as Resource>::Request,
-        data: &DrmNode,
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -767,13 +732,13 @@ where
                 data_init.init(
                     id,
                     DrmLeaseRequestData {
-                        node: *data,
+                        node: self.node,
                         connectors: Mutex::new(Vec::new()),
                     },
                 );
             }
             wp_drm_lease_device_v1::Request::Release => {
-                let drm_lease_state = state.drm_lease_state(*data);
+                let drm_lease_state = state.drm_lease_state(self.node);
                 drm_lease_state
                     .known_lease_devices
                     .retain(|device| device != resource);
@@ -784,68 +749,62 @@ where
     }
 }
 
-impl<D> Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D> for DrmLeaseState
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct DrmLeaseConnectorData {
+    node: DrmNode,
+}
+
+impl<D> Dispatch2<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, D> for DrmLeaseConnectorData
 where
-    D: DrmLeaseHandler
-        + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-        + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-        + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
-        + 'static,
+    D: DrmLeaseHandler + 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1,
         _request: <wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1 as Resource>::Request,
-        _data: &DrmNode,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_server::backend::ClientId,
         resource: &wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1,
-        data: &DrmNode,
     ) {
-        let drm_lease_state = state.drm_lease_state(*data);
+        let drm_lease_state = state.drm_lease_state(self.node);
         drm_lease_state.connectors.iter_mut().for_each(|connector| {
             connector.known_instances.retain(|obj| obj != resource);
         });
     }
 }
 
-impl<D> Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D> for DrmLeaseState
+impl<D> Dispatch2<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, D> for DrmLeaseRequestData
 where
-    D: DrmLeaseHandler
-        + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-        + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-        + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
-        + 'static,
+    D: DrmLeaseHandler + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData> + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         resource: &wp_drm_lease_request_v1::WpDrmLeaseRequestV1,
         request: <wp_drm_lease_request_v1::WpDrmLeaseRequestV1 as Resource>::Request,
-        data: &DrmLeaseRequestData,
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             wp_drm_lease_request_v1::Request::RequestConnector { connector } => {
-                data.connectors.lock().unwrap().push(connector);
+                self.connectors.lock().unwrap().push(connector);
             }
             wp_drm_lease_request_v1::Request::Submit { id } => {
-                let drm_lease_state = state.drm_lease_state(data.node);
+                let drm_lease_state = state.drm_lease_state(self.node);
 
                 let mut connector_handles = Vec::new();
-                for connector in &*data.connectors.lock().unwrap() {
+                for connector in &*self.connectors.lock().unwrap() {
                     if let Some(conn) = drm_lease_state
                         .connectors
                         .iter()
@@ -877,7 +836,7 @@ where
                 }
 
                 match state.lease_request(
-                    data.node,
+                    self.node,
                     DrmLeaseRequest {
                         connectors: connector_handles,
                     },
@@ -888,7 +847,7 @@ where
                                 id,
                                 DrmLeaseData {
                                     id: lease.lease_id.get(),
-                                    node: data.node,
+                                    node: self.node,
                                 },
                             );
                             lease.set_obj(lease_obj.clone());
@@ -903,11 +862,11 @@ where
                                 revoked: lease.revoked.clone(),
                             };
 
-                            let drm_lease_state = state.drm_lease_state(data.node);
+                            let drm_lease_state = state.drm_lease_state(self.node);
                             drm_lease_state.suspend_internal(Some(&lease.connectors));
                             drm_lease_state.active_leases.push(lease_ref);
 
-                            state.new_active_lease(data.node, lease);
+                            state.new_active_lease(self.node, lease);
                         }
                         Err(err) => {
                             tracing::error!(?err, "Failed to create lease");
@@ -915,7 +874,7 @@ where
                                 id,
                                 DrmLeaseData {
                                     id: 0,
-                                    node: data.node,
+                                    node: self.node,
                                 },
                             );
                             lease_obj.finished();
@@ -927,7 +886,7 @@ where
                             id,
                             DrmLeaseData {
                                 id: 0,
-                                node: data.node,
+                                node: self.node,
                             },
                         );
                         lease_obj.finished();
@@ -939,85 +898,32 @@ where
     }
 }
 
-impl<D> Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D> for DrmLeaseState
+impl<D> Dispatch2<wp_drm_lease_v1::WpDrmLeaseV1, D> for DrmLeaseData
 where
     D: DrmLeaseHandler
-        + GlobalDispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmLeaseDeviceGlobalData>
-        + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_device_v1::WpDrmLeaseDeviceV1, DrmNode, D>
-        + Dispatch<wp_drm_lease_request_v1::WpDrmLeaseRequestV1, DrmLeaseRequestData, D>
-        + Dispatch<wp_drm_lease_v1::WpDrmLeaseV1, DrmLeaseData, D>
+        + Dispatch<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, DrmLeaseConnectorData>
         + 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &wp_drm_lease_v1::WpDrmLeaseV1,
         _request: <wp_drm_lease_v1::WpDrmLeaseV1 as Resource>::Request,
-        _data: &DrmLeaseData,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_server::backend::ClientId,
         _resource: &wp_drm_lease_v1::WpDrmLeaseV1,
-        data: &DrmLeaseData,
     ) {
-        let drm_lease_state = state.drm_lease_state(data.node);
-        if let Some(lease_ref) = drm_lease_state.remove_lease::<D>(data.id) {
-            state.lease_destroyed(data.node, lease_ref.lease_id.get());
+        let drm_lease_state = state.drm_lease_state(self.node);
+        if let Some(lease_ref) = drm_lease_state.remove_lease::<D>(self.id) {
+            state.lease_destroyed(self.node, lease_ref.lease_id.get());
         }
     }
-}
-
-/// Macro to delegate implementation of the drm-lease protocol to [`DrmLeaseState`].
-///
-/// You must also implement [`DrmLeaseHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_drm_lease {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                backend::drm::DrmNode,
-                reexports::{
-                    wayland_protocols::wp::drm_lease::v1::server::{
-                        wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1,
-                        wp_drm_lease_device_v1::WpDrmLeaseDeviceV1,
-                        wp_drm_lease_request_v1::WpDrmLeaseRequestV1, wp_drm_lease_v1::WpDrmLeaseV1,
-                    },
-                    wayland_server::{
-                        delegate_dispatch, delegate_global_dispatch, protocol::wl_buffer::WlBuffer,
-                    },
-                },
-                wayland::drm_lease::{
-                    DrmLeaseData, DrmLeaseDeviceGlobalData, DrmLeaseRequestData, DrmLeaseState,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpDrmLeaseDeviceV1: DrmLeaseDeviceGlobalData] => DrmLeaseState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpDrmLeaseConnectorV1: DrmNode] => DrmLeaseState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpDrmLeaseDeviceV1: DrmNode] => DrmLeaseState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpDrmLeaseRequestV1: DrmLeaseRequestData] => DrmLeaseState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpDrmLeaseV1: DrmLeaseData] => DrmLeaseState
-            );
-        };
-    };
 }

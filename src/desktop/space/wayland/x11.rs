@@ -15,8 +15,11 @@ use super::{WindowOutputUserData, output_update};
 
 impl SpaceElement for X11Surface {
     fn bbox(&self) -> Rectangle<i32, Logical> {
-        let geo = X11Surface::geometry(self);
-        Rectangle::from_size(geo.size)
+        X11Surface::bbox(self)
+    }
+
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        X11Surface::geometry(self)
     }
 
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {

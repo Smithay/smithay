@@ -2,13 +2,11 @@
 //!
 //! This protocol enables clients to ring the system bell.
 //!
-//! In order to advertise system bell global call [`XdgSystemBellState::new`] and delegate
-//! events to it with [`delegate_xdg_system_bell`][crate::delegate_xdg_system_bell].
+//! In order to advertise system bell global call [`XdgSystemBellState::new`].
 //!
 //! ```
 //! use smithay::wayland::xdg_system_bell::{XdgSystemBellState, XdgSystemBellHandler};
 //! use wayland_server::protocol::wl_surface::WlSurface;
-//! use smithay::delegate_xdg_system_bell;
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -24,7 +22,7 @@
 //!     }
 //! }
 //!
-//! delegate_xdg_system_bell!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use wayland_protocols::xdg::system_bell::v1::server::xdg_system_bell_v1::{self, XdgSystemBellV1};
@@ -33,10 +31,10 @@ use wayland_server::{
     protocol::wl_surface::WlSurface,
 };
 
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+
 /// Handler for xdg ring request
-pub trait XdgSystemBellHandler:
-    GlobalDispatch<XdgSystemBellV1, ()> + Dispatch<XdgSystemBellV1, ()> + 'static
-{
+pub trait XdgSystemBellHandler: 'static {
     /// Ring the system bell
     fn ring(&mut self, surface: Option<WlSurface>);
 }
@@ -49,8 +47,11 @@ pub struct XdgSystemBellState {
 
 impl XdgSystemBellState {
     /// Register new [XdgSystemBellV1] global
-    pub fn new<D: XdgSystemBellHandler>(display: &DisplayHandle) -> Self {
-        let global_id = display.create_global::<D, XdgSystemBellV1, ()>(1, ());
+    pub fn new<D>(display: &DisplayHandle) -> Self
+    where
+        D: XdgSystemBellHandler + GlobalDispatch<XdgSystemBellV1, GlobalData>,
+    {
+        let global_id = display.create_global::<D, XdgSystemBellV1, _>(1, GlobalData);
         Self { global_id }
     }
 
@@ -60,26 +61,29 @@ impl XdgSystemBellState {
     }
 }
 
-impl<D: XdgSystemBellHandler> GlobalDispatch<XdgSystemBellV1, (), D> for XdgSystemBellState {
+impl<D: XdgSystemBellHandler> GlobalDispatch2<XdgSystemBellV1, D> for GlobalData
+where
+    D: Dispatch<XdgSystemBellV1, GlobalData>,
+{
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &Client,
         resource: New<XdgSystemBellV1>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D: XdgSystemBellHandler> Dispatch<XdgSystemBellV1, (), D> for XdgSystemBellState {
+impl<D: XdgSystemBellHandler> Dispatch2<XdgSystemBellV1, D> for GlobalData {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         _resource: &XdgSystemBellV1,
         request: xdg_system_bell_v1::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -91,32 +95,4 @@ impl<D: XdgSystemBellHandler> Dispatch<XdgSystemBellV1, (), D> for XdgSystemBell
             _ => unreachable!(),
         }
     }
-}
-
-/// Macro to delegate implementation of the xdg system bell to [`XdgSystemBellState`].
-///
-/// You must also implement [`XdgSystemBellHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_xdg_system_bell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::xdg::system_bell::v1::server::xdg_system_bell_v1::XdgSystemBellV1,
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::xdg_system_bell::XdgSystemBellState,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgSystemBellV1: ()] => XdgSystemBellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgSystemBellV1: ()] => XdgSystemBellState
-            );
-        };
-    };
 }

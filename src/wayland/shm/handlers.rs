@@ -1,16 +1,17 @@
 use crate::wayland::{
+    Dispatch2, GlobalData, GlobalDispatch2,
     buffer::BufferHandler,
     shm::{ShmBufferUserData, wl_bytes_per_pixel},
 };
 
 use super::{
-    BufferData, ShmHandler, ShmPoolUserData, ShmState,
+    BufferData, ShmHandler, ShmPoolUserData,
     pool::{Pool, ResizeError},
 };
 
 use std::{num::NonZeroUsize, os::unix::io::AsRawFd, sync::Arc};
 use wayland_server::{
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, New, Resource, WEnum,
     backend::ClientId,
     protocol::{
         wl_buffer,
@@ -19,23 +20,22 @@ use wayland_server::{
     },
 };
 
-impl<D> GlobalDispatch<WlShm, (), D> for ShmState
+impl<D> GlobalDispatch2<WlShm, D> for GlobalData
 where
-    D: GlobalDispatch<WlShm, ()>,
-    D: Dispatch<WlShm, ()>,
+    D: Dispatch<WlShm, GlobalData>,
     D: Dispatch<WlShmPool, ShmPoolUserData>,
     D: ShmHandler,
     D: 'static,
 {
     fn bind(
+        &self,
         state: &mut D,
         _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WlShm>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        let shm = data_init.init(resource, ());
+        let shm = data_init.init(resource, GlobalData);
 
         // send the formats
         for &f in &state.shm_state().formats {
@@ -44,16 +44,16 @@ where
     }
 }
 
-impl<D> Dispatch<WlShm, (), D> for ShmState
+impl<D> Dispatch2<WlShm, D> for GlobalData
 where
-    D: Dispatch<WlShm, ()> + Dispatch<WlShmPool, ShmPoolUserData> + ShmHandler + 'static,
+    D: Dispatch<WlShmPool, ShmPoolUserData> + ShmHandler + 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         shm: &WlShm,
         request: wl_shm::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -94,26 +94,22 @@ where
  * wl_shm_pool
  */
 
-impl<D> Dispatch<WlShmPool, ShmPoolUserData, D> for ShmState
+impl<D> Dispatch2<WlShmPool, D> for ShmPoolUserData
 where
-    D: Dispatch<WlShmPool, ShmPoolUserData>
-        + Dispatch<wl_buffer::WlBuffer, ShmBufferUserData>
-        + BufferHandler
-        + ShmHandler
-        + 'static,
+    D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler + ShmHandler + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         pool: &WlShmPool,
         request: wl_shm_pool::Request,
-        data: &ShmPoolUserData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         use self::wl_shm_pool::Request;
 
-        let arc_pool = &data.inner;
+        let arc_pool = &self.inner;
 
         match request {
             Request::CreateBuffer {
@@ -211,17 +207,17 @@ where
     }
 }
 
-impl<D> Dispatch<wl_buffer::WlBuffer, ShmBufferUserData, D> for ShmState
+impl<D> Dispatch2<wl_buffer::WlBuffer, D> for ShmBufferUserData
 where
-    D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler,
+    D: BufferHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _data: &mut D,
         _client: &wayland_server::Client,
         _buffer: &wl_buffer::WlBuffer,
         request: wl_buffer::Request,
-        _udata: &ShmBufferUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -234,9 +230,9 @@ where
         }
     }
 
-    fn destroyed(data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer, udata: &ShmBufferUserData) {
+    fn destroyed(&self, data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer) {
         // Clone to drop the mutex guard
-        let destruction_hooks = udata.destruction_hooks.lock().unwrap().clone();
+        let destruction_hooks = self.destruction_hooks.lock().unwrap().clone();
         for hook in destruction_hooks.iter() {
             (hook.cb)(data, buffer);
         }

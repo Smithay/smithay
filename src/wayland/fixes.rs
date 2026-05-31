@@ -6,6 +6,8 @@ use wayland_server::{
     protocol::wl_fixes,
 };
 
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+
 /// Delegate type for handling wl fixes requests.
 #[derive(Debug, Clone)]
 pub struct FixesState {
@@ -16,11 +18,11 @@ impl FixesState {
     /// Creates a new delegate type for handling [`wl_fixes::WlFixes`] events.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<wl_fixes::WlFixes, ()>,
-        D: Dispatch<wl_fixes::WlFixes, ()>,
+        D: GlobalDispatch<wl_fixes::WlFixes, GlobalData>,
+        D: Dispatch<wl_fixes::WlFixes, GlobalData>,
         D: 'static,
     {
-        let global = display.create_global::<D, wl_fixes::WlFixes, _>(1, ());
+        let global = display.create_global::<D, wl_fixes::WlFixes, _>(1, GlobalData);
         Self { global }
     }
 
@@ -30,35 +32,33 @@ impl FixesState {
     }
 }
 
-impl<D> GlobalDispatch<wl_fixes::WlFixes, (), D> for FixesState
+impl<D> GlobalDispatch2<wl_fixes::WlFixes, D> for GlobalData
 where
-    D: GlobalDispatch<wl_fixes::WlFixes, ()>,
-    D: Dispatch<wl_fixes::WlFixes, ()>,
+    D: Dispatch<wl_fixes::WlFixes, GlobalData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<wl_fixes::WlFixes>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<wl_fixes::WlFixes, (), D> for FixesState
+impl<D> Dispatch2<wl_fixes::WlFixes, D> for GlobalData
 where
-    D: Dispatch<wl_fixes::WlFixes, ()>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &wl_fixes::WlFixes,
         request: wl_fixes::Request,
-        _data: &(),
         dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -72,17 +72,4 @@ where
             _ => unreachable!(),
         }
     }
-}
-
-/// Macro to delegate implementation of wl fixes protocol to [`FixesState`].
-#[macro_export]
-macro_rules! delegate_fixes {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_fixes::WlFixes: ()
-        ] => $crate::wayland::fixes::FixesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_fixes::WlFixes: ()
-        ] => $crate::wayland::fixes::FixesState);
-    };
 }

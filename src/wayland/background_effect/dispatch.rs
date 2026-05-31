@@ -1,8 +1,7 @@
-use crate::wayland::background_effect::{
-    BackgroundEffectState, BackgroundEffectSurfaceData, ExtBackgroundEffectHandler,
-};
+use crate::wayland::background_effect::{BackgroundEffectSurfaceData, ExtBackgroundEffectHandler};
 use crate::wayland::compositor;
 use crate::wayland::{
+    Dispatch2, GlobalData, GlobalDispatch2,
     background_effect::{BackgroundEffectSurfaceCachedState, BackgroundEffectSurfaceUserData},
     compositor::with_states,
 };
@@ -14,31 +13,35 @@ use wayland_protocols::ext::background_effect::v1::server::{
         Error as SurfaceError, ExtBackgroundEffectSurfaceV1, Request as SurfaceRequest,
     },
 };
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource};
 
-impl<D: ExtBackgroundEffectHandler> GlobalDispatch<ExtBackgroundEffectManagerV1, (), D>
-    for BackgroundEffectState
+impl<D: ExtBackgroundEffectHandler> GlobalDispatch2<ExtBackgroundEffectManagerV1, D> for GlobalData
+where
+    D: Dispatch<ExtBackgroundEffectManagerV1, GlobalData>,
 {
     fn bind(
+        &self,
         state: &mut D,
         _handle: &DisplayHandle,
         _client: &Client,
         resource: New<ExtBackgroundEffectManagerV1>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        let manager = data_init.init(resource, ());
+        let manager = data_init.init(resource, GlobalData);
         manager.capabilities(state.capabilities());
     }
 }
 
-impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectManagerV1, (), D> for BackgroundEffectState {
+impl<D: ExtBackgroundEffectHandler> Dispatch2<ExtBackgroundEffectManagerV1, D> for GlobalData
+where
+    D: Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData>,
+{
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         manager: &ExtBackgroundEffectManagerV1,
         request: ManagerRequest,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -70,21 +73,21 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectManagerV1, (), D
     }
 }
 
-impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, BackgroundEffectSurfaceUserData, D>
-    for BackgroundEffectState
+impl<D: ExtBackgroundEffectHandler> Dispatch2<ExtBackgroundEffectSurfaceV1, D>
+    for BackgroundEffectSurfaceUserData
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         obj: &ExtBackgroundEffectSurfaceV1,
         request: SurfaceRequest,
-        data: &BackgroundEffectSurfaceUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             SurfaceRequest::SetBlurRegion { region } => {
-                let Some(surface) = data.wl_surface() else {
+                let Some(surface) = self.wl_surface() else {
                     obj.post_error(SurfaceError::SurfaceDestroyed, "wl_surface was destroyed");
                     return;
                 };
@@ -104,7 +107,7 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, Backg
                 }
             }
             SurfaceRequest::Destroy => {
-                let Some(surface) = data.wl_surface() else {
+                let Some(surface) = self.wl_surface() else {
                     // object is inert, but destroy is still allowed. We are done here.
                     return;
                 };
@@ -126,10 +129,10 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, Backg
     }
 
     fn destroyed(
+        &self,
         _state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         _object: &ExtBackgroundEffectSurfaceV1,
-        _data: &BackgroundEffectSurfaceUserData,
     ) {
         // No-op: cleanup is handled by double-buffering and surface destruction
     }

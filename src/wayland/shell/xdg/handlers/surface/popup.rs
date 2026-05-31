@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 use crate::{
     utils::Serial,
     wayland::{
+        Dispatch2,
         compositor::{self, with_states},
         shell::xdg::{PopupCachedState, SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
     },
@@ -10,34 +11,33 @@ use crate::{
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
-use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId};
+use wayland_server::{DataInit, DisplayHandle, Resource, backend::ClientId};
 
-use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData};
+use super::{PopupConfigure, XdgShellHandler, XdgShellSurfaceUserData, XdgSurfaceUserData};
 
-impl<D> Dispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
+impl<D> Dispatch2<XdgPopup, D> for XdgShellSurfaceUserData
 where
-    D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         popup: &XdgPopup,
         request: xdg_popup::Request,
-        data: &XdgShellSurfaceUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             xdg_popup::Request::Destroy => {
-                if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
+                if let Some(surface_data) = self.xdg_surface.data::<XdgSurfaceUserData>() {
                     surface_data.has_active_role.store(false, Ordering::Release);
                 }
             }
             xdg_popup::Request::Grab { seat, serial } => {
                 let handle = crate::wayland::shell::xdg::PopupSurface {
-                    wl_surface: data.wl_surface.clone(),
+                    wl_surface: self.wl_surface.clone(),
                     shell_surface: popup.clone(),
                 };
 
@@ -55,7 +55,7 @@ where
             }
             xdg_popup::Request::Reposition { positioner, token } => {
                 let handle = crate::wayland::shell::xdg::PopupSurface {
-                    wl_surface: data.wl_surface.clone(),
+                    wl_surface: self.wl_surface.clone(),
                     shell_surface: popup.clone(),
                 };
 
@@ -72,8 +72,8 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _client_id: ClientId, xdg_popup: &XdgPopup, data: &XdgShellSurfaceUserData) {
-        data.alive_tracker.destroy_notify();
+    fn destroyed(&self, state: &mut D, _client_id: ClientId, xdg_popup: &XdgPopup) {
+        self.alive_tracker.destroy_notify();
 
         // remove this surface from the known ones (as well as any leftover dead surface)
         if let Some(index) = state

@@ -16,9 +16,6 @@
 //! ## How to use it
 //!
 //! ```no_run
-//! use smithay::delegate_image_copy_capture;
-//! use smithay::delegate_image_capture_source;
-//! use smithay::delegate_output_capture_source;
 //! use smithay::wayland::image_copy_capture::{
 //!     ImageCopyCaptureState, ImageCopyCaptureHandler, BufferConstraints,
 //!     Session, SessionRef, Frame,
@@ -65,14 +62,12 @@
 //! #         source.user_data().insert_if_missing(|| output.downgrade());
 //! #     }
 //! # }
-//! # smithay::delegate_image_capture_source!(State);
-//! # smithay::delegate_output_capture_source!(State);
 //!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! let state = ImageCopyCaptureState::new::<State>(&display_handle);
 //!
-//! delegate_image_copy_capture!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ## Session Lifecycle
@@ -120,6 +115,7 @@ use crate::backend::renderer::{BufferType, buffer_type};
 #[cfg(feature = "backend_drm")]
 use crate::wayland::dmabuf::get_dmabuf;
 use crate::wayland::shm::with_buffer_contents;
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 // Re-export FailureReason for convenience
 pub use wayland_protocols::ext::image_copy_capture::v1::server::ext_image_copy_capture_frame_v1::FailureReason as CaptureFailureReason;
@@ -761,7 +757,7 @@ impl Drop for Frame {
 /// Implement this on your compositor's state type to handle capture requests.
 pub trait ImageCopyCaptureHandler:
     GlobalDispatch<ExtImageCopyCaptureManagerV1, ImageCopyCaptureGlobalData>
-    + Dispatch<ExtImageCopyCaptureManagerV1, ()>
+    + Dispatch<ExtImageCopyCaptureManagerV1, GlobalData>
     + Dispatch<ExtImageCopyCaptureSessionV1, SessionData>
     + Dispatch<ExtImageCopyCaptureSessionV1, CursorSessionData>
     + Dispatch<ExtImageCopyCaptureCursorSessionV1, CursorSessionData>
@@ -944,36 +940,36 @@ impl ImageCopyCaptureState {
 // Dispatch implementations
 // ============================================================================
 
-impl<D> GlobalDispatch<ExtImageCopyCaptureManagerV1, ImageCopyCaptureGlobalData, D> for ImageCopyCaptureState
+impl<D> GlobalDispatch2<ExtImageCopyCaptureManagerV1, D> for ImageCopyCaptureGlobalData
 where
     D: ImageCopyCaptureHandler,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<ExtImageCopyCaptureManagerV1>,
-        _global_data: &ImageCopyCaptureGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 
-    fn can_view(client: Client, global_data: &ImageCopyCaptureGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<ExtImageCopyCaptureManagerV1, (), D> for ImageCopyCaptureState
+impl<D> Dispatch2<ExtImageCopyCaptureManagerV1, D> for GlobalData
 where
     D: ImageCopyCaptureHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _resource: &ExtImageCopyCaptureManagerV1,
         request: ext_image_copy_capture_manager_v1::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -1097,25 +1093,25 @@ where
     }
 }
 
-impl<D> Dispatch<ExtImageCopyCaptureSessionV1, SessionData, D> for ImageCopyCaptureState
+impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for SessionData
 where
     D: ImageCopyCaptureHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         resource: &ExtImageCopyCaptureSessionV1,
         request: ext_image_copy_capture_session_v1::Request,
-        data: &SessionData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             ext_image_copy_capture_session_v1::Request::CreateFrame { frame } => {
-                let constraints = data.inner.lock().unwrap().constraints.clone();
+                let constraints = self.inner.lock().unwrap().constraints.clone();
                 let inner = Arc::new(Mutex::new(FrameInner::new(resource.clone(), constraints)));
                 let obj = data_init.init(frame, FrameData { inner: inner.clone() });
-                data.inner
+                self.inner
                     .lock()
                     .unwrap()
                     .active_frames
@@ -1127,40 +1123,40 @@ where
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureSessionV1,
-        data: &SessionData,
     ) {
         let session_ref = SessionRef {
             obj: resource.clone(),
-            inner: data.inner.clone(),
-            user_data: data.user_data.clone(),
+            inner: self.inner.clone(),
+            user_data: self.user_data.clone(),
         };
         state.session_destroyed(session_ref);
     }
 }
 
 // Dispatch for session created from cursor session's get_capture_session
-impl<D> Dispatch<ExtImageCopyCaptureSessionV1, CursorSessionData, D> for ImageCopyCaptureState
+impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for CursorSessionData
 where
     D: ImageCopyCaptureHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         resource: &ExtImageCopyCaptureSessionV1,
         request: ext_image_copy_capture_session_v1::Request,
-        data: &CursorSessionData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             ext_image_copy_capture_session_v1::Request::CreateFrame { frame } => {
-                let constraints = data.inner.lock().unwrap().constraints.clone();
+                let constraints = self.inner.lock().unwrap().constraints.clone();
                 let inner = Arc::new(Mutex::new(FrameInner::new(resource.clone(), constraints)));
                 let obj = data_init.init(frame, FrameData { inner: inner.clone() });
-                data.inner
+                self.inner
                     .lock()
                     .unwrap()
                     .active_frames
@@ -1172,22 +1168,22 @@ where
     }
 }
 
-impl<D> Dispatch<ExtImageCopyCaptureCursorSessionV1, CursorSessionData, D> for ImageCopyCaptureState
+impl<D> Dispatch2<ExtImageCopyCaptureCursorSessionV1, D> for CursorSessionData
 where
     D: ImageCopyCaptureHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &ExtImageCopyCaptureCursorSessionV1,
         request: ext_image_copy_capture_cursor_session_v1::Request,
-        data: &CursorSessionData,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             ext_image_copy_capture_cursor_session_v1::Request::GetCaptureSession { session } => {
-                let mut inner = data.inner.lock().unwrap();
+                let mut inner = self.inner.lock().unwrap();
 
                 if inner.session_obj.is_some() {
                     // Protocol error: only one session allowed
@@ -1197,8 +1193,8 @@ where
                 let obj = data_init.init(
                     session,
                     CursorSessionData {
-                        inner: data.inner.clone(),
-                        user_data: data.user_data.clone(),
+                        inner: self.inner.clone(),
+                        user_data: self.user_data.clone(),
                     },
                 );
 
@@ -1232,36 +1228,36 @@ where
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureCursorSessionV1,
-        data: &CursorSessionData,
     ) {
         let session_ref = CursorSessionRef {
             obj: resource.clone(),
-            inner: data.inner.clone(),
-            user_data: data.user_data.clone(),
+            inner: self.inner.clone(),
+            user_data: self.user_data.clone(),
         };
         state.cursor_session_destroyed(session_ref);
     }
 }
 
-impl<D> Dispatch<ExtImageCopyCaptureFrameV1, FrameData, D> for ImageCopyCaptureState
+impl<D> Dispatch2<ExtImageCopyCaptureFrameV1, D> for FrameData
 where
     D: ImageCopyCaptureHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         resource: &ExtImageCopyCaptureFrameV1,
         request: ext_image_copy_capture_frame_v1::Request,
-        data: &FrameData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             ext_image_copy_capture_frame_v1::Request::AttachBuffer { buffer } => {
-                let mut inner = data.inner.lock().unwrap();
+                let mut inner = self.inner.lock().unwrap();
                 if inner.capture_requested {
                     // Protocol error: can't attach after capture
                     return;
@@ -1269,7 +1265,7 @@ where
                 inner.buffer = Some(buffer);
             }
             ext_image_copy_capture_frame_v1::Request::DamageBuffer { x, y, width, height } => {
-                let mut inner = data.inner.lock().unwrap();
+                let mut inner = self.inner.lock().unwrap();
                 if inner.capture_requested {
                     return;
                 }
@@ -1285,11 +1281,11 @@ where
             ext_image_copy_capture_frame_v1::Request::Capture => {
                 let frame_ref = FrameRef {
                     obj: resource.clone(),
-                    inner: data.inner.clone(),
+                    inner: self.inner.clone(),
                 };
 
                 {
-                    let mut inner = data.inner.lock().unwrap();
+                    let mut inner = self.inner.lock().unwrap();
                     if inner.capture_requested || inner.failed.is_some() {
                         return;
                     }
@@ -1352,7 +1348,7 @@ where
                 }
 
                 // Frame not found in any session
-                data.inner.lock().unwrap().fail(resource, FailureReason::Unknown);
+                self.inner.lock().unwrap().fail(resource, FailureReason::Unknown);
             }
             ext_image_copy_capture_frame_v1::Request::Destroy => {}
             _ => unreachable!(),
@@ -1360,14 +1356,14 @@ where
     }
 
     fn destroyed(
+        &self,
         state: &mut D,
         _client: wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureFrameV1,
-        data: &FrameData,
     ) {
         let frame_ref = FrameRef {
             obj: resource.clone(),
-            inner: data.inner.clone(),
+            inner: self.inner.clone(),
         };
 
         // Remove from active frames in sessions
@@ -1390,55 +1386,4 @@ where
 
         state.frame_aborted(frame_ref);
     }
-}
-
-// ============================================================================
-// Delegate macro
-// ============================================================================
-
-/// Macro to delegate implementation of the image copy capture protocol to [`ImageCopyCaptureState`].
-///
-/// You must also implement [`ImageCopyCaptureHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_image_copy_capture {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::reexports::wayland_protocols::ext::image_copy_capture::v1::server::{
-                ext_image_copy_capture_cursor_session_v1::ExtImageCopyCaptureCursorSessionV1,
-                ext_image_copy_capture_frame_v1::ExtImageCopyCaptureFrameV1,
-                ext_image_copy_capture_manager_v1::ExtImageCopyCaptureManagerV1,
-                ext_image_copy_capture_session_v1::ExtImageCopyCaptureSessionV1,
-            };
-            use $crate::reexports::wayland_server::{delegate_dispatch, delegate_global_dispatch};
-            use $crate::wayland::image_copy_capture::{
-                ImageCopyCaptureGlobalData, ImageCopyCaptureState,
-                SessionData, CursorSessionData, FrameData,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtImageCopyCaptureManagerV1: ImageCopyCaptureGlobalData] => ImageCopyCaptureState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtImageCopyCaptureManagerV1: ()] => ImageCopyCaptureState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtImageCopyCaptureSessionV1: SessionData] => ImageCopyCaptureState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtImageCopyCaptureSessionV1: CursorSessionData] => ImageCopyCaptureState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtImageCopyCaptureCursorSessionV1: CursorSessionData] => ImageCopyCaptureState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtImageCopyCaptureFrameV1: FrameData] => ImageCopyCaptureState
-            );
-        };
-    };
 }

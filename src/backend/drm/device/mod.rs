@@ -443,7 +443,8 @@ impl DrmDevice {
     pub fn activate(&mut self, disable_connectors: bool) -> Result<(), Error> {
         if self.device_fd().is_privileged() {
             if let Err(err) = self.acquire_master_lock() {
-                error!("Failed to acquire drm master again. Error: {}", err);
+                error!("Failed to acquire drm master on activate. Error: {}", err);
+                return Err(Error::DrmMasterFailed);
             }
         }
         if !self.set_active(true) && disable_connectors {

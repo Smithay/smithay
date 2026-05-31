@@ -25,7 +25,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::delegate_xdg_shell;
 //! use smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface};
 //! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState};
 //! use smithay::utils::Serial;
@@ -94,7 +93,8 @@
 //!         // handle new images for the cursor ...
 //!     }
 //! }
-//! delegate_xdg_shell!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -121,6 +121,7 @@
 use crate::utils::alive_tracker::IsAlive;
 use crate::utils::{Logical, Point, Rectangle, Size, user_data::UserDataMap};
 use crate::utils::{SERIAL_COUNTER, Serial};
+use crate::wayland::GlobalData;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::compositor::{self, BufferAssignment, SurfaceAttributes};
 use crate::wayland::shell::xdg::dialog::ToplevelDialogHint;
@@ -1217,7 +1218,7 @@ impl XdgShellState {
     /// Create a new `xdg_shell` global with all [`WmCapabilities`](xdg_toplevel::WmCapabilities)
     pub fn new<D>(display: &DisplayHandle) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, ()> + 'static,
+        D: GlobalDispatch<XdgWmBase, GlobalData> + 'static,
     {
         Self::new_with_capabilities::<D>(
             display,
@@ -1236,9 +1237,9 @@ impl XdgShellState {
         capabilities: impl Into<WmCapabilitySet>,
     ) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, ()> + 'static,
+        D: GlobalDispatch<XdgWmBase, GlobalData> + 'static,
     {
-        let global = display.create_global::<D, XdgWmBase, _>(7, ());
+        let global = display.create_global::<D, XdgWmBase, _>(7, GlobalData);
 
         XdgShellState {
             known_toplevels: Vec::new(),
@@ -2169,56 +2170,4 @@ impl From<PopupConfigure> for Configure {
     fn from(configure: PopupConfigure) -> Self {
         Configure::Popup(configure)
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_xdg_shell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::xdg::shell::server::{
-                        xdg_popup::XdgPopup, xdg_positioner::XdgPositioner, xdg_surface::XdgSurface,
-                        xdg_toplevel::XdgToplevel, xdg_wm_base::XdgWmBase,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::shell::xdg::{
-                    XdgPositionerUserData, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData,
-                    XdgWmBaseUserData,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgWmBase: ()] => XdgShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgWmBase: XdgWmBaseUserData] => XdgShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgPositioner: XdgPositionerUserData] => XdgShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgPopup: XdgShellSurfaceUserData] => XdgShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgSurface: XdgSurfaceUserData] => XdgShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgToplevel: XdgShellSurfaceUserData] => XdgShellState
-            );
-        };
-    };
 }

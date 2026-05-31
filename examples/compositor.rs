@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use smithay::delegate_compositor;
+use smithay::delegate_dispatch2;
 use smithay::reexports::wayland_server::Display;
 
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
@@ -75,4 +75,4 @@ impl AsMut<CompositorState> for App {
     }
 }
 
-delegate_compositor!(App);
+delegate_dispatch2!(App);

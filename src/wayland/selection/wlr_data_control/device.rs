@@ -5,16 +5,17 @@ use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1
     self, ZwlrDataControlDeviceV1,
 };
 use wayland_server::protocol::wl_seat::WlSeat;
-use wayland_server::{Client, Dispatch, DisplayHandle, Resource};
+use wayland_server::{Client, DisplayHandle, Resource};
 
 use crate::input::Seat;
+use crate::wayland::Dispatch2;
 use crate::wayland::selection::device::SelectionDevice;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;
 use crate::wayland::selection::{SelectionSource, SelectionTarget};
 
-use super::{DataControlHandler, DataControlState};
+use super::DataControlHandler;
 
 #[allow(missing_debug_implementations)]
 #[doc(hidden)]
@@ -23,22 +24,21 @@ pub struct DataControlDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData, D> for DataControlState
+impl<D> Dispatch2<ZwlrDataControlDeviceV1, D> for DataControlDeviceUserData
 where
-    D: Dispatch<ZwlrDataControlDeviceV1, DataControlDeviceUserData>,
     D: DataControlHandler,
     D: 'static,
 {
     fn request(
+        &self,
         handler: &mut D,
         client: &Client,
         resource: &ZwlrDataControlDeviceV1,
         request: <ZwlrDataControlDeviceV1 as wayland_server::Resource>::Request,
-        data: &DataControlDeviceUserData,
         dh: &DisplayHandle,
         _: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let seat = match Seat::<D>::from_resource(&data.wl_seat) {
+        let seat = match Seat::<D>::from_resource(&self.wl_seat) {
             Some(seat) => seat,
             None => return,
         };
@@ -50,7 +50,7 @@ where
                     if handler
                         .data_control_state()
                         .used_sources
-                        .insert(source.clone(), data.wl_seat.clone())
+                        .insert(source.clone(), self.wl_seat.clone())
                         .is_some()
                     {
                         resource.post_error(
@@ -80,7 +80,7 @@ where
             }
             zwlr_data_control_device_v1::Request::SetPrimarySelection { source, .. } => {
                 // When the primary selection is disabled, we should simply ignore the requests.
-                if !(*data.primary_selection_filter)(client) {
+                if !(*self.primary_selection_filter)(client) {
                     return;
                 }
 
@@ -89,7 +89,7 @@ where
                     if handler
                         .data_control_state()
                         .used_sources
-                        .insert(source.clone(), data.wl_seat.clone())
+                        .insert(source.clone(), self.wl_seat.clone())
                         .is_some()
                     {
                         resource.post_error(
@@ -132,12 +132,12 @@ where
     }
 
     fn destroyed(
+        &self,
         _state: &mut D,
         _client: wayland_server::backend::ClientId,
         resource: &ZwlrDataControlDeviceV1,
-        data: &DataControlDeviceUserData,
     ) {
-        if let Some(seat) = Seat::<D>::from_resource(&data.wl_seat) {
+        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
             if let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>() {
                 seat_data.borrow_mut().retain_devices(|ndd| match ndd {
                     SelectionDevice::WlrDataControl(ndd) => ndd != resource,

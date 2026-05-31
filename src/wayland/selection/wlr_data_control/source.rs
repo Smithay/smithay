@@ -4,16 +4,17 @@ use std::sync::Mutex;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::{
     self, ZwlrDataControlSourceV1,
 };
+use wayland_server::DisplayHandle;
 use wayland_server::backend::ClientId;
-use wayland_server::{Dispatch, DisplayHandle};
 
 use crate::input::Seat;
+use crate::wayland::Dispatch2;
 use crate::wayland::selection::SelectionTarget;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;
 
-use super::{DataControlHandler, DataControlState};
+use super::DataControlHandler;
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -38,24 +39,23 @@ pub struct SourceMetadata {
     pub mime_types: Vec<String>,
 }
 
-impl<D> Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData, D> for DataControlState
+impl<D> Dispatch2<ZwlrDataControlSourceV1, D> for DataControlSourceUserData
 where
-    D: Dispatch<ZwlrDataControlSourceV1, DataControlSourceUserData>,
     D: DataControlHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &ZwlrDataControlSourceV1,
         request: <ZwlrDataControlSourceV1 as wayland_server::Resource>::Request,
-        data: &DataControlSourceUserData,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
             zwlr_data_control_source_v1::Request::Offer { mime_type } => {
-                let mut data = data.inner.lock().unwrap();
+                let mut data = self.inner.lock().unwrap();
                 data.mime_types.push(mime_type);
             }
             zwlr_data_control_source_v1::Request::Destroy => (),
@@ -63,12 +63,7 @@ where
         }
     }
 
-    fn destroyed(
-        state: &mut D,
-        _client: ClientId,
-        source: &ZwlrDataControlSourceV1,
-        data: &DataControlSourceUserData,
-    ) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, source: &ZwlrDataControlSourceV1) {
         // Remove the source from the used ones.
         let seat = match state
             .data_control_state()
@@ -99,10 +94,10 @@ where
                 {
                     match target {
                         SelectionTarget::Primary => {
-                            seat_data.set_primary_selection::<D>(&data.display_handle, None)
+                            seat_data.set_primary_selection::<D>(&self.display_handle, None)
                         }
                         SelectionTarget::Clipboard => {
-                            seat_data.set_clipboard_selection::<D>(&data.display_handle, None)
+                            seat_data.set_clipboard_selection::<D>(&self.display_handle, None)
                         }
                     }
                 }

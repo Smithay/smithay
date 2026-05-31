@@ -598,7 +598,7 @@ where
             return;
         }
 
-        // Check if the the client of the focused surface is still equal to the grabbed surface client
+        // Check if the client of the focused surface is still equal to the grabbed surface client
         // if not the popup will be dismissed
         if state == ButtonState::Pressed
             && !handle

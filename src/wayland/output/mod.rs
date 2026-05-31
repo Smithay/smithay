@@ -21,8 +21,6 @@
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
-//! use smithay::delegate_output;
-//! # use smithay::delegate_compositor;
 //! use smithay::output::{Output, PhysicalProperties, Scale, Mode, Subpixel};
 //! use smithay::utils::Transform;
 //! use smithay::wayland::output::OutputHandler;
@@ -67,8 +65,7 @@
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
 //!
-//! delegate_output!(State);
-//! # delegate_compositor!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 mod handlers;
@@ -94,7 +91,10 @@ use wayland_server::{
     },
 };
 
-use crate::utils::{Logical, Point};
+use crate::{
+    utils::{Logical, Point},
+    wayland::GlobalData,
+};
 
 pub use self::handlers::XdgOutputUserData;
 
@@ -128,10 +128,10 @@ impl OutputManagerState {
     pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
         D: GlobalDispatch<WlOutput, WlOutputData>,
-        D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
+        D: GlobalDispatch<ZxdgOutputManagerV1, GlobalData>,
         D: 'static,
     {
-        let xdg_output_manager = display.create_global::<D, ZxdgOutputManagerV1, _>(3, ());
+        let xdg_output_manager = display.create_global::<D, ZxdgOutputManagerV1, _>(3, GlobalData);
 
         Self {
             xdg_output_manager: Some(xdg_output_manager),
@@ -350,49 +350,4 @@ impl Output {
         let mut inner = self.inner.0.lock().unwrap();
         inner.surfaces.retain(|s| s.is_alive());
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_output {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::xdg::xdg_output::zv1::server::{
-                        zxdg_output_manager_v1::ZxdgOutputManagerV1, zxdg_output_v1::ZxdgOutputV1,
-                    },
-                    wayland_server::{
-                        delegate_dispatch, delegate_global_dispatch, protocol::wl_output::WlOutput,
-                    },
-                },
-                wayland::output::{OutputManagerState, OutputUserData, WlOutputData, XdgOutputUserData},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlOutput: WlOutputData] => OutputManagerState
-            );
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgOutputManagerV1: ()] => OutputManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlOutput: OutputUserData] => OutputManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgOutputV1: XdgOutputUserData] => OutputManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZxdgOutputManagerV1: ()] => OutputManagerState
-            );
-        };
-    };
 }

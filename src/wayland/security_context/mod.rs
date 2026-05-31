@@ -14,6 +14,8 @@ use wayland_server::{
     backend::{ClientId, GlobalId},
 };
 
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+
 mod listener_source;
 pub use listener_source::SecurityContextListenerSource;
 
@@ -68,7 +70,7 @@ impl SecurityContextState {
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData>,
-        D: Dispatch<WpSecurityContextManagerV1, ()>,
+        D: Dispatch<WpSecurityContextManagerV1, GlobalData>,
         D: Dispatch<WpSecurityContextV1, SecurityContextUserData>,
         D: 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
@@ -93,40 +95,38 @@ pub struct SecurityContextGlobalData {
     filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
 }
 
-impl<D> GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData, D> for SecurityContextState
+impl<D> GlobalDispatch2<WpSecurityContextManagerV1, D> for SecurityContextGlobalData
 where
-    D: GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData>,
-    D: Dispatch<WpSecurityContextManagerV1, ()>,
+    D: Dispatch<WpSecurityContextManagerV1, GlobalData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<WpSecurityContextManagerV1>,
-        _global_data: &SecurityContextGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 
-    fn can_view(client: Client, global_data: &SecurityContextGlobalData) -> bool {
-        (global_data.filter)(&client)
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
     }
 }
 
-impl<D> Dispatch<WpSecurityContextManagerV1, (), D> for SecurityContextState
+impl<D> Dispatch2<WpSecurityContextManagerV1, D> for GlobalData
 where
-    D: Dispatch<WpSecurityContextManagerV1, ()>,
     D: Dispatch<WpSecurityContextV1, SecurityContextUserData>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _manager: &WpSecurityContextManagerV1,
         request: wp_security_context_manager_v1::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -151,21 +151,20 @@ where
     }
 }
 
-impl<D> Dispatch<WpSecurityContextV1, SecurityContextUserData, D> for SecurityContextState
+impl<D> Dispatch2<WpSecurityContextV1, D> for SecurityContextUserData
 where
-    D: Dispatch<WpSecurityContextV1, SecurityContextUserData> + 'static,
-    D: SecurityContextHandler,
+    D: SecurityContextHandler + 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         client: &wayland_server::Client,
         context: &WpSecurityContextV1,
         request: wp_security_context_v1::Request,
-        data: &SecurityContextUserData,
         _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let mut data = data.0.lock().unwrap();
+        let mut data = self.0.lock().unwrap();
 
         if matches!(request, wp_security_context_v1::Request::Destroy) {
             return;
@@ -226,40 +225,4 @@ where
             _ => unreachable!(),
         }
     }
-}
-
-/// Macro to delegate implementation of the security context protocol
-#[macro_export]
-macro_rules! delegate_security_context {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::security_context::v1::server::{
-                        wp_security_context_manager_v1::WpSecurityContextManagerV1,
-                        wp_security_context_v1::WpSecurityContextV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::security_context::{
-                    SecurityContextGlobalData, SecurityContextState, SecurityContextUserData,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpSecurityContextManagerV1: SecurityContextGlobalData] => SecurityContextState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpSecurityContextManagerV1: ()] => SecurityContextState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpSecurityContextV1: SecurityContextUserData] => SecurityContextState
-            );
-        };
-    };
 }

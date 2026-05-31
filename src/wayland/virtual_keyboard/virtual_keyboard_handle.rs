@@ -10,8 +10,7 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
     self, ZwpVirtualKeyboardV1,
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
-    backend::ClientId,
+    Client, DataInit, DisplayHandle, Resource,
     protocol::wl_keyboard::{KeyState, KeymapFormat},
 };
 use xkbcommon::xkb;
@@ -20,10 +19,11 @@ use crate::input::keyboard::{KeyboardTarget, KeymapFile, ModifiersState};
 use crate::{
     input::{Seat, SeatHandler},
     utils::SERIAL_COUNTER,
-    wayland::seat::{WaylandFocus, keyboard::for_each_focused_kbds},
+    wayland::{
+        Dispatch2,
+        seat::{WaylandFocus, keyboard::for_each_focused_kbds},
+    },
 };
-
-use super::VirtualKeyboardManagerState;
 
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
@@ -71,28 +71,27 @@ impl<D: SeatHandler> fmt::Debug for VirtualKeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>, D> for VirtualKeyboardManagerState
+impl<D> Dispatch2<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData<D>
 where
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
     D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
+        &self,
         user_data: &mut D,
         _client: &Client,
         virtual_keyboard: &ZwpVirtualKeyboardV1,
         request: zwp_virtual_keyboard_v1::Request,
-        data: &VirtualKeyboardUserData<D>,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                update_keymap(data, format, fd, size as usize);
+                update_keymap(self, format, fd, size as usize);
             }
             zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
                 // Ensure keymap was initialized.
-                let mut virtual_data = data.handle.inner.lock().unwrap();
+                let mut virtual_data = self.handle.inner.lock().unwrap();
                 let vk_state = match virtual_data.state.as_mut() {
                     Some(vk_state) => vk_state,
                     None => {
@@ -102,13 +101,13 @@ where
                 };
 
                 // Ensure virtual keyboard's keymap is active.
-                let keyboard_handle = data.seat.get_keyboard().unwrap();
+                let keyboard_handle = self.seat.get_keyboard().unwrap();
                 let mut internal = keyboard_handle.arc.internal.lock().unwrap();
                 let focus = internal.focus.as_mut().map(|(focus, _)| focus);
                 keyboard_handle.send_keymap(user_data, &focus, &vk_state.keymap, vk_state.mods);
 
                 if let Some(wl_surface) = focus.and_then(|f| f.wl_surface()) {
-                    for_each_focused_kbds(&data.seat, &wl_surface, |kbd| {
+                    for_each_focused_kbds(&self.seat, &wl_surface, |kbd| {
                         // This should be wl_keyboard::KeyState, but the protocol does not state
                         // the parameter is an enum.
                         let key_state = if state == 1 {
@@ -128,7 +127,7 @@ where
                 group,
             } => {
                 // Ensure keymap was initialized.
-                let mut virtual_data = data.handle.inner.lock().unwrap();
+                let mut virtual_data = self.handle.inner.lock().unwrap();
                 let state = match virtual_data.state.as_mut() {
                     Some(state) => state,
                     None => {
@@ -144,7 +143,7 @@ where
                 state.mods.update_with(&state.state);
 
                 // Ensure virtual keyboard's keymap is active.
-                let keyboard_handle = data.seat.get_keyboard().unwrap();
+                let keyboard_handle = self.seat.get_keyboard().unwrap();
                 let mut internal = keyboard_handle.arc.internal.lock().unwrap();
                 let focus = internal.focus.as_mut().map(|(focus, _)| focus);
                 let keymap_changed =
@@ -153,7 +152,7 @@ where
                 // Report modifiers change to all keyboards.
                 if !keymap_changed {
                     if let Some(focus) = focus {
-                        focus.modifiers(&data.seat, user_data, state.mods, SERIAL_COUNTER.next_serial());
+                        focus.modifiers(&self.seat, user_data, state.mods, SERIAL_COUNTER.next_serial());
                     }
                 }
             }
@@ -162,14 +161,6 @@ where
             }
             _ => unreachable!(),
         }
-    }
-
-    fn destroyed(
-        _state: &mut D,
-        _client: ClientId,
-        _virtual_keyboard: &ZwpVirtualKeyboardV1,
-        _data: &VirtualKeyboardUserData<D>,
-    ) {
     }
 }
 

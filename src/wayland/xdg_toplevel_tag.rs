@@ -2,15 +2,13 @@
 //!
 //! This protocol allows clients to set a tag and description of a toplevel.
 //!
-//! In order to advertise toplevel tag global call [XdgToplevelTagManager::new] and delegate
-//! events to it with [`delegate_xdg_toplevel_tag`][crate::delegate_xdg_toplevel_tag].
+//! In order to advertise toplevel tag global call [XdgToplevelTagManager::new].
 //! Currently attached tag is available either via [XdgToplevelTagHandler] or in [XdgToplevelTagSurfaceData]
 //!
 //! ```
 //! use smithay::wayland::xdg_toplevel_tag::{XdgToplevelTagManager, XdgToplevelTagHandler};
 //! use wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel;
 //! use wayland_server::protocol::wl_surface::WlSurface;
-//! use smithay::delegate_xdg_toplevel_tag;
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -29,7 +27,7 @@
 //!     }
 //! }
 //!
-//! delegate_xdg_toplevel_tag!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::{Arc, Mutex};
@@ -43,7 +41,9 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::GlobalId,
 };
 
-use crate::wayland::{compositor, shell::xdg::XdgShellSurfaceUserData};
+use crate::wayland::{
+    Dispatch2, GlobalData, GlobalDispatch2, compositor, shell::xdg::XdgShellSurfaceUserData,
+};
 
 /// Data associated with WlSurface
 /// Represents the client pending state
@@ -86,9 +86,7 @@ impl XdgToplevelTagSurfaceData {
 }
 
 /// Handler trait for xdg toplevel tag events.
-pub trait XdgToplevelTagHandler:
-    GlobalDispatch<XdgToplevelTagManagerV1, ()> + Dispatch<XdgToplevelTagManagerV1, ()> + 'static
-{
+pub trait XdgToplevelTagHandler: 'static {
     /// Toplevel tag was set/updated.
     #[allow(unused)]
     fn set_tag(&mut self, toplevel: XdgToplevel, tag: String) {}
@@ -106,8 +104,11 @@ pub struct XdgToplevelTagManager {
 
 impl XdgToplevelTagManager {
     /// Creates a new delegate type for handling xdg toplevel tag events.
-    pub fn new<D: XdgToplevelTagHandler>(display: &DisplayHandle) -> Self {
-        let global = display.create_global::<D, XdgToplevelTagManagerV1, _>(1, ());
+    pub fn new<D>(display: &DisplayHandle) -> Self
+    where
+        D: XdgToplevelTagHandler + GlobalDispatch<XdgToplevelTagManagerV1, GlobalData>,
+    {
+        let global = display.create_global::<D, XdgToplevelTagManagerV1, _>(1, GlobalData);
         XdgToplevelTagManager { global }
     }
 
@@ -117,26 +118,29 @@ impl XdgToplevelTagManager {
     }
 }
 
-impl<D: XdgToplevelTagHandler> GlobalDispatch<XdgToplevelTagManagerV1, (), D> for XdgToplevelTagManager {
+impl<D: XdgToplevelTagHandler> GlobalDispatch2<XdgToplevelTagManagerV1, D> for GlobalData
+where
+    D: Dispatch<XdgToplevelTagManagerV1, GlobalData>,
+{
     fn bind(
+        &self,
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<XdgToplevelTagManagerV1>,
-        _data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D: XdgToplevelTagHandler> Dispatch<XdgToplevelTagManagerV1, (), D> for XdgToplevelTagManager {
+impl<D: XdgToplevelTagHandler> Dispatch2<XdgToplevelTagManagerV1, D> for GlobalData {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _resource: &XdgToplevelTagManagerV1,
         request: xdg_toplevel_tag_manager_v1::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -174,32 +178,4 @@ impl<D: XdgToplevelTagHandler> Dispatch<XdgToplevelTagManagerV1, (), D> for XdgT
             _ => unreachable!(),
         }
     }
-}
-
-/// Macro to delegate implementation of the xdg toplevel tag to [`XdgToplevelTagManager`].
-///
-/// You must also implement [`XdgToplevelTagHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_xdg_toplevel_tag {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::xdg::toplevel_tag::v1::server::xdg_toplevel_tag_manager_v1::XdgToplevelTagManagerV1,
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::xdg_toplevel_tag::XdgToplevelTagManager,
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgToplevelTagManagerV1: ()] => XdgToplevelTagManager
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XdgToplevelTagManagerV1: ()] => XdgToplevelTagManager
-            );
-        };
-    };
 }

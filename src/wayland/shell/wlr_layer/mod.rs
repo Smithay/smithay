@@ -11,7 +11,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::delegate_layer_shell;
 //! use smithay::wayland::shell::wlr_layer::{WlrLayerShellState, WlrLayerShellHandler, LayerSurface, Layer};
 //! use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 //!
@@ -39,8 +38,8 @@
 //!         // your implementation
 //!     }
 //! }
-//! // let smithay implement wayland_server::DelegateDispatch
-//! delegate_layer_shell!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -582,41 +581,4 @@ pub struct LayerSurfaceConfigure {
     /// from a client for a serial will validate all pending lower
     /// serials.
     pub serial: Serial,
-}
-
-/// Macro to delegate implementation of wlr layer shell to [`WlrLayerShellState`].
-///
-/// You must also implement [`WlrLayerShellHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_layer_shell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols_wlr::layer_shell::v1::server::{
-                        zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::shell::wlr_layer::{
-                    WlrLayerShellGlobalData, WlrLayerShellState, WlrLayerSurfaceUserData,
-                },
-            };
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwlrLayerShellV1: ()] => WlrLayerShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwlrLayerSurfaceV1: WlrLayerSurfaceUserData] => WlrLayerShellState
-            );
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwlrLayerShellV1: WlrLayerShellGlobalData] => WlrLayerShellState
-            );
-        };
-    };
 }

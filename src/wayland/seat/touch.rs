@@ -2,17 +2,18 @@ use std::sync::{Arc, atomic::Ordering};
 
 use atomic_float::AtomicF64;
 use wayland_server::{
-    Dispatch, DisplayHandle, Resource,
+    DisplayHandle, Resource,
     backend::ClientId,
     protocol::wl_touch::{self, WlTouch},
 };
 
-use super::{SeatHandler, SeatState};
+use super::SeatHandler;
 use crate::input::touch::TouchTarget;
 use crate::input::{
     Seat,
     touch::{MotionEvent, OrientationEvent, ShapeEvent, UpEvent},
 };
+use crate::wayland::Dispatch2;
 use crate::{input::touch::DownEvent, wayland::seat::wl_surface::WlSurface};
 use crate::{input::touch::TouchHandle, utils::Serial};
 
@@ -135,25 +136,24 @@ pub struct TouchUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch<WlTouch, TouchUserData<D>, D> for SeatState<D>
+impl<D> Dispatch2<WlTouch, D> for TouchUserData<D>
 where
-    D: Dispatch<WlTouch, TouchUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlTouch,
         _request: wl_touch::Request,
-        _data: &TouchUserData<D>,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, touch: &WlTouch, data: &TouchUserData<D>) {
-        if let Some(ref handle) = data.handle {
+    fn destroyed(&self, _state: &mut D, _client_id: ClientId, touch: &WlTouch) {
+        if let Some(ref handle) = self.handle {
             handle
                 .known_instances
                 .lock()

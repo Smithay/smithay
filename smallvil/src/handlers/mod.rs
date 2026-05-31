@@ -18,7 +18,6 @@ use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus,
 };
-use smithay::{delegate_data_device, delegate_output, delegate_seat};
 
 impl SeatHandler for Smallvil {
     type KeyboardFocus = WlSurface;
@@ -37,8 +36,6 @@ impl SeatHandler for Smallvil {
         set_data_device_focus(dh, seat, client);
     }
 }
-
-delegate_seat!(Smallvil);
 
 //
 // Wl Data Device
@@ -81,11 +78,10 @@ impl WaylandDndGrabHandler for Smallvil {
     }
 }
 
-delegate_data_device!(Smallvil);
-
 //
 // Wl Output & Xdg Output
 //
 
 impl OutputHandler for Smallvil {}
-delegate_output!(Smallvil);
+
+smithay::delegate_dispatch2!(Smallvil);

@@ -3,14 +3,15 @@ use std::sync::{Arc, Mutex};
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::{
     self, ZwpInputPopupSurfaceV2,
 };
-use wayland_server::{Dispatch, Resource, backend::ClientId, protocol::wl_surface::WlSurface};
+use wayland_server::{Resource, backend::ClientId, protocol::wl_surface::WlSurface};
 
-use crate::utils::{
-    Logical, Point, Rectangle,
-    alive_tracker::{AliveTracker, IsAlive},
+use crate::{
+    utils::{
+        Logical, Point, Rectangle,
+        alive_tracker::{AliveTracker, IsAlive},
+    },
+    wayland::Dispatch2,
 };
-
-use super::InputMethodManagerState;
 
 /// Handle to a popup surface
 #[derive(Debug, Clone, Default)]
@@ -129,13 +130,13 @@ pub struct InputMethodPopupSurfaceUserData {
     pub(super) alive_tracker: AliveTracker,
 }
 
-impl<D> Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData, D> for InputMethodManagerState {
+impl<D> Dispatch2<ZwpInputPopupSurfaceV2, D> for InputMethodPopupSurfaceUserData {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &ZwpInputPopupSurfaceV2,
         request: zwp_input_popup_surface_v2::Request,
-        _data: &InputMethodPopupSurfaceUserData,
         _dhandle: &wayland_server::DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -147,12 +148,7 @@ impl<D> Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData, D> for
         }
     }
 
-    fn destroyed(
-        _state: &mut D,
-        _client: ClientId,
-        _object: &ZwpInputPopupSurfaceV2,
-        data: &InputMethodPopupSurfaceUserData,
-    ) {
-        data.alive_tracker.destroy_notify();
+    fn destroyed(&self, _state: &mut D, _client: ClientId, _object: &ZwpInputPopupSurfaceV2) {
+        self.alive_tracker.destroy_notify();
     }
 }

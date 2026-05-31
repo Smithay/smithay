@@ -24,7 +24,6 @@ use smithay::{
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
     },
-    delegate_dmabuf,
     input::{
         keyboard::LedState,
         pointer::{CursorImageAttributes, CursorImageStatus},
@@ -80,7 +79,6 @@ impl DmabufHandler for AnvilState<WinitData> {
         }
     }
 }
-delegate_dmabuf!(AnvilState<WinitData>);
 
 impl Backend for WinitData {
     fn seat_name(&self) -> String {

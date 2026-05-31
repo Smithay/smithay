@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use wayland_server::{
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, New, Resource, WEnum,
     protocol::{
         wl_callback::{self, WlCallback},
         wl_compositor::{self, WlCompositor},
@@ -20,9 +20,11 @@ use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
 };
 
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+
 use super::{
-    AlreadyHasRole, BufferAssignment, CompositorHandler, CompositorState, Damage, Rectangle, RectangleKind,
-    RegionAttributes, SurfaceAttributes,
+    AlreadyHasRole, BufferAssignment, CompositorHandler, Damage, Rectangle, RectangleKind, RegionAttributes,
+    SurfaceAttributes,
     cache::Cacheable,
     tree::{Location, PrivateSurfaceData},
 };
@@ -33,41 +35,39 @@ use tracing::trace;
  * wl_compositor
  */
 
-impl<D> GlobalDispatch<WlCompositor, (), D> for CompositorState
+impl<D> GlobalDispatch2<WlCompositor, D> for GlobalData
 where
-    D: GlobalDispatch<WlCompositor, ()>,
-    D: Dispatch<WlCompositor, ()>,
+    D: Dispatch<WlCompositor, GlobalData>,
     D: Dispatch<WlSurface, SurfaceUserData>,
     D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WlCompositor>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<WlCompositor, (), D> for CompositorState
+impl<D> Dispatch2<WlCompositor, D> for GlobalData
 where
-    D: Dispatch<WlCompositor, ()>,
     D: Dispatch<WlSurface, SurfaceUserData>,
     D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlCompositor,
         request: wl_compositor::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -156,19 +156,18 @@ pub struct SurfaceUserData {
     pub(super) user_state_type: (std::any::TypeId, &'static str),
 }
 
-impl<D> Dispatch<WlSurface, SurfaceUserData, D> for CompositorState
+impl<D> Dispatch2<WlSurface, D> for SurfaceUserData
 where
-    D: Dispatch<WlSurface, SurfaceUserData>,
-    D: Dispatch<WlCallback, ()>,
+    D: Dispatch<WlCallback, GlobalData>,
     D: CompositorHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         client: &wayland_server::Client,
         surface: &WlSurface,
         request: wl_surface::Request,
-        _data: &SurfaceUserData,
         handle: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -227,7 +226,7 @@ where
                 });
             }
             wl_surface::Request::Frame { callback } => {
-                let callback = data_init.init(callback, ());
+                let callback = data_init.init(callback, GlobalData);
 
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
@@ -341,15 +340,10 @@ where
         }
     }
 
-    fn destroyed(
-        state: &mut D,
-        _client_id: wayland_server::backend::ClientId,
-        surface: &WlSurface,
-        data: &SurfaceUserData,
-    ) {
+    fn destroyed(&self, state: &mut D, _client_id: wayland_server::backend::ClientId, surface: &WlSurface) {
         // We let the destruction hooks run first and then tell the compositor handler the surface was
         // destroyed.
-        data.alive_tracker.destroy_notify();
+        self.alive_tracker.destroy_notify();
         state.destroyed(surface);
 
         // Remove the surface after the callback is invoked.
@@ -357,7 +351,7 @@ where
             .compositor_state()
             .surfaces
             .retain(|s| s.id() != surface.id());
-        PrivateSurfaceData::cleanup(state, data, surface);
+        PrivateSurfaceData::cleanup(state, self, surface);
     }
 }
 
@@ -379,21 +373,20 @@ pub struct RegionUserData {
     pub(crate) inner: Mutex<RegionAttributes>,
 }
 
-impl<D> Dispatch<WlRegion, RegionUserData, D> for CompositorState
+impl<D> Dispatch2<WlRegion, D> for RegionUserData
 where
-    D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
 {
     fn request(
+        &self,
         state: &mut D,
         client: &wayland_server::Client,
         _resource: &WlRegion,
         request: wl_region::Request,
-        data: &RegionUserData,
         _dhandle: &DisplayHandle,
         _init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let mut guard = data.inner.lock().unwrap();
+        let mut guard = self.inner.lock().unwrap();
         let client_scale = state.client_compositor_state(client).client_scale();
 
         match request {
@@ -423,39 +416,37 @@ where
  * wl_subcompositor
  */
 
-impl<D> GlobalDispatch<WlSubcompositor, (), D> for CompositorState
+impl<D> GlobalDispatch2<WlSubcompositor, D> for GlobalData
 where
-    D: GlobalDispatch<WlSubcompositor, ()>,
-    D: Dispatch<WlSubcompositor, ()>,
+    D: Dispatch<WlSubcompositor, GlobalData>,
     D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WlSubcompositor>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<WlSubcompositor, (), D> for CompositorState
+impl<D> Dispatch2<WlSubcompositor, D> for GlobalData
 where
-    D: Dispatch<WlSubcompositor, ()>,
     D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         subcompositor: &WlSubcompositor,
         request: wl_subcompositor::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -561,25 +552,24 @@ pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
     }
 }
 
-impl<D> Dispatch<WlSubsurface, SubsurfaceUserData, D> for CompositorState
+impl<D> Dispatch2<WlSubsurface, D> for SubsurfaceUserData
 where
-    D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         client: &wayland_server::Client,
         subsurface: &WlSubsurface,
         request: wl_subsurface::Request,
-        data: &SubsurfaceUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
                 let client_scale = state.client_compositor_state(client).client_scale();
-                PrivateSurfaceData::with_states(&data.surface, |state| {
+                PrivateSurfaceData::with_states(&self.surface, |state| {
                     state
                         .cached_state
                         .get::<SubsurfaceCachedState>()
@@ -591,7 +581,7 @@ where
                 })
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {
-                if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::After, &sibling) {
+                if let Err(()) = PrivateSurfaceData::reorder(&self.surface, Location::After, &sibling) {
                     subsurface.post_error(
                         wl_subsurface::Error::BadSurface,
                         "Provided surface is not a sibling or parent.",
@@ -599,14 +589,14 @@ where
                 }
             }
             wl_subsurface::Request::PlaceBelow { sibling } => {
-                if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::Before, &sibling) {
+                if let Err(()) = PrivateSurfaceData::reorder(&self.surface, Location::Before, &sibling) {
                     subsurface.post_error(
                         wl_subsurface::Error::BadSurface,
                         "Provided surface is not a sibling or parent.",
                     )
                 }
             }
-            wl_subsurface::Request::SetSync => PrivateSurfaceData::with_states(&data.surface, |state| {
+            wl_subsurface::Request::SetSync => PrivateSurfaceData::with_states(&self.surface, |state| {
                 state
                     .data_map
                     .get::<SubsurfaceState>()
@@ -614,7 +604,7 @@ where
                     .sync
                     .store(true, Ordering::Release);
             }),
-            wl_subsurface::Request::SetDesync => PrivateSurfaceData::with_states(&data.surface, |state| {
+            wl_subsurface::Request::SetDesync => PrivateSurfaceData::with_states(&self.surface, |state| {
                 state
                     .data_map
                     .get::<SubsurfaceState>()
@@ -630,13 +620,13 @@ where
     }
 
     fn destroyed(
+        &self,
         _state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         _object: &WlSubsurface,
-        data: &SubsurfaceUserData,
     ) {
-        PrivateSurfaceData::unset_parent(&data.surface);
-        PrivateSurfaceData::with_states(&data.surface, |state| {
+        PrivateSurfaceData::unset_parent(&self.surface);
+        PrivateSurfaceData::with_states(&self.surface, |state| {
             state
                 .data_map
                 .get::<SubsurfaceState>()
@@ -651,18 +641,17 @@ where
     }
 }
 
-impl<D> Dispatch<WlCallback, (), D> for CompositorState
+impl<D> Dispatch2<WlCallback, D> for GlobalData
 where
-    D: Dispatch<WlCallback, ()>,
     D: CompositorHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _subsurface: &WlCallback,
         _request: wl_callback::Request,
-        _data: &(),
         _handle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {

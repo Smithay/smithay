@@ -2,44 +2,39 @@ use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_manager_v1::{self, WpContentTypeManagerV1},
     wp_content_type_v1::{self, WpContentTypeV1},
 };
-use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
-};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource, backend::ClientId};
 
-use super::{ContentTypeState, ContentTypeSurfaceCachedState, ContentTypeSurfaceData, ContentTypeUserData};
-use crate::wayland::compositor;
+use super::{ContentTypeSurfaceCachedState, ContentTypeSurfaceData, ContentTypeUserData};
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor};
 
-impl<D> GlobalDispatch<WpContentTypeManagerV1, (), D> for ContentTypeState
+impl<D> GlobalDispatch2<WpContentTypeManagerV1, D> for GlobalData
 where
-    D: GlobalDispatch<WpContentTypeManagerV1, ()>,
-    D: Dispatch<WpContentTypeManagerV1, ()>,
-    D: Dispatch<WpContentTypeV1, ContentTypeUserData>,
+    D: Dispatch<WpContentTypeManagerV1, GlobalData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _: &DisplayHandle,
         _: &Client,
         resource: New<WpContentTypeManagerV1>,
-        _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<WpContentTypeManagerV1, (), D> for ContentTypeState
+impl<D> Dispatch2<WpContentTypeManagerV1, D> for GlobalData
 where
-    D: Dispatch<WpContentTypeManagerV1, ()>,
     D: Dispatch<WpContentTypeV1, ContentTypeUserData>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _: &Client,
         manager: &wp_content_type_manager_v1::WpContentTypeManagerV1,
         request: wp_content_type_manager_v1::Request,
-        _data: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -76,16 +71,13 @@ where
     }
 }
 
-impl<D> Dispatch<WpContentTypeV1, ContentTypeUserData, D> for ContentTypeState
-where
-    D: Dispatch<WpContentTypeV1, ContentTypeUserData>,
-{
+impl<D> Dispatch2<WpContentTypeV1, D> for ContentTypeUserData {
     fn request(
+        &self,
         _state: &mut D,
         _: &Client,
         _: &WpContentTypeV1,
         request: wp_content_type_v1::Request,
-        data: &ContentTypeUserData,
         _dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
@@ -94,7 +86,7 @@ where
                 let wayland_server::WEnum::Value(content_type) = content_type else {
                     return;
                 };
-                let Some(surface) = data.wl_surface() else {
+                let Some(surface) = self.wl_surface() else {
                     return;
                 };
 
@@ -110,7 +102,7 @@ where
             // This is equivalent to setting the content type to none,
             // including double buffering semantics.
             wp_content_type_v1::Request::Destroy => {
-                let Some(surface) = data.wl_surface() else {
+                let Some(surface) = self.wl_surface() else {
                     return;
                 };
 
@@ -132,7 +124,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _object: &WpContentTypeV1, _data: &ContentTypeUserData) {
+    fn destroyed(&self, _state: &mut D, _client: ClientId, _object: &WpContentTypeV1) {
         // Nothing to do here, graceful Destroy is already handled with double buffering
         // and in case of client close WlSurface destroyed handler will clean up the data anyway,
         // so there is no point in queuing new update
