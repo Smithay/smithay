@@ -349,9 +349,16 @@ where
         let dst = Rectangle::from_size((mode.size().0 as i32, mode.size().1 as i32).into());
 
         let damage_clips = damage.and_then(|damage| {
-            PlaneDamageClips::from_damage(self.drm.device_fd(), src, dst, damage)
-                .ok()
-                .flatten()
+            PlaneDamageClips::from_damage(
+                self.drm.device_fd(),
+                src,
+                dst,
+                Transform::Normal,
+                Transform::Normal,
+                damage,
+            )
+            .ok()
+            .flatten()
         });
 
         // Try to extract a native fence out of the supplied sync point if any
