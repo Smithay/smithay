@@ -281,6 +281,9 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                 self.pressed_keys.remove(&keycode);
                 xkb::KeyDirection::Up
             }
+            KeyState::Repeated => {
+                return (false, false);
+            }
         };
 
         // update state
@@ -1027,6 +1030,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             KeyState::Released => {
                 guard.forwarded_pressed_keys.remove(&keycode);
             }
+            KeyState::Repeated => {}
         };
 
         // forward to client if no keybinding is triggered

@@ -291,12 +291,18 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         seat: &Seat<D>,
         _data: &mut D,
         key: KeysymHandle<'_>,
-        state: KeyState,
+        event: KeyState,
         serial: Serial,
         time: u32,
     ) {
         for_each_focused_kbds(seat, self, |kbd| {
-            kbd.key(serial.into(), time, key.raw_code().raw() - 8, state.into())
+            let compatible = match (event, kbd.version() < 10) {
+                (KeyState::Repeated, true) => false,
+                _ => true,
+            };
+            if compatible {
+                kbd.key(serial.into(), time, key.raw_code().raw() - 8, event.into())
+            }
         })
     }
 
@@ -320,6 +326,7 @@ impl From<KeyState> for WlKeyState {
         match state {
             KeyState::Pressed => WlKeyState::Pressed,
             KeyState::Released => WlKeyState::Released,
+            KeyState::Repeated => WlKeyState::Repeated,
         }
     }
 }
@@ -335,6 +342,7 @@ impl TryFrom<WlKeyState> for KeyState {
         match state {
             WlKeyState::Pressed => Ok(KeyState::Pressed),
             WlKeyState::Released => Ok(KeyState::Released),
+            WlKeyState::Repeated => Ok(KeyState::Repeated),
             x => Err(UnknownKeyState(x)),
         }
     }
