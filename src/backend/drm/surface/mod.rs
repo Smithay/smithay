@@ -69,9 +69,11 @@ impl PlaneDamageClips {
         device: &DrmDeviceFd,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
+        dst_transform: Transform,
+        damage_transform: Transform,
         damage: impl IntoIterator<Item = Rectangle<i32, Physical>>,
     ) -> io::Result<Option<Self>> {
-        let scale = src.size / dst.size.to_logical(1).to_buffer(1, Transform::Normal).to_f64();
+        let scale = src.size / dst.size.to_logical(1).to_buffer(1, dst_transform).to_f64();
 
         let mut rects = damage
             .into_iter()
@@ -81,8 +83,8 @@ impl PlaneDamageClips {
                     .to_logical(1f64)
                     .to_buffer(
                         1f64,
-                        Transform::Normal,
-                        &src.size.to_logical(1f64, Transform::Normal),
+                        damage_transform,
+                        &src.size.to_logical(scale, damage_transform),
                     )
                     .upscale(scale);
                 rect.loc += src.loc;

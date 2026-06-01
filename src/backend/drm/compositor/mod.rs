@@ -2299,10 +2299,16 @@ where
                                     &output_geometry.size.to_logical(1),
                                 )
                             }));
+
+                            // Here we need to apply the output_transform to the damage since we
+                            // haven't rotated our framebuffer. dst is already in the same
+                            // coordinate space src is, so no transform needed.
                             config.damage_clips = PlaneDamageClips::from_damage(
                                 self.surface.device_fd(),
                                 config.properties.src,
                                 config.properties.dst,
+                                Transform::Normal,
+                                output_transform,
                                 render_damage.iter().copied(),
                             )
                             .ok()
@@ -3967,11 +3973,17 @@ where
         let element_damage = element.damage_since(scale, previous_commit);
         let has_element_damage = !element_damage.is_empty();
 
+        // Damage were applied buffer transform to be in physical-space. We need to invert it to go
+        // back to buffer-coordinate. We'll apply the same transform to the element geometry for
+        // scale computation as it's already in physical space.
+        let transform = element.transform().invert();
         let damage_clips = if has_element_damage {
             PlaneDamageClips::from_damage(
                 self.surface.device_fd(),
                 element_config.properties.src,
                 element_config.geometry,
+                transform,
+                transform,
                 element_damage,
             )
             .ok()
