@@ -18,9 +18,10 @@ use crate::utils::{Logical, Point, Raw, Size};
 
 /// Trait for generic functions every input device does provide
 pub trait Device: PartialEq + Eq + std::hash::Hash {
-    /// Unique id of a single device at a point in time.
+    /// Backend-specific identifier for this device.
     ///
-    /// Note: This means ids may be re-used by the backend for later devices.
+    /// Unique within a single backend instance at a point in time, but not
+    /// guaranteed to be globally unique across different backends.
     fn id(&self) -> String;
     /// Human-readable name of the device
     fn name(&self) -> String;
