@@ -260,9 +260,15 @@ fn convert_request(request: EisRequest) -> Option<InputEvent<EiInput>> {
         EisRequest::TouchUp(event) => Some(InputEvent::TouchUp { event }),
         EisRequest::TouchMotion(event) => Some(InputEvent::TouchMotion { event }),
         EisRequest::TouchCancel(event) => Some(InputEvent::TouchCancel { event }),
+        EisRequest::DeviceClosed(event) => Some(InputEvent::DeviceRemoved { device: event.device }),
         EisRequest::Frame(_) => None,
-        EisRequest::Disconnect
+        // TODO: handle `TextKeysym`/`TextUtf8` once `add_text()` support is added.
+        EisRequest::TextKeysym(_)
+        | EisRequest::TextUtf8(_)
+        | EisRequest::Disconnect
         | EisRequest::Bind(_)
+        | EisRequest::RequestDevice(_)
+        | EisRequest::Ready(_)
         | EisRequest::DeviceStartEmulating(_)
         | EisRequest::DeviceStopEmulating(_) => None,
     }
