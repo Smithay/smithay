@@ -18,7 +18,7 @@ pub fn listen_eis(handle: &calloop::LoopHandle<'static, AnvilState<UdevData>>) {
         }
     };
 
-    std::env::set_var("LIBEI_SOCKET", listener.path());
+    unsafe { std::env::set_var("LIBEI_SOCKET", listener.path()) };
 
     let listener_source = EisListenerSource::new(listener);
     let handle_clone = handle.clone();
