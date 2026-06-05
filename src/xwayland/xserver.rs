@@ -95,6 +95,8 @@ impl XWayland {
     ///   If you wish smithay to choose a display for you, pass `None`.
     /// - `envs` - Allows additionally environment variables to be set when
     ///   launching XWayland.
+    /// - `extra_args` - Additional command-line arguments to pass to Xwayland
+    ///   (e.g. `-enable-ei-portal`).
     /// - `open_abstract_socket` - Open an abstract socket as well as filesystem
     ///   sockets (only on available on Linux).
     /// - `stdout, stderr` - Allows redirecting stdout and stderr of the
@@ -109,10 +111,12 @@ impl XWayland {
     /// handle can be inserted in your event loop, and If everything goes well,
     /// you'll eventually receive an `XWaylandEvent::Ready`, indicating that
     /// it's time to start the X11 window manager.
-    pub fn spawn<K, V, I, F>(
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn<K, V, I, A, AI, F>(
         dh: &DisplayHandle,
         display: impl Into<Option<u32>>,
         envs: I,
+        extra_args: AI,
         open_abstract_socket: bool,
         stdout: impl Into<std::process::Stdio>,
         stderr: impl Into<std::process::Stdio>,
@@ -122,6 +126,8 @@ impl XWayland {
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
+        AI: IntoIterator<Item = A>,
+        A: AsRef<OsStr>,
         F: FnOnce(&UserDataMap),
     {
         let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
@@ -150,6 +156,10 @@ impl XWayland {
 
         for socket in &listen_sockets {
             command.arg("-listenfd").arg(socket.as_raw_fd().to_string());
+        }
+
+        for arg in extra_args {
+            command.arg(arg);
         }
 
         // Setup the environment; clear everything except PATH and XDG_RUNTIME_DIR.
