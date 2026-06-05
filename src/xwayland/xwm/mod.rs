@@ -96,6 +96,7 @@
 //!     &dh,
 //!     None,
 //!     std::iter::empty::<(String, String)>(),
+//!     std::iter::empty::<String>(),
 //!     true,
 //!     Stdio::null(),
 //!     Stdio::null(),
