@@ -910,7 +910,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         render_element_states: &RenderElementStates,
     ) {
         let time = time.into();
-        let throttle = Some(Duration::from_secs(1));
+        let throttle = output
+            .current_mode()
+            .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64));
 
         #[allow(clippy::mutable_key_type)]
         let mut clients: HashMap<ClientId, Client> = HashMap::new();
