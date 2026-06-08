@@ -195,11 +195,10 @@ fn saturating_sub_timespec(lhs: Timespec, rhs: Timespec) -> Option<Duration> {
     if let Some(mut secs) = lhs_tv_sec.checked_sub(rhs_tv_sec) {
         let nanos = if lhs_tv_nsec >= rhs_tv_nsec {
             lhs_tv_nsec - rhs_tv_nsec
-        } else if let Some(sub_secs) = secs.checked_sub(1) {
+        } else {
+            let sub_secs = secs.checked_sub(1)?;
             secs = sub_secs;
             lhs_tv_nsec + (NANOS_PER_SEC as u64) - rhs_tv_nsec
-        } else {
-            return None;
         };
         debug_assert!(nanos < (NANOS_PER_SEC as u64));
         Some(Duration::new(secs, nanos as u32))

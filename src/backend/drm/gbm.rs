@@ -354,7 +354,7 @@ where
 
             let fourcc = bo.format();
             let (depth, bpp) = get_depth(fourcc)
-                .and_then(|d| get_bpp(fourcc).map(|b| (d, b)))
+                .zip(get_bpp(fourcc))
                 .ok_or_else(|| AccessError {
                     errmsg: "Unknown format for legacy framebuffer",
                     dev: drm.dev_path(),
