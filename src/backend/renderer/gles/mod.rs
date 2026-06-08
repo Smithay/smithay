@@ -1315,13 +1315,13 @@ impl ExportMem for GlesRenderer {
 
         let (_, has_alpha) = target.0.format().ok_or(GlesError::UnknownPixelFormat)?;
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
+        let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
 
         let mut pbo = 0;
         let err = unsafe {
             self.gl.GetError(); // clear errors
             self.gl.GenBuffers(1, &mut pbo);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
-            let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
             let size = (region.size.w * region.size.h * bpp as i32) as isize;
             self.gl
                 .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_DRAW);
@@ -1355,8 +1355,14 @@ impl ExportMem for GlesRenderer {
                 mapping: AtomicPtr::new(ptr::null_mut()),
                 destruction_callback_sender: self.gles_cleanup().sender.clone(),
             }),
-            ffi::INVALID_ENUM | ffi::INVALID_OPERATION => Err(GlesError::UnsupportedPixelFormat(fourcc)),
-            _ => Err(GlesError::UnknownPixelFormat),
+            err => {
+                unsafe { self.gl.DeleteBuffers(1, &pbo) };
+                Err(if matches!(err, ffi::INVALID_ENUM | ffi::INVALID_OPERATION) {
+                    GlesError::UnsupportedPixelFormat(fourcc)
+                } else {
+                    GlesError::UnknownPixelFormat
+                })
+            }
         }
     }
 
@@ -1415,8 +1421,14 @@ impl ExportMem for GlesRenderer {
                 mapping: AtomicPtr::new(ptr::null_mut()),
                 destruction_callback_sender: self.gles_cleanup().sender.clone(),
             }),
-            ffi::INVALID_ENUM | ffi::INVALID_OPERATION => Err(GlesError::UnsupportedPixelFormat(fourcc)),
-            _ => Err(GlesError::UnknownPixelFormat),
+            err => {
+                unsafe { self.gl.DeleteBuffers(1, &pbo) };
+                Err(if matches!(err, ffi::INVALID_ENUM | ffi::INVALID_OPERATION) {
+                    GlesError::UnsupportedPixelFormat(fourcc)
+                } else {
+                    GlesError::UnknownPixelFormat
+                })
+            }
         }
     }
 
