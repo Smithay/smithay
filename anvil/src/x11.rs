@@ -6,7 +6,7 @@ use std::{
 use crate::{
     drawing::*,
     render::*,
-    state::{AnvilState, Backend, take_presentation_feedback},
+    state::{AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output},
 };
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
@@ -414,6 +414,15 @@ pub fn run_x11() {
                     };
 
                     let states = render_output_result.states;
+
+                    update_primary_scanout_output(
+                        &state.space,
+                        &output,
+                        &state.dnd_icon,
+                        &state.cursor_status,
+                        &states,
+                    );
+
                     #[cfg(feature = "debug")]
                     let rendered = render_output_result.damage.is_some();
                     if render_output_result.damage.is_some() {
