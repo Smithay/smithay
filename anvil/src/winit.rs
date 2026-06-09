@@ -46,7 +46,7 @@ use smithay::{
 };
 use tracing::{error, info, warn};
 
-use crate::state::{AnvilState, Backend, take_presentation_feedback};
+use crate::state::{AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output};
 use crate::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";
@@ -392,6 +392,15 @@ pub fn run_winit() {
                     backend.window().set_cursor_visible(cursor_visible);
 
                     let states = render_output_result.states;
+
+                    update_primary_scanout_output(
+                        &state.space,
+                        &output,
+                        &state.dnd_icon,
+                        &state.cursor_status,
+                        &states,
+                    );
+
                     if has_rendered {
                         let mut output_presentation_feedback =
                             take_presentation_feedback(&output, &state.space, &states);
