@@ -1620,12 +1620,12 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, '_> {
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<SyncPoint, Self::Error> {
         let res = self.renderer.blit(self.target, to, src, dst, filter);
         self.target
             .0
             .make_current(&self.renderer.gl, &self.renderer.egl)?;
-        res.map(|_| ())
+        res
     }
 
     fn blit_from(
@@ -1634,12 +1634,12 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, '_> {
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<SyncPoint, Self::Error> {
         let res = self.renderer.blit(from, self.target, src, dst, filter);
         self.target
             .0
             .make_current(&self.renderer.gl, &self.renderer.egl)?;
-        res.map(|_| ())
+        res
     }
 }
 
