@@ -843,7 +843,7 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<SyncPoint, Self::Error>;
 
     /// Copies the contents of the provided framebuffer to `dst` in the bound framebuffer,
     /// applying `filter` if necessary.
@@ -864,7 +864,7 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<SyncPoint, Self::Error>;
 }
 
 #[cfg(feature = "wayland_frontend")]

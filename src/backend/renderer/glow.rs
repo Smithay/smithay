@@ -597,7 +597,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlowFrame<'_, 'buffer> {
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<sync::SyncPoint, Self::Error> {
         self.frame.as_mut().unwrap().blit_to(to, src, dst, filter)
     }
 
@@ -607,7 +607,7 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlowFrame<'_, 'buffer> {
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<sync::SyncPoint, Self::Error> {
         self.frame.as_mut().unwrap().blit_from(from, src, dst, filter)
     }
 }
