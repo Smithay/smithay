@@ -368,12 +368,13 @@ fn get_non_master_fd<P: AsRef<Path>>(path: P) -> Result<OwnedFd, Error> {
     )
     .map_err(Error::UnableToOpenNode)?;
 
-    // check if the fd has master
-    if drm_ffi::get_client(fd.as_fd(), 0)
-        .map(|client| client.auth == 1)
-        .unwrap_or(false)
-    {
-        drm_ffi::auth::release_master(fd.as_fd()).map_err(Error::UnableToDropMaster)?;
+    // Attempt to drop master unconditionally. EINVAL means the fd never had
+    // master to begin with (common on drivers like nvidia-drm that mark all
+    // clients as authenticated regardless of master status)
+    match drm_ffi::auth::release_master(fd.as_fd()) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::InvalidInput => {}
+        Err(e) => return Err(Error::UnableToDropMaster(e)),
     }
 
     Ok(fd)
