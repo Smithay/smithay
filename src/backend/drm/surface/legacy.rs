@@ -1,6 +1,7 @@
 use drm::control::{Device as ControlDevice, Mode, PageFlipFlags, connector, crtc, encoder, framebuffer};
 
 use std::collections::HashSet;
+use std::io::ErrorKind;
 use std::sync::{
     Arc, Mutex, RwLock,
     atomic::{AtomicBool, Ordering},
@@ -9,7 +10,7 @@ use std::sync::{
 use crate::backend::drm::error::AccessError;
 use crate::{
     backend::drm::{
-        DrmDeviceFd, device::DrmDeviceInternal, device::legacy::set_connector_state, error::Error,
+        DrmDeviceFd, DrmSurface, device::DrmDeviceInternal, device::legacy::set_connector_state, error::Error,
     },
     utils::DevPath,
 };
@@ -333,7 +334,7 @@ impl LegacyDrmSurface {
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
-    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+    fn do_page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         trace!("Queueing Page flip");
 
         if !self.active.load(Ordering::SeqCst) {
@@ -365,6 +366,29 @@ impl LegacyDrmSurface {
                 source,
             })
         })
+    }
+
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
+    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+        match self.do_page_flip(framebuffer, event) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                let lost_mode = matches!(err, Error::Access(AccessError { ref source, .. }) if source.kind() == ErrorKind::InvalidInput);
+
+                if lost_mode {
+                    self.reset_state::<DrmSurface>(None)?;
+                    if self.commit_pending() {
+                        self.commit(framebuffer, false)?;
+                        self.do_page_flip(framebuffer, event)
+                    } else {
+                        Err(err)
+                    }
+                } else {
+                    Err(err)
+                }
+            }
+        }
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
