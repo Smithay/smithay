@@ -2505,12 +2505,15 @@ where
             .frame
             .commit(&self.surface, self.supports_fencing, false, false);
 
-        if flip.is_ok() {
+        let res = self.handle_flip(&prepared_frame, flip);
+
+        if res.is_ok() {
             self.queued_frame = None;
             self.pending_frame = None;
+            self.current_frame = prepared_frame.frame;
         }
 
-        self.handle_flip(prepared_frame, None, flip)
+        res
     }
 
     /// Re-evaluates the current state of the crtc and forces calls to [`render_frame`](DrmCompositor::render_frame)
@@ -2546,13 +2549,21 @@ where
                 .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
         };
 
-        self.handle_flip(prepared_frame, Some(user_data), flip)
+        let res = self.handle_flip(&prepared_frame, flip);
+
+        if res.is_ok() {
+            self.pending_frame = Some(PendingFrame {
+                frame: prepared_frame.frame,
+                user_data,
+            });
+        }
+
+        res
     }
 
     fn handle_flip(
         &mut self,
-        prepared_frame: PreparedFrame<A, F>,
-        user_data: Option<U>,
+        prepared_frame: &PreparedFrame<A, F>,
         flip: Result<(), crate::backend::drm::error::Error>,
     ) -> FrameResult<(), A, F> {
         match flip {
@@ -2560,11 +2571,6 @@ where
                 if prepared_frame.kind == PreparedFrameKind::Full {
                     self.reset_pending = false;
                 }
-
-                self.pending_frame = user_data.map(|user_data| PendingFrame {
-                    frame: prepared_frame.frame,
-                    user_data,
-                });
             }
             Err(crate::backend::drm::error::Error::Access(ref access))
                 if access.source.kind() == ErrorKind::InvalidInput =>
