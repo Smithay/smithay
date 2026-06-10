@@ -111,14 +111,36 @@ where
     let _guard = span.enter();
     info!("Initializing a winit backend");
 
-    let event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
+    let mut event_loop = EventLoop::builder().build().map_err(Error::EventLoopCreation)?;
 
-    // TODO: Create window in `resumed`?
-    #[allow(deprecated)]
-    let window = Arc::new(
-        event_loop
-            .create_window(attributes)
-            .map_err(Error::WindowCreation)?,
+    let mut window_event_loop_inner = WinitEventLoopInner {
+        window_attributes: attributes,
+        scale_factor: 1.0,
+        clock: Clock::<Monotonic>::new(),
+        key_counter: 0,
+        // Will be initialized after window creation
+        window: None,
+        window_create_error: None,
+        is_x11: false,
+    };
+    let mut initial_events = Vec::new();
+    while window_event_loop_inner.window.is_none() {
+        event_loop.pump_app_events(
+            None,
+            &mut WinitEventLoopApp {
+                inner: &mut window_event_loop_inner,
+                callback: |evt| initial_events.push(evt),
+            },
+        );
+        if let Some(err) = window_event_loop_inner.window_create_error {
+            return Err(err);
+        }
+    }
+    let window = window_event_loop_inner.window.clone().unwrap();
+
+    window_event_loop_inner.is_x11 = matches!(
+        window.window_handle().map(|handle| handle.as_raw()),
+        Ok(RawWindowHandle::Xlib(_))
     );
 
     span.record("window", Into::<u64>::into(window.id()));
@@ -132,23 +154,13 @@ where
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     let event_loop = Generic::new(event_loop, Interest::READ, calloop::Mode::Level);
 
-    let is_x11 = matches!(
-        window.window_handle().map(|handle| handle.as_raw()),
-        Ok(RawWindowHandle::Xlib(_))
-    );
-
     Ok((
         winit_graphics_backend,
         WinitEventLoop {
-            inner: WinitEventLoopInner {
-                scale_factor: window.scale_factor(),
-                clock: Clock::<Monotonic>::new(),
-                key_counter: 0,
-                window: Some(window),
-                is_x11,
-            },
+            inner: window_event_loop_inner,
             fake_token: None,
             event_loop,
+            initial_events,
             pending_events: Vec::new(),
             span,
         },
@@ -373,7 +385,9 @@ where
 
 #[derive(Debug)]
 struct WinitEventLoopInner {
+    window_attributes: WindowAttributes,
     window: Option<Arc<WinitWindow>>,
+    window_create_error: Option<Error>,
     clock: Clock<Monotonic>,
     key_counter: u32,
     is_x11: bool,
@@ -389,6 +403,7 @@ struct WinitEventLoopInner {
 pub struct WinitEventLoop {
     inner: WinitEventLoopInner,
     fake_token: Option<Token>,
+    initial_events: Vec<WinitEvent>,
     pending_events: Vec<WinitEvent>,
     event_loop: Generic<EventLoop<()>>,
     span: tracing::Span,
@@ -408,10 +423,15 @@ impl WinitEventLoop {
     /// not be used anymore as well.
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     #[profiling::function]
-    pub fn dispatch_new_events<F>(&mut self, callback: F) -> PumpStatus
+    pub fn dispatch_new_events<F>(&mut self, mut callback: F) -> PumpStatus
     where
         F: FnMut(WinitEvent),
     {
+        // On first call, handle events produced during window creation
+        for event in std::mem::take(&mut self.initial_events) {
+            callback(event);
+        }
+
         // SAFETY: we don't drop event loop ourselves.
         let event_loop = unsafe { self.event_loop.get_mut() };
 
@@ -437,10 +457,17 @@ impl<F: FnMut(WinitEvent)> WinitEventLoopApp<'_, F> {
 }
 
 impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
-        (self.callback)(WinitEvent::Input(InputEvent::DeviceAdded {
-            device: WinitVirtualDevice,
-        }));
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.inner.window.is_none() {
+            match event_loop.create_window(self.inner.window_attributes.clone()) {
+                Ok(window) => self.inner.window = Some(Arc::new(window)),
+                Err(err) => self.inner.window_create_error = Some(err.into()),
+            }
+
+            (self.callback)(WinitEvent::Input(InputEvent::DeviceAdded {
+                device: WinitVirtualDevice,
+            }));
+        }
     }
 
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
