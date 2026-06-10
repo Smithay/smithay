@@ -203,7 +203,7 @@ where
                 scale_factor: window.scale_factor(),
                 clock: Clock::<Monotonic>::new(),
                 key_counter: 0,
-                window,
+                window: Some(window),
                 is_x11,
             },
             fake_token: None,
@@ -356,7 +356,7 @@ where
 
 #[derive(Debug)]
 struct WinitEventLoopInner {
-    window: Arc<WinitWindow>,
+    window: Option<Arc<WinitWindow>>,
     clock: Clock<Monotonic>,
     key_counter: u32,
     is_x11: bool,
@@ -427,6 +427,10 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
     }
 
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+        let Some(window) = self.inner.window.as_ref() else {
+            return;
+        };
+
         match event {
             WindowEvent::Resized(size) => {
                 trace!("Resizing window to {size:?}");
@@ -443,7 +447,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
             } => {
                 trace!("Scale factor changed to {new_scale_factor}");
                 self.inner.scale_factor = new_scale_factor;
-                let (w, h): (i32, i32) = self.inner.window.inner_size().into();
+                let (w, h): (i32, i32) = window.inner_size().into();
                 (self.callback)(WinitEvent::Resized {
                     size: (w, h).into(),
                     scale_factor: self.inner.scale_factor,
@@ -480,7 +484,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 (self.callback)(WinitEvent::Input(event));
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let size = self.inner.window.inner_size();
+                let size = window.inner_size();
                 let x = position.x / size.width as f64;
                 let y = position.y / size.height as f64;
                 let event = InputEvent::PointerMotionAbsolute {
@@ -518,7 +522,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 id,
                 ..
             }) => {
-                let size = self.inner.window.inner_size();
+                let size = window.inner_size();
                 let x = location.x / size.width as f64;
                 let y = location.y / size.width as f64;
                 let event = InputEvent::TouchDown {
@@ -538,7 +542,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 id,
                 ..
             }) => {
-                let size = self.inner.window.inner_size();
+                let size = window.inner_size();
                 let x = location.x / size.width as f64;
                 let y = location.y / size.width as f64;
                 let event = InputEvent::TouchMotion {
@@ -559,7 +563,7 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                 id,
                 ..
             }) => {
-                let size = self.inner.window.inner_size();
+                let size = window.inner_size();
                 let x = location.x / size.width as f64;
                 let y = location.y / size.width as f64;
                 let event = InputEvent::TouchMotion {
