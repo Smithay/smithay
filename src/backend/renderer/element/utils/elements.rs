@@ -349,6 +349,11 @@ impl<E: Element> RelocateRenderElement<E> {
             relocate,
         }
     }
+
+    /// The wrapped element, without this wrapper's relocation applied.
+    pub(crate) fn inner(&self) -> &E {
+        &self.element
+    }
 }
 
 impl<E: Element> Element for RelocateRenderElement<E> {

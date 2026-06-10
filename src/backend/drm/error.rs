@@ -86,6 +86,13 @@ pub enum Error {
     /// Atomic Test failed for new properties
     #[error("Atomic Test failed for new properties on crtc ({0:?})")]
     TestFailed(crtc::Handle),
+    /// A multi-CRTC atomic commit (e.g. a tiled output) was requested on a
+    /// legacy device, which has no atomic modesetting API.
+    #[error("Atomic commits spanning multiple crtcs are not supported on legacy devices")]
+    AtomicUnsupported,
+    /// A shared atomic commit was requested for surfaces on different DRM devices.
+    #[error("Atomic commits spanning multiple drm devices are not supported")]
+    AtomicDeviceMismatch,
 }
 
 impl From<Error> for SwapBuffersError {

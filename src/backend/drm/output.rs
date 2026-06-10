@@ -1,7 +1,7 @@
 //! Device-wide synchronization helpers
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     marker::PhantomData,
     os::fd::AsFd,
@@ -21,18 +21,25 @@ use crate::{
         renderer::{Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture, element::RenderElement},
     },
     output::OutputModeSource,
+    utils::{Physical, Rectangle},
 };
 
 use super::{
     DrmDevice, DrmError, Planes,
     compositor::{
         DrmCompositor, FrameError, FrameFlags, FrameResult, PrimaryPlaneElement, RenderFrameError,
-        RenderFrameErrorType, RenderFrameResult,
+        RenderFrameErrorType, RenderFrameResult, TileConfigError, TilePlacement,
     },
     exporter::ExportFramebuffer,
 };
+use smallvec::SmallVec;
 
 type CompositorList<A, F, U, G> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>>;
+/// CRTCs claimed by tiled outputs that have no entry of their own in the
+/// [`CompositorList`] (only the primary tile's CRTC keys that map). Lets a later
+/// `initialize_output`/`initialize_tiled_output` reject a CRTC a tiled
+/// `DrmCompositor` already drives.
+type ReservedCrtcs = Arc<RwLock<HashSet<crtc::Handle>>>;
 
 /// Provides synchronization between a [`DrmDevice`] and derived [`DrmOutput`]s.
 ///
@@ -55,6 +62,7 @@ where
     exporter: F,
     gbm: Option<GbmDevice<G>>,
     compositor: CompositorList<A, F, U, G>,
+    reserved_crtcs: ReservedCrtcs,
     color_formats: Vec<DrmFourcc>,
     renderer_formats: Vec<DrmFormat>,
 }
@@ -73,6 +81,7 @@ where
     gbm: &'a mut Option<GbmDevice<G>>,
     compositor: RwLockWriteGuard<'a, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
     compositor_arc: CompositorList<A, F, U, G>,
+    reserved_crtcs: ReservedCrtcs,
     color_formats: &'a [DrmFourcc],
     renderer_formats: &'a [DrmFormat],
 }
@@ -93,6 +102,7 @@ where
             .field("exporter", &self.exporter)
             .field("gbm", &self.gbm)
             .field("compositor", &self.compositor)
+            .field("reserved_crtcs", &self.reserved_crtcs)
             .field("color_formats", &self.color_formats)
             .field("renderer_formats", &self.renderer_formats)
             .finish()
@@ -253,6 +263,7 @@ where
             exporter,
             gbm,
             compositor: Default::default(),
+            reserved_crtcs: Default::default(),
             color_formats: color_formats.into_iter().collect(),
             renderer_formats: renderer_formats.into_iter().collect(),
         }
@@ -271,6 +282,7 @@ where
             gbm: &mut self.gbm,
             compositor: self.compositor.write().unwrap(),
             compositor_arc: self.compositor.clone(),
+            reserved_crtcs: self.reserved_crtcs.clone(),
             color_formats: &self.color_formats,
             renderer_formats: &self.renderer_formats,
         }
@@ -328,7 +340,7 @@ where
     {
         let output_mode_source = output_mode_source.into();
 
-        if self.compositor.contains_key(&crtc) {
+        if self.compositor.contains_key(&crtc) || self.reserved_crtcs.read().unwrap().contains(&crtc) {
             return Err(DrmOutputManagerError::DuplicateCrtc(crtc));
         }
 
@@ -488,7 +500,204 @@ where
 
         Ok(DrmOutput {
             compositor: self.compositor_arc.clone(),
+            reserved_crtcs: self.reserved_crtcs.clone(),
+            secondary_crtcs: SmallVec::new(),
             crtc,
+            allocator: self.allocator.clone(),
+            renderer_formats: Vec::from(self.renderer_formats),
+        })
+    }
+
+    /// Create a [`DrmOutput`] that drives several CRTCs on this device as one
+    /// logical output.
+    ///
+    /// This wraps [`DrmCompositor::new_tiled`] for callers that want one logical
+    /// output backed by multiple same-device CRTCs, whether that layout comes
+    /// from a DisplayID-tiled monitor or from compositor policy.
+    ///
+    /// `tiles` lists one [`DrmTilePlacement`] per CRTC. `tiles[0]` is the
+    /// primary tile; its CRTC keys the resulting output and provides the
+    /// page-flip event for the logical frame. The regions must tile a gap-free
+    /// rectangle anchored at the origin matching `output_mode_source`'s size, and
+    /// all CRTCs must be unused.
+    #[allow(clippy::too_many_arguments)]
+    pub fn initialize_tiled_output<R, E>(
+        &mut self,
+        tiles: impl IntoIterator<Item = DrmTilePlacement>,
+        output_mode_source: impl Into<OutputModeSource> + std::fmt::Debug,
+        renderer: &mut R,
+        render_elements: &DrmOutputRenderElements<R, E>,
+    ) -> DrmOutputManagerResult<DrmOutput<A, F, U, G>, A, F, R>
+    where
+        E: RenderElement<R>,
+        R: Renderer + Bind<Dmabuf>,
+        R::TextureId: Texture + 'static,
+        R::Error: Send + Sync + 'static,
+    {
+        let output_mode_source = output_mode_source.into();
+        let tiles: SmallVec<[DrmTilePlacement; 4]> = tiles.into_iter().collect();
+
+        let Some(primary_crtc) = tiles.first().map(|tile| tile.crtc) else {
+            return Err(DrmOutputManagerError::Frame(FrameError::InvalidTileConfig(
+                TileConfigError::Empty,
+            )));
+        };
+
+        let mut seen = HashSet::new();
+        for tile in &tiles {
+            if !seen.insert(tile.crtc)
+                || self.compositor.contains_key(&tile.crtc)
+                || self.reserved_crtcs.read().unwrap().contains(&tile.crtc)
+            {
+                return Err(DrmOutputManagerError::DuplicateCrtc(tile.crtc));
+            }
+        }
+
+        let mut create_compositor =
+            |implicit_modifiers: bool| -> FrameResult<DrmCompositor<A, F, U, G>, A, F> {
+                let mut placements = Vec::with_capacity(tiles.len());
+                for tile in &tiles {
+                    let surface = self
+                        .device
+                        .create_surface(tile.crtc, tile.mode, &tile.connectors)?;
+                    placements.push(TilePlacement {
+                        surface,
+                        planes: tile.planes.clone(),
+                        region: tile.region,
+                    });
+                }
+
+                if implicit_modifiers {
+                    DrmCompositor::<A, F, U, G>::new_tiled(
+                        output_mode_source.clone(),
+                        placements,
+                        self.allocator.clone(),
+                        self.exporter.clone(),
+                        self.color_formats.iter().copied(),
+                        self.renderer_formats
+                            .iter()
+                            .filter(|f| f.modifier == DrmModifier::Invalid)
+                            .copied(),
+                        self.device.cursor_size(),
+                        self.gbm.clone(),
+                    )
+                } else {
+                    DrmCompositor::<A, F, U, G>::new_tiled(
+                        output_mode_source.clone(),
+                        placements,
+                        self.allocator.clone(),
+                        self.exporter.clone(),
+                        self.color_formats.iter().copied(),
+                        self.renderer_formats.iter().copied(),
+                        self.device.cursor_size(),
+                        self.gbm.clone(),
+                    )
+                }
+            };
+
+        match create_compositor(false) {
+            Ok(compositor) => {
+                self.compositor.insert(primary_crtc, Mutex::new(compositor));
+            }
+            Err(err) => {
+                tracing::warn!(
+                    ?primary_crtc,
+                    ?err,
+                    "failed to initialize tiled output, trying to lower bandwidth"
+                );
+
+                for compositor in self.compositor.values_mut() {
+                    let compositor = compositor.get_mut().unwrap();
+                    if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+                        if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
+                            return Err(err);
+                        }
+                    }
+                }
+
+                match create_compositor(false) {
+                    Ok(compositor) => {
+                        self.compositor.insert(primary_crtc, Mutex::new(compositor));
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?primary_crtc,
+                            ?err,
+                            "failed to initialize tiled output, trying implicit modifiers"
+                        );
+
+                        for compositor in self.compositor.values_mut() {
+                            let compositor = compositor.get_mut().unwrap();
+
+                            let current_format = compositor.format();
+                            if let Err(err) = compositor.set_format(
+                                self.allocator.clone(),
+                                current_format,
+                                [DrmModifier::Invalid],
+                            ) {
+                                tracing::warn!(?err, "failed to set new format");
+                                continue;
+                            }
+
+                            render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                        }
+
+                        match create_compositor(true) {
+                            Ok(compositor) => {
+                                self.compositor.insert(primary_crtc, Mutex::new(compositor));
+                            }
+                            Err(err) => {
+                                for compositor in self.compositor.values_mut() {
+                                    let compositor = compositor.get_mut().unwrap();
+
+                                    let current_format = compositor.format();
+                                    if let Err(err) = compositor.set_format(
+                                        self.allocator.clone(),
+                                        current_format,
+                                        self.renderer_formats
+                                            .iter()
+                                            .filter(|f| f.code == current_format)
+                                            .map(|f| f.modifier),
+                                    ) {
+                                        tracing::warn!(?err, "failed to reset format");
+                                        continue;
+                                    }
+
+                                    render_elements.submit_composited_frame(&mut *compositor, renderer)?;
+                                }
+
+                                return Err(DrmOutputManagerError::Frame(err));
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        // Render once to lock in the primary plane with the chosen format (see
+        // `initialize_output`).
+        let compositor = self.compositor.get_mut(&primary_crtc).unwrap().get_mut().unwrap();
+        if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
+            self.compositor.remove(&primary_crtc);
+            return Err(err);
+        }
+
+        // Reserve the non-primary CRTCs: only `primary_crtc` keys `self.compositor`,
+        // so without this a later `initialize_output`/`initialize_tiled_output`
+        // would consider the others free and hand out a second surface for a CRTC
+        // this compositor already drives. Released on `DrmOutput::drop`.
+        let secondary_crtcs: SmallVec<[crtc::Handle; 3]> =
+            tiles.iter().skip(1).map(|tile| tile.crtc).collect();
+        self.reserved_crtcs
+            .write()
+            .unwrap()
+            .extend(secondary_crtcs.iter().copied());
+
+        Ok(DrmOutput {
+            compositor: self.compositor_arc.clone(),
+            reserved_crtcs: self.reserved_crtcs.clone(),
+            secondary_crtcs,
+            crtc: primary_crtc,
             allocator: self.allocator.clone(),
             renderer_formats: Vec::from(self.renderer_formats),
         })
@@ -611,6 +820,30 @@ where
     }
 }
 
+/// Placement of one CRTC within a tiled [`DrmOutput`].
+///
+/// One per CRTC, passed to [`LockedDrmOutputManager::initialize_tiled_output`].
+/// The manager creates the surface for `crtc` (so, unlike the compositor's
+/// `TilePlacement`, this carries the CRTC setup rather than a ready surface).
+#[derive(Debug, Clone)]
+pub struct DrmTilePlacement {
+    /// The CRTC driving this tile.
+    pub crtc: crtc::Handle,
+    /// The mode this tile's CRTC scans out — its native per-tile resolution, not
+    /// the aggregated logical-output size.
+    pub mode: Mode,
+    /// Connectors to drive from this tile's CRTC.
+    pub connectors: Vec<connector::Handle>,
+    /// Planes this tile may use for direct scan-out (`None` = all available).
+    pub planes: Option<Planes>,
+    /// Sub-rect of the logical output this tile scans out, in the output's
+    /// untransformed (mode) coordinate space.
+    ///
+    /// Derive it from the connector's [`TileInfo`](super::TileInfo) (read via
+    /// [`DrmDevice::tile_info`]): `((loc_h * tile_w, loc_v * tile_h), (tile_w, tile_h))`.
+    pub region: Rectangle<i32, Physical>,
+}
+
 /// A handle to an underlying [`DrmCompositor`] handled by an [`DrmOutputManager`].
 pub struct DrmOutput<A, F, U, G>
 where
@@ -620,6 +853,13 @@ where
     G: AsFd + 'static,
 {
     compositor: CompositorList<A, F, U, G>,
+    /// Shared reserved-CRTC set (see [`DrmOutputManager`]); the `secondary_crtcs`
+    /// entries are removed from it on drop.
+    reserved_crtcs: ReservedCrtcs,
+    /// Non-primary CRTCs this output drives — empty for a single-CRTC output,
+    /// populated for a tiled one. Reserved in `reserved_crtcs` for the output's
+    /// lifetime so nothing else hands them out.
+    secondary_crtcs: SmallVec<[crtc::Handle; 3]>,
     crtc: crtc::Handle,
     allocator: A,
     renderer_formats: Vec<DrmFormat>,
@@ -808,8 +1048,13 @@ where
     G: AsFd + 'static,
 {
     fn drop(&mut self) {
-        let mut write_guard = self.compositor.write().unwrap();
-        write_guard.remove(&self.crtc);
+        self.compositor.write().unwrap().remove(&self.crtc);
+        if !self.secondary_crtcs.is_empty() {
+            let mut reserved = self.reserved_crtcs.write().unwrap();
+            for crtc in &self.secondary_crtcs {
+                reserved.remove(crtc);
+            }
+        }
     }
 }
 

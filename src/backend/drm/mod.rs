@@ -98,11 +98,11 @@ pub use error::Error as DrmError;
 use indexmap::IndexSet;
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
-pub use surface::{DrmSurface, PlaneConfig, PlaneDamageClips, PlaneState, VrrSupport};
+pub use surface::{DrmAtomicCommit, DrmSurface, PlaneConfig, PlaneDamageClips, PlaneState, VrrSupport};
 
 use drm::{
     DriverCapability,
-    control::{Device as ControlDevice, PlaneType, crtc, framebuffer, plane},
+    control::{Device as ControlDevice, PlaneType, connector, crtc, framebuffer, plane},
 };
 use tracing::trace;
 
@@ -514,4 +514,163 @@ fn plane_size_hints(
         }
     }
     Ok(None)
+}
+
+/// Information from a connector's DRM `TILE` property
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TileInfo {
+    /// Tile-group identifier shared by all connectors of the same monitor
+    pub group_id: u32,
+    /// Total horizontal tile count in the group
+    pub num_h_tiles: u8,
+    /// Total vertical tile count in the group
+    pub num_v_tiles: u8,
+    /// Horizontal location of this tile, `0..num_h_tiles`
+    pub loc_h: u8,
+    /// Vertical location of this tile, `0..num_v_tiles`
+    pub loc_v: u8,
+    /// Native horizontal pixel size of this tile
+    pub tile_w: u16,
+    /// Native vertical pixel size of this tile
+    pub tile_h: u16,
+}
+
+fn tile_info(
+    dev: &(impl ControlDevice + DevPath),
+    conn: connector::Handle,
+) -> Result<Option<TileInfo>, DrmError> {
+    let props = dev.get_properties(conn).map_err(|source| {
+        DrmError::Access(AccessError {
+            errmsg: "Failed to get properties of connector",
+            dev: dev.dev_path(),
+            source,
+        })
+    })?;
+    let (ids, vals) = props.as_props_and_values();
+    for (&id, &val) in ids.iter().zip(vals.iter()) {
+        let info = dev.get_property(id).map_err(|source| {
+            DrmError::Access(AccessError {
+                errmsg: "Failed to get property info",
+                dev: dev.dev_path(),
+                source,
+            })
+        })?;
+        if info.name().to_str().map(|x| x == "TILE").unwrap_or(false) {
+            let tile_info =
+                if let drm::control::property::Value::Blob(blob_id) = info.value_type().convert_value(val) {
+                    // Value 0 means "no blob set" — the kernel uses this for
+                    // non-tiled connectors that nonetheless expose the property.
+                    if blob_id == 0 {
+                        return Ok(None);
+                    }
+                    let data = dev.get_property_blob(blob_id).map_err(|source| {
+                        DrmError::Access(AccessError {
+                            errmsg: "Failed to read TILE property blob",
+                            dev: dev.dev_path(),
+                            source,
+                        })
+                    })?;
+                    parse_tile_blob(&data)
+                } else {
+                    tracing::debug!(?conn, "TILE property has wrong value type");
+                    None
+                };
+            return Ok(tile_info);
+        }
+    }
+    Ok(None)
+}
+
+// Format written by the kernel in drm_connector_set_tile_property: eight
+// unsigned decimal fields separated by ':', in the order
+// group_id:flags:num_h_tiles:num_v_tiles:loc_h:loc_v:tile_w:tile_h.
+fn parse_tile_blob(data: &[u8]) -> Option<TileInfo> {
+    // The blob is a NUL-terminated C string; trim trailing NULs before parsing.
+    let s = std::str::from_utf8(data).ok()?.trim_end_matches('\0').trim();
+
+    let mut parts = s.split(':');
+    let group_id: u32 = parts.next()?.parse().ok()?;
+    // Field 2 is the kernel ABI "flags" placeholder; currently always 0 and unused.
+    let _flags: u32 = parts.next()?.parse().ok()?;
+    let num_h_tiles: u8 = parts.next()?.parse().ok()?;
+    let num_v_tiles: u8 = parts.next()?.parse().ok()?;
+    let loc_h: u8 = parts.next()?.parse().ok()?;
+    let loc_v: u8 = parts.next()?.parse().ok()?;
+    let tile_w: u16 = parts.next()?.parse().ok()?;
+    let tile_h: u16 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    // group_id == 0 is the kernel sentinel for "no tile info".
+    if group_id == 0 || num_h_tiles == 0 || num_v_tiles == 0 {
+        return None;
+    }
+    if loc_h >= num_h_tiles || loc_v >= num_v_tiles {
+        return None;
+    }
+
+    Some(TileInfo {
+        group_id,
+        num_h_tiles,
+        num_v_tiles,
+        loc_h,
+        loc_v,
+        tile_w,
+        tile_h,
+    })
+}
+
+#[cfg(test)]
+mod test {
+    use super::{TileInfo, parse_tile_blob};
+
+    #[test]
+    fn parse_tile_blob_kernel_format() {
+        let blob = b"305419896:0:2:1:1:0:2560:2880";
+        assert_eq!(
+            parse_tile_blob(blob),
+            Some(TileInfo {
+                group_id: 0x12345678,
+                num_h_tiles: 2,
+                num_v_tiles: 1,
+                loc_h: 1,
+                loc_v: 0,
+                tile_w: 2560,
+                tile_h: 2880,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_tile_blob_tolerates_nul_padding() {
+        let info = parse_tile_blob(b"42:0:2:1:0:0:2560:2880\0\0\0").unwrap();
+        assert_eq!(info.group_id, 42);
+    }
+
+    #[test]
+    fn parse_tile_blob_rejects_zero_group_id() {
+        assert_eq!(parse_tile_blob(b"0:0:2:1:0:0:2560:2880"), None);
+    }
+
+    #[test]
+    fn parse_tile_blob_rejects_zero_tile_count() {
+        assert_eq!(parse_tile_blob(b"1:0:0:1:0:0:2560:2880"), None);
+        assert_eq!(parse_tile_blob(b"1:0:2:0:0:0:2560:2880"), None);
+    }
+
+    #[test]
+    fn parse_tile_blob_rejects_out_of_range_location() {
+        assert_eq!(parse_tile_blob(b"1:0:2:1:2:0:2560:2880"), None);
+        assert_eq!(parse_tile_blob(b"1:0:2:1:0:1:2560:2880"), None);
+    }
+
+    #[test]
+    fn parse_tile_blob_rejects_malformed() {
+        assert_eq!(parse_tile_blob(b""), None);
+        assert_eq!(parse_tile_blob(b"not:a:tile:blob"), None);
+        assert_eq!(parse_tile_blob(b"1:0:2:1:0:0:2560"), None);
+        assert_eq!(parse_tile_blob(b"1:0:2:1:0:0:2560:2880:99"), None);
+        assert_eq!(parse_tile_blob(b"1,0,2,1,0,0,2560,2880"), None);
+    }
 }
