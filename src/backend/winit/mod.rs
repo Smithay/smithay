@@ -124,80 +124,21 @@ where
     span.record("window", Into::<u64>::into(window.id()));
     debug!("Window created");
 
-    let (display, context, surface, is_x11) = {
-        let display = unsafe { EGLDisplay::new(window.clone())? };
-
-        let context =
-            EGLContext::new_with_config(&display, gl_attributes, PixelFormatRequirements::_10_bit())
-                .or_else(|_| {
-                    EGLContext::new_with_config(&display, gl_attributes, PixelFormatRequirements::_8_bit())
-                })?;
-
-        let (surface, is_x11) = match window.window_handle().map(|handle| handle.as_raw()) {
-            Ok(RawWindowHandle::Wayland(handle)) => {
-                debug!("Winit backend: Wayland");
-                let size = window.inner_size();
-                let surface = unsafe {
-                    wegl::WlEglSurface::new_from_raw(
-                        handle.surface.as_ptr() as *mut _,
-                        size.width as i32,
-                        size.height as i32,
-                    )
-                }
-                .map_err(|err| Error::Surface(err.into()))?;
-                unsafe {
-                    (
-                        EGLSurface::new(
-                            &display,
-                            context.pixel_format().unwrap(),
-                            context.config_id(),
-                            surface,
-                        )
-                        .map_err(EGLError::CreationFailed)?,
-                        false,
-                    )
-                }
-            }
-            Ok(RawWindowHandle::Xlib(handle)) => {
-                debug!("Winit backend: X11");
-                unsafe {
-                    (
-                        EGLSurface::new(
-                            &display,
-                            context.pixel_format().unwrap(),
-                            context.config_id(),
-                            native::XlibWindow(handle.window),
-                        )
-                        .map_err(EGLError::CreationFailed)?,
-                        true,
-                    )
-                }
-            }
-            _ => panic!("only running on Wayland or with Xlib is supported"),
-        };
-
-        let _ = context.unbind();
-        (display, context, surface, is_x11)
-    };
-
-    let renderer = unsafe { GlesRenderer::new(context)?.into() };
-    let damage_tracking = display.supports_damage();
+    let winit_graphics_backend =
+        WinitGraphicsBackend::new_with_gl_attr(window.clone(), &span, gl_attributes)?;
 
     drop(_guard);
 
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     let event_loop = Generic::new(event_loop, Interest::READ, calloop::Mode::Level);
 
+    let is_x11 = matches!(
+        window.window_handle().map(|handle| handle.as_raw()),
+        Ok(RawWindowHandle::Xlib(_))
+    );
+
     Ok((
-        WinitGraphicsBackend {
-            window: window.clone(),
-            span: span.clone(),
-            _display: display,
-            egl_surface: surface,
-            damage_tracking,
-            bind_size: None,
-            renderer,
-        },
+        winit_graphics_backend,
         WinitEventLoop {
             inner: WinitEventLoopInner {
                 scale_factor: window.scale_factor(),
@@ -255,6 +196,82 @@ where
     R: Bind<EGLSurface>,
     crate::backend::SwapBuffersError: From<R::Error>,
 {
+    fn new_with_gl_attr(
+        window: Arc<winit::window::Window>,
+        span: &tracing::Span,
+        gl_attributes: GlAttributes,
+    ) -> Result<Self, Error>
+    where
+        R: From<GlesRenderer>,
+    {
+        let (display, context, surface) = {
+            let display = unsafe { EGLDisplay::new(window.clone())? };
+
+            let context =
+                EGLContext::new_with_config(&display, gl_attributes, PixelFormatRequirements::_10_bit())
+                    .or_else(|_| {
+                        EGLContext::new_with_config(
+                            &display,
+                            gl_attributes,
+                            PixelFormatRequirements::_8_bit(),
+                        )
+                    })?;
+
+            let surface = match window.window_handle().map(|handle| handle.as_raw()) {
+                Ok(RawWindowHandle::Wayland(handle)) => {
+                    debug!("Winit backend: Wayland");
+                    let size = window.inner_size();
+                    let surface = unsafe {
+                        wegl::WlEglSurface::new_from_raw(
+                            handle.surface.as_ptr() as *mut _,
+                            size.width as i32,
+                            size.height as i32,
+                        )
+                    }
+                    .map_err(|err| Error::Surface(err.into()))?;
+                    unsafe {
+                        EGLSurface::new(
+                            &display,
+                            context.pixel_format().unwrap(),
+                            context.config_id(),
+                            surface,
+                        )
+                        .map_err(EGLError::CreationFailed)?
+                    }
+                }
+                Ok(RawWindowHandle::Xlib(handle)) => {
+                    debug!("Winit backend: X11");
+                    unsafe {
+                        EGLSurface::new(
+                            &display,
+                            context.pixel_format().unwrap(),
+                            context.config_id(),
+                            native::XlibWindow(handle.window),
+                        )
+                        .map_err(EGLError::CreationFailed)?
+                    }
+                }
+                _ => panic!("only running on Wayland or with Xlib is supported"),
+            };
+
+            let _ = context.unbind();
+            (display, context, surface)
+        };
+
+        let renderer = unsafe { GlesRenderer::new(context)?.into() };
+        let damage_tracking = display.supports_damage();
+
+        Ok(WinitGraphicsBackend {
+            window: window.clone(),
+            span: span.clone(),
+            _display: display,
+            egl_surface: surface,
+            damage_tracking,
+            bind_size: None,
+            renderer,
+        })
+    }
+
     /// Window size of the underlying window
     pub fn window_size(&self) -> Size<i32, Physical> {
         let (w, h): (i32, i32) = self.window.inner_size().into();
