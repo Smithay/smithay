@@ -1734,6 +1734,29 @@ impl MultiTexture {
         })))
     }
 
+    /// Create a `MultiTexture` from a renderer `A`-specific texture type.
+    ///
+    /// The resulting texture contains only and entry for `A` and can thus
+    /// only be successfully rendered from `MultiFrame`s where `R` equals `A`.
+    ///
+    /// Prefer using `ImportDma` or `ImportMem` for function which handle
+    /// returning and caching textures for the current renderer automatically.
+    pub fn from_native_texture<A: GraphicsApi + 'static>(
+        render_id: &ContextId<<<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>,
+        texture: <<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId,
+    ) -> Option<MultiTexture> {
+        let mut multi = Self::new(
+            texture.size(),
+            Format {
+                code: texture.format()?,
+                modifier: Modifier::Invalid,
+            },
+        );
+        multi.0.lock().unwrap().format = texture.format();
+        multi.insert_texture::<A>(render_id, texture);
+        Some(multi)
+    }
+
     /// Attempt to get a texture of type `T: Renderer::TextureId` given the renderer type `A` for the given `DrmNode`.
     ///
     /// Will return `None` if either:
