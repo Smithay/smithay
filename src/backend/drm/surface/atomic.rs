@@ -994,7 +994,6 @@ impl AtomicDrmSurface {
         if res.is_ok() {
             self.used_planes.lock().unwrap().clear();
             self.state.write().unwrap().clear();
-            self.pending.write().unwrap().clear();
         }
 
         res
@@ -1009,7 +1008,6 @@ impl AtomicDrmSurface {
         } else {
             State::current_state(&*self.fd, self.crtc, &mut self.prop_mapping.write().unwrap())?
         };
-        *self.pending.write().unwrap() = self.state.read().unwrap().clone();
         Ok(())
     }
 
