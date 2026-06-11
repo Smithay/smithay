@@ -425,6 +425,14 @@ pub trait XwmHandler {
     fn unfullscreen_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
+    /// Window requests to be set as a modal dialog (see [`X11Surface::is_popup`]).
+    fn modal_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to no longer be a modal dialog.
+    fn unmodal_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
     /// Window requests to be minimized.
     fn minimize_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
@@ -2517,6 +2525,18 @@ where
                                     _ => {}
                                 }
                             }
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_MODAL) => match data[0] {
+                                0 => state.unmodal_request(xwm_id, surface),
+                                1 => state.modal_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_popup() {
+                                        state.unmodal_request(xwm_id, surface)
+                                    } else {
+                                        state.modal_request(xwm_id, surface)
+                                    }
+                                }
+                                _ => {}
+                            },
                             actions if actions.contains(&xwm.atoms._NET_WM_STATE_ABOVE) => match data[0] {
                                 0 => state.unabove_request(xwm_id, surface),
                                 1 => state.above_request(xwm_id, surface),

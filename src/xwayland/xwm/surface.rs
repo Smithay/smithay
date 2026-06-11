@@ -1362,6 +1362,19 @@ impl X11Surface {
         Ok(())
     }
 
+    /// Sets the window as a modal dialog or not.
+    ///
+    /// Corresponds to the `_NET_WM_STATE_MODAL` state, also reflected
+    /// by [`X11Surface::is_popup`].
+    pub fn set_modal(&self, modal: bool) -> Result<(), ConnectionError> {
+        if modal {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_MODAL], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_MODAL])?;
+        }
+        Ok(())
+    }
+
     /// Sets the window as above (always on top) or not.
     ///
     /// Allows the client to reflect this state in their UI.
