@@ -1102,12 +1102,20 @@ impl X11Surface {
         self.state.lock().unwrap().opacity
     }
 
+    /// Returns if the window is a modal dialog.
+    ///
+    /// Corresponds to the `_NET_WM_STATE_MODAL` state of the underlying X11 window.
+    pub fn is_modal(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.net_state.contains(&self.atoms._NET_WM_STATE_MODAL)
+    }
+
     /// Returns if the window is considered to be a popup.
     ///
     /// Corresponds to the internal `_NET_WM_STATE_MODAL` state of the underlying X11 window.
+    #[deprecated = "use `X11Surface::is_modal` instead"]
     pub fn is_popup(&self) -> bool {
-        let state = self.state.lock().unwrap();
-        state.net_state.contains(&self.atoms._NET_WM_STATE_MODAL)
+        self.is_modal()
     }
 
     /// Returns if the underlying window is transient to another window.
@@ -1365,7 +1373,7 @@ impl X11Surface {
     /// Sets the window as a modal dialog or not.
     ///
     /// Corresponds to the `_NET_WM_STATE_MODAL` state, also reflected
-    /// by [`X11Surface::is_popup`].
+    /// by [`X11Surface::is_modal`].
     pub fn set_modal(&self, modal: bool) -> Result<(), ConnectionError> {
         if modal {
             self.change_net_state(&[self.atoms._NET_WM_STATE_MODAL], &[])?;

@@ -425,7 +425,7 @@ pub trait XwmHandler {
     fn unfullscreen_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
-    /// Window requests to be set as a modal dialog (see [`X11Surface::is_popup`]).
+    /// Window requests to be set as a modal dialog (see [`X11Surface::is_modal`]).
     fn modal_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
@@ -2529,7 +2529,7 @@ where
                                 0 => state.unmodal_request(xwm_id, surface),
                                 1 => state.modal_request(xwm_id, surface),
                                 2 => {
-                                    if surface.is_popup() {
+                                    if surface.is_modal() {
                                         state.unmodal_request(xwm_id, surface)
                                     } else {
                                         state.modal_request(xwm_id, surface)
