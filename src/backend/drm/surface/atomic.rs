@@ -1008,6 +1008,20 @@ impl AtomicDrmSurface {
         } else {
             State::current_state(&*self.fd, self.crtc, &mut self.prop_mapping.write().unwrap())?
         };
+
+        // Re-initialize the mode blob which might got lost after suspend/resume
+        let mut pending = self.pending.write().unwrap();
+        let blob = self.fd.create_property_blob(&pending.mode).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Failed to create Property Blob for mode",
+                dev: self.fd.dev_path(),
+                source,
+            })
+        })?;
+
+        let old_blob = std::mem::replace(&mut pending.blob, blob);
+        let _ = self.fd.destroy_property_blob(old_blob.into());
+
         Ok(())
     }
 
