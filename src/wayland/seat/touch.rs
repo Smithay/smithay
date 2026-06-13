@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use atomic_float::AtomicF64;
 use wayland_server::{
-    DisplayHandle, Resource,
+    Client, DisplayHandle, Resource,
     backend::ClientId,
     protocol::wl_touch::{self, WlTouch},
 };
@@ -10,14 +10,16 @@ use wayland_server::{
 use super::SeatHandler;
 use crate::input::touch::TouchHandle;
 use crate::input::touch::TouchTarget;
-use crate::input::{
-    Seat,
-    touch::{MotionEvent, OrientationEvent, ShapeEvent, UpEvent},
-};
 use crate::wayland::Dispatch2;
-use crate::{input::touch::DownEvent, wayland::seat::wl_surface::WlSurface};
-#[cfg(feature = "wayland_frontend")]
-use crate::{input::touch::FrameMarker, wayland::compositor::CompositorHandler};
+use crate::wayland::compositor::CompositorHandler;
+use crate::wayland::seat::wl_surface::WlSurface;
+use crate::{
+    input::{
+        Seat,
+        touch::{DownEvent, FrameMarker, MotionEvent, OrientationEvent, ShapeEvent, UpEvent},
+    },
+    utils::iter::new_locked_obj_iter_from_vec,
+};
 
 impl<D: SeatHandler> TouchHandle<D> {
     pub(crate) fn new_touch(&self, touch: WlTouch) {
@@ -33,6 +35,12 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// the touch capability.
     pub fn from_resource(seat: &WlTouch) -> Option<Self> {
         seat.data::<TouchUserData<D>>()?.handle.clone()
+    }
+
+    /// Return all raw [`WlTouch`] instances for a particular [`Client`]
+    pub fn client_touch<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlTouch> + 'a {
+        let guard = self.known_instances.lock().unwrap();
+        new_locked_obj_iter_from_vec(guard, client.id())
     }
 }
 
