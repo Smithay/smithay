@@ -24,7 +24,7 @@ use smithay::{
             GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
             GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
         },
-        touch::TouchTarget,
+        touch::{FrameMarker, TouchTarget},
     },
     reexports::wayland_server::DisplayHandle,
     utils::{Logical, Point},
@@ -286,9 +286,8 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocus
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::DownEvent,
-        seq: Serial,
     ) {
-        self.inner_touch_target().down(seat, data, event, seq)
+        self.inner_touch_target().down(seat, data, event)
     }
 
     fn up(
@@ -296,9 +295,8 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocus
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::UpEvent,
-        seq: Serial,
     ) {
-        self.inner_touch_target().up(seat, data, event, seq)
+        self.inner_touch_target().up(seat, data, event)
     }
 
     fn motion(
@@ -306,17 +304,26 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocus
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::MotionEvent,
-        seq: Serial,
     ) {
-        self.inner_touch_target().motion(seat, data, event, seq)
+        self.inner_touch_target().motion(seat, data, event)
     }
 
-    fn frame(&self, seat: &Seat<AnvilState<BackendData>>, data: &mut AnvilState<BackendData>, seq: Serial) {
-        self.inner_touch_target().frame(seat, data, seq)
+    fn frame(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        marker: FrameMarker,
+    ) {
+        self.inner_touch_target().frame(seat, data, marker)
     }
 
-    fn cancel(&self, seat: &Seat<AnvilState<BackendData>>, data: &mut AnvilState<BackendData>, seq: Serial) {
-        self.inner_touch_target().cancel(seat, data, seq)
+    fn cancel(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        marker: FrameMarker,
+    ) {
+        self.inner_touch_target().cancel(seat, data, marker)
     }
 
     fn shape(
@@ -324,9 +331,8 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocus
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::ShapeEvent,
-        seq: Serial,
     ) {
-        self.inner_touch_target().shape(seat, data, event, seq)
+        self.inner_touch_target().shape(seat, data, event)
     }
 
     fn orientation(
@@ -334,9 +340,16 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocus
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::OrientationEvent,
-        seq: Serial,
     ) {
-        self.inner_touch_target().orientation(seat, data, event, seq)
+        self.inner_touch_target().orientation(seat, data, event)
+    }
+
+    fn last_frame(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+    ) -> Option<FrameMarker> {
+        self.inner_touch_target().last_frame(seat, data)
     }
 }
 
