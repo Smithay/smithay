@@ -15,7 +15,7 @@ use smithay::{
             GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
             GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
         },
-        touch::TouchTarget,
+        touch::{FrameMarker, TouchTarget},
     },
     output::Output,
     reexports::{
@@ -282,7 +282,6 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for SSD {
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::DownEvent,
-        _seq: Serial,
     ) {
         let mut state = self.0.decoration_state();
         if state.is_ssd {
@@ -296,7 +295,6 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for SSD {
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::UpEvent,
-        _seq: Serial,
     ) {
         let mut state = self.0.decoration_state();
         if state.is_ssd {
@@ -309,7 +307,6 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for SSD {
         _seat: &Seat<AnvilState<BackendData>>,
         _data: &mut AnvilState<BackendData>,
         event: &smithay::input::touch::MotionEvent,
-        _seq: Serial,
     ) {
         let mut state = self.0.decoration_state();
         if state.is_ssd {
@@ -321,7 +318,7 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for SSD {
         &self,
         _seat: &Seat<AnvilState<BackendData>>,
         _data: &mut AnvilState<BackendData>,
-        _seq: Serial,
+        _marker: FrameMarker,
     ) {
     }
 
@@ -329,7 +326,7 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for SSD {
         &self,
         _seat: &Seat<AnvilState<BackendData>>,
         _data: &mut AnvilState<BackendData>,
-        _seq: Serial,
+        _marker: FrameMarker,
     ) {
     }
 
@@ -338,7 +335,6 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for SSD {
         _seat: &Seat<AnvilState<BackendData>>,
         _data: &mut AnvilState<BackendData>,
         _event: &smithay::input::touch::ShapeEvent,
-        _seq: Serial,
     ) {
     }
 
@@ -347,8 +343,17 @@ impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for SSD {
         _seat: &Seat<AnvilState<BackendData>>,
         _data: &mut AnvilState<BackendData>,
         _event: &smithay::input::touch::OrientationEvent,
-        _seq: Serial,
     ) {
+    }
+
+    fn last_frame(
+        &self,
+        _seat: &Seat<AnvilState<BackendData>>,
+        _data: &mut AnvilState<BackendData>,
+    ) -> Option<FrameMarker> {
+        // It would be more correct to store the marker on frame and cancel,
+        // but since we're ignoring those anyway, no need for the added complexity.
+        None
     }
 }
 
