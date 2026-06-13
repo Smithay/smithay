@@ -181,10 +181,16 @@ pub trait KeyboardShortcutsInhibitorSeat {
     /// Can be used to check if certain surface has inhibitor on it
     /// ```no_run
     /// use smithay::input::Seat;
+    /// # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
     /// use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
     /// # use smithay::input::{SeatHandler, SeatState, pointer::CursorImageStatus};
     /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
     /// # struct State;
+    /// # impl CompositorHandler for State {
+    /// #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+    /// #     fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState { unimplemented!() }
+    /// #     fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {}
+    /// # }
     /// # impl SeatHandler for State {
     /// #     type KeyboardFocus = WlSurface;
     /// #     type PointerFocus = WlSurface;

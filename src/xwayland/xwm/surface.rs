@@ -8,14 +8,14 @@ use crate::{
             GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
             GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
         },
-        touch::TouchTarget,
+        touch::{FrameMarker, TouchTarget},
     },
     utils::{
         Client, FrameExtents, HookId, IsAlive, Logical, Physical, Rectangle, Serial, Size,
         user_data::UserDataMap,
     },
     wayland::{
-        compositor::{self, RectangleKind, RegionAttributes, SurfaceAttributes},
+        compositor::{self, CompositorHandler, RectangleKind, RegionAttributes, SurfaceAttributes},
         seat::{WaylandFocus, keyboard::enter_internal},
     },
 };
@@ -2330,52 +2330,54 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for X11Surface {
     }
 }
 
-impl<D: SeatHandler + 'static> TouchTarget<D> for X11Surface {
-    fn down(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::DownEvent, seq: Serial) {
+impl<D: SeatHandler + CompositorHandler + 'static> TouchTarget<D> for X11Surface {
+    fn down(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::DownEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
-            TouchTarget::down(surface, seat, data, event, seq)
+            TouchTarget::down(surface, seat, data, event)
         }
     }
 
-    fn up(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::UpEvent, seq: Serial) {
+    fn up(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::UpEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
-            TouchTarget::up(surface, seat, data, event, seq)
+            TouchTarget::up(surface, seat, data, event)
         }
     }
 
-    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::MotionEvent, seq: Serial) {
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::MotionEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
-            TouchTarget::motion(surface, seat, data, event, seq)
+            TouchTarget::motion(surface, seat, data, event)
         }
     }
 
-    fn frame(&self, seat: &Seat<D>, data: &mut D, seq: Serial) {
+    fn frame(&self, seat: &Seat<D>, data: &mut D, marker: FrameMarker) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
-            TouchTarget::frame(surface, seat, data, seq)
+            TouchTarget::frame(surface, seat, data, marker)
         }
     }
 
-    fn cancel(&self, seat: &Seat<D>, data: &mut D, seq: Serial) {
+    fn cancel(&self, seat: &Seat<D>, data: &mut D, marker: FrameMarker) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
-            TouchTarget::cancel(surface, seat, data, seq)
+            TouchTarget::cancel(surface, seat, data, marker)
         }
     }
 
-    fn shape(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::ShapeEvent, seq: Serial) {
+    fn shape(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::ShapeEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
-            TouchTarget::shape(surface, seat, data, event, seq)
+            TouchTarget::shape(surface, seat, data, event)
         }
     }
 
-    fn orientation(
-        &self,
-        seat: &Seat<D>,
-        data: &mut D,
-        event: &crate::input::touch::OrientationEvent,
-        seq: Serial,
-    ) {
+    fn orientation(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::OrientationEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
-            TouchTarget::orientation(surface, seat, data, event, seq)
+            TouchTarget::orientation(surface, seat, data, event)
+        }
+    }
+
+    fn last_frame(&self, seat: &Seat<D>, data: &mut D) -> Option<FrameMarker> {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::last_frame(surface, seat, data)
+        } else {
+            None
         }
     }
 }
