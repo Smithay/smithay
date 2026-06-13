@@ -49,8 +49,14 @@
 //!     fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, hint: ToplevelDialogHint) { /* ... */ }
 //! }
 //!
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //!
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {}
+//! # }
 //! type Target = wl_surface::WlSurface;
 //! impl SeatHandler for State {
 //!     type KeyboardFocus = Target;
@@ -71,7 +77,7 @@
 //!
 //! smithay::delegate_dispatch2!(State);
 //!
-//! // You are ready to go!  
+//! // You are ready to go!
 
 use wayland_protocols::xdg::dialog::v1::server::{
     xdg_dialog_v1::{self, XdgDialogV1},

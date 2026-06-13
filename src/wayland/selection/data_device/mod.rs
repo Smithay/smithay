@@ -27,6 +27,7 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::selection::SelectionHandler;
 //! use smithay::wayland::selection::data_device::{WaylandDndGrabHandler, DataDeviceState, DataDeviceHandler};
 //! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
@@ -43,6 +44,11 @@
 //! // ..
 //!
 //! // implement the necessary traits
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {}
+//! # }
 //! # impl SeatHandler for State {
 //! #     type KeyboardFocus = WlSurface;
 //! #     type PointerFocus = WlSurface;

@@ -27,6 +27,7 @@
 //! # Example
 //!
 //! ```no_run
+//! #  use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! #  use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
 //! #  use smithay::wayland::selection::{SelectionTarget, SelectionHandler, data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler}};
 //! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
@@ -52,6 +53,12 @@
 //! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
+//! #
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {}
+//! # }
 //! #
 //! # type Target = WlSurface;
 //! # impl SeatHandler for State {
@@ -116,7 +123,7 @@
 //!             client.clone(),
 //!         )
 //!         .expect("Failed to attach X11 Window Manager");
-//!         
+//!
 //!         // store the WM somewhere
 //!     }
 //!     XWaylandEvent::Error => eprintln!("XWayland failed to start!"),
@@ -1205,7 +1212,7 @@ impl X11Wm {
     ///
     /// So if windows `A -> C` are given in order and the internal stack is `C -> B -> A`,
     /// no reordering will occur.
-    ///  
+    ///
     /// See [`X11Wm::update_stacking_order_downwards`] for a variant of this algorithm,
     /// which works from the top down or [`X11Wm::raise_window`] for an easier but
     /// much more limited way to reorder.
