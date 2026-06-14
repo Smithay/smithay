@@ -153,8 +153,10 @@ impl WlPointerHandle {
                                     ptr.axis_discrete(WlAxis::HorizontalScroll, x);
                                 }
                             }
-                            (None, Some((x120, _))) => {
-                                if x120.abs() < 120 {
+                            (None, Some((x120, _))) if x120 != 0 => {
+                                if matches!(details.source, Some(AxisSource::Wheel | AxisSource::WheelTilt))
+                                    && x120.abs() < 120
+                                {
                                     ptr.axis_discrete(WlAxis::HorizontalScroll, x120.signum());
                                     data.x = 0;
                                 } else {
@@ -175,8 +177,10 @@ impl WlPointerHandle {
                                     ptr.axis_discrete(WlAxis::VerticalScroll, y);
                                 }
                             }
-                            (None, Some((_, y120))) => {
-                                if y120.abs() < 120 {
+                            (None, Some((_, y120))) if y120 != 0 => {
+                                if matches!(details.source, Some(AxisSource::Wheel | AxisSource::WheelTilt))
+                                    && y120.abs() < 120
+                                {
                                     ptr.axis_discrete(WlAxis::VerticalScroll, y120.signum());
                                     data.y = 0;
                                 } else {
