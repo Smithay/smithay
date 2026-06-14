@@ -154,10 +154,15 @@ impl WlPointerHandle {
                                 }
                             }
                             (None, Some((x120, _))) => {
-                                data.x += x120;
-                                if data.x.abs() >= 120 {
-                                    ptr.axis_discrete(WlAxis::HorizontalScroll, data.x / 120);
-                                    data.x %= 120
+                                if x120.abs() < 120 {
+                                    ptr.axis_discrete(WlAxis::HorizontalScroll, x120.signum());
+                                    data.x = 0;
+                                } else {
+                                    data.x += x120;
+                                    if data.x.abs() >= 120 {
+                                        ptr.axis_discrete(WlAxis::HorizontalScroll, data.x / 120);
+                                        data.x %= 120
+                                    }
                                 }
                             }
                             _ => {}
@@ -167,14 +172,19 @@ impl WlPointerHandle {
                             (Some(y), _) => {
                                 data.y = 0;
                                 if let Some(y) = y {
-                                    ptr.axis_discrete(WlAxis::HorizontalScroll, y);
+                                    ptr.axis_discrete(WlAxis::VerticalScroll, y);
                                 }
                             }
                             (None, Some((_, y120))) => {
-                                data.y += y120;
-                                if data.y.abs() >= 120 {
-                                    ptr.axis_discrete(WlAxis::VerticalScroll, data.y / 120);
-                                    data.y %= 120
+                                if y120.abs() < 120 {
+                                    ptr.axis_discrete(WlAxis::VerticalScroll, y120.signum());
+                                    data.y = 0;
+                                } else {
+                                    data.y += y120;
+                                    if data.y.abs() >= 120 {
+                                        ptr.axis_discrete(WlAxis::VerticalScroll, data.y / 120);
+                                        data.y %= 120
+                                    }
                                 }
                             }
                             _ => {}
