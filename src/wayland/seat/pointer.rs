@@ -129,35 +129,57 @@ impl WlPointerHandle {
                     ptr.axis_source(source);
                 }
                 // axis discrete
-                if let Some((x, y)) = details.v120 {
-                    if ptr.version() >= 8 {
+                if ptr.version() >= 8 {
+                    if let Some((x, y)) = details.v120 {
                         if x != 0 {
                             ptr.axis_value120(WlAxis::HorizontalScroll, x);
                         }
                         if y != 0 {
                             ptr.axis_value120(WlAxis::VerticalScroll, y);
                         }
-                    } else {
-                        compositor::with_states(surface, |states| {
-                            let mut data = states
-                                .data_map
-                                .get_or_insert_threadsafe(Mutex::<V120UserData>::default)
-                                .lock()
-                                .unwrap();
-
-                            data.x += x;
-                            if data.x.abs() >= 120 {
-                                ptr.axis_discrete(WlAxis::HorizontalScroll, data.x / 120);
-                                data.x %= 120;
-                            }
-
-                            data.y += y;
-                            if data.y.abs() >= 120 {
-                                ptr.axis_discrete(WlAxis::VerticalScroll, data.y / 120);
-                                data.y %= 120;
-                            }
-                        });
                     }
+                } else {
+                    compositor::with_states(surface, |states| {
+                        let mut data = states
+                            .data_map
+                            .get_or_insert_threadsafe(Mutex::<V120UserData>::default)
+                            .lock()
+                            .unwrap();
+
+                        match (details.discrete.0, details.v120) {
+                            (Some(x), _) => {
+                                data.x = 0;
+                                if let Some(x) = x {
+                                    ptr.axis_discrete(WlAxis::HorizontalScroll, x);
+                                }
+                            }
+                            (None, Some((x120, _))) => {
+                                data.x += x120;
+                                if data.x.abs() >= 120 {
+                                    ptr.axis_discrete(WlAxis::HorizontalScroll, data.x / 120);
+                                    data.x %= 120
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        match (details.discrete.1, details.v120) {
+                            (Some(y), _) => {
+                                data.y = 0;
+                                if let Some(y) = y {
+                                    ptr.axis_discrete(WlAxis::HorizontalScroll, y);
+                                }
+                            }
+                            (None, Some((_, y120))) => {
+                                data.y += y120;
+                                if data.y.abs() >= 120 {
+                                    ptr.axis_discrete(WlAxis::VerticalScroll, data.y / 120);
+                                    data.y %= 120
+                                }
+                            }
+                            _ => {}
+                        }
+                    });
                 }
                 // stop
                 if details.stop.0 {
