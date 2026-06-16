@@ -125,6 +125,11 @@ impl EiInputConnection {
     pub fn flush(&self) -> rustix::io::Result<()> {
         self.0.connection.flush()
     }
+
+    /// Returns the underlying `eis` connection.
+    pub fn eis_connection(&self) -> &eis::Connection {
+        self.0.connection.connection()
+    }
 }
 
 /// An event produced by an [`EiInput`] event source.
