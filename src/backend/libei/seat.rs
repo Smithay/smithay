@@ -57,10 +57,12 @@ impl EiInputSeat {
             pointer_absolute: None,
             pointer_absolute_regions: Vec::new(),
             touch: None,
+            text: None,
             device_keyboard: None,
             device_pointer: None,
             device_pointer_absolute: None,
             device_touch: None,
+            device_text: None,
             bound_capabilities: BitFlags::empty(),
         })))
     }
@@ -98,6 +100,26 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_keyboard = None;
         inner.keyboard = None;
+    }
+
+    /// Send the compositor's current modifier state to this seat's keyboard device via
+    /// `ei_keyboard.modifiers`, so the client keeps its keyboard state in sync with the
+    /// compositor (mirroring `wl_keyboard.modifiers`). No-op if there is no bound keyboard.
+    pub fn keyboard_modifiers(&self, depressed: u32, locked: u32, latched: u32, group: u32) {
+        let inner = self.0.lock().unwrap();
+        let Some(device) = inner.device_keyboard.as_ref() else {
+            return;
+        };
+        let Some(keyboard) = device.device.interface::<reis::eis::Keyboard>() else {
+            return;
+        };
+        let Some(connection) = inner.connection.upgrade() else {
+            return;
+        };
+        connection.connection.with_next_serial(|serial| {
+            keyboard.modifiers(serial, depressed, locked, latched, group);
+        });
+        let _ = connection.connection.flush();
     }
 
     /// Add a pointer device to the EI seat
@@ -168,6 +190,25 @@ impl EiInputSeat {
         inner.touch = None;
     }
 
+    /// Add a text device to the EI seat.
+    ///
+    /// A text device lets clients inject input by keysym or UTF-8 string (`ei_text`), independent
+    /// of any keymap. Calling on a seat that already has a text device will remove that device and
+    /// add a new one.
+    pub fn add_text(&self, name: &str) {
+        let mut inner = self.0.lock().unwrap();
+        inner.device_text = None;
+        inner.text = Some(name.to_string());
+        inner.refresh_devices();
+    }
+
+    /// Remove text device from the EI seat
+    pub fn remove_text(&self) {
+        let mut inner = self.0.lock().unwrap();
+        inner.device_text = None;
+        inner.text = None;
+    }
+
     /// Remove seat from EI connection
     pub fn remove(&self) {
         let inner = self.0.lock().unwrap();
@@ -195,11 +236,13 @@ struct EiInputSeatInner {
     // coordinate space(s) the client may address (see `EiRegion`).
     pointer_absolute_regions: Vec<EiRegion>,
     touch: Option<String>,
+    text: Option<String>,
     // Devices created in response to client bind
     device_keyboard: Option<DeviceDropWrapper>,
     device_pointer: Option<DeviceDropWrapper>,
     device_pointer_absolute: Option<DeviceDropWrapper>,
     device_touch: Option<DeviceDropWrapper>,
+    device_text: Option<DeviceDropWrapper>,
 }
 
 impl EiInputSeatInner {
@@ -295,6 +338,22 @@ impl EiInputSeatInner {
                     device: device.clone(),
                 });
                 self.device_touch = Some(DeviceDropWrapper::new(device, &self.event_sender));
+            }
+        }
+
+        if self.device_text.is_none() && self.bound_capabilities.contains(DeviceCapability::Text) {
+            if let Some(name) = self.text.as_ref() {
+                let device = self.seat.add_device(
+                    Some(name),
+                    DeviceType::Virtual,
+                    DeviceCapability::Text.into(),
+                    |_| {},
+                );
+                device.resumed();
+                let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                    device: device.clone(),
+                });
+                self.device_text = Some(DeviceDropWrapper::new(device, &self.event_sender));
             }
         }
     }
