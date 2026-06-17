@@ -17,6 +17,7 @@ pub(crate) struct TextInput {
     instances: Vec<Instance>,
     focus: Option<WlSurface>,
     active_text_input_id: Option<ObjectId>,
+    compositor_input_method: bool,
 }
 
 impl TextInput {
@@ -124,6 +125,33 @@ impl TextInputHandle {
         });
     }
 
+    /// Have the compositor act as the input method for this seat.
+    ///
+    /// While enabled, `enter` is delivered to the focused text-input even when no real
+    /// `zwp_input_method_v2` is bound, so the compositor can `commit_string` into it (e.g. for
+    /// remote-desktop text injection). Toggling this sends `enter`/`leave` for the current
+    /// focus immediately; subsequent focus changes are handled by the keyboard focus logic.
+    pub fn set_compositor_input_method(&self, active: bool) {
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.compositor_input_method == active {
+                return;
+            }
+            inner.compositor_input_method = active;
+        }
+        if active {
+            self.enter();
+        } else {
+            self.leave();
+        }
+    }
+
+    /// Whether the compositor is currently acting as the input method for this seat
+    /// (see [`set_compositor_input_method`](Self::set_compositor_input_method)).
+    pub fn compositor_input_method(&self) -> bool {
+        self.inner.lock().unwrap().compositor_input_method
+    }
+
     /// The `discard_state` is used when the input-method signaled that
     /// the state should be discarded and wrong serial sent.
     pub fn done(&self, discard_state: bool) {
@@ -205,8 +233,11 @@ where
             self.handle.increment_serial(resource);
         }
 
-        // Discard requests without any active input method instance.
-        if !self.input_method_handle.has_instance() {
+        // Discard requests without any active input method instance, unless the compositor
+        // itself is acting as the input method for this seat (the text-injection escape hatch).
+        // In that case we still process enable/commit so the focused client becomes the active
+        // text input and the compositor can `commit_string` into it.
+        if !self.input_method_handle.has_instance() && !self.handle.compositor_input_method() {
             debug!("discarding text-input request without IME running");
             return;
         }

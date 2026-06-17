@@ -39,6 +39,7 @@ pub fn listen_eis(handle: &calloop::LoopHandle<'static, AnvilState<UdevData>>) {
                         let dh = data.display_handle.clone();
                         data.process_input_event(&dh, event);
                     }
+                    EiInputEvent::TextKeysym { .. } | EiInputEvent::TextUtf8 { .. } => {}
                 })
                 .unwrap();
             Ok(calloop::PostAction::Continue)

@@ -253,8 +253,9 @@ pub(crate) fn enter_internal<D: SeatHandler + 'static>(
     // text-input global bound due to clients doing lazy global binding.
     text_input.set_focus(Some(surface.clone()));
 
-    // Only notify on `enter` once we have an actual IME.
-    if input_method.has_instance() {
+    // Notify on `enter` once we have an actual IME, or while the compositor is itself acting
+    // as the input method for this seat.
+    if input_method.has_instance() || text_input.compositor_input_method() {
         text_input.enter();
     }
 }
@@ -281,6 +282,9 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
 
         if input_method.has_instance() {
             input_method.deactivate_input_method(state);
+        }
+        // Send `leave` for a real IME or while the compositor is acting as the input method.
+        if input_method.has_instance() || text_input.compositor_input_method() {
             text_input.leave();
         }
 
