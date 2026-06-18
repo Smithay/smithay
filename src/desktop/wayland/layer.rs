@@ -44,7 +44,7 @@ pub struct LayerMap {
 /// to the output and returned on subsequent calls.
 ///
 /// Note: This function internally uses a [`Mutex`] per
-/// [`Output`] as exposed by its return type. Therefor
+/// [`Output`] as exposed by its return type. Therefore
 /// trying to hold on to multiple references of a [`LayerMap`]
 /// of the same output using this function *will* result in a deadlock.
 pub fn layer_map_for_output(o: &Output) -> MutexGuard<'_, LayerMap> {
