@@ -202,6 +202,15 @@ default implementations, which result in skipping the new functionality. As such
 - `lower_element()`: lowers an element to the bottom of the stack, respecting its z-index group.
 - `relocate_element()`: moves an element to a new location in the space without changing the stacking order.
 
+### Bugfixes
+
+`SimpleCrtcMapper` (in `smithay-drm-extras`) now releases the CRTC reservation of any connector that
+is no longer connected, including connectors that have disappeared from the resource list entirely
+rather than being reported as disconnected. Previously such connectors (for example DP-MST sink
+connectors when a dock is unplugged, or across suspend/resume) leaked their CRTC reservation
+indefinitely, which could accumulate until a newly connected output could no longer be assigned a
+CRTC.
+
 ## 0.7.0
 
 ### Breaking changes
