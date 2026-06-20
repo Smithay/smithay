@@ -404,6 +404,8 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
                     {
                         state.reset();
                     }
+                    #[cfg(feature = "renderer_multi")]
+                    crate::backend::renderer::multigpu::clear_surface_textures(data);
                 });
             });
         }
