@@ -3,17 +3,17 @@
 
 use crate::{
     backend::renderer::{
+        Color32F, Renderer, Texture,
         damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{AsRenderElements, RenderElement, Wrap},
-        Color32F, Renderer, Texture,
     },
     output::{Output, OutputModeSource, OutputNoMode},
     utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
 };
 #[cfg(feature = "wayland_frontend")]
 use crate::{
-    backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
-    desktop::{layer_map_for_output, LayerSurface, WindowSurfaceType},
+    backend::renderer::{ImportAll, element::surface::WaylandSurfaceRenderElement},
+    desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output},
     wayland::shell::wlr_layer::Layer,
 };
 use std::{collections::HashMap, fmt};
@@ -103,6 +103,52 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     where
         P: Into<Point<i32, Logical>>,
     {
+        let inner = self.create_inner_element(element, location);
+        self.insert_elem(self.elements.len(), inner, activate);
+    }
+
+    /// Map a [`SpaceElement`] above `reference_element` in the stack
+    ///
+    /// This can safely be called on an already mapped window
+    /// to update its location inside the space.
+    ///
+    /// This function does nothing if `reference_element` is not mapped.
+    ///
+    /// Both elements must have the same z-index, otherwise they will not be placed together.
+    ///
+    /// If activate is true it will set the new windows state
+    /// to be activate and removes that state from every
+    /// other mapped window.
+    pub fn map_element_above<P>(&mut self, element: E, location: P, reference_element: &E, activate: bool)
+    where
+        P: Into<Point<i32, Logical>>,
+    {
+        if let Some(reference_pos) = self
+            .elements
+            .iter()
+            .position(|inner| &inner.element == reference_element)
+        {
+            let (inner, index) =
+                if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
+                    let inner = self.elements.remove(pos);
+                    let index = if pos > reference_pos {
+                        reference_pos + 1
+                    } else {
+                        reference_pos
+                    };
+                    (inner, index)
+                } else {
+                    (self.create_inner_element(element, location), reference_pos + 1)
+                };
+
+            self.insert_elem(index, inner, activate);
+        }
+    }
+
+    fn create_inner_element<P>(&mut self, element: E, location: P) -> InnerElement<E>
+    where
+        P: Into<Point<i32, Logical>>,
+    {
         #[allow(clippy::mutable_key_type)]
         let outputs = if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
             self.elements.remove(pos).outputs
@@ -110,12 +156,11 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             HashMap::new()
         };
 
-        let inner = InnerElement {
+        InnerElement {
             element,
             location: location.into(),
             outputs,
-        };
-        self.insert_elem(inner, activate);
+        }
     }
 
     /// Moves an already mapped [`SpaceElement`] to top of the stack
@@ -128,11 +173,49 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn raise_element(&mut self, element: &E, activate: bool) {
         if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
             let inner = self.elements.remove(pos);
-            self.insert_elem(inner, activate);
+            self.insert_elem(self.elements.len(), inner, activate);
         }
     }
 
-    fn insert_elem(&mut self, elem: InnerElement<E>, activate: bool) {
+    /// Moves an already-mapped [`SpaceElement`] to be above `reference_element`
+    ///
+    /// This function does nothing if one or both windows are unmapped.
+    ///
+    /// Both elements must have the same z-index, otherwise they will not be placed together.
+    ///
+    /// If activate is true it will set the new windows state
+    /// to be activate and removes that state from every
+    /// other mapped window.
+    pub fn raise_element_above(&mut self, element: &E, reference_element: &E, activate: bool) {
+        if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
+            if let Some(reference_pos) = self
+                .elements
+                .iter()
+                .position(|inner| &inner.element == reference_element)
+            {
+                let index = if pos > reference_pos {
+                    reference_pos + 1
+                } else {
+                    reference_pos
+                };
+
+                let inner = self.elements.remove(pos);
+                self.insert_elem(index, inner, activate);
+            }
+        }
+    }
+
+    /// Moves an already mapped [`SpaceElement`] to the bottom of the stack
+    ///
+    /// This function does nothing for unmapped windows.
+    pub fn lower_element(&mut self, element: &E) {
+        if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
+            let inner = self.elements.remove(pos);
+            self.insert_elem(0, inner, false);
+        }
+    }
+
+    fn insert_elem(&mut self, index: usize, elem: InnerElement<E>, activate: bool) {
         if activate {
             elem.element.set_activate(true);
             for e in self.elements.iter() {
@@ -140,9 +223,22 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             }
         }
 
-        self.elements.push(elem);
-        self.elements
-            .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
+        self.elements.insert(index, elem);
+        self.elements.sort_by_key(|e1| e1.element.z_index());
+    }
+
+    /// Changes the location of an already-mapped [`SpaceElement`] in this space
+    ///
+    /// This function does nothing for unmapped windows.
+    ///
+    /// The element's stacing order and active state are not changed.
+    pub fn relocate_element<P>(&mut self, element: &E, location: P)
+    where
+        P: Into<Point<i32, Logical>>,
+    {
+        if let Some(inner) = self.elements.iter_mut().find(|inner| &inner.element == element) {
+            inner.location = location.into();
+        }
     }
 
     /// Unmap a [`SpaceElement`] from this space.
@@ -166,7 +262,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn elements_for_output<'output>(
         &'output self,
         output: &'output Output,
-    ) -> impl DoubleEndedIterator<Item = &'output E> {
+    ) -> impl DoubleEndedIterator<Item = &'output E> + use<'output, E> {
         self.elements
             .iter()
             .filter(|e| e.outputs.contains_key(output))
@@ -536,10 +632,10 @@ crate::backend::renderer::element::render_elements! {
 }
 
 impl<
-        #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
-        #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-        E: RenderElement<R> + std::fmt::Debug,
-    > std::fmt::Debug for SpaceRenderElements<R, E>
+    #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+    #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+    E: RenderElement<R> + std::fmt::Debug,
+> std::fmt::Debug for SpaceRenderElements<R, E>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

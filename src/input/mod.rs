@@ -24,7 +24,7 @@
 //! #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
 //! #             GestureHoldBeginEvent, GestureHoldEndEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
+//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget, FrameMarker},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
 //!
@@ -77,13 +77,14 @@
 //! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
 //! # }
 //! # impl TouchTarget<State> for Target {
-//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
-//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
-//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
-//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
-//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent) {}
+//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent) {}
+//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent) {}
+//! #   fn last_frame(&self, seat: &Seat<State>, data: &mut State) -> Option<FrameMarker> { unimplemented!() }
 //! # }
 //!
 //! // implement the required traits
@@ -125,6 +126,7 @@ use std::{
 };
 
 use tracing::{info_span, instrument};
+use xkbcommon::xkb::ContextFlags;
 
 use self::touch::TouchTarget;
 use self::{
@@ -135,7 +137,7 @@ use self::{
     pointer::{CursorImageStatus, PointerHandle, PointerTarget},
     touch::TouchGrab,
 };
-use crate::utils::{user_data::UserDataMap, Serial};
+use crate::utils::{Serial, user_data::UserDataMap};
 
 pub mod dnd;
 pub mod keyboard;
@@ -370,7 +372,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
     /// #             GestureHoldBeginEvent, GestureHoldEndEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-    /// #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
+    /// #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget, FrameMarker},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
     /// #
@@ -411,13 +413,14 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
     /// # }
     /// # impl TouchTarget<State> for Target {
-    /// #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
-    /// #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
-    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
-    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-    /// #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-    /// #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
-    /// #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+    /// #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent) {}
+    /// #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent) {}
+    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent) {}
+    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+    /// #   fn cancel(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+    /// #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent) {}
+    /// #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent) {}
+    /// #   fn last_frame(&self, seat: &Seat<State>, data: &mut State) -> Option<FrameMarker> { unimplemented!() }
     /// # }
     /// # struct State;
     /// # impl SeatHandler for State {
@@ -491,7 +494,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
     /// #             GestureHoldBeginEvent, GestureHoldEndEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-    /// #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
+    /// #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget, FrameMarker},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
     /// #
@@ -532,13 +535,14 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
     /// # }
     /// # impl TouchTarget<State> for Target {
-    /// #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
-    /// #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
-    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
-    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-    /// #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-    /// #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
-    /// #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+    /// #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent) {}
+    /// #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent) {}
+    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent) {}
+    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+    /// #   fn cancel(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+    /// #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent) {}
+    /// #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent) {}
+    /// #   fn last_frame(&self, seat: &Seat<State>, data: &mut State) -> Option<FrameMarker> { unimplemented!() }
     /// # }
     /// #
     /// # struct State;
@@ -571,8 +575,29 @@ impl<D: SeatHandler + 'static> Seat<D> {
         repeat_delay: i32,
         repeat_rate: i32,
     ) -> Result<KeyboardHandle<D>, KeyboardError> {
+        Self::add_keyboard_with_context_flags(
+            self,
+            xkb_config,
+            repeat_delay,
+            repeat_rate,
+            xkbcommon::xkb::CONTEXT_NO_FLAGS,
+        )
+    }
+
+    /// [`Self::add_keyboard`] equivalent, that allows for overwriting default xkb::Context flags.
+    ///
+    /// For more info read [`Self::add_keyboard`] docs.
+    #[instrument(parent = &self.arc.span, skip(self))]
+    pub fn add_keyboard_with_context_flags(
+        &mut self,
+        xkb_config: keyboard::XkbConfig<'_>,
+        repeat_delay: i32,
+        repeat_rate: i32,
+        context_flags: ContextFlags,
+    ) -> Result<KeyboardHandle<D>, KeyboardError> {
         let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard = self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate)?;
+        let keyboard =
+            self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate, context_flags)?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
@@ -616,10 +641,16 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # Examples
     ///
     /// ```no_run
+    /// # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
     /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
     /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
     /// #
     /// # struct State;
+    /// # impl CompositorHandler for State {
+    /// #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+    /// #     fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState { unimplemented!() }
+    /// #     fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {}
+    /// # }
     /// # impl SeatHandler for State {
     /// #     type KeyboardFocus = WlSurface;
     /// #     type PointerFocus = WlSurface;

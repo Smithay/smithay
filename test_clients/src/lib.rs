@@ -13,8 +13,8 @@ use smithay_client_toolkit::{
 
 use calloop::EventLoop;
 use wayland_client::{
-    globals::registry_queue_init, globals::GlobalListContents, protocol::wl_registry::WlRegistry, Connection,
-    Dispatch, QueueHandle,
+    Connection, Dispatch, QueueHandle, globals::GlobalListContents, globals::registry_queue_init,
+    protocol::wl_registry::WlRegistry,
 };
 
 pub fn init_logging() {

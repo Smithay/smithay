@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set WAYLAND_DISPLAY to our socket name, so child processes connect to Smallvil rather
     // than the host compositor
-    std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
+    unsafe { std::env::set_var("WAYLAND_DISPLAY", &state.socket_name) };
 
     // Spawn a test client, that will run under Smallvil
     spawn_client();

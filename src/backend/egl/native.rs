@@ -3,8 +3,9 @@
 #[cfg(feature = "backend_winit")]
 use super::wrap_egl_call_ptr;
 use super::{
+    EGLDevice, SwapBuffersError,
     display::{DamageSupport, EGLDisplayHandle},
-    ffi, wrap_egl_call_bool, EGLDevice, SwapBuffersError,
+    ffi, wrap_egl_call_bool,
 };
 #[cfg(feature = "backend_gbm")]
 use crate::utils::DevPath;
@@ -160,7 +161,7 @@ impl<A: AsFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
 }
 
 #[cfg(feature = "backend_winit")]
-impl EGLNativeDisplay for Arc<WinitWindow> {
+impl EGLNativeDisplay for Arc<dyn WinitWindow> {
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
         use winit::raw_window_handle::{self, HasDisplayHandle};
 

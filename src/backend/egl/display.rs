@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashSet,
-    ffi::{c_int, CStr},
+    ffi::{CStr, c_int},
     hash::{Hash, Hasher},
     mem::MaybeUninit,
     ops::Deref,
@@ -13,7 +13,7 @@ use std::{
 use indexmap::IndexSet;
 use libc::c_void;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
+use wayland_server::{DisplayHandle, Resource, protocol::wl_buffer::WlBuffer};
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_sys::server::wl_display;
 
@@ -24,13 +24,14 @@ use crate::backend::egl::EGLDevice;
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Buffer as _, Format as DrmFormat, Fourcc, Modifier},
+        allocator::{Buffer as _, Format as DrmFormat, Fourcc, Modifier, dmabuf::Dmabuf},
         egl::{
+            EGLError, Error,
             context::{GlAttributes, PixelFormatRequirements},
             ffi,
             ffi::egl::types::EGLImage,
             native::EGLNativeDisplay,
-            wrap_egl_call_bool, wrap_egl_call_ptr, EGLError, Error,
+            wrap_egl_call_bool, wrap_egl_call_ptr,
         },
     },
     utils::{Buffer as BufferCoords, Size},
@@ -181,12 +182,13 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
 
         if !missing_extensions.is_empty() {
             info!(
-                "Skipping EGL platform because one or more required extensions are not supported. Missing extensions: {:?}", missing_extensions
+                "Skipping EGL platform because one or more required extensions are not supported. Missing extensions: {:?}",
+                missing_extensions
             );
             continue;
         }
 
-        let display = wrap_egl_call_ptr(|| {
+        let display = wrap_egl_call_ptr(|| unsafe {
             ffi::egl::GetPlatformDisplayEXT(
                 platform.platform,
                 platform.native_display,
@@ -342,10 +344,12 @@ impl EGLDisplay {
         debug!("Supported EGL client extensions: {:?}", dp_extensions);
 
         let egl_version = {
-            let p = CStr::from_ptr(
-                wrap_egl_call_ptr(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
-                    .map_err(|_| Error::DisplayQueryResultInvalid)?,
-            );
+            let p = unsafe {
+                CStr::from_ptr(
+                    wrap_egl_call_ptr(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
+                        .map_err(|_| Error::DisplayQueryResultInvalid)?,
+                )
+            };
 
             let version_string = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
             let mut version_iterator = version_string
@@ -374,7 +378,7 @@ impl EGLDisplay {
         let (dmabuf_import_formats, dmabuf_render_formats) =
             get_dmabuf_formats(&display, &extensions).map_err(Error::DisplayCreationError)?;
 
-        let egl_api = ffi::egl::QueryAPI();
+        let egl_api = unsafe { ffi::egl::QueryAPI() };
         if egl_api != ffi::egl::OPENGL_ES_API {
             return Err(Error::OpenGlesNotSupported(None));
         }
@@ -382,7 +386,7 @@ impl EGLDisplay {
         let surface_type = {
             let mut surface_type: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
-            wrap_egl_call_bool(|| {
+            wrap_egl_call_bool(|| unsafe {
                 ffi::egl::GetConfigAttrib(
                     display,
                     config_id,
@@ -392,7 +396,7 @@ impl EGLDisplay {
             })
             .map_err(|_| Error::OpenGlesNotSupported(None))?;
 
-            surface_type.assume_init()
+            unsafe { surface_type.assume_init() }
         };
 
         Ok(EGLDisplay {
@@ -572,7 +576,7 @@ impl EGLDisplay {
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
                 let mut value = MaybeUninit::uninit();
-                wrap_egl_call_bool(|| {
+                wrap_egl_call_bool(|| unsafe {
                     ffi::egl::GetConfigAttrib(
                         **$display,
                         $config,
@@ -581,7 +585,7 @@ impl EGLDisplay {
                     )
                 })
                 .map_err(Error::ConfigFailed)?;
-                value.assume_init()
+                unsafe { value.assume_init() }
             }};
         }
 
@@ -976,7 +980,7 @@ fn get_dmabuf_formats(
                 external.set_len(num as usize);
             }
 
-            for (modifier, external_only) in mods.into_iter().zip(external.into_iter()) {
+            for (modifier, external_only) in mods.into_iter().zip(external) {
                 let format = DrmFormat {
                     code: fourcc,
                     modifier: Modifier::from(modifier),
@@ -1077,13 +1081,13 @@ impl EGLBufferReader {
             x if x == ffi::egl::TEXTURE_RGBA as i32 => Format::RGBA,
             ffi::egl::TEXTURE_EXTERNAL_WL => Format::External,
             ffi::egl::TEXTURE_Y_UV_WL => {
-                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV))
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_UV));
             }
             ffi::egl::TEXTURE_Y_U_V_WL => {
-                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V))
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_U_V));
             }
             ffi::egl::TEXTURE_Y_XUXV_WL => {
-                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV))
+                return Err(BufferAccessError::UnsupportedMultiPlanarFormat(Format::Y_XUXV));
             }
             x => panic!("EGL returned invalid texture type: {x}"),
         };

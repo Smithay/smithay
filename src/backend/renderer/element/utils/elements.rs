@@ -2,11 +2,11 @@
 
 use crate::{
     backend::renderer::{
+        Renderer,
         element::{AsRenderElements, Element, Id, Kind, RenderElement, UnderlyingStorage},
         utils::{DamageSet, OpaqueRegions},
-        Renderer,
     },
-    utils::{Buffer, Physical, Point, Rectangle, Scale},
+    utils::{Buffer, Physical, Point, Rectangle, Scale, user_data::UserDataMap},
 };
 
 /// A element that allows to re-scale another element
@@ -41,14 +41,11 @@ impl<E: Element> Element for RescaleRenderElement<E> {
         self.element.current_commit()
     }
 
-    fn src(&self) -> crate::utils::Rectangle<f64, crate::utils::Buffer> {
+    fn src(&self) -> Rectangle<f64, Buffer> {
         self.element.src()
     }
 
-    fn geometry(
-        &self,
-        scale: crate::utils::Scale<f64>,
-    ) -> crate::utils::Rectangle<i32, crate::utils::Physical> {
+    fn geometry(&self, scale: crate::utils::Scale<f64>) -> Rectangle<i32, Physical> {
         let mut element_geometry = self.element.geometry(scale);
         // First we make the element relative to the origin
         element_geometry.loc -= self.origin;
@@ -90,23 +87,38 @@ impl<E: Element> Element for RescaleRenderElement<E> {
     fn kind(&self) -> Kind {
         self.element.kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.element.is_framebuffer_effect()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement<E> {
     fn draw(
         &self,
         frame: &mut R::Frame<'_, '_>,
-        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
-        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
-        damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.element.draw(frame, src, dst, damage, opaque_regions)
+        self.element.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
+    ) -> Result<(), <R>::Error> {
+        self.element.capture_framebuffer(frame, src, dst, cache)
     }
 }
 
@@ -207,11 +219,11 @@ impl<E: Element> Element for CropRenderElement<E> {
         self.element.current_commit()
     }
 
-    fn src(&self) -> crate::utils::Rectangle<f64, crate::utils::Buffer> {
+    fn src(&self) -> Rectangle<f64, Buffer> {
         self.src
     }
 
-    fn geometry(&self, scale: Scale<f64>) -> crate::utils::Rectangle<i32, Physical> {
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         let element_geometry = self.element.geometry(scale);
         if let Some(intersection) = element_geometry.intersection(self.crop_rect) {
             // FIXME: intersection sometimes return a 0 size element
@@ -274,23 +286,38 @@ impl<E: Element> Element for CropRenderElement<E> {
     fn kind(&self) -> Kind {
         self.element.kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.element.is_framebuffer_effect()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
     fn draw(
         &self,
         frame: &mut R::Frame<'_, '_>,
-        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
-        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
-        damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.element.draw(frame, src, dst, damage, opaque_regions)
+        self.element.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
+    ) -> Result<(), <R>::Error> {
+        self.element.capture_framebuffer(frame, src, dst, cache)
     }
 }
 
@@ -376,23 +403,38 @@ impl<E: Element> Element for RelocateRenderElement<E> {
     fn kind(&self) -> Kind {
         self.element.kind()
     }
+
+    fn is_framebuffer_effect(&self) -> bool {
+        self.element.is_framebuffer_effect()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElement<E> {
     fn draw(
         &self,
         frame: &mut R::Frame<'_, '_>,
-        src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
-        dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
-        damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        opaque_regions: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        opaque_regions: &[Rectangle<i32, Physical>],
+        cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
-        self.element.draw(frame, src, dst, damage, opaque_regions)
+        self.element.draw(frame, src, dst, damage, opaque_regions, cache)
     }
 
     #[inline]
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn capture_framebuffer(
+        &self,
+        frame: &mut <R>::Frame<'_, '_>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
+        cache: &UserDataMap,
+    ) -> Result<(), <R>::Error> {
+        self.element.capture_framebuffer(frame, src, dst, cache)
     }
 }
 
@@ -451,17 +493,17 @@ bitflags::bitflags! {
 /// See [`constrain_render_elements`] for more information
 #[profiling::function]
 #[allow(clippy::too_many_arguments)]
-pub fn constrain_as_render_elements<R, E, C>(
+pub fn constrain_as_render_elements<R, E, C, L, S>(
     element: &E,
     renderer: &mut R,
-    location: impl Into<Point<i32, Physical>>,
+    location: L,
     alpha: f32,
     constrain: Rectangle<i32, Physical>,
     reference: Rectangle<i32, Physical>,
     behavior: ConstrainScaleBehavior,
     align: ConstrainAlign,
-    output_scale: impl Into<Scale<f64>>,
-) -> impl Iterator<Item = C>
+    output_scale: S,
+) -> impl Iterator<Item = C> + use<R, E, C, L, S>
 where
     R: Renderer,
     E: AsRenderElements<R>,
@@ -470,6 +512,8 @@ where
             RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R>>::RenderElement>>,
         >,
     >,
+    L: Into<Point<i32, Physical>>,
+    S: Into<Scale<f64>>,
 {
     let location = location.into();
     let output_scale = output_scale.into();

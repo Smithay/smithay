@@ -16,15 +16,13 @@
 //! To get the required extensions a device must support to use the Vulkan allocator, use
 //! [`VulkanAllocator::required_extensions`].
 
-#![forbid(unsafe_op_in_unsafe_fn)]
-
 pub mod format;
 
 use std::{
     ffi::CStr,
     fmt,
     os::unix::io::{FromRawFd, OwnedFd},
-    sync::{mpsc, Arc, Weak},
+    sync::{Arc, Weak, mpsc},
 };
 
 use ash::{ext, khr, vk};
@@ -37,14 +35,14 @@ use crate::backend::drm::DrmNode;
 use crate::{
     backend::{
         allocator::dmabuf::DmabufFlags,
-        vulkan::{version::Version, PhysicalDevice},
+        vulkan::{PhysicalDevice, version::Version},
     },
     utils::{Buffer as BufferCoord, Size},
 };
 
 use super::{
-    dmabuf::{AsDmabuf, Dmabuf, MAX_PLANES},
     Allocator, Buffer,
+    dmabuf::{AsDmabuf, Dmabuf, MAX_PLANES},
 };
 
 bitflags! {

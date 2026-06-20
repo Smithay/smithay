@@ -3,16 +3,16 @@ use std::collections::HashSet;
 use crate::{
     backend::{
         allocator::{
-            dmabuf::{AsDmabuf, Dmabuf},
             Buffer, Slot,
+            dmabuf::{AsDmabuf, Dmabuf},
         },
         drm::Framebuffer,
         renderer::{
+            Bind, Blit, Color32F, Frame, Renderer,
             damage::OutputDamageTracker,
             element::{Element, Id, RenderElement, RenderElementStates},
             sync::SyncPoint,
             utils::{CommitCounter, DamageSet, DamageSnapshot, OpaqueRegions},
-            Bind, Blit, Color32F, Frame, Renderer,
         },
     },
     output::OutputNoMode,
@@ -406,7 +406,7 @@ where
                 tracing::trace!("drawing frame element with damage: {:#?}", element_damage);
 
                 element
-                    .draw(&mut frame, src, dst, &element_damage, &[])
+                    .draw(&mut frame, src, dst, &element_damage, &[], None)
                     .map_err(BlitFrameResultError::Rendering)?;
             }
 

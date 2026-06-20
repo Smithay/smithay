@@ -1,5 +1,5 @@
 use std::{
-    sync::{atomic::Ordering, Mutex},
+    sync::{Mutex, atomic::Ordering},
     time::Duration,
 };
 
@@ -13,18 +13,17 @@ use smithay::{
 
 use smithay::{
     backend::{
+        SwapBuffersError,
         allocator::dmabuf::Dmabuf,
         egl::EGLDevice,
         renderer::{
+            ImportDma, ImportMemWl,
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
             gles::GlesRenderer,
-            ImportDma, ImportMemWl,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
-        SwapBuffersError,
     },
-    delegate_dmabuf,
     input::{
         keyboard::LedState,
         pointer::{CursorImageAttributes, CursorImageStatus},
@@ -33,8 +32,8 @@ use smithay::{
     reexports::{
         calloop::EventLoop,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
-        wayland_server::{protocol::wl_surface, Display},
-        winit::platform::pump_events::PumpStatus,
+        wayland_server::{Display, protocol::wl_surface},
+        winit::event_loop::pump_events::PumpStatus,
     },
     utils::{IsAlive, Scale, Transform},
     wayland::{
@@ -47,7 +46,7 @@ use smithay::{
 };
 use tracing::{error, info, warn};
 
-use crate::state::{take_presentation_feedback, AnvilState, Backend};
+use crate::state::{AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output};
 use crate::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";
@@ -80,7 +79,6 @@ impl DmabufHandler for AnvilState<WinitData> {
         }
     }
 }
-delegate_dmabuf!(AnvilState<WinitData>);
 
 impl Backend for WinitData {
     fn seat_name(&self) -> String {
@@ -348,7 +346,7 @@ pub fn run_winit() {
                 #[cfg(feature = "debug")]
                 elements.push(CustomRenderElements::Fps(fps_element.clone()));
 
-                let res = render_output(
+                render_output(
                     &output,
                     space,
                     elements,
@@ -361,9 +359,7 @@ pub fn run_winit() {
                 .map_err(|err| match err {
                     OutputDamageTrackerError::Rendering(err) => err.into(),
                     _ => unreachable!(),
-                });
-
-                res
+                })
             });
 
             match render_res {
@@ -396,6 +392,15 @@ pub fn run_winit() {
                     backend.window().set_cursor_visible(cursor_visible);
 
                     let states = render_output_result.states;
+
+                    update_primary_scanout_output(
+                        &state.space,
+                        &output,
+                        &state.dnd_icon,
+                        &state.cursor_status,
+                        &states,
+                    );
+
                     if has_rendered {
                         let mut output_presentation_feedback =
                             take_presentation_feedback(&output, &state.space, &states);

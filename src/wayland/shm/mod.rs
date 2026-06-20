@@ -21,7 +21,6 @@
 //!
 //! use smithay::wayland::buffer::BufferHandler;
 //! use smithay::wayland::shm::{ShmState, ShmHandler};
-//! use smithay::delegate_shm;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
 //! # struct State { shm_state: ShmState };
@@ -49,7 +48,8 @@
 //!         &self.shm_state
 //!     }
 //! }
-//! delegate_shm!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! Then, when you have a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
@@ -102,13 +102,13 @@ use std::{
 };
 
 use wayland_server::{
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
     backend::GlobalId,
     protocol::{
         wl_buffer,
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
     },
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
 };
 
 mod handlers;
@@ -116,7 +116,8 @@ mod pool;
 
 use crate::{
     backend::allocator::format::get_bpp,
-    utils::{hook::Hook, HookId, UnmanagedResource},
+    utils::{HookId, UnmanagedResource, hook::Hook},
+    wayland::GlobalData,
 };
 
 use self::pool::Pool;
@@ -141,8 +142,8 @@ impl ShmState {
     /// remove this global in the future.
     pub fn new<D>(display: &DisplayHandle, formats: impl IntoIterator<Item = wl_shm::Format>) -> ShmState
     where
-        D: GlobalDispatch<WlShm, ()>
-            + Dispatch<WlShm, ()>
+        D: GlobalDispatch<WlShm, GlobalData>
+            + Dispatch<WlShm, GlobalData>
             + Dispatch<WlShmPool, ShmPoolUserData>
             + BufferHandler
             + ShmHandler
@@ -154,7 +155,7 @@ impl ShmState {
         formats.insert(wl_shm::Format::Argb8888);
         formats.insert(wl_shm::Format::Xrgb8888);
 
-        let shm = display.create_global::<D, WlShm, _>(2, ());
+        let shm = display.create_global::<D, WlShm, _>(2, GlobalData);
 
         ShmState { formats, shm }
     }
@@ -491,46 +492,10 @@ impl ShmBufferUserData {
         id
     }
 
-    pub(crate) fn remove_destruction_hook(&self, hook_id: HookId) {
+    pub(crate) fn remove_destruction_hook(&self, hook_id: &HookId) {
         let mut guard = self.destruction_hooks.lock().unwrap();
-        if let Some(id) = guard.iter().position(|hook| hook.id != hook_id) {
+        if let Some(id) = guard.iter().position(|hook| hook.id == *hook_id) {
             guard.remove(id);
         }
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_shm {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_server::protocol::{wl_buffer::WlBuffer, wl_shm::WlShm, wl_shm_pool::WlShmPool},
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::shm::{ShmBufferUserData, ShmPoolUserData, ShmState},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlShm: ()] => ShmState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlShm: ()] => ShmState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlShmPool: ShmPoolUserData] => ShmState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlBuffer: ShmBufferUserData] => ShmState
-            );
-        };
-    };
 }

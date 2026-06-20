@@ -1,6 +1,6 @@
 use std::{
     mem,
-    sync::{mpsc::Receiver, Weak},
+    sync::{Weak, mpsc::Receiver},
 };
 
 use drm_fourcc::DrmFourcc;
@@ -10,10 +10,10 @@ use x11rb::{connection::Connection, protocol::xproto::PixmapWrapper, rust_connec
 use crate::{
     backend::{
         allocator::{
-            dmabuf::{AnyError, Dmabuf},
             Allocator, Slot, Swapchain,
+            dmabuf::{AnyError, Dmabuf},
         },
-        x11::{buffer::PixmapWrapperExt, window_inner::WindowInner, AllocateBuffersError, Window},
+        x11::{AllocateBuffersError, Window, buffer::PixmapWrapperExt, window_inner::WindowInner},
     },
     utils::{Logical, Size},
 };

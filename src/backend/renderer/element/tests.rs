@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    backend::renderer::{gles::GlesRenderer, ImportDma, ImportMem, Renderer, Texture},
-    utils::{Buffer, Physical, Point, Rectangle, Scale},
+    backend::renderer::{ImportDma, ImportMem, Renderer, Texture, gles::GlesRenderer},
+    utils::{Buffer, Physical, Point, Rectangle, Scale, user_data::UserDataMap},
 };
 
 use super::{CommitCounter, Element, Id, RenderElement, Wrap};
@@ -150,6 +150,7 @@ where
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         todo!()
     }
@@ -188,6 +189,7 @@ where
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         todo!()
     }
@@ -235,6 +237,7 @@ where
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         todo!()
     }
@@ -281,6 +284,7 @@ where
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         todo!()
     }

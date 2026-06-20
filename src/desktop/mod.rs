@@ -54,7 +54,7 @@ pub use self::space::Space;
 
 #[cfg(feature = "wayland_frontend")]
 pub use self::wayland::{
-    layer::{layer_map_for_output, LayerMap, LayerSurface},
+    layer::{LayerMap, LayerSurface, layer_map_for_output},
     popup::*,
     utils,
     window::*,

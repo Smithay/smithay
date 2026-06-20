@@ -202,11 +202,14 @@ use crate::{
     backend::{
         allocator::Fourcc,
         renderer::{
-            utils::{DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
             ContextId, Frame, ImportMem, Renderer, Texture,
+            utils::{DamageBag, DamageSet, DamageSnapshot, OpaqueRegions},
         },
     },
-    utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{
+        Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
+        user_data::UserDataMap,
+    },
 };
 
 use super::{CommitCounter, Element, Id, Kind, RenderElement};
@@ -693,6 +696,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         if frame.context_id() != self.context_id {
             warn!("trying to render texture from different renderer context");

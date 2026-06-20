@@ -1,33 +1,32 @@
 use std::sync::Arc;
 
-use ::winit::platform::pump_events::PumpStatus;
+use ::winit::event_loop::pump_events::PumpStatus;
 use smithay::{
     backend::{
         input::{InputEvent, KeyboardKeyEvent},
         renderer::{
+            Color32F, Frame, Renderer,
             element::{
-                surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
                 Kind,
+                surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
             },
             gles::GlesRenderer,
             utils::{draw_render_elements, on_commit_buffer_handler},
-            Color32F, Frame, Renderer,
         },
         winit::{self, WinitEvent},
     },
-    delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
-    input::{keyboard::FilterResult, Seat, SeatHandler, SeatState},
-    reexports::wayland_server::{protocol::wl_seat, Display},
+    input::{Seat, SeatHandler, SeatState, keyboard::FilterResult},
+    reexports::wayland_server::{Display, protocol::wl_seat},
     utils::{Rectangle, Serial, Transform},
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            with_surface_tree_downward, CompositorClientState, CompositorHandler, CompositorState,
-            SurfaceAttributes, TraversalAction,
+            CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, TraversalAction,
+            with_surface_tree_downward,
         },
         selection::{
-            data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
             SelectionHandler,
+            data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
         },
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         shm::{ShmHandler, ShmState},
@@ -35,12 +34,12 @@ use smithay::{
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::{
+    Client, ListeningSocket,
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::{
         wl_buffer,
         wl_surface::{self, WlSurface},
     },
-    Client, ListeningSocket,
 };
 
 impl BufferHandler for App {
@@ -166,7 +165,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
     let keyboard = state.seat.add_keyboard(Default::default(), 200, 200).unwrap();
 
-    std::env::set_var("WAYLAND_DISPLAY", "wayland-5");
+    unsafe { std::env::set_var("WAYLAND_DISPLAY", "wayland-5") };
     std::process::Command::new("weston-terminal").spawn().ok();
 
     loop {
@@ -290,9 +289,4 @@ impl ClientData for ClientState {
     }
 }
 
-// Macros used to delegate protocol handling to types in the app state.
-delegate_xdg_shell!(App);
-delegate_compositor!(App);
-delegate_shm!(App);
-delegate_seat!(App);
-delegate_data_device!(App);
+smithay::delegate_dispatch2!(App);

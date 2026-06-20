@@ -1,12 +1,12 @@
 use std::{
-    sync::{atomic::Ordering, Mutex},
+    sync::{Mutex, atomic::Ordering},
     time::Duration,
 };
 
 use crate::{
     drawing::*,
     render::*,
-    state::{take_presentation_feedback, AnvilState, Backend},
+    state::{AnvilState, Backend, take_presentation_feedback, update_primary_scanout_output},
 };
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
@@ -22,13 +22,12 @@ use smithay::{
         },
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            damage::OutputDamageTracker, element::AsRenderElements, gles::GlesRenderer, Bind, ImportDma,
-            ImportMemWl,
+            Bind, ImportDma, ImportMemWl, damage::OutputDamageTracker, element::AsRenderElements,
+            gles::GlesRenderer,
         },
-        vulkan::{version::Version, Instance, PhysicalDevice},
+        vulkan::{Instance, PhysicalDevice, version::Version},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
-    delegate_dmabuf,
     input::{
         keyboard::LedState,
         pointer::{CursorImageAttributes, CursorImageStatus},
@@ -39,7 +38,7 @@ use smithay::{
         calloop::EventLoop,
         gbm,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
-        wayland_server::{protocol::wl_surface, Display},
+        wayland_server::{Display, protocol::wl_surface},
     },
     utils::{DeviceFd, IsAlive, Scale},
     wayland::{
@@ -83,7 +82,6 @@ impl DmabufHandler for AnvilState<X11Data> {
         }
     }
 }
-delegate_dmabuf!(AnvilState<X11Data>);
 
 impl Backend for X11Data {
     fn seat_name(&self) -> String {
@@ -416,6 +414,15 @@ pub fn run_x11() {
                     };
 
                     let states = render_output_result.states;
+
+                    update_primary_scanout_output(
+                        &state.space,
+                        &output,
+                        &state.dnd_icon,
+                        &state.cursor_status,
+                        &states,
+                    );
+
                     #[cfg(feature = "debug")]
                     let rendered = render_output_result.damage.is_some();
                     if render_output_result.damage.is_some() {

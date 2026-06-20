@@ -2,30 +2,30 @@ use std::cell::RefCell;
 
 use tracing::debug;
 use wayland_server::{
+    Client, DataInit, DisplayHandle, Resource,
     protocol::{
         wl_data_device::{self, WlDataDevice},
         wl_seat::WlSeat,
     },
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
-    input::{dnd::DndFocus, Seat, SeatHandler},
+    input::{Seat, SeatHandler, dnd::DndFocus},
     utils::Serial,
     wayland::{
-        compositor,
+        Dispatch2, compositor,
         seat::WaylandFocus,
         selection::{
+            SelectionTarget,
             device::SelectionDevice,
             offer::OfferReplySource,
             seat_data::SeatData,
             source::{SelectionSource, SelectionSourceProvider},
-            SelectionTarget,
         },
     },
 };
 
-use super::{DataDeviceHandler, DataDeviceState, GrabType};
+use super::{DataDeviceHandler, GrabType};
 
 /// WlSurface role of drag and drop icon
 pub const DND_ICON_ROLE: &str = "dnd_icon";
@@ -36,9 +36,8 @@ pub struct DataDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch<WlDataDevice, DataDeviceUserData, D> for DataDeviceState
+impl<D> Dispatch2<WlDataDevice, D> for DataDeviceUserData
 where
-    D: Dispatch<WlDataDevice, DataDeviceUserData>,
     D: DataDeviceHandler,
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: DndFocus<D>,
@@ -47,15 +46,15 @@ where
     D: 'static,
 {
     fn request(
+        &self,
         handler: &mut D,
         client: &Client,
         resource: &WlDataDevice,
         request: wl_data_device::Request,
-        data: &DataDeviceUserData,
         dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let seat = match Seat::<D>::from_resource(&data.wl_seat) {
+        let seat = match Seat::<D>::from_resource(&self.wl_seat) {
             Some(seat) => seat,
             None => return,
         };
@@ -74,7 +73,7 @@ where
                     handler
                         .data_device_state()
                         .used_sources
-                        .insert(source.clone(), data.wl_seat.clone());
+                        .insert(source.clone(), self.wl_seat.clone());
                 }
 
                 let serial = Serial::from(serial);
@@ -167,7 +166,7 @@ where
                     handler
                         .data_device_state()
                         .used_sources
-                        .insert(source.clone(), data.wl_seat.clone());
+                        .insert(source.clone(), self.wl_seat.clone());
                 }
 
                 let source = source.map(SelectionSourceProvider::DataDevice);
@@ -194,6 +193,17 @@ where
                 }),
 
             _ => unreachable!(),
+        }
+    }
+
+    fn destroyed(&self, _state: &mut D, _client: wayland_server::backend::ClientId, resource: &WlDataDevice) {
+        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
+            if let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>() {
+                seat_data.borrow_mut().retain_devices(|ndd| match ndd {
+                    SelectionDevice::DataDevice(ndd) => ndd != resource,
+                    _ => true,
+                });
+            }
         }
     }
 }

@@ -11,21 +11,24 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::{
     self, ZwpVirtualKeyboardV1,
 };
-use wayland_server::protocol::wl_keyboard::KeymapFormat;
-use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
+
+use crate::wayland::input_method::InputMethodSeat;
+
+use wayland_server::{
+    Client, DataInit, DisplayHandle, Resource, Dispatch,
+    protocol::wl_keyboard::{KeyState, KeymapFormat},
+};
 use xkbcommon::xkb;
 
-use crate::input::keyboard::{Keymap, ModifiersState};
-use crate::wayland::input_method::InputMethodSeat;
+use crate::input::keyboard::{KeyboardTarget, Keymap, KeymapFile, ModifiersState};
 use crate::{
     input::{Seat, SeatHandler},
     utils::SERIAL_COUNTER,
-    wayland::seat::{keyboard::for_each_focused_kbds, WaylandFocus},
+    wayland::{
+        Dispatch2,
+        seat::{WaylandFocus, keyboard::for_each_focused_kbds},
+    },
 };
-
-use crate::backend::input::KeyState;
-
-use super::{VirtualKeyboardHandler, VirtualKeyboardManagerState};
 
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
@@ -75,35 +78,27 @@ impl<D: SeatHandler> fmt::Debug for VirtualKeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>, D> for VirtualKeyboardManagerState
+impl<D> Dispatch2<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData<D>
 where
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
     D: SeatHandler + 'static,
-    D: VirtualKeyboardHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
+        &self,
         user_data: &mut D,
-        client: &Client,
+        _client: &Client,
         virtual_keyboard: &ZwpVirtualKeyboardV1,
         request: zwp_virtual_keyboard_v1::Request,
-        data: &VirtualKeyboardUserData<D>,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let ime_keyboard_grabbed = {
-            let input_method = data.seat.input_method().inner.lock().unwrap();
-            let keyboard_grab = input_method.keyboard_grab.inner.lock().unwrap();
-            keyboard_grab.grab.clone()
-        };
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                update_keymap(user_data, data, format, fd, size as usize);
+                update_keymap(self, format, fd, size as usize);
             }
-
             zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
                 // Ensure keymap was initialized.
-                let mut virtual_data = data.handle.inner.lock().unwrap();
+                let mut virtual_data = self.handle.inner.lock().unwrap();
                 let vk_state = match virtual_data.state.as_mut() {
                     Some(vk_state) => vk_state,
                     None => {
@@ -111,6 +106,7 @@ where
                         return;
                     }
                 };
+
                 // Ensure virtual keyboard's keymap is active.
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
                 if ime_keyboard_grabbed
@@ -166,7 +162,7 @@ where
                 group,
             } => {
                 // Ensure keymap was initialized.
-                let mut virtual_data = data.handle.inner.lock().unwrap();
+                let mut virtual_data = self.handle.inner.lock().unwrap();
                 let state = match virtual_data.state.as_mut() {
                     Some(state) => state,
                     None => {

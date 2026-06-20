@@ -10,7 +10,6 @@
 //! extern crate wayland_server;
 //!
 //! use smithay::wayland::cursor_shape::CursorShapeManagerState;
-//! use smithay::delegate_cursor_shape;
 //!
 //! # use smithay::backend::input::KeyState;
 //! # use smithay::input::{
@@ -19,7 +18,7 @@
 //! #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
 //! #             GestureHoldBeginEvent, GestureHoldEndEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
+//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget, FrameMarker},
 //! #   Seat, SeatHandler, SeatState,
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
@@ -70,13 +69,14 @@
 //! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
 //! # }
 //! # impl TouchTarget<State> for Target {
-//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
-//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
-//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
-//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
-//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent) {}
+//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent) {}
+//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent) {}
+//! #   fn last_frame(&self, seat: &Seat<State>, data: &mut State) -> Option<FrameMarker> { unimplemented!() }
 //! # }
 //! # struct State {
 //! #     seat_state: SeatState<Self>,
@@ -95,7 +95,7 @@
 //!
 //! let state = CursorShapeManagerState::new::<State>(&display.handle());
 //!
-//! delegate_cursor_shape!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::Request as ShapeRequest;
@@ -108,13 +108,14 @@ use wayland_server::GlobalDispatch;
 use wayland_server::Resource;
 use wayland_server::WEnum;
 use wayland_server::Weak;
-use wayland_server::{backend::GlobalId, Dispatch, DisplayHandle};
+use wayland_server::{Dispatch, DisplayHandle, backend::GlobalId};
 
-use crate::input::pointer::{CursorIcon, CursorImageStatus};
 use crate::input::SeatHandler;
 use crate::input::WeakSeat;
+use crate::input::pointer::{CursorIcon, CursorImageStatus};
 use crate::utils::Serial;
-use crate::wayland::seat::{pointer::allow_setting_cursor, WaylandFocus};
+use crate::wayland::seat::{WaylandFocus, pointer::allow_setting_cursor};
+use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 use super::seat::PointerUserData;
 use super::tablet_manager::{TabletSeatHandler, TabletToolUserData};
@@ -129,12 +130,12 @@ impl CursorShapeManagerState {
     /// Register new [CursorShapeManager] global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<CursorShapeManager, ()>,
-        D: Dispatch<CursorShapeManager, ()>,
+        D: GlobalDispatch<CursorShapeManager, GlobalData>,
+        D: Dispatch<CursorShapeManager, GlobalData>,
         D: SeatHandler,
         D: 'static,
     {
-        let global = display.create_global::<D, CursorShapeManager, _>(2, ());
+        let global = display.create_global::<D, CursorShapeManager, _>(2, GlobalData);
         Self { global }
     }
 
@@ -144,38 +145,36 @@ impl CursorShapeManagerState {
     }
 }
 
-impl<D> GlobalDispatch<CursorShapeManager, (), D> for CursorShapeManagerState
+impl<D> GlobalDispatch2<CursorShapeManager, D> for GlobalData
 where
-    D: GlobalDispatch<CursorShapeManager, ()>,
-    D: Dispatch<CursorShapeManager, ()>,
+    D: Dispatch<CursorShapeManager, GlobalData>,
     D: SeatHandler,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: wayland_server::New<CursorShapeManager>,
-        _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<CursorShapeManager, (), D> for CursorShapeManagerState
+impl<D> Dispatch2<CursorShapeManager, D> for GlobalData
 where
-    D: Dispatch<CursorShapeManager, ()>,
     D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         _resource: &CursorShapeManager,
         request: <CursorShapeManager as wayland_server::Resource>::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -236,20 +235,18 @@ pub(crate) enum CursorShapeDeviceUserDataInner<D: SeatHandler> {
     Tablet(Weak<ZwpTabletToolV2>),
 }
 
-impl<D> Dispatch<CursorShapeDevice, CursorShapeDeviceUserData<D>, D> for CursorShapeManagerState
+impl<D> Dispatch2<CursorShapeDevice, D> for CursorShapeDeviceUserData<D>
 where
-    D: Dispatch<CursorShapeManager, ()>,
-    D: Dispatch<CursorShapeDevice, CursorShapeDeviceUserData<D>>,
     D: SeatHandler + TabletSeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         resource: &CursorShapeDevice,
         request: <CursorShapeDevice as wayland_server::Resource>::Request,
-        data: &CursorShapeDeviceUserData<D>,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -258,7 +255,7 @@ where
                 serial,
                 shape: WEnum::Value(shape),
             } => {
-                match &data.0 {
+                match &self.0 {
                     CursorShapeDeviceUserDataInner::Pointer { seat } => {
                         let Some(seat) = seat.upgrade() else {
                             return;
@@ -355,38 +352,4 @@ fn shape_to_cursor_icon(shape: Shape) -> CursorIcon {
         Shape::AllResize => CursorIcon::AllResize,
         _ => CursorIcon::Default,
     }
-}
-
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_cursor_shape {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::wp::cursor_shape::v1::server::{
-                        wp_cursor_shape_device_v1::WpCursorShapeDeviceV1,
-                        wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::cursor_shape::{CursorShapeDeviceUserData, CursorShapeManagerState},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpCursorShapeManagerV1: ()] => CursorShapeManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpCursorShapeManagerV1: ()] => CursorShapeManagerState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WpCursorShapeDeviceV1: CursorShapeDeviceUserData<$ty>] => CursorShapeManagerState
-            );
-        };
-    };
 }

@@ -2,23 +2,24 @@ use std::{cell::RefCell, fmt};
 
 use tracing::{instrument, trace, warn};
 use wayland_server::{
+    Client, DisplayHandle, Resource,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, Dispatch, DisplayHandle, Resource,
 };
 
 use super::WaylandFocus;
 use crate::{
     backend::input::{KeyState, Keycode},
     input::{
+        Seat, SeatHandler, WeakSeat,
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
-        Seat, SeatHandler, SeatState, WeakSeat,
     },
-    utils::{iter::new_locked_obj_iter_from_vec, HookId, Serial},
+    utils::{HookId, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
+        Dispatch2,
         compositor::{add_destruction_hook, remove_destruction_hook, with_states},
         input_method::InputMethodSeat,
         text_input::TextInputSeat,
@@ -116,24 +117,24 @@ impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch<WlKeyboard, KeyboardUserData<D>, D> for SeatState<D>
+impl<D> Dispatch2<WlKeyboard, D> for KeyboardUserData<D>
 where
-    D: 'static + Dispatch<WlKeyboard, KeyboardUserData<D>>,
+    D: 'static,
     D: SeatHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlKeyboard,
         _request: wl_keyboard::Request,
-        _data: &KeyboardUserData<D>,
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard, data: &KeyboardUserData<D>) {
-        if let Some(ref handle) = data.handle {
+    fn destroyed(&self, _state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard) {
+        if let Some(ref handle) = self.handle {
             handle
                 .arc
                 .known_kbds
@@ -238,7 +239,7 @@ pub(crate) fn enter_internal<D: SeatHandler + 'static>(
             .get_or_insert::<FocusDestroyHook<D>, _>(Default::default)
             .insert(seat, hook_id)
     }) {
-        remove_destruction_hook(surface, old_hook_id);
+        remove_destruction_hook(surface, &old_hook_id);
     }
 
     let text_input = seat.text_input();
@@ -272,7 +273,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 .get::<FocusDestroyHook<D>>()
                 .and_then(|hook| hook.remove(seat))
         }) {
-            remove_destruction_hook(self, hook_id);
+            remove_destruction_hook(self, &hook_id);
         };
 
         let text_input = seat.text_input();

@@ -13,8 +13,8 @@ use crate::backend::{
         gbm::{GbmBuffer, GbmConvertError},
     },
     drm::{
-        gbm::{framebuffer_from_bo, framebuffer_from_dmabuf, Error as GbmError, GbmFramebuffer},
         DrmDeviceFd,
+        gbm::{Error as GbmError, GbmFramebuffer, framebuffer_from_bo, framebuffer_from_dmabuf},
     },
 };
 

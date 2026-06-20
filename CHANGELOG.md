@@ -103,6 +103,16 @@ The following methods are no longer needed as Smithay does them automatically no
 
 You also no longer need to manually set `LayerSurfaceAttributes::initial_configure_sent`, Smithay handles it automatically.
 
+The `delegate_*!` macros have been replaced with a single `delegate_dispatch2!` macro, which implements dispatch in terms
+of new `Dipsatch2` and `GlobalDispatch2` traits. These will replace `Dispatch` and `GlobalDispatch` in a future version of
+`wayland_server`.
+
+The `SpaceElement::geometry` impl for `X11Surface` is no longer equivalent to its bbox.  For clients that set
+`_GTK_FRAME_EXTENTS`, the shadow extents are subtracted from the bbox to give the geometry.
+
+`X11Surface::geometry` has been renamed to `X11Surface::last_configure`. `X11Surface::geometry` now returns the bounding
+box minus the surface's frame extents.
+
 ### Additions
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
@@ -178,6 +188,19 @@ struct LockSurfaceConfigure {
     serial: Serial,
 }
 ```
+
+Added `Element::is_framebuffer_effect` and `RenderElement::capture_framebuffer` to better support render elements,
+that take the current framebuffers contents and modify them, e.g. blurring the backgrounds of windows.
+See the documentation for these functions for how to make use of them, but note, that they provide
+default implementations, which result in skipping the new functionality. As such any custom `RenderElements` wrappers
+(not using `crate::render_elements!`) need to be updated.
+
+`Space` has new functionality that allows for more fine-grained control over window stacking:
+
+- `map_element_above()`: maps a new element directly above an existing one.
+- `raise_element_above()`: same as above, but moves an already-mapped element.
+- `lower_element()`: lowers an element to the bottom of the stack, respecting its z-index group.
+- `relocate_element()`: moves an element to a new location in the space without changing the stacking order.
 
 ## 0.7.0
 

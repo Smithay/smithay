@@ -1,11 +1,11 @@
 use crate::{
     backend::renderer::{
+        Color32F, Frame, Renderer,
         element::{Element, Id, RenderElement},
         utils::{CommitCounter, DamageSet, OpaqueRegions},
-        Color32F, Frame, Renderer,
     },
     render_elements,
-    utils::{Buffer, Physical, Rectangle, Scale, Transform},
+    utils::{Buffer, Physical, Rectangle, Scale, Transform, user_data::UserDataMap},
 };
 
 render_elements! {
@@ -44,6 +44,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         frame.clear(
             Color32F::TRANSPARENT,
@@ -177,6 +178,7 @@ where
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         // We do not actually draw anything here
         Ok(())

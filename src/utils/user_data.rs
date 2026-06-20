@@ -252,7 +252,7 @@ mod list {
             if ptr.is_null() {
                 None
             } else {
-                Some(Box::from_raw(ptr))
+                Some(unsafe { Box::from_raw(ptr) })
             }
         }
 
@@ -280,7 +280,7 @@ mod list {
                     Ok(_) => return,
                     Err(head) => {
                         if !head.is_null() {
-                            return (*head).next.append_ptr(p);
+                            return unsafe { (*head).next.append_ptr(p) };
                         }
                     }
                 }

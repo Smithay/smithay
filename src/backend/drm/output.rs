@@ -8,28 +8,28 @@ use std::{
     sync::{Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError},
 };
 
-use drm::control::{self, connector, crtc, Mode};
+use drm::control::{self, Mode, connector, crtc};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 
 use crate::{
     backend::{
         allocator::{
+            Allocator,
             dmabuf::{AsDmabuf, Dmabuf},
             gbm::GbmDevice,
-            Allocator,
         },
-        renderer::{element::RenderElement, Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture},
+        renderer::{Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture, element::RenderElement},
     },
     output::OutputModeSource,
 };
 
 use super::{
+    DrmDevice, DrmError, Planes,
     compositor::{
         DrmCompositor, FrameError, FrameFlags, FrameResult, PrimaryPlaneElement, RenderFrameError,
         RenderFrameErrorType, RenderFrameResult,
     },
     exporter::ExportFramebuffer,
-    DrmDevice, DrmError, Planes,
 };
 
 type CompositorList<A, F, U, G> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>>;
@@ -1014,7 +1014,7 @@ where
         let (elements, clear_color) = self
             .render_elements
             .get(&compositor.crtc())
-            .map(|(ref elements, ref color)| (&**elements, color))
+            .map(|(elements, color)| (&**elements, color))
             .unwrap_or((&[], &Color32F::BLACK));
         let frame_result = compositor
             .render_frame(renderer, elements, *clear_color, FrameFlags::empty())

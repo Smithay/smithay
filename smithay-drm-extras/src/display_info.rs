@@ -14,7 +14,7 @@
 //! println!("Manufacturer name: {}", info.make());
 //! ```
 
-use drm::control::{connector, Device as ControlDevice};
+use drm::control::{Device as ControlDevice, connector};
 use libdisplay_info::info::Info;
 
 /// Try to read the [`Info`] from the connector EDID property

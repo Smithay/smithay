@@ -7,7 +7,6 @@
 //!     XWaylandShellHandler,
 //!     XWaylandShellState,
 //! };
-//! use smithay::delegate_xwayland_shell;
 //! use smithay::xwayland::xwm::{XwmId, X11Surface};
 //!
 //! # struct State;
@@ -26,7 +25,7 @@
 //! #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
 //! #             GestureHoldBeginEvent, GestureHoldEndEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
+//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget, FrameMarker},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
 //! #
@@ -67,13 +66,14 @@
 //! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
 //! # }
 //! # impl TouchTarget<State> for Target {
-//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
-//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
-//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
-//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
-//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
-//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent) {}
+//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, marker: FrameMarker) {}
+//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent) {}
+//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent) {}
+//! #   fn last_frame(&self, seat: &Seat<State>, data: &mut State) -> Option<FrameMarker> { unimplemented!() }
 //! # }
 //! # impl SeatHandler for State {
 //! #     type KeyboardFocus = Target;
@@ -121,7 +121,7 @@
 //! }
 //!
 //! // implement Dispatch for your state.
-//! delegate_xwayland_shell!(State);
+//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::collections::HashMap;
@@ -132,15 +132,15 @@ use wayland_protocols::xwayland::shell::v1::server::{
     xwayland_surface_v1::{self, XwaylandSurfaceV1},
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::GlobalId,
     protocol::wl_surface::{self, WlSurface},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{
     input::SeatHandler,
-    wayland::compositor,
-    xwayland::{xwm::XwmId, X11Surface, XWaylandClientData, XwmHandler},
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor},
+    xwayland::{X11Surface, XWaylandClientData, XwmHandler, xwm::XwmId},
 };
 
 /// The role for an xwayland-associated surface.
@@ -160,12 +160,12 @@ impl XWaylandShellState {
     /// able to bind it.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<XwaylandShellV1, ()>,
-        D: Dispatch<XwaylandShellV1, ()>,
+        D: GlobalDispatch<XwaylandShellV1, GlobalData>,
+        D: Dispatch<XwaylandShellV1, GlobalData>,
         D: Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>,
         D: 'static,
     {
-        let global = display.create_global::<D, XwaylandShellV1, _>(VERSION, ());
+        let global = display.create_global::<D, XwaylandShellV1, _>(VERSION, GlobalData);
         Self {
             global,
             by_serial: HashMap::new(),
@@ -219,41 +219,39 @@ impl compositor::Cacheable for XWaylandShellCachedState {
     }
 }
 
-impl<D> GlobalDispatch<XwaylandShellV1, (), D> for XWaylandShellState
+impl<D> GlobalDispatch2<XwaylandShellV1, D> for GlobalData
 where
-    D: GlobalDispatch<XwaylandShellV1, ()>,
-    D: Dispatch<XwaylandShellV1, ()>,
+    D: Dispatch<XwaylandShellV1, GlobalData>,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &Client,
         resource: New<XwaylandShellV1>,
-        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 
-    fn can_view(client: Client, _global_data: &()) -> bool {
+    fn can_view(&self, client: &Client) -> bool {
         client.get_data::<XWaylandClientData>().is_some()
     }
 }
 
-impl<D> Dispatch<XwaylandShellV1, (), D> for XWaylandShellState
+impl<D> Dispatch2<XwaylandShellV1, D> for GlobalData
 where
-    D: Dispatch<XwaylandShellV1, ()>,
     D: Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>,
     D: XWaylandShellHandler + XwmHandler + SeatHandler,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         resource: &XwaylandShellV1,
         request: <XwaylandShellV1 as Resource>::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -277,19 +275,18 @@ where
     }
 }
 
-impl<D> Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData, D> for XWaylandShellState
+impl<D> Dispatch2<XwaylandSurfaceV1, D> for XWaylandSurfaceUserData
 where
-    D: Dispatch<XwaylandSurfaceV1, XWaylandSurfaceUserData>,
     D: XWaylandShellHandler,
     D: 'static,
     D: XwmHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &XwaylandSurfaceV1,
         request: <XwaylandSurfaceV1 as Resource>::Request,
-        data: &XWaylandSurfaceUserData,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -300,7 +297,7 @@ where
                 let serial = u64::from(serial_lo) | (u64::from(serial_hi) << 32);
 
                 // Set the serial on the pending state of surface
-                compositor::with_states(&data.wl_surface, |states| {
+                compositor::with_states(&self.wl_surface, |states| {
                     states
                         .cached_state
                         .get::<XWaylandShellCachedState>()
@@ -367,41 +364,14 @@ fn serial_commit_hook<D: XWaylandShellHandler + XwmHandler + SeatHandler + 'stat
                     XWaylandShellHandler::xwayland_shell_state(state)
                         .by_serial
                         .insert(serial, surface.clone());
+
+                    compositor::add_destruction_hook::<D, _>(surface, move |state, _| {
+                        XWaylandShellHandler::xwayland_shell_state(state)
+                            .by_serial
+                            .remove(&serial);
+                    });
                 }
             }
         }
     }
-}
-
-/// Macro to delegate implementation of the xwayland keyboard grab protocol
-#[macro_export]
-macro_rules! delegate_xwayland_shell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::xwayland::shell::v1::server::{
-                        xwayland_shell_v1::XwaylandShellV1, xwayland_surface_v1::XwaylandSurfaceV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::xwayland_shell::{XWaylandShellState, XWaylandSurfaceUserData},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XwaylandShellV1: ()] => XWaylandShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XwaylandShellV1: ()] => XWaylandShellState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [XwaylandSurfaceV1: XWaylandSurfaceUserData] => XWaylandShellState
-            );
-        };
-    };
 }

@@ -40,7 +40,7 @@ use x11rb::{
     },
 };
 
-use crate::backend::allocator::{dmabuf::Dmabuf, Buffer};
+use crate::backend::allocator::{Buffer, dmabuf::Dmabuf};
 
 // Shm can be easily supported in the future using, xcb_shm_create_pixmap.
 

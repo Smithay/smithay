@@ -27,6 +27,7 @@
 //! # Example
 //!
 //! ```no_run
+//! #  use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! #  use smithay::wayland::xwayland_shell::{XWaylandShellHandler, XWaylandShellState};
 //! #  use smithay::wayland::selection::{SelectionTarget, SelectionHandler, data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler}};
 //! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
@@ -52,6 +53,12 @@
 //! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
+//! #
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {}
+//! # }
 //! #
 //! # type Target = WlSurface;
 //! # impl SeatHandler for State {
@@ -96,6 +103,7 @@
 //!     &dh,
 //!     None,
 //!     std::iter::empty::<(String, String)>(),
+//!     std::iter::empty::<String>(),
 //!     true,
 //!     Stdio::null(),
 //!     Stdio::null(),
@@ -115,7 +123,7 @@
 //!             client.clone(),
 //!         )
 //!         .expect("Failed to attach X11 Window Manager");
-//!         
+//!
 //!         // store the WM somewhere
 //!     }
 //!     XWaylandEvent::Error => eprintln!("XWayland failed to start!"),
@@ -125,20 +133,21 @@
 
 use crate::{
     input::{
-        dnd::{DndFocus, DndGrabHandler},
         SeatHandler,
+        dnd::{DndFocus, DndGrabHandler},
     },
     output::Output,
-    utils::{x11rb::X11Source, Client, Logical, Point, Rectangle, Size},
+    utils::{Client, Logical, Point, Rectangle, Size, x11rb::X11Source},
     wayland::{
         selection::SelectionTarget,
         xwayland_shell::{self, XWaylandShellHandler},
     },
 };
 use atomic_float::AtomicF64;
-use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction};
+use calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic, ping};
 use rustix::fs::OFlags;
 use std::{
+    cell::RefCell,
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
     ops::Deref,
@@ -146,7 +155,10 @@ use std::{
         io::{AsFd, OwnedFd},
         net::UnixStream,
     },
-    sync::{atomic::Ordering, Arc, Weak},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tracing::{debug, debug_span, info, trace, warn};
 use wayland_server::{DisplayHandle, Resource};
@@ -156,21 +168,22 @@ use x11rb::{
     connection::Connection as _,
     errors::{ReplyError, ReplyOrIdError},
     protocol::{
+        Event,
         composite::{ConnectionExt as _, Redirect},
         randr::{ConnectionExt as _, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
+        sync::{ConnectionExt as _, Counter},
         xfixes::ConnectionExt as _,
         xproto::{
-            AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux,
-            ConnectionExt, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper,
-            GcontextWrapper, ImageFormat, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
-            StackMode, WindowClass, CONFIGURE_NOTIFY_EVENT,
+            AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
+            ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
+            CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat, InputFocus,
+            NotifyDetail, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen, StackMode,
+            Visualid, WindowClass,
         },
-        Event,
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
     wrapper::ConnectionExt as _,
-    COPY_DEPTH_FROM_PARENT,
 };
 
 mod dnd;
@@ -212,6 +225,10 @@ mod atoms {
             _NET_WM_PID,
             _NET_WM_WINDOW_OPACITY,
             _NET_WM_WINDOW_TYPE,
+            _NET_WM_WINDOW_TYPE_COMBO,
+            _NET_WM_WINDOW_TYPE_DESKTOP,
+            _NET_WM_WINDOW_TYPE_DND,
+            _NET_WM_WINDOW_TYPE_DOCK,
             _NET_WM_WINDOW_TYPE_DROPDOWN_MENU,
             _NET_WM_WINDOW_TYPE_DIALOG,
             _NET_WM_WINDOW_TYPE_MENU,
@@ -223,8 +240,10 @@ mod atoms {
             _NET_WM_WINDOW_TYPE_TOOLTIP,
             _NET_WM_WINDOW_TYPE_UTILITY,
             _NET_WM_STATE_MODAL,
+            _NET_WM_OPAQUE_REGION,
             _MOTIF_WM_HINTS,
             _NET_STARTUP_ID,
+            _GTK_FRAME_EXTENTS,
 
             // server -> client
             WM_S0,
@@ -240,9 +259,20 @@ mod atoms {
             _NET_WM_STATE_MAXIMIZED_HORZ,
             _NET_WM_STATE_HIDDEN,
             _NET_WM_STATE_FULLSCREEN,
+            _NET_WM_STATE_DEMANDS_ATTENTION,
             _NET_WM_STATE_FOCUSED,
+            _NET_WM_STATE_ABOVE,
+            _NET_WM_STATE_BELOW,
+            _NET_WM_STATE_SHADED,
+            _NET_WM_STATE_SKIP_TASKBAR,
+            _NET_WM_STATE_SKIP_PAGER,
+            _NET_WM_STATE_STICKY,
+            _NET_WM_SYNC_REQUEST,
+            _NET_WM_SYNC_REQUEST_COUNTER,
+            _NET_SHOWING_DESKTOP,
             _NET_SUPPORTING_WM_CHECK,
             _XSETTINGS_SETTINGS,
+            _XWAYLAND_ALLOW_COMMITS,
 
             // selection
             _WL_SELECTION,
@@ -278,6 +308,9 @@ pub use self::atoms::Atoms;
 use super::XWaylandClientData;
 
 crate::utils::ids::id_gen!(xwm_id);
+
+const XSYNC_REQUIRED_MAJOR_VERSION: u8 = 3;
+const XSYNC_REQUIRED_MINOR_VERSION: u8 = 1;
 
 /// Id of an X11 WM
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -400,12 +433,63 @@ pub trait XwmHandler {
     fn unfullscreen_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
+    /// Window requests to be set as a modal dialog (see [`X11Surface::is_modal`]).
+    fn modal_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to no longer be a modal dialog.
+    fn unmodal_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
     /// Window requests to be minimized.
     fn minimize_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
     /// Window requests to be unminimized.
     fn unminimize_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+
+    /// Window requests to be placed above other windows.
+    fn above_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to no longer be placed above other windows.
+    fn unabove_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be placed below other windows.
+    fn below_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to no longer be placed below other windows.
+    fn unbelow_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be made sticky.
+    ///
+    /// This is usually used to indicate that the window should be shown on all workspaces.
+    fn stick_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be unstuck.
+    fn unstick_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be shaded.
+    fn shade_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window requests to be unshaded.
+    fn unshade_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window indicates it requires the user's attention.
+    fn demands_attention_request(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+    /// Window no longer indicates it requires the user's attention.
+    fn undemands_attention_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
 
@@ -433,6 +517,27 @@ pub trait XwmHandler {
         let _ = (xwm, window, timestamp, currently_active_window);
     }
 
+    /// Window has responded to a `_NET_WM_PING` request.
+    fn ping_acked(&mut self, xwm: XwmId, window: X11Surface, timestamp: u32) {
+        let _ = (xwm, window, timestamp);
+    }
+
+    /// A client has acknowledged a `_NET_WM_SYNC_REQUEST` request.
+    ///
+    /// This is informational only; a compositor need not implement this or take any particular
+    /// action.
+    fn sync_request_acked(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+
+    /// A client's `_NET_WM_SYNC_REQUEST` has timed out.
+    ///
+    /// This is informational only; a compositor need not implement this or take any particular
+    /// action.
+    fn sync_request_timeout(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
+
     /// Window requests access to the given selection.
     fn allow_selection_access(&mut self, xwm: XwmId, selection: SelectionTarget) -> bool {
         let _ = (xwm, selection);
@@ -442,7 +547,9 @@ pub trait XwmHandler {
     /// The given selection is being read by an X client and needs to be written to the provided file descriptor
     fn send_selection(&mut self, xwm: XwmId, selection: SelectionTarget, mime_type: String, fd: OwnedFd) {
         let _ = (xwm, selection, mime_type, fd);
-        panic!("`allow_selection_access` returned true without `send_selection` implementation to handle transfers.");
+        panic!(
+            "`allow_selection_access` returned true without `send_selection` implementation to handle transfers."
+        );
     }
 
     /// A new selection was set by an X client with provided mime_types
@@ -460,6 +567,16 @@ pub trait XwmHandler {
         let _ = (xwm, output_name);
     }
 
+    /// Application requests enabling "show desktop" mode
+    fn show_desktop_request(&mut self, xwm: XwmId) {
+        let _ = xwm;
+    }
+
+    /// Application requests disabling "show desktop" mode
+    fn unshow_desktop_request(&mut self, xwm: XwmId) {
+        let _ = xwm;
+    }
+
     /// WM has lost connection to X server
     fn disconnected(&mut self, _xwm: XwmId) {}
 }
@@ -473,11 +590,13 @@ pub struct X11Wm {
     screen: Screen,
     wm_window: OwnedX11Window,
     atoms: Atoms,
+    servertime_counter: Option<Counter>,
     xsettings: XSettings,
     randr_primary: u32,
 
     pub(crate) unpaired_surfaces: HashMap<u64, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
+    colormaps: RefCell<HashMap<Visualid, Colormap>>,
 
     // selections
     _xfixes_data: QueryExtensionReply,
@@ -491,12 +610,62 @@ pub struct X11Wm {
     // bottom -> top
     client_list_stacking: Vec<X11Window>,
 
+    is_showing_desktop: bool,
+
+    pub(super) focus_release: FocusReleaseHandle,
+
     span: tracing::Span,
 }
 
 impl Drop for X11Wm {
     fn drop(&mut self) {
         xwm_id::remove(self.id.0);
+
+        // Break reference cycle caused by deferred_sync hook
+        for window in std::mem::take(&mut self.windows) {
+            window.handle_destroyed();
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct FocusReleaseHandle {
+    pending: Arc<AtomicBool>,
+    signal: ping::Ping,
+    conn: Weak<RustConnection>,
+}
+
+impl FocusReleaseHandle {
+    fn new(conn: &Arc<RustConnection>) -> std::io::Result<(Self, ping::PingSource)> {
+        let (signal, source) = ping::make_ping()?;
+        Ok((
+            Self {
+                pending: Arc::new(AtomicBool::new(false)),
+                signal,
+                conn: Arc::downgrade(conn),
+            },
+            source,
+        ))
+    }
+
+    fn schedule(&self) {
+        self.pending.store(true, Ordering::Release);
+        self.signal.ping();
+    }
+
+    fn cancel(&self) {
+        self.pending.store(false, Ordering::Release);
+    }
+
+    fn dispatch(&self) {
+        if !self.pending.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let Some(conn) = self.conn.upgrade() else { return };
+        if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
+            warn!("Unable to release X11 keyboard focus: {}", err);
+        }
+        let _ = conn.flush();
     }
 }
 
@@ -654,6 +823,24 @@ impl X11Wm {
         let screen = conn.setup().roots[0].clone();
         let randr_primary = conn.randr_get_output_primary(screen.root)?.reply()?.output;
 
+        let sync_init = conn
+            .sync_initialize(XSYNC_REQUIRED_MAJOR_VERSION, XSYNC_REQUIRED_MINOR_VERSION)?
+            .reply_unchecked();
+        let sync_supported = sync_init.ok().flatten().is_some();
+        let servertime_counter = if sync_supported {
+            conn.sync_list_system_counters()?
+                .reply_unchecked()?
+                .and_then(|reply| {
+                    reply
+                        .counters
+                        .into_iter()
+                        .find(|counter| counter.name == b"SERVERTIME" && counter.counter != x11rb::NONE)
+                })
+                .map(|counter| counter.counter)
+        } else {
+            None
+        };
+
         {
             let font = FontWrapper::open_font(&conn, "cursor".as_bytes())?;
             let cursor = CursorWrapper::create_glyph_cursor(
@@ -708,24 +895,44 @@ impl X11Wm {
         conn.composite_redirect_subwindows(screen.root, Redirect::MANUAL)?;
 
         // Set some EWMH properties
+        let net_supported_base = [
+            atoms._NET_WM_STATE,
+            atoms._NET_WM_STATE_MAXIMIZED_HORZ,
+            atoms._NET_WM_STATE_MAXIMIZED_VERT,
+            atoms._NET_WM_STATE_HIDDEN,
+            atoms._NET_WM_STATE_FULLSCREEN,
+            atoms._NET_WM_STATE_MODAL,
+            atoms._NET_WM_STATE_FOCUSED,
+            atoms._NET_WM_STATE_ABOVE,
+            atoms._NET_WM_STATE_BELOW,
+            atoms._NET_WM_STATE_SHADED,
+            atoms._NET_WM_STATE_SKIP_TASKBAR,
+            atoms._NET_WM_STATE_SKIP_PAGER,
+            atoms._NET_WM_STATE_STICKY,
+            atoms._NET_WM_STATE_DEMANDS_ATTENTION,
+            atoms._NET_ACTIVE_WINDOW,
+            atoms._NET_WM_MOVERESIZE,
+            atoms._NET_CLIENT_LIST,
+            atoms._NET_CLIENT_LIST_STACKING,
+            atoms._NET_SHOWING_DESKTOP,
+            atoms._NET_WM_OPAQUE_REGION,
+            atoms._NET_WM_PING,
+            atoms._GTK_FRAME_EXTENTS,
+        ];
+        let net_supported = if sync_supported {
+            net_supported_base
+                .into_iter()
+                .chain([atoms._NET_WM_SYNC_REQUEST, atoms._NET_WM_SYNC_REQUEST_COUNTER])
+                .collect::<Vec<_>>()
+        } else {
+            net_supported_base.to_vec()
+        };
         conn.change_property32(
             PropMode::REPLACE,
             screen.root,
             atoms._NET_SUPPORTED,
             AtomEnum::ATOM,
-            &[
-                atoms._NET_WM_STATE,
-                atoms._NET_WM_STATE_MAXIMIZED_HORZ,
-                atoms._NET_WM_STATE_MAXIMIZED_VERT,
-                atoms._NET_WM_STATE_HIDDEN,
-                atoms._NET_WM_STATE_FULLSCREEN,
-                atoms._NET_WM_STATE_MODAL,
-                atoms._NET_WM_STATE_FOCUSED,
-                atoms._NET_ACTIVE_WINDOW,
-                atoms._NET_WM_MOVERESIZE,
-                atoms._NET_CLIENT_LIST,
-                atoms._NET_CLIENT_LIST_STACKING,
-            ],
+            &net_supported,
         )?;
         conn.change_property32(
             PropMode::REPLACE,
@@ -746,6 +953,13 @@ impl X11Wm {
             screen.root,
             atoms._NET_ACTIVE_WINDOW,
             AtomEnum::WINDOW,
+            &[0],
+        )?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            screen.root,
+            atoms._NET_SHOWING_DESKTOP,
+            AtomEnum::CARDINAL,
             &[0],
         )?;
         conn.change_property32(
@@ -797,6 +1011,12 @@ impl X11Wm {
         let dnd = XWmDnd::new(&conn, &screen, &atoms)?;
         let wm_window = OwnedX11Window::new(win, &conn);
 
+        let (focus_release, focus_release_source) = FocusReleaseHandle::new(&conn)?;
+        {
+            let release = focus_release.clone();
+            handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
+        }
+
         drop(_guard);
         let wm = Self {
             id,
@@ -804,6 +1024,7 @@ impl X11Wm {
             client_scale,
             screen,
             atoms,
+            servertime_counter,
             xsettings,
             randr_primary,
             wm_window,
@@ -813,9 +1034,12 @@ impl X11Wm {
             dnd,
             unpaired_surfaces: Default::default(),
             sequences_to_ignore: Default::default(),
+            colormaps: Default::default(),
             windows: Vec::new(),
             client_list: Vec::new(),
             client_list_stacking: Vec::new(),
+            is_showing_desktop: false,
+            focus_release,
             span,
         };
 
@@ -837,6 +1061,13 @@ impl X11Wm {
     /// Id of this X11 WM
     pub fn id(&self) -> XwmId {
         self.id
+    }
+
+    /// Whether or not the XSYNC extension is present
+    ///
+    /// This can be used to tell if the `_NET_WM_SYNC_REQUEST` protocol can be used.
+    pub fn sync_supported(&self) -> bool {
+        self.servertime_counter.is_some()
     }
 
     /// Raises a window in the internal X11 state
@@ -981,7 +1212,7 @@ impl X11Wm {
     ///
     /// So if windows `A -> C` are given in order and the internal stack is `C -> B -> A`,
     /// no reordering will occur.
-    ///  
+    ///
     /// See [`X11Wm::update_stacking_order_downwards`] for a variant of this algorithm,
     /// which works from the top down or [`X11Wm::raise_window`] for an easier but
     /// much more limited way to reorder.
@@ -1216,6 +1447,49 @@ impl X11Wm {
 
         Err(PrimaryOutputError::OutputUnknown)
     }
+
+    /// Sets the state of the "showing desktop" flag
+    ///
+    /// This updates the `_NET_SHOWING_DESKTOP` property on the root window to reflect whether or
+    /// not the compositor is in "show desktop" mode.  This mode is usually used to temporarily
+    /// hide all windows so the user can see the desktop.
+    ///
+    /// Note that this function does not show or hide any windows; the compositor is expected to
+    /// manage window state itself.
+    pub fn set_showing_desktop(&mut self, is_showing_desktop: bool) -> Result<(), ReplyOrIdError> {
+        if self.is_showing_desktop != is_showing_desktop {
+            let value = if is_showing_desktop { 1 } else { 0 };
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.screen.root,
+                self.atoms._NET_SHOWING_DESKTOP,
+                AtomEnum::CARDINAL,
+                &[value],
+            )?;
+            self.conn.flush()?;
+            self.is_showing_desktop = is_showing_desktop;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the state of the "showing desktop" flag
+    pub fn is_showing_desktop(&self) -> bool {
+        self.is_showing_desktop
+    }
+
+    fn colormap_for_visual(&self, visual: Visualid) -> Result<Colormap, ReplyOrIdError> {
+        if let Some(colormap) = self.colormaps.borrow().get(&visual) {
+            Ok(*colormap)
+        } else {
+            let colormap = self.conn.generate_id()?;
+            self.conn
+                .create_colormap(ColormapAlloc::NONE, colormap, self.screen.root, visual)?
+                .check()?;
+            self.colormaps.borrow_mut().insert(visual, colormap);
+            Ok(colormap)
+        }
+    }
 }
 
 fn handle_event<D>(
@@ -1275,9 +1549,15 @@ where
                 return Ok(());
             }
 
+            let attrs = conn.get_window_attributes(n.window)?.reply()?;
+            if attrs.class != WindowClass::INPUT_OUTPUT {
+                return Ok(());
+            }
+
             xwm.conn.change_window_attributes(
                 n.window,
-                &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+                &ChangeWindowAttributesAux::new()
+                    .event_mask(EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE),
             )?;
             xwm.conn.flush()?;
 
@@ -1300,6 +1580,7 @@ where
                 n.override_redirect,
                 Arc::downgrade(&conn),
                 xwm.atoms,
+                xwm.servertime_counter,
                 geometry,
                 xwm.dnd.xdnd_active.clone(),
             );
@@ -1317,14 +1598,23 @@ where
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
                 if surface.state.lock().unwrap().mapped_onto.is_none() {
                     // we reparent windows, because a lot of stuff expects, that we do
-                    let geo = conn.get_geometry(r.window)?.reply()?;
+                    let geo_cookie = conn.get_geometry(r.window)?;
+                    let attrs_cookie = conn.get_window_attributes(r.window)?;
+                    let geo = geo_cookie.reply()?;
+                    let attrs = attrs_cookie.reply()?;
+                    let colormap = xwm.colormap_for_visual(attrs.visual)?;
+
                     let win = r.window;
                     let frame_win = conn.generate_id()?;
-                    let win_aux = CreateWindowAux::new().event_mask(
-                        EventMask::SUBSTRUCTURE_NOTIFY
-                            | EventMask::SUBSTRUCTURE_REDIRECT
-                            | EventMask::PROPERTY_CHANGE,
-                    );
+                    let win_aux = CreateWindowAux::new()
+                        .event_mask(
+                            EventMask::SUBSTRUCTURE_NOTIFY
+                                | EventMask::SUBSTRUCTURE_REDIRECT
+                                | EventMask::PROPERTY_CHANGE,
+                        )
+                        .colormap(colormap)
+                        .background_pixmap(x11rb::NONE)
+                        .border_pixel(0);
 
                     {
                         let _guard = scopeguard::guard((), |_| {
@@ -1333,7 +1623,7 @@ where
 
                         conn.grab_server()?;
                         let cookie1 = conn.create_window(
-                            COPY_DEPTH_FROM_PARENT,
+                            geo.depth,
                             frame_win,
                             xwm.screen.root,
                             geo.x,
@@ -1342,7 +1632,7 @@ where
                             geo.height,
                             0,
                             WindowClass::INPUT_OUTPUT,
-                            x11rb::COPY_FROM_PARENT,
+                            attrs.visual,
                             &win_aux,
                         )?;
                         let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
@@ -1366,6 +1656,21 @@ where
                     // In that case, we set the X11Surface's override-redirect state to false here
                     // to prevent `set_mapped` and `configure` from failing.
                     surface.state.lock().unwrap().override_redirect = false;
+
+                    // Read initial _NET_WM_STATE set by the client before mapping.
+                    // Per EWMH spec, clients may set _NET_WM_STATE prior to mapping
+                    // and the window manager must respect it.
+                    if let Ok(reply) = conn
+                        .get_property(false, win, xwm.atoms._NET_WM_STATE, AtomEnum::ATOM, 0, 1024)?
+                        .reply()
+                    {
+                        if let Some(states) = reply.value32() {
+                            let mut state_lock = surface.state.lock().unwrap();
+                            for atom in states {
+                                state_lock.net_state.insert(atom);
+                            }
+                        }
+                    }
 
                     drop(_guard);
                     state.map_window_request(xwm_id, surface);
@@ -1465,8 +1770,8 @@ where
                 );
                 // Synthetic event
                 surface.configure(None).map_err(|err| match err {
-                    X11SurfaceError::Connection(err) => err,
                     X11SurfaceError::UnsupportedForOverrideRedirect => unreachable!(),
+                    err => err,
                 })?;
             }
         }
@@ -1501,7 +1806,7 @@ where
                 );
             } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
                 if surface.is_override_redirect() {
-                    surface.state.lock().unwrap().geometry = geometry;
+                    surface.state.lock().unwrap().last_configure = geometry;
                     drop(_guard);
                     state.configure_notify(
                         xwm_id,
@@ -1544,8 +1849,8 @@ where
                         conn.reparent_window(
                             n.window,
                             xwm.screen.root,
-                            state.geometry.loc.x as i16,
-                            state.geometry.loc.y as i16,
+                            state.last_configure.loc.x as i16,
+                            state.last_configure.loc.y as i16,
                         )?;
                         if let Some(frame) = state.mapped_onto.take() {
                             conn.destroy_window(frame)?;
@@ -1566,7 +1871,7 @@ where
 
             if let Some(pos) = xwm.windows.iter().position(|x| x.window_id() == n.window) {
                 let surface = xwm.windows.remove(pos);
-                surface.state.lock().unwrap().alive = false;
+                surface.handle_destroyed();
                 drop(_guard);
                 state.destroyed_window(xwm_id, surface);
             }
@@ -1685,10 +1990,10 @@ where
                                     if let Some(transfer) = selection.incoming.get_mut(&incoming_window) {
                                         match write_selection_callback(fd.as_fd(), conn, atoms, transfer) {
                                             Ok(IncomingAction::WaitForWritable) => {
-                                                return Ok(PostAction::Continue)
+                                                return Ok(PostAction::Continue);
                                             }
                                             Ok(IncomingAction::WaitForProperty) if !transfer.incr_done => {
-                                                return Ok(PostAction::Disable)
+                                                return Ok(PostAction::Disable);
                                             }
                                             Ok(_) | Err(_) => {
                                                 selection
@@ -1994,6 +2299,10 @@ where
                         }
                     }
                 }
+            } else if n.atom == xwm.atoms._NET_WM_SYNC_REQUEST_COUNTER {
+                if let Some(surface) = xwm.windows.iter().find(|w| w.window_id() == n.window).cloned() {
+                    surface.init_net_wm_sync_request()?;
+                }
             }
 
             if n.state == Property::DELETE {
@@ -2054,22 +2363,26 @@ where
             }
         }
         Event::FocusIn(n) => {
-            conn.change_property32(
-                PropMode::REPLACE,
-                xwm.screen.root,
-                xwm.atoms._NET_ACTIVE_WINDOW,
-                AtomEnum::WINDOW,
-                &[n.event],
-            )?;
+            if xwm.windows.iter().any(|x| x.window_id() == n.event) {
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    xwm.screen.root,
+                    xwm.atoms._NET_ACTIVE_WINDOW,
+                    AtomEnum::WINDOW,
+                    &[n.event],
+                )?;
+            }
         }
-        Event::FocusOut(n) => {
-            conn.change_property32(
-                PropMode::REPLACE,
-                xwm.screen.root,
-                xwm.atoms._NET_ACTIVE_WINDOW,
-                AtomEnum::WINDOW,
-                &[n.event],
-            )?;
+        Event::FocusOut(n) if n.detail == NotifyDetail::NONE => {
+            if xwm.windows.iter().any(|x| x.window_id() == n.event) {
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    xwm.screen.root,
+                    xwm.atoms._NET_ACTIVE_WINDOW,
+                    AtomEnum::WINDOW,
+                    &[x11rb::NONE],
+                )?;
+            }
         }
         Event::ClientMessage(msg) => {
             if let Some(reply) = conn.get_atom_name(msg.type_)?.reply_unchecked()? {
@@ -2220,6 +2533,80 @@ where
                                     _ => {}
                                 }
                             }
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_MODAL) => match data[0] {
+                                0 => state.unmodal_request(xwm_id, surface),
+                                1 => state.modal_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_modal() {
+                                        state.unmodal_request(xwm_id, surface)
+                                    } else {
+                                        state.modal_request(xwm_id, surface)
+                                    }
+                                }
+                                _ => {}
+                            },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_ABOVE) => match data[0] {
+                                0 => state.unabove_request(xwm_id, surface),
+                                1 => state.above_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_above() {
+                                        state.unabove_request(xwm_id, surface)
+                                    } else {
+                                        state.above_request(xwm_id, surface)
+                                    }
+                                }
+                                _ => {}
+                            },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_BELOW) => match data[0] {
+                                0 => state.unbelow_request(xwm_id, surface),
+                                1 => state.below_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_below() {
+                                        state.unbelow_request(xwm_id, surface)
+                                    } else {
+                                        state.below_request(xwm_id, surface)
+                                    }
+                                }
+                                _ => {}
+                            },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_STICKY) => match data[0] {
+                                0 => state.unstick_request(xwm_id, surface),
+                                1 => state.stick_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_sticky() {
+                                        state.unstick_request(xwm_id, surface)
+                                    } else {
+                                        state.stick_request(xwm_id, surface)
+                                    }
+                                }
+                                _ => {}
+                            },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_SHADED) => match data[0] {
+                                0 => state.unshade_request(xwm_id, surface),
+                                1 => state.shade_request(xwm_id, surface),
+                                2 => {
+                                    if surface.is_shaded() {
+                                        state.unshade_request(xwm_id, surface)
+                                    } else {
+                                        state.shade_request(xwm_id, surface)
+                                    }
+                                }
+                                _ => {}
+                            },
+                            actions if actions.contains(&xwm.atoms._NET_WM_STATE_DEMANDS_ATTENTION) => {
+                                match data[0] {
+                                    0 => state.undemands_attention_request(xwm_id, surface),
+                                    1 => state.demands_attention_request(xwm_id, surface),
+                                    2 => {
+                                        if surface.demands_attention() {
+                                            state.undemands_attention_request(xwm_id, surface)
+                                        } else {
+                                            state.demands_attention_request(xwm_id, surface)
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -2256,6 +2643,58 @@ where
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
                         drop(_guard);
                         state.active_window_request(xwm_id, surface, timestamp, currently_active_window);
+                    }
+                }
+                x if x == xwm.atoms.WM_PROTOCOLS => {
+                    let data = msg.data.as_data32();
+
+                    match data[0] {
+                        x if x == xwm.atoms._NET_WM_PING => {
+                            let timestamp = data[1];
+                            // Some older clients will not faithfully copy the data back to us, and
+                            // will only set the timestamp, so `data[2]` may be zero or unreliable.
+                            let window_id = data[2];
+
+                            let surface = (window_id != x11rb::NONE)
+                                .then(|| xwm.windows.iter().find(|x| x.window_id() == window_id))
+                                .flatten()
+                                .filter(|surface| {
+                                    surface.state.lock().unwrap().pending_ping_timestamp == Some(timestamp)
+                                })
+                                .or_else(|| {
+                                    xwm.windows.iter().find(|x| {
+                                        x.state.lock().unwrap().pending_ping_timestamp == Some(timestamp)
+                                    })
+                                })
+                                .cloned();
+
+                            if let Some(surface) = surface {
+                                surface.state.lock().unwrap().pending_ping_timestamp = None;
+                                drop(_guard);
+                                state.ping_acked(xwm_id, surface.clone(), timestamp);
+                            }
+                        }
+
+                        _ => {
+                            debug!(
+                                "Unhandled WM_PROTOCOLS client msg of type {:?}",
+                                String::from_utf8(
+                                    conn.get_atom_name(data[0])?.reply_unchecked()?.unwrap().name
+                                )
+                                .ok()
+                            )
+                        }
+                    }
+                }
+                x if x == xwm.atoms._NET_SHOWING_DESKTOP => {
+                    let data = msg.data.as_data32();
+                    let show_desktop = data[0];
+                    if show_desktop == 1 && !xwm.is_showing_desktop {
+                        drop(_guard);
+                        state.show_desktop_request(xwm_id);
+                    } else if show_desktop == 0 && xwm.is_showing_desktop {
+                        drop(_guard);
+                        state.unshow_desktop_request(xwm_id);
                     }
                 }
                 // Dnd events incoming
@@ -2313,6 +2752,30 @@ where
             xwm.screen.height_in_millimeters = n.mheight;
 
             xwm.dnd.update_screen(&xwm.screen)?;
+        }
+        Event::SyncAlarmNotify(n) => {
+            if let Some(surface) = xwm
+                .windows
+                .iter()
+                .find(|x| {
+                    let state = x.state.lock().unwrap();
+                    state.sync_alarm == Some(n.alarm) || state.sync_timeout_alarm == Some(n.alarm)
+                })
+                .cloned()
+            {
+                let is_sync_ack = surface.state.lock().unwrap().sync_alarm == Some(n.alarm);
+
+                if is_sync_ack {
+                    if surface.handle_sync_alarm(n.counter_value) {
+                        drop(_guard);
+                        state.sync_request_acked(xwm_id, surface);
+                    }
+                } else {
+                    surface.handle_sync_timeout();
+                    drop(_guard);
+                    state.sync_request_timeout(xwm_id, surface);
+                }
+            }
         }
         Event::Error(err) => {
             info!(?err, "Got X11 Error");

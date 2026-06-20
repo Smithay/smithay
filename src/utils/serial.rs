@@ -7,17 +7,8 @@ pub static SERIAL_COUNTER: SerialCounter = SerialCounter::new();
 
 /// A serial type, whose comparison takes into account the wrapping-around behavior of the
 /// underlying counter.
-#[derive(Debug, Copy, Clone)]
+#[derive(Hash, PartialEq, Eq, Debug, Copy, Clone)]
 pub struct Serial(pub(crate) u32);
-
-impl PartialEq for Serial {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Eq for Serial {}
 
 impl PartialOrd for Serial {
     #[inline]

@@ -1,9 +1,9 @@
+use drm::control::Device as ControlDevice;
 use drm::control::atomic::AtomicModeReq;
 use drm::control::connector::Interface;
 use drm::control::property::ValueType;
-use drm::control::Device as ControlDevice;
 use drm::control::{
-    connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType,
+    AtomicCommitFlags, Mode, PlaneType, connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property,
 };
 
 #[cfg(debug_assertions)]
@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::os::unix::io::AsRawFd;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::backend::drm::error::AccessError;
@@ -23,10 +23,11 @@ use crate::{
     backend::{
         allocator::format::{get_bpp, get_depth},
         drm::{
-            device::atomic::{map_props, PropMapping},
+            DrmDeviceFd,
             device::DrmDeviceInternal,
+            device::atomic::{PropMapping, map_props},
             error::Error,
-            plane_type, DrmDeviceFd,
+            plane_type,
         },
     },
     utils::DevPath,
@@ -1007,6 +1008,20 @@ impl AtomicDrmSurface {
         } else {
             State::current_state(&*self.fd, self.crtc, &mut self.prop_mapping.write().unwrap())?
         };
+
+        // Re-initialize the mode blob which might got lost after suspend/resume
+        let mut pending = self.pending.write().unwrap();
+        let blob = self.fd.create_property_blob(&pending.mode).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Failed to create Property Blob for mode",
+                dev: self.fd.dev_path(),
+                source,
+            })
+        })?;
+
+        let old_blob = std::mem::replace(&mut pending.blob, blob);
+        let _ = self.fd.destroy_property_blob(old_blob.into());
+
         Ok(())
     }
 

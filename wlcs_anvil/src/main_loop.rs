@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
 
@@ -19,16 +19,16 @@ use smithay::{
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
-            channel::{Channel, Event as ChannelEvent},
             EventLoop,
+            channel::{Channel, Event as ChannelEvent},
         },
-        wayland_server::{protocol::wl_surface, Client, Display, Resource},
+        wayland_server::{Client, Display, Resource, protocol::wl_surface},
     },
-    utils::{IsAlive, Scale, SERIAL_COUNTER as SCOUNTER},
+    utils::{IsAlive, SERIAL_COUNTER as SCOUNTER, Scale},
     wayland::compositor,
 };
 
-use anvil::{drawing::PointerElement, render::*, state::Backend, AnvilState, ClientState};
+use anvil::{AnvilState, ClientState, drawing::PointerElement, render::*, state::Backend};
 
 use crate::WlcsEvent;
 

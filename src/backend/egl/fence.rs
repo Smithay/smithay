@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::backend::egl::{
-    ffi, wrap_egl_call, wrap_egl_call_bool, wrap_egl_call_ptr, EGLDisplay, EGLDisplayHandle, Error,
+    EGLDisplay, EGLDisplayHandle, Error, ffi, wrap_egl_call, wrap_egl_call_bool, wrap_egl_call_ptr,
 };
 
 #[derive(Debug)]

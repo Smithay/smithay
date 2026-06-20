@@ -3,7 +3,7 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::delegate_idle_notify;
+//! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::idle_notify::{IdleNotifierState, IdleNotifierHandler};
 //! # use smithay::input::{Seat, SeatHandler, SeatState, pointer::CursorImageStatus};
 //! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -20,6 +20,11 @@
 //! let state = State { idle_notifier };
 //!
 //! // Implement the necessary trait
+//! # impl CompositorHandler for State {
+//! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
+//! #     fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState { unimplemented!() }
+//! #     fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {}
+//! # }
 //! # impl SeatHandler for State {
 //! #     type KeyboardFocus = WlSurface;
 //! #     type PointerFocus = WlSurface;
@@ -33,7 +38,8 @@
 //!         &mut self.idle_notifier
 //!     }
 //! }
-//! delegate_idle_notify!(State);
+//!
+//! smithay::delegate_dispatch2!(State);
 //!
 //! // On input you should notify the idle_notifier
 //! // state.idle_notifier.notify_activity(&seat);
@@ -42,24 +48,27 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{self, AtomicBool},
         Mutex,
+        atomic::{self, AtomicBool},
     },
     time::Duration,
 };
 
-use calloop::{timer::TimeoutAction, LoopHandle, RegistrationToken};
+use calloop::{LoopHandle, RegistrationToken, timer::TimeoutAction};
 use wayland_protocols::ext::idle_notify::v1::server::{
     ext_idle_notification_v1::{self, ExtIdleNotificationV1},
     ext_idle_notifier_v1::{self, ExtIdleNotifierV1},
 };
 use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId},
     protocol::wl_seat::WlSeat,
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-use crate::input::{Seat, SeatHandler};
+use crate::{
+    input::{Seat, SeatHandler},
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+};
 
 /// Handler trait for ext-idle-notify
 pub trait IdleNotifierHandler: Sized {
@@ -110,13 +119,11 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
     /// Create new [`ExtIdleNotifierV1`] global.
     pub fn new(display: &DisplayHandle, loop_handle: LoopHandle<'static, D>) -> Self
     where
-        D: GlobalDispatch<ExtIdleNotifierV1, ()>,
-        D: Dispatch<ExtIdleNotifierV1, ()>,
-        D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
+        D: GlobalDispatch<ExtIdleNotifierV1, GlobalData>,
         D: IdleNotifierHandler,
         D: 'static,
     {
-        let global = display.create_global::<D, ExtIdleNotifierV1, _>(2, ());
+        let global = display.create_global::<D, ExtIdleNotifierV1, _>(2, GlobalData);
         Self {
             global,
             notifications: HashMap::new(),
@@ -235,40 +242,36 @@ impl<D: IdleNotifierHandler + SeatHandler> IdleNotifierState<D> {
     }
 }
 
-impl<D> GlobalDispatch<ExtIdleNotifierV1, (), D> for IdleNotifierState<D>
+impl<D> GlobalDispatch2<ExtIdleNotifierV1, D> for GlobalData
 where
-    D: GlobalDispatch<ExtIdleNotifierV1, ()>,
-    D: Dispatch<ExtIdleNotifierV1, ()>,
-    D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
+    D: Dispatch<ExtIdleNotifierV1, GlobalData>,
     D: IdleNotifierHandler,
     D: 'static,
 {
     fn bind(
+        &self,
         _state: &mut D,
         _handle: &DisplayHandle,
         _client: &Client,
         resource: New<ExtIdleNotifierV1>,
-        _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init(resource, GlobalData);
     }
 }
 
-impl<D> Dispatch<ExtIdleNotifierV1, (), D> for IdleNotifierState<D>
+impl<D> Dispatch2<ExtIdleNotifierV1, D> for GlobalData
 where
-    D: GlobalDispatch<ExtIdleNotifierV1, ()>,
-    D: Dispatch<ExtIdleNotifierV1, ()>,
     D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
     D: IdleNotifierHandler,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &Client,
         _resource: &ExtIdleNotifierV1,
         request: ext_idle_notifier_v1::Request,
-        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -329,17 +332,16 @@ where
     }
 }
 
-impl<D> Dispatch<ExtIdleNotificationV1, IdleNotificationUserData, D> for IdleNotifierState<D>
+impl<D> Dispatch2<ExtIdleNotificationV1, D> for IdleNotificationUserData
 where
-    D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
     D: IdleNotifierHandler,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _resource: &ExtIdleNotificationV1,
         request: ext_idle_notification_v1::Request,
-        _data: &IdleNotificationUserData,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
@@ -349,14 +351,9 @@ where
         }
     }
 
-    fn destroyed(
-        state: &mut D,
-        _client: ClientId,
-        notification: &ExtIdleNotificationV1,
-        data: &IdleNotificationUserData,
-    ) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, notification: &ExtIdleNotificationV1) {
         let state = state.idle_notifier_state();
-        if let Some(notifications) = state.notifications.get_mut(&data.seat) {
+        if let Some(notifications) = state.notifications.get_mut(&self.seat) {
             notifications.retain(|x| x != notification);
         }
 
@@ -364,38 +361,4 @@ where
             .notifications
             .retain(|seat, notifications| !notifications.is_empty() && seat.is_alive());
     }
-}
-
-/// Macro to delegate implementation of the ext idle notify protocol
-#[macro_export]
-macro_rules! delegate_idle_notify {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                reexports::{
-                    wayland_protocols::ext::idle_notify::v1::server::{
-                        ext_idle_notification_v1::ExtIdleNotificationV1,
-                        ext_idle_notifier_v1::ExtIdleNotifierV1,
-                    },
-                    wayland_server::{delegate_dispatch, delegate_global_dispatch},
-                },
-                wayland::idle_notify::{IdleNotificationUserData, IdleNotifierState},
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtIdleNotifierV1: ()] => IdleNotifierState<$ty>
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtIdleNotifierV1: ()] => IdleNotifierState<$ty>
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ExtIdleNotificationV1: IdleNotificationUserData] => IdleNotifierState<$ty>
-            );
-        };
-    };
 }

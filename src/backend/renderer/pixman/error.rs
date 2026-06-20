@@ -2,8 +2,8 @@ use drm_fourcc::{DrmFourcc, DrmModifier};
 use thiserror::Error;
 
 use crate::backend::{
-    allocator::dmabuf::{DmabufMappingFailed, DmabufSyncFailed},
     SwapBuffersError,
+    allocator::dmabuf::{DmabufMappingFailed, DmabufSyncFailed},
 };
 
 #[cfg(feature = "wayland_frontend")]

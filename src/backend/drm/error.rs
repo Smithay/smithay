@@ -1,5 +1,5 @@
 use crate::backend::SwapBuffersError;
-use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
+use drm::control::{Mode, RawResourceHandle, connector, crtc, plane};
 use std::{
     io::{self, ErrorKind},
     path::PathBuf,
@@ -94,7 +94,9 @@ impl From<Error> for SwapBuffersError {
         // FIXME: replace the special handling for EBUSY with ErrorKind::ResourceBusy once
         // we reach MSRV >= 1.83
         match err {
-            x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ Error::DeviceInactive | x @ Error::DrmMasterFailed => {
+                SwapBuffersError::TemporaryFailure(Box::new(x))
+            }
             Error::Access(AccessError {
                 errmsg, dev, source, ..
             }) if matches!(

@@ -10,6 +10,7 @@ use wayland_server::Resource;
 
 use crate::{
     input::{
+        Seat, SeatHandler,
         dnd::OfferData,
         pointer::{
             AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
@@ -21,9 +22,8 @@ use crate::{
             DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, TouchGrab,
             TouchInnerHandle, UpEvent,
         },
-        Seat, SeatHandler,
     },
-    utils::{Logical, Point, Serial, SERIAL_COUNTER},
+    utils::{Logical, Point, SERIAL_COUNTER, Serial},
 };
 
 use super::{DndFocus, Source};
@@ -48,6 +48,7 @@ pub struct DnDGrab<D: SeatHandler, S: Source, F: DndFocus<D> + 'static> {
     current_focus: Option<F>,
     offer_data: Option<F::OfferData<S>>,
     seat: Seat<D>,
+    should_drop: bool,
 }
 
 impl<D, S, F> fmt::Debug for DnDGrab<D, S, F>
@@ -98,6 +99,7 @@ where
             current_focus: None,
             offer_data: None,
             seat,
+            should_drop: false,
         }
     }
 }
@@ -124,6 +126,7 @@ where
             current_focus: None,
             offer_data: None,
             seat,
+            should_drop: false,
         }
     }
 }
@@ -192,8 +195,7 @@ pub trait DndGrabHandler: SeatHandler + Sized {
     /// At this point, any icon should be removed.
     ///
     /// * `target` - The target that the contents were dropped on.
-    /// * `validated` - Whether the drop offer was negotiated and accepted. If `false`, the drop
-    ///   was cancelled or otherwise not successful.
+    /// * `validated` - Whether the drop offer was negotiated and accepted.
     /// * `seat` - The seat on which the DnD action was finished.
     /// * `location` - The location the drop was finished at
     fn dropped(
@@ -204,6 +206,12 @@ pub trait DndGrabHandler: SeatHandler + Sized {
         location: Point<f64, Logical>,
     ) {
         let _ = (target, validated, seat, location);
+    }
+
+    /// The grab was cancelled by removing the grab by some means other than releasing the mouse
+    /// button or touch up.
+    fn cancelled(&mut self, seat: Seat<Self>, location: Point<f64, Logical>) {
+        let _ = (seat, location);
     }
 }
 
@@ -272,6 +280,20 @@ where
                 // make a move
                 focus.motion(data, self.offer_data.as_mut(), &self.seat, Point::new(x, y), time);
             }
+        }
+    }
+
+    fn cancel(&mut self, data: &mut D) {
+        if let Some(ref offer_data) = self.offer_data {
+            offer_data.disable();
+        }
+
+        self.data_source.cancel();
+
+        DndGrabHandler::cancelled(data, self.seat.clone(), self.last_position);
+
+        if let Some(ref focus) = self.current_focus {
+            focus.leave(data, self.offer_data.as_mut(), &self.seat);
         }
     }
 
@@ -348,6 +370,7 @@ where
 
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
+            self.should_drop = true;
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
@@ -438,7 +461,11 @@ where
     }
 
     fn unset(&mut self, data: &mut D) {
-        self.drop(data, DndTarget::Pointer);
+        if self.should_drop {
+            self.drop(data, DndTarget::Pointer);
+        } else {
+            self.cancel(data);
+        }
     }
 }
 
@@ -456,16 +483,17 @@ where
         _handle: &mut TouchInnerHandle<'_, D>,
         _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         _event: &DownEvent,
-        _seq: Serial,
     ) {
         // Ignore
     }
 
-    fn up(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &UpEvent, _seq: Serial) {
+    fn up(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &UpEvent) {
         if event.slot != self.start_data().slot {
             return;
         }
 
+        // the user dropped, proceed to the drop
+        self.should_drop = true;
         handle.unset_grab(self, data);
     }
 
@@ -475,13 +503,12 @@ where
         handle: &mut TouchInnerHandle<'_, D>,
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &TouchMotionEvent,
-        seq: Serial,
     ) {
         if event.slot != self.start_data().slot {
             return;
         }
 
-        handle.motion(data, self.touch_focus(), event, seq);
+        handle.motion(data, self.touch_focus(), event);
 
         self.last_position = event.location;
 
@@ -494,12 +521,11 @@ where
         );
     }
 
-    fn frame(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, seq: Serial) {
-        handle.frame(data, seq);
+    fn frame(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>) {
+        handle.frame(data);
     }
 
-    fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, _seq: Serial) {
-        // TODO: should we cancel something here?
+    fn cancel(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>) {
         handle.unset_grab(self, data);
     }
 
@@ -508,7 +534,6 @@ where
         _data: &mut D,
         _handle: &mut TouchInnerHandle<'_, D>,
         _event: &crate::input::touch::ShapeEvent,
-        _seq: Serial,
     ) {
     }
 
@@ -517,7 +542,6 @@ where
         _data: &mut D,
         _handle: &mut TouchInnerHandle<'_, D>,
         _event: &crate::input::touch::OrientationEvent,
-        _seq: Serial,
     ) {
     }
 
@@ -526,7 +550,11 @@ where
     }
 
     fn unset(&mut self, data: &mut D) {
-        self.drop(data, DndTarget::Touch);
+        if self.should_drop {
+            self.drop(data, DndTarget::Touch);
+        } else {
+            self.cancel(data);
+        }
     }
 }
 

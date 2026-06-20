@@ -1,8 +1,8 @@
 //! Implementation of the rendering traits using pixman
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, LazyLock, Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -10,10 +10,15 @@ use pixman::{Filter, FormatCode, Image, Operation, Repeat};
 use tracing::warn;
 
 use crate::{
-    backend::allocator::{
-        dmabuf::{Dmabuf, DmabufMapping, DmabufMappingMode, DmabufSyncFailed, DmabufSyncFlags, WeakDmabuf},
-        format::{has_alpha, FormatSet},
-        Buffer,
+    backend::{
+        allocator::{
+            Buffer,
+            dmabuf::{
+                Dmabuf, DmabufMapping, DmabufMappingMode, DmabufSyncFailed, DmabufSyncFlags, WeakDmabuf,
+            },
+            format::{FormatSet, has_alpha},
+        },
+        renderer::FrameContext,
     },
     utils::{Buffer as BufferCoords, Physical, Rectangle, Scale, Size, Transform},
 };
@@ -33,8 +38,8 @@ use wayland_server::protocol::wl_buffer;
 ))]
 use super::ImportEgl;
 use super::{
-    sync::SyncPoint, Bind, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
-    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    Bind, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
+    RendererSuper, Texture, TextureFilter, TextureMapping, sync::SyncPoint,
 };
 
 mod error;
@@ -247,20 +252,20 @@ impl PixmanTexture {
 
 impl Texture for PixmanTexture {
     fn width(&self) -> u32 {
-        self.0 .0.image.lock().unwrap().width() as u32
+        self.0.0.image.lock().unwrap().width() as u32
     }
 
     fn height(&self) -> u32 {
-        self.0 .0.image.lock().unwrap().height() as u32
+        self.0.0.image.lock().unwrap().height() as u32
     }
 
     fn size(&self) -> Size<i32, BufferCoords> {
-        let lock = self.0 .0.image.lock().unwrap();
+        let lock = self.0.0.image.lock().unwrap();
         Size::from((lock.width() as i32, lock.height() as i32))
     }
 
     fn format(&self) -> Option<DrmFourcc> {
-        DrmFourcc::try_from(self.0 .0.image.lock().unwrap().format()).ok()
+        DrmFourcc::try_from(self.0.0.image.lock().unwrap().format()).ok()
     }
 }
 
@@ -644,6 +649,10 @@ impl Frame for PixmanFrame<'_, '_> {
         self.transform
     }
 
+    fn output_size(&self) -> Size<i32, Physical> {
+        self.output_size
+    }
+
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         sync.wait().map_err(|_| PixmanError::SyncInterrupted)
     }
@@ -925,15 +934,15 @@ impl ImportMem for PixmanRenderer {
         region: Rectangle<i32, BufferCoords>,
     ) -> Result<(), Self::Error> {
         #[cfg(feature = "wayland_frontend")]
-        if texture.0 .0.buffer.is_some() {
+        if texture.0.0.buffer.is_some() {
             return Err(PixmanError::ImportFailed);
         }
 
-        if texture.0 .0.dmabuf.is_some() {
+        if texture.0.0.dmabuf.is_some() {
             return Err(PixmanError::ImportFailed);
         }
 
-        let mut image = texture.0 .0.image.lock().unwrap();
+        let mut image = texture.0.0.image.lock().unwrap();
         let stride = image.stride();
         let expected_len = stride * image.height();
 
@@ -1276,5 +1285,36 @@ impl Bind<Image<'static, 'static>> for PixmanRenderer {
         });
 
         Some(RENDER_BUFFER_FORMATS.clone())
+    }
+}
+
+/// Guard type wrapping the underlying `PixmanRenderer` of a `PixmanFrameGuard`.
+#[derive(Debug)]
+pub struct PixmanFrameGuard<'a, 'frame> {
+    renderer: &'a mut &'frame mut PixmanRenderer,
+}
+
+impl AsRef<PixmanRenderer> for PixmanFrameGuard<'_, '_> {
+    fn as_ref(&self) -> &PixmanRenderer {
+        self.renderer
+    }
+}
+
+impl AsMut<PixmanRenderer> for PixmanFrameGuard<'_, '_> {
+    fn as_mut(&mut self) -> &mut PixmanRenderer {
+        self.renderer
+    }
+}
+
+impl<'a, 'frame, 'buffer> FrameContext<'a, 'frame, 'buffer, PixmanRenderer> for PixmanFrame<'frame, 'buffer>
+where
+    'frame: 'a,
+{
+    type Guard = PixmanFrameGuard<'a, 'frame>;
+
+    fn renderer(&'a mut self) -> Self::Guard {
+        PixmanFrameGuard {
+            renderer: &mut self.renderer,
+        }
     }
 }

@@ -1,7 +1,8 @@
-use std::sync::{atomic::Ordering, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use atomic_float::AtomicF64;
 use wayland_server::{
+    Client, DisplayHandle, Resource, Weak,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_pointer::{
@@ -10,25 +11,24 @@ use wayland_server::{
         },
         wl_surface::WlSurface,
     },
-    Client, Dispatch, DisplayHandle, Resource, Weak,
 };
 
 use crate::{
     backend::input::{Axis, AxisSource, ButtonState},
     input::{
+        Seat,
         pointer::{
             AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, GestureHoldBeginEvent,
             GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
             GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent,
             PointerHandle, PointerTarget, RelativeMotionEvent,
         },
-        Seat,
     },
-    utils::{iter::new_locked_obj_iter_from_vec, Client as ClientCoords, Point, Serial},
-    wayland::{compositor, pointer_constraints::with_pointer_constraint},
+    utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
+    wayland::{Dispatch2, compositor, pointer_constraints::with_pointer_constraint},
 };
 
-use super::{SeatHandler, SeatState, WaylandFocus};
+use super::{SeatHandler, WaylandFocus};
 
 // Use to accumulate discrete values for `wl_pointer` < 8
 #[derive(Default)]
@@ -44,7 +44,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// Attempt to retrieve a [`PointerHandle`] from an existing resource
     ///
     /// May return `None` for a valid `WlPointer` that was created without
-    /// the keyboard capability.
+    /// the pointer capability.
     pub fn from_resource(seat: &WlPointer) -> Option<Self> {
         seat.data::<PointerUserData<D>>()?.handle.clone()
     }
@@ -348,19 +348,18 @@ pub struct PointerUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
+impl<D> Dispatch2<WlPointer, D> for PointerUserData<D>
 where
-    D: Dispatch<WlPointer, PointerUserData<D>>,
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
+        &self,
         state: &mut D,
         _client: &wayland_server::Client,
         pointer: &WlPointer,
         request: wl_pointer::Request,
-        data: &PointerUserData<D>,
         _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -371,7 +370,7 @@ where
                 hotspot_x,
                 hotspot_y,
             } => {
-                let handle = match &data.handle {
+                let handle = match &self.handle {
                     Some(handle) => handle,
                     None => return,
                 };
@@ -437,8 +436,8 @@ where
         };
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, pointer: &WlPointer, data: &PointerUserData<D>) {
-        if let Some(ref handle) = data.handle {
+    fn destroyed(&self, _state: &mut D, _: ClientId, pointer: &WlPointer) {
+        if let Some(ref handle) = self.handle {
             handle
                 .wl_pointer
                 .known_pointers

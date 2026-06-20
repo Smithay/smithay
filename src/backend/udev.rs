@@ -41,6 +41,7 @@
 use drm::node::{DrmNode, NodeType};
 use libc::dev_t;
 use rustix::fs::stat;
+use std::ops::{Deref, DerefMut};
 use std::{
     collections::HashMap,
     ffi::OsString,
@@ -60,7 +61,7 @@ use tracing::{debug, debug_span, info, warn};
 /// given handler of any changes. Can be used to provide hot-plug functionality for gpus and
 /// attached monitors.
 pub struct UdevBackend {
-    devices: HashMap<dev_t, PathBuf>,
+    devices: UdevDevices,
     monitor: MonitorSocket,
     token: Option<Token>,
     span: tracing::Span,
@@ -104,6 +105,7 @@ impl UdevBackend {
                 }
             })
             .collect();
+        let devices = UdevDevices(devices);
 
         let monitor = MonitorBuilder::new()?.match_subsystem("drm")?.listen()?;
 
@@ -121,13 +123,13 @@ impl UdevBackend {
     /// You should call this once before inserting the event source into your
     /// event loop, to get an initial snapshot of the device state.
     pub fn device_list(&self) -> impl Iterator<Item = (dev_t, &Path)> {
-        self.devices.iter().map(|(&id, path)| (id, path.as_ref()))
+        self.devices.device_list()
     }
 }
 
 impl EventSource for UdevBackend {
     type Event = UdevEvent;
-    type Metadata = ();
+    type Metadata = UdevDevices;
     type Ret = ();
     type Error = io::Error;
 
@@ -139,7 +141,7 @@ impl EventSource for UdevBackend {
         mut callback: F,
     ) -> std::io::Result<PostAction>
     where
-        F: FnMut(UdevEvent, &mut ()),
+        F: FnMut(Self::Event, &mut Self::Metadata),
     {
         if Some(token) != self.token {
             return Ok(PostAction::Continue);
@@ -164,7 +166,7 @@ impl EventSource for UdevBackend {
                                     device_id: devnum,
                                     path: path.to_path_buf(),
                                 },
-                                &mut (),
+                                &mut self.devices,
                             );
                         }
                     }
@@ -174,7 +176,7 @@ impl EventSource for UdevBackend {
                     if let Some(devnum) = event.devnum() {
                         info!("Device removed: #{}", devnum);
                         if self.devices.remove(&devnum).is_some() {
-                            callback(UdevEvent::Removed { device_id: devnum }, &mut ());
+                            callback(UdevEvent::Removed { device_id: devnum }, &mut self.devices);
                         }
                     }
                 }
@@ -183,7 +185,7 @@ impl EventSource for UdevBackend {
                     if let Some(devnum) = event.devnum() {
                         info!("Device changed: #{}", devnum);
                         if self.devices.contains_key(&devnum) {
-                            callback(UdevEvent::Changed { device_id: devnum }, &mut ());
+                            callback(UdevEvent::Changed { device_id: devnum }, &mut self.devices);
                         }
                     }
                 }
@@ -207,6 +209,34 @@ impl EventSource for UdevBackend {
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
         poll.unregister(self.as_fd())
+    }
+}
+
+/// Udev DRM devices.
+#[derive(Debug)]
+pub struct UdevDevices(HashMap<dev_t, PathBuf>);
+
+impl UdevDevices {
+    /// Get a list of DRM devices currently known to the backend
+    ///
+    /// You should call this once before inserting the event source into your
+    /// event loop, to get an initial snapshot of the device state.
+    pub fn device_list(&self) -> impl Iterator<Item = (dev_t, &Path)> {
+        self.0.iter().map(|(&id, path)| (id, path.as_ref()))
+    }
+}
+
+impl Deref for UdevDevices {
+    type Target = HashMap<dev_t, PathBuf>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for UdevDevices {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

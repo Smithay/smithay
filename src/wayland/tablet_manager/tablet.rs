@@ -8,13 +8,11 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_v2::{self, ZwpTabletV2},
 };
 use wayland_server::{
-    backend::ClientId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, Resource,
-    Weak,
+    Client, DataInit, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId,
+    protocol::wl_surface::WlSurface,
 };
 
-use crate::backend::input::Device;
-
-use super::TabletManagerState;
+use crate::{backend::input::Device, wayland::Dispatch2};
 
 /// Description of graphics tablet device
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -107,24 +105,23 @@ pub struct TabletUserData {
     handle: TabletHandle,
 }
 
-impl<D> Dispatch<ZwpTabletV2, TabletUserData, D> for TabletManagerState
+impl<D> Dispatch2<ZwpTabletV2, D> for TabletUserData
 where
-    D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _tablet: &ZwpTabletV2,
         _request: zwp_tablet_v2::Request,
-        _data: &TabletUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, tablet: &ZwpTabletV2, data: &TabletUserData) {
-        data.handle
+    fn destroyed(&self, _state: &mut D, _client: ClientId, tablet: &ZwpTabletV2) {
+        self.handle
             .inner
             .lock()
             .unwrap()

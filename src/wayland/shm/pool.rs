@@ -1,5 +1,3 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use std::{
     cell::Cell,
     mem,
@@ -7,8 +5,8 @@ use std::{
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     ptr,
     sync::{
-        mpsc::{channel, Sender},
         LazyLock, OnceLock, RwLock,
+        mpsc::{Sender, channel},
     },
     thread,
 };

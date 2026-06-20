@@ -1,10 +1,10 @@
 use crate::{
     backend::renderer::{
-        element::{
-            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            AsRenderElements, Kind,
-        },
         ImportAll, Renderer,
+        element::{
+            AsRenderElements, Kind,
+            surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
+        },
     },
     desktop::{LayerSurface, PopupManager},
     utils::{Physical, Point, Scale},

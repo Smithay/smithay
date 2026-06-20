@@ -2,17 +2,17 @@ use std::cell::RefCell;
 
 use smithay::{
     desktop::{
-        find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, space::SpaceElement,
         PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Space, Window,
-        WindowSurfaceType,
+        WindowSurfaceType, find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output,
+        space::SpaceElement,
     },
-    input::{pointer::Focus, Seat},
+    input::{Seat, pointer::Focus},
     output::Output,
     reexports::{
         wayland_protocols::xdg::{decoration as xdg_decoration, shell::server::xdg_toplevel},
         wayland_server::{
-            protocol::{wl_output, wl_seat, wl_surface::WlSurface},
             Resource,
+            protocol::{wl_output, wl_seat, wl_surface::WlSurface},
         },
     },
     utils::{Logical, Point, Serial},
@@ -34,8 +34,8 @@ use crate::{
 };
 
 use super::{
-    fullscreen_output_geometry, place_new_window, FullscreenSurface, PointerMoveSurfaceGrab,
-    PointerResizeSurfaceGrab, ResizeData, ResizeEdge, ResizeState, SurfaceData, WindowElement,
+    FullscreenSurface, PointerMoveSurfaceGrab, PointerResizeSurfaceGrab, ResizeData, ResizeEdge, ResizeState,
+    SurfaceData, WindowElement, fullscreen_output_geometry, place_new_window,
 };
 
 impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {

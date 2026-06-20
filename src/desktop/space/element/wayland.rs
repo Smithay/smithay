@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{
-        element::{surface::WaylandSurfaceRenderElement, AsRenderElements, Kind},
         ImportAll, Renderer,
+        element::{AsRenderElements, Kind, surface::WaylandSurfaceRenderElement},
     },
     utils::{IsAlive, Physical, Point, Scale},
 };

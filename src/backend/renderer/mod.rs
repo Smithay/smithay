@@ -7,7 +7,7 @@
 //!
 //! - Raw OpenGL ES 2
 
-use crate::utils::{ids::id_gen, Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
+use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform, ids::id_gen};
 use cgmath::Matrix3;
 use std::{
     any::TypeId,
@@ -36,15 +36,15 @@ pub mod pixman;
 mod color;
 pub use color::Color32F;
 
-use crate::backend::allocator::{dmabuf::Dmabuf, Format, Fourcc};
+use crate::backend::allocator::{Format, Fourcc, dmabuf::Dmabuf};
 #[cfg(all(
     feature = "wayland_frontend",
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
 use crate::backend::egl::{
-    display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
+    display::{BUFFER_READER, EGLBufferReader},
 };
 
 use super::allocator::format::FormatSet;
@@ -343,6 +343,9 @@ pub trait Frame {
     /// Output transformation that is applied to this frame
     fn transformation(&self) -> Transform;
 
+    /// Output size this frame was initialized for.
+    fn output_size(&self) -> Size<i32, Physical>;
+
     /// Wait for a [`SyncPoint`] to be signaled
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error>;
 
@@ -357,6 +360,16 @@ pub trait Frame {
     /// Leaking might make the renderer return Errors and force it's recreation.
     /// Leaking may not cause otherwise undefined behavior and program execution will always continue normally.
     fn finish(self) -> Result<sync::SyncPoint, Self::Error>;
+}
+
+/// Helper trait for [`Frame`]s, that allow referencing the underlying renderer
+/// to create additional frames for offscreen targets.
+pub trait FrameContext<'a, 'frame, 'buffer, R: Renderer>: Frame {
+    /// Type returned by [`FrameContext::renderer`] which derefs into the underlying [`Renderer`].
+    type Guard: fmt::Debug + AsRef<R> + AsMut<R> + 'a;
+
+    /// Receive the underlying [`Renderer`]
+    fn renderer(&'a mut self) -> Self::Guard;
 }
 
 bitflags::bitflags! {
@@ -773,7 +786,7 @@ pub trait ExportMem: Renderer {
     /// This function *may* fail, if (but not limited to):
     /// - There is not enough space in memory
     fn map_texture<'a>(&mut self, texture_mapping: &'a Self::TextureMapping)
-        -> Result<&'a [u8], Self::Error>;
+    -> Result<&'a [u8], Self::Error>;
 }
 
 /// Trait for renderers supporting blitting contents from one framebuffer to another.
@@ -830,7 +843,7 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<SyncPoint, Self::Error>;
 
     /// Copies the contents of the provided framebuffer to `dst` in the bound framebuffer,
     /// applying `filter` if necessary.
@@ -851,7 +864,7 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<SyncPoint, Self::Error>;
 }
 
 #[cfg(feature = "wayland_frontend")]

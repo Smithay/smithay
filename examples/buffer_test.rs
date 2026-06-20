@@ -4,19 +4,19 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use smithay::{
     backend::{
         allocator::{
+            Allocator, Fourcc, Modifier,
             dmabuf::{AnyError, Dmabuf, DmabufAllocator},
             dumb::DumbAllocator,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
             vulkan::{ImageUsageFlags, VulkanAllocator},
-            Allocator, Fourcc, Modifier,
         },
         drm::{DrmDeviceFd, DrmNode},
         egl::{EGLContext, EGLDevice, EGLDisplay},
         renderer::{
-            gles::{GlesRenderbuffer, GlesRenderer},
             Bind, Color32F, ExportMem, Frame, ImportDma, Offscreen, Renderer,
+            gles::{GlesRenderbuffer, GlesRenderer},
         },
-        vulkan::{version::Version, Instance, PhysicalDevice},
+        vulkan::{Instance, PhysicalDevice, version::Version},
     },
     utils::{DeviceFd, Rectangle, Transform},
 };

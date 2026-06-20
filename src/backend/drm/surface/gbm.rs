@@ -1,19 +1,19 @@
 use std::os::unix::io::AsFd;
 use std::sync::Arc;
 
-use drm::control::{connector, crtc, plane, Mode};
+use drm::control::{Mode, connector, crtc, plane};
 use drm::{Device, DriverCapability};
 use indexmap::IndexSet;
 
+use crate::backend::SwapBuffersError;
 use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use crate::backend::allocator::format::get_opaque;
 use crate::backend::allocator::gbm::{GbmBuffer, GbmConvertError};
 use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapchain};
 use crate::backend::drm::error::AccessError;
-use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
-use crate::backend::drm::{plane_has_property, DrmError, DrmSurface};
+use crate::backend::drm::gbm::{GbmFramebuffer, framebuffer_from_bo};
+use crate::backend::drm::{DrmError, DrmSurface, plane_has_property};
 use crate::backend::renderer::sync::SyncPoint;
-use crate::backend::SwapBuffersError;
 use crate::utils::{DevPath, Physical, Rectangle, Transform};
 
 use tracing::{debug, info_span, instrument, trace, warn};

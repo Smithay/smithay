@@ -4,7 +4,7 @@ use drm_fourcc::{DrmFormat, DrmModifier};
 
 use drm::{
     buffer::{Buffer as DrmBuffer, PlanarBuffer},
-    control::{framebuffer, Device, FbCmd2Flags},
+    control::{Device, FbCmd2Flags, framebuffer},
 };
 use tracing::{trace, warn};
 
@@ -12,16 +12,16 @@ use crate::utils::DevPath;
 use crate::{
     backend::{
         allocator::{
+            Buffer, Fourcc,
             dumb::DumbBuffer,
             format::{get_bpp, get_depth, get_opaque},
-            Buffer, Fourcc,
         },
         drm::DrmDeviceFd,
     },
     utils::{Buffer as BufferCoords, Size},
 };
 
-use super::{error::AccessError, warn_legacy_fb_export, Framebuffer};
+use super::{Framebuffer, error::AccessError, warn_legacy_fb_export};
 
 /// A GBM backed framebuffer
 #[derive(Debug)]
@@ -177,7 +177,7 @@ pub fn framebuffer_from_dumb_buffer(
 
             let fourcc = format.code;
             let (depth, bpp) = get_depth(fourcc)
-                .and_then(|d| get_bpp(fourcc).map(|b| (d, b)))
+                .zip(get_bpp(fourcc))
                 .ok_or_else(|| AccessError {
                     errmsg: "Unknown format for legacy framebuffer",
                     dev: drm.dev_path(),

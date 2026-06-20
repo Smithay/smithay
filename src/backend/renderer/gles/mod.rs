@@ -1,6 +1,9 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
-use cgmath::{prelude::*, Matrix3, Vector2};
+// GL calls are all unsafe, so not very helpful in this module.
+#![allow(unsafe_op_in_unsafe_fn)]
+
+use cgmath::{Matrix3, Vector2, prelude::*};
 use core::slice;
 use std::{
     collections::HashMap,
@@ -10,14 +13,13 @@ use std::{
     mem,
     os::raw::c_char,
     ptr,
-    rc::Rc,
     sync::{
+        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{self, Sender},
-        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
     },
 };
-use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
+use tracing::{Level, debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn};
 
 pub mod element;
 mod error;
@@ -34,26 +36,26 @@ pub use shaders::*;
 pub use texture::*;
 pub use uniform::*;
 
-use crate::gpu_span_location;
+use crate::{backend::renderer::FrameContext, gpu_span_location};
 use profiler::SpanLocation;
 
 use self::version::GlVersion;
 
 use super::{
-    sync::SyncPoint, Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma,
-    ImportMem, Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping,
+    Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
+    Offscreen, Renderer, RendererSuper, Texture, TextureFilter, TextureMapping, sync::SyncPoint,
 };
 use crate::{
     backend::{
         allocator::{
+            Format, Fourcc,
             dmabuf::{Dmabuf, WeakDmabuf},
-            format::{get_bpp, get_opaque, has_alpha, FormatSet},
-            Buffer, Format, Fourcc,
+            format::{FormatSet, get_bpp, get_opaque, has_alpha},
         },
         egl::{
+            EGLContext, EGLDevice, EGLSurface, MakeCurrentError,
             fence::EGLFence,
             ffi::egl::{self as ffi_egl, types::EGLImage},
-            EGLContext, EGLDevice, EGLSurface, MakeCurrentError,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -64,7 +66,7 @@ use super::ImportEgl;
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
+use crate::backend::egl::{Format as EGLFormat, display::EGLBufferReader};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::shm::shm_format_to_fourcc;
 #[cfg(feature = "wayland_frontend")]
@@ -86,38 +88,12 @@ enum CleanupResource {
 }
 unsafe impl Send for CleanupResource {}
 
-#[derive(Debug)]
-struct GlesBufferInner {
-    dmabuf: WeakDmabuf,
-    image: EGLImage,
-    rbo: ffi::types::GLuint,
-    fbo: ffi::types::GLuint,
-    destruction_callback_sender: Sender<CleanupResource>,
-}
-
-impl Drop for GlesBufferInner {
-    fn drop(&mut self) {
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::FramebufferObject(self.fbo));
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::RenderbufferObject(self.rbo));
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::EGLImage(self.image));
-    }
-}
-
-#[derive(Debug, Clone)]
-struct GlesBuffer(Rc<GlesBufferInner>);
-
 /// Offscreen render surface
 ///
 /// Usually more performant than using a texture as a framebuffer.
 /// Can be read out, but not used like a texture otherwise.
 #[derive(Debug, Clone)]
-pub struct GlesRenderbuffer(Rc<GlesRenderbufferInternal>);
+pub struct GlesRenderbuffer(Arc<GlesRenderbufferInternal>);
 
 #[derive(Debug)]
 struct GlesRenderbufferInternal {
@@ -127,6 +103,8 @@ struct GlesRenderbufferInternal {
     size: Size<i32, BufferCoord>,
     destruction_callback_sender: Sender<CleanupResource>,
 }
+unsafe impl Send for GlesRenderbufferInternal {}
+unsafe impl Sync for GlesRenderbufferInternal {}
 
 impl GlesRenderbuffer {
     /// Size of the renderbuffer
@@ -159,12 +137,6 @@ pub struct GlesTarget<'a>(GlesTargetInternal<'a>);
 
 #[derive(Debug)]
 enum GlesTargetInternal<'a> {
-    Image {
-        // TODO: Ideally we would be able to share the texture between renderers with shared EGLContexts though.
-        // But we definitely don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
-        buf: GlesBuffer,
-        dmabuf: &'a mut Dmabuf,
-    },
     Surface {
         surface: &'a mut EGLSurface,
     },
@@ -191,7 +163,6 @@ impl Texture for GlesTarget<'_> {
 
     fn size(&self) -> Size<i32, BufferCoord> {
         match &self.0 {
-            GlesTargetInternal::Image { dmabuf, .. } => dmabuf.size(),
             GlesTargetInternal::Surface { surface } => surface
                 .get_size()
                 .expect("a bound EGLSurface needs to have a size")
@@ -211,13 +182,6 @@ impl Texture for GlesTarget<'_> {
 impl GlesTargetInternal<'_> {
     fn format(&self) -> Option<(ffi::types::GLenum, bool)> {
         match self {
-            GlesTargetInternal::Image { dmabuf, .. } => {
-                let format = crate::backend::allocator::Buffer::format(*dmabuf).code;
-                let has_alpha = has_alpha(format);
-                let (format, _, _) = fourcc_to_gl_formats(format)?;
-
-                Some((format, has_alpha))
-            }
             GlesTargetInternal::Surface { surface, .. } => {
                 let format = surface.pixel_format();
                 let format = match (format.color_bits, format.alpha_bits) {
@@ -243,11 +207,8 @@ impl GlesTargetInternal<'_> {
             } else {
                 egl.make_current()?;
                 match self {
-                    GlesTargetInternal::Image { ref buf, .. } => {
-                        gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo)
-                    }
-                    GlesTargetInternal::Texture { ref fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
-                    GlesTargetInternal::Renderbuffer { ref fbo, .. } => {
+                    GlesTargetInternal::Texture { fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
+                    GlesTargetInternal::Renderbuffer { fbo, .. } => {
                         gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
                     }
                     _ => unreachable!(),
@@ -390,7 +351,6 @@ pub struct GlesRenderer {
     solid_program: GlesSolidProgram,
 
     // caches
-    buffers: Vec<GlesBuffer>,
     dmabuf_cache: HashMap<WeakDmabuf, GlesTexture>,
     vbos: [ffi::types::GLuint; 2],
     vertices: Vec<f32>,
@@ -446,7 +406,6 @@ impl fmt::Debug for GlesFrame<'_, '_> {
 impl fmt::Debug for GlesRenderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlesRenderer")
-            .field("buffers", &self.buffers)
             .field("extensions", &self.extensions)
             .field("capabilities", &self.capabilities)
             .field("tex_program", &self.tex_program)
@@ -731,7 +690,6 @@ impl GlesRenderer {
             min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
 
-            buffers: Vec::new(),
             dmabuf_cache: std::collections::HashMap::new(),
             vertices: Vec::with_capacity(6 * 16),
             non_opaque_damage: Vec::with_capacity(16),
@@ -809,7 +767,6 @@ impl GlesRenderer {
     #[profiling::function]
     fn cleanup(&mut self) {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
-        self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
         self.gles_cleanup().cleanup(&self.egl, &self.gl);
     }
 
@@ -1367,7 +1324,7 @@ impl ExportMem for GlesRenderer {
             let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
             let size = (region.size.w * region.size.h * bpp as i32) as isize;
             self.gl
-                .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
+                .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_DRAW);
             self.gl
                 .ReadBuffer(if matches!(target.0, GlesTargetInternal::Surface { .. }) {
                     ffi::BACK
@@ -1431,7 +1388,7 @@ impl ExportMem for GlesRenderer {
                 ffi::PIXEL_PACK_BUFFER,
                 (region.size.w * region.size.h * bpp as i32) as isize,
                 ptr::null(),
-                ffi::STREAM_READ,
+                ffi::STREAM_DRAW,
             );
             self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
             self.gl.ReadPixels(
@@ -1509,70 +1466,11 @@ impl Bind<EGLSurface> for GlesRenderer {
 impl Bind<Dmabuf> for GlesRenderer {
     fn bind<'a>(&mut self, dmabuf: &'a mut Dmabuf) -> Result<GlesTarget<'a>, GlesError> {
         let mut bind = |dmabuf: &'a mut Dmabuf| {
-            let buf = self
-                .buffers
-                .iter_mut()
-                .find(|buffer| {
-                    if let Some(dma) = buffer.0.dmabuf.upgrade() {
-                        dma == *dmabuf
-                    } else {
-                        false
-                    }
-                })
-                .map(|buf| Ok(buf.clone()))
-                .unwrap_or_else(|| {
-                    unsafe {
-                        self.egl.make_current()?;
-                    }
-
-                    trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
-                    let image = self
-                        .egl
-                        .display()
-                        .create_image_from_dmabuf(dmabuf)
-                        .map_err(GlesError::BindBufferEGLError)?;
-
-                    unsafe {
-                        let mut rbo = 0;
-                        self.gl.GenRenderbuffers(1, &mut rbo as *mut _);
-                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-                        self.gl
-                            .EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
-                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
-
-                        let mut fbo = 0;
-                        self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                        self.gl.FramebufferRenderbuffer(
-                            ffi::FRAMEBUFFER,
-                            ffi::COLOR_ATTACHMENT0,
-                            ffi::RENDERBUFFER,
-                            rbo,
-                        );
-                        let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-
-                        if status != ffi::FRAMEBUFFER_COMPLETE {
-                            self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                            self.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
-                            ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
-                            return Err(GlesError::FramebufferBindingError);
-                        }
-                        let buf = GlesBuffer(Rc::new(GlesBufferInner {
-                            dmabuf: dmabuf.weak(),
-                            image,
-                            rbo,
-                            fbo,
-                            destruction_callback_sender: self.gles_cleanup().sender.clone(),
-                        }));
-
-                        self.buffers.push(buf.clone());
-
-                        Ok(buf)
-                    }
-                })?;
-
-            Ok(GlesTarget(GlesTargetInternal::Image { buf, dmabuf }))
+            let texture = self.import_dmabuf(dmabuf, None)?;
+            self.bind_texture(&texture)
+                // SAFETY: The lifetime of the target only depends on the dmabuf,
+                // as the GlesTexture is cloned internally.
+                .map(|tex| unsafe { std::mem::transmute::<GlesTarget<'_>, GlesTarget<'a>>(tex) })
         };
 
         bind(dmabuf).inspect_err(|_| {
@@ -1704,7 +1602,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
                 .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
             self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
-            Ok(GlesRenderbuffer(Rc::new(GlesRenderbufferInternal {
+            Ok(GlesRenderbuffer(Arc::new(GlesRenderbufferInternal {
                 rbo,
                 format: internal,
                 has_alpha,
@@ -1715,19 +1613,19 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
     }
 }
 
-impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
+impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, '_> {
     fn blit_to(
         &mut self,
         to: &mut GlesTarget<'buffer>,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<SyncPoint, Self::Error> {
         let res = self.renderer.blit(self.target, to, src, dst, filter);
         self.target
             .0
             .make_current(&self.renderer.gl, &self.renderer.egl)?;
-        res.map(|_| ())
+        res
     }
 
     fn blit_from(
@@ -1736,12 +1634,12 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, 'buffer> {
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<SyncPoint, Self::Error> {
         let res = self.renderer.blit(from, self.target, src, dst, filter);
         self.target
             .0
             .make_current(&self.renderer.gl, &self.renderer.egl)?;
-        res.map(|_| ())
+        res
     }
 }
 
@@ -1783,25 +1681,19 @@ impl Blit for GlesRenderer {
         let scope = self.profiler.scope(gpu_span_location!("blit"), &self.gl);
 
         match &src_target.0 {
-            GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.0.fbo)
-            },
-            GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Texture { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
-            GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Renderbuffer { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
         match &dst_target.0 {
-            GlesTargetInternal::Image { ref buf, .. } => unsafe {
-                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.0.fbo)
-            },
-            GlesTargetInternal::Texture { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Texture { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
-            GlesTargetInternal::Renderbuffer { ref fbo, .. } => unsafe {
+            GlesTargetInternal::Renderbuffer { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
@@ -2454,6 +2346,10 @@ impl Frame for GlesFrame<'_, '_> {
 
     fn transformation(&self) -> Transform {
         self.transform
+    }
+
+    fn output_size(&self) -> Size<i32, Physical> {
+        self.size
     }
 
     #[profiling::function]
@@ -3251,6 +3147,69 @@ fn build_texture_mat(
     ) * tex_mat;
 
     tex_mat
+}
+
+/// Guard type wrapping the underlying [`GlesRenderer`] of a [`GlesFrame`].
+#[derive(Debug)]
+pub struct GlesFrameGuard<'a, 'frame, 'buffer> {
+    renderer: &'a mut &'frame mut GlesRenderer,
+    target: &'a mut &'frame mut GlesTarget<'buffer>,
+    old_size: Size<i32, Physical>,
+    old_transform: Transform,
+}
+
+impl AsRef<GlesRenderer> for GlesFrameGuard<'_, '_, '_> {
+    fn as_ref(&self) -> &GlesRenderer {
+        self.renderer
+    }
+}
+
+impl AsMut<GlesRenderer> for GlesFrameGuard<'_, '_, '_> {
+    fn as_mut(&mut self) -> &mut GlesRenderer {
+        self.renderer
+    }
+}
+
+impl<'a, 'frame, 'buffer> FrameContext<'a, 'frame, 'buffer, GlesRenderer> for GlesFrame<'frame, 'buffer>
+where
+    'frame: 'a,
+{
+    type Guard = GlesFrameGuard<'a, 'frame, 'buffer>;
+
+    fn renderer(&'a mut self) -> Self::Guard {
+        GlesFrameGuard {
+            renderer: &mut self.renderer,
+            target: &mut self.target,
+            old_size: self.size,
+            old_transform: self.transform,
+        }
+    }
+}
+
+impl Drop for GlesFrameGuard<'_, '_, '_> {
+    fn drop(&mut self) {
+        if let Err(err) = self.target.0.make_current(&self.renderer.gl, &self.renderer.egl) {
+            warn!(?err, "Failed to restore previous render target");
+            return;
+        }
+
+        let mut output_size = self.old_size;
+        if let Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 =
+            self.old_transform
+        {
+            mem::swap(&mut output_size.w, &mut output_size.h);
+        }
+
+        unsafe {
+            self.renderer.gl.Viewport(0, 0, output_size.w, output_size.h);
+
+            self.renderer.gl.Scissor(0, 0, output_size.w, output_size.h);
+            self.renderer.gl.Enable(ffi::SCISSOR_TEST);
+
+            self.renderer.gl.Enable(ffi::BLEND);
+            self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+        }
+    }
 }
 
 #[cfg(test)]

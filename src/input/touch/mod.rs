@@ -9,13 +9,27 @@ use tracing::{info_span, instrument};
 use wayland_server::Weak;
 
 use crate::backend::input::TouchSlot;
-use crate::utils::{IsAlive, Logical, Point, Serial, SerialCounter};
+use crate::utils::{IsAlive, Logical, Point, Serial};
 
 pub use grab::{DefaultGrab, GrabStartData, TouchDownGrab, TouchGrab};
 
 use super::{GrabStatus, Seat, SeatHandler};
 
 mod grab;
+
+crate::utils::ids::id_gen!(frame_marker);
+
+/// A marker to identify a given touch frame.
+///
+/// This marker is sent to [`TouchTarget`] during `frame` and `cancel`, and can be returned via the
+/// [`TouchTarget::last_frame`] function. They are used internally by [`TouchHandle`] to avoid
+/// sending `frame` and `cancel` event more than once.
+///
+/// FrameMarker are used instead of comparing [`TouchTarget`] as different [`TouchTarget`] could
+/// refer to the same underlying object (e.g. multiple surfaces belonging to the same wayland
+/// `Client`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameMarker(usize);
 
 /// An handle to a touch handler
 ///
@@ -29,8 +43,7 @@ mod grab;
 pub struct TouchHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<TouchInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_instances:
-        Arc<Mutex<Vec<(Weak<wayland_server::protocol::wl_touch::WlTouch>, Option<Serial>)>>>,
+    pub(crate) known_instances: Arc<Mutex<Vec<Weak<wayland_server::protocol::wl_touch::WlTouch>>>>,
     pub(crate) span: tracing::Span,
 }
 
@@ -81,16 +94,24 @@ impl<D: SeatHandler> std::cmp::Eq for TouchHandle<D> {}
 
 pub(crate) struct TouchInternal<D: SeatHandler> {
     focus: HashMap<TouchSlot, TouchSlotState<D>>,
-    seq_counter: SerialCounter,
+    pending_frame: Option<FrameMarker>,
     default_grab: Box<dyn Fn() -> Box<dyn TouchGrab<D>> + Send + 'static>,
     grab: GrabStatus<dyn TouchGrab<D>>,
+}
+
+impl<D: SeatHandler> Drop for TouchInternal<D> {
+    fn drop(&mut self) {
+        if let Some(marker) = self.pending_frame.take() {
+            frame_marker::remove(marker.0);
+        }
+    }
 }
 
 struct TouchSlotState<D: SeatHandler> {
     focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
     frame_pending: Option<<D as SeatHandler>::TouchFocus>,
-    pending: Serial,
-    current: Option<Serial>,
+    pending: FrameMarker,
+    current: Option<FrameMarker>,
 }
 
 impl<D: SeatHandler> fmt::Debug for TouchSlotState<D> {
@@ -178,26 +199,34 @@ where
     ///
     /// This touch point is assigned a unique ID. Future events from this touch point reference this ID.
     /// The ID ceases to be valid after a touch up event and may be reused in the future.
-    fn down(&self, seat: &Seat<D>, data: &mut D, event: &DownEvent, seq: Serial);
+    fn down(&self, seat: &Seat<D>, data: &mut D, event: &DownEvent);
 
     /// The touch point has disappeared.
     ///
     /// No further events will be sent for this touch point and the touch point's ID
     /// is released and may be reused in a future touch down event.
-    fn up(&self, seat: &Seat<D>, data: &mut D, event: &UpEvent, seq: Serial);
+    fn up(&self, seat: &Seat<D>, data: &mut D, event: &UpEvent);
 
     /// A touch point has changed coordinates.
-    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent, seq: Serial);
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
 
     /// Indicates the end of a set of events that logically belong together.
-    fn frame(&self, seat: &Seat<D>, data: &mut D, seq: Serial);
+    ///
+    /// The `marker` parameter is used to avoid re-sending the cancel event if the [`TouchTarget`]
+    /// has multiple active touch slot, or if multiple [`TouchTarget`] belong to the same underlying
+    /// target (e.g. a single client). See [`TouchTarget::last_frame`].
+    fn frame(&self, seat: &Seat<D>, data: &mut D, marker: FrameMarker);
 
     /// Touch session cancelled.
     ///
     /// Touch cancellation applies to all touch points currently active on this target.
     /// The client is responsible for finalizing the touch points, future touch points on
     /// this target may reuse the touch point ID.
-    fn cancel(&self, seat: &Seat<D>, data: &mut D, seq: Serial);
+    ///
+    /// The `marker` parameter is used to avoid re-sending the cancel event if the [`TouchTarget`]
+    /// has multiple active touch slot, or if multiple [`TouchTarget`] belong to the same underlying
+    /// target (e.g. a single client). See [`TouchTarget::last_frame`].
+    fn cancel(&self, seat: &Seat<D>, data: &mut D, marker: FrameMarker);
 
     /// Sent when a touch point has changed its shape.
     ///
@@ -206,14 +235,20 @@ where
     /// length describes the shorter diameter. Major and minor are orthogonal and both are specified
     /// in surface-local coordinates. The center of the ellipse is always at the touch point location
     /// as reported by [`TouchTarget::down`] or [`TouchTarget::motion`].
-    fn shape(&self, seat: &Seat<D>, data: &mut D, event: &ShapeEvent, seq: Serial);
+    fn shape(&self, seat: &Seat<D>, data: &mut D, event: &ShapeEvent);
 
     /// Sent when a touch point has changed its orientation.
     ///
     /// The orientation describes the clockwise angle of a touch point's major axis to the positive surface
     /// y-axis and is normalized to the -180 to +180 degree range. The granularity of orientation depends
     /// on the touch device, some devices only support binary rotation values between 0 and 90 degrees.
-    fn orientation(&self, seat: &Seat<D>, data: &mut D, event: &OrientationEvent, seq: Serial);
+    fn orientation(&self, seat: &Seat<D>, data: &mut D, event: &OrientationEvent);
+
+    /// Returns last know [`FrameMarker`].
+    ///
+    /// If this function returns `Some(marker)`, [`TouchHandle`] will use that value to avoid
+    /// sending the `frame` or `cancel` event more than once.
+    fn last_frame(&self, seat: &Seat<D>, data: &mut D) -> Option<FrameMarker>;
 }
 
 impl<D: SeatHandler + 'static> TouchHandle<D> {
@@ -295,9 +330,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     ) {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        let seq = inner.seq_counter.next_serial();
         inner.with_grab(data, &seat, |data, handle, grab| {
-            grab.down(data, handle, focus, event, seq);
+            grab.down(data, handle, focus, event);
         });
     }
 
@@ -305,9 +339,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn up(&self, data: &mut D, event: &UpEvent) {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        let seq = inner.seq_counter.next_serial();
         inner.with_grab(data, &seat, |data, handle, grab| {
-            grab.up(data, handle, event, seq);
+            grab.up(data, handle, event);
         });
     }
 
@@ -331,9 +364,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     ) {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        let seq = inner.seq_counter.next_serial();
         inner.with_grab(data, &seat, |data, handle, grab| {
-            grab.motion(data, handle, focus, event, seq);
+            grab.motion(data, handle, focus, event);
         });
     }
 
@@ -343,9 +375,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn frame(&self, data: &mut D) {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        let seq = inner.seq_counter.next_serial();
         inner.with_grab(data, &seat, |data, handle, grab| {
-            grab.frame(data, handle, seq);
+            grab.frame(data, handle);
         });
     }
 
@@ -357,9 +388,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn cancel(&self, data: &mut D) {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        let seq = inner.seq_counter.next_serial();
         inner.with_grab(data, &seat, |data, handle, grab| {
-            grab.cancel(data, handle, seq);
+            grab.cancel(data, handle);
         });
     }
 
@@ -367,9 +397,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn shape(&self, data: &mut D, event: &ShapeEvent) {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        let seq = inner.seq_counter.next_serial();
         inner.with_grab(data, &seat, |data, handle, grab| {
-            grab.shape(data, handle, event, seq);
+            grab.shape(data, handle, event);
         });
     }
 
@@ -377,9 +406,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     pub fn orientation(&self, data: &mut D, event: &OrientationEvent) {
         let mut inner = self.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        let seq = inner.seq_counter.next_serial();
         inner.with_grab(data, &seat, |data, handle, grab| {
-            grab.orientation(data, handle, event, seq);
+            grab.orientation(data, handle, event);
         });
     }
 
@@ -447,14 +475,13 @@ impl<D: SeatHandler + 'static> TouchInnerHandle<'_, D> {
         data: &mut D,
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
-        seq: Serial,
     ) {
-        self.inner.down(data, self.seat, focus, event, seq)
+        self.inner.down(data, self.seat, focus, event)
     }
 
     /// Notify that a touch point disappeared
-    pub fn up(&mut self, data: &mut D, event: &UpEvent, seq: Serial) {
-        self.inner.up(data, self.seat, event, seq)
+    pub fn up(&mut self, data: &mut D, event: &UpEvent) {
+        self.inner.up(data, self.seat, event)
     }
 
     /// Notify that a touch point has changed coordinates.
@@ -474,26 +501,25 @@ impl<D: SeatHandler + 'static> TouchInnerHandle<'_, D> {
         data: &mut D,
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
-        seq: Serial,
     ) {
-        self.inner.motion(data, self.seat, focus, event, seq)
+        self.inner.motion(data, self.seat, focus, event)
     }
 
     /// Notify about the end of a set of events that logically belong together.
     ///
     /// This needs to be called after one or move calls to [`TouchHandle::down`] or [`TouchHandle::motion`]
-    pub fn frame(&mut self, data: &mut D, seq: Serial) {
-        self.inner.frame(data, self.seat, seq)
+    pub fn frame(&mut self, data: &mut D) {
+        self.inner.frame(data, self.seat)
     }
 
     /// Notify that a touch point has changed its shape.
-    pub fn shape(&mut self, data: &mut D, event: &ShapeEvent, seq: Serial) {
-        self.inner.shape(data, self.seat, event, seq)
+    pub fn shape(&mut self, data: &mut D, event: &ShapeEvent) {
+        self.inner.shape(data, self.seat, event)
     }
 
     /// Notify that a touch point has changed its orientation.
-    pub fn orientation(&mut self, data: &mut D, event: &OrientationEvent, seq: Serial) {
-        self.inner.orientation(data, self.seat, event, seq)
+    pub fn orientation(&mut self, data: &mut D, event: &OrientationEvent) {
+        self.inner.orientation(data, self.seat, event)
     }
 
     /// Notify that the touch session has been cancelled.
@@ -501,8 +527,8 @@ impl<D: SeatHandler + 'static> TouchInnerHandle<'_, D> {
     /// Use in case you decide the touch stream is a global gesture.
     /// This will remove all current focus targets, and no further events will be sent
     /// until a new touch point appears.
-    pub fn cancel(&mut self, data: &mut D, seq: Serial) {
-        self.inner.cancel(data, self.seat, seq)
+    pub fn cancel(&mut self, data: &mut D) {
+        self.inner.cancel(data, self.seat)
     }
 }
 
@@ -513,7 +539,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
     {
         Self {
             focus: Default::default(),
-            seq_counter: SerialCounter::new(),
+            pending_frame: None,
             default_grab: Box::new(default_grab),
             grab: GrabStatus::None,
         }
@@ -545,36 +571,38 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         seat: &Seat<D>,
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
-        seq: Serial,
     ) {
+        let marker = self.frame_marker();
         self.focus
             .entry(event.slot)
             .and_modify(|state| {
-                state.pending = seq;
+                state.pending = marker;
                 state.frame_pending = None;
                 state.focus.clone_from(&focus);
             })
             .or_insert_with(|| TouchSlotState {
                 focus,
                 frame_pending: None,
-                pending: seq,
+                pending: marker,
                 current: None,
             });
+
         let state = self.focus.get(&event.slot).unwrap();
         if let Some((focus, loc)) = state.focus.as_ref() {
             let mut new_event = event.clone();
             new_event.location -= *loc;
-            focus.down(seat, data, &new_event, seq);
+            focus.down(seat, data, &new_event);
         }
     }
 
-    fn up(&mut self, data: &mut D, seat: &Seat<D>, event: &UpEvent, seq: Serial) {
+    fn up(&mut self, data: &mut D, seat: &Seat<D>, event: &UpEvent) {
+        let marker = self.frame_marker();
         let Some(state) = self.focus.get_mut(&event.slot) else {
             return;
         };
-        state.pending = seq;
+        state.pending = marker;
         if let Some((focus, _)) = state.focus.take() {
-            focus.up(seat, data, event, seq);
+            focus.up(seat, data, event);
 
             // Keep the focus around to be able to send a frame event after up, but move
             // it out of the current focus to prevent sending other events.
@@ -588,66 +616,93 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         seat: &Seat<D>,
         _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
-        seq: Serial,
     ) {
+        let marker = self.frame_marker();
         let Some(state) = self.focus.get_mut(&event.slot) else {
             return;
         };
-        state.pending = seq;
+        state.pending = marker;
         if let Some((focus, loc)) = state.focus.as_ref() {
             let mut new_event = event.clone();
             new_event.location -= *loc;
-            focus.motion(seat, data, &new_event, seq);
+            focus.motion(seat, data, &new_event);
         }
     }
 
-    fn frame(&mut self, data: &mut D, seat: &Seat<D>, seq: Serial) {
+    fn frame(&mut self, data: &mut D, seat: &Seat<D>) {
+        let Some(marker) = self.pending_frame.take() else {
+            tracing::warn!("frame called without prior events");
+            return;
+        };
+
         for state in self.focus.values_mut() {
-            if state.current.map(|c| c >= state.pending).unwrap_or(false) {
+            if state.current.map(|c| c == state.pending).unwrap_or(false) {
                 continue;
             }
-            state.current = Some(seq);
+            state.current = Some(marker);
 
             // Send the frame event for any stored focus in the up handler
             if let Some(focus) = state.frame_pending.take() {
-                focus.frame(seat, data, seq);
+                if focus.last_frame(seat, data) != Some(marker) {
+                    focus.frame(seat, data, marker);
+                }
             }
 
             if let Some((focus, _)) = state.focus.as_ref() {
-                focus.frame(seat, data, seq);
+                if focus.last_frame(seat, data) != Some(marker) {
+                    focus.frame(seat, data, marker);
+                }
             }
         }
+
+        frame_marker::remove(marker.0);
     }
 
-    fn cancel(&mut self, data: &mut D, seat: &Seat<D>, seq: Serial) {
+    fn cancel(&mut self, data: &mut D, seat: &Seat<D>) {
+        let Some(marker) = self.pending_frame.take() else {
+            tracing::warn!("cancel called without prior events");
+            return;
+        };
+
         for state in self.focus.values_mut() {
-            if state.current.map(|c| c >= state.pending).unwrap_or(false) {
+            if state.current.map(|c| c == state.pending).unwrap_or(false) {
                 continue;
             }
-            state.current = Some(seq);
+
+            state.current = Some(marker);
+
             if let Some((focus, _)) = state.focus.take() {
-                focus.cancel(seat, data, seq);
+                if focus.last_frame(seat, data) != Some(marker) {
+                    focus.cancel(seat, data, marker);
+                }
             }
         }
+
+        frame_marker::remove(marker.0);
     }
 
-    fn shape(&mut self, data: &mut D, seat: &Seat<D>, event: &ShapeEvent, seq: Serial) {
+    fn shape(&mut self, data: &mut D, seat: &Seat<D>, event: &ShapeEvent) {
+        let marker = self.frame_marker();
+
         let Some(state) = self.focus.get_mut(&event.slot) else {
             return;
         };
-        state.pending = seq;
+
+        state.pending = marker;
         if let Some((focus, _)) = state.focus.as_ref() {
-            focus.shape(seat, data, event, seq);
+            focus.shape(seat, data, event);
         }
     }
 
-    fn orientation(&mut self, data: &mut D, seat: &Seat<D>, event: &OrientationEvent, seq: Serial) {
+    fn orientation(&mut self, data: &mut D, seat: &Seat<D>, event: &OrientationEvent) {
+        let marker = self.frame_marker();
+
         let Some(state) = self.focus.get_mut(&event.slot) else {
             return;
         };
-        state.pending = seq;
+        state.pending = marker;
         if let Some((focus, _)) = state.focus.as_ref() {
-            focus.orientation(seat, data, event, seq);
+            focus.orientation(seat, data, event);
         }
     }
 
@@ -689,5 +744,13 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
             // the grab has not been ended nor replaced, put it back in place
             self.grab = grab;
         }
+    }
+
+    fn frame_marker(&mut self) -> FrameMarker {
+        if self.pending_frame.is_none() {
+            self.pending_frame = Some(FrameMarker(frame_marker::next()));
+        };
+
+        self.pending_frame.unwrap()
     }
 }

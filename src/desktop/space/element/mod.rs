@@ -2,14 +2,14 @@ use std::hash::Hash;
 
 #[cfg(feature = "wayland_frontend")]
 use crate::{
-    backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
+    backend::renderer::{ImportAll, element::surface::WaylandSurfaceRenderElement},
     desktop::LayerSurface,
     wayland::shell::wlr_layer::Layer,
 };
 use crate::{
     backend::renderer::{
-        element::{AsRenderElements, Wrap},
         Renderer, Texture,
+        element::{AsRenderElements, Wrap},
     },
     output::Output,
     utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale},
@@ -163,11 +163,11 @@ where
 }
 
 impl<
-        'a,
-        #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
-        #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-        E: AsRenderElements<R>,
-    > AsRenderElements<R> for SpaceElements<'a, E>
+    'a,
+    #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+    #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+    E: AsRenderElements<R>,
+> AsRenderElements<R> for SpaceElements<'a, E>
 where
     R::TextureId: Clone + Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,

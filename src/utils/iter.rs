@@ -1,5 +1,5 @@
 /// Common iterator types
-use wayland_server::{backend::ClientId, Resource, Weak};
+use wayland_server::{Resource, Weak, backend::ClientId};
 
 use std::{fmt, sync::MutexGuard};
 

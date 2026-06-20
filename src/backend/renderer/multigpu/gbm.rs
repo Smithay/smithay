@@ -6,19 +6,19 @@ use tracing::warn;
 use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
+    SwapBuffersError,
     allocator::{
+        Allocator,
         dmabuf::{AnyError, Dmabuf, DmabufAllocator},
         gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
-        Allocator,
     },
     drm::{CreateDrmNodeError, DrmNode},
-    egl::{context::ContextPriority, EGLContext, EGLDisplay, Error as EGLError},
+    egl::{EGLContext, EGLDisplay, Error as EGLError, context::ContextPriority},
     renderer::{
+        Renderer, RendererSuper,
         gles::{GlesError, GlesRenderer},
         multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
-        Renderer, RendererSuper,
     },
-    SwapBuffersError,
 };
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::{
@@ -26,8 +26,8 @@ use crate::{
         allocator::Buffer as BufferTrait,
         egl::display::EGLBufferReader,
         renderer::{
-            multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
             Bind, ExportMem, ImportDma, ImportEgl, ImportMem,
+            multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture, import_dmabuf_internal},
         },
     },
     utils::{Buffer as BufferCoords, Rectangle},
@@ -153,10 +153,8 @@ impl<R, A: AsFd + Clone + Send + 'static> GbmGlesBackend<R, A> {
     }
 }
 
-impl<
-        R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>,
-        A: AsFd + Clone + 'static,
-    > GraphicsApi for GbmGlesBackend<R, A>
+impl<R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>, A: AsFd + Clone + 'static>
+    GraphicsApi for GbmGlesBackend<R, A>
 {
     type Device = GbmGlesDevice<R>;
     type Error = Error;
@@ -223,10 +221,10 @@ impl<
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
 impl<
-        T: GraphicsApi,
-        R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>,
-        A: AsFd + Clone + 'static,
-    > std::convert::From<GlesError> for MultiError<GbmGlesBackend<R, A>, T>
+    T: GraphicsApi,
+    R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>,
+    A: AsFd + Clone + 'static,
+> std::convert::From<GlesError> for MultiError<GbmGlesBackend<R, A>, T>
 where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
@@ -321,7 +319,14 @@ where
         {
             let texture = MultiTexture::from_surface(surface, dmabuf.size(), dmabuf.format());
             let texture_ref = texture.0.clone();
-            let res = self.import_dmabuf_internal(&dmabuf, texture, Some(damage));
+            let res = import_dmabuf_internal(
+                self.render,
+                self.target.as_mut().map(|target| &mut *target.device),
+                &mut self.other_renderers,
+                &dmabuf,
+                texture,
+                Some(damage),
+            );
             if res.is_ok() {
                 if let Some(surface) = surface {
                     surface.data_map.insert_if_missing_threadsafe(|| texture_ref);

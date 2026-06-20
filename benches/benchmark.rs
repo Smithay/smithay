@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use smithay::utils::user_data::UserDataMap;
 
 fn criterion_benchmark(c: &mut Criterion) {

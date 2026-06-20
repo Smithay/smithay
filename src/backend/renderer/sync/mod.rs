@@ -1,7 +1,7 @@
 //! Helper for synchronizing rendering operations
 use std::{error::Error, fmt, os::unix::io::OwnedFd, sync::Arc};
 
-use downcast_rs::{impl_downcast, Downcast};
+use downcast_rs::{Downcast, impl_downcast};
 
 #[cfg(feature = "backend_egl")]
 mod egl;

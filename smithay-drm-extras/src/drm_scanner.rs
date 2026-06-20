@@ -23,7 +23,7 @@
 //! ```
 use std::collections::HashMap;
 
-use drm::control::{connector, crtc, Device as ControlDevice};
+use drm::control::{Device as ControlDevice, connector, crtc};
 
 mod connector_scanner;
 pub use connector_scanner::{ConnectorScanEvent, ConnectorScanResult, ConnectorScanner};

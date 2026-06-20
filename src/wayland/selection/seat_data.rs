@@ -179,7 +179,7 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                     device.unset_selection();
                     continue;
                 }
-                (Some(ref selection), _) => {
+                (Some(selection), _) => {
                     // DataControl devices is the client itself, however other devices use
                     // the currently focused one as a client.
                     let client_id = match device {

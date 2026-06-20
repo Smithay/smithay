@@ -1,15 +1,15 @@
-use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, PageFlipFlags};
+use drm::control::{Device as ControlDevice, Mode, PageFlipFlags, connector, crtc, encoder, framebuffer};
 
 use std::collections::HashSet;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
+    atomic::{AtomicBool, Ordering},
 };
 
 use crate::backend::drm::error::AccessError;
 use crate::{
     backend::drm::{
-        device::legacy::set_connector_state, device::DrmDeviceInternal, error::Error, DrmDeviceFd,
+        DrmDeviceFd, device::DrmDeviceInternal, device::legacy::set_connector_state, error::Error,
     },
     utils::DevPath,
 };

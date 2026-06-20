@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use smithay::{
-    desktop::{space::SpaceElement, WindowSurface},
+    desktop::{WindowSurface, space::SpaceElement},
     input::{
         pointer::{
             AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
@@ -183,7 +183,6 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
             Point<f64, Logical>,
         )>,
         _event: &smithay::input::touch::DownEvent,
-        _seq: Serial,
     ) {
     }
 
@@ -192,13 +191,12 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         event: &smithay::input::touch::UpEvent,
-        seq: Serial,
     ) {
         if event.slot != self.start_data.slot {
             return;
         }
 
-        handle.up(data, event, seq);
+        handle.up(data, event);
         handle.unset_grab(self, data);
     }
 
@@ -211,7 +209,6 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
             Point<f64, Logical>,
         )>,
         event: &smithay::input::touch::MotionEvent,
-        _seq: Serial,
     ) {
         if event.slot != self.start_data.slot {
             return;
@@ -227,7 +224,6 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         &mut self,
         _data: &mut AnvilState<BackendData>,
         _handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
-        _seq: Serial,
     ) {
     }
 
@@ -235,9 +231,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
-        seq: Serial,
     ) {
-        handle.cancel(data, seq);
+        handle.cancel(data);
         handle.unset_grab(self, data);
     }
 
@@ -246,9 +241,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         event: &smithay::input::touch::ShapeEvent,
-        seq: Serial,
     ) {
-        handle.shape(data, event, seq);
+        handle.shape(data, event);
     }
 
     fn orientation(
@@ -256,9 +250,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchMoveSurfa
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         event: &smithay::input::touch::OrientationEvent,
-        seq: Serial,
     ) {
-        handle.orientation(data, event, seq);
+        handle.orientation(data, event);
     }
 
     fn start_data(&self) -> &smithay::input::touch::GrabStartData<AnvilState<BackendData>> {
@@ -420,7 +413,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
             #[cfg(feature = "xwayland")]
             WindowSurface::X11(x11) => {
                 let location = data.space.element_location(&self.window).unwrap();
-                x11.configure(Rectangle::new(location, self.last_window_size))
+                x11.configure_with_sync(Rectangle::new(location, self.last_window_size), None)
                     .unwrap();
             }
         }
@@ -505,7 +498,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for PointerResiz
 
                         data.space.map_element(self.window.clone(), location, true);
                     }
-                    x11.configure(Rectangle::new(location, self.last_window_size))
+                    x11.configure_with_sync(Rectangle::new(location, self.last_window_size), None)
                         .unwrap();
 
                     let Some(surface) = self.window.wl_surface() else {
@@ -644,7 +637,6 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
             Point<f64, Logical>,
         )>,
         _event: &smithay::input::touch::DownEvent,
-        _seq: Serial,
     ) {
     }
 
@@ -653,7 +645,6 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         event: &smithay::input::touch::UpEvent,
-        _seq: Serial,
     ) {
         if event.slot != self.start_data.slot {
             return;
@@ -718,7 +709,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
 
                     data.space.map_element(self.window.clone(), location, true);
                 }
-                x11.configure(Rectangle::new(location, self.last_window_size))
+                x11.configure_with_sync(Rectangle::new(location, self.last_window_size), None)
                     .unwrap();
 
                 let Some(surface) = self.window.wl_surface() else {
@@ -750,7 +741,6 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
             Point<f64, Logical>,
         )>,
         event: &smithay::input::touch::MotionEvent,
-        _seq: Serial,
     ) {
         if event.slot != self.start_data.slot {
             return;
@@ -817,7 +807,7 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
             #[cfg(feature = "xwayland")]
             WindowSurface::X11(x11) => {
                 let location = data.space.element_location(&self.window).unwrap();
-                x11.configure(Rectangle::new(location, self.last_window_size))
+                x11.configure_with_sync(Rectangle::new(location, self.last_window_size), None)
                     .unwrap();
             }
         }
@@ -827,7 +817,6 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         &mut self,
         _data: &mut AnvilState<BackendData>,
         _handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
-        _seq: Serial,
     ) {
     }
 
@@ -835,9 +824,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
-        seq: Serial,
     ) {
-        handle.cancel(data, seq);
+        handle.cancel(data);
         handle.unset_grab(self, data);
     }
 
@@ -846,9 +834,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         event: &smithay::input::touch::ShapeEvent,
-        seq: Serial,
     ) {
-        handle.shape(data, event, seq);
+        handle.shape(data, event);
     }
 
     fn orientation(
@@ -856,9 +843,8 @@ impl<BackendData: Backend> TouchGrab<AnvilState<BackendData>> for TouchResizeSur
         data: &mut AnvilState<BackendData>,
         handle: &mut smithay::input::touch::TouchInnerHandle<'_, AnvilState<BackendData>>,
         event: &smithay::input::touch::OrientationEvent,
-        seq: Serial,
     ) {
-        handle.orientation(data, event, seq);
+        handle.orientation(data, event);
     }
 
     fn start_data(&self) -> &smithay::input::touch::GrabStartData<AnvilState<BackendData>> {

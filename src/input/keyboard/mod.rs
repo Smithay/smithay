@@ -1,8 +1,8 @@
 //! Keyboard-related types for smithay's input abstraction
 
 use crate::backend::input::KeyState;
-use crate::utils::{IsAlive, Serial, SERIAL_COUNTER};
-use downcast_rs::{impl_downcast, Downcast};
+use crate::utils::{IsAlive, SERIAL_COUNTER, Serial};
+use downcast_rs::{Downcast, impl_downcast};
 use std::collections::HashSet;
 #[cfg(feature = "wayland_frontend")]
 use std::sync::RwLock;
@@ -15,7 +15,7 @@ use thiserror::Error;
 use tracing::{debug, info, info_span, instrument, trace};
 
 use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
-pub use xkbcommon::xkb::{self, keysyms, Keycode, Keysym};
+pub use xkbcommon::xkb::{self, ContextFlags, Keycode, Keysym, keysyms};
 
 use super::{GrabStatus, Seat, SeatHandler};
 
@@ -178,7 +178,7 @@ impl Xkb {
     }
 
     /// Iterate over layouts present in the keymap.
-    pub fn layouts(&self) -> impl Iterator<Item = Layout> {
+    pub fn layouts(&self) -> impl Iterator<Item = Layout> + use<> {
         (0..self.keymap.num_layouts()).map(Layout)
     }
 
@@ -267,14 +267,19 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
 unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
-    fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
+    fn new(
+        xkb_config: XkbConfig<'_>,
+        repeat_rate: i32,
+        repeat_delay: i32,
+        context_flags: ContextFlags,
+    ) -> Result<KbdInternal<D>, ()> {
         // we create a new context for each keyboard because libxkbcommon is actually NOT threadsafe
         // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
         // sure nothing goes wrong.
         //
         // FIXME: This is an issue with the xkbcommon-rs crate that does not reflect this
         // non-threadsafety properly.
-        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let context = xkb::Context::new(context_flags);
         let keymap = xkb_config.compile_keymap(&context)?;
         let state = xkb::State::new(&keymap);
         let led_mapping = LedMapping::from_keymap(&keymap);
@@ -694,15 +699,21 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for KeyboardHandle<D> {
 
 impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Create a keyboard handler from a set of RMLVO rules
-    pub(crate) fn new(xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) -> Result<Self, Error> {
+    pub(crate) fn new(
+        xkb_config: XkbConfig<'_>,
+        repeat_delay: i32,
+        repeat_rate: i32,
+        context_flags: ContextFlags,
+    ) -> Result<Self, Error> {
         let span = info_span!("input_keyboard");
         let _guard = span.enter();
 
         info!("Initializing a xkbcommon handler with keymap query");
-        let internal = KbdInternal::new(xkb_config, repeat_rate, repeat_delay).map_err(|_| {
-            debug!("Loading keymap failed");
-            Error::BadKeymap
-        })?;
+        let internal =
+            KbdInternal::new(xkb_config, repeat_rate, repeat_delay, context_flags).map_err(|_| {
+                debug!("Loading keymap failed");
+                Error::BadKeymap
+            })?;
 
         let xkb = internal.xkb.lock().unwrap();
 
@@ -760,7 +771,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ) -> bool {
         use std::os::unix::io::AsFd;
         use tracing::warn;
-        use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
+        use wayland_server::{Resource, protocol::wl_keyboard::KeymapFormat};
 
         // Ignore request which do not change the keymap.
         let new_id = keymap_file.id();

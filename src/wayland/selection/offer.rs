@@ -11,23 +11,23 @@ use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_offer_v1::{
     self, ZwlrDataControlOfferV1,
 };
-use wayland_server::backend::protocol::Message;
+use wayland_server::DisplayHandle;
 use wayland_server::backend::ObjectId;
+use wayland_server::backend::protocol::Message;
 use wayland_server::backend::{ClientId, Handle, ObjectData};
 use wayland_server::protocol::wl_data_offer;
 use wayland_server::protocol::wl_seat::WlSeat;
-use wayland_server::DisplayHandle;
-use wayland_server::{protocol::wl_data_offer::WlDataOffer, Resource};
+use wayland_server::{Resource, protocol::wl_data_offer::WlDataOffer};
 use wl_data_offer::Request as DataOfferRequest;
 use zwlr_data_control_offer_v1::Request as DataControlRequest;
 use zwp_primary_selection_offer_v1::Request as PrimaryRequest;
 
 use crate::input::Seat;
 
+use super::SelectionHandler;
 use super::device::{DataDeviceKind, SelectionDevice};
 use super::private::selection_dispatch;
 use super::source::{CompositorSelectionProvider, SelectionSourceProvider};
-use super::SelectionHandler;
 
 #[derive(Debug, Clone)]
 pub enum OfferReplySource<U: Clone + Send + Sync + 'static> {

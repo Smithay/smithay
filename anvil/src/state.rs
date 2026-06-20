@@ -2,7 +2,7 @@
 use std::os::unix::io::OwnedFd;
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -12,50 +12,45 @@ use smithay::{
     backend::{
         input::TabletToolDescriptor,
         renderer::element::{
-            default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
+            RenderElementStates, default_primary_scanout_output_compare, utils::select_dmabuf_feedback,
         },
     },
-    delegate_compositor, delegate_data_control, delegate_data_device, delegate_fixes,
-    delegate_fractional_scale, delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit,
-    delegate_layer_shell, delegate_output, delegate_pointer_constraints, delegate_pointer_gestures,
-    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
-    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_dispatch2,
     desktop::{
+        PopupKind, PopupManager, Space,
         space::SpaceElement,
         utils::{
-            surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
-            update_surface_primary_scanout_output, with_surfaces_surface_tree, OutputPresentationFeedback,
+            OutputPresentationFeedback, surface_presentation_feedback_flags_from_states,
+            surface_primary_scanout_output, update_surface_primary_scanout_output,
+            with_surfaces_surface_tree,
         },
-        PopupKind, PopupManager, Space,
     },
     input::{
+        Seat, SeatHandler, SeatState,
         dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source},
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, Focus, PointerHandle},
-        Seat, SeatHandler, SeatState,
     },
     output::Output,
     reexports::{
-        calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
+        calloop::{Interest, LoopHandle, Mode, PostAction, generic::Generic},
         wayland_protocols::xdg::decoration::{
             self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
         },
         wayland_server::{
+            Client, Display, DisplayHandle, Resource,
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
-            Client, Display, DisplayHandle, Resource,
         },
     },
     utils::{Clock, Logical, Monotonic, Point, Rectangle, Serial, Time},
     wayland::{
         commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState},
-        compositor::{get_parent, with_states, CompositorClientState, CompositorHandler, CompositorState},
+        compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, with_states},
         dmabuf::DmabufFeedback,
         fifo::{FifoBarrierCachedState, FifoManagerState},
         fixes::FixesState,
-        fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
+        fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState, with_fractional_scale},
         image_capture_source::{
             ImageCaptureSource, ImageCaptureSourceHandler, ImageCaptureSourceState,
             OutputCaptureSourceHandler, OutputCaptureSourceState,
@@ -68,7 +63,7 @@ use smithay::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
         output::{OutputHandler, OutputManagerState},
-        pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler, PointerConstraintsState},
+        pointer_constraints::{PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint},
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
         relative_pointer::RelativePointerManagerState,
@@ -77,16 +72,16 @@ use smithay::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
         },
         selection::{
-            data_device::{set_data_device_focus, DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
-            primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
-            wlr_data_control::{DataControlHandler, DataControlState},
             SelectionHandler,
+            data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus},
+            primary_selection::{PrimarySelectionHandler, PrimarySelectionState, set_primary_focus},
+            wlr_data_control::{DataControlHandler, DataControlState},
         },
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
-                decoration::{XdgDecorationHandler, XdgDecorationState},
                 ToplevelSurface, XdgShellState,
+                decoration::{XdgDecorationHandler, XdgDecorationState},
             },
         },
         shm::{ShmHandler, ShmState},
@@ -111,7 +106,6 @@ use crate::{
 };
 #[cfg(feature = "xwayland")]
 use smithay::{
-    delegate_xwayland_keyboard_grab, delegate_xwayland_shell,
     utils::Size,
     wayland::selection::{SelectionSource, SelectionTarget},
     wayland::xwayland_keyboard_grab::{XWaylandKeyboardGrabHandler, XWaylandKeyboardGrabState},
@@ -178,6 +172,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub seat: Seat<AnvilState<BackendData>>,
     pub clock: Clock<Monotonic>,
     pub pointer: PointerHandle<AnvilState<BackendData>>,
+    pub cursor_position_hint: Option<(WlSurface, Point<f64, Logical>)>,
 
     #[cfg(feature = "xwayland")]
     pub xwm: Option<X11Wm>,
@@ -195,8 +190,6 @@ pub struct DndIcon {
     pub surface: WlSurface,
     pub offset: Point<i32, Logical>,
 }
-
-delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&mut self) -> &mut DataDeviceState {
@@ -253,10 +246,8 @@ impl<BackendData: Backend> DndGrabHandler for AnvilState<BackendData> {
         self.dnd_icon = None;
     }
 }
-delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> OutputHandler for AnvilState<BackendData> {}
-delegate_output!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> SelectionHandler for AnvilState<BackendData> {
     type SelectionUserData = ();
@@ -292,7 +283,6 @@ impl<BackendData: Backend> PrimarySelectionHandler for AnvilState<BackendData> {
         &mut self.primary_selection_state
     }
 }
-delegate_primary_selection!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> DataControlHandler for AnvilState<BackendData> {
     fn data_control_state(&mut self) -> &mut DataControlState {
@@ -300,14 +290,11 @@ impl<BackendData: Backend> DataControlHandler for AnvilState<BackendData> {
     }
 }
 
-delegate_data_control!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
 impl<BackendData: Backend> ShmHandler for AnvilState<BackendData> {
     fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }
-delegate_shm!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     type KeyboardFocus = KeyboardFocusTarget;
@@ -335,7 +322,6 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
         self.backend_data.update_led_state(led_state)
     }
 }
-delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> TabletSeatHandler for AnvilState<BackendData> {
     fn tablet_tool_image(&mut self, _tool: &TabletToolDescriptor, image: CursorImageStatus) {
@@ -343,9 +329,6 @@ impl<BackendData: Backend> TabletSeatHandler for AnvilState<BackendData> {
         self.cursor_status = image;
     }
 }
-delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-delegate_text_input_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
     fn new_popup(&mut self, surface: PopupSurface) {
@@ -370,8 +353,6 @@ impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
     }
 }
 
-delegate_input_method_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
 impl<BackendData: Backend> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
     fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
         &mut self.keyboard_shortcuts_inhibit_state
@@ -382,14 +363,6 @@ impl<BackendData: Backend> KeyboardShortcutsInhibitHandler for AnvilState<Backen
         inhibitor.activate();
     }
 }
-
-delegate_keyboard_shortcuts_inhibit!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-delegate_pointer_gestures!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-delegate_relative_pointer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData> {
     fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>) {
@@ -404,6 +377,25 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         }
     }
 
+    fn remove_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>) {
+        if with_pointer_constraint(surface, pointer, |constraint| constraint.is_none()) {
+            if let Some((hint_surface, hint_location)) = &self.cursor_position_hint {
+                let origin = self
+                    .space
+                    .elements()
+                    .find_map(|window| {
+                        (window.wl_surface().as_deref() == Some(hint_surface)).then(|| window.geometry())
+                    })
+                    .unwrap_or_default()
+                    .loc
+                    .to_f64();
+
+                pointer.set_location(origin + *hint_location);
+            }
+            self.cursor_position_hint = None;
+        }
+    }
+
     fn cursor_position_hint(
         &mut self,
         surface: &WlSurface,
@@ -413,23 +405,10 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         if with_pointer_constraint(surface, pointer, |constraint| {
             constraint.is_some_and(|c| c.is_active())
         }) {
-            let origin = self
-                .space
-                .elements()
-                .find_map(|window| {
-                    (window.wl_surface().as_deref() == Some(surface)).then(|| window.geometry())
-                })
-                .unwrap_or_default()
-                .loc
-                .to_f64();
-
-            pointer.set_location(origin + location);
+            self.cursor_position_hint = Some((surface.clone(), location));
         }
     }
 }
-delegate_pointer_constraints!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-delegate_viewporter!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {
@@ -468,7 +447,6 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
         }
     }
 }
-delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
@@ -503,11 +481,6 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
         }
     }
 }
-delegate_xdg_decoration!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-delegate_xdg_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-delegate_layer_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-delegate_presentation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
     fn new_fractional_scale(
@@ -556,7 +529,6 @@ impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
         });
     }
 }
-delegate_fractional_scale!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend + 'static> SecurityContextHandler for AnvilState<BackendData> {
     fn context_created(&mut self, source: SecurityContextListenerSource, security_context: SecurityContext) {
@@ -576,7 +548,6 @@ impl<BackendData: Backend + 'static> SecurityContextHandler for AnvilState<Backe
             .expect("Failed to init wayland socket source");
     }
 }
-delegate_security_context!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 #[cfg(feature = "xwayland")]
 impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<BackendData> {
@@ -588,33 +559,18 @@ impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<
         Some(KeyboardFocusTarget::Window(elem.0.clone()))
     }
 }
-#[cfg(feature = "xwayland")]
-delegate_xwayland_keyboard_grab!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-#[cfg(feature = "xwayland")]
-delegate_xwayland_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> XdgForeignHandler for AnvilState<BackendData> {
     fn xdg_foreign_state(&mut self) -> &mut XdgForeignState {
         &mut self.xdg_foreign_state
     }
 }
-smithay::delegate_xdg_foreign!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-smithay::delegate_single_pixel_buffer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-smithay::delegate_fifo!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-smithay::delegate_commit_timing!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
-delegate_fixes!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> ImageCaptureSourceHandler for AnvilState<BackendData> {
     fn source_destroyed(&mut self, _source: ImageCaptureSource) {
         // Anvil doesn't track sources
     }
 }
-smithay::delegate_image_capture_source!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> OutputCaptureSourceHandler for AnvilState<BackendData> {
     fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState {
@@ -625,7 +581,6 @@ impl<BackendData: Backend> OutputCaptureSourceHandler for AnvilState<BackendData
         source.user_data().insert_if_missing(|| output.downgrade());
     }
 }
-smithay::delegate_output_capture_source!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> ImageCopyCaptureHandler for AnvilState<BackendData> {
     fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState {
@@ -661,7 +616,8 @@ impl<BackendData: Backend> ImageCopyCaptureHandler for AnvilState<BackendData> {
         frame.fail(smithay::wayland::image_copy_capture::CaptureFailureReason::Unknown);
     }
 }
-smithay::delegate_image_copy_capture!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+delegate_dispatch2!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
@@ -803,6 +759,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             seat_name,
             seat,
             pointer,
+            cursor_position_hint: None,
             clock,
 
             #[cfg(feature = "xwayland")]
@@ -827,6 +784,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             &self.display_handle,
             None,
             std::iter::empty::<(String, String)>(),
+            std::iter::empty::<String>(),
             true,
             Stdio::null(),
             Stdio::null(),
@@ -1131,6 +1089,7 @@ pub fn update_primary_scanout_output(
                 surface,
                 output,
                 states,
+                None,
                 render_element_states,
                 default_primary_scanout_output_compare,
             );
@@ -1143,18 +1102,20 @@ pub fn update_primary_scanout_output(
                 surface,
                 output,
                 states,
+                None,
                 render_element_states,
                 default_primary_scanout_output_compare,
             );
         });
     }
 
-    if let CursorImageStatus::Surface(ref surface) = cursor_status {
+    if let CursorImageStatus::Surface(surface) = cursor_status {
         with_surfaces_surface_tree(surface, |surface, states| {
             update_surface_primary_scanout_output(
                 surface,
                 output,
                 states,
+                None,
                 render_element_states,
                 default_primary_scanout_output_compare,
             );
@@ -1167,6 +1128,7 @@ pub fn update_primary_scanout_output(
                 surface,
                 output,
                 states,
+                None,
                 render_element_states,
                 default_primary_scanout_output_compare,
             );
@@ -1193,7 +1155,9 @@ pub fn take_presentation_feedback(
             window.take_presentation_feedback(
                 &mut output_presentation_feedback,
                 surface_primary_scanout_output,
-                |surface, _| surface_presentation_feedback_flags_from_states(surface, render_element_states),
+                |surface, _| {
+                    surface_presentation_feedback_flags_from_states(surface, None, render_element_states)
+                },
             );
         }
     });
@@ -1202,7 +1166,9 @@ pub fn take_presentation_feedback(
         layer_surface.take_presentation_feedback(
             &mut output_presentation_feedback,
             surface_primary_scanout_output,
-            |surface, _| surface_presentation_feedback_flags_from_states(surface, render_element_states),
+            |surface, _| {
+                surface_presentation_feedback_flags_from_states(surface, None, render_element_states)
+            },
         );
     }
 

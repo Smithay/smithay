@@ -3,7 +3,7 @@
 // - poll for accept
 
 use calloop::{
-    generic::Generic, EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory,
+    EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory, generic::Generic,
 };
 use std::{
     io,

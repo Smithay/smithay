@@ -17,7 +17,6 @@
 //!
 //! ```no_run
 //! use smithay::{
-//!     delegate_dmabuf,
 //!     backend::allocator::dmabuf::{Dmabuf},
 //!     reexports::{
 //!         wayland_server::protocol::{
@@ -73,8 +72,7 @@
 //!     }
 //! }
 //!
-//! // Delegate dmabuf handling for State to DmabufState.
-//! delegate_dmabuf!(State);
+//! smithay::delegate_dispatch2!(State);
 //!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
@@ -140,7 +138,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! # use smithay::{
-//! #     delegate_dmabuf,
 //! #     backend::allocator::dmabuf::Dmabuf,
 //! #     reexports::{wayland_server::protocol::wl_buffer::WlBuffer},
 //! #     wayland::{
@@ -161,7 +158,6 @@
 //! #     }
 //! #     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {}
 //! # }
-//! # delegate_dmabuf!(State);
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! # let mut dmabuf_state = DmabufState::new();
@@ -182,6 +178,8 @@
 //!     dmabuf_global,
 //! };
 //!
+//! smithay::delegate_dispatch2!(State);
+//!
 //! // Rest of the compositor goes here...
 //! ```
 
@@ -192,34 +190,34 @@ use std::{
     ops::Sub,
     os::unix::io::AsFd,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
 use indexmap::{IndexMap, IndexSet};
-use rustix::fs::{seek, SeekFrom};
+use rustix::fs::{SeekFrom, seek};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1},
     zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
+    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
     backend::{GlobalId, InvalidId},
     protocol::{
         wl_buffer::{self, WlBuffer},
         wl_surface::WlSurface,
     },
-    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
 };
 
 #[cfg(feature = "backend_drm")]
 use crate::backend::drm::DrmNode;
 use crate::{
     backend::allocator::{
-        dmabuf::{Dmabuf, DmabufFlags, Plane},
         Format, Fourcc, Modifier,
+        dmabuf::{Dmabuf, DmabufFlags, Plane},
     },
-    utils::{ids::id_gen, SealedFile, UnmanagedResource},
+    utils::{SealedFile, UnmanagedResource, ids::id_gen},
 };
 
 use super::{buffer::BufferHandler, compositor};
@@ -1004,55 +1002,6 @@ pub fn get_dmabuf(buffer: &wl_buffer::WlBuffer) -> Result<&Dmabuf, UnmanagedReso
     buffer.data::<Dmabuf>().ok_or(UnmanagedResource)
 }
 
-/// Macro to delegate implementation of the linux dmabuf to [`DmabufState`].
-///
-/// You must also implement [`DmabufHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_dmabuf {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        const _: () = {
-            use $crate::{
-                backend::allocator::dmabuf::Dmabuf,
-                reexports::{
-                    wayland_protocols::wp::linux_dmabuf::zv1::server::{
-                        zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
-                        zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1,
-                        zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-                    },
-                    wayland_server::{
-                        delegate_dispatch, delegate_global_dispatch, protocol::wl_buffer::WlBuffer,
-                    },
-                },
-                wayland::dmabuf::{
-                    DmabufData, DmabufFeedbackData, DmabufGlobalData, DmabufParamsData, DmabufState,
-                },
-            };
-
-            delegate_global_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpLinuxDmabufV1: DmabufGlobalData] => DmabufState
-            );
-
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpLinuxDmabufV1: DmabufData] => DmabufState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpLinuxBufferParamsV1: DmabufParamsData] => DmabufState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [WlBuffer: Dmabuf] => DmabufState
-            );
-            delegate_dispatch!(
-                $(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?
-                $ty: [ZwpLinuxDmabufFeedbackV1: DmabufFeedbackData] => DmabufState
-            );
-        };
-    };
-}
-
 impl DmabufParamsData {
     /// Emits a protocol error if the params have already been used to create a dmabuf.
     ///
@@ -1212,7 +1161,7 @@ impl DmabufParamsData {
 
             None => {
                 params.post_error(
-                    zwp_linux_buffer_params_v1::Error::Incomplete as u32,
+                    zwp_linux_buffer_params_v1::Error::Incomplete,
                     "Provided buffer is incomplete, it has zero planes",
                 );
                 return None;

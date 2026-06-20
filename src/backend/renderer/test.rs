@@ -14,12 +14,12 @@ use crate::{
 };
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Fourcc},
-        renderer::{
-            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportMem, Renderer, RendererSuper, Texture,
-            TextureFilter,
-        },
         SwapBuffersError,
+        allocator::{Fourcc, dmabuf::Dmabuf},
+        renderer::{
+            DebugFlags, Frame, ImportDma, ImportMem, Renderer, RendererSuper, Texture, TextureFilter,
+            sync::SyncPoint,
+        },
     },
     utils::{Buffer, Physical, Rectangle, Size, Transform},
 };
@@ -267,6 +267,9 @@ impl Frame for DummyFrame {
 
     fn transformation(&self) -> Transform {
         Transform::Normal
+    }
+    fn output_size(&self) -> Size<i32, Physical> {
+        Size::default()
     }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {

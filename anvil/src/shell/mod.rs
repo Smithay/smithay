@@ -9,25 +9,25 @@ use smithay::wayland::drm_syncobj::DrmSyncobjCachedState;
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
-        layer_map_for_output, space::SpaceElement, LayerSurface, PopupKind, PopupManager, Space,
-        WindowSurfaceType,
+        LayerSurface, PopupKind, PopupManager, Space, WindowSurfaceType, layer_map_for_output,
+        space::SpaceElement,
     },
     input::pointer::{CursorImageStatus, CursorImageSurfaceData},
     output::Output,
     reexports::{
         calloop::Interest,
         wayland_server::{
-            protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
             Client, Resource,
+            protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
         },
     },
     utils::{IsAlive, Logical, Point, Rectangle, Size},
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
-            with_surface_tree_upward, BufferAssignment, CompositorClientState, CompositorHandler,
-            CompositorState, SurfaceAttributes, TraversalAction,
+            BufferAssignment, CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes,
+            TraversalAction, add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
+            with_surface_tree_upward,
         },
         dmabuf::get_dmabuf,
         shell::{
@@ -41,8 +41,8 @@ use smithay::{
 };
 
 use crate::{
-    state::{AnvilState, Backend},
     ClientState,
+    state::{AnvilState, Backend},
 };
 
 mod element;

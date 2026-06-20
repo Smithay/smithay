@@ -83,7 +83,9 @@ pub enum MissingExtensionError {
     },
 
     /// An extension was present, but the version is too low.
-    #[error("Extension \"{name}\" version {required_major}.{required_minor} is required but only version {available_major}.{available_minor} is available.")]
+    #[error(
+        "Extension \"{name}\" version {required_major}.{required_minor} is required but only version {available_major}.{available_minor} is available."
+    )]
     WrongVersion {
         /// The name of the extension.
         name: &'static str,

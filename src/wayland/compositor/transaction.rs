@@ -41,14 +41,14 @@
 use std::{
     collections::HashSet,
     fmt,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource, Weak};
+use wayland_server::{DisplayHandle, Resource, Weak, protocol::wl_surface::WlSurface};
 
 use crate::utils::Serial;
 
-use super::{tree::PrivateSurfaceData, CompositorHandler};
+use super::{CompositorHandler, tree::PrivateSurfaceData};
 
 /// Types potentially blocking state changes
 pub trait Blocker {

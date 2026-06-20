@@ -9,11 +9,11 @@ use smithay_drm_extras::{
 use smithay::{
     backend::{
         drm::{self, DrmDeviceFd, DrmNode},
-        session::{libseat::LibSeatSession, Session},
+        session::{Session, libseat::LibSeatSession},
         udev::{UdevBackend, UdevEvent},
     },
     reexports::{
-        calloop::{timer::Timer, EventLoop, LoopHandle},
+        calloop::{EventLoop, LoopHandle, timer::Timer},
         rustix::fs::OFlags,
     },
     utils::DeviceFd,

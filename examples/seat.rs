@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use smithay::input::{keyboard::FilterResult, Seat, SeatHandler, SeatState};
+use smithay::input::{Seat, SeatHandler, SeatState, keyboard::FilterResult};
 use smithay::reexports::wayland_server::{
+    Display, ListeningSocket,
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::wl_surface::WlSurface,
-    Display, ListeningSocket,
 };
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
-use smithay::{delegate_compositor, delegate_seat};
 
 struct App {
     compositor_state: CompositorState,
@@ -104,5 +103,4 @@ impl CompositorHandler for App {
     fn commit(&mut self, _surface: &WlSurface) {}
 }
 
-delegate_compositor!(App);
-delegate_seat!(App);
+smithay::delegate_dispatch2!(App);

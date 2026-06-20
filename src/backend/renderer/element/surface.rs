@@ -69,13 +69,16 @@ use wayland_server::protocol::wl_surface;
 
 use crate::{
     backend::renderer::{
+        Color32F, Frame, ImportAll, Renderer, Texture,
         utils::{
             Buffer, DamageSet, DamageSnapshot, OpaqueRegions, RendererSurfaceState,
             RendererSurfaceStateUserData, SurfaceView,
         },
-        Color32F, Frame, ImportAll, Renderer, Texture,
     },
-    utils::{Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{
+        Buffer as BufferCoords, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
+        user_data::UserDataMap,
+    },
     wayland::{
         alpha_modifier::AlphaModifierSurfaceCachedState,
         compositor::{self, SurfaceData, TraversalAction},
@@ -133,7 +136,8 @@ impl KindEvaluation {
         KindEvaluation::Dynamic(func)
     }
 
-    fn eval(&self, data: &SurfaceData) -> Kind {
+    /// Evaluates the `Kind` for a given `SurfaceData` struct.
+    pub fn eval(&self, data: &SurfaceData) -> Kind {
         match self {
             KindEvaluation::Static(res) => *res,
             KindEvaluation::Dynamic(func) => func(data),
@@ -340,6 +344,11 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
     pub fn texture(&self) -> &WaylandSurfaceTexture<R> {
         &self.texture
     }
+
+    /// Get the buffer
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
 }
 
 impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
@@ -447,6 +456,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), R::Error> {
         match self.texture {
             WaylandSurfaceTexture::Texture(ref texture) => frame.render_texture_from_to(

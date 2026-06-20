@@ -63,7 +63,6 @@
 //! instance and have the same physical device handle.
 
 #![warn(missing_debug_implementations)]
-#![forbid(unsafe_op_in_unsafe_fn)]
 
 use std::{
     env::{self, VarError},
@@ -72,10 +71,9 @@ use std::{
 };
 
 use ash::{
-    ext,
+    Entry, ext,
     prelude::VkResult,
     vk::{self, PhysicalDeviceDriverProperties, PhysicalDeviceDrmPropertiesEXT},
-    Entry,
 };
 use libc::c_void;
 use scopeguard::ScopeGuard;
@@ -675,8 +673,7 @@ fn get_env_or_max_version(max_version: Version) -> Version {
                 if overridden_version > max_version {
                     warn!(
                         "Ignoring SMITHAY_VK_VERSION since the requested max version is higher than the maximum of {}.{}",
-                        max_version.major,
-                        max_version.minor
+                        max_version.major, max_version.minor
                     );
                     max_version
                 } else {

@@ -2,10 +2,10 @@
 
 use crate::{
     backend::renderer::{
-        element::{texture::TextureRenderElement, Element, Id, Kind, RenderElement, UnderlyingStorage},
+        element::{Element, Id, Kind, RenderElement, UnderlyingStorage, texture::TextureRenderElement},
         utils::{CommitCounter, DamageSet, OpaqueRegions},
     },
-    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Transform},
+    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Transform, user_data::UserDataMap},
 };
 
 use super::{GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexProgram, GlesTexture, Uniform};
@@ -112,6 +112,7 @@ impl RenderElement<GlesRenderer> for PixelShaderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
         frame.render_pixel_shader_to(
             &self.shader,
@@ -209,6 +210,7 @@ impl RenderElement<GlesRenderer> for TextureShaderElement {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
+        _cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
         frame.render_texture_from_to(
             &self.inner.texture,

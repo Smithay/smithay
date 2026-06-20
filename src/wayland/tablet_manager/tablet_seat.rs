@@ -3,18 +3,18 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_tool_v2::ZwpTabletToolV2,
     zwp_tablet_v2::ZwpTabletV2,
 };
-use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId};
 
 use crate::input::pointer::CursorImageStatus;
-use crate::{backend::input::TabletToolDescriptor, wayland::compositor::CompositorHandler};
+use crate::{
+    backend::input::TabletToolDescriptor,
+    wayland::{Dispatch2, compositor::CompositorHandler},
+};
 
+use super::tablet::{TabletDescriptor, TabletHandle};
 use super::{
     tablet::TabletUserData,
     tablet_tool::{TabletToolHandle, TabletToolUserData},
-};
-use super::{
-    tablet::{TabletDescriptor, TabletHandle},
-    TabletManagerState,
 };
 
 use std::collections::HashMap;
@@ -213,24 +213,23 @@ pub struct TabletSeatUserData {
     pub(super) handle: TabletSeatHandle,
 }
 
-impl<D> Dispatch<ZwpTabletSeatV2, TabletSeatUserData, D> for TabletManagerState
+impl<D> Dispatch2<ZwpTabletSeatV2, D> for TabletSeatUserData
 where
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: 'static,
 {
     fn request(
+        &self,
         _state: &mut D,
         _client: &Client,
         _seat: &ZwpTabletSeatV2,
         _request: zwp_tablet_seat_v2::Request,
-        _data: &TabletSeatUserData,
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, seat: &ZwpTabletSeatV2, data: &TabletSeatUserData) {
-        data.handle
+    fn destroyed(&self, _state: &mut D, _client: ClientId, seat: &ZwpTabletSeatV2) {
+        self.handle
             .inner
             .lock()
             .unwrap()

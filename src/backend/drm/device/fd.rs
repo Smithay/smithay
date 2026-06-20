@@ -1,4 +1,4 @@
-use drm::{control::Device as ControlDevice, Device as BasicDevice};
+use drm::{Device as BasicDevice, control::Device as ControlDevice};
 use std::{
     os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd},
     sync::{Arc, Weak},
