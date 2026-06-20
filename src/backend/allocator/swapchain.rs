@@ -118,7 +118,7 @@ impl<B: Buffer + AsDmabuf> AsDmabuf for Slot<B> {
         let maybe_dmabuf = self.userdata().get::<Dmabuf>();
         if maybe_dmabuf.is_none() {
             let dmabuf = (**self).export()?;
-            self.userdata().insert_if_missing(|| dmabuf);
+            self.userdata().insert_if_missing_threadsafe(|| dmabuf);
         }
 
         Ok(self.userdata().get::<Dmabuf>().cloned().unwrap())

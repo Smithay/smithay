@@ -212,7 +212,7 @@ where
             Ok(dmabuf) => dmabuf,
             Err(err) => return Err((swapchain.allocator, err.into())),
         };
-        buffer.userdata().insert_if_missing(|| fb);
+        buffer.userdata().insert_if_missing_threadsafe(|| fb);
 
         let handle = buffer.userdata().get::<GbmFramebuffer>().unwrap();
 
@@ -266,7 +266,7 @@ where
             if maybe_buffer.is_none() {
                 let fb = framebuffer_from_bo(self.drm.device_fd(), &slot, self.is_opaque)
                     .map_err(|err| Error::DrmError(err.into()))?;
-                slot.userdata().insert_if_missing(|| fb);
+                slot.userdata().insert_if_missing_threadsafe(|| fb);
             }
 
             self.next_fb = Some(slot);
