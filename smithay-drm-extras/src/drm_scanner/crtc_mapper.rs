@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use drm::control::{Device as ControlDevice, connector, crtc};
 
@@ -86,12 +86,16 @@ impl super::CrtcMapper for SimpleCrtcMapper {
         drm: &impl ControlDevice,
         connectors: impl Iterator<Item = &'a connector::Info> + Clone,
     ) {
-        for connector in connectors
+        // Release CRTC reservations for every connector that is not currently connected. This
+        // covers connectors that are present but disconnected, as well as connectors that have
+        // vanished from the resource list entirely (e.g. DP-MST sink connectors when a dock is
+        // unplugged or the system is suspended).
+        let connected: HashSet<connector::Handle> = connectors
             .clone()
-            .filter(|conn| conn.state() != connector::State::Connected)
-        {
-            self.crtcs.remove(&connector.handle());
-        }
+            .filter(|conn| conn.state() == connector::State::Connected)
+            .map(|conn| conn.handle())
+            .collect();
+        self.crtcs.retain(|handle, _| connected.contains(handle));
 
         let mut needs_crtc: Vec<&connector::Info> = connectors
             .filter(|conn| conn.state() == connector::State::Connected)
