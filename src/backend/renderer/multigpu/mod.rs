@@ -1680,6 +1680,13 @@ struct MultiTextureInternal {
 //  Type erasure just forces us to do this instead.
 unsafe impl Send for MultiTextureInternal {}
 
+#[cfg(feature = "wayland_frontend")]
+pub(crate) fn clear_surface_textures(states: &crate::wayland::compositor::SurfaceData) {
+    if let Some(texture) = states.data_map.get::<Arc<Mutex<MultiTextureInternal>>>() {
+        texture.lock().unwrap().textures.clear();
+    }
+}
+
 type DamageAnyTextureMappings = Vec<(Rectangle<i32, BufferCoords>, Box<dyn Any + 'static>)>;
 
 #[derive(Debug)]
