@@ -5,9 +5,32 @@ use xkbcommon::xkb;
 use crate::{
     backend::input::InputEvent,
     input::keyboard::{KeymapFile, XkbConfig},
+    utils::{Logical, Rectangle},
 };
 
 use super::{EiInput, EiInputConnection, EiInputConnectionInner};
+
+/// A region advertised on an EI absolute pointer device.
+///
+/// Describes a rectangular coordinate space the client may point within, in the
+/// compositor's logical coordinate system. Clients that capture at a different
+/// (e.g. physical) resolution use `scale` to convert their coordinates into the
+/// logical space the compositor expects.
+///
+/// `rect` is the logical offset and size of the region; `scale` the
+/// physical-to-logical scale of the underlying output (e.g. `2.0` for a 200%
+/// display). `mapping_id`, when set, identifies which screen/stream the region
+/// maps to (it must match the `mapping_id` the client sees for the corresponding
+/// screencast stream), letting a client correlate a region with the video it shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EiRegion {
+    /// Logical offset and size of the region.
+    pub rect: Rectangle<i32, Logical>,
+    /// Physical-to-logical scale of the region (e.g. `2.0` at 200%).
+    pub scale: f32,
+    /// Identifier tying this region to a screencast stream (e.g. the output name).
+    pub mapping_id: Option<String>,
+}
 
 /// A seat advertised on an EI sender context
 #[derive(Clone, Debug)]
@@ -32,6 +55,7 @@ impl EiInputSeat {
             keyboard: None,
             pointer: None,
             pointer_absolute: None,
+            pointer_absolute_regions: Vec::new(),
             touch: None,
             device_keyboard: None,
             device_pointer: None,
@@ -102,12 +126,19 @@ impl EiInputSeat {
     /// The EI device will have button and scroll capabilities in addition
     /// to the pointer absolute capability.
     ///
+    /// `regions` describes the logical coordinate space(s) the client may point
+    /// within (see [`EiRegion`]). Pass an empty slice to advertise no region, in
+    /// which case the client must guess the coordinate space. Advertising a
+    /// region lets clients that capture at a different resolution (e.g. physical
+    /// pixels on a HiDPI output) convert their coordinates correctly.
+    ///
     /// Calling on a seat that already has an absolute pointer device will remove
     /// that device and add a new one.
-    pub fn add_pointer_absolute(&self, name: &str) {
+    pub fn add_pointer_absolute(&self, name: &str, regions: &[EiRegion]) {
         let mut inner = self.0.lock().unwrap();
         inner.device_pointer_absolute = None;
         inner.pointer_absolute = Some(name.to_string());
+        inner.pointer_absolute_regions = regions.to_vec();
         inner.refresh_devices();
     }
 
@@ -116,6 +147,7 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_pointer_absolute = None;
         inner.pointer_absolute = None;
+        inner.pointer_absolute_regions.clear();
     }
 
     /// Add a touch device to the EI seat
@@ -159,6 +191,9 @@ struct EiInputSeatInner {
     keyboard: Option<(String, KeymapFile)>,
     pointer: Option<String>,
     pointer_absolute: Option<String>,
+    // Regions advertised on the absolute pointer device, describing the logical
+    // coordinate space(s) the client may address (see `EiRegion`).
+    pointer_absolute_regions: Vec<EiRegion>,
     touch: Option<String>,
     // Devices created in response to client bind
     device_keyboard: Option<DeviceDropWrapper>,
@@ -213,11 +248,31 @@ impl EiInputSeatInner {
                 .contains(DeviceCapability::PointerAbsolute)
         {
             if let Some(name) = self.pointer_absolute.as_ref() {
+                let regions = self.pointer_absolute_regions.clone();
                 let device = self.seat.add_device(
                     Some(name),
                     DeviceType::Virtual,
                     DeviceCapability::PointerAbsolute | DeviceCapability::Button | DeviceCapability::Scroll,
-                    |_| {},
+                    |device| {
+                        // Advertise the coordinate space(s) the client may point within.
+                        // These `ei_device.region` events must be sent after the device is
+                        // created but before `done`, which is exactly when this closure runs.
+                        for region in &regions {
+                            // `region_mapping_id` applies to the region created by the
+                            // next `region` request, so send it first when present.
+                            if let Some(mapping_id) = &region.mapping_id {
+                                device.device().region_mapping_id(mapping_id);
+                            }
+                            // `ei_device.region` coordinates are unsigned
+                            device.device().region(
+                                region.rect.loc.x.max(0) as u32,
+                                region.rect.loc.y.max(0) as u32,
+                                region.rect.size.w.max(0) as u32,
+                                region.rect.size.h.max(0) as u32,
+                                region.scale,
+                            );
+                        }
+                    },
                 );
                 device.resumed();
                 let _ = self.event_sender.send(InputEvent::DeviceAdded {
