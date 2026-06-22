@@ -111,7 +111,7 @@
 //! Once the seat is initialized, you can add capabilities to it.
 //!
 //! Currently, pointer, touch and keyboard capabilities are supported by this module.
-//! [`tablet_manager`](crate::wayland::tablet_manager) also provides client interaction for drawing tablets.
+//! [`tablet`] provides similar abstractions for drawing tablets.
 //!
 //! You can add these capabilities via methods of the [`Seat`] struct:
 //! [`Seat::add_keyboard`], [`Seat::add_pointer`] and [`Seat::add_touch`].
@@ -145,6 +145,7 @@ use crate::{
 pub mod dnd;
 pub mod keyboard;
 pub mod pointer;
+pub mod tablet;
 pub mod touch;
 
 /// Handler trait for Seats

@@ -8,6 +8,7 @@ use crate::{
             GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
             GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
         },
+        tablet::{TabletSeatHandler, tool::TabletToolTarget},
         touch::{FrameMarker, TouchTarget},
     },
     utils::{
@@ -2378,6 +2379,104 @@ impl<D: SeatHandler + CompositorHandler + 'static> TouchTarget<D> for X11Surface
             TouchTarget::last_frame(surface, seat, data)
         } else {
             None
+        }
+    }
+}
+
+impl<D: TabletSeatHandler + CompositorHandler + 'static> TabletToolTarget<D> for X11Surface {
+    fn proximity_in(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+        tablet: &crate::input::tablet::Tablet,
+        serial: Serial,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::proximity_in(surface, seat, data, tool_descriptor, tablet, serial);
+        }
+    }
+
+    fn proximity_out(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::proximity_out(surface, seat, data, tool_descriptor);
+        }
+    }
+
+    fn down(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+        event: &crate::input::tablet::tool::DownEvent,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::down(surface, seat, data, tool_descriptor, event);
+        }
+    }
+
+    fn up(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+        event: &crate::input::tablet::tool::UpEvent,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::up(surface, seat, data, tool_descriptor, event);
+        }
+    }
+
+    fn motion(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+        event: &crate::input::tablet::tool::MotionEvent,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::motion(surface, seat, data, tool_descriptor, event);
+        }
+    }
+
+    fn button(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+        event: &crate::input::tablet::tool::ButtonEvent,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::button(surface, seat, data, tool_descriptor, event);
+        }
+    }
+
+    fn axis(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+        frame: crate::input::tablet::tool::AxisFrame,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::axis(surface, seat, data, tool_descriptor, frame);
+        }
+    }
+
+    fn frame(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        tool_descriptor: &crate::backend::input::TabletToolDescriptor,
+        time: u32,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TabletToolTarget::frame(surface, seat, data, tool_descriptor, time);
         }
     }
 }

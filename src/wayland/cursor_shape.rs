@@ -11,7 +11,7 @@
 //!
 //! use smithay::wayland::cursor_shape::CursorShapeManagerState;
 //!
-//! # use smithay::backend::input::KeyState;
+//! # use smithay::backend::input::{KeyState, TabletToolDescriptor};
 //! # use smithay::input::{
 //! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
 //! #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
@@ -19,12 +19,12 @@
 //! #             GestureHoldBeginEvent, GestureHoldEndEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
 //! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget, FrameMarker},
+//! #   tablet::{Tablet, TabletSeatHandler, tool::{self, TabletToolTarget}},
 //! #   Seat, SeatHandler, SeatState,
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
 //! # use smithay::wayland::seat::WaylandFocus;
 //! # use wayland_server::protocol::wl_surface;
-//! # use smithay::wayland::tablet_manager::TabletSeatHandler;
 //!
 //! # #[derive(Debug, Clone, PartialEq)]
 //! # struct Target;
@@ -78,6 +78,16 @@
 //! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent) {}
 //! #   fn last_frame(&self, seat: &Seat<State>, data: &mut State) -> Option<FrameMarker> { unimplemented!() }
 //! # }
+//! # impl TabletToolTarget<State> for Target {
+//! #   fn proximity_in(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor, tablet: &Tablet, serial: Serial) {}
+//! #   fn proximity_out(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor) {}
+//! #   fn down(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor, event: &tool::DownEvent) {}
+//! #   fn up(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor, event: &tool::UpEvent) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor, event: &tool::MotionEvent) {}
+//! #   fn axis(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor, frame: tool::AxisFrame) {}
+//! #   fn button(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor, event: &tool::ButtonEvent) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, tool_descriptor: &TabletToolDescriptor, time: u32) {}
+//! # }
 //! # struct State {
 //! #     seat_state: SeatState<Self>,
 //! # };
@@ -91,7 +101,9 @@
 //! #         &mut self.seat_state
 //! #     }
 //! # }
-//! # impl TabletSeatHandler for State {}
+//! # impl TabletSeatHandler for State {
+//! #     type ToolFocus = Target;
+//! # }
 //!
 //! let state = CursorShapeManagerState::new::<State>(&display.handle());
 //!
@@ -113,12 +125,14 @@ use wayland_server::{Dispatch, DisplayHandle, backend::GlobalId};
 use crate::input::SeatHandler;
 use crate::input::WeakSeat;
 use crate::input::pointer::{CursorIcon, CursorImageStatus};
+use crate::input::tablet::TabletSeatHandler;
 use crate::utils::Serial;
 use crate::wayland::seat::{WaylandFocus, pointer::allow_setting_cursor};
+use crate::wayland::tablet_manager::TabletToolUserData;
+use crate::wayland::tablet_manager::tablet_tool;
 use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 use super::seat::PointerUserData;
-use super::tablet_manager::{TabletSeatHandler, TabletToolUserData};
 
 /// State of the cursor shape manager.
 #[derive(Debug)]
@@ -239,6 +253,7 @@ impl<D> Dispatch2<CursorShapeDevice, D> for CursorShapeDeviceUserData<D>
 where
     D: SeatHandler + TabletSeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
+    <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
@@ -279,27 +294,22 @@ where
                             // When the zwp_tablet_tool_v2 is removed, the wp_cursor_shape_device_v1 object becomes inert.
                             return;
                         };
-                        let tablet_data = match tablet.data::<TabletToolUserData>() {
+                        let tablet_data = match tablet.data::<TabletToolUserData<D>>() {
                             Some(data) => data,
                             None => return,
                         };
 
-                        // Check that tablet focus matches.
-                        if !tablet_data
-                            .handle
-                            .inner
-                            .lock()
-                            .unwrap()
-                            .focus
-                            .as_ref()
-                            .map(|focus| focus.same_client_as(&tablet.id()))
-                            .unwrap_or(false)
-                        {
+                        let Some(handle) = tablet_data.handle.upgrade() else {
+                            return;
+                        };
+
+                        if !tablet_tool::allow_setting_cursor(&handle, Serial(serial), &resource.id()) {
                             return;
                         }
 
                         let cursor_icon = shape_to_cursor_icon(shape);
-                        state.tablet_tool_image(&tablet_data.desc, CursorImageStatus::Named(cursor_icon));
+                        state
+                            .tablet_tool_image(&handle.arc.descriptor, CursorImageStatus::Named(cursor_icon));
                     }
                 }
             }
