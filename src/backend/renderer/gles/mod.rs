@@ -1220,7 +1220,15 @@ impl ImportDma for GlesRenderer {
                 .create_image_from_dmabuf(buffer)
                 .map_err(GlesError::BindBufferEGLError)?;
 
-            let tex = self.import_egl_image(image, is_external, None)?;
+            let tex = match self.import_egl_image(image, is_external, None) {
+                Ok(tex) => tex,
+                Err(err) => {
+                    unsafe {
+                        ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
+                    }
+                    return Err(err);
+                }
+            };
             let format = fourcc_to_gl_formats(buffer.format().code)
                 .map(|(internal, _, _)| internal)
                 .unwrap_or(ffi::RGBA8);
