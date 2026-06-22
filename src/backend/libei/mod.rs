@@ -20,7 +20,7 @@
 //!                 let seat = connection.add_seat("default");
 //!                 let _ = seat.add_keyboard("virtual keyboard", XkbConfig::default());
 //!                 seat.add_pointer("virtual pointer");
-//!                 seat.add_pointer_absolute("virtual absolute pointer");
+//!                 seat.add_pointer_absolute("virtual absolute pointer", &[]);
 //!                 seat.add_touch("virtual touch");
 //!             }
 //!             EiInputEvent::Disconnected => {}
@@ -52,7 +52,7 @@ use crate::backend::input::InputEvent;
 mod input;
 pub use input::ScrollEvent;
 mod seat;
-pub use seat::EiInputSeat;
+pub use seat::{EiInputSeat, EiRegion};
 
 /// An [`EventSource`] for receiving input from an EI sender context and
 /// converting to [`InputEvent`]s.
