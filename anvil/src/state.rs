@@ -30,6 +30,7 @@ use smithay::{
         dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source},
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, Focus, PointerHandle},
+        tablet::TabletSeatHandler,
     },
     output::Output,
     reexports::{
@@ -87,7 +88,7 @@ use smithay::{
         shm::{ShmHandler, ShmState},
         single_pixel_buffer::SinglePixelBufferState,
         socket::ListeningSocketSource,
-        tablet_manager::{TabletManagerState, TabletSeatHandler},
+        tablet_manager::TabletManagerState,
         text_input::TextInputManagerState,
         viewporter::ViewporterState,
         virtual_keyboard::VirtualKeyboardManagerState,
@@ -324,6 +325,8 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
 }
 
 impl<BackendData: Backend> TabletSeatHandler for AnvilState<BackendData> {
+    type ToolFocus = PointerFocusTarget;
+
     fn tablet_tool_image(&mut self, _tool: &TabletToolDescriptor, image: CursorImageStatus) {
         // TODO: tablet tools should have their own cursors
         self.cursor_status = image;

@@ -1,108 +1,154 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use wayland_protocols::wp::tablet::zv2::server::{
-    zwp_tablet_seat_v2::ZwpTabletSeatV2,
-    zwp_tablet_v2::{self, ZwpTabletV2},
+    zwp_tablet_seat_v2::ZwpTabletSeatV2, zwp_tablet_v2::ZwpTabletV2,
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId,
-    protocol::wl_surface::WlSurface,
+    Client, Dispatch, DisplayHandle, Resource, Weak, backend::ObjectId, protocol::wl_surface::WlSurface,
 };
 
-use crate::{backend::input::Device, wayland::Dispatch2};
+use crate::{
+    input::tablet::{Tablet, TabletDescriptor, TabletRc, TabletSeat, TabletSeatHandler, WeakTablet},
+    wayland::Dispatch2,
+};
 
-/// Description of graphics tablet device
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct TabletDescriptor {
-    /// Tablet device name
-    pub name: String,
-    /// Tablet device USB (product,vendor) id
-    pub usb_id: Option<(u32, u32)>,
-    /// Path to the device
-    pub syspath: Option<PathBuf>,
-}
-
-impl<D: Device> From<&D> for TabletDescriptor {
-    #[inline]
-    fn from(device: &D) -> Self {
-        TabletDescriptor {
-            name: device.name(),
-            syspath: device.syspath(),
-            usb_id: device.usb_id(),
+impl Tablet {
+    fn new_bound(descriptor: TabletDescriptor) -> Self {
+        Self {
+            arc: Arc::new(TabletRc {
+                descriptor,
+                #[cfg(feature = "wayland_frontend")]
+                wp_tablet: WpTabletHandle {
+                    bound: true,
+                    known_instances: Default::default(),
+                },
+            }),
         }
     }
 }
 
-#[derive(Debug, Default)]
-struct Tablet {
-    instances: Vec<Weak<ZwpTabletV2>>,
-}
-
-/// Handle to a tablet device
-///
-/// Tablet represents one graphics tablet device
-#[derive(Debug, Default, Clone)]
-pub struct TabletHandle {
-    inner: Arc<Mutex<Tablet>>,
-}
-
-impl TabletHandle {
-    pub(super) fn new_instance<D>(
-        &mut self,
-        client: &Client,
-        dh: &DisplayHandle,
-        seat: &ZwpTabletSeatV2,
-        tablet: &TabletDescriptor,
-    ) where
+impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
+    /// Add a new tablet to a seat, and exposes it to wayland clients
+    ///
+    /// You can either add tablet on [DeviceAdded] event, or you can add tablet based
+    /// on tool event, then clients will not know about devices that are not being used.
+    ///
+    /// If the tablet was already known it removes it and recreate a new handle. Because
+    /// [`TabletToolHandle`] will keep a handle to the [`Tablet`] while in proximity, it may appears
+    /// to clients that the tablet hasn't been removed until the tool leave its proximity.
+    ///
+    /// [DeviceAdded]: crate::backend::input::InputEvent::DeviceAdded
+    /// [`TabletToolHandle`]: crate::input::tablet::tool::TabletToolHandle
+    pub fn add_wp_tablet(&self, dh: &DisplayHandle, tablet_desc: &TabletDescriptor) -> Tablet
+    where
         D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: 'static,
     {
-        let wl_tablet = client
-            .create_resource::<ZwpTabletV2, _, D>(dh, seat.version(), TabletUserData { handle: self.clone() })
-            .unwrap();
+        let inner = &mut *self.arc.lock().unwrap();
 
-        seat.tablet_added(&wl_tablet);
+        let tablet = inner.add_tablet(tablet_desc, Tablet::new_bound);
+        let instances = &mut inner.instances;
 
-        wl_tablet.name(tablet.name.clone());
+        for seat in instances.iter() {
+            let Ok(seat) = seat.upgrade() else {
+                continue;
+            };
 
-        if let Some((id_product, id_vendor)) = tablet.usb_id {
-            wl_tablet.id(id_product, id_vendor);
+            if let Ok(client) = dh.get_client(seat.id()) {
+                tablet
+                    .arc
+                    .wp_tablet
+                    .new_instance::<D>(&client, dh, &seat, tablet.clone(), tablet_desc);
+            }
         }
 
-        if let Some(syspath) = tablet.syspath.as_ref().and_then(|p| p.to_str()) {
-            wl_tablet.path(syspath.to_owned());
-        }
-
-        wl_tablet.done();
-
-        self.inner.lock().unwrap().instances.push(wl_tablet.downgrade());
-    }
-
-    pub(super) fn with_focused_tablet<F>(&self, focus: &WlSurface, cb: F)
-    where
-        F: Fn(&ZwpTabletV2),
-    {
-        if let Some(instance) = self
-            .inner
-            .lock()
-            .unwrap()
-            .instances
-            .iter()
-            .find(|i| i.id().same_client_as(&focus.id()))
-            .and_then(|t| t.upgrade().ok())
-        {
-            cb(&instance);
-        }
+        tablet
     }
 }
 
 /// User data of ZwpTabletV2 object
 #[derive(Debug)]
 pub struct TabletUserData {
-    handle: TabletHandle,
+    tablet: WeakTablet,
+    seat_id: ObjectId,
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct WpTabletHandle {
+    bound: bool,
+    known_instances: Mutex<Vec<Weak<wayland_protocols::wp::tablet::zv2::server::zwp_tablet_v2::ZwpTabletV2>>>,
+}
+
+impl WpTabletHandle {
+    pub(super) fn new_instance<D>(
+        &self,
+        client: &Client,
+        dh: &DisplayHandle,
+        seat: &ZwpTabletSeatV2,
+        tablet: Tablet,
+        desc: &TabletDescriptor,
+    ) where
+        D: Dispatch<ZwpTabletV2, TabletUserData>,
+        D: 'static,
+    {
+        if !self.bound {
+            return;
+        }
+
+        let wp_tablet = client
+            .create_resource::<ZwpTabletV2, _, D>(
+                dh,
+                seat.version(),
+                TabletUserData {
+                    tablet: tablet.downgrade(),
+                    seat_id: seat.id(),
+                },
+            )
+            .unwrap();
+
+        seat.tablet_added(&wp_tablet);
+
+        wp_tablet.name(desc.name.clone());
+
+        if let Some((id_product, id_vendor)) = desc.usb_id {
+            wp_tablet.id(id_product, id_vendor);
+        }
+
+        if let Some(syspath) = desc.syspath.as_ref().and_then(|p| p.to_str()) {
+            wp_tablet.path(syspath.to_owned());
+        }
+
+        wp_tablet.done();
+
+        self.known_instances.lock().unwrap().push(wp_tablet.downgrade());
+    }
+
+    pub(crate) fn focused_tablet_for_seat(
+        &self,
+        surface: &WlSurface,
+        seat_id: &ObjectId,
+    ) -> Option<ZwpTabletV2> {
+        self.known_instances.lock().unwrap().iter().find_map(|tablet| {
+            tablet.upgrade().ok().filter(|wp_tablet| {
+                Resource::id(wp_tablet).same_client_as(&surface.id())
+                    && &wp_tablet.data::<TabletUserData>().unwrap().seat_id == seat_id
+            })
+        })
+    }
+}
+
+impl Drop for WpTabletHandle {
+    fn drop(&mut self) {
+        let mut guard = self.known_instances.lock().unwrap();
+
+        for wp_tablet in guard.drain(..) {
+            let Ok(wp_tablet) = wp_tablet.upgrade() else {
+                continue;
+            };
+
+            wp_tablet.removed();
+        }
+    }
 }
 
 impl<D> Dispatch2<ZwpTabletV2, D> for TabletUserData
@@ -112,20 +158,25 @@ where
     fn request(
         &self,
         _state: &mut D,
-        _client: &Client,
-        _tablet: &ZwpTabletV2,
-        _request: zwp_tablet_v2::Request,
-        _dh: &DisplayHandle,
-        _data_init: &mut DataInit<'_, D>,
+        _client: &wayland_server::Client,
+        _resource: &ZwpTabletV2,
+        _request: <ZwpTabletV2 as wayland_server::Resource>::Request,
+        _dhandle: &wayland_server::DisplayHandle,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, tablet: &ZwpTabletV2) {
-        self.handle
-            .inner
+    fn destroyed(&self, _state: &mut D, _client: wayland_server::backend::ClientId, wp_tablet: &ZwpTabletV2) {
+        let Some(tablet) = self.tablet.upgrade() else {
+            return;
+        };
+
+        tablet
+            .arc
+            .wp_tablet
+            .known_instances
             .lock()
             .unwrap()
-            .instances
-            .retain(|i| i.id() != Resource::id(tablet));
+            .retain(|i| i.id() != Resource::id(wp_tablet));
     }
 }

@@ -1,429 +1,352 @@
-use std::fmt;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 
-use crate::backend::input::{ButtonState, TabletToolCapabilities, TabletToolDescriptor, TabletToolType};
-use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
-use crate::utils::{Client as ClientCoords, Logical, Point};
-use crate::wayland::compositor::CompositorHandler;
-use crate::wayland::seat::CURSOR_IMAGE_ROLE;
 use portable_atomic::AtomicF64;
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
 };
-use wayland_server::Weak;
-use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId};
-
-use crate::{
-    utils::Serial,
-    wayland::{Dispatch2, compositor},
+use wayland_server::{
+    Client, Dispatch, DisplayHandle, Resource, Weak,
+    backend::{ClientId, ObjectId},
+    protocol::wl_surface::WlSurface,
 };
 
-use super::tablet::TabletHandle;
-use super::tablet_seat::TabletSeatHandler;
+use crate::{
+    backend::input::{ButtonState, TabletToolCapabilities, TabletToolDescriptor, TabletToolType},
+    input::{
+        pointer::{CursorImageAttributes, CursorImageStatus},
+        tablet::{
+            Tablet, TabletSeat, TabletSeatHandler, TabletSeatTrait,
+            tool::{
+                self, AxisFrame, ButtonEvent, DownEvent, MotionEvent, TabletToolGrab, TabletToolHandle,
+                TabletToolInternal, TabletToolRc, TabletToolTarget, UpEvent, WeakTabletToolHandle,
+            },
+        },
+    },
+    utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
+    wayland::{
+        Dispatch2,
+        compositor::{self, CompositorHandler},
+        seat::{CURSOR_IMAGE_ROLE, WaylandFocus},
+    },
+};
 
-#[derive(Debug, Default)]
-pub(crate) struct TabletTool {
-    instances: Vec<Weak<ZwpTabletToolV2>>,
-    pub(crate) focus: Option<WlSurface>,
-
-    is_down: bool,
-
-    pending_pressure: Option<f64>,
-    pending_distance: Option<f64>,
-    pending_tilt: Option<(f64, f64)>,
-    pending_slider: Option<f64>,
-    pending_rotation: Option<f64>,
-    pending_wheel: Option<(f64, i32)>,
-}
-
-impl TabletTool {
-    fn proximity_in(
-        &mut self,
-        loc: Point<f64, Logical>,
-        (focus, sloc): (WlSurface, Point<f64, Logical>),
-        tablet: &TabletHandle,
-        serial: Serial,
-        time: u32,
-    ) {
-        let wl_tool = self.instances.iter().find(|i| i.id().same_client_as(&focus.id()));
-
-        if let Some(wl_tool) = wl_tool.and_then(|tool| tool.upgrade().ok()) {
-            tablet.with_focused_tablet(&focus, |wl_tablet| {
-                wl_tool.proximity_in(serial.into(), wl_tablet, &focus);
-                // proximity_in has to be followed by motion event (required by protocol)
-                let client_scale = wl_tool
-                    .data::<TabletToolUserData>()
-                    .unwrap()
-                    .client_scale
-                    .load(Ordering::Acquire);
-                let srel_loc = (loc - sloc).to_client(client_scale);
-                wl_tool.motion(srel_loc.x, srel_loc.y);
-                wl_tool.frame(time);
-            });
-        }
-
-        self.focus = Some(focus.clone());
-    }
-
-    fn proximity_out(&mut self, time: u32) {
-        if let Some(ref focus) = self.focus {
-            let wl_tool = self.instances.iter().find(|i| i.id().same_client_as(&focus.id()));
-
-            if let Some(wl_tool) = wl_tool.and_then(|tool| tool.upgrade().ok()) {
-                if self.is_down {
-                    wl_tool.pressure(0);
-                    wl_tool.up();
-                    self.is_down = false;
-                }
-                wl_tool.proximity_out();
-                wl_tool.frame(time);
-            }
-        }
-
-        self.focus = None;
-    }
-
-    fn tip_down(&mut self, serial: Serial, time: u32) {
-        if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self
-                .instances
-                .iter()
-                .find(|i| i.id().same_client_as(&focus.id()))
-                .and_then(|tool| tool.upgrade().ok())
-            {
-                if !self.is_down {
-                    wl_tool.down(serial.into());
-                    wl_tool.frame(time);
-                }
-            }
-        }
-
-        self.is_down = true;
-    }
-
-    fn tip_up(&mut self, time: u32) {
-        if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self
-                .instances
-                .iter()
-                .find(|i| i.id().same_client_as(&focus.id()))
-                .and_then(|tool| tool.upgrade().ok())
-            {
-                if self.is_down {
-                    wl_tool.pressure(0);
-                    wl_tool.up();
-                    wl_tool.frame(time);
-                }
-            }
-        }
-
-        self.is_down = false;
-    }
-
-    fn motion(
-        &mut self,
-        pos: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<f64, Logical>)>,
-        tablet: &TabletHandle,
-        serial: Serial,
-        time: u32,
-    ) {
-        match (focus, self.focus.as_ref()) {
-            (Some(focus), Some(prev_focus)) => {
-                if &focus.0 == prev_focus {
-                    if let Some(wl_tool) = self
-                        .instances
-                        .iter()
-                        .find(|i| i.id().same_client_as(&focus.0.id()))
-                        .and_then(|tool| tool.upgrade().ok())
-                    {
-                        let client_scale = wl_tool
-                            .data::<TabletToolUserData>()
-                            .unwrap()
-                            .client_scale
-                            .load(Ordering::Acquire);
-                        let srel_loc = (pos - focus.1).to_client(client_scale);
-                        wl_tool.motion(srel_loc.x, srel_loc.y);
-
-                        if let Some(pressure) = self.pending_pressure.take() {
-                            wl_tool.pressure((pressure * 65535.0).round() as u32);
-                        }
-
-                        if let Some(distance) = self.pending_distance.take() {
-                            wl_tool.distance((distance * 65535.0).round() as u32);
-                        }
-
-                        if let Some((x, y)) = self.pending_tilt.take() {
-                            wl_tool.tilt(x, y);
-                        }
-
-                        if let Some(slider) = self.pending_slider.take() {
-                            wl_tool.slider((slider * 65535.0).round() as i32);
-                        }
-
-                        if let Some(rotation) = self.pending_rotation.take() {
-                            wl_tool.rotation(rotation);
-                        }
-
-                        if let Some((degrees, clicks)) = self.pending_wheel.take() {
-                            wl_tool.wheel(degrees, clicks)
-                        }
-
-                        wl_tool.frame(time);
-                    }
-                } else {
-                    // If surface has changed
-
-                    // Unfocus previous surface
-                    self.proximity_out(time);
-                    // Focus a new one
-                    self.proximity_in(pos, focus, tablet, serial, time)
-                }
-            }
-            // New surface in focus
-            (Some(focus), None) => self.proximity_in(pos, focus, tablet, serial, time),
-            // No surface in focus
-            (None, _) => self.proximity_out(time),
+impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
+    fn new_bound<F>(descriptor: TabletToolDescriptor, default_grab: F) -> Self
+    where
+        F: Fn() -> Box<dyn TabletToolGrab<D>> + Send + 'static,
+    {
+        Self {
+            arc: Arc::new(TabletToolRc {
+                descriptor,
+                inner: Mutex::new(TabletToolInternal::new(default_grab)),
+                wp_tablet_tool: WpTabletToolHandle {
+                    bound: true,
+                    last_proximity_in: Default::default(),
+                    known_instances: Default::default(),
+                },
+            }),
         }
     }
 
-    fn pressure(&mut self, pressure: f64) {
-        self.pending_pressure = Some(pressure);
+    /// Attempt to retrieve a [`TabletToolHandle`] from an existing resource
+    pub fn from_resource(tool: &ZwpTabletToolV2) -> Option<Self> {
+        tool.data::<TabletToolUserData<D>>()?.handle.upgrade()
     }
 
-    fn distance(&mut self, distance: f64) {
-        self.pending_distance = Some(distance);
-    }
-
-    fn tilt(&mut self, tilt: (f64, f64)) {
-        self.pending_tilt = Some(tilt);
-    }
-
-    fn rotation(&mut self, rotation: f64) {
-        self.pending_rotation = Some(rotation);
-    }
-
-    fn slider_position(&mut self, slider: f64) {
-        self.pending_slider = Some(slider);
-    }
-
-    fn wheel(&mut self, degrees: f64, clicks: i32) {
-        self.pending_wheel = Some((degrees, clicks));
-    }
-
-    /// Sent whenever a button on the tool is pressed or released.
-    fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
-        if let Some(ref focus) = self.focus {
-            if let Some(wl_tool) = self
-                .instances
-                .iter()
-                .find(|i| i.id().same_client_as(&focus.id()))
-                .and_then(|tool| tool.upgrade().ok())
-            {
-                wl_tool.button(serial.into(), button, state.into());
-                wl_tool.frame(time);
-            }
-        }
+    /// Return the raw [`ZwpTabletToolV2`] instance for a particular [`Client`]
+    pub fn client_tools<'a>(&'a self, client: &Client) -> impl Iterator<Item = ZwpTabletToolV2> + 'a {
+        let guard = self.arc.wp_tablet_tool.known_instances.lock().unwrap();
+        new_locked_obj_iter_from_vec(guard, client.id())
     }
 }
 
-impl Drop for TabletTool {
-    fn drop(&mut self) {
-        for instance in self.instances.iter().filter_map(|tool| tool.upgrade().ok()) {
-            // This event is sent when the tool is removed from the system and will send no further events.
-            instance.removed();
+impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
+    /// Add a new tool to a seat and exposes it to wayland clients.
+    ///
+    /// Tool are usually added on [TabletToolProximityEvent] event.
+    ///
+    /// Calling this method on a seat that already has the same tool will overwrite it, and will be
+    /// seen by clients as if the tool was removed and a new one was added.
+    ///
+    /// [TabletToolProximityEvent]: crate::backend::input::InputEvent::TabletToolProximity
+    pub fn add_wp_tool(
+        &self,
+        state: &mut D,
+        dh: &DisplayHandle,
+        tool_desc: &TabletToolDescriptor,
+    ) -> TabletToolHandle<D>
+    where
+        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
+        D: CompositorHandler,
+    {
+        self.add_wp_tool_with_grab(state, dh, tool_desc, || Box::new(tool::grab::DefaultGrab))
+    }
+
+    /// Add a new tool to a seat and allows the use of a custom default [`TabletToolGrab`]
+    ///
+    /// The default ghrab is used in case no other grab is currently active. When using
+    /// [`TabletSeat::add_wp_tool`], it will use [`tool::DefaultGrab`] which will install
+    /// [`tool::DownGrab`] on a down event. [`tool::DownGrab`] makes sure all further event will use
+    /// the same target until an up or physical proximity out event.
+    ///
+    /// See [`TabletSeat::add_wp_tool`] for more information.
+    pub fn add_wp_tool_with_grab<F>(
+        &self,
+        state: &mut D,
+        dh: &DisplayHandle,
+        tool_desc: &TabletToolDescriptor,
+        default_grab: F,
+    ) -> TabletToolHandle<D>
+    where
+        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
+        D: CompositorHandler,
+        F: Fn() -> Box<dyn TabletToolGrab<D>> + Send + 'static,
+    {
+        let inner = &mut self.arc.lock().unwrap();
+
+        let tool = inner.add_tool(tool_desc, default_grab, TabletToolHandle::new_bound);
+        let instances = &mut inner.instances;
+
+        for seat in instances.iter() {
+            let Ok(seat) = seat.upgrade() else {
+                continue;
+            };
+
+            if let Ok(client) = dh.get_client(seat.id()) {
+                tool.arc
+                    .wp_tablet_tool
+                    .new_instance(state, &client, dh, &seat, tool.clone(), tool_desc);
+            }
         }
+
+        tool
     }
 }
 
-/// Handle to a tablet tool device
-///
-/// TabletTool represents a physical tool that has been, or is currently in use with a tablet in seat.
-///
-/// A TabletTool relation to a physical tool depends on the tablet's ability to report serial numbers. If the tablet supports this capability, then the object represents a specific physical tool and can be identified even when used on multiple tablets.
-#[derive(Debug, Default, Clone)]
-pub struct TabletToolHandle {
-    pub(crate) inner: Arc<Mutex<TabletTool>>,
+/// User data for ZwpTabletToolV2 object
+#[derive(Debug)]
+pub struct TabletToolUserData<D: TabletSeatHandler> {
+    pub(crate) handle: WeakTabletToolHandle<D>,
+    seat_id: ObjectId,
+    client_scale: Arc<AtomicF64>,
 }
 
-impl TabletToolHandle {
+#[derive(Default, Debug)]
+pub(crate) struct WpTabletToolHandle {
+    pub(crate) bound: bool,
+    pub(crate) last_proximity_in: Mutex<Option<Serial>>,
+    known_instances: Mutex<Vec<Weak<ZwpTabletToolV2>>>,
+}
+
+impl WpTabletToolHandle {
     pub(super) fn new_instance<D>(
-        &mut self,
+        &self,
         state: &mut D,
         client: &Client,
         dh: &DisplayHandle,
         seat: &ZwpTabletSeatV2,
-        tool: &TabletToolDescriptor,
+        handle: TabletToolHandle<D>,
+        desc: &TabletToolDescriptor,
     ) where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-        D: TabletSeatHandler + 'static,
+        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
+        D: TabletSeatHandler,
+        D: 'static,
     {
-        let desc = tool.clone();
+        if !self.bound {
+            return;
+        }
 
         let client_scale = state.client_compositor_state(client).clone_client_scale();
-        let wl_tool = client
+        let wp_tool = client
             .create_resource::<ZwpTabletToolV2, _, D>(
                 dh,
                 seat.version(),
                 TabletToolUserData {
-                    handle: self.clone(),
-                    desc,
+                    handle: handle.downgrade(),
+                    seat_id: seat.id(),
                     client_scale,
                 },
             )
             .unwrap();
 
-        seat.tool_added(&wl_tool);
+        seat.tool_added(&wp_tool);
 
-        wl_tool._type(tool.tool_type.into());
+        wp_tool._type(desc.tool_type.into());
 
-        let high: u32 = (tool.hardware_serial >> 16) as u32;
-        let low: u32 = tool.hardware_serial as u32;
+        let high: u32 = (desc.hardware_serial >> 32) as u32;
+        let low: u32 = desc.hardware_serial as u32;
+        wp_tool.hardware_serial(high, low);
 
-        wl_tool.hardware_serial(high, low);
+        let high: u32 = (desc.hardware_id_wacom >> 32) as u32;
+        let low: u32 = desc.hardware_id_wacom as u32;
+        wp_tool.hardware_id_wacom(high, low);
 
-        let high: u32 = (tool.hardware_id_wacom >> 16) as u32;
-        let low: u32 = tool.hardware_id_wacom as u32;
-        wl_tool.hardware_id_wacom(high, low);
-
-        if tool.capabilities.contains(TabletToolCapabilities::PRESSURE) {
-            wl_tool.capability(zwp_tablet_tool_v2::Capability::Pressure);
+        if desc.capabilities.contains(TabletToolCapabilities::PRESSURE) {
+            wp_tool.capability(zwp_tablet_tool_v2::Capability::Pressure);
         }
 
-        if tool.capabilities.contains(TabletToolCapabilities::DISTANCE) {
-            wl_tool.capability(zwp_tablet_tool_v2::Capability::Distance);
+        if desc.capabilities.contains(TabletToolCapabilities::DISTANCE) {
+            wp_tool.capability(zwp_tablet_tool_v2::Capability::Distance);
         }
 
-        if tool.capabilities.contains(TabletToolCapabilities::TILT) {
-            wl_tool.capability(zwp_tablet_tool_v2::Capability::Tilt);
+        if desc.capabilities.contains(TabletToolCapabilities::TILT) {
+            wp_tool.capability(zwp_tablet_tool_v2::Capability::Tilt);
         }
 
-        if tool.capabilities.contains(TabletToolCapabilities::SLIDER) {
-            wl_tool.capability(zwp_tablet_tool_v2::Capability::Slider);
+        if desc.capabilities.contains(TabletToolCapabilities::SLIDER) {
+            wp_tool.capability(zwp_tablet_tool_v2::Capability::Slider);
         }
 
-        if tool.capabilities.contains(TabletToolCapabilities::ROTATION) {
-            wl_tool.capability(zwp_tablet_tool_v2::Capability::Rotation);
+        if desc.capabilities.contains(TabletToolCapabilities::ROTATION) {
+            wp_tool.capability(zwp_tablet_tool_v2::Capability::Rotation);
         }
 
-        if tool.capabilities.contains(TabletToolCapabilities::WHEEL) {
-            wl_tool.capability(zwp_tablet_tool_v2::Capability::Wheel);
+        if desc.capabilities.contains(TabletToolCapabilities::WHEEL) {
+            wp_tool.capability(zwp_tablet_tool_v2::Capability::Wheel);
         }
 
-        wl_tool.done();
-        self.inner.lock().unwrap().instances.push(wl_tool.downgrade());
+        wp_tool.done();
+        self.known_instances.lock().unwrap().push(wp_tool.downgrade());
     }
 
-    /// Notify that this tool is focused on a certain surface.
-    ///
-    /// You provide the location of the tool, in the form of:
-    ///
-    /// - The coordinates of the tool in the global compositor space
-    /// - The surface on top of which the tool is, and the coordinates of its
-    ///   origin in the global compositor space.
-    pub fn proximity_in(
+    fn proximity_in<D: TabletSeatHandler + 'static>(
         &self,
-        pos: Point<f64, Logical>,
-        focus: (WlSurface, Point<f64, Logical>),
-        tablet: &TabletHandle,
+        surface: &WlSurface,
+        tablet: &Tablet,
         serial: Serial,
-        time: u32,
     ) {
-        self.inner
-            .lock()
-            .unwrap()
-            .proximity_in(pos, focus, tablet, serial, time)
+        *self.last_proximity_in.lock().unwrap() = Some(serial);
+
+        self.for_each_focused_tool(surface, |wp_tool| {
+            let seat_id = &wp_tool.data::<TabletToolUserData<D>>().unwrap().seat_id;
+
+            let Some(wp_tablet) = tablet.arc.wp_tablet.focused_tablet_for_seat(surface, seat_id) else {
+                return;
+            };
+
+            wp_tool.proximity_in(serial.0, &wp_tablet, surface);
+        });
     }
 
-    /// Notify that this tool has left proximity.
-    pub fn proximity_out(&self, time: u32) {
-        self.inner.lock().unwrap().proximity_out(time);
+    fn proximity_out(&self, surface: &WlSurface) {
+        self.for_each_focused_tool(surface, |wp_tool| {
+            wp_tool.proximity_out();
+        });
+
+        *self.last_proximity_in.lock().unwrap() = None;
     }
 
-    /// Tablet tool is making contact
-    pub fn tip_down(&self, serial: Serial, time: u32) {
-        self.inner.lock().unwrap().tip_down(serial, time);
+    fn down(&self, surface: &WlSurface, event: &DownEvent) {
+        self.for_each_focused_tool(surface, |wp_tool| {
+            wp_tool.down(event.serial.0);
+        });
     }
 
-    /// Tablet tool is no longer making contact
-    pub fn tip_up(&self, time: u32) {
-        self.inner.lock().unwrap().tip_up(time);
+    fn up(&self, surface: &WlSurface) {
+        self.for_each_focused_tool(surface, |wp_tool| {
+            wp_tool.up();
+        });
     }
 
-    /// Notify that the tool moved
-    ///
-    /// You provide the new location of the tool, in the form of:
-    ///
-    /// - The coordinates of the tool in the global compositor space
-    /// - The surface on top of which the tool is, and the coordinates of its
-    ///   origin in the global compositor space (or `None` of the pointer is not
-    ///   on top of a client surface).
-    ///
-    /// This will internally take care of notifying the appropriate client objects
-    /// of proximity_in/proximity_out events.
-    pub fn motion(
-        &self,
-        pos: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<f64, Logical>)>,
-        tablet: &TabletHandle,
-        serial: Serial,
-        time: u32,
-    ) {
-        self.inner
-            .lock()
-            .unwrap()
-            .motion(pos, focus, tablet, serial, time)
+    fn motion<D: TabletSeatHandler + 'static>(&self, surface: &WlSurface, event: &MotionEvent) {
+        self.for_each_focused_tool(surface, |wp_tool| {
+            let client_scale = wp_tool
+                .data::<TabletToolUserData<D>>()
+                .unwrap()
+                .client_scale
+                .load(Ordering::Acquire);
+
+            let Point { x, y, .. } = event.location.to_client(client_scale);
+            wp_tool.motion(x, y);
+        })
     }
 
-    /// Queue tool pressure update
-    ///
-    /// It will be sent alongside next motion event
-    pub fn pressure(&self, pressure: f64) {
-        self.inner.lock().unwrap().pressure(pressure);
+    fn axis(&self, surface: &WlSurface, frame: AxisFrame) {
+        const NORMALIZE: f64 = 65535.0;
+        fn normalize(value: f64) -> u32 {
+            (value * NORMALIZE) as u32
+        }
+
+        self.for_each_focused_tool(surface, |wp_tool| {
+            let AxisFrame {
+                pressure,
+                distance,
+                tilt,
+                rotation,
+                slider,
+                wheel,
+            } = frame;
+
+            if let Some(pressure) = pressure.map(normalize) {
+                wp_tool.pressure(pressure);
+            }
+
+            if let Some(distance) = distance.map(normalize) {
+                wp_tool.distance(distance);
+            }
+
+            if let Some((tilt_x, tilt_y)) = tilt {
+                wp_tool.tilt(tilt_x, tilt_y);
+            }
+
+            if let Some(degrees) = rotation {
+                wp_tool.rotation(degrees);
+            }
+
+            if let Some(slider) = slider.map(|s| (s * NORMALIZE) as i32) {
+                wp_tool.slider(slider);
+            }
+
+            if let Some((degrees, clicks)) = wheel {
+                wp_tool.wheel(degrees, clicks);
+            }
+        });
     }
 
-    /// Queue tool distance update
-    ///
-    /// It will be sent alongside next motion event
-    pub fn distance(&self, distance: f64) {
-        self.inner.lock().unwrap().distance(distance);
+    fn button(&self, surface: &WlSurface, event: &ButtonEvent) {
+        self.for_each_focused_tool(surface, |wp_tool| {
+            let ButtonEvent {
+                serial,
+                button,
+                state,
+                ..
+            } = *event;
+            wp_tool.button(serial.0, button, state.into());
+        });
     }
 
-    /// Queue tool tilt update
-    ///
-    /// It will be sent alongside next motion event
-    pub fn tilt(&self, tilt: (f64, f64)) {
-        self.inner.lock().unwrap().tilt(tilt);
+    fn frame(&self, surface: &WlSurface, time: u32) {
+        self.for_each_focused_tool(surface, |wp_tool| {
+            wp_tool.frame(time);
+        });
     }
 
-    /// Queue tool rotation update
-    ///
-    /// It will be sent alongside next motion event
-    pub fn rotation(&self, rotation: f64) {
-        self.inner.lock().unwrap().rotation(rotation);
-    }
+    fn for_each_focused_tool(&self, surface: &WlSurface, mut f: impl FnMut(ZwpTabletToolV2)) {
+        let inner = self.known_instances.lock().unwrap();
 
-    /// Queue tool slider update
-    ///
-    /// It will be sent alongside next motion event
-    pub fn slider_position(&self, slider: f64) {
-        self.inner.lock().unwrap().slider_position(slider);
-    }
+        for tool in &*inner {
+            let Ok(tool) = tool.upgrade() else {
+                continue;
+            };
 
-    /// Queue tool wheel update
-    ///
-    /// It will be sent alongside next motion event
-    pub fn wheel(&self, degrees: f64, clicks: i32) {
-        self.inner.lock().unwrap().wheel(degrees, clicks);
+            if tool.id().same_client_as(&surface.id()) {
+                f(tool.clone())
+            }
+        }
     }
+}
 
-    /// Button on the tool was pressed or released
-    pub fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
-        self.inner.lock().unwrap().button(button, state, serial, time);
+impl Drop for WpTabletToolHandle {
+    fn drop(&mut self) {
+        let mut guard = self.known_instances.lock().unwrap();
+
+        for tool in guard.drain(..) {
+            let Ok(wp_tool) = tool.upgrade() else { continue };
+
+            wp_tool.removed();
+        }
     }
 }
 
@@ -453,89 +376,81 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
     }
 }
 
-/// User data of ZwpTabletToolV2 object
-pub struct TabletToolUserData {
-    pub(crate) handle: TabletToolHandle,
-    pub(crate) desc: TabletToolDescriptor,
-    client_scale: Arc<AtomicF64>,
-}
-
-impl fmt::Debug for TabletToolUserData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TabletToolUserData")
-            .field("handle", &self.handle)
-            .field("desc", &self.desc)
-            .field("client_scale", &self.client_scale)
-            .finish()
-    }
-}
-
-impl<D> Dispatch2<ZwpTabletToolV2, D> for TabletToolUserData
+impl<D> Dispatch2<ZwpTabletToolV2, D> for TabletToolUserData<D>
 where
-    D: TabletSeatHandler + 'static,
+    D: TabletSeatHandler,
+    <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
+    D: 'static,
 {
     fn request(
         &self,
         state: &mut D,
-        _client: &Client,
+        _client: &wayland_server::Client,
         tool: &ZwpTabletToolV2,
-        request: zwp_tablet_tool_v2::Request,
-        _dh: &DisplayHandle,
-        _data_init: &mut DataInit<'_, D>,
+        request: <ZwpTabletToolV2 as wayland_server::Resource>::Request,
+        _dhandle: &wayland_server::DisplayHandle,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
+        let Some(handle) = self.handle.upgrade() else {
+            return;
+        };
+
         match request {
             zwp_tablet_tool_v2::Request::SetCursor {
+                serial,
                 surface,
                 hotspot_x,
                 hotspot_y,
-                ..
             } => {
-                let focus = self.handle.inner.lock().unwrap().focus.clone();
+                if !allow_setting_cursor(&handle, Serial(serial), &tool.id()) {
+                    return;
+                }
 
-                if let Some(focus) = focus {
-                    if focus.id().same_client_as(&tool.id()) {
-                        if let Some(surface) = surface {
-                            // tolerate re-using the same surface
-                            if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
-                                && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
-                            {
-                                tool.post_error(
-                                    zwp_tablet_tool_v2::Error::Role,
-                                    "Given wl_surface has another role.",
-                                );
-                                return;
-                            }
+                let cursor_image = match surface {
+                    Some(surface) => {
+                        if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
+                            && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
+                        {
+                            tool.post_error(
+                                zwp_tablet_tool_v2::Error::Role,
+                                "Given wl_surface has another role.",
+                            );
+                            return;
+                        }
 
-                            compositor::with_states(&surface, |states| {
-                                states.data_map.insert_if_missing_threadsafe(|| {
-                                    Mutex::new(CursorImageAttributes {
-                                        hotspot: (0, 0).into(),
-                                    })
-                                });
-                                let client_scale = tool
-                                    .data::<TabletToolUserData>()
-                                    .unwrap()
-                                    .client_scale
-                                    .load(Ordering::Acquire);
-                                let hotspot = Point::<_, ClientCoords>::from((hotspot_x, hotspot_y))
-                                    .to_f64()
-                                    .to_logical(client_scale)
-                                    .to_i32_round();
-                                states
-                                    .data_map
-                                    .get::<Mutex<CursorImageAttributes>>()
-                                    .unwrap()
-                                    .lock()
-                                    .unwrap()
-                                    .hotspot = hotspot;
+                        compositor::with_states(&surface, |states| {
+                            states.data_map.insert_if_missing_threadsafe(|| {
+                                Mutex::new(CursorImageAttributes {
+                                    hotspot: (0, 0).into(),
+                                })
                             });
 
-                            state.tablet_tool_image(&self.desc, CursorImageStatus::Surface(surface));
-                        } else {
-                            state.tablet_tool_image(&self.desc, CursorImageStatus::Hidden);
-                        };
+                            let client_scale = tool
+                                .data::<TabletToolUserData<D>>()
+                                .unwrap()
+                                .client_scale
+                                .load(Ordering::Acquire);
+
+                            let hotspot = Point::<i32, ClientCoords>::from((hotspot_x, hotspot_y))
+                                .to_f64()
+                                .to_logical(client_scale)
+                                .to_i32_round();
+
+                            states
+                                .data_map
+                                .get::<Mutex<CursorImageAttributes>>()
+                                .unwrap()
+                                .lock()
+                                .unwrap()
+                                .hotspot = hotspot;
+                        });
+
+                        CursorImageStatus::Surface(surface)
                     }
-                }
+                    None => CursorImageStatus::Hidden,
+                };
+
+                state.tablet_tool_image(handle.descriptor(), cursor_image);
             }
             zwp_tablet_tool_v2::Request::Destroy => {
                 // Nothing to do
@@ -544,12 +459,175 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ZwpTabletToolV2) {
-        self.handle
-            .inner
+    fn destroyed(&self, _state: &mut D, _client: ClientId, tool: &ZwpTabletToolV2) {
+        let Some(handle) = self.handle.upgrade() else {
+            return;
+        };
+
+        handle
+            .arc
+            .wp_tablet_tool
+            .known_instances
             .lock()
             .unwrap()
-            .instances
-            .retain(|i| i.id() != resource.id());
+            .retain(|i| i.id() != tool.id())
     }
+}
+
+impl<D> TabletToolTarget<D> for WlSurface
+where
+    D: TabletSeatHandler + 'static,
+{
+    fn proximity_in(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+        tablet: &Tablet,
+        serial: Serial,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.proximity_in::<D>(self, tablet, serial);
+        }
+    }
+
+    fn proximity_out(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.proximity_out(self);
+        }
+    }
+
+    fn down(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+        event: &DownEvent,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.down(self, event);
+        }
+    }
+
+    fn up(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+        _event: &UpEvent,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.up(self);
+        }
+    }
+
+    fn motion(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+        event: &MotionEvent,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.motion::<D>(self, event);
+        }
+    }
+
+    fn axis(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+        frame: AxisFrame,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.axis(self, frame);
+        }
+    }
+
+    fn button(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+        event: &ButtonEvent,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.button(self, event);
+        }
+    }
+
+    fn frame(
+        &self,
+        seat: &crate::input::Seat<D>,
+        _data: &mut D,
+        tool_descriptor: &TabletToolDescriptor,
+        time: u32,
+    ) {
+        let tablet_seat = seat.tablet_seat();
+
+        if let Some(tool) = tablet_seat.get_tool(tool_descriptor) {
+            tool.arc.wp_tablet_tool.frame(self, time);
+        }
+    }
+}
+
+pub(crate) fn allow_setting_cursor<D>(
+    handle: &TabletToolHandle<D>,
+    serial: Serial,
+    object_id: &ObjectId,
+) -> bool
+where
+    D: TabletSeatHandler + 'static,
+    <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
+{
+    // Allow client if there is a tool grab for that client. Like drag and drop.
+    if handle
+        .grab_start_data()
+        .and_then(|data| data.focus)
+        .is_some_and(|focus| focus.0.same_client_as(object_id))
+    {
+        return true;
+    }
+
+    if !handle
+        .arc
+        .wp_tablet_tool
+        .last_proximity_in
+        .lock()
+        .unwrap()
+        .is_some_and(|last_serial| last_serial == serial)
+    {
+        return false; // Ignore mismatches in serial
+    }
+
+    // Only allow setting the cursor icon if the current tool focus is of the same
+    // client.
+    handle
+        .arc
+        .inner
+        .lock()
+        .unwrap()
+        .focus
+        .as_ref()
+        .is_some_and(|(focus, _)| focus.same_client_as(object_id))
 }
