@@ -153,6 +153,34 @@ impl WindowHandler for App {
             self.first_configure = false;
             self.draw(conn, qh);
         }
+
+        if let Some(confined_pointer) = &self.confined_pointer {
+            confined_pointer.destroy();
+            self.confined_pointer = None;
+        }
+
+        if let Some(pointer) = &self.pointer {
+            let region = self.compositor_state.wl_compositor().create_region(qh, ());
+            let w = self.width as i32;
+            let h = self.height as i32;
+
+            region.add(0, 0, w, h);
+            region.subtract(w / 2, h / 2, w / 2, h / 2);
+            region.subtract(0, 0, w / 4, h / 4);
+
+            let confined_pointer = self
+                .pointer_constraint_state
+                .confine_pointer(
+                    self.window.wl_surface(),
+                    &pointer,
+                    Some(&region),
+                    zwp_pointer_constraints_v1::Lifetime::Persistent,
+                    qh,
+                )
+                .unwrap();
+
+            self.confined_pointer = Some(confined_pointer);
+        }
     }
 }
 
@@ -214,22 +242,7 @@ impl SeatHandler for App {
                 .get_pointer(qh, &seat)
                 .expect("Failed to create pointer");
 
-            let region = self.compositor_state.wl_compositor().create_region(qh, ());
-            region.add(0, 0, 64, 64);
-
-            let confined_pointer = self
-                .pointer_constraint_state
-                .confine_pointer(
-                    self.window.wl_surface(),
-                    &pointer,
-                    Some(&region),
-                    zwp_pointer_constraints_v1::Lifetime::Persistent,
-                    qh,
-                )
-                .unwrap();
-
             self.pointer = Some(pointer);
-            self.confined_pointer = Some(confined_pointer);
         }
     }
 
