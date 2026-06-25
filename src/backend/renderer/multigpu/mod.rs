@@ -1800,6 +1800,22 @@ impl MultiTexture {
             })
     }
 
+    fn reimport<A: GraphicsApi + 'static>(
+        &self,
+        renderer: &mut <A::Device as ApiDevice>::Renderer,
+    ) -> Result<(), <<A::Device as ApiDevice>::Renderer as RendererSuper>::Error>
+    where
+        <A::Device as ApiDevice>::Renderer: ImportDma,
+    {
+        let mut tex = self.0.lock().unwrap();
+        if let Some(GpuSingleTexture::Dma { texture, dmabuf, .. }) =
+            tex.textures.get_mut(&renderer.context_id().erased())
+        {
+            *texture = Box::new(renderer.import_dmabuf(dmabuf, None)?) as Box<_>;
+        }
+        Ok(())
+    }
+
     fn insert_texture<A: GraphicsApi + 'static>(
         &mut self,
         render_id: &ContextId<<<A::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>,
@@ -1983,17 +1999,21 @@ where
     ) -> Result<(), Error<R, T>> {
         let render_id = self.frame.as_mut().unwrap().context_id();
         let sync = texture.needs_synchronization::<R>(&render_id);
+        if let Some(sync) = sync {
+            if let Err(err) = self.frame.as_mut().unwrap().wait(&sync) {
+                trace!(?err, "Failed to import sync point, blocking");
+                let _ = sync.wait();
+            }
+        }
+        texture
+            .reimport::<R>(unsafe { (*self.render).renderer_mut() })
+            .map_err(Error::Render)?;
+
         if let Some(texture) = texture.get::<R>(&render_id) {
             self.damage.extend(damage.iter().copied().map(|mut rect| {
                 rect.loc += dst.loc;
                 rect
             }));
-            if let Some(sync) = sync {
-                if let Err(err) = self.frame.as_mut().unwrap().wait(&sync) {
-                    trace!(?err, "Failed to import sync point, blocking");
-                    let _ = sync.wait(); // ignore interrupt errors
-                }
-            }
             self.frame
                 .as_mut()
                 .unwrap()
@@ -2430,7 +2450,7 @@ where
     if let Some(sync) = existing_sync_point.take() {
         if let Err(err) = src_renderer.wait(&sync) {
             debug!(?err, "Unable to wait for existing sync_point, blocking..");
-            let _ = sync.wait(); // ignore interrupt errors
+            let _ = sync.wait();
         }
     }
     let mut framebuffer = src_renderer.bind(shadow_buffer).map_err(Error::Render)?;
