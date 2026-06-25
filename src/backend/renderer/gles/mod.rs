@@ -1467,6 +1467,9 @@ impl Bind<Dmabuf> for GlesRenderer {
     fn bind<'a>(&mut self, dmabuf: &'a mut Dmabuf) -> Result<GlesTarget<'a>, GlesError> {
         let mut bind = |dmabuf: &'a mut Dmabuf| {
             let texture = self.import_dmabuf(dmabuf, None)?;
+            if texture.0.is_external {
+                return Err(GlesError::FramebufferBindingError);
+            }
             self.bind_texture(&texture)
                 // SAFETY: The lifetime of the target only depends on the dmabuf,
                 // as the GlesTexture is cloned internally.
