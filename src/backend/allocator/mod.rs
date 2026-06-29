@@ -21,6 +21,7 @@ pub mod dumb;
 pub mod format;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
+pub mod udmabuf;
 #[cfg(feature = "backend_vulkan")]
 pub mod vulkan;
 
