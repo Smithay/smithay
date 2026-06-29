@@ -732,6 +732,13 @@ pub trait ApiDevice: fmt::Debug {
     /// Returns whether the underlying renderer can in principle do cross-device imports.
     /// (With no guarantee on being able to import a specific buffer.)
     fn can_do_cross_device_imports(&self) -> bool;
+
+    /// Returns whether the [`MultiRenderer`] should attempt exporting buffers from this
+    /// device to other devices. By default this always returns `true`, but can be used
+    /// to implement quirks for buggy hardware.
+    fn should_do_cross_device_exports(&self) -> bool {
+        true
+    }
 }
 
 /// Renderer, that transparently copies rendering results to another gpu,
@@ -1370,7 +1377,7 @@ where
     <<R::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
-    if !target.device.can_do_cross_device_imports() {
+    if !target.device.can_do_cross_device_imports() || !src.should_do_cross_device_exports() {
         return Err(Error::ImportFailed);
     }
 
@@ -2339,7 +2346,7 @@ where
 {
     if target
         .as_ref()
-        .is_some_and(|target| !target.can_do_cross_device_imports())
+        .is_some_and(|target| !target.can_do_cross_device_imports() || !src.should_do_cross_device_exports())
     {
         return Err(Error::ImportFailed);
     }
