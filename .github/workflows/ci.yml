@@ -1,429 +1,428 @@
 name: Continuous Integration
 
 on:
-  push:
-    branches:
-    - master
-  pull_request:
+    push:
+        branches:
+            - master
+    pull_request:
 
 jobs:
-  format:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Cargo cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
-      - name: Format
-        run: cargo fmt --all -- --check
-  
-  clippy-check:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-      - name: Get cargo-cache latest version
-        id: cargocacheversion
-        run: echo "::set-output name=version::$(cargo search 'cargo-cache' --limit 1 | head -n 1 | cut -d ' ' -f 3 | cut -d '"' -f 2)"
-      - name: Cargo binaries cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/cargo-cache
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-          key: ${{ runner.os }}-cargo-binaries-${{ steps.cargocacheversion.outputs.version }}
-      - name: Install cargo-cache
-        run: cargo install cargo-cache --version ${{ steps.cargocacheversion.outputs.version }}
-      - name: Clean cargo cache of old items
-        run: cargo cache clean-unref
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libdisplay-info-dev
-      - name: Clippy Smithay
-        run: cargo clippy --features "test_all_features" -- -D warnings
-      - name: Clippy Anvil
-        run: cargo clippy --manifest-path "./anvil/Cargo.toml" --features "test_all_features" --no-deps -- -D warnings
-      - name: Clippy Smallvil
-        run: cargo clippy --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
-  
-  check-msrv:
-    env:
-      RUSTFLAGS: "-D warnings"
+    format:
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: rustfmt
+            - name: Cargo cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+            - name: Format
+              run: cargo fmt --all -- --check
 
-    runs-on: ubuntu-24.04
-    needs:
-      - smithay-check-features
+    clippy-check:
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: clippy
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
+            - name: Get cargo-cache latest version
+              id: cargocacheversion
+              run: echo "::set-output name=version::$(cargo search 'cargo-cache' --limit 1 | head -n 1 | cut -d ' ' -f 3 | cut -d '"' -f 2)"
+            - name: Cargo binaries cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/bin/cargo-cache
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
+                  key: ${{ runner.os }}-cargo-binaries-${{ steps.cargocacheversion.outputs.version }}
+            - name: Install cargo-cache
+              run: cargo install cargo-cache --version ${{ steps.cargocacheversion.outputs.version }}
+            - name: Clean cargo cache of old items
+              run: cargo cache clean-unref
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libdisplay-info-dev
+            - name: Clippy Smithay
+              run: cargo clippy --features "test_all_features" -- -D warnings
+            - name: Clippy Anvil
+              run: cargo clippy --manifest-path "./anvil/Cargo.toml" --features "test_all_features" --no-deps -- -D warnings
+            - name: Clippy Smallvil
+              run: cargo clippy --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
 
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@1.85.1
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      - name: Check
-        run: cargo check --features "test_all_features"
-
-  check-minimal:
-    env:
-      RUSTFLAGS: "-D warnings"
-
-    runs-on: ubuntu-24.04
-    needs:
-      - smithay-check-features
-
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      - name: Downgrade to minimal dependencies
-        run: cargo -Z minimal-versions generate-lockfile
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@1.85.1
-      - name: Check
-        run: cargo check --features "test_all_features"
-
-  smithay-check-features:
-
-    env:
-      RUSTFLAGS: "-D warnings"
-
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-hack
-        uses: taiki-e/install-action@cargo-hack
-
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-
-      - name: Test features
+    check-msrv:
         env:
-          RUST_BACKTRACE: full
-        run: cargo hack check --each-feature --no-dev-deps --exclude-features use_bindgen
+            RUSTFLAGS: "-D warnings"
 
-  smithay-tests:
-    needs:
-      - smithay-check-features
+        runs-on: ubuntu-24.04
+        needs:
+            - smithay-check-features
 
-    env:
-      RUSTFLAGS: "-D warnings"
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@1.87
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+            - name: Check
+              run: cargo check --features "test_all_features"
 
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpixman-1-dev
-      
-      - name: Run tests
+    check-minimal:
         env:
-          RUST_BACKTRACE: full
-        run: cargo test --features "test_all_features"
+            RUSTFLAGS: "-D warnings"
 
-  smallvil-check:
-    needs:
-      - smithay-check-features
+        runs-on: ubuntu-24.04
+        needs:
+            - smithay-check-features
 
-    env:
-      RUSTFLAGS: "-D warnings"
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@nightly
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+            - name: Downgrade to minimal dependencies
+              run: cargo -Z minimal-versions generate-lockfile
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@1.87
+            - name: Check
+              run: cargo check --features "test_all_features"
 
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
-      
-      - name: Test smallvil
+    smithay-check-features:
         env:
-          RUST_BACKTRACE: full
-        run: cargo check --manifest-path "./smallvil/Cargo.toml"
+            RUSTFLAGS: "-D warnings"
 
-  anvil-check-features:
-    needs:
-      - smithay-check-features
+        runs-on: ubuntu-24.04
 
-    env:
-      RUSTFLAGS: "-D warnings"
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
 
-    runs-on: ubuntu-24.04
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
 
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
+            - name: Install cargo-hack
+              uses: taiki-e/install-action@cargo-hack
 
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
 
-      - name: Install cargo-hack
-        uses: taiki-e/install-action@cargo-hack
+            - name: Test features
+              env:
+                  RUST_BACKTRACE: full
+              run: cargo hack check --each-feature --no-dev-deps --exclude-features use_bindgen
 
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libdisplay-info-dev
-      
-      - name: Test features
+    smithay-tests:
+        needs:
+            - smithay-check-features
+
         env:
-          RUST_BACKTRACE: full
-        run: cargo hack check --each-feature --manifest-path "./anvil/Cargo.toml" --exclude-features profile-with-puffin,profile-with-tracy,profile-with-tracy-mem
+            RUSTFLAGS: "-D warnings"
 
-  anvil-wlcs:
-    needs:
-      - anvil-check-features
+        runs-on: ubuntu-24.04
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - job_name: "Core tests"
-            gtest_filter: "SelfTest*:FrameSubmission*"
-            flag: core
-          - job_name: "Output tests"
-            gtest_filter: "XdgOutputV1Test*"
-            flag: output
-          - job_name: "Pointer input tests"
-            gtest_filter: "*/SurfacePointerMotionTest*:RelativePointer*"
-            flag: pointer-input
-          - job_name: "Bad Buffer Test"
-            gtest_filter: "BadBufferTest*"
-            flag: buffer 
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
 
-    name: "WLCS: ${{ matrix.job_name }}"
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
 
-    env:
-      RUSTFLAGS: "-D warnings"
-      GRCOV_VERSION: "0.8.10"
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
 
-    runs-on: ubuntu-24.04
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpixman-1-dev
 
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
+            - name: Run tests
+              env:
+                  RUST_BACKTRACE: full
+              run: cargo test --features "test_all_features"
 
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
+    smallvil-check:
+        needs:
+            - smithay-check-features
 
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: llvm-tools-preview
-
-      - name: grcov cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/grcov
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-          key: ${{ runner.os }}-grcov-${{ env.GRCOV_VERSION }}
-
-      - name: Install grcov
-        run: cargo install grcov --version ${{ env.GRCOV_VERSION }}
-
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev libdisplay-info-dev
-
-      - name: WLCS build cache
-        uses: actions/cache@v3
-        with:
-          path: wlcs
-          key: ${{ runner.os }}-build-wlcs-${{ hashFiles('./compile_wlcs.sh') }}
-
-      - name: Build WLCS
-        run: ./compile_wlcs.sh
-
-      - name: Build anvil WLCS plugin
         env:
-          RUST_BACKTRACE: full
-          RUSTFLAGS: "-Cinstrument-coverage --cfg coverage"
-        run: cargo build --manifest-path "./wlcs_anvil/Cargo.toml"
+            RUSTFLAGS: "-D warnings"
 
-      - name: Run test suite
-        run: ./wlcs/wlcs ./target/debug/libwlcs_anvil.so --gtest_filter="${{ matrix.gtest_filter }}"
+        runs-on: ubuntu-24.04
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
+
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
+
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
+
+            - name: Test smallvil
+              env:
+                  RUST_BACKTRACE: full
+              run: cargo check --manifest-path "./smallvil/Cargo.toml"
+
+    anvil-check-features:
+        needs:
+            - smithay-check-features
+
         env:
-          LLVM_PROFILE_FILE: "anvil-wlcs-%p-%m.profraw"
+            RUSTFLAGS: "-D warnings"
 
-      - name: Coverage
-        run: grcov . --binary-path ./target/debug -s . -t lcov --branch --llvm --ignore-not-existing --ignore '*/examples/*' --ignore '*/tests/*' --ignore '*/.cargo/registry/*' --excl-br-start "mod tests \{" --excl-start "mod tests \{" --excl-br-line "#\[derive\(" --excl-line "#\[derive\(" -o lcov.info
+        runs-on: ubuntu-24.04
 
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-        with:
-          flags: wlcs-${{ matrix.flag }}
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
 
-  doc:
-    name: Documentation on Github Pages
-    runs-on: ubuntu-24.04
-    needs:
-      - smithay-check-features
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
 
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Get date for registry cache
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
-      - name: Cargo registry cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
-          restore-keys: ${{ runner.os }}-cargo-registry-
+            - name: Install cargo-hack
+              uses: taiki-e/install-action@cargo-hack
 
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2025-09-26
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libdisplay-info-dev
 
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      
-      - name: Build Documentation
-        env: 
-          RUSTDOCFLAGS: --cfg=docsrs -D warnings
-        run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop:0.14 -p drm -p gbm -p input -p udev -p wayland-server -p wayland-backend -p wayland-protocols -p winit -p x11rb -p tracing
-        
-      - name: Setup index
-        run: cp ./doc_index.html ./target/doc/index.html
+            - name: Test features
+              env:
+                  RUST_BACKTRACE: full
+              run: cargo hack check --each-feature --manifest-path "./anvil/Cargo.toml" --exclude-features profile-with-puffin,profile-with-tracy,profile-with-tracy-mem
 
-      - name: Deploy
-        if: ${{ github.event_name == 'push' }}
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/doc
-          force_orphan: true
+    anvil-wlcs:
+        needs:
+            - anvil-check-features
+
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - job_name: "Core tests"
+                      gtest_filter: "SelfTest*:FrameSubmission*"
+                      flag: core
+                    - job_name: "Output tests"
+                      gtest_filter: "XdgOutputV1Test*"
+                      flag: output
+                    - job_name: "Pointer input tests"
+                      gtest_filter: "*/SurfacePointerMotionTest*:RelativePointer*"
+                      flag: pointer-input
+                    - job_name: "Bad Buffer Test"
+                      gtest_filter: "BadBufferTest*"
+                      flag: buffer
+
+        name: "WLCS: ${{ matrix.job_name }}"
+
+        env:
+            RUSTFLAGS: "-D warnings"
+            GRCOV_VERSION: "0.8.10"
+
+        runs-on: ubuntu-24.04
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
+
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
+
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@nightly
+              with:
+                  components: llvm-tools-preview
+
+            - name: grcov cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/bin/grcov
+                      ~/.cargo/.crates.toml
+                      ~/.cargo/.crates2.json
+                  key: ${{ runner.os }}-grcov-${{ env.GRCOV_VERSION }}
+
+            - name: Install grcov
+              run: cargo install grcov --version ${{ env.GRCOV_VERSION }}
+
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev libdisplay-info-dev
+
+            - name: WLCS build cache
+              uses: actions/cache@v3
+              with:
+                  path: wlcs
+                  key: ${{ runner.os }}-build-wlcs-${{ hashFiles('./compile_wlcs.sh') }}
+
+            - name: Build WLCS
+              run: ./compile_wlcs.sh
+
+            - name: Build anvil WLCS plugin
+              env:
+                  RUST_BACKTRACE: full
+                  RUSTFLAGS: "-Cinstrument-coverage --cfg coverage"
+              run: cargo build --manifest-path "./wlcs_anvil/Cargo.toml"
+
+            - name: Run test suite
+              run: ./wlcs/wlcs ./target/debug/libwlcs_anvil.so --gtest_filter="${{ matrix.gtest_filter }}"
+              env:
+                  LLVM_PROFILE_FILE: "anvil-wlcs-%p-%m.profraw"
+
+            - name: Coverage
+              run: grcov . --binary-path ./target/debug -s . -t lcov --branch --llvm --ignore-not-existing --ignore '*/examples/*' --ignore '*/tests/*' --ignore '*/.cargo/registry/*' --excl-br-start "mod tests \{" --excl-start "mod tests \{" --excl-br-line "#\[derive\(" --excl-line "#\[derive\(" -o lcov.info
+
+            - name: Upload to codecov.io
+              uses: codecov/codecov-action@v3
+              with:
+                  flags: wlcs-${{ matrix.flag }}
+
+    doc:
+        name: Documentation on Github Pages
+        runs-on: ubuntu-24.04
+        needs:
+            - smithay-check-features
+
+        steps:
+            - name: Checkout sources
+              uses: actions/checkout@v3
+
+            - name: Get date for registry cache
+              id: date
+              run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+            - name: Cargo registry cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry/index
+                      ~/.cargo/registry/cache
+                      ~/.cargo/git
+                  key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+                  restore-keys: ${{ runner.os }}-cargo-registry-
+
+            - name: Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: nightly-2025-09-26
+
+            - name: System dependencies
+              run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+
+            - name: Build Documentation
+              env:
+                  RUSTDOCFLAGS: --cfg=docsrs -D warnings
+              run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop:0.14 -p drm -p gbm -p input -p udev -p wayland-server -p wayland-backend -p wayland-protocols -p winit -p x11rb -p tracing
+
+            - name: Setup index
+              run: cp ./doc_index.html ./target/doc/index.html
+
+            - name: Deploy
+              if: ${{ github.event_name == 'push' }}
+              uses: peaceiris/actions-gh-pages@v3
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: ./target/doc
+                  force_orphan: true
