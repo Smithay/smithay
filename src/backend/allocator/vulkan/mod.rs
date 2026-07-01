@@ -468,7 +468,7 @@ impl AsDmabuf for VulkanImage {
             // VUID-vkGetImageSubresourceLayout-image-02270: All allocate images are created with drm tiling
             let subresource = vk::ImageSubresource::default().aspect_mask(aspect_mask);
             let layout = unsafe { device.get_image_subresource_layout(self.inner.image, subresource) };
-            builder.add_plane(fd.clone(), idx, layout.offset as u32, layout.row_pitch as u32);
+            builder.add_plane(fd.clone(), layout.offset as u32, layout.row_pitch as u32);
         }
 
         #[cfg(feature = "backend_drm")]

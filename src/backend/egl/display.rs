@@ -724,7 +724,6 @@ impl EGLDisplay {
                 // SAFETY: The fds returned by `ExportDMABUFImageMESA` are defined to be owned by
                 // the caller.
                 unsafe { OwnedFd::from_raw_fd(fds[i as usize]) },
-                i as u32,
                 offsets[i as usize] as u32,
                 strides[i as usize] as u32,
             );

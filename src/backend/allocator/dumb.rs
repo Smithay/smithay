@@ -115,7 +115,7 @@ impl AsDmabuf for DumbBuffer {
             self.format.modifier,
             DmabufFlags::empty(),
         );
-        builder.add_plane(fd, 0, 0, self.handle.pitch());
+        builder.add_plane(fd, 0, self.handle.pitch());
         if let Ok(node) = DrmNode::from_file(&self.fd) {
             builder.set_node(node);
         }
