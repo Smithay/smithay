@@ -1146,7 +1146,15 @@ impl DmabufParamsData {
         );
 
         planes.sort_by_key(|plane| plane.plane_idx);
-        for plane in planes.drain(..) {
+        for (i, plane) in planes.drain(..).enumerate() {
+            if plane.plane_idx != i as u32 {
+                // After sorting, plane indices should be consecutive and start at 0.
+                params.post_error(
+                    zwp_linux_buffer_params_v1::Error::Incomplete,
+                    "missing or too many planes to create a buffer",
+                );
+                return None;
+            }
             buf.add_plane(plane.fd, plane.offset, plane.stride);
         }
 
