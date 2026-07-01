@@ -54,20 +54,13 @@ pub(crate) struct DmabufInternal {
 
 #[derive(Debug)]
 pub(crate) struct Plane {
-    pub fd: OwnedFd,
+    pub fd: Arc<OwnedFd>,
     /// The plane index
     pub plane_idx: u32,
     /// Offset from the start of the Fd
     pub offset: u32,
     /// Stride for this plane
     pub stride: u32,
-}
-
-impl From<Plane> for OwnedFd {
-    #[inline]
-    fn from(plane: Plane) -> OwnedFd {
-        plane.fd
-    }
 }
 
 bitflags::bitflags! {
@@ -160,12 +153,12 @@ impl DmabufBuilder {
     ///
     /// *Note*: Each Dmabuf needs at least one plane.
     /// MAX_PLANES notes the maximum amount of planes any format may use with this implementation.
-    pub fn add_plane(&mut self, fd: OwnedFd, idx: u32, offset: u32, stride: u32) -> bool {
+    pub fn add_plane(&mut self, fd: impl Into<Arc<OwnedFd>>, idx: u32, offset: u32, stride: u32) -> bool {
         if self.internal.planes.len() == MAX_PLANES {
             return false;
         }
         self.internal.planes.push(Plane {
-            fd,
+            fd: fd.into(),
             plane_idx: idx,
             offset,
             stride,

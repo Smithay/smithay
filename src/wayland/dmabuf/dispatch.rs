@@ -268,7 +268,7 @@ where
                 }
 
                 planes.push(Plane {
-                    fd,
+                    fd: Arc::new(fd),
                     plane_idx,
                     offset,
                     stride,
