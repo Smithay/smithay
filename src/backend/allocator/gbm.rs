@@ -285,7 +285,6 @@ impl AsDmabuf for GbmBuffer {
             let fd = self.fd_for_plane(idx)?;
 
             builder.add_plane(
-                // SAFETY: `gbm_bo_get_fd_for_plane` returns a new fd owned by the caller.
                 fd,
                 idx as u32,
                 self.offset(idx),
@@ -327,7 +326,6 @@ impl AsDmabuf for GbmBuffer {
             let fd = self.fd()?;
 
             builder.add_plane(
-                // SAFETY: `gbm_bo_get_fd` returns a new fd owned by the caller.
                 fd,
                 idx as u32,
                 self.offset(idx),
