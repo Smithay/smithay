@@ -85,20 +85,6 @@ pub struct Dmabuf(pub(crate) Arc<DmabufInternal>);
 /// Weak reference to a dmabuf handle
 pub struct WeakDmabuf(pub(crate) Weak<DmabufInternal>);
 
-// A reference to a particular dmabuf plane fd, so it can be used as a calloop source.
-#[derive(Debug)]
-struct PlaneRef {
-    dmabuf: Dmabuf,
-    idx: usize,
-}
-
-impl AsFd for PlaneRef {
-    #[inline]
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.dmabuf.0.planes[self.idx].fd.as_fd()
-    }
-}
-
 impl PartialEq for Dmabuf {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -543,8 +529,8 @@ impl Blocker for DmabufBlocker {
 
 #[derive(Debug)]
 enum Subsource {
-    Active(Generic<PlaneRef, std::io::Error>),
-    Done(Generic<PlaneRef, std::io::Error>),
+    Active(Generic<Arc<OwnedFd>, std::io::Error>),
+    Done(Generic<Arc<OwnedFd>, std::io::Error>),
     Empty,
 }
 
@@ -617,10 +603,7 @@ impl DmabufSource {
             ) {
                 continue;
             }
-            let fd = PlaneRef {
-                dmabuf: dmabuf.clone(),
-                idx,
-            };
+            let fd = dmabuf.0.planes[idx].fd.clone();
             sources[idx] = Subsource::Active(Generic::new(fd, interest, Mode::OneShot));
         }
         if sources
