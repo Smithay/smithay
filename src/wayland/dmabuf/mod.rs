@@ -1145,10 +1145,8 @@ impl DmabufParamsData {
             DmabufFlags::from_bits_truncate(flags.into()),
         );
 
-        for (i, plane) in planes.drain(..).enumerate() {
-            let offset = plane.offset;
-            let stride = plane.stride;
-            buf.add_plane(plane.fd, i as u32, offset, stride);
+        for plane in planes.drain(..) {
+            buf.add_plane(plane.fd, plane.plane_idx, plane.offset, plane.stride);
         }
 
         #[cfg(feature = "backend_drm")]
