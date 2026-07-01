@@ -56,6 +56,7 @@ pub(crate) struct DmabufInternal {
 pub(crate) struct Plane {
     pub fd: Arc<OwnedFd>,
     /// The plane index
+    #[allow(dead_code)]
     pub plane_idx: u32,
     /// Offset from the start of the Fd
     pub offset: u32,
@@ -153,13 +154,13 @@ impl DmabufBuilder {
     ///
     /// *Note*: Each Dmabuf needs at least one plane.
     /// MAX_PLANES notes the maximum amount of planes any format may use with this implementation.
-    pub fn add_plane(&mut self, fd: impl Into<Arc<OwnedFd>>, idx: u32, offset: u32, stride: u32) -> bool {
+    pub fn add_plane(&mut self, fd: impl Into<Arc<OwnedFd>>, offset: u32, stride: u32) -> bool {
         if self.internal.planes.len() == MAX_PLANES {
             return false;
         }
         self.internal.planes.push(Plane {
             fd: fd.into(),
-            plane_idx: idx,
+            plane_idx: self.internal.planes.len() as u32,
             offset,
             stride,
         });
@@ -179,12 +180,11 @@ impl DmabufBuilder {
     /// Build a `Dmabuf` out of the provided parameters and planes
     ///
     /// Returns `None` if the builder has no planes attached.
-    pub fn build(mut self) -> Option<Dmabuf> {
+    pub fn build(self) -> Option<Dmabuf> {
         if self.internal.planes.is_empty() {
             return None;
         }
 
-        self.internal.planes.sort_by_key(|plane| plane.plane_idx);
         Some(Dmabuf(Arc::new(self.internal)))
     }
 }
