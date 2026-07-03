@@ -1624,7 +1624,13 @@ impl<'buffer> BlitFrame<GlesTarget<'buffer>> for GlesFrame<'_, '_> {
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
     ) -> Result<SyncPoint, Self::Error> {
+        unsafe {
+            self.renderer.gl.Disable(ffi::SCISSOR_TEST);
+        }
         let res = self.renderer.blit(self.target, to, src, dst, filter);
+        unsafe {
+            self.renderer.gl.Enable(ffi::SCISSOR_TEST);
+        }
         self.target
             .0
             .make_current(&self.renderer.gl, &self.renderer.egl)?;
