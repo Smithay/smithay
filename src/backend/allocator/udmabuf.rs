@@ -80,7 +80,7 @@ impl UdmabufAllocator {
             Modifier::Linear,
             DmabufFlags::empty(),
         );
-        dmabuf.add_plane(dma_fd, 0, 0, stride);
+        dmabuf.add_plane(dma_fd, 0, stride);
         dmabuf.build().ok_or_else(|| io::ErrorKind::Unsupported.into())
     }
 }
