@@ -740,6 +740,7 @@ fn get_surface_dmabuf_feedback(
                 render_node.dev_id(),
                 zwp_linux_dmabuf_feedback_v1::TrancheFlags::Sampling,
                 render_formats.clone(),
+                3u32..=6,
             )
             .build()
             .unwrap()
@@ -752,11 +753,13 @@ fn get_surface_dmabuf_feedback(
             surface.device_fd().dev_id().unwrap(),
             zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout,
             planes_formats,
+            4u32..=6,
         )
         .add_preference_tranche(
             scanout_node.dev_id(),
             zwp_linux_dmabuf_feedback_v1::TrancheFlags::Sampling,
             render_formats,
+            4u32..=6,
         )
         .build()
         .unwrap();
