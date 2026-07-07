@@ -363,8 +363,10 @@ format_tables! {
     // RGBA with 10-bit components packed in 64-bits per pixel, with 6-bits of unused padding per component
 
     // Axbxgxrx106106106106 has no direct non-alpha alternative.
-    Axbxgxrx106106106106 { alpha: true, bpp: 64, depth: 40 }
+    Axbxgxrx106106106106 { alpha: true, bpp: 64, depth: 40 },
 
+    Yuv420 {alpha: false, bpp: 12, depth: 12 },
+    Nv12 {alpha: false, bpp: 12, depth: 12 }
     // TODO: YUV and other formats
 }
 
