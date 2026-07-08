@@ -1855,6 +1855,13 @@ where
                         if let Some(frame) = state.mapped_onto.take() {
                             conn.destroy_window(frame)?;
                         }
+                        conn.change_property32(
+                            PropMode::REPLACE,
+                            n.window,
+                            xwm.atoms.WM_STATE,
+                            xwm.atoms.WM_STATE,
+                            &[0 /*WithdrawnState*/, 0 /*WINDOW_NONE*/],
+                        )?;
                     }
                 }
                 drop(_guard);
