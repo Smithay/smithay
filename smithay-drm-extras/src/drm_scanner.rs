@@ -13,7 +13,7 @@
 //!
 //! let mut scanner: DrmScanner = DrmScanner::new();
 //!
-//! for event in scanner.scan_connectors(&drm_device) {
+//! for event in scanner.scan_connectors(&drm_device).expect("failed to scan connectors") {
 //!     match event {
 //!         DrmScanEvent::Connected { .. } => {},
 //!         DrmScanEvent::Disconnected { .. } => {},
