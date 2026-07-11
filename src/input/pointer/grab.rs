@@ -358,10 +358,14 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        handle.motion(data, self.start_data.focus.clone(), event);
+        let focus = match (&focus, &self.start_data.focus) {
+            (Some((current, loc)), Some((start, _))) if current == start => Some((current.clone(), *loc)),
+            _ => self.start_data.focus.clone(),
+        };
+        handle.motion(data, focus, event);
     }
 
     fn relative_motion(
