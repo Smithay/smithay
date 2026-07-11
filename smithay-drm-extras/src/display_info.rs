@@ -10,8 +10,8 @@
 //!
 //! let info = display_info::for_connector(&drm_device, connector).unwrap();
 //!
-//! println!("Monitor name: {}", info.model());
-//! println!("Manufacturer name: {}", info.make());
+//! println!("Monitor name: {:?}", info.model());
+//! println!("Manufacturer name: {:?}", info.make());
 //! ```
 
 use drm::control::{Device as ControlDevice, connector};
