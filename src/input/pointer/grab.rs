@@ -244,6 +244,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
                         button: event.button,
                         location: handle.current_location(),
                     },
+                    focus: handle.current_focus(),
                 },
             );
         }
@@ -343,6 +344,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
 /// the grab once all are released.
 pub struct ClickGrab<D: SeatHandler> {
     start_data: GrabStartData<D>,
+    focus: Option<(D::PointerFocus, Point<f64, Logical>)>,
 }
 
 impl<D: SeatHandler + 'static> fmt::Debug for ClickGrab<D> {
@@ -361,11 +363,14 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        let focus = match (&focus, &self.start_data.focus) {
-            (Some((current, loc)), Some((start, _))) if current == start => Some((current.clone(), *loc)),
-            _ => self.start_data.focus.clone(),
-        };
-        handle.motion(data, focus, event);
+        if let (Some((new_target, new_location)), Some((grab_target, grab_location))) =
+            (&focus, self.focus.as_mut())
+        {
+            if *new_target == *grab_target {
+                *grab_location = *new_location;
+            }
+        }
+        handle.motion(data, self.focus.clone(), event);
     }
 
     fn relative_motion(
