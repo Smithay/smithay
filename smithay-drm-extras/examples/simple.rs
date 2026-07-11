@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
-use drm::control::{connector, crtc};
+use smithay::reexports::drm::control::{connector, crtc};
 use smithay_drm_extras::{
     display_info,
     drm_scanner::{self, DrmScanEvent},
