@@ -231,6 +231,8 @@ impl Dmabuf {
     }
 
     /// Returns the flags stored on this buffer without interpreting them.
+    ///
+    /// Bits unknown to this Smithay version are retained.
     pub fn flags(&self) -> DmabufFlags {
         self.0.flags
     }

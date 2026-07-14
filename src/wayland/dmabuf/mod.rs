@@ -222,6 +222,10 @@ use crate::{
 
 use super::{buffer::BufferHandler, compositor};
 
+fn dmabuf_flags_from_wire(raw: u32) -> DmabufFlags {
+    DmabufFlags::from_bits_retain(raw)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct DmabufFeedbackTranche {
     target_device: libc::dev_t,
@@ -1142,7 +1146,7 @@ impl DmabufParamsData {
             (width, height),
             format,
             modifier,
-            DmabufFlags::from_bits_truncate(flags.into()),
+            dmabuf_flags_from_wire(flags.into()),
         );
 
         planes.sort_by_key(|plane| plane.plane_idx);
