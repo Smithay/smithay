@@ -230,6 +230,11 @@ impl Dmabuf {
         self.0.modifier != Modifier::Invalid && self.0.modifier != Modifier::Linear
     }
 
+    /// Returns the flags stored on this buffer without interpreting them.
+    pub fn flags(&self) -> DmabufFlags {
+        self.0.flags
+    }
+
     /// Returns if the buffer is stored inverted on the y-axis
     pub fn y_inverted(&self) -> bool {
         self.0.flags.contains(DmabufFlags::Y_INVERT)
