@@ -70,6 +70,8 @@ jobs:
               run: cargo clippy --manifest-path "./anvil/Cargo.toml" --features "test_all_features" --no-deps -- -D warnings
             - name: Clippy Smallvil
               run: cargo clippy --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
+            - name: Clippy drm-extras
+              run: cargo clippy --manifest-path "./smithay-drm-extras/Cargo.toml" --no-deps -- -D warnings
 
     check-msrv:
         env:
