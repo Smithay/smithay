@@ -149,8 +149,8 @@ impl UdevData {
         if self.debug_flags != flags {
             self.debug_flags = flags;
 
-            for (_, backend) in self.backends.iter_mut() {
-                for (_, surface) in backend.surfaces.iter_mut() {
+            for backend in self.backends.values_mut() {
+                for surface in backend.surfaces.values_mut() {
                     surface.drm_output.set_debug_flags(flags);
                 }
             }
