@@ -421,10 +421,15 @@ jobs:
             - name: Setup index
               run: cp ./doc_index.html ./target/doc/index.html
 
-            - name: Deploy
-              if: ${{ github.event_name == 'push' }}
-              uses: peaceiris/actions-gh-pages@v3
+            - name: Upload static files as artifact
+              uses: actions/upload-pages-artifact@v3
               with:
-                  github_token: ${{ secrets.GITHUB_TOKEN }}
-                  publish_dir: ./target/doc
-                  force_orphan: true
+                  path: ./target/doc
+
+            - name: Deploy to GitHub Pages
+              if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master'  }}
+              uses: actions/deploy-pages@v4
+
+permissions:
+  pages: write
+  id-token: write
