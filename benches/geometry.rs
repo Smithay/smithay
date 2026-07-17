@@ -17,9 +17,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     let max_x = stage.w - element_size.w;
     let max_y = stage.h - element_size.h;
 
-    let mut rand = rand::thread_rng();
-    let x = rand.gen_range(0..max_x);
-    let y = rand.gen_range(0..max_y);
+    let mut rand = rand::rng();
+    let x = rand.random_range(0..max_x);
+    let y = rand.random_range(0..max_y);
     let test_element = Rectangle::new((x, y).into(), element_size);
 
     let x_min = (test_element.loc.x - element_size.w) + 1;
@@ -33,8 +33,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let opaque_regions = (0..2048)
         .map(|_| {
-            let x = rand.gen_range(x_min..=x_max);
-            let y = rand.gen_range(y_min..=y_max);
+            let x = rand.random_range(x_min..=x_max);
+            let y = rand.random_range(y_min..=y_max);
             Rectangle::new((x, y).into(), element_size)
         })
         .collect::<Vec<_>>();
