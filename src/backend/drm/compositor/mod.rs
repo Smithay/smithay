@@ -750,11 +750,13 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         supports_fencing: bool,
         allow_partial_update: bool,
         event: bool,
+        async_flip: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.page_flip(
             self.build_planes(surface, supports_fencing, allow_partial_update),
             event,
+            async_flip,
         )
     }
 
@@ -2552,7 +2554,7 @@ where
         } else {
             prepared_frame
                 .frame
-                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
+                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true, false)
         };
 
         let res = self.handle_flip(&prepared_frame, flip);

@@ -869,6 +869,7 @@ impl AtomicDrmSurface {
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         event: bool,
+        async_flip: bool,
     ) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -896,10 +897,16 @@ impl AtomicDrmSurface {
         let res = self
             .fd
             .atomic_commit(
-                if event {
-                    AtomicCommitFlags::PAGE_FLIP_EVENT | AtomicCommitFlags::NONBLOCK
-                } else {
-                    AtomicCommitFlags::NONBLOCK
+                {
+                    let mut flags = if event {
+                        AtomicCommitFlags::PAGE_FLIP_EVENT | AtomicCommitFlags::NONBLOCK
+                    } else {
+                        AtomicCommitFlags::NONBLOCK
+                    };
+                    if async_flip {
+                        flags |= AtomicCommitFlags::PAGE_FLIP_ASYNC;
+                    }
+                    flags
                 },
                 req.build()?,
             )

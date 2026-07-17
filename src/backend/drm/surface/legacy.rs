@@ -331,6 +331,7 @@ impl LegacyDrmSurface {
         Ok(())
     }
 
+    // legacy KMS has no async flip support here; tearing is atomic-only (MVP)
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
     pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {

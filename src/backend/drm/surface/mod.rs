@@ -431,11 +431,13 @@ impl DrmSurface {
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         event: bool,
+        async_flip: bool,
     ) -> Result<(), Error> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(planes, event),
+            DrmSurfaceInternal::Atomic(surf) => surf.page_flip(planes, event, async_flip),
             DrmSurfaceInternal::Legacy(surf) => {
                 let fb = ensure_legacy_planes(self, planes)?;
+                // legacy KMS has no async flip support here; tearing is atomic-only (MVP)
                 surf.page_flip(fb, event)
             }
         }
