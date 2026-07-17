@@ -2601,7 +2601,7 @@ where
                 Err(ref err) if async_flip && Self::is_async_flip_rejected(err) => {
                     if !self.async_flip_rejection_logged {
                         self.async_flip_rejection_logged = true;
-                        tracing::info!(
+                        tracing::warn!(
                             "async page flip rejected by driver, retried synchronously (further rejections logged at debug)"
                         );
                     } else {
