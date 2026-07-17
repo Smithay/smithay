@@ -967,6 +967,10 @@ where
 struct QueuedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
     prepared_frame: PreparedFrame<A, F>,
     user_data: U,
+    /// Whether this specific queued frame should attempt an async (tearing) page flip.
+    /// Scoped to the frame (rather than the compositor) so it cannot leak onto a later,
+    /// unrelated `queue_frame` call.
+    async_flip: bool,
 }
 
 impl<A, F, U> std::fmt::Debug for QueuedFrame<A, F, U>
@@ -981,6 +985,7 @@ where
         f.debug_struct("QueuedFrame")
             .field("prepared_frame", &self.prepared_frame)
             .field("user_data", &self.user_data)
+            .field("async_flip", &self.async_flip)
             .finish()
     }
 }
@@ -1067,7 +1072,6 @@ where
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
     supports_fencing: bool,
     reset_pending: bool,
-    pending_async_flip: bool,
     signaled_fence: Option<Arc<OwnedFd>>,
 
     framebuffer_exporter: F,
@@ -1254,7 +1258,6 @@ where
                         primary_plane_damage_bag: DamageBag::new(4),
                         primary_is_opaque: is_opaque,
                         reset_pending: true,
-                        pending_async_flip: false,
                         signaled_fence,
                         current_frame,
                         pending_frame: None,
@@ -1437,7 +1440,6 @@ where
             primary_plane_damage_bag: DamageBag::new(4),
             primary_is_opaque: is_opaque,
             reset_pending: true,
-            pending_async_flip: false,
             signaled_fence,
             current_frame,
             pending_frame: None,
@@ -2436,15 +2438,14 @@ where
     /// driver to perform an asynchronous page flip for this frame, which may present it
     /// immediately (potentially tearing) instead of waiting for the next vblank. If the
     /// driver rejects the async flip (e.g. `EINVAL`/`EBUSY` because it is not supported
-    /// for the current configuration), the same frame is automatically retried once as a
-    /// regular synchronous flip, so this call still succeeds/fails exactly as
-    /// [`DrmCompositor::queue_frame`] would. Any other flags are ignored.
+    /// for the current configuration), this specific frame is automatically retried once
+    /// as a regular synchronous flip. The request is scoped to this single frame only and
+    /// never affects any other queued frame. Any other flags are ignored.
     ///
     /// See [`DrmCompositor::queue_frame`] for the general semantics of queuing a frame.
-    #[profiling::function]
     pub fn queue_frame_with_flags(&mut self, user_data: U, flags: FrameFlags) -> FrameResult<(), A, F> {
-        self.pending_async_flip = flags.contains(FrameFlags::ALLOW_ASYNC_PAGE_FLIP);
-        self.queue_frame(user_data)
+        let async_flip = flags.contains(FrameFlags::ALLOW_ASYNC_PAGE_FLIP);
+        self.queue_frame_internal(user_data, async_flip)
     }
 
     /// Queues the current frame for scan-out.
@@ -2463,8 +2464,12 @@ where
     /// Otherwise the underlying swapchain will eventually run out of buffers.
     ///
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]
-    #[profiling::function]
     pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
+        self.queue_frame_internal(user_data, false)
+    }
+
+    #[profiling::function]
+    fn queue_frame_internal(&mut self, user_data: U, async_flip: bool) -> FrameResult<(), A, F> {
         if !self.surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
@@ -2490,6 +2495,7 @@ where
         self.queued_frame = Some(QueuedFrame {
             prepared_frame,
             user_data,
+            async_flip,
         });
         if self.pending_frame.is_none() {
             self.submit()?;
@@ -2568,13 +2574,8 @@ where
         let QueuedFrame {
             mut prepared_frame,
             user_data,
+            async_flip,
         } = self.queued_frame.take().unwrap();
-
-        // Consume the pending async-flip request for this submit attempt. Reset
-        // unconditionally so a rejected/retried or failed attempt never leaks the
-        // request into a later, unrelated submit.
-        let async_flip = self.pending_async_flip;
-        self.pending_async_flip = false;
 
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.surface.commit_pending() {
