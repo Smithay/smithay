@@ -4,7 +4,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use core::slice;
-use glam::{Mat3, Vec2};
+use glam::{Affine2, Mat3, Vec2};
 use std::{
     collections::HashMap,
     ffi::{CStr, CString},
@@ -2141,8 +2141,8 @@ impl Renderer for GlesRenderer {
 
         // replicate https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/glOrtho.xml
         // glOrtho(0, width, 0, height, 1, 1);
-        let mut renderer = Mat3::IDENTITY;
-        let t = Mat3::IDENTITY;
+        let mut renderer = Affine2::IDENTITY;
+        let t = Affine2::IDENTITY;
         let x = 2.0 / (output_size.w as f32);
         let y = 2.0 / (output_size.h as f32);
 
@@ -2157,9 +2157,9 @@ impl Renderer for GlesRenderer {
         renderer.z_axis.y = -(1.0f32.copysign(renderer.x_axis.y + renderer.y_axis.y));
 
         // We account for OpenGLs coordinate system here
-        let flip180 = Mat3::from_cols_array(&[1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0]);
+        let flip180 = Affine2::from_cols_array(&[1.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
 
-        let current_projection = flip180 * transform.matrix() * renderer;
+        let current_projection = (flip180 * transform.matrix() * renderer).into();
         let span = span!(parent: &self.span, Level::DEBUG, "renderer_gles2_frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
 
         Ok(GlesFrame {
@@ -3153,38 +3153,38 @@ fn build_texture_mat(
     let dst_src_size = transform.transform_size(src.size);
     let scale = dst_src_size.to_f64() / dest.size.to_f64();
 
-    let mut tex_mat = Mat3::IDENTITY;
+    let mut tex_mat = Affine2::IDENTITY;
 
     // first bring the damage into src scale
-    tex_mat = Mat3::from_scale(Vec2::new(scale.x as f32, scale.y as f32)) * tex_mat;
+    tex_mat = Affine2::from_scale(Vec2::new(scale.x as f32, scale.y as f32)) * tex_mat;
 
     // then compensate for the texture transform
     let transform_mat = transform.matrix();
     let translation = match transform {
-        Transform::Normal => Mat3::IDENTITY,
-        Transform::_90 => Mat3::from_translation(Vec2::new(0f32, dst_src_size.w as f32)),
-        Transform::_180 => Mat3::from_translation(Vec2::new(dst_src_size.w as f32, dst_src_size.h as f32)),
-        Transform::_270 => Mat3::from_translation(Vec2::new(dst_src_size.h as f32, 0f32)),
-        Transform::Flipped => Mat3::from_translation(Vec2::new(dst_src_size.w as f32, 0f32)),
-        Transform::Flipped90 => Mat3::IDENTITY,
-        Transform::Flipped180 => Mat3::from_translation(Vec2::new(0f32, dst_src_size.h as f32)),
+        Transform::Normal => Affine2::IDENTITY,
+        Transform::_90 => Affine2::from_translation(Vec2::new(0f32, dst_src_size.w as f32)),
+        Transform::_180 => Affine2::from_translation(Vec2::new(dst_src_size.w as f32, dst_src_size.h as f32)),
+        Transform::_270 => Affine2::from_translation(Vec2::new(dst_src_size.h as f32, 0f32)),
+        Transform::Flipped => Affine2::from_translation(Vec2::new(dst_src_size.w as f32, 0f32)),
+        Transform::Flipped90 => Affine2::IDENTITY,
+        Transform::Flipped180 => Affine2::from_translation(Vec2::new(0f32, dst_src_size.h as f32)),
         Transform::Flipped270 => {
-            Mat3::from_translation(Vec2::new(dst_src_size.h as f32, dst_src_size.w as f32))
+            Affine2::from_translation(Vec2::new(dst_src_size.h as f32, dst_src_size.w as f32))
         }
     };
     tex_mat = transform_mat * tex_mat;
     tex_mat = translation * tex_mat;
 
     // now we can add the src crop loc, the size already done implicit by the src size
-    tex_mat = Mat3::from_translation(Vec2::new(src.loc.x as f32, src.loc.y as f32)) * tex_mat;
+    tex_mat = Affine2::from_translation(Vec2::new(src.loc.x as f32, src.loc.y as f32)) * tex_mat;
 
     // at last we have to normalize the values for UV space
-    tex_mat = Mat3::from_scale(Vec2::new(
+    tex_mat = Affine2::from_scale(Vec2::new(
         (1.0f64 / texture.w as f64) as f32,
         (1.0f64 / texture.h as f64) as f32,
     )) * tex_mat;
 
-    tex_mat
+    tex_mat.into()
 }
 
 /// Guard type wrapping the underlying [`GlesRenderer`] of a [`GlesFrame`].
