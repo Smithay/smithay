@@ -74,7 +74,7 @@ atomic_float = "1.1.0"
 sha2 = "0.10.9"
 tracy-client = { version = "0.18.4", default-features = false, optional = true }
 reis = { version = "0.7.0", features = ["calloop"] }
-glam = { version = "0.33.2", default-features = false, features = ["float-types", "std"] }
+glam = { version = "0.33.2", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
