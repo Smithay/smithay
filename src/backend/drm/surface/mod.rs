@@ -426,6 +426,11 @@ impl DrmSurface {
     ///
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
     /// Make sure to have the device registered in your event loop to not miss the event.
+    ///
+    /// If `async_flip` is `true`, an async (tearing) page flip is requested via
+    /// `DRM_MODE_PAGE_FLIP_ASYNC`: the new framebuffer is presented immediately, without
+    /// waiting for the next vblank. This only applies to atomic surfaces; legacy surfaces
+    /// silently ignore this flag.
     #[profiling::function]
     pub fn page_flip<'a>(
         &self,
