@@ -1036,6 +1036,9 @@ bitflags::bitflags! {
         const ALLOW_CURSOR_PLANE_SCANOUT = 8;
         /// Return `EmptyFrame`, if only the cursor plane would have been updated
         const SKIP_CURSOR_ONLY_UPDATES = 16;
+        /// Attempt to present this frame with an async (tearing) page flip.
+        /// Falls back to a synchronous flip if the driver rejects it.
+        const ALLOW_ASYNC_PAGE_FLIP = 32;
         /// Allow to realize the frame by assigning elements on any plane
         const ALLOW_SCANOUT = Self::ALLOW_PRIMARY_PLANE_SCANOUT.bits() | Self::ALLOW_OVERLAY_PLANE_SCANOUT.bits() | Self::ALLOW_CURSOR_PLANE_SCANOUT.bits();
         /// Safe default set of flags
@@ -1064,6 +1067,7 @@ where
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
     supports_fencing: bool,
     reset_pending: bool,
+    pending_async_flip: bool,
     signaled_fence: Option<Arc<OwnedFd>>,
 
     framebuffer_exporter: F,
@@ -1250,6 +1254,7 @@ where
                         primary_plane_damage_bag: DamageBag::new(4),
                         primary_is_opaque: is_opaque,
                         reset_pending: true,
+                        pending_async_flip: false,
                         signaled_fence,
                         current_frame,
                         pending_frame: None,
@@ -1432,6 +1437,7 @@ where
             primary_plane_damage_bag: DamageBag::new(4),
             primary_is_opaque: is_opaque,
             reset_pending: true,
+            pending_async_flip: false,
             signaled_fence,
             current_frame,
             pending_frame: None,
@@ -2423,6 +2429,24 @@ where
         Ok(frame_reference)
     }
 
+    /// Queues the current frame for scan-out, optionally requesting an async (tearing)
+    /// page flip via [`FrameFlags::ALLOW_ASYNC_PAGE_FLIP`].
+    ///
+    /// When [`FrameFlags::ALLOW_ASYNC_PAGE_FLIP`] is set, the compositor will ask the
+    /// driver to perform an asynchronous page flip for this frame, which may present it
+    /// immediately (potentially tearing) instead of waiting for the next vblank. If the
+    /// driver rejects the async flip (e.g. `EINVAL`/`EBUSY` because it is not supported
+    /// for the current configuration), the same frame is automatically retried once as a
+    /// regular synchronous flip, so this call still succeeds/fails exactly as
+    /// [`DrmCompositor::queue_frame`] would. Any other flags are ignored.
+    ///
+    /// See [`DrmCompositor::queue_frame`] for the general semantics of queuing a frame.
+    #[profiling::function]
+    pub fn queue_frame_with_flags(&mut self, user_data: U, flags: FrameFlags) -> FrameResult<(), A, F> {
+        self.pending_async_flip = flags.contains(FrameFlags::ALLOW_ASYNC_PAGE_FLIP);
+        self.queue_frame(user_data)
+    }
+
     /// Queues the current frame for scan-out.
     ///
     /// If `render_frame` has not been called prior to this function or returned no damage
@@ -2546,15 +2570,39 @@ where
             user_data,
         } = self.queued_frame.take().unwrap();
 
+        // Consume the pending async-flip request for this submit attempt. Reset
+        // unconditionally so a rejected/retried or failed attempt never leaks the
+        // request into a later, unrelated submit.
+        let async_flip = self.pending_async_flip;
+        self.pending_async_flip = false;
+
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.surface.commit_pending() {
             prepared_frame
                 .frame
                 .commit(&self.surface, self.supports_fencing, allow_partial_update, true)
         } else {
-            prepared_frame
-                .frame
-                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true, false)
+            let flip = prepared_frame.frame.page_flip(
+                &self.surface,
+                self.supports_fencing,
+                allow_partial_update,
+                true,
+                async_flip,
+            );
+
+            match flip {
+                Err(ref err) if async_flip && Self::is_async_flip_rejected(err) => {
+                    tracing::debug!("async_flip_rejected, retried synchronously");
+                    prepared_frame.frame.page_flip(
+                        &self.surface,
+                        self.supports_fencing,
+                        allow_partial_update,
+                        true,
+                        false,
+                    )
+                }
+                other => other,
+            }
         };
 
         let res = self.handle_flip(&prepared_frame, flip);
@@ -2567,6 +2615,18 @@ where
         }
 
         res
+    }
+
+    /// Returns `true` if `err` indicates the driver rejected an async (tearing) page
+    /// flip specifically (as opposed to any other commit failure), meaning a synchronous
+    /// retry of the same frame is worth attempting.
+    fn is_async_flip_rejected(err: &crate::backend::drm::error::Error) -> bool {
+        matches!(
+            err,
+            crate::backend::drm::error::Error::Access(access)
+                if access.source.kind() == ErrorKind::InvalidInput
+                    || rustix::io::Errno::from_io_error(&access.source) == Some(rustix::io::Errno::BUSY)
+        )
     }
 
     fn handle_flip(
