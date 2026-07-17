@@ -1093,6 +1093,10 @@ where
 
     debug_flags: DebugFlags,
     span: tracing::Span,
+
+    /// Set once the first async page-flip rejection has been logged at
+    /// `info!` level, so subsequent rejections fall back to `debug!`.
+    async_flip_rejection_logged: bool,
 }
 
 impl<A, F, U, G> DrmCompositor<A, F, U, G>
@@ -1279,6 +1283,7 @@ where
                         supports_fencing,
                         debug_flags: DebugFlags::empty(),
                         span,
+                        async_flip_rejection_logged: false,
                     };
 
                     return Ok(drm_renderer);
@@ -1461,6 +1466,7 @@ where
             supports_fencing,
             debug_flags: DebugFlags::empty(),
             span,
+            async_flip_rejection_logged: false,
         };
 
         Ok(drm_renderer)
@@ -2593,7 +2599,14 @@ where
 
             match flip {
                 Err(ref err) if async_flip && Self::is_async_flip_rejected(err) => {
-                    tracing::debug!("async_flip_rejected, retried synchronously");
+                    if !self.async_flip_rejection_logged {
+                        self.async_flip_rejection_logged = true;
+                        tracing::info!(
+                            "async page flip rejected by driver, retried synchronously (further rejections logged at debug)"
+                        );
+                    } else {
+                        tracing::debug!("async_flip_rejected, retried synchronously");
+                    }
                     prepared_frame.frame.page_flip(
                         &self.surface,
                         self.supports_fencing,
