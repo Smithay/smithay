@@ -25,8 +25,8 @@ use crate::{
     utils::Point,
 };
 
-use atomic_float::AtomicF64;
 use encoding_rs::WINDOWS_1252;
+use portable_atomic::AtomicF64;
 use std::{
     borrow::Cow,
     collections::HashSet,

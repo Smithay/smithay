@@ -126,7 +126,7 @@ use crate::utils::Transform;
 pub use crate::utils::hook::HookId;
 use crate::utils::{Buffer, Logical, Point, Rectangle, user_data::UserDataMap};
 use crate::wayland::GlobalData;
-use atomic_float::AtomicF64;
+use portable_atomic::AtomicF64;
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;

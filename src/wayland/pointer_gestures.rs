@@ -98,7 +98,7 @@
 
 use std::sync::{Arc, Mutex, atomic::Ordering};
 
-use atomic_float::AtomicF64;
+use portable_atomic::AtomicF64;
 use wayland_protocols::wp::pointer_gestures::zv1::server::{
     zwp_pointer_gesture_hold_v1::{self, ZwpPointerGestureHoldV1},
     zwp_pointer_gesture_pinch_v1::{self, ZwpPointerGesturePinchV1},

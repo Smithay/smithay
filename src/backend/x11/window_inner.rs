@@ -13,11 +13,8 @@ use crate::utils::{Logical, Size};
 
 use super::{Atoms, Window, X11Error, extension::Extensions};
 use drm_fourcc::DrmFourcc;
-use std::sync::{
-    Arc, Mutex, Weak,
-    atomic::{AtomicU32, AtomicU64},
-    mpsc::Sender,
-};
+use portable_atomic::{AtomicU32, AtomicU64};
+use std::sync::{Arc, Mutex, Weak, mpsc::Sender};
 use x11rb::{
     connection::Connection,
     protocol::{
