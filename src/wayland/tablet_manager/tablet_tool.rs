@@ -7,7 +7,7 @@ use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
 use crate::utils::{Client as ClientCoords, Logical, Point};
 use crate::wayland::compositor::CompositorHandler;
 use crate::wayland::seat::CURSOR_IMAGE_ROLE;
-use atomic_float::AtomicF64;
+use portable_atomic::AtomicF64;
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},

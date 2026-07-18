@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex, atomic::Ordering};
 
-use atomic_float::AtomicF64;
+use portable_atomic::AtomicF64;
 use wayland_server::{
     Client, DisplayHandle, Resource, Weak,
     backend::{ClientId, ObjectId},

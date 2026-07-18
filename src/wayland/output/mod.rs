@@ -79,7 +79,7 @@ use crate::{
     utils::iter::new_locked_obj_iter,
 };
 
-use atomic_float::AtomicF64;
+use portable_atomic::AtomicF64;
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_server::{

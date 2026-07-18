@@ -10,8 +10,8 @@ use std::{
     },
 };
 
-use atomic_float::AtomicF64;
 use calloop::LoopHandle;
+use portable_atomic::AtomicF64;
 use rustix::fs::OFlags;
 use smallvec::SmallVec;
 use tracing::{debug, trace, warn};
