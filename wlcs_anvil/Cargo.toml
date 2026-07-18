@@ -14,6 +14,3 @@ smithay = { path = "..", default-features=false, features=["wayland_frontend", "
 anvil = { path = "../anvil", default-features=false }
 wayland-sys = { version = "0.31.1", features = ["client", "server"] }
 wlcs = "0.1"
-libc = "0.2"
-memoffset = "0.9"
-cgmath = "0.18"
