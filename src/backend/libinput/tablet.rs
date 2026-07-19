@@ -192,3 +192,23 @@ impl backend::TabletToolButtonEvent<LibinputInputBackend> for tablet_tool::Table
         tablet_tool::TabletToolButtonEvent::button_state(self).into()
     }
 }
+
+impl backend::Event<LibinputInputBackend> for event::tablet_pad::TabletPadButtonEvent {
+    fn time(&self) -> u64 {
+        event::tablet_pad::TabletPadEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::TabletPadButtonEvent<LibinputInputBackend> for event::tablet_pad::TabletPadButtonEvent {
+    fn button(&self) -> u32 {
+        self.button_number()
+    }
+
+    fn state(&self) -> backend::ButtonState {
+        self.button_state().into()
+    }
+}
