@@ -141,6 +141,7 @@ impl DrmSyncPoint {
     }
 
     /// Wait for sync point.
+    #[allow(clippy::same_name_method)]
     pub fn wait(&self, timeout_nsec: i64) -> io::Result<()> {
         let ctx = self.timeline.0.dev_ctx.lock().unwrap();
         ctx.device
