@@ -37,6 +37,8 @@
 //! See also `anvil/src/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
+#![allow(unexpected_cfgs)]
+
 #[cfg(feature = "backend_drm")]
 use drm::node::{DrmNode, NodeType};
 use libc::dev_t;
@@ -98,7 +100,17 @@ impl UdevBackend {
             .into_iter()
             // Create devices
             .flat_map(|path| match stat(&path) {
-                Ok(stat) => Some((stat.st_rdev, path)),
+                Ok(stat) => Some({
+                    #[cfg(not(target_arch = "e2k"))]
+                    {
+                        (stat.st_rdev, path)
+                    }
+
+                    #[cfg(target_arch = "e2k")]
+                    {
+                        (stat.st_rdev as u64, path)
+                    }
+                }),
                 Err(err) => {
                     warn!("Unable to get id of {:?}, Error: {:?}. Skipping", path, err);
                     None

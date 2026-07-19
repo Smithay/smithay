@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 use drm::{Device as BasicDevice, control::Device as ControlDevice};
 use std::{
     os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd},
@@ -94,7 +96,18 @@ impl DrmDeviceFd {
 
     /// Returns the `dev_t` of the underlying device
     pub fn dev_id(&self) -> rustix::io::Result<libc::dev_t> {
-        Ok(rustix::fs::fstat(&self.0.fd)?.st_rdev)
+        let dev: libc::dev_t = {
+            #[cfg(not(target_arch = "e2k"))]
+            {
+                rustix::fs::fstat(&self.0.fd)?.st_rdev
+            }
+
+            #[cfg(target_arch = "e2k")]
+            {
+                rustix::fs::fstat(&self.0.fd)?.st_rdev as u64
+            }
+        };
+        Ok(dev)
     }
 
     /// Returns a weak reference to the underlying device
