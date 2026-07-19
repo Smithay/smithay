@@ -19,7 +19,10 @@ use crate::{
 use std::{
     any::Any,
     collections::{HashMap, hash_map::Entry},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use super::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, SurfaceView};
@@ -59,15 +62,29 @@ unsafe impl Sync for RendererSurfaceState {}
 #[derive(Debug)]
 struct InnerBuffer {
     buffer: WlBuffer,
+    released: AtomicBool,
     #[cfg(feature = "backend_drm")]
     acquire_point: Option<DrmSyncPoint>,
     #[cfg(feature = "backend_drm")]
     release_point: Option<DrmSyncPoint>,
 }
 
+fn claim_release(released: &AtomicBool) -> bool {
+    !released.swap(true, Ordering::AcqRel)
+}
+
 impl Drop for InnerBuffer {
     #[inline]
     fn drop(&mut self) {
+        self.release();
+    }
+}
+
+impl InnerBuffer {
+    fn release(&self) -> bool {
+        if !claim_release(&self.released) {
+            return false;
+        }
         self.buffer.release();
         #[cfg(feature = "backend_drm")]
         if let Some(release_point) = &self.release_point {
@@ -75,6 +92,11 @@ impl Drop for InnerBuffer {
                 tracing::error!("Failed to signal syncobj release point: {}", err);
             }
         }
+        true
+    }
+
+    fn rearm_release(&self) {
+        self.released.store(false, Ordering::Release);
     }
 }
 
@@ -90,6 +112,7 @@ impl Buffer {
         Self {
             inner: Arc::new(InnerBuffer {
                 buffer,
+                released: AtomicBool::new(false),
                 #[cfg(feature = "backend_drm")]
                 acquire_point: None,
                 #[cfg(feature = "backend_drm")]
@@ -104,6 +127,7 @@ impl Buffer {
         Self {
             inner: Arc::new(InnerBuffer {
                 buffer,
+                released: AtomicBool::new(false),
                 acquire_point: Some(acquire_point),
                 release_point: Some(release_point),
             }),
@@ -114,6 +138,18 @@ impl Buffer {
     #[allow(dead_code)]
     pub(crate) fn acquire_point(&self) -> Option<&DrmSyncPoint> {
         self.inner.acquire_point.as_ref()
+    }
+
+    fn release_if_implicit(&self) -> bool {
+        #[cfg(feature = "backend_drm")]
+        if self.inner.acquire_point.is_some() || self.inner.release_point.is_some() {
+            return false;
+        }
+        self.inner.release()
+    }
+
+    fn rearm_release(&self) {
+        self.inner.rearm_release();
     }
 }
 
@@ -169,12 +205,15 @@ impl RendererSurfaceState {
                     self.buffer = Some(Buffer {
                         inner: Arc::new(InnerBuffer {
                             buffer,
+                            released: AtomicBool::new(false),
                             #[cfg(feature = "backend_drm")]
                             acquire_point: syncobj_state.acquire_point.take(),
                             #[cfg(feature = "backend_drm")]
                             release_point: syncobj_state.release_point.take(),
                         }),
                     });
+                } else if let Some(buffer) = self.buffer.as_ref() {
+                    buffer.rearm_release();
                 }
 
                 self.textures.clear();
@@ -315,6 +354,16 @@ impl RendererSurfaceState {
     /// Can be used to check if surface is mapped
     pub fn buffer(&self) -> Option<&Buffer> {
         self.buffer.as_ref()
+    }
+
+    /// Releases an implicitly synchronized buffer while preserving its cached texture.
+    ///
+    /// The caller must only use this after importing the buffer into a retained
+    /// compositor-owned texture and must not clear that texture before the next
+    /// client buffer commit. Explicitly synchronized buffers are never released
+    /// through this method because their release point must follow GPU completion.
+    pub fn release_implicit_buffer(&self) -> bool {
+        self.buffer.as_ref().is_some_and(Buffer::release_if_implicit)
     }
 
     /// Gets a reference to the texture for the specified renderer context
