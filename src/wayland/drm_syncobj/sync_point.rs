@@ -198,6 +198,7 @@ impl DrmSyncPoint {
     /// inject the resulting sync-file fence into the client's
     /// release point.
     pub fn import_sync_file(&self, fd: BorrowedFd<'_>) -> io::Result<()> {
+        use rustix::ioctl::{Updater, ioctl, opcode::read_write};
         use std::os::fd::AsRawFd;
 
         let ctx = self.timeline.0.dev_ctx.lock().unwrap();
@@ -207,46 +208,28 @@ impl DrmSyncPoint {
 
         let tmp = device.create_syncobj(false)?;
 
-        // DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE with
-        // DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE and a
-        // non-zero existing handle. Computed ioctl number:
-        //   _IOWR('d', 0xC2, drm_syncobj_handle)
-        //     = (3<<30) | (sizeof(24)<<16) | (0x64<<8) | 0xC2
-        //     = 0xC018_64C2
-        const DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE: libc::c_ulong = 0xC018_64C2;
-        const DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE: u32 = 1;
+        const DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE: rustix::ioctl::Opcode =
+            read_write::<drm_ffi::drm_syncobj_handle>(drm_ffi::DRM_IOCTL_BASE, 0xC2);
 
-        #[repr(C)]
-        struct DrmSyncobjHandle {
-            handle: u32,
-            flags: u32,
-            fd: i32,
-            pad: u32,
-            point: u64,
-        }
-
-        let mut args = DrmSyncobjHandle {
+        let mut args = drm_ffi::drm_syncobj_handle {
             handle: tmp.into(),
-            flags: DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE,
+            flags: drm_ffi::DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE,
             fd: fd.as_raw_fd(),
             pad: 0,
             point: 0,
         };
-        // SAFETY: `device.as_raw_fd()` is a valid DRM device fd;
-        // `args` layout matches the kernel's `drm_syncobj_handle`;
-        // the ioctl is a standard `_IOWR` that reads+writes `args`
-        // and returns 0 on success or -1 with errno set.
-        let ret = unsafe {
-            libc::ioctl(
-                device.as_raw_fd(),
-                DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE,
-                &mut args as *mut _,
+        // SAFETY: `device.as_fd()` is a valid DRM device fd;
+        // `drm_ffi::drm_syncobj_handle` is the type expected by the
+        // DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE ioctl.
+        let res = unsafe {
+            ioctl(
+                device.as_fd(),
+                Updater::<DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE, _>::new(&mut args),
             )
         };
-        if ret < 0 {
-            let err = io::Error::last_os_error();
+        if let Err(err) = res {
             let _ = device.destroy_syncobj(tmp);
-            return Err(err);
+            return Err(err.into());
         }
 
         let res = device.syncobj_timeline_transfer(tmp, ctx.syncobj, 0, self.point);
