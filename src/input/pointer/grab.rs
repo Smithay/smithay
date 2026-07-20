@@ -233,20 +233,12 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         handle.button(data, event);
         if event.state == ButtonState::Pressed {
-            handle.set_grab(
-                self,
-                data,
-                event.serial,
-                Focus::Keep,
-                ClickGrab {
-                    start_data: GrabStartData {
-                        focus: handle.current_focus(),
-                        button: event.button,
-                        location: handle.current_location(),
-                    },
-                    focus: handle.current_focus(),
-                },
-            );
+            let grab = data.click_grab(GrabStartData {
+                focus: handle.current_focus(),
+                button: event.button,
+                location: handle.current_location(),
+            });
+            handle.set_grab(self, data, event.serial, Focus::Keep, grab);
         }
     }
 
@@ -345,6 +337,15 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
 pub struct ClickGrab<D: SeatHandler> {
     start_data: GrabStartData<D>,
     focus: Option<(D::PointerFocus, Point<f64, Logical>)>,
+}
+
+impl<D: SeatHandler> ClickGrab<D> {
+    pub(in crate::input) fn new(start_data: GrabStartData<D>) -> Self {
+        Self {
+            focus: start_data.focus.clone(),
+            start_data,
+        }
+    }
 }
 
 impl<D: SeatHandler + 'static> fmt::Debug for ClickGrab<D> {
