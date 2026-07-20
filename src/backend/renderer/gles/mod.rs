@@ -719,7 +719,14 @@ impl GlesRenderer {
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
                 self.gl.FramebufferTexture2D(
-                    ffi::FRAMEBUFFER,
+                    ffi::READ_FRAMEBUFFER,
+                    ffi::COLOR_ATTACHMENT0,
+                    ffi::TEXTURE_2D,
+                    texture.0.texture,
+                    0,
+                );
+                self.gl.FramebufferTexture2D(
+                    ffi::DRAW_FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::TEXTURE_2D,
                     texture.0.texture,
