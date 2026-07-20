@@ -217,6 +217,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
 
         inner.tablet = Some(tablet);
         inner.location = Some(event.location);
+        inner.pending_focus.clone_from(&focus);
 
         inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.proximity_in(data, handle, focus, event);
@@ -229,9 +230,6 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     /// - Button release, for any pressed button
     /// - Up, if the tool tip was down
     /// - ProximityOut
-    /// - frame
-    ///
-    /// Any active grab will then be unset. The `TabletToolHandle` will also be reset
     pub fn proximity_out(&self, data: &mut D, event: &ProximityOutEvent) {
         let mut inner = self.arc.inner.lock().unwrap();
         if !inner.in_proximity() {
@@ -355,7 +353,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     /// A frame groups associated events. This terminates the frame.
     pub fn frame(&self, data: &mut D, time: u32) {
         let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() {
+        if !inner.in_proximity() && !inner.frame_pending {
             tracing::warn!("frame was called, but the tool hasn't entered tablet proximity.");
             return;
         }
@@ -662,6 +660,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
 pub(crate) struct TabletToolInternal<D: TabletSeatHandler> {
     pub(crate) focus: Option<(<D as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
     pending_focus: Option<(<D as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
+    previous_focus: Option<<D as TabletSeatHandler>::ToolFocus>,
 
     location: Option<Point<f64, Logical>>,
     tablet: Option<Tablet>,
@@ -691,6 +690,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         Self {
             focus: Default::default(),
             pending_focus: Default::default(),
+            previous_focus: Default::default(),
 
             location: None,
             tablet: None,
@@ -772,7 +772,6 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
                         time,
                     },
                 );
-                self.frame(data, seat, descriptor, time);
             }
         }
     }
@@ -928,10 +927,17 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
             }
 
             focused.proximity_out(seat, data, descriptor);
-            focused.frame(seat, data, descriptor, event.time);
+
+            // This should not happen, but in case a previous proximity_out wasn't acknowledged by a
+            // frame, we need to send one now.
+            if let Some(old_focus) = self.previous_focus.take_if(|f| f != &focused) {
+                old_focus.frame(seat, data, descriptor, time);
+            }
+
+            self.previous_focus = Some(focused);
         }
 
-        self.frame_pending = false;
+        self.frame_pending = true;
     }
 
     fn motion(
@@ -1048,6 +1054,13 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         if self.frame_pending {
             if let Some((focused, _)) = self.focus.as_mut() {
                 focused.frame(seat, data, descriptor, time);
+
+                // We don't want to send the frame twice.
+                self.previous_focus.take_if(|f| f == focused);
+            }
+
+            if let Some(focused) = self.previous_focus.take() {
+                focused.frame(seat, data, descriptor, time);
             }
         }
 
@@ -1064,10 +1077,6 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         self.with_grab(data, seat, descriptor, |data, handle, grab| {
             grab.proximity_out(data, handle, event);
         });
-        // If the grab has forwarded the proximity_out, the function does nothing. If not, we need
-        // to send the proximity out anyway.
-        self.proximity_out(data, seat, descriptor, event);
-        self.unset_grab(data, seat, descriptor, event.serial, event.time, false);
 
         // Now, reset everything so we don't get stale data later.
         self.tip_down = false;
@@ -1075,6 +1084,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         self.current_buttons.clear();
         self.focus = None;
         self.pending_focus = None;
+        // We don't reset last_focus just yet as it's needed for the frame event.
         self.tablet = None;
         self.location = None;
     }
