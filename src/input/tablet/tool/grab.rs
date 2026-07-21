@@ -66,10 +66,7 @@ pub trait TabletToolGrab<D: TabletSeatHandler + 'static>: Send + Downcast {
     /// A physical proximity_out was reported.
     ///
     /// This method allows you to attach additional behavior to a proximity out event. You generally
-    /// want to invoke `TabletToolInnerHandle::proximity_out()` as part of your processing. However,
-    /// since this event correspond to the physical removal of the tool, the compositor will always
-    /// act as if the function was invoked and remove the outstanding grab. Invoking it explicitly
-    /// gives you some control over events ordering.
+    /// want to invoke `TabletToolInnerHandle::proximity_out()` as part of your processing.
     fn proximity_out(
         &mut self,
         data: &mut D,

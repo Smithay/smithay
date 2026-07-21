@@ -1143,11 +1143,6 @@ impl AnvilState<UdevData> {
                                 time: evt.time_msec(),
                             },
                         );
-
-                        // Doing this in an idle handler would allow other events (e.g. buttons) to be
-                        // sent as part of the same frame, which is closer to what the protocol
-                        // expect, and let well behaved clients accumulate events.
-                        tool.frame(self, evt.time_msec());
                     }
                     ProximityState::Out => {
                         tool.proximity_out(
@@ -1157,11 +1152,13 @@ impl AnvilState<UdevData> {
                                 time: evt.time_msec(),
                             },
                         );
-
-                        // The tool left, we don't want to send a frame event here as it's sent as
-                        // part of the proximity out logic.
                     }
                 }
+
+                // Doing this in an idle handler would allow other events (e.g. buttons) to be
+                // sent as part of the same frame, which is closer to what the protocol
+                // expect, and let well behaved clients accumulate events.
+                tool.frame(self, evt.time_msec());
             }
         }
     }
