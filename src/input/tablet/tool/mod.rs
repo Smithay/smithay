@@ -590,7 +590,6 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
     /// - Button release, for any pressed button
     /// - Up, if the tool tip was down
     /// - ProximityOut
-    /// - frame
     pub fn proximity_out(&mut self, data: &mut D, event: &ProximityOutEvent) {
         self.inner.proximity_out(data, self.seat, self.descriptor, event);
     }

@@ -138,7 +138,7 @@
 //! You can add tablet and tools via methods of the [`TabletSeat`] struct:
 //! [`TabletSeat::add_tablet`] and [`TabletSeat::add_tool`].
 //! These method return handles that can be cloned and sent across thread, so you can keep them
-//! around in you event-handling code to forward inputs to your clients.
+//! around in your event-handling code to forward inputs to your clients.
 //!
 
 use std::{
