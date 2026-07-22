@@ -25,7 +25,10 @@ use crate::{
         },
     },
     utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
-    wayland::{Dispatch2, compositor, pointer_constraints::with_pointer_constraint},
+    wayland::{
+        Dispatch2, compositor,
+        pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint},
+    },
 };
 
 use super::{SeatHandler, WaylandFocus};
@@ -235,7 +238,9 @@ impl WlPointerHandle {
 
 impl<D> PointerTarget<D> for WlSurface
 where
-    D: SeatHandler + 'static,
+    D: SeatHandler,
+    D: PointerConstraintsHandler,
+    D: 'static,
 {
     fn enter(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         if let Some(pointer) = seat.get_pointer() {
@@ -243,14 +248,14 @@ where
         }
     }
 
-    fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial, time: u32) {
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
         if let Some(pointer) = seat.get_pointer() {
             pointer.wp_pointer_gestures.leave::<D>(self, serial, time);
             pointer.wl_pointer.leave(self, serial, time);
 
             with_pointer_constraint(self, &pointer, |constraint| {
                 if let Some(constraint) = constraint {
-                    constraint.deactivate();
+                    constraint.deactivate(data, self, &pointer);
                 }
             });
         }

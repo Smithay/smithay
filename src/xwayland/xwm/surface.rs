@@ -17,6 +17,7 @@ use crate::{
     },
     wayland::{
         compositor::{self, CompositorHandler, RectangleKind, RegionAttributes, SurfaceAttributes},
+        pointer_constraints::PointerConstraintsHandler,
         seat::{WaylandFocus, keyboard::enter_internal},
     },
 };
@@ -2239,7 +2240,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     }
 }
 
-impl<D: SeatHandler + 'static> PointerTarget<D> for X11Surface {
+impl<D: SeatHandler + PointerConstraintsHandler + 'static> PointerTarget<D> for X11Surface {
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             PointerTarget::enter(surface, seat, data, event);

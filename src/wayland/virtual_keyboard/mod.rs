@@ -9,6 +9,7 @@
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::reexports::wayland_server::Client;
 //!
 //! # struct State { seat_state: SeatState<Self> };
@@ -31,6 +32,7 @@
 //!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
 //!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
 //! }
+//! # impl PointerConstraintsHandler for State {}
 //!
 //! // Add the seat state to your state, create manager global and add client filter
 //! // to avoid untrusted clients requesting a new keyboard

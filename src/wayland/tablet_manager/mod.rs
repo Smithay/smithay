@@ -14,6 +14,7 @@
 //! use smithay::wayland::tablet_manager::{TabletManagerState};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::reexports::wayland_server::Client;
 //!
 //! # struct State { seat_state: SeatState<Self> };
@@ -50,6 +51,7 @@
 //!         // handle new images for the cursor ...
 //!     }
 //! }
+//! # impl PointerConstraintsHandler for State {}
 //!
 //! impl TabletSeatHandler for State {
 //!     type ToolFocus = WlSurface;
