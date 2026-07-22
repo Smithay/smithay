@@ -667,6 +667,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     ///
     /// ```no_run
     /// # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
+    /// # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
     /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
     /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
     /// #
@@ -684,6 +685,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
     /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
     /// # }
+    /// # impl PointerConstraintsHandler for State {}
     /// # let mut seat: Seat<State> = unimplemented!();
     /// let touch_handle = seat.add_touch();
     /// ```

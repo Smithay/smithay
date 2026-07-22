@@ -42,6 +42,7 @@
 //! #     }
 //! # }
 //! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus, dnd::DndGrabHandler};
 //! # use smithay::backend::input::KeyState;
 //! # use smithay::input::{
@@ -69,6 +70,7 @@
 //! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) {}
 //! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {}
 //! # }
+//! # impl PointerConstraintsHandler for State {}
 //! # impl DndGrabHandler for State {}
 //! # impl DataDeviceHandler for State {
 //! #     fn data_device_state(&mut self) -> &mut DataDeviceState { unreachable!() }

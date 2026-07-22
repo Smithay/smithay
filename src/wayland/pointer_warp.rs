@@ -15,6 +15,7 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! #
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::reexports::wayland_server::Client;
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
@@ -30,6 +31,7 @@
 //! #         todo!()
 //! #     }
 //! # }
+//! # impl PointerConstraintsHandler for State {}
 //!
 //! PointerWarpManager::new::<State>(
 //!     &display.handle(),

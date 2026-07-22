@@ -11,6 +11,7 @@
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::reexports::wayland_server::Client;
 //!
 //! # struct State { seat_state: SeatState<Self> };
@@ -42,6 +43,7 @@
 //!         // ...
 //!     }
 //! }
+//! # impl PointerConstraintsHandler for State {}
 //!
 //! smithay::delegate_dispatch2!(State);
 //!
