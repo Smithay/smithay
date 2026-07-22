@@ -1098,7 +1098,6 @@ impl AnvilState<UdevData> {
 
         if let Some(pointer_location) = self.touch_location_transformed(&evt) {
             let tool = evt.tool();
-            tablet_seat.add_wp_tool(self, dh, &tool);
 
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
