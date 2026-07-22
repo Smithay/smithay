@@ -72,9 +72,7 @@ pub trait TabletToolGrab<D: TabletSeatHandler + 'static>: Send + Downcast {
         data: &mut D,
         handle: &mut TabletToolInnerHandle<'_, D>,
         event: &ProximityOutEvent,
-    ) {
-        handle.proximity_out(data, event);
-    }
+    );
 
     /// A motion was reported
     ///
@@ -187,6 +185,15 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DefaultGrab {
         unreachable!();
     }
 
+    fn proximity_out(
+        &mut self,
+        data: &mut D,
+        handle: &mut TabletToolInnerHandle<'_, D>,
+        event: &ProximityOutEvent,
+    ) {
+        handle.proximity_out(data, event);
+    }
+
     fn motion(
         &mut self,
         data: &mut D,
@@ -212,6 +219,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DefaultGrab {
                     trigger: GrabTrigger::Tip,
                     location: handle.current_location(),
                 },
+                focus: handle.current_focus(),
             },
         );
     }
@@ -239,6 +247,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DefaultGrab {
 /// maintain it focused until the user lift the tool.
 pub struct DownGrab<D: TabletSeatHandler> {
     start_data: GrabStartData<D>,
+    focus: Option<(<D as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
 }
 
 impl<D: TabletSeatHandler + 'static> fmt::Debug for DownGrab<D> {
@@ -271,16 +280,24 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DownGrab<D> {
         event: &ProximityOutEvent,
     ) {
         handle.proximity_out(data, event);
+        handle.unset_grab(self, data, event.serial, event.time, false);
     }
 
     fn motion(
         &mut self,
         data: &mut D,
         handle: &mut TabletToolInnerHandle<'_, D>,
-        _focus: Option<(<D as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
+        focus: Option<(<D as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        handle.motion(data, self.start_data.focus.clone(), event);
+        if let (Some((new_target, new_location)), Some((grab_target, grab_location))) =
+            (&focus, self.focus.as_mut())
+        {
+            if *new_target == *grab_target {
+                *grab_location = *new_location;
+            }
+        }
+        handle.motion(data, self.focus.clone(), event);
     }
 
     fn down(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, event: &DownEvent) {
