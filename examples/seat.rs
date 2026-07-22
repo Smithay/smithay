@@ -7,6 +7,7 @@ use smithay::reexports::wayland_server::{
     protocol::wl_surface::WlSurface,
 };
 use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
+use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 
 struct App {
     compositor_state: CompositorState,
@@ -26,6 +27,8 @@ impl SeatHandler for App {
     fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
     fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
 }
+
+impl PointerConstraintsHandler for App {}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;

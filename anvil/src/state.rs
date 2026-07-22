@@ -64,7 +64,9 @@ use smithay::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
         output::{OutputHandler, OutputManagerState},
-        pointer_constraints::{PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint},
+        pointer_constraints::{
+            PointerConstraint, PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint,
+        },
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
         relative_pointer::RelativePointerManagerState,
@@ -380,23 +382,26 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         }
     }
 
-    fn remove_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>) {
-        if with_pointer_constraint(surface, pointer, |constraint| constraint.is_none()) {
-            if let Some((hint_surface, hint_location)) = &self.cursor_position_hint {
-                let origin = self
-                    .space
-                    .elements()
-                    .find_map(|window| {
-                        (window.wl_surface().as_deref() == Some(hint_surface)).then(|| window.geometry())
-                    })
-                    .unwrap_or_default()
-                    .loc
-                    .to_f64();
+    fn remove_constraint(
+        &mut self,
+        _surface: &WlSurface,
+        pointer: &PointerHandle<Self>,
+        _constraint: Option<&PointerConstraint>,
+    ) {
+        if let Some((hint_surface, hint_location)) = &self.cursor_position_hint {
+            let origin = self
+                .space
+                .elements()
+                .find_map(|window| {
+                    (window.wl_surface().as_deref() == Some(hint_surface)).then(|| window.geometry())
+                })
+                .unwrap_or_default()
+                .loc
+                .to_f64();
 
-                pointer.set_location(origin + *hint_location);
-            }
-            self.cursor_position_hint = None;
+            pointer.set_location(origin + *hint_location);
         }
+        self.cursor_position_hint = None;
     }
 
     fn cursor_position_hint(
