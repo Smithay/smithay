@@ -13,6 +13,7 @@ use std::{
     mem,
     os::raw::c_char,
     ptr,
+    rc::Rc,
     sync::{
         Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
         atomic::{AtomicBool, AtomicPtr, Ordering},
@@ -48,7 +49,7 @@ use super::{
 use crate::{
     backend::{
         allocator::{
-            Format, Fourcc,
+            Buffer, Format, Fourcc,
             dmabuf::{Dmabuf, WeakDmabuf},
             format::{FormatSet, get_bpp, get_opaque, has_alpha},
         },
@@ -87,6 +88,32 @@ enum CleanupResource {
     Sync(ffi::types::GLsync),
 }
 unsafe impl Send for CleanupResource {}
+
+#[derive(Debug)]
+struct GlesBufferInner {
+    dmabuf: WeakDmabuf,
+    image: EGLImage,
+    rbo: ffi::types::GLuint,
+    fbo: ffi::types::GLuint,
+    destruction_callback_sender: Sender<CleanupResource>,
+}
+
+impl Drop for GlesBufferInner {
+    fn drop(&mut self) {
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::FramebufferObject(self.fbo));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::RenderbufferObject(self.rbo));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::EGLImage(self.image));
+    }
+}
+
+#[derive(Debug, Clone)]
+struct GlesBuffer(Rc<GlesBufferInner>);
 
 /// Offscreen render surface
 ///
@@ -137,6 +164,12 @@ pub struct GlesTarget<'a>(GlesTargetInternal<'a>);
 
 #[derive(Debug)]
 enum GlesTargetInternal<'a> {
+    Image {
+        // TODO: Ideally we would be able to share the texture between renderers with shared EGLContexts though.
+        // But we definitely don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
+        buf: GlesBuffer,
+        dmabuf: &'a mut Dmabuf,
+    },
     Surface {
         surface: &'a mut EGLSurface,
     },
@@ -163,6 +196,7 @@ impl Texture for GlesTarget<'_> {
 
     fn size(&self) -> Size<i32, BufferCoord> {
         match &self.0 {
+            GlesTargetInternal::Image { dmabuf, .. } => dmabuf.size(),
             GlesTargetInternal::Surface { surface } => surface
                 .get_size()
                 .expect("a bound EGLSurface needs to have a size")
@@ -182,6 +216,13 @@ impl Texture for GlesTarget<'_> {
 impl GlesTargetInternal<'_> {
     fn format(&self) -> Option<(ffi::types::GLenum, bool)> {
         match self {
+            GlesTargetInternal::Image { dmabuf, .. } => {
+                let format = crate::backend::allocator::Buffer::format(*dmabuf).code;
+                let has_alpha = has_alpha(format);
+                let (format, _, _) = fourcc_to_gl_formats(format)?;
+
+                Some((format, has_alpha))
+            }
             GlesTargetInternal::Surface { surface, .. } => {
                 let format = surface.pixel_format();
                 let format = match (format.color_bits, format.alpha_bits) {
@@ -207,6 +248,7 @@ impl GlesTargetInternal<'_> {
             } else {
                 egl.make_current()?;
                 match self {
+                    GlesTargetInternal::Image { buf, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.0.fbo),
                     GlesTargetInternal::Texture { fbo, .. } => gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo),
                     GlesTargetInternal::Renderbuffer { fbo, .. } => {
                         gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
@@ -351,6 +393,7 @@ pub struct GlesRenderer {
     solid_program: GlesSolidProgram,
 
     // caches
+    buffers: Vec<GlesBuffer>,
     dmabuf_cache: HashMap<WeakDmabuf, GlesTexture>,
     vbos: [ffi::types::GLuint; 2],
     vertices: Vec<f32>,
@@ -406,6 +449,7 @@ impl fmt::Debug for GlesFrame<'_, '_> {
 impl fmt::Debug for GlesRenderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlesRenderer")
+            .field("buffers", &self.buffers)
             .field("extensions", &self.extensions)
             .field("capabilities", &self.capabilities)
             .field("tex_program", &self.tex_program)
@@ -690,6 +734,7 @@ impl GlesRenderer {
             min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
 
+            buffers: Vec::new(),
             dmabuf_cache: std::collections::HashMap::new(),
             vertices: Vec::with_capacity(6 * 16),
             non_opaque_damage: Vec::with_capacity(16),
@@ -719,7 +764,14 @@ impl GlesRenderer {
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
                 self.gl.FramebufferTexture2D(
-                    ffi::FRAMEBUFFER,
+                    ffi::READ_FRAMEBUFFER,
+                    ffi::COLOR_ATTACHMENT0,
+                    ffi::TEXTURE_2D,
+                    texture.0.texture,
+                    0,
+                );
+                self.gl.FramebufferTexture2D(
+                    ffi::DRAW_FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::TEXTURE_2D,
                     texture.0.texture,
@@ -767,6 +819,7 @@ impl GlesRenderer {
     #[profiling::function]
     fn cleanup(&mut self) {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
+        self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
         self.gles_cleanup().cleanup(&self.egl, &self.gl);
     }
 
@@ -1491,10 +1544,80 @@ impl Bind<Dmabuf> for GlesRenderer {
             if texture.0.is_external {
                 return Err(GlesError::FramebufferBindingError);
             }
-            self.bind_texture(&texture)
+
+            if let Ok(target) = self
+                .bind_texture(&texture)
                 // SAFETY: The lifetime of the target only depends on the dmabuf,
                 // as the GlesTexture is cloned internally.
                 .map(|tex| unsafe { std::mem::transmute::<GlesTarget<'_>, GlesTarget<'a>>(tex) })
+            {
+                return Ok(target);
+            }
+
+            let buf = self
+                .buffers
+                .iter_mut()
+                .find(|buffer| {
+                    if let Some(dma) = buffer.0.dmabuf.upgrade() {
+                        dma == *dmabuf
+                    } else {
+                        false
+                    }
+                })
+                .map(|buf| Ok(buf.clone()))
+                .unwrap_or_else(|| {
+                    unsafe {
+                        self.egl.make_current()?;
+                    }
+
+                    trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
+                    let image = self
+                        .egl
+                        .display()
+                        .create_image_from_dmabuf(dmabuf)
+                        .map_err(GlesError::BindBufferEGLError)?;
+
+                    unsafe {
+                        let mut rbo = 0;
+                        self.gl.GenRenderbuffers(1, &mut rbo as *mut _);
+                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+                        self.gl
+                            .EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
+                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+
+                        let mut fbo = 0;
+                        self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                        self.gl.FramebufferRenderbuffer(
+                            ffi::FRAMEBUFFER,
+                            ffi::COLOR_ATTACHMENT0,
+                            ffi::RENDERBUFFER,
+                            rbo,
+                        );
+                        let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+
+                        if status != ffi::FRAMEBUFFER_COMPLETE {
+                            self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                            self.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
+                            ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
+                            return Err(GlesError::FramebufferBindingError);
+                        }
+                        let buf = GlesBuffer(Rc::new(GlesBufferInner {
+                            dmabuf: dmabuf.weak(),
+                            image,
+                            rbo,
+                            fbo,
+                            destruction_callback_sender: self.gles_cleanup().sender.clone(),
+                        }));
+
+                        self.buffers.push(buf.clone());
+
+                        Ok(buf)
+                    }
+                })?;
+
+            Ok(GlesTarget(GlesTargetInternal::Image { buf, dmabuf }))
         };
 
         bind(dmabuf).inspect_err(|_| {
@@ -1711,6 +1834,9 @@ impl Blit for GlesRenderer {
         let scope = self.profiler.scope(gpu_span_location!("blit"), &self.gl);
 
         match &src_target.0 {
+            GlesTargetInternal::Image { buf, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.0.fbo)
+            },
             GlesTargetInternal::Texture { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
@@ -1720,6 +1846,9 @@ impl Blit for GlesRenderer {
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
         match &dst_target.0 {
+            GlesTargetInternal::Image { buf, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.0.fbo)
+            },
             GlesTargetInternal::Texture { fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
