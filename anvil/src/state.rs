@@ -91,6 +91,7 @@ use smithay::{
         text_input::TextInputManagerState,
         viewporter::ViewporterState,
         virtual_keyboard::VirtualKeyboardManagerState,
+        virtual_pointer::{VirtualPointerHandler, VirtualPointerManagerState},
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
         },
@@ -350,6 +351,76 @@ impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
             .elements()
             .find_map(|window| (window.wl_surface().as_deref() == Some(parent)).then(|| window.geometry()))
             .unwrap_or_default()
+    }
+}
+
+impl<BackendData: Backend> VirtualPointerHandler for AnvilState<BackendData> {
+    fn virtual_pointer_get_default_seat(&self) -> Option<Seat<Self>> {
+        Some(self.seat.clone())
+    }
+
+    fn virtual_pointer_motion(
+        &mut self,
+        _seat: Option<&Seat<Self>>,
+        time: u32,
+        delta: Point<f64, Logical>,
+    ) {
+        let pointer = self.pointer.clone();
+        let location = (pointer.current_location() + delta).constrain(
+            self.space
+                .outputs()
+                .filter_map(|o| self.space.output_geometry(o))
+                .fold(Rectangle::default(), |acc, r| acc.merge(r))
+                .to_f64(),
+        );
+        let under = self.surface_under(location);
+        pointer.motion(
+            self,
+            under,
+            &smithay::input::pointer::MotionEvent {
+                location,
+                serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                time,
+            },
+        );
+        pointer.frame(self);
+    }
+
+    fn virtual_pointer_motion_absolute(
+        &mut self,
+        _seat: Option<&Seat<Self>>,
+        time: u32,
+        x: u32,
+        y: u32,
+        x_extent: u32,
+        y_extent: u32,
+    ) {
+        if x_extent == 0 || y_extent == 0 {
+            return;
+        }
+        let output_geo = self
+            .space
+            .outputs()
+            .next()
+            .and_then(|o| self.space.output_geometry(o))
+            .unwrap_or_default()
+            .to_f64();
+        let location = Point::from((
+            output_geo.loc.x + (x as f64 / x_extent as f64) * output_geo.size.w,
+            output_geo.loc.y + (y as f64 / y_extent as f64) * output_geo.size.h,
+        ));
+        let under = self.surface_under(location);
+        let pointer = self.pointer.clone();
+        pointer.motion(
+            self,
+            under,
+            &smithay::input::pointer::MotionEvent {
+                location,
+                serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                time,
+            },
+        );
+        pointer.frame(self);
     }
 }
 
@@ -686,6 +757,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self, _>(&dh, |_client| true);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
+        VirtualPointerManagerState::new::<Self, _>(&dh, |_client| true);
         // Expose global only if backend supports relative motion events
         if BackendData::HAS_RELATIVE_MOTION {
             RelativePointerManagerState::new::<Self>(&dh);
