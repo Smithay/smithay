@@ -997,6 +997,12 @@ pub struct AxisFrame {
     pub axis: (f64, f64),
     /// Discrete representation of scroll value per axis, if available
     pub v120: Option<(i32, i32)>,
+    /// Discrete scroll event to send for older versions of the protocol
+    ///
+    /// None corresponds to the default behavior, Some(None) corresponds to no
+    /// event, and Some(Some(x)) corresponds to sending a discrete scroll event
+    /// with a value of x.
+    pub discrete: (Option<Option<i32>>, Option<Option<i32>>),
     /// If the axis is considered having stopped movement
     ///
     /// Only useful in conjunction of AxisSource::Finger events
@@ -1100,6 +1106,7 @@ impl AxisFrame {
             time,
             axis: (0.0, 0.0),
             v120: None,
+            discrete: (None, None),
             stop: (false, false),
         }
     }
@@ -1156,6 +1163,27 @@ impl AxisFrame {
             }
             Axis::Vertical => {
                 self.axis.1 += value;
+            }
+        };
+        self
+    }
+
+    /// Specify forced discrete scroll events for older versions of the protocol
+    /// instead of default behavior. A value of None will prevent the
+    /// axis_discrete event from being sent, while a value of Some(x) will cause
+    /// x to be sent to the client. Only one of None or Some may be specified
+    /// per frame, but multiple of Some will accumulate.
+    pub fn discrete(mut self, axis: Axis, value: Option<i32>) -> Self {
+        match axis {
+            Axis::Horizontal => {
+                let old = self.discrete.0.flatten().unwrap_or(0);
+                let new = value.map(|x| x + old);
+                self.discrete.0 = Some(new);
+            }
+            Axis::Vertical => {
+                let old = self.discrete.1.flatten().unwrap_or(0);
+                let new = value.map(|x| x + old);
+                self.discrete.1 = Some(new);
             }
         };
         self
