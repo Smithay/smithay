@@ -95,14 +95,9 @@
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
-use wayland_protocols::wp::tablet::zv2::server::{
-    zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
-    zwp_tablet_seat_v2::ZwpTabletSeatV2,
-    zwp_tablet_tool_v2::ZwpTabletToolV2,
-    zwp_tablet_v2::ZwpTabletV2,
-};
+use wayland_protocols::wp::tablet::zv2::server::zwp_tablet_manager_v2::{self, ZwpTabletManagerV2};
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, backend::GlobalId};
 
 const MANAGER_VERSION: u32 = 1;
@@ -114,8 +109,6 @@ pub(crate) mod tablet_tool;
 pub use tablet::{TabletDescriptor, TabletHandle, TabletUserData};
 pub use tablet_seat::{TabletSeatHandle, TabletSeatHandler, TabletSeatUserData};
 pub use tablet_tool::{TabletToolHandle, TabletToolUserData};
-
-use super::compositor::CompositorHandler;
 
 /// Extends [Seat] with graphic tablet specific functionality
 pub trait TabletSeatTrait {
@@ -141,11 +134,7 @@ impl TabletManagerState {
     /// Initialize a tablet manager global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpTabletManagerV2, GlobalData>,
-        D: Dispatch<ZwpTabletManagerV2, GlobalData>,
-        D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-        D: 'static,
+        D: TabletSeatHandler + 'static,
     {
         let global = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, GlobalData);
 
@@ -158,11 +147,9 @@ impl TabletManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpTabletManagerV2, D> for GlobalData
+impl<D> GlobalDispatch<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpTabletManagerV2, GlobalData>,
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-    D: 'static,
+    D: TabletSeatHandler + 'static,
 {
     fn bind(
         &self,
@@ -176,13 +163,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpTabletManagerV2, D> for GlobalData
+impl<D> Dispatch<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-    D: Dispatch<ZwpTabletV2, TabletUserData>,
-    D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-    D: SeatHandler + TabletSeatHandler + 'static,
-    D: CompositorHandler,
+    D: TabletSeatHandler + 'static,
 {
     fn request(
         &self,

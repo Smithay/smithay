@@ -83,7 +83,7 @@ use std::{
 use smallvec::SmallVec;
 use tracing::instrument;
 use wayland_server::{
-    Client, DisplayHandle, GlobalDispatch, Resource,
+    Client, DisplayHandle, Resource,
     backend::{ClientId, GlobalId, Handle, ObjectData, ObjectId, protocol::Message},
     protocol::{
         wl_data_device_manager::{DndAction as WlDndAction, WlDataDeviceManager},
@@ -100,7 +100,7 @@ use crate::{
         dnd::{DndAction, DndFocus, GrabType, OfferData, Source},
     },
     utils::{Logical, Point, Serial},
-    wayland::GlobalData,
+    wayland::{GlobalData, seat::WaylandFocus},
 };
 
 mod device;
@@ -321,9 +321,6 @@ fn handle_dnd<D, S>(
             preferred_action,
         } => {
             if let Some(source) = source.as_ref() {
-                let dnd_actions = dnd_actions.into_result().unwrap_or(WlDndAction::None);
-                let preferred_action = preferred_action.into_result().unwrap_or(WlDndAction::None);
-
                 // preferred_action must only contain one bitflag at the same time
                 if ![
                     WlDndAction::None,
@@ -579,8 +576,10 @@ impl DataDeviceState {
     /// Regiseter new [WlDataDeviceManager] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlDataDeviceManager, GlobalData> + 'static,
-        D: DataDeviceHandler,
+        D: DataDeviceHandler + 'static,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     {
         let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, GlobalData);
 
@@ -758,29 +757,28 @@ mod handlers {
 
     use tracing::error;
     use wayland_server::{
-        Dispatch, DisplayHandle,
-        protocol::{
-            wl_data_device::WlDataDevice,
-            wl_data_device_manager::{self, WlDataDeviceManager},
-            wl_data_source::WlDataSource,
-        },
+        Dispatch, DisplayHandle, GlobalDispatch,
+        protocol::wl_data_device_manager::{self, WlDataDeviceManager},
     };
 
     use crate::{
-        input::Seat,
-        wayland::selection::{device::SelectionDevice, seat_data::SeatData},
-        wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+        input::{Seat, SeatHandler, dnd::DndFocus},
+        wayland::{
+            GlobalData,
+            seat::WaylandFocus,
+            selection::{device::SelectionDevice, seat_data::SeatData},
+        },
     };
 
     use super::DataDeviceHandler;
     use super::{device::DataDeviceUserData, source::DataSourceUserData};
 
-    impl<D> GlobalDispatch2<WlDataDeviceManager, D> for GlobalData
+    impl<D> GlobalDispatch<WlDataDeviceManager, D> for GlobalData
     where
-        D: Dispatch<WlDataDeviceManager, GlobalData>,
-        D: Dispatch<WlDataSource, DataSourceUserData>,
-        D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         D: 'static,
     {
         fn bind(
@@ -795,11 +793,12 @@ mod handlers {
         }
     }
 
-    impl<D> Dispatch2<WlDataDeviceManager, D> for GlobalData
+    impl<D> Dispatch<WlDataDeviceManager, D> for GlobalData
     where
-        D: Dispatch<WlDataSource, DataSourceUserData>,
-        D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         D: 'static,
     {
         fn request(

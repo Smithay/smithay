@@ -121,7 +121,7 @@ use crate::{
         },
     },
     utils::{SERIAL_COUNTER, Serial},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
+    wayland::{GlobalData, seat::PointerUserData},
 };
 
 const MANAGER_VERSION: u32 = 3;
@@ -379,11 +379,6 @@ impl PointerGesturesState {
     /// Register new [ZwpPointerGesturesV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpPointerGesturesV1, GlobalData>,
-        D: Dispatch<ZwpPointerGesturesV1, GlobalData>,
-        D: Dispatch<ZwpPointerGestureSwipeV1, PointerGestureUserData<D>>,
-        D: Dispatch<ZwpPointerGesturePinchV1, PointerGestureUserData<D>>,
-        D: Dispatch<ZwpPointerGestureHoldV1, PointerGestureUserData<D>>,
         D: SeatHandler,
         D: 'static,
     {
@@ -398,11 +393,8 @@ impl PointerGesturesState {
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGesturesV1, D> for GlobalData
+impl<D> Dispatch<ZwpPointerGesturesV1, D> for GlobalData
 where
-    D: Dispatch<ZwpPointerGestureSwipeV1, PointerGestureUserData<D>>,
-    D: Dispatch<ZwpPointerGesturePinchV1, PointerGestureUserData<D>>,
-    D: Dispatch<ZwpPointerGestureHoldV1, PointerGestureUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {
@@ -458,9 +450,9 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<ZwpPointerGesturesV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpPointerGesturesV1, D> for GlobalData
 where
-    D: Dispatch<ZwpPointerGesturesV1, GlobalData> + SeatHandler + 'static,
+    D: SeatHandler + 'static,
 {
     fn bind(
         &self,
@@ -474,7 +466,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGestureSwipeV1, D> for PointerGestureUserData<D>
+impl<D> Dispatch<ZwpPointerGestureSwipeV1, D> for PointerGestureUserData<D>
 where
     D: SeatHandler,
     D: 'static,
@@ -506,7 +498,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGesturePinchV1, D> for PointerGestureUserData<D>
+impl<D> Dispatch<ZwpPointerGesturePinchV1, D> for PointerGestureUserData<D>
 where
     D: SeatHandler,
     D: 'static,
@@ -538,7 +530,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGestureHoldV1, D> for PointerGestureUserData<D>
+impl<D> Dispatch<ZwpPointerGestureHoldV1, D> for PointerGestureUserData<D>
 where
     D: SeatHandler,
     D: 'static,

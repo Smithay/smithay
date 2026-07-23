@@ -60,7 +60,7 @@ use wayland_protocols::ext::data_control::v1::server::ext_data_control_manager_v
 use wayland_protocols::ext::data_control::v1::server::ext_data_control_source_v1::ExtDataControlSourceV1;
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_seat::WlSeat;
-use wayland_server::{Client, DisplayHandle, GlobalDispatch};
+use wayland_server::{Client, DisplayHandle};
 
 mod device;
 mod source;
@@ -98,7 +98,7 @@ impl DataControlState {
         filter: F,
     ) -> Self
     where
-        D: GlobalDispatch<ExtDataControlManagerV1, ExtDataControlManagerGlobalData> + 'static,
+        D: DataControlHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = ExtDataControlManagerGlobalData {
@@ -139,18 +139,15 @@ mod handlers {
     use std::cell::RefCell;
 
     use tracing::error;
-    use wayland_protocols::ext::data_control::v1::server::{
-        ext_data_control_device_v1::ExtDataControlDeviceV1,
-        ext_data_control_manager_v1::{self, ExtDataControlManagerV1},
-        ext_data_control_source_v1::ExtDataControlSourceV1,
+    use wayland_protocols::ext::data_control::v1::server::ext_data_control_manager_v1::{
+        self, ExtDataControlManagerV1,
     };
-    use wayland_server::{Client, Dispatch, DisplayHandle};
+    use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch};
 
     use crate::input::Seat;
     use crate::wayland::selection::SelectionTarget;
     use crate::wayland::selection::device::SelectionDevice;
     use crate::wayland::selection::seat_data::SeatData;
-    use crate::wayland::{Dispatch2, GlobalDispatch2};
 
     use super::DataControlHandler;
     use super::ExtDataControlDeviceUserData;
@@ -158,9 +155,8 @@ mod handlers {
     use super::ExtDataControlManagerUserData;
     use super::ExtDataControlSourceUserData;
 
-    impl<D> GlobalDispatch2<ExtDataControlManagerV1, D> for ExtDataControlManagerGlobalData
+    impl<D> GlobalDispatch<ExtDataControlManagerV1, D> for ExtDataControlManagerGlobalData
     where
-        D: Dispatch<ExtDataControlManagerV1, ExtDataControlManagerUserData>,
         D: DataControlHandler,
         D: 'static,
     {
@@ -185,10 +181,8 @@ mod handlers {
         }
     }
 
-    impl<D> Dispatch2<ExtDataControlManagerV1, D> for ExtDataControlManagerUserData
+    impl<D> Dispatch<ExtDataControlManagerV1, D> for ExtDataControlManagerUserData
     where
-        D: Dispatch<ExtDataControlDeviceV1, ExtDataControlDeviceUserData>,
-        D: Dispatch<ExtDataControlSourceV1, ExtDataControlSourceUserData>,
         D: DataControlHandler,
         D: 'static,
     {

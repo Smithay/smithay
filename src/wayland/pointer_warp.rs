@@ -56,7 +56,7 @@ use wayland_server::{
 use crate::{
     input::SeatHandler,
     utils::{Client as ClientCords, Logical, Point, Serial},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
+    wayland::{GlobalData, seat::PointerUserData},
 };
 
 /// Handler trait for pointer warp events.
@@ -91,7 +91,7 @@ impl PointerWarpManager {
     /// Creates a new delegate type for handling [WpPointerWarpV1] events.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: PointerWarpHandler + GlobalDispatch<WpPointerWarpV1, GlobalData>,
+        D: PointerWarpHandler,
     {
         let global = display.create_global::<D, WpPointerWarpV1, _>(1, GlobalData);
         Self { global }
@@ -103,9 +103,9 @@ impl PointerWarpManager {
     }
 }
 
-impl<D: PointerWarpHandler> GlobalDispatch2<WpPointerWarpV1, D> for GlobalData
+impl<D: PointerWarpHandler> GlobalDispatch<WpPointerWarpV1, D> for GlobalData
 where
-    D: Dispatch<WpPointerWarpV1, GlobalData>,
+    D: PointerWarpHandler,
 {
     fn bind(
         &self,
@@ -119,7 +119,7 @@ where
     }
 }
 
-impl<D: PointerWarpHandler> Dispatch2<WpPointerWarpV1, D> for GlobalData {
+impl<D: PointerWarpHandler> Dispatch<WpPointerWarpV1, D> for GlobalData {
     fn request(
         &self,
         state: &mut D,

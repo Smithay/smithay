@@ -4,10 +4,10 @@ use std::{
     os::fd::{AsFd, OwnedFd},
     sync::Mutex,
 };
-use tracing::{debug, error};
+use tracing::debug;
 
 use wayland_server::{
-    DisplayHandle, Resource,
+    Dispatch, DisplayHandle, Resource,
     backend::ClientId,
     protocol::{
         wl_data_source::{self, WlDataSource},
@@ -20,7 +20,6 @@ use crate::input::{
     dnd::{DndAction, Source, SourceMetadata},
 };
 use crate::utils::{IsAlive, alive_tracker::AliveTracker};
-use crate::wayland::Dispatch2;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
 use crate::wayland::selection::source::SelectionSourceProvider;
@@ -45,7 +44,7 @@ impl DataSourceUserData {
     }
 }
 
-impl<D> Dispatch2<WlDataSource, D> for DataSourceUserData
+impl<D> Dispatch<WlDataSource, D> for DataSourceUserData
 where
     D: DataDeviceHandler,
     D: 'static,
@@ -65,14 +64,9 @@ where
             wl_data_source::Request::Offer { mime_type } => {
                 data.mime_types.push(mime_type);
             }
-            wl_data_source::Request::SetActions { dnd_actions } => match dnd_actions {
-                wayland_server::WEnum::Value(dnd_actions) => {
-                    data.dnd_actions = DndAction::vec_from_wl(dnd_actions);
-                }
-                wayland_server::WEnum::Unknown(action) => {
-                    error!("Unknown dnd_action: {:?}", action);
-                }
-            },
+            wl_data_source::Request::SetActions { dnd_actions } => {
+                data.dnd_actions = DndAction::vec_from_wl(dnd_actions);
+            }
             wl_data_source::Request::Destroy => {}
             _ => unreachable!(),
         }

@@ -4,12 +4,11 @@ use tracing::debug;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::{
     self as primary_device, ZwpPrimarySelectionDeviceV1 as PrimaryDevice,
 };
-use wayland_server::{Client, DataInit, DisplayHandle, Resource, protocol::wl_seat::WlSeat};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, protocol::wl_seat::WlSeat};
 
 use crate::{
     input::{Seat, SeatHandler},
     wayland::{
-        Dispatch2,
         seat::WaylandFocus,
         selection::{
             SelectionHandler, SelectionTarget,
@@ -29,7 +28,7 @@ pub struct PrimaryDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch2<PrimaryDevice, D> for PrimaryDeviceUserData
+impl<D> Dispatch<PrimaryDevice, D> for PrimaryDeviceUserData
 where
     D: PrimarySelectionHandler,
     D: SelectionHandler,

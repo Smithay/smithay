@@ -203,7 +203,7 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
-    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
+    Client, DisplayHandle, Resource,
     backend::{GlobalId, InvalidId},
     protocol::{
         wl_buffer::{self, WlBuffer},
@@ -597,10 +597,7 @@ impl DmabufState {
         formats: impl IntoIterator<Item = Format>,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: BufferHandler + DmabufHandler + 'static,
     {
         self.create_global_with_filter::<D, _>(display, formats, |_| true)
     }
@@ -620,10 +617,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let formats = formats.into_iter().collect::<Vec<_>>();
@@ -644,10 +638,7 @@ impl DmabufState {
         default_feedback: &DmabufFeedback,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
     {
         self.create_global_with_filter_and_default_feedback::<D, _>(display, default_feedback, |_| true)
     }
@@ -666,10 +657,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         self.create_global_with_filter_and_optional_default_feedback::<D, _>(
@@ -688,10 +676,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let id = global_id::next();
@@ -878,11 +863,7 @@ impl ImportNotifier {
     /// This can return [`InvalidId`] if the client the buffer was imported from has died.
     pub fn successful<D>(mut self) -> Result<WlBuffer, InvalidId>
     where
-        D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-            + Dispatch<wl_buffer::WlBuffer, Dmabuf>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: BufferHandler + DmabufHandler + 'static,
     {
         let client = self.inner.client();
 
@@ -1055,7 +1036,7 @@ impl DmabufParamsData {
         width: i32,
         height: i32,
         format: u32,
-        flags: WEnum<zwp_linux_buffer_params_v1::Flags>,
+        flags: zwp_linux_buffer_params_v1::Flags,
         _node: Option<libc::dev_t>,
     ) -> Option<Dmabuf> {
         // We cannot create a dmabuf if the parameters have already been used.

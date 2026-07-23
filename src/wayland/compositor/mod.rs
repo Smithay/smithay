@@ -131,7 +131,7 @@ use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
-use wayland_server::{Client, DisplayHandle, GlobalDispatch, Resource};
+use wayland_server::{Client, DisplayHandle, Resource};
 
 /// The role of a subsurface surface.
 pub const SUBSURFACE_ROLE: &str = "subsurface";
@@ -695,7 +695,7 @@ impl CompositorState {
     /// [`wl_subcompositor`]: wayland_server::protocol::wl_subcompositor
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlCompositor, GlobalData> + GlobalDispatch<WlSubcompositor, GlobalData> + 'static,
+        D: CompositorHandler + 'static,
     {
         Self::new_with_version::<D>(display, 5)
     }
@@ -709,14 +709,14 @@ impl CompositorState {
     /// [`wl_compositor`]: wayland_server::protocol::wl_compositor
     pub fn new_v6<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlCompositor, GlobalData> + GlobalDispatch<WlSubcompositor, GlobalData> + 'static,
+        D: CompositorHandler + 'static,
     {
         Self::new_with_version::<D>(display, 6)
     }
 
     fn new_with_version<D>(display: &DisplayHandle, version: u32) -> Self
     where
-        D: GlobalDispatch<WlCompositor, GlobalData> + GlobalDispatch<WlSubcompositor, GlobalData> + 'static,
+        D: CompositorHandler + 'static,
     {
         let compositor = display.create_global::<D, WlCompositor, _>(version, GlobalData);
         let subcompositor = display.create_global::<D, WlSubcompositor, _>(1, GlobalData);
