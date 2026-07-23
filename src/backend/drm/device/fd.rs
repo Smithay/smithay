@@ -1,5 +1,3 @@
-#![allow(unexpected_cfgs)]
-
 use drm::{Device as BasicDevice, control::Device as ControlDevice};
 use std::{
     os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd},
@@ -96,17 +94,9 @@ impl DrmDeviceFd {
 
     /// Returns the `dev_t` of the underlying device
     pub fn dev_id(&self) -> rustix::io::Result<libc::dev_t> {
-        let dev: libc::dev_t = {
-            #[cfg(not(target_arch = "e2k"))]
-            {
-                rustix::fs::fstat(&self.0.fd)?.st_rdev
-            }
-
-            #[cfg(target_arch = "e2k")]
-            {
-                rustix::fs::fstat(&self.0.fd)?.st_rdev as u64
-            }
-        };
+        // Hack (u64 as libc::dev_t) for E2K CPU architecture
+        #[allow(clippy::unnecessary_cast)]
+        let dev = rustix::fs::fstat(&self.0.fd)?.st_rdev as libc::dev_t;
         Ok(dev)
     }
 
