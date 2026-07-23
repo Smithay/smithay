@@ -37,8 +37,6 @@
 //! See also `anvil/src/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
-#![allow(unexpected_cfgs)]
-
 #[cfg(feature = "backend_drm")]
 use drm::node::{DrmNode, NodeType};
 use libc::dev_t;
