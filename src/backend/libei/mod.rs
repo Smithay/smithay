@@ -210,6 +210,7 @@ impl EventSource for EiInput {
                     }
                 }
                 Err(err) => {
+                    cb(EiInputEvent::Disconnected, connection);
                     tracing::error!("Libei client error: {}", err);
                     return Ok(PostAction::Remove);
                 }
