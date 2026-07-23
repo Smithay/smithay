@@ -98,7 +98,11 @@ impl UdevBackend {
             .into_iter()
             // Create devices
             .flat_map(|path| match stat(&path) {
-                Ok(stat) => Some((stat.st_rdev, path)),
+                Ok(stat) => Some({
+                    // Hack (u64 as u64) for E2K CPU architecture
+                    #[allow(clippy::unnecessary_cast)]
+                    (stat.st_rdev as u64, path)
+                }),
                 Err(err) => {
                     warn!("Unable to get id of {:?}, Error: {:?}. Skipping", path, err);
                     None
