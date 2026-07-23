@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use smithay::{
     desktop::{
-        PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Space, Window,
+        PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupTouchGrab, PopupUngrabStrategy, Space, Window,
         WindowSurfaceType, find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output,
         space::SpaceElement,
     },
@@ -419,6 +419,16 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                         return;
                     }
                     pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+                }
+                if let Some(touch) = seat.get_touch() {
+                    if touch.is_grabbed()
+                        && !(touch.has_grab(serial)
+                            || touch.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+                    {
+                        grab.ungrab(PopupUngrabStrategy::All);
+                        return;
+                    }
+                    touch.set_grab(self, PopupTouchGrab::new(&grab), serial);
                 }
             }
         }

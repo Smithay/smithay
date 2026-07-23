@@ -185,33 +185,30 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 
     /// Check if this pointer is currently grabbed with this serial
     pub fn has_grab(&self, serial: Serial) -> bool {
-        let guard = self.inner.lock().unwrap();
-        match guard.grab {
-            GrabStatus::Active(s, _) => s == serial,
-            _ => false,
-        }
+        self.with_grab(|s, _| s == serial).unwrap_or(false)
     }
 
     /// Check if this pointer is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
         let guard = self.inner.lock().unwrap();
+        if let GrabStatus::Active(_, handler) = &guard.grab {
+            if !handler.alive() {
+                return false;
+            }
+        }
         !matches!(guard.grab, GrabStatus::None)
     }
 
     /// Returns the start data for the grab, if any.
     pub fn grab_start_data(&self) -> Option<GrabStartData<D>> {
-        let guard = self.inner.lock().unwrap();
-        match &guard.grab {
-            GrabStatus::Active(_, g) => Some(g.start_data().clone()),
-            _ => None,
-        }
+        self.with_grab(|_, g| g.start_data().clone())
     }
 
     /// Calls `f` with the active grab, if any.
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn PointerGrab<D>) -> T) -> Option<T> {
         let guard = self.inner.lock().unwrap();
         if let GrabStatus::Active(s, g) = &guard.grab {
-            Some(f(*s, &**g))
+            if g.alive() { Some(f(*s, &**g)) } else { None }
         } else {
             None
         }
@@ -523,7 +520,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         focus: Focus,
         grab: G,
     ) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner.set_grab(data, self.seat, serial, grab, focus);
     }
 
@@ -539,7 +536,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         time: u32,
         restore_focus: bool,
     ) {
-        handler.unset(data);
+        handler.unset(data, self);
         self.inner
             .unset_grab(data, self.seat, serial, time, restore_focus);
     }
@@ -740,8 +737,8 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         grab: G,
         focus: Focus,
     ) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut self.grab, GrabStatus::Borrowed) {
+            handler.unset(data, &mut PointerInnerHandle { inner: self, seat });
         }
         self.grab = GrabStatus::Active(serial, Box::new(grab));
 
@@ -761,8 +758,8 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
     }
 
     fn unset_grab(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, time: u32, restore_focus: bool) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
+        if let GrabStatus::Active(_, mut handler) = std::mem::replace(&mut self.grab, GrabStatus::Borrowed) {
+            handler.unset(data, &mut PointerInnerHandle { inner: self, seat });
         }
         self.grab = GrabStatus::None;
         if restore_focus {
@@ -877,7 +874,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
     }
 
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
+    pub(super) fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
     where
         F: FnOnce(&mut D, &mut PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
     {
@@ -887,8 +884,8 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
-                        handler.unset(data);
+                    if !focus.alive() || !handler.alive() {
+                        handler.unset(data, &mut PointerInnerHandle { inner: self, seat });
                         self.grab = GrabStatus::None;
                         f(
                             data,
