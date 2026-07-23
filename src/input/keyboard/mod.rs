@@ -1086,6 +1086,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
     /// Release every key currently held by `source` (e.g. when a virtual keyboard is destroyed
     /// or a libei connection drops), forwarding the resulting releases to the focused client.
+    ///
+    /// This is a teardown-only path: the releases are forwarded directly and do not run
+    /// the compositor's input filter, so a departing source can't trigger a key binding
     pub fn release_source(&self, data: &mut D, source: KeyboardSource) {
         let (transitioned, mods) = {
             let mut guard = self.arc.internal.lock().unwrap();
@@ -1357,6 +1360,10 @@ where
     <D as SeatHandler>::KeyboardFocus: crate::wayland::seat::WaylandFocus,
 {
     /// Inject a batch of keysyms as text into the currently focused client (KWin-style).
+    ///
+    /// This is a helper/fallback: a compositor should prefer delivering text through the
+    /// text-input protocol (`zwp_text_input_v3::commit_string`) when a text-input client is
+    /// focused, and fall back to this for clients that aren't (terminals, games, ...).
     ///
     /// Builds a throwaway keymap that binds each keysym to its own spare keycode at base level
     /// (so no modifiers are ever needed), hands that keymap to clients, taps each keycode on the
