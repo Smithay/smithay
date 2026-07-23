@@ -5,7 +5,7 @@ use crate::{AnvilState, focus::PointerFocusTarget, shell::FullscreenSurface};
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
 #[cfg(feature = "udev")]
-use smithay::backend::renderer::DebugFlags;
+use smithay::{backend::renderer::DebugFlags, input::tablet};
 
 use smithay::{
     backend::input::{
@@ -16,6 +16,7 @@ use smithay::{
     input::{
         keyboard::{FilterResult, Keysym, ModifiersState, keysyms as xkb},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
+        tablet::{TabletDescriptor, TabletSeatTrait},
         touch::{DownEvent, UpEvent},
     },
     output::Scale,
@@ -28,7 +29,6 @@ use smithay::{
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer},
-        tablet_manager::{TabletDescriptor, TabletSeatTrait},
     },
 };
 
@@ -534,7 +534,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         if device.has_capability(DeviceCapability::TabletTool) {
             self.seat
                 .tablet_seat()
-                .add_tablet::<Self>(dh, &TabletDescriptor::from(&device));
+                .add_wp_tablet(dh, &TabletDescriptor::from(&device));
         }
         if device.has_capability(DeviceCapability::Touch) && self.seat.get_touch().is_none() {
             self.seat.add_touch();
@@ -1045,8 +1045,8 @@ impl AnvilState<UdevData> {
         if let Some(pointer_location) = self.touch_location_transformed(&evt) {
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
-            let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
             let tool = tablet_seat.get_tool(&evt.tool());
+            let time = self.clock.now().as_millis();
 
             pointer.motion(
                 self,
@@ -1054,37 +1054,35 @@ impl AnvilState<UdevData> {
                 &MotionEvent {
                     location: pointer_location,
                     serial: SCOUNTER.next_serial(),
-                    time: self.clock.now().as_millis(),
+                    time,
                 },
             );
 
-            if let (Some(tablet), Some(tool)) = (tablet, tool) {
-                if evt.pressure_has_changed() {
-                    tool.pressure(evt.pressure());
-                }
-                if evt.distance_has_changed() {
-                    tool.distance(evt.distance());
-                }
-                if evt.tilt_has_changed() {
-                    tool.tilt(evt.tilt());
-                }
-                if evt.slider_has_changed() {
-                    tool.slider_position(evt.slider_position());
-                }
-                if evt.rotation_has_changed() {
-                    tool.rotation(evt.rotation());
-                }
-                if evt.wheel_has_changed() {
-                    tool.wheel(evt.wheel_delta(), evt.wheel_delta_discrete());
-                }
+            if let Some(tool) = tool {
+                let frame = tablet::tool::AxisFrame {
+                    pressure: evt.pressure_has_changed().then(|| evt.pressure()),
+                    distance: evt.distance_has_changed().then(|| evt.distance()),
+                    tilt: evt.tilt_has_changed().then(|| evt.tilt()),
+                    rotation: evt.rotation_has_changed().then(|| evt.rotation()),
+                    slider: evt.slider_has_changed().then(|| evt.slider_position()),
+                    wheel: evt
+                        .wheel_has_changed()
+                        .then(|| (evt.wheel_delta(), evt.wheel_delta_discrete())),
+                };
+
+                tool.axis(self, frame);
 
                 tool.motion(
-                    pointer_location,
-                    under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.into_owned(), loc))),
-                    &tablet,
-                    SCOUNTER.next_serial(),
-                    evt.time_msec(),
+                    self,
+                    under,
+                    &tablet::tool::MotionEvent {
+                        location: pointer_location,
+                        serial: SCOUNTER.next_serial(),
+                        time,
+                    },
                 );
+
+                tool.frame(self, time);
             }
 
             pointer.frame(self);
@@ -1100,12 +1098,13 @@ impl AnvilState<UdevData> {
 
         if let Some(pointer_location) = self.touch_location_transformed(&evt) {
             let tool = evt.tool();
-            tablet_seat.add_tool::<Self>(self, dh, &tool);
 
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
-            let tool = tablet_seat.get_tool(&tool);
+            let tool = tablet_seat
+                .get_tool(&tool)
+                .unwrap_or_else(|| tablet_seat.add_wp_tool(self, dh, &tool));
 
             pointer.motion(
                 self,
@@ -1118,21 +1117,47 @@ impl AnvilState<UdevData> {
             );
             pointer.frame(self);
 
-            if let (Some(under), Some(tablet), Some(tool)) = (
-                under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.into_owned(), loc))),
-                tablet,
-                tool,
-            ) {
+            if let Some(tablet) = tablet {
+                let frame = tablet::tool::AxisFrame {
+                    pressure: evt.pressure_has_changed().then(|| evt.pressure()),
+                    distance: evt.distance_has_changed().then(|| evt.distance()),
+                    tilt: evt.tilt_has_changed().then(|| evt.tilt()),
+                    rotation: evt.rotation_has_changed().then(|| evt.rotation()),
+                    slider: evt.slider_has_changed().then(|| evt.slider_position()),
+                    wheel: evt
+                        .wheel_has_changed()
+                        .then(|| (evt.wheel_delta(), evt.wheel_delta_discrete())),
+                };
+
                 match evt.state() {
-                    ProximityState::In => tool.proximity_in(
-                        pointer_location,
-                        under,
-                        &tablet,
-                        SCOUNTER.next_serial(),
-                        evt.time_msec(),
-                    ),
-                    ProximityState::Out => tool.proximity_out(evt.time_msec()),
+                    ProximityState::In => {
+                        tool.proximity_in(
+                            self,
+                            under,
+                            tablet,
+                            &tablet::tool::ProximityInEvent {
+                                location: pointer_location,
+                                axis: Some(frame),
+                                serial: SCOUNTER.next_serial(),
+                                time: evt.time_msec(),
+                            },
+                        );
+                    }
+                    ProximityState::Out => {
+                        tool.proximity_out(
+                            self,
+                            &tablet::tool::ProximityOutEvent {
+                                serial: SCOUNTER.next_serial(),
+                                time: evt.time_msec(),
+                            },
+                        );
+                    }
                 }
+
+                // Doing this in an idle handler would allow other events (e.g. buttons) to be
+                // sent as part of the same frame, which is closer to what the protocol
+                // expect, and let well behaved clients accumulate events.
+                tool.frame(self, evt.time_msec());
             }
         }
     }
@@ -1141,18 +1166,33 @@ impl AnvilState<UdevData> {
         let tool = self.seat.tablet_seat().get_tool(&evt.tool());
 
         if let Some(tool) = tool {
+            let serial = SCOUNTER.next_serial();
+
             match evt.tip_state() {
                 TabletToolTipState::Down => {
-                    let serial = SCOUNTER.next_serial();
-                    tool.tip_down(serial, evt.time_msec());
+                    tool.down(
+                        self,
+                        &tablet::tool::DownEvent {
+                            serial,
+                            time: evt.time_msec(),
+                        },
+                    );
 
                     // change the keyboard focus
                     self.update_keyboard_focus(self.pointer.current_location(), serial);
                 }
                 TabletToolTipState::Up => {
-                    tool.tip_up(evt.time_msec());
+                    tool.up(
+                        self,
+                        &tablet::tool::UpEvent {
+                            serial,
+                            time: evt.time_msec(),
+                        },
+                    );
                 }
             }
+
+            tool.frame(self, evt.time_msec());
         }
     }
 
@@ -1161,11 +1201,16 @@ impl AnvilState<UdevData> {
 
         if let Some(tool) = tool {
             tool.button(
-                evt.button(),
-                evt.button_state(),
-                SCOUNTER.next_serial(),
-                evt.time_msec(),
+                self,
+                &tablet::tool::ButtonEvent {
+                    serial: SCOUNTER.next_serial(),
+                    button: evt.button(),
+                    state: evt.button_state(),
+                    time: evt.time_msec(),
+                },
             );
+
+            tool.frame(self, evt.time_msec());
         }
     }
 
