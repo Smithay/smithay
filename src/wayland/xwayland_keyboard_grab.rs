@@ -54,7 +54,7 @@ use wayland_server::{
 };
 
 use crate::{
-    backend::input::{KeyState, Keycode},
+    backend::input::{InputTime, KeyState, Keycode},
     input::{
         Seat, SeatHandler,
         keyboard::{self, KeyboardGrab, KeyboardInnerHandle},
@@ -120,7 +120,7 @@ impl<D: XWaylandKeyboardGrabHandler + 'static> KeyboardGrab<D> for XWaylandKeybo
         state: KeyState,
         modifiers: Option<keyboard::ModifiersState>,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         handle.set_focus(data, self.start_data.focus.clone(), serial);
 

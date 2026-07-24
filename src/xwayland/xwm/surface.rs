@@ -1,5 +1,8 @@
 use crate::{
-    backend::{input::KeyState, renderer::utils::RendererSurfaceStateUserData},
+    backend::{
+        input::{InputTime, KeyState},
+        renderer::utils::RendererSurfaceStateUserData,
+    },
     input::{
         Seat, SeatHandler,
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
@@ -2215,7 +2218,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         key: KeysymHandle<'_>,
         state: KeyState,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         let mut xstate = self.state.lock().unwrap();
         if let Some(surface) = xstate.wl_surface.as_ref() {
@@ -2279,7 +2282,7 @@ impl<D: SeatHandler + PointerConstraintsHandler + 'static> PointerTarget<D> for 
         }
     }
 
-    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: InputTime) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             PointerTarget::leave(surface, seat, data, serial, time);
         }
@@ -2476,7 +2479,7 @@ impl<D: TabletSeatHandler + CompositorHandler + 'static> TabletToolTarget<D> for
         seat: &Seat<D>,
         data: &mut D,
         tool_descriptor: &crate::backend::input::TabletToolDescriptor,
-        time: u32,
+        time: InputTime,
     ) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             TabletToolTarget::frame(surface, seat, data, tool_descriptor, time);

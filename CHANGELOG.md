@@ -120,6 +120,8 @@ box minus the surface's frame extents.
 time. `LockSurface::ext_session_lock` has been added to allow the compositor to disambiguate, and associate lock surfaces
 with the correct lock instance.
 
+`backend::input` and `input` now use `backend::input::InputTime` for timestamps instead of `u32` or `u64`.
+
 ### Additions
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
