@@ -100,6 +100,7 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_keyboard = None;
         inner.keyboard = None;
+        inner.flush();
     }
 
     /// Send the compositor's current modifier state to this seat's keyboard device via
@@ -141,6 +142,7 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_pointer = None;
         inner.pointer = None;
+        inner.flush();
     }
 
     /// Add an absolute pointer device to the EI seat
@@ -170,6 +172,7 @@ impl EiInputSeat {
         inner.device_pointer_absolute = None;
         inner.pointer_absolute = None;
         inner.pointer_absolute_regions.clear();
+        inner.flush();
     }
 
     /// Add a touch device to the EI seat
@@ -188,6 +191,7 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_touch = None;
         inner.touch = None;
+        inner.flush();
     }
 
     /// Add a text device to the EI seat.
@@ -207,6 +211,7 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_text = None;
         inner.text = None;
+        inner.flush();
     }
 
     /// Remove seat from EI connection
@@ -246,6 +251,19 @@ struct EiInputSeatInner {
 }
 
 impl EiInputSeatInner {
+    /// Flush this seat's connection.
+    ///
+    /// Device add/remove (and the `ei_device.destroyed` a removal emits) are usually triggered
+    /// from *compositor* state changes (an output layout/scale change, a keymap change).
+    /// Without an explicit flush here those messages would sit in the output buffer until the client
+    /// happened to send an unrelated event, so a client that is only listening (not injecting)
+    /// would never learn its devices changed.
+    fn flush(&self) {
+        if let Some(connection) = self.connection.upgrade() {
+            let _ = connection.connection.flush();
+        }
+    }
+
     // Add any devices the server provides, for capabilities the client has bound, if no device yet
     fn refresh_devices(&mut self) {
         if self.device_keyboard.is_none() && self.bound_capabilities.contains(DeviceCapability::Keyboard) {
@@ -356,6 +374,9 @@ impl EiInputSeatInner {
                 self.device_text = Some(DeviceDropWrapper::new(device, &self.event_sender));
             }
         }
+
+        // Deliver any device add/remove produced above to the client (see `flush`).
+        self.flush();
     }
 }
 
