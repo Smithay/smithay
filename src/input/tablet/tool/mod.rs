@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::{hash::Hash, sync::Weak};
 
 use crate::{
-    backend::input::{ButtonState, TabletToolDescriptor},
+    backend::input::{ButtonState, InputTime, TabletToolDescriptor},
     input::{
         GrabStatus, Seat, SeatHandler,
         pointer::Focus,
@@ -119,7 +119,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
         &self,
         data: &mut D,
         grab: G,
-        time: u32,
+        time: InputTime,
         serial: Serial,
         focus: Focus,
     ) {
@@ -130,7 +130,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     }
 
     /// Remove any current grab on this tablet tool, resetting it to the default behavior.
-    pub fn unset_grab(&self, data: &mut D, serial: Serial, time: u32) {
+    pub fn unset_grab(&self, data: &mut D, serial: Serial, time: InputTime) {
         let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
 
@@ -351,7 +351,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     /// End of a tool frame.
     ///
     /// A frame groups associated events. This terminates the frame.
-    pub fn frame(&self, data: &mut D, time: u32) {
+    pub fn frame(&self, data: &mut D, time: InputTime) {
         let mut inner = self.arc.inner.lock().unwrap();
         if !inner.in_proximity() && !inner.frame_pending {
             tracing::warn!("frame was called, but the tool hasn't entered tablet proximity.");
@@ -486,7 +486,7 @@ where
     );
 
     /// End of a tablet tool frame.
-    fn frame(&self, seat: &Seat<D>, data: &mut D, tool_descriptor: &TabletToolDescriptor, time: u32);
+    fn frame(&self, seat: &Seat<D>, data: &mut D, tool_descriptor: &TabletToolDescriptor, time: InputTime);
 }
 
 /// This inner handle is accessed from inside a tablet tool grab logic, and directly sends event to
@@ -515,7 +515,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
         &mut self,
         handler: &mut dyn TabletToolGrab<D>,
         data: &mut D,
-        time: u32,
+        time: InputTime,
         serial: Serial,
         focus: Focus,
         grab: G,
@@ -533,7 +533,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
         handler: &mut dyn TabletToolGrab<D>,
         data: &mut D,
         serial: Serial,
-        time: u32,
+        time: InputTime,
         restore_focus: bool,
     ) {
         handler.unset(data);
@@ -646,7 +646,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
     /// End of a tool frame.
     ///
     /// A frame groups associated events. This terminates the frame.
-    pub fn frame(&mut self, data: &mut D, time: u32) {
+    pub fn frame(&mut self, data: &mut D, time: InputTime) {
         self.inner.frame(data, self.seat, self.descriptor, time);
     }
 
@@ -710,7 +710,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         seat: &Seat<D>,
         descriptor: &TabletToolDescriptor,
         grab: G,
-        time: u32,
+        time: InputTime,
         serial: Serial,
         focus: Focus,
     ) {
@@ -748,7 +748,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         seat: &Seat<D>,
         descriptor: &TabletToolDescriptor,
         serial: Serial,
-        time: u32,
+        time: InputTime,
         restore_focus: bool,
     ) {
         if let GrabStatus::Active(_, handler) = &mut self.grab {
@@ -1049,7 +1049,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         self.frame_pending = true;
     }
 
-    fn frame(&mut self, data: &mut D, seat: &Seat<D>, descriptor: &TabletToolDescriptor, time: u32) {
+    fn frame(&mut self, data: &mut D, seat: &Seat<D>, descriptor: &TabletToolDescriptor, time: InputTime) {
         if self.frame_pending {
             if let Some((focused, _)) = self.focus.as_mut() {
                 focused.frame(seat, data, descriptor, time);
@@ -1098,8 +1098,8 @@ pub struct ProximityInEvent {
     pub axis: Option<AxisFrame>,
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Proximity out event.
@@ -1107,8 +1107,8 @@ pub struct ProximityInEvent {
 pub struct ProximityOutEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Tablet tool motion event
@@ -1118,8 +1118,8 @@ pub struct MotionEvent {
     pub location: Point<f64, Logical>,
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Tablet tool button event
@@ -1134,8 +1134,8 @@ pub struct ButtonEvent {
     pub button: u32,
     /// Physical state of the button
     pub state: ButtonState,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Tip down event.
@@ -1145,8 +1145,8 @@ pub struct ButtonEvent {
 pub struct DownEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Tip up event.
@@ -1156,8 +1156,8 @@ pub struct DownEvent {
 pub struct UpEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// A frame of tablet tool axis events.

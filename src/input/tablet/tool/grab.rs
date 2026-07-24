@@ -3,6 +3,7 @@ use std::fmt;
 use downcast_rs::{Downcast, impl_downcast};
 
 use crate::{
+    backend::input::InputTime,
     input::{
         pointer::Focus,
         tablet::{
@@ -125,7 +126,7 @@ pub trait TabletToolGrab<D: TabletSeatHandler + 'static>: Send + Downcast {
     /// End of a tablet tool frame
     ///
     /// A frame groups associated events. This terminate the frame.
-    fn frame(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, time: u32);
+    fn frame(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, time: InputTime);
 
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
@@ -227,7 +228,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DefaultGrab {
         handle.axis(data, frame);
     }
 
-    fn frame(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, time: u32) {
+    fn frame(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, time: InputTime) {
         handle.frame(data, time);
     }
 
@@ -317,7 +318,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DownGrab<D> {
         handle.axis(data, frame);
     }
 
-    fn frame(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, time: u32) {
+    fn frame(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, time: InputTime) {
         handle.frame(data, time);
     }
 

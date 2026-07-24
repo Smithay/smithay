@@ -5,7 +5,7 @@ use smithay::xwayland::X11Surface;
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::xwm::XwmOfferData;
 pub use smithay::{
-    backend::input::KeyState,
+    backend::input::{InputTime, KeyState},
     desktop::{LayerSurface, PopupKind},
     input::{
         Seat,
@@ -178,7 +178,7 @@ impl<BackendData: Backend> PointerTarget<AnvilState<BackendData>> for PointerFoc
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         self.inner_pointer_target().leave(seat, data, serial, time)
     }
@@ -275,7 +275,7 @@ impl<BackendData: Backend> KeyboardTarget<AnvilState<BackendData>> for KeyboardF
         key: KeysymHandle<'_>,
         state: KeyState,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         self.inner_keyboard_target()
             .key(seat, data, key, state, serial, time)
@@ -448,7 +448,7 @@ impl<BackendData: Backend> TabletToolTarget<AnvilState<BackendData>> for Pointer
         seat: &Seat<AnvilState<BackendData>>,
         data: &mut AnvilState<BackendData>,
         tool_descriptor: &smithay::backend::input::TabletToolDescriptor,
-        time: u32,
+        time: InputTime,
     ) {
         self.inner_tablet_tool_target()
             .frame(seat, data, tool_descriptor, time);
@@ -557,7 +557,7 @@ impl<BackendData: Backend> DndFocus<AnvilState<BackendData>> for PointerFocusTar
         offer: Option<&mut AnvilOfferData<S>>,
         seat: &Seat<AnvilState<BackendData>>,
         location: Point<f64, Logical>,
-        time: u32,
+        time: InputTime,
     ) {
         match self {
             PointerFocusTarget::WlSurface(surface) => {

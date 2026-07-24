@@ -9,6 +9,7 @@ use crate::{wayland::seat::WaylandFocus, xwayland::XWaylandClientData};
 use wayland_server::Resource;
 
 use crate::{
+    backend::input::InputTime,
     input::{
         Seat, SeatHandler,
         dnd::OfferData,
@@ -229,7 +230,7 @@ where
         focus: Option<(F, Point<f64, Logical>)>,
         location: Point<f64, Logical>,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         if self
             .current_focus

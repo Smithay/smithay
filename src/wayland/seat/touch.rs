@@ -135,7 +135,7 @@ where
             let location = event.location.to_client(client_scale);
             touch.down(
                 serial.into(),
-                event.time,
+                event.time.millis(),
                 self,
                 slot.into(),
                 location.x,
@@ -148,7 +148,7 @@ where
         let serial = event.serial;
         let slot = event.slot;
         for_each_focused_touch(seat, self, |touch| {
-            touch.up(serial.into(), event.time, slot.into());
+            touch.up(serial.into(), event.time.millis(), slot.into());
         });
 
         if let Some(touch) = seat.get_touch() {
@@ -165,7 +165,7 @@ where
                 .client_scale
                 .load(Ordering::Acquire);
             let location = event.location.to_client(client_scale);
-            touch.motion(event.time, slot.into(), location.x, location.y);
+            touch.motion(event.time.millis(), slot.into(), location.x, location.y);
         })
     }
 
