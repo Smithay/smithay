@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ::winit::event_loop::pump_events::PumpStatus;
 use smithay::{
     backend::{
-        input::{InputEvent, KeyboardKeyEvent},
+        input::{InputEvent, InputTime, KeyboardKeyEvent},
         renderer::{
             Color32F, Frame, Renderer,
             element::{
@@ -181,7 +181,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         event.key_code(),
                         event.state(),
                         0.into(),
-                        0,
+                        InputTime::from_millis(0),
                         |_, _, _| {
                             //
                             FilterResult::Forward

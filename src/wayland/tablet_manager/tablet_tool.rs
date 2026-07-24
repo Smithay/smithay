@@ -12,7 +12,7 @@ use wayland_server::{
 };
 
 use crate::{
-    backend::input::{ButtonState, TabletToolCapabilities, TabletToolDescriptor, TabletToolType},
+    backend::input::{ButtonState, InputTime, TabletToolCapabilities, TabletToolDescriptor, TabletToolType},
     input::{
         pointer::{CursorImageAttributes, CursorImageStatus},
         tablet::{
@@ -351,9 +351,9 @@ impl WpTabletToolHandle {
         });
     }
 
-    fn frame(&self, surface: &WlSurface, time: u32) {
+    fn frame(&self, surface: &WlSurface, time: InputTime) {
         self.for_each_focused_tool(surface, |wp_tool| {
-            wp_tool.frame(time);
+            wp_tool.frame(time.millis());
         });
     }
 
@@ -615,7 +615,7 @@ where
         seat: &crate::input::Seat<D>,
         _data: &mut D,
         tool_descriptor: &TabletToolDescriptor,
-        time: u32,
+        time: InputTime,
     ) {
         let tablet_seat = seat.tablet_seat();
 
