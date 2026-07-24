@@ -31,16 +31,21 @@ use crate::{
 const VERSION: u32 = 1;
 
 /// Handler for pointer constraints
-pub trait PointerConstraintsHandler: SeatHandler {
+pub trait PointerConstraintsHandler<D: SeatHandler> {
     /// Pointer lock or confinement constraint created for `pointer` on `surface`
     ///
     /// Use [`with_pointer_constraint`] to access the constraint.
-    fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>);
+    fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<D>);
 
-    /// Constraint removed for `pointer` on `surface`
+    /// Pointer constraint removed for `pointer` on `surface`
     ///
-    /// Use [`with_pointer_constraint`] to access the constraint.
-    fn remove_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>);
+    /// Don't use
+    fn remove_constraint(
+        &mut self,
+        surface: &WlSurface,
+        pointer: &PointerHandle<D>,
+        constraint: Option<&PointerConstraint>,
+    );
 
     /// The client holding a LockedPointer has committed a cursor position hint.
     ///
@@ -50,9 +55,47 @@ pub trait PointerConstraintsHandler: SeatHandler {
     fn cursor_position_hint(
         &mut self,
         surface: &WlSurface,
-        pointer: &PointerHandle<Self>,
+        pointer: &PointerHandle<D>,
         location: Point<f64, Logical>,
     );
+}
+
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct AutoPointerConstraintsHandler<'a, D>(&'a mut D);
+
+impl<'a, D: SeatHandler> AutoPointerConstraintsHandler<'a, D> {
+    pub fn new(state: &'a mut D) -> Self {
+        Self(state)
+    }
+}
+
+impl<'a, D: SeatHandler + PointerConstraintsHandler<D>> AutoPointerConstraintsHandler<'a, D> {
+    #[inline]
+    pub fn get_handler(self) -> Option<&'a mut dyn PointerConstraintsHandler<D>> {
+        Some(self.0)
+    }
+}
+
+#[doc(hidden)]
+pub trait AutoPointerConstraintsHandlerFallback<'a, D: SeatHandler> {
+    fn get_handler(self) -> Option<&'a mut dyn PointerConstraintsHandler<D>>;
+}
+
+impl<'a, D: SeatHandler> AutoPointerConstraintsHandlerFallback<'a, D>
+    for AutoPointerConstraintsHandler<'a, D>
+{
+    #[inline]
+    fn get_handler(self) -> Option<&'a mut dyn PointerConstraintsHandler<D>> {
+        None
+    }
+}
+
+/// Helper function to automatically get `PointerConstraintsHandler` if implemented for state `D`.
+pub fn pointer_constraints_handler<D: SeatHandler>(
+    state: &mut D,
+) -> Option<&mut dyn PointerConstraintsHandler<D>> {
+    AutoPointerConstraintsHandler::new(state).get_handler()
 }
 
 /// Constraint confining pointer to a region of the surface
@@ -147,7 +190,7 @@ impl<D: SeatHandler + 'static> PointerConstraintRef<'_, D> {
     ///
     /// This is sent automatically when the surface loses pointer focus, but
     /// may also be invoked while the surface is focused.
-    pub fn deactivate(self) {
+    pub fn deactivate(self, state: &mut D, surface: &WlSurface, pointer: &PointerHandle<D>) {
         let deactivated = match self.entry.get() {
             PointerConstraint::Confined(confined) => {
                 if confined.active.swap(false, Ordering::SeqCst) {
@@ -166,6 +209,11 @@ impl<D: SeatHandler + 'static> PointerConstraintRef<'_, D> {
                 }
             }
         };
+
+        if deactivated && let Some(handler) = pointer_constraints_handler(state) {
+            let constraint = self.entry.get();
+            handler.remove_constraint(surface, pointer, Some(constraint));
+        }
 
         if deactivated && self.lifetime() == WEnum::Value(Lifetime::Oneshot) {
             self.entry.remove_entry();
@@ -274,11 +322,7 @@ pub fn with_pointer_constraint<
     })
 }
 
-fn commit_hook<D: SeatHandler + PointerConstraintsHandler + 'static>(
-    state: &mut D,
-    _dh: &DisplayHandle,
-    surface: &WlSurface,
-) {
+fn commit_hook<D: SeatHandler + 'static>(state: &mut D, _dh: &DisplayHandle, surface: &WlSurface) {
     // `with_constraint_data` locks the pointer constraints,
     // so we collect the hints first into a Vec, then release the mutex
     // and only once the mutex is released, we call the handler method.
@@ -293,8 +337,10 @@ fn commit_hook<D: SeatHandler + PointerConstraintsHandler + 'static>(
             .collect::<Vec<_>>()
     });
 
-    for (pointer, hint) in position_hints {
-        state.cursor_position_hint(surface, &pointer, hint);
+    if let Some(handler) = pointer_constraints_handler(state) {
+        for (pointer, hint) in position_hints {
+            handler.cursor_position_hint(surface, &pointer, hint);
+        }
     }
 }
 
@@ -318,7 +364,7 @@ fn with_constraint_data<
 }
 
 /// Add constraint for surface, or raise protocol error if one exists
-fn add_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
+fn add_constraint<D: SeatHandler + 'static>(
     pointer_constraints: &ZwpPointerConstraintsV1,
     surface: &WlSurface,
     pointer: &PointerHandle<D>,
@@ -349,22 +395,24 @@ fn add_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
     }
 }
 
-fn remove_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
+fn remove_constraint<D: SeatHandler + 'static>(
     state: &mut D,
     surface: &WlSurface,
     pointer: &PointerHandle<D>,
 ) {
-    let is_removed = with_constraint_data::<D, _, _>(surface, |data| {
+    let (is_removed, constraint) = with_constraint_data::<D, _, _>(surface, |data| {
         if let Some(data) = data {
-            if let Some(_constraint) = data.constraints.remove(pointer) {
-                return true;
+            if let Some(constraint) = data.constraints.remove(pointer) {
+                return (true, Some(constraint));
             }
         }
-        false
+        (false, None)
     });
 
-    if is_removed {
-        state.remove_constraint(surface, pointer);
+    if is_removed && let Some(constraint) = constraint {
+        if let Some(handler) = pointer_constraints_handler(state) {
+            handler.remove_constraint(surface, pointer, Some(&constraint));
+        }
     }
 }
 
@@ -373,7 +421,6 @@ where
     D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
     D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
     D: SeatHandler,
-    D: PointerConstraintsHandler,
     D: 'static,
 {
     fn request(
@@ -417,7 +464,9 @@ where
                             active: AtomicBool::new(false),
                         }),
                     );
-                    state.new_constraint(&surface, &pointer);
+                    if let Some(handler) = pointer_constraints_handler(state) {
+                        handler.new_constraint(&surface, &pointer);
+                    }
                 }
             }
             zwp_pointer_constraints_v1::Request::ConfinePointer {
@@ -449,7 +498,9 @@ where
                             active: AtomicBool::new(false),
                         }),
                     );
-                    state.new_constraint(&surface, &pointer);
+                    if let Some(handler) = pointer_constraints_handler(state) {
+                        handler.new_constraint(&surface, &pointer);
+                    }
                 }
             }
             zwp_pointer_constraints_v1::Request::Destroy => {}
@@ -476,7 +527,7 @@ where
 
 impl<D> Dispatch2<ZwpConfinedPointerV1, D> for PointerConstraintUserData<D>
 where
-    D: SeatHandler + PointerConstraintsHandler,
+    D: SeatHandler,
     D: 'static,
 {
     fn request(
@@ -523,7 +574,7 @@ where
 
 impl<D> Dispatch2<ZwpLockedPointerV1, D> for PointerConstraintUserData<D>
 where
-    D: SeatHandler + PointerConstraintsHandler,
+    D: SeatHandler,
     D: 'static,
 {
     fn request(
