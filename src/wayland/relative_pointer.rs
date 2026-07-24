@@ -131,8 +131,9 @@ impl WpRelativePointerHandle {
             let delta = event.delta.to_client(client_scale);
             let delta_unaccel = event.delta_unaccel;
 
-            let utime_hi = (event.utime >> 32) as u32;
-            let utime_lo = (event.utime & 0xffffffff) as u32;
+            let utime = event.time.micros();
+            let utime_hi = (utime >> 32) as u32;
+            let utime_lo = (utime & 0xffffffff) as u32;
             ptr.relative_motion(
                 utime_hi,
                 utime_lo,

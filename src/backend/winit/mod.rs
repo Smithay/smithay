@@ -47,7 +47,7 @@ use crate::{
             display::EGLDisplay,
             native,
         },
-        input::InputEvent,
+        input::{InputEvent, InputTime},
         renderer::{
             Bind,
             gles::{GlesError, GlesRenderer},
@@ -452,8 +452,8 @@ struct WinitEventLoopApp<'a, F: FnMut(WinitEvent)> {
 }
 
 impl<F: FnMut(WinitEvent)> WinitEventLoopApp<'_, F> {
-    fn timestamp(&self) -> u64 {
-        self.inner.clock.now().as_micros()
+    fn timestamp(&self) -> InputTime {
+        InputTime::from_micros(self.inner.clock.now().as_micros())
     }
 }
 

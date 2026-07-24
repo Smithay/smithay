@@ -95,6 +95,7 @@ use wayland_server::{
 };
 
 use crate::{
+    backend::input::InputTime,
     input::{
         Seat, SeatHandler,
         dnd::{DndAction, DndFocus, GrabType, OfferData, Source},
@@ -501,7 +502,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
         offer: Option<&mut WlOfferData<S>>,
         seat: &Seat<D>,
         location: Point<f64, Logical>,
-        time: u32,
+        time: InputTime,
     ) {
         let seat_data = seat
             .user_data()
@@ -525,7 +526,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
 
         for device in seat_data.known_data_devices() {
             if device.id().same_client_as(&self.id()) {
-                device.motion(time, location.x, location.y);
+                device.motion(time.millis(), location.x, location.y);
             }
         }
     }

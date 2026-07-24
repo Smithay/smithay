@@ -11,6 +11,7 @@ use wayland_server::DisplayHandle;
 #[cfg(feature = "xwayland")]
 use crate::wayland::seat::WaylandFocus;
 use crate::{
+    backend::input::InputTime,
     input::{Seat, SeatHandler},
     utils::{IsAlive, Logical, Point, Serial},
 };
@@ -114,7 +115,7 @@ pub trait DndFocus<D: SeatHandler>: WaylandFocus + IsAlive + PartialEq {
         offer: Option<&mut Self::OfferData<S>>,
         seat: &Seat<D>,
         location: Point<f64, Logical>,
-        time: u32,
+        time: InputTime,
     );
 
     /// An active Drag'n'Drop operation, which has previously
@@ -152,7 +153,7 @@ pub trait DndFocus<D: SeatHandler>: IsAlive + PartialEq {
         offer: Option<&mut Self::OfferData<S>>,
         seat: &Seat<D>,
         location: Point<f64, Logical>,
-        time: u32,
+        time: InputTime,
     );
 
     /// An active Drag'n'Drop operation, which has previously

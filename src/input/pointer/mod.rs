@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    backend::input::{Axis, AxisRelativeDirection, AxisSource, ButtonState},
+    backend::input::{Axis, AxisRelativeDirection, AxisSource, ButtonState, InputTime},
     input::{GrabStatus, Seat, SeatHandler},
     utils::Serial,
     utils::{Clock, IsAlive, Logical, Monotonic, Point},
@@ -128,7 +128,7 @@ where
     /// A pointer of a given seat ended a hold gesture
     fn gesture_hold_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldEndEvent);
     /// A pointer of a given seat left this handler
-    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32);
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: InputTime);
     /// A pointer of a given seat moved from another handler to this handler
     fn replace(
         &self,
@@ -175,7 +175,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     #[instrument(level = "debug", parent = &self.span, skip(self, data))]
-    pub fn unset_grab(&self, data: &mut D, serial: Serial, time: u32) {
+    pub fn unset_grab(&self, data: &mut D, serial: Serial, time: InputTime) {
         let seat = self.get_seat(data);
         self.inner
             .lock()
@@ -536,7 +536,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         handler: &mut dyn PointerGrab<D>,
         data: &mut D,
         serial: Serial,
-        time: u32,
+        time: InputTime,
         restore_focus: bool,
     ) {
         handler.unset(data);
@@ -754,13 +754,20 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 &MotionEvent {
                     location,
                     serial,
-                    time: Clock::<Monotonic>::new().now().as_millis(),
+                    time: InputTime::from_millis(Clock::<Monotonic>::new().now().as_millis()),
                 },
             );
         }
     }
 
-    fn unset_grab(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, time: u32, restore_focus: bool) {
+    fn unset_grab(
+        &mut self,
+        data: &mut D,
+        seat: &Seat<D>,
+        serial: Serial,
+        time: InputTime,
+        restore_focus: bool,
+    ) {
         if let GrabStatus::Active(_, handler) = &mut self.grab {
             handler.unset(data);
         }
@@ -936,8 +943,8 @@ pub struct MotionEvent {
     pub location: Point<f64, Logical>,
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Relative pointer motion event
@@ -948,7 +955,7 @@ pub struct RelativeMotionEvent {
     /// Unaccelerated motion vector
     pub delta_unaccel: Point<f64, Logical>,
     /// Timestamp in microseconds
-    pub utime: u64,
+    pub time: InputTime,
 }
 
 /// Pointer button event
@@ -959,8 +966,8 @@ pub struct RelativeMotionEvent {
 pub struct ButtonEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp with millisecond granularity, with an undefined base.
-    pub time: u32,
+    /// Timestamp with microsecond granularity, with an undefined base.
+    pub time: InputTime,
     /// Button that produced the event
     ///
     /// The button is a button code as defined in the
@@ -992,7 +999,7 @@ pub struct AxisFrame {
     /// Direction of the physical motion that caused axis event
     pub relative_direction: (AxisRelativeDirection, AxisRelativeDirection),
     /// Time of the axis event
-    pub time: u32,
+    pub time: InputTime,
     /// Raw scroll value per axis of the event
     pub axis: (f64, f64),
     /// Discrete representation of scroll value per axis, if available
@@ -1008,8 +1015,8 @@ pub struct AxisFrame {
 pub struct GestureSwipeBeginEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Number of fingers of the event
     pub fingers: u32,
 }
@@ -1017,8 +1024,8 @@ pub struct GestureSwipeBeginEvent {
 /// Gesture swipe update event
 #[derive(Debug, Clone)]
 pub struct GestureSwipeUpdateEvent {
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Offset of the logical center of the gesture relative to the previous event
     pub delta: Point<f64, Logical>,
 }
@@ -1028,8 +1035,8 @@ pub struct GestureSwipeUpdateEvent {
 pub struct GestureSwipeEndEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Whether the gesture was cancelled
     pub cancelled: bool,
 }
@@ -1039,8 +1046,8 @@ pub struct GestureSwipeEndEvent {
 pub struct GesturePinchBeginEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Number of fingers of the event
     pub fingers: u32,
 }
@@ -1048,8 +1055,8 @@ pub struct GesturePinchBeginEvent {
 /// Gesture pinch update event
 #[derive(Debug, Clone)]
 pub struct GesturePinchUpdateEvent {
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Offset of the logical center of the gesture relative to the previous event
     pub delta: Point<f64, Logical>,
     /// Absolute scale compared to the begin event
@@ -1063,8 +1070,8 @@ pub struct GesturePinchUpdateEvent {
 pub struct GesturePinchEndEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Whether the gesture was cancelled
     pub cancelled: bool,
 }
@@ -1074,8 +1081,8 @@ pub struct GesturePinchEndEvent {
 pub struct GestureHoldBeginEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Number of fingers of the event
     pub fingers: u32,
 }
@@ -1085,15 +1092,15 @@ pub struct GestureHoldBeginEvent {
 pub struct GestureHoldEndEvent {
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
     /// Whether the gesture was cancelled
     pub cancelled: bool,
 }
 
 impl AxisFrame {
     /// Create a new frame of axis events
-    pub fn new(time: u32) -> Self {
+    pub fn new(time: InputTime) -> Self {
         AxisFrame {
             source: None,
             relative_direction: (AxisRelativeDirection::Identical, AxisRelativeDirection::Identical),

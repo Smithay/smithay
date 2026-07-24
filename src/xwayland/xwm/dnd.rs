@@ -33,6 +33,7 @@ use x11rb::{
 };
 
 use crate::{
+    backend::input::InputTime,
     input::{
         Seat, SeatHandler,
         dnd::{DnDGrab, DndAction, DndFocus, DndGrabHandler, OfferData, Source, SourceMetadata},
@@ -1068,7 +1069,14 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
                 source: offer.source.clone(),
             });
 
-            DndFocus::motion(self, data, Some(&mut offer), seat, location, 0);
+            DndFocus::motion(
+                self,
+                data,
+                Some(&mut offer),
+                seat,
+                location,
+                InputTime::from_millis(0),
+            );
             Some(offer)
         }
     }
@@ -1079,7 +1087,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
         offer: Option<&mut XwmOfferData<S>>,
         _seat: &Seat<D>,
         location: Point<f64, Logical>,
-        _time: u32,
+        _time: InputTime,
     ) {
         let Some(offer) = offer else { return };
         let mut state = offer.state.lock().unwrap();
