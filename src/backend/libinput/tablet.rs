@@ -1,5 +1,6 @@
 use crate::backend::input::{
-    self as backend, TabletToolCapabilities, TabletToolDescriptor, TabletToolTipState, TabletToolType,
+    self as backend, InputTime, TabletToolCapabilities, TabletToolDescriptor, TabletToolTipState,
+    TabletToolType,
 };
 
 use input as libinput;
@@ -20,8 +21,8 @@ impl<E> backend::Event<LibinputInputBackend> for E
 where
     E: IsTabletEvent,
 {
-    fn time(&self) -> u64 {
-        tablet_tool::TabletToolEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(tablet_tool::TabletToolEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {

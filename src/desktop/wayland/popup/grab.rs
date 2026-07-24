@@ -6,7 +6,7 @@ use std::{
 use wayland_server::{Resource, protocol::wl_surface::WlSurface};
 
 use crate::{
-    backend::input::{ButtonState, KeyState, Keycode},
+    backend::input::{ButtonState, InputTime, KeyState, Keycode},
     input::{
         SeatHandler,
         keyboard::{
@@ -446,7 +446,7 @@ where
         state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         // Check if the grab changed and update the focus
         // If the grab has ended this will return the root

@@ -12,7 +12,7 @@ use wayland_server::{
 
 use super::WaylandFocus;
 use crate::{
-    backend::input::{KeyState, Keycode},
+    backend::input::{InputTime, KeyState, Keycode},
     input::{
         Seat, SeatHandler, WeakSeat,
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
@@ -298,10 +298,15 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         key: KeysymHandle<'_>,
         state: KeyState,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         for_each_focused_kbds(seat, self, |kbd| {
-            kbd.key(serial.into(), time, key.raw_code().raw() - 8, state.into())
+            kbd.key(
+                serial.into(),
+                time.millis(),
+                key.raw_code().raw() - 8,
+                state.into(),
+            )
         })
     }
 

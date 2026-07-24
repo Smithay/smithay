@@ -1,6 +1,6 @@
 //! Keyboard-related types for smithay's input abstraction
 
-use crate::backend::input::KeyState;
+use crate::backend::input::{InputTime, KeyState};
 use crate::utils::{IsAlive, SERIAL_COUNTER, Serial};
 use downcast_rs::{Downcast, impl_downcast};
 use std::collections::{HashMap, HashSet};
@@ -49,7 +49,7 @@ where
         key: KeysymHandle<'_>,
         state: KeyState,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     );
     /// Hold modifiers were changed on a keyboard from a given seat
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial);
@@ -677,7 +677,7 @@ pub trait KeyboardGrab<D: SeatHandler>: Downcast {
         state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     );
 
     /// A focus change was requested.
@@ -1029,7 +1029,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         keycode: Keycode,
         state: KeyState,
         serial: Serial,
-        time: u32,
+        time: InputTime,
         filter: F,
     ) -> Option<T>
     where
@@ -1047,7 +1047,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         keycode: Keycode,
         state: KeyState,
         serial: Serial,
-        time: u32,
+        time: InputTime,
         filter: F,
     ) -> Option<T>
     where
@@ -1097,7 +1097,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
         let _ = mods;
         let serial = SERIAL_COUNTER.next_serial();
-        let time = 0;
+        let time = InputTime::from_millis(0);
         for keycode in transitioned {
             // modifiers may have changed as a modifier key was released; let input_forward
             // re-derive and send the current state.
@@ -1154,7 +1154,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         keycode: Keycode,
         state: KeyState,
         serial: Serial,
-        time: u32,
+        time: InputTime,
         mods_changed: bool,
     ) {
         let mut guard = self.arc.internal.lock().unwrap();
@@ -1435,11 +1435,25 @@ where
             let release = SERIAL_COUNTER.next_serial();
             if let Some((focus, _)) = guard.focus.as_mut() {
                 let handle = KeysymHandle { xkb: &xkb, keycode };
-                focus.key(&seat, data, handle, KeyState::Pressed, press, 0);
+                focus.key(
+                    &seat,
+                    data,
+                    handle,
+                    KeyState::Pressed,
+                    press,
+                    InputTime::from_millis(0),
+                );
             }
             if let Some((focus, _)) = guard.focus.as_mut() {
                 let handle = KeysymHandle { xkb: &xkb, keycode };
-                focus.key(&seat, data, handle, KeyState::Released, release, 0);
+                focus.key(
+                    &seat,
+                    data,
+                    handle,
+                    KeyState::Released,
+                    release,
+                    InputTime::from_millis(0),
+                );
             }
         }
 
@@ -1544,7 +1558,7 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         key_state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         let (focus, _) = match self.inner.focus.as_mut() {
             Some(focus) => focus,
@@ -1654,7 +1668,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
         state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
-        time: u32,
+        time: InputTime,
     ) {
         handle.input(data, keycode, state, modifiers, serial, time)
     }

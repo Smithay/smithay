@@ -6,7 +6,7 @@ use reis::{
 };
 use std::path::PathBuf;
 
-use crate::backend::input::{self, InputBackend};
+use crate::backend::input::{self, InputBackend, InputTime};
 
 use super::EiInput;
 
@@ -93,8 +93,8 @@ impl input::Device for request::Device {
 }
 
 impl<T: request::DeviceEvent + request::EventTime> input::Event<EiInput> for T {
-    fn time(&self) -> u64 {
-        request::EventTime::time(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(request::EventTime::time(self))
     }
 
     fn device(&self) -> request::Device {
@@ -120,7 +120,7 @@ impl input::KeyboardKeyEvent<EiInput> for request::KeyboardKey {
 }
 
 impl input::Event<EiInput> for ScrollEvent {
-    fn time(&self) -> u64 {
+    fn time(&self) -> InputTime {
         match self {
             Self::Delta(evt) => evt.time(),
             Self::Cancel(evt) => evt.time(),
