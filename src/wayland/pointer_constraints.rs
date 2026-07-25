@@ -375,8 +375,10 @@ fn remove_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
         (false, None)
     });
 
-    if is_removed && let Some(constraint) = constraint {
-        state.remove_constraint(surface, pointer, Some(&constraint));
+    if is_removed {
+        if let Some(constraint) = constraint {
+            state.remove_constraint(surface, pointer, Some(&constraint));
+        }
     }
 }
 

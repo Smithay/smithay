@@ -14,6 +14,7 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::Serial;
 use smithay::wayland::output::OutputHandler;
+use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus,
@@ -36,6 +37,8 @@ impl SeatHandler for Smallvil {
         set_data_device_focus(dh, seat, client);
     }
 }
+
+impl PointerConstraintsHandler for Smallvil {}
 
 //
 // Wl Data Device

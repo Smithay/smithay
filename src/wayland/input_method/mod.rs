@@ -9,6 +9,7 @@
 //! use smithay::wayland::input_method::{InputMethodManagerState, InputMethodHandler, PopupSurface};
 //! use smithay::wayland::text_input::TextInputManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::reexports::wayland_server::Client;
 //! use smithay::utils::{Rectangle, Logical};
 //!
@@ -41,6 +42,7 @@
 //!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
 //!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
 //! }
+//! # impl PointerConstraintsHandler for State {}
 //!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
