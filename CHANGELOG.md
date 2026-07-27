@@ -211,6 +211,9 @@ connectors when a dock is unplugged, or across suspend/resume) leaked their CRTC
 indefinitely, which could accumulate until a newly connected output could no longer be assigned a
 CRTC.
 
+XWayland now honors WM_HINTS request to map the window in IconicState(minimized). Compositors should
+check X11Surface::is_hidden() at mapping time and minimize the window appropriately.
+
 ## 0.7.0
 
 ### Breaking changes
