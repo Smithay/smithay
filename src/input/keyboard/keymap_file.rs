@@ -1,6 +1,7 @@
 use std::ffi::CString;
 use std::os::unix::io::{AsFd, BorrowedFd};
 
+use siphasher::sip128::SipHasher;
 use tracing::error;
 use xkbcommon::xkb::{self, KEYMAP_FORMAT_TEXT_V1, Keymap};
 
@@ -8,45 +9,13 @@ use crate::utils::SealedFile;
 
 /// Unique ID for a keymap
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct KeymapFileId([u8; 32]);
-
-#[cfg(not(feature = "use_sha"))]
-// Generates a 32-byte (256-bit) hash using only the standard library.
-// This is sufficient to prevent keymap collisions, but it is not cryptographically
-// secure or guaranteed to be stable/persistent across different Rust versions.
-fn hash(data: &[u8]) -> [u8; 32] {
-    use std::hash::{DefaultHasher, Hasher};
-    let mut output = [0u8; 32];
-    let mut prev_hash: Option<[u8; 8]> = None;
-
-    for i in (0..32).step_by(8) {
-        let mut hasher = DefaultHasher::new();
-        if let Some(prev_hash_val) = prev_hash {
-            hasher.write(&prev_hash_val);
-        }
-        hasher.write(data);
-        let hash = hasher.finish().to_le_bytes();
-        output[i..i + 8].copy_from_slice(&hash);
-        prev_hash = Some(hash);
-    }
-
-    output
-}
+pub struct KeymapFileId([u8; 16]);
 
 impl KeymapFileId {
     fn for_keymap(keymap: &str) -> Self {
         // Use a hash, so `keymap` events aren't sent when keymap hasn't changed, particularly
         // with `virtual-keyboard-unstable-v1`.
-        #[cfg(feature = "use_sha")]
-        {
-            use sha2::{Digest, Sha256};
-            #[allow(deprecated)]
-            Self(Sha256::digest(keymap).as_slice().try_into().unwrap())
-        }
-        #[cfg(not(feature = "use_sha"))]
-        {
-            Self(hash(keymap.as_bytes()))
-        }
+        Self(SipHasher::new().hash(keymap.as_bytes()).as_bytes())
     }
 }
 
@@ -156,6 +125,6 @@ mod tests {
         let keymap = xkb_config.compile_keymap(&context).unwrap();
         let keymap_file = KeymapFile::new(&keymap);
 
-        assert_ne!(keymap_file.id().0, [0u8; 32]);
+        assert_ne!(keymap_file.id().0, [0_u8; 16]);
     }
 }
