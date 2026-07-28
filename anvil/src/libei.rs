@@ -32,7 +32,7 @@ pub fn listen_eis(handle: &calloop::LoopHandle<'static, AnvilState<UdevData>>) {
                         let _ = seat.add_keyboard("virtual keyboard", XkbConfig::default());
                         seat.add_pointer("virtual pointer");
                         seat.add_pointer_absolute("virtual absolute pointer", &[]);
-                        seat.add_touch("virtual touch");
+                        seat.add_touch("virtual touch", &[]);
                     }
                     EiInputEvent::Disconnected => {}
                     EiInputEvent::Event(event) => {

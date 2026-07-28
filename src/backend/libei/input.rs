@@ -44,7 +44,7 @@ impl InputBackend for EiInput {
     type TouchUpEvent = request::TouchUp;
     type TouchMotionEvent = request::TouchMotion;
     type TouchCancelEvent = request::TouchCancel;
-    type TouchFrameEvent = input::UnusedEvent;
+    type TouchFrameEvent = request::Frame;
 
     type TabletToolAxisEvent = input::UnusedEvent;
     type TabletToolProximityEvent = input::UnusedEvent;
@@ -101,6 +101,8 @@ impl<T: request::DeviceEvent + request::EventTime> input::Event<EiInput> for T {
         request::DeviceEvent::device(self).clone()
     }
 }
+
+impl input::TouchFrameEvent<EiInput> for request::Frame {}
 
 impl input::KeyboardKeyEvent<EiInput> for request::KeyboardKey {
     fn key_code(&self) -> input::Keycode {
