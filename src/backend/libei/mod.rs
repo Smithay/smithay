@@ -21,7 +21,7 @@
 //!                 let _ = seat.add_keyboard("virtual keyboard", XkbConfig::default());
 //!                 seat.add_pointer("virtual pointer");
 //!                 seat.add_pointer_absolute("virtual absolute pointer", &[]);
-//!                 seat.add_touch("virtual touch");
+//!                 seat.add_touch("virtual touch", &[]);
 //!             }
 //!             EiInputEvent::Disconnected => {}
 //!             EiInputEvent::Event(event) => {
@@ -299,7 +299,16 @@ fn convert_request(request: EisRequest) -> Option<InputEvent<EiInput>> {
         EisRequest::TouchMotion(event) => Some(InputEvent::TouchMotion { event }),
         EisRequest::TouchCancel(event) => Some(InputEvent::TouchCancel { event }),
         EisRequest::DeviceClosed(event) => Some(InputEvent::DeviceRemoved { device: event.device }),
-        EisRequest::Frame(_) => None,
+        // `ei_device.frame` is not touch-specific: it commits whatever the client has sent
+        // for that device. The capability check is sufficient here because reis only emits
+        // a frame for a device that had pending events of its own, and every device we
+        // create has a single capability. So a frame on a touch-capable device
+        // necessarily contains touch events. This would need revisiting if a device ever
+        // advertised `Touch` alongside another capability.
+        EisRequest::Frame(event) => event
+            .device
+            .has_capability(reis::request::DeviceCapability::Touch)
+            .then_some(InputEvent::TouchFrame { event }),
         // `TextKeysym`/`TextUtf8` are surfaced as `EiInputEvent::TextKeysym`/`TextUtf8` directly,
         // so they never reach here.
         EisRequest::TextKeysym(_)

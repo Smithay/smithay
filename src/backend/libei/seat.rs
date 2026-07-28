@@ -55,7 +55,7 @@ impl EiInputSeat {
             keyboard: None,
             pointer: None,
             pointer_absolute: None,
-            pointer_absolute_regions: Vec::new(),
+            regions: Vec::new(),
             touch: None,
             text: None,
             device_keyboard: None,
@@ -162,7 +162,7 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_pointer_absolute = None;
         inner.pointer_absolute = Some(name.to_string());
-        inner.pointer_absolute_regions = regions.to_vec();
+        inner.regions = regions.to_vec();
         inner.refresh_devices();
     }
 
@@ -171,18 +171,38 @@ impl EiInputSeat {
         let mut inner = self.0.lock().unwrap();
         inner.device_pointer_absolute = None;
         inner.pointer_absolute = None;
-        inner.pointer_absolute_regions.clear();
         inner.flush();
     }
 
     /// Add a touch device to the EI seat
     ///
+    /// `regions` describes the logical coordinate space(s) the client may send absolute touch
+    /// coordinates in (see [`EiRegion`]).
+    ///
     /// Calling on a seat that already has a touch device will remove
     /// that device and add a new one.
-    pub fn add_touch(&self, name: &str) {
+    pub fn add_touch(&self, name: &str, regions: &[EiRegion]) {
         let mut inner = self.0.lock().unwrap();
         inner.device_touch = None;
         inner.touch = Some(name.to_string());
+        inner.regions = regions.to_vec();
+        inner.refresh_devices();
+    }
+
+    /// Update the coordinate regions advertised to the client, recreating whichever absolute
+    /// devices (absolute pointer, touch) this seat already has.
+    ///
+    /// Regions are immutable once a device is created, so the devices have to be replaced for a
+    /// client to see a new output layout/scale.
+    pub fn update_regions(&self, regions: &[EiRegion]) {
+        let mut inner = self.0.lock().unwrap();
+        inner.regions = regions.to_vec();
+        if inner.pointer_absolute.is_some() {
+            inner.device_pointer_absolute = None;
+        }
+        if inner.touch.is_some() {
+            inner.device_touch = None;
+        }
         inner.refresh_devices();
     }
 
@@ -239,7 +259,7 @@ struct EiInputSeatInner {
     pointer_absolute: Option<String>,
     // Regions advertised on the absolute pointer device, describing the logical
     // coordinate space(s) the client may address (see `EiRegion`).
-    pointer_absolute_regions: Vec<EiRegion>,
+    regions: Vec<EiRegion>,
     touch: Option<String>,
     text: Option<String>,
     // Devices created in response to client bind
@@ -309,31 +329,12 @@ impl EiInputSeatInner {
                 .contains(DeviceCapability::PointerAbsolute)
         {
             if let Some(name) = self.pointer_absolute.as_ref() {
-                let regions = self.pointer_absolute_regions.clone();
+                let regions = self.regions.clone();
                 let device = self.seat.add_device(
                     Some(name),
                     DeviceType::Virtual,
                     DeviceCapability::PointerAbsolute | DeviceCapability::Button | DeviceCapability::Scroll,
-                    |device| {
-                        // Advertise the coordinate space(s) the client may point within.
-                        // These `ei_device.region` events must be sent after the device is
-                        // created but before `done`, which is exactly when this closure runs.
-                        for region in &regions {
-                            // `region_mapping_id` applies to the region created by the
-                            // next `region` request, so send it first when present.
-                            if let Some(mapping_id) = &region.mapping_id {
-                                device.device().region_mapping_id(mapping_id);
-                            }
-                            // `ei_device.region` coordinates are unsigned
-                            device.device().region(
-                                region.rect.loc.x.max(0) as u32,
-                                region.rect.loc.y.max(0) as u32,
-                                region.rect.size.w.max(0) as u32,
-                                region.rect.size.h.max(0) as u32,
-                                region.scale,
-                            );
-                        }
-                    },
+                    |device| advertise_regions(device, &regions),
                 );
                 device.resumed();
                 let _ = self.event_sender.send(InputEvent::DeviceAdded {
@@ -345,11 +346,12 @@ impl EiInputSeatInner {
 
         if self.device_touch.is_none() && self.bound_capabilities.contains(DeviceCapability::Touch) {
             if let Some(name) = self.touch.as_ref() {
+                let regions = self.regions.clone();
                 let device = self.seat.add_device(
                     Some(name),
                     DeviceType::Virtual,
                     DeviceCapability::Touch.into(),
-                    |_| {},
+                    |device| advertise_regions(device, &regions),
                 );
                 device.resumed();
                 let _ = self.event_sender.send(InputEvent::DeviceAdded {
@@ -377,6 +379,28 @@ impl EiInputSeatInner {
 
         // Deliver any device add/remove produced above to the client (see `flush`).
         self.flush();
+    }
+}
+
+/// Advertise the coordinate space(s) a client may address on an absolute device.
+///
+/// These `ei_device.region` events must be sent after the device is created but before `done`,
+/// i.e. from within `add_device`'s callback.
+fn advertise_regions(device: &reis::request::Device, regions: &[EiRegion]) {
+    for region in regions {
+        // `region_mapping_id` applies to the region created by the next `region` request,
+        // so send it first when present.
+        if let Some(mapping_id) = &region.mapping_id {
+            device.device().region_mapping_id(mapping_id);
+        }
+        // `ei_device.region` coordinates are unsigned
+        device.device().region(
+            region.rect.loc.x.max(0) as u32,
+            region.rect.loc.y.max(0) as u32,
+            region.rect.size.w.max(0) as u32,
+            region.rect.size.h.max(0) as u32,
+            region.scale,
+        );
     }
 }
 
