@@ -187,6 +187,8 @@ use x11rb::{
 };
 
 mod dnd;
+mod mwm;
+pub use self::mwm::*;
 pub mod settings;
 use settings::{NameError, Value, XSettings};
 mod selection;
