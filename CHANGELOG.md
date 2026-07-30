@@ -219,6 +219,11 @@ Added `Renderer::invalidate_caches`, which unconditionally drops all renderer-in
 including entries `Renderer::cleanup_texture_cache` retains while their source buffers are still
 alive.
 
+Added `GpuManager::cleanup_texture_cache` and `GpuManager::invalidate_caches`, which apply the
+corresponding `Renderer` method to every enumerated device. `GpuManager::invalidate_caches`
+additionally drops the buffers cached for copying between a render and a target node, which no
+`Renderer` owns.
+
 ### Bugfixes
 
 `SimpleCrtcMapper` (in `smithay-drm-extras`) now releases the CRTC reservation of any connector that

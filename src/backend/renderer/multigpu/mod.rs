@@ -249,6 +249,37 @@ impl<A: GraphicsApi> GpuManager<A> {
         Ok(self.devices.iter_mut())
     }
 
+    /// Clean up the texture caches of every device enumerated by the API.
+    ///
+    /// See [`Renderer::cleanup_texture_cache`]. Cleanup is best-effort: every device is attempted
+    /// even if one of them fails, every failure is logged, and the first error is returned.
+    #[profiling::function]
+    pub fn cleanup_texture_cache(&mut self) -> Result<(), Error<A, A>> {
+        let mut result = Ok(());
+        for device in self.devices_mut().map_err(Error::RenderApiError)? {
+            result = result.and(cleanup_device_texture_cache(device).map_err(Error::Render));
+        }
+        result
+    }
+
+    /// Drop all caches held by this manager and by every device enumerated by the API.
+    ///
+    /// See [`Renderer::invalidate_caches`]. Beyond the per-device caches this also drops the
+    /// buffers cached for copying between a render- and a target-node.
+    ///
+    /// Invalidation is best-effort: every device is attempted even if one of them fails, every
+    /// failure is logged, and the first error is returned.
+    #[profiling::function]
+    pub fn invalidate_caches(&mut self) -> Result<(), Error<A, A>> {
+        self.dmabuf_cache.clear();
+
+        let mut result = Ok(());
+        for device in self.devices_mut().map_err(Error::RenderApiError)? {
+            result = result.and(invalidate_device_caches(device).map_err(Error::Render));
+        }
+        result
+    }
+
     /// Create a [`MultiRenderer`] from a single device.
     ///
     /// This a convenience function to deal with the same types even, if you only need one device.
