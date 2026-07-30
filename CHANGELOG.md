@@ -215,6 +215,10 @@ default implementations, which result in skipping the new functionality. As such
 
 `Output` now has `owns_xdg_output()` which allows you to match an XDG output protocol object with an `Output`.
 
+Added `Renderer::invalidate_caches`, which unconditionally drops all renderer-internal caches,
+including entries `Renderer::cleanup_texture_cache` retains while their source buffers are still
+alive.
+
 ### Bugfixes
 
 `SimpleCrtcMapper` (in `smithay-drm-extras`) now releases the CRTC reservation of any connector that

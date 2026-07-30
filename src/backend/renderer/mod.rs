@@ -446,6 +446,19 @@ pub trait Renderer: RendererSuper {
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
+
+    /// Drop all internal caches, freeing their resources unconditionally
+    ///
+    /// Unlike [`Renderer::cleanup_texture_cache`], this also discards cached imports and bind
+    /// targets whose source buffers are still alive.
+    ///
+    /// Note: Caches held outside the renderer, like per-surface textures in surface user-data,
+    /// are unaffected.
+    ///
+    /// The default implementation falls back to [`Renderer::cleanup_texture_cache`].
+    fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
+        self.cleanup_texture_cache()
+    }
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.

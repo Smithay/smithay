@@ -1361,6 +1361,35 @@ where
             .map_err(Error::Render)?;
         Ok(())
     }
+
+    #[profiling::function]
+    fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
+        let mut result = Ok(());
+        let render_devices =
+            std::iter::once(&mut *self.render).chain(self.other_renderers.iter_mut().map(|dev| &mut **dev));
+        for device in render_devices {
+            result = result.and(invalidate_device_caches(device).map_err(Error::Render));
+        }
+        if let Some(target) = self.target.as_mut() {
+            *target.cached_buffer = None;
+            result = result.and(invalidate_device_caches(&mut *target.device).map_err(Error::Target));
+        }
+        result
+    }
+}
+
+/// Invalidate a single device's caches, logging a failure against the node it happened on.
+///
+/// Callers apply this to every device they own and keep only the first error, so the log is what
+/// identifies any device that fails after that one.
+fn invalidate_device_caches<D: ApiDevice>(
+    device: &mut D,
+) -> Result<(), <D::Renderer as RendererSuper>::Error> {
+    let node = *device.node();
+    device
+        .renderer_mut()
+        .invalidate_caches()
+        .inspect_err(|err| warn!("Error invalidating caches of {}: {}", node, err))
 }
 
 fn create_shared_dma_framebuffer<R, T: GraphicsApi>(
@@ -3483,6 +3512,10 @@ where
 
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
         self.guard.as_mut().cleanup_texture_cache().map_err(Error::Render)
+    }
+
+    fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
+        self.guard.as_mut().invalidate_caches().map_err(Error::Render)
     }
 }
 
