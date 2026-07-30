@@ -8,7 +8,7 @@ use tracing::{info_span, instrument};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::Weak;
 
-use crate::backend::input::TouchSlot;
+use crate::backend::input::{InputTime, TouchSlot};
 use crate::utils::{IsAlive, Logical, Point, Serial};
 
 pub use grab::{DefaultGrab, GrabStartData, TouchDownGrab, TouchGrab};
@@ -144,8 +144,8 @@ pub struct DownEvent {
     pub location: Point<f64, Logical>,
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Pointer motion event
@@ -155,8 +155,8 @@ pub struct UpEvent {
     pub slot: TouchSlot,
     /// Serial of the event
     pub serial: Serial,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Pointer motion event
@@ -166,8 +166,8 @@ pub struct MotionEvent {
     pub slot: TouchSlot,
     /// Location of the touch in compositor space
     pub location: Point<f64, Logical>,
-    /// Timestamp of the event, with millisecond granularity
-    pub time: u32,
+    /// Timestamp of the event, with microsecond granularity
+    pub time: InputTime,
 }
 
 /// Pointer motion event

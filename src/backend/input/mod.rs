@@ -11,6 +11,34 @@ pub use tablet::{
     TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TabletToolType,
 };
 
+/// Input timestamp in microseconds, with an undefined base.
+///
+/// Libinput does not guarantee that timestamps always increase monotonically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct InputTime(u64);
+
+impl InputTime {
+    /// Input time from milliseconds
+    pub fn from_millis(milliseconds: u32) -> Self {
+        Self(u64::from(milliseconds) * 1000)
+    }
+
+    /// Input time from microseconds
+    pub fn from_micros(microseconds: u64) -> Self {
+        Self(microseconds)
+    }
+
+    /// Input time in milliseconds
+    pub fn millis(&self) -> u32 {
+        (self.0 / 1000) as u32
+    }
+
+    /// Input time in microseconds
+    pub fn micros(&self) -> u64 {
+        self.0
+    }
+}
+
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_pointer;
 
@@ -52,18 +80,13 @@ pub enum DeviceCapability {
 
 /// Trait for generic functions every input event does provide
 pub trait Event<B: InputBackend> {
-    /// Timestamp in milliseconds
-    fn time_msec(&self) -> u32 {
-        (self.time() / 1000) as u32
-    }
-
     /// Timestamp in microseconds, with an undefined base.
     ///
     /// Libinput does not guarantee that timestamps always increase monotonically.
     // # TODO:
     // - check if events can even arrive out of order.
     // - Make stronger time guarantees, if possible
-    fn time(&self) -> u64;
+    fn time(&self) -> InputTime;
 
     /// Returns the device, that generated this event
     fn device(&self) -> B::Device;
@@ -79,7 +102,7 @@ pub trait Event<B: InputBackend> {
 pub enum UnusedEvent {}
 
 impl<B: InputBackend> Event<B> for UnusedEvent {
-    fn time(&self) -> u64 {
+    fn time(&self) -> InputTime {
         match *self {}
     }
 

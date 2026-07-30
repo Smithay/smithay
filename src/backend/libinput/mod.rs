@@ -1,7 +1,7 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
 use crate::backend::input::{
-    self as backend, Axis, AxisRelativeDirection, AxisSource, InputBackend, InputEvent,
+    self as backend, Axis, AxisRelativeDirection, AxisSource, InputBackend, InputEvent, InputTime,
 };
 #[cfg(feature = "backend_session")]
 use crate::backend::session::{AsErrno, Session};
@@ -101,8 +101,8 @@ impl From<backend::DeviceCapability> for libinput::DeviceCapability {
 }
 
 impl backend::Event<LibinputInputBackend> for event::keyboard::KeyboardKeyEvent {
-    fn time(&self) -> u64 {
-        event::keyboard::KeyboardEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::keyboard::KeyboardEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -127,8 +127,8 @@ impl backend::KeyboardKeyEvent<LibinputInputBackend> for event::keyboard::Keyboa
 }
 
 impl backend::Event<LibinputInputBackend> for event::switch::SwitchToggleEvent {
-    fn time(&self) -> u64 {
-        event::switch::SwitchEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::switch::SwitchEventTrait::time_usec(self))
     }
 
     fn device(&self) -> <LibinputInputBackend as InputBackend>::Device {
@@ -178,12 +178,12 @@ impl PointerScrollAxis {
 }
 
 impl backend::Event<LibinputInputBackend> for PointerScrollAxis {
-    fn time(&self) -> u64 {
-        match self {
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(match self {
             Self::Wheel(evt) => event::pointer::PointerEventTrait::time_usec(evt),
             Self::Finger(evt) => event::pointer::PointerEventTrait::time_usec(evt),
             Self::Continuous(evt) => event::pointer::PointerEventTrait::time_usec(evt),
-        }
+        })
     }
 
     fn device(&self) -> libinput::Device {
@@ -242,8 +242,8 @@ impl backend::PointerAxisEvent<LibinputInputBackend> for PointerScrollAxis {
 }
 
 impl backend::Event<LibinputInputBackend> for event::pointer::PointerButtonEvent {
-    fn time(&self) -> u64 {
-        event::pointer::PointerEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::pointer::PointerEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -262,8 +262,8 @@ impl backend::PointerButtonEvent<LibinputInputBackend> for event::pointer::Point
 }
 
 impl backend::Event<LibinputInputBackend> for event::pointer::PointerMotionEvent {
-    fn time(&self) -> u64 {
-        event::pointer::PointerEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::pointer::PointerEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -290,8 +290,8 @@ impl backend::PointerMotionEvent<LibinputInputBackend> for event::pointer::Point
 }
 
 impl backend::Event<LibinputInputBackend> for event::pointer::PointerMotionAbsoluteEvent {
-    fn time(&self) -> u64 {
-        event::pointer::PointerEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::pointer::PointerEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -341,8 +341,8 @@ where
 }
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeBeginEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -353,8 +353,8 @@ impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeBeginE
 impl backend::GestureSwipeBeginEvent<LibinputInputBackend> for event::gesture::GestureSwipeBeginEvent {}
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeUpdateEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -373,8 +373,8 @@ impl backend::GestureSwipeUpdateEvent<LibinputInputBackend> for event::gesture::
 }
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeEndEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -385,8 +385,8 @@ impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeEndEve
 impl backend::GestureSwipeEndEvent<LibinputInputBackend> for event::gesture::GestureSwipeEndEvent {}
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchBeginEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -397,8 +397,8 @@ impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchBeginE
 impl backend::GesturePinchBeginEvent<LibinputInputBackend> for event::gesture::GesturePinchBeginEvent {}
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchUpdateEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -425,8 +425,8 @@ impl backend::GesturePinchUpdateEvent<LibinputInputBackend> for event::gesture::
 }
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchEndEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -437,8 +437,8 @@ impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchEndEve
 impl backend::GesturePinchEndEvent<LibinputInputBackend> for event::gesture::GesturePinchEndEvent {}
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GestureHoldBeginEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -449,8 +449,8 @@ impl backend::Event<LibinputInputBackend> for event::gesture::GestureHoldBeginEv
 impl backend::GestureHoldBeginEvent<LibinputInputBackend> for event::gesture::GestureHoldBeginEvent {}
 
 impl backend::Event<LibinputInputBackend> for event::gesture::GestureHoldEndEvent {
-    fn time(&self) -> u64 {
-        event::gesture::GestureEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::gesture::GestureEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -461,8 +461,8 @@ impl backend::Event<LibinputInputBackend> for event::gesture::GestureHoldEndEven
 impl backend::GestureHoldEndEvent<LibinputInputBackend> for event::gesture::GestureHoldEndEvent {}
 
 impl backend::Event<LibinputInputBackend> for event::touch::TouchDownEvent {
-    fn time(&self) -> u64 {
-        event::touch::TouchEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::touch::TouchEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -497,8 +497,8 @@ impl backend::AbsolutePositionEvent<LibinputInputBackend> for event::touch::Touc
 }
 
 impl backend::Event<LibinputInputBackend> for event::touch::TouchMotionEvent {
-    fn time(&self) -> u64 {
-        event::touch::TouchEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::touch::TouchEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -533,8 +533,8 @@ impl backend::AbsolutePositionEvent<LibinputInputBackend> for event::touch::Touc
 }
 
 impl backend::Event<LibinputInputBackend> for event::touch::TouchUpEvent {
-    fn time(&self) -> u64 {
-        event::touch::TouchEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::touch::TouchEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -551,8 +551,8 @@ impl backend::TouchEvent<LibinputInputBackend> for event::touch::TouchUpEvent {
 }
 
 impl backend::Event<LibinputInputBackend> for event::touch::TouchCancelEvent {
-    fn time(&self) -> u64 {
-        event::touch::TouchEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::touch::TouchEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
@@ -569,8 +569,8 @@ impl backend::TouchEvent<LibinputInputBackend> for event::touch::TouchCancelEven
 }
 
 impl backend::Event<LibinputInputBackend> for event::touch::TouchFrameEvent {
-    fn time(&self) -> u64 {
-        event::touch::TouchEventTrait::time_usec(self)
+    fn time(&self) -> InputTime {
+        InputTime::from_micros(event::touch::TouchEventTrait::time_usec(self))
     }
 
     fn device(&self) -> libinput::Device {
