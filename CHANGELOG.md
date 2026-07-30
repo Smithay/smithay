@@ -237,6 +237,12 @@ are emitted with a stale wl_output anymore.
 The XWayland WM implementation previously incorrectly prefixed large transfers from X11 windows with
 the four INCR bytes.
 
+`MultiRenderer::cleanup_texture_cache` now also cleans up the devices other than the render and
+target device. Buffers that cannot be imported on the render node directly are imported on their
+source device, so those devices accumulate cached imports that previously were never released.
+Cleanup is now also attempted on every device even if it fails on one of them, with every failure
+logged and the first error returned.
+
 ## 0.7.0
 
 ### Breaking changes
