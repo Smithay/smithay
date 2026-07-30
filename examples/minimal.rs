@@ -24,6 +24,7 @@ use smithay::{
             CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, TraversalAction,
             with_surface_tree_downward,
         },
+        pointer_constraints::PointerConstraintsHandler,
         selection::{
             SelectionHandler,
             data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler},
@@ -115,6 +116,8 @@ impl SeatHandler for App {
     fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
     fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
 }
+
+impl PointerConstraintsHandler for App {}
 
 struct App {
     compositor_state: CompositorState,

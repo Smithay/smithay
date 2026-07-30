@@ -31,6 +31,7 @@
 //! use smithay::wayland::selection::primary_selection::{PrimarySelectionState, PrimarySelectionHandler};
 //! # use smithay::input::{Seat, SeatHandler, SeatState, pointer::CursorImageStatus};
 //! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //!
 //! # struct State { primary_selection_state: PrimarySelectionState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -56,6 +57,7 @@
 //! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
 //! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
 //! # }
+//! # impl PointerConstraintsHandler for State {}
 //! impl SelectionHandler for State {
 //!     type SelectionUserData = ();
 //! }

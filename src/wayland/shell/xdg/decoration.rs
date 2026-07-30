@@ -63,6 +63,7 @@
 //!
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
@@ -86,6 +87,7 @@
 //!         // handle new images for the cursor ...
 //!     }
 //! }
+//! # impl PointerConstraintsHandler for State {}
 //!
 //! smithay::delegate_dispatch2!(State);
 //!
