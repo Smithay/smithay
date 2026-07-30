@@ -92,6 +92,16 @@ impl AlphaModifierSurfaceCachedState {
         self.multiplier
     }
 
+    /// Sets the alpha multiplier for the surface.
+    ///
+    /// This allows compositors to drive the multiplier from sources other than
+    /// `wp_alpha_modifier` (e.g. bridging Chromium's `zcr_alpha_compositing_v1`).
+    /// When called on the pending state, the value takes effect on the next
+    /// `wl_surface.commit`, just like a client `set_multiplier` request.
+    pub fn set_multiplier(&mut self, multiplier: Option<u32>) {
+        self.multiplier = multiplier;
+    }
+
     /// Alpha multiplier for the surface
     pub fn multiplier_f32(&self) -> Option<f32> {
         self.multiplier
