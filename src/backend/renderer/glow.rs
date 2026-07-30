@@ -283,6 +283,11 @@ impl Renderer for GlowRenderer {
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
         self.gl.as_mut().cleanup_texture_cache()
     }
+
+    #[profiling::function]
+    fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
+        self.gl.as_mut().invalidate_caches()
+    }
 }
 
 impl Frame for GlowFrame<'_, '_> {

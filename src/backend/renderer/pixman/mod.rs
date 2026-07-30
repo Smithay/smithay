@@ -892,6 +892,12 @@ impl Renderer for PixmanRenderer {
         self.cleanup();
         Ok(())
     }
+
+    fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
+        self.dmabuf_cache.clear();
+        self.buffers.clear();
+        Ok(())
+    }
 }
 
 impl ImportMem for PixmanRenderer {
@@ -1316,5 +1322,85 @@ where
         PixmanFrameGuard {
             renderer: &mut self.renderer,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::allocator::dmabuf::DmabufFlags;
+
+    const SIZE: i32 = 4;
+    const BYTES_PER_PIXEL: u32 = 4;
+    const STRIDE: u32 = SIZE as u32 * BYTES_PER_PIXEL;
+
+    // A memfd stands in for a real dmabuf: `Dmabuf::builder` accepts any fd and
+    // `map_plane` is a plain mmap, which is all the cache entries below need.
+    fn memfd_dmabuf() -> Dmabuf {
+        let fd = rustix::fs::memfd_create("dmabuf-stand-in", rustix::fs::MemfdFlags::CLOEXEC).unwrap();
+        rustix::fs::ftruncate(&fd, (STRIDE * SIZE as u32) as u64).unwrap();
+        let mut builder = Dmabuf::builder(
+            (SIZE, SIZE),
+            DrmFourcc::Argb8888,
+            DrmModifier::Linear,
+            DmabufFlags::empty(),
+        );
+        builder.add_plane(fd, 0, STRIDE);
+        builder.build().unwrap()
+    }
+
+    fn cache_entry(dmabuf: &Dmabuf) -> PixmanImage {
+        let mapping = dmabuf.map_plane(0, DmabufMappingMode::READ).unwrap();
+        let image = pixman::Image::new(FormatCode::A8R8G8B8, SIZE as usize, SIZE as usize, false).unwrap();
+        PixmanImage(Arc::new(PixmanImageInner {
+            #[cfg(feature = "wayland_frontend")]
+            buffer: None,
+            dmabuf: Some(PixmanDmabufMapping {
+                dmabuf: dmabuf.weak(),
+                _mapping: mapping,
+            }),
+            image: Mutex::new(image),
+            _flipped: false,
+        }))
+    }
+
+    #[test]
+    fn cleanup_texture_cache_retains_live_entries() {
+        let mut renderer = PixmanRenderer::new().unwrap();
+        let dmabuf = memfd_dmabuf();
+        renderer.dmabuf_cache.push(cache_entry(&dmabuf));
+        renderer.buffers.push(cache_entry(&dmabuf));
+
+        renderer.cleanup_texture_cache().unwrap();
+
+        assert_eq!(renderer.dmabuf_cache.len(), 1);
+        assert_eq!(renderer.buffers.len(), 1);
+    }
+
+    #[test]
+    fn cleanup_texture_cache_drops_dead_entries() {
+        let mut renderer = PixmanRenderer::new().unwrap();
+        let dmabuf = memfd_dmabuf();
+        renderer.dmabuf_cache.push(cache_entry(&dmabuf));
+        renderer.buffers.push(cache_entry(&dmabuf));
+        drop(dmabuf);
+
+        renderer.cleanup_texture_cache().unwrap();
+
+        assert!(renderer.dmabuf_cache.is_empty());
+        assert!(renderer.buffers.is_empty());
+    }
+
+    #[test]
+    fn invalidate_caches_drops_live_entries() {
+        let mut renderer = PixmanRenderer::new().unwrap();
+        let dmabuf = memfd_dmabuf();
+        renderer.dmabuf_cache.push(cache_entry(&dmabuf));
+        renderer.buffers.push(cache_entry(&dmabuf));
+
+        renderer.invalidate_caches().unwrap();
+
+        assert!(renderer.dmabuf_cache.is_empty());
+        assert!(renderer.buffers.is_empty());
     }
 }

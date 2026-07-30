@@ -2350,6 +2350,17 @@ impl Renderer for GlesRenderer {
         self.cleanup();
         Ok(())
     }
+
+    #[profiling::function]
+    fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
+        unsafe {
+            self.egl.make_current()?;
+        }
+        self.dmabuf_cache.clear();
+        self.buffers.clear();
+        self.cleanup();
+        Ok(())
+    }
 }
 
 /// Vertices for instanced rendering.
