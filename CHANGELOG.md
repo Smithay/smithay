@@ -204,6 +204,8 @@ default implementations, which result in skipping the new functionality. As such
 - `lower_element()`: lowers an element to the bottom of the stack, respecting its z-index group.
 - `relocate_element()`: moves an element to a new location in the space without changing the stacking order.
 
+`Output` now has `owns_xdg_output()` which allows you to match an XDG output protocol object with an `Output`.
+
 ### Bugfixes
 
 `SimpleCrtcMapper` (in `smithay-drm-extras`) now releases the CRTC reservation of any connector that
