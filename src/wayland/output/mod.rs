@@ -82,6 +82,7 @@ use crate::{
 use portable_atomic::AtomicF64;
 use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
+use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
 use wayland_server::{
     Client, DisplayHandle, GlobalDispatch, Resource,
     backend::{ClientId, GlobalId},
@@ -268,6 +269,26 @@ impl Output {
             .instances
             .iter()
             .any(|o| o.id() == output.id())
+    }
+
+    /// Check if given [`xdg_output`](ZxdgOutputV1) instance is managed by this [`Output`].
+    pub fn owns_xdg_output(&self, output: &ZxdgOutputV1) -> bool {
+        self.inner
+            .0
+            .lock()
+            .unwrap()
+            .xdg_output
+            .as_ref()
+            .map(|xdg_output| {
+                xdg_output
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .instances
+                    .iter()
+                    .any(|o| o.id() == output.id())
+            })
+            .unwrap_or(false)
     }
 
     /// This function returns all managed [WlOutput] matching the provided [Client]
