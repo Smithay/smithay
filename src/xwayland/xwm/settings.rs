@@ -159,13 +159,16 @@ impl XSettings {
         self.values.get(name).map(|setting| &setting.val)
     }
 
-    #[allow(dead_code)]
     pub fn remove<Q>(&mut self, name: &Q) -> Option<Value>
     where
         Q: Hash + Eq + ?Sized,
         String: Borrow<Q>,
     {
         self.values.remove(name).map(|setting| setting.val)
+    }
+
+    pub fn clear(&mut self) {
+        self.values.clear();
     }
 
     fn serialize(&mut self) -> Vec<u8> {
