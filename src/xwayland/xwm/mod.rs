@@ -1382,6 +1382,23 @@ impl X11Wm {
         Ok(())
     }
 
+    /// Removes settings from XSETTINGS.
+    pub fn remove_xsettings(&mut self, names: impl Iterator<Item = String>) -> Result<(), ConnectionError> {
+        let removed = names.fold(false, |any_removed, name| {
+            self.xsettings.remove(&name).is_some() | any_removed
+        });
+        if removed {
+            self.xsettings.update(&self.conn)?;
+        }
+        Ok(())
+    }
+
+    /// Clears all settings from XSETTINGS.
+    pub fn clear_xsettings(&mut self) -> Result<(), ConnectionError> {
+        self.xsettings.clear();
+        self.xsettings.update(&self.conn)
+    }
+
     /// Gets the current primary output as advertised by xrandr
     pub fn get_randr_primary_output(&self) -> Result<Option<String>, ReplyError> {
         let current_primary = self

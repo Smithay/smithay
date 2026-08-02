@@ -133,6 +133,8 @@ allowing DnD operations between X11 and Wayland clients (both directions).
 
 `X11Surface` now parses and exposes the Motif WM hints via `motif_hints()`.
 
+`X11Wm` allows you to remove and clear XSETTINGS settings.
+
 xdg_shell and layer_shell now enforce the client acking a configure before committing a buffer, as required by the protocols.
 
 ```rs
