@@ -436,8 +436,16 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             })
             .collect::<Vec<_>>();
         for e in &mut self.elements {
-            let bbox = e.bbox();
+            e.outputs.retain(|output, _| {
+                if !outputs.iter().any(|(o, _)| o == output) {
+                    e.element.output_leave(output);
+                    false
+                } else {
+                    true
+                }
+            });
 
+            let bbox = e.bbox();
             for (output, output_geometry) in &outputs {
                 // Check if the bounding box of the toplevel intersects with the output
                 if let Some(mut overlap) = output_geometry.intersection(bbox) {
@@ -451,14 +459,6 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                     e.element.output_leave(output);
                 }
             }
-            e.outputs.retain(|output, _| {
-                if !outputs.iter().any(|(o, _)| o == output) {
-                    e.element.output_leave(output);
-                    false
-                } else {
-                    true
-                }
-            });
         }
 
         self.elements.iter().for_each(|e| e.element.refresh());
