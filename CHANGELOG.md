@@ -220,6 +220,9 @@ CRTC.
 XWayland now honors WM_HINTS request to map the window in IconicState(minimized). Compositors should
 check X11Surface::is_hidden() at mapping time and minimize the window appropriately.
 
+Space::refresh() now clears stale outputs before emitting any enter events so no wl_surface.enter events
+are emitted with a stale wl_output anymore.
+
 ## 0.7.0
 
 ### Breaking changes
