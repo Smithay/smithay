@@ -690,6 +690,7 @@ impl OutputDamageTracker {
         for (z_index, element) in render_elements
             .iter()
             .enumerate()
+            .rev()
             .filter(|(_, e)| e.is_framebuffer_effect())
         {
             let damage_index = if force_effect_redraw {
