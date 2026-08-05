@@ -659,7 +659,7 @@ impl OutputDamageTracker {
         element_damage.extend_from_slice(&self.last_state.opaque_regions);
         element_damage =
             Rectangle::subtract_rects_many_in_place(element_damage, self.opaque_regions.iter().copied());
-        if !element_damage.is_empty() {
+        if element_damage.iter().any(|rect| !rect.is_empty()) {
             force_effect_redraw = true;
         }
         self.damage.extend_from_slice(&element_damage);
