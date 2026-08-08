@@ -151,19 +151,12 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
         event: &DownEvent,
     ) {
         handle.down(data, focus.clone(), event);
-        handle.set_grab(
-            self,
-            data,
-            event.serial,
-            TouchDownGrab {
-                start_data: GrabStartData {
-                    focus,
-                    slot: event.slot,
-                    location: event.location,
-                },
-                touch_points: 1,
-            },
-        );
+        let grab = data.touch_down_grab(GrabStartData {
+            focus,
+            slot: event.slot,
+            location: event.location,
+        });
+        handle.set_grab(self, data, event.serial, grab);
     }
 
     fn up(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>, event: &UpEvent) {
@@ -213,6 +206,15 @@ pub struct TouchDownGrab<D: SeatHandler> {
     pub start_data: GrabStartData<D>,
     /// Currently active touch points
     pub touch_points: usize,
+}
+
+impl<D: SeatHandler> TouchDownGrab<D> {
+    pub(in crate::input) fn new(start_data: GrabStartData<D>) -> Self {
+        Self {
+            start_data,
+            touch_points: 1,
+        }
+    }
 }
 
 impl<D: SeatHandler + 'static> fmt::Debug for TouchDownGrab<D> {
