@@ -21,7 +21,7 @@
 //!     }
 //! }
 //! ```
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use drm::control::{Device as ControlDevice, connector, crtc};
 
@@ -30,6 +30,20 @@ pub use connector_scanner::{ConnectorScanEvent, ConnectorScanResult, ConnectorSc
 
 mod crtc_mapper;
 pub use crtc_mapper::{CrtcMapper, SimpleCrtcMapper};
+
+fn newly_mapped_connectors(
+    previously_mapped: &HashSet<connector::Handle>,
+    connected_events: &HashSet<connector::Handle>,
+    current_mappings: impl Iterator<Item = (connector::Handle, Option<crtc::Handle>)>,
+) -> Vec<(connector::Handle, crtc::Handle)> {
+    current_mappings
+        .filter_map(|(connector, crtc)| {
+            let crtc = crtc?;
+            (!previously_mapped.contains(&connector) && !connected_events.contains(&connector))
+                .then_some((connector, crtc))
+        })
+        .collect()
+}
 
 /// Drm Scanner
 ///
@@ -105,6 +119,13 @@ where
     /// ```
     pub fn scan_connectors(&mut self, drm: &impl ControlDevice) -> std::io::Result<DrmScanResult> {
         let scan = self.connectors.scan(drm)?;
+        let previously_mapped: HashSet<_> = self
+            .connectors
+            .connectors()
+            .keys()
+            .filter(|connector| self.crtc_mapper.crtc_for_connector(connector).is_some())
+            .copied()
+            .collect();
 
         let removed = scan
             .disconnected
@@ -117,7 +138,7 @@ where
 
         self.crtc_mapper.map(drm, self.connectors.connectors().values());
 
-        let added = scan
+        let mut added: Vec<_> = scan
             .connected
             .into_iter()
             .map(|info| {
@@ -125,6 +146,28 @@ where
                 (info, crtc)
             })
             .collect();
+        let connected_events: HashSet<_> = added.iter().map(|(info, _)| info.handle()).collect();
+
+        // A connected connector can remain unmapped when every compatible CRTC is occupied. If a
+        // later scan releases a CRTC, the mapper can assign it without a corresponding connector
+        // state change. Report that connector now so consumers can activate the new mapping.
+        let newly_mapped = newly_mapped_connectors(
+            &previously_mapped,
+            &connected_events,
+            self.connectors
+                .connectors()
+                .values()
+                .filter(|info| info.state() == connector::State::Connected)
+                .map(|info| (info.handle(), self.crtc_mapper.crtc_for_connector(&info.handle()))),
+        );
+
+        added.extend(newly_mapped.into_iter().filter_map(|(connector, crtc)| {
+            self.connectors
+                .connectors()
+                .get(&connector)
+                .cloned()
+                .map(|info| (info, Some(crtc)))
+        }));
 
         let changed = scan
             .changed
@@ -171,7 +214,7 @@ type DrmScanItem = (connector::Info, Option<crtc::Handle>);
 /// over this result to get [`DrmScanEvent`].
 #[derive(Debug, Default, Clone)]
 pub struct DrmScanResult {
-    /// Connectors that got plugged in since last scan
+    /// Connectors that got plugged in or became mapped to a CRTC since last scan
     pub connected: Vec<DrmScanItem>,
     /// Connectors that got unplugged since last scan
     pub disconnected: Vec<DrmScanItem>,
@@ -191,7 +234,7 @@ impl DrmScanResult {
 /// Created from [`DrmScanResult`], informs about connector events.
 #[derive(Debug, Clone)]
 pub enum DrmScanEvent {
-    /// A new connector got plugged in since last scan
+    /// A connector got plugged in or became mapped to a CRTC since last scan
     Connected {
         /// Info about connected connector
         connector: connector::Info,
@@ -240,5 +283,38 @@ impl IntoIterator for DrmScanResult {
             .chain(self.changed.into_iter().map(DrmScanEvent::changed))
             .collect::<Vec<_>>()
             .into_iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_connector_when_crtc_mapping_becomes_available() {
+        let already_mapped = drm::control::from_u32::<connector::Handle>(1).unwrap();
+        let newly_mapped = drm::control::from_u32::<connector::Handle>(2).unwrap();
+        let newly_connected = drm::control::from_u32::<connector::Handle>(3).unwrap();
+        let still_unmapped = drm::control::from_u32::<connector::Handle>(4).unwrap();
+        let first_crtc = drm::control::from_u32::<crtc::Handle>(5).unwrap();
+        let second_crtc = drm::control::from_u32::<crtc::Handle>(6).unwrap();
+        let third_crtc = drm::control::from_u32::<crtc::Handle>(7).unwrap();
+        let previously_mapped = HashSet::from([already_mapped]);
+        let connected_events = HashSet::from([newly_connected]);
+        let current_mappings = [
+            (already_mapped, Some(first_crtc)),
+            (newly_mapped, Some(second_crtc)),
+            (newly_connected, Some(third_crtc)),
+            (still_unmapped, None),
+        ];
+
+        assert_eq!(
+            newly_mapped_connectors(
+                &previously_mapped,
+                &connected_events,
+                current_mappings.into_iter(),
+            ),
+            vec![(newly_mapped, second_crtc)]
+        );
     }
 }
