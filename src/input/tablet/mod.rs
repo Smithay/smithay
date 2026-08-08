@@ -154,7 +154,10 @@ use crate::{
     input::{
         Seat, SeatHandler,
         pointer::CursorImageStatus,
-        tablet::tool::{TabletToolGrab, TabletToolHandle, TabletToolTarget},
+        tablet::tool::{
+            DownGrab, GrabStartData as TabletToolGrabStartData, TabletToolGrab, TabletToolHandle,
+            TabletToolTarget,
+        },
     },
 };
 
@@ -319,6 +322,15 @@ pub trait TabletSeatHandler: SeatHandler + Sized {
     fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
         let _ = tool;
         let _ = image;
+    }
+
+    /// Provides the implicit tool grab for down events
+    ///
+    /// When the user presses down a tool, an implicit grab is installed. If your
+    /// compositor needs custom behavior for this grab, you can implement this trait item and
+    /// return your own [`TabletToolGrab`] implementation.
+    fn down_grab(&mut self, start_data: TabletToolGrabStartData<Self>) -> impl TabletToolGrab<Self> {
+        DownGrab::new(start_data)
     }
 }
 
