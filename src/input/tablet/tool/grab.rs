@@ -207,21 +207,12 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DefaultGrab {
     fn down(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, event: &DownEvent) {
         handle.down(data, event);
 
-        handle.set_grab(
-            self,
-            data,
-            event.time,
-            event.serial,
-            Focus::Keep,
-            DownGrab {
-                start_data: GrabStartData {
-                    focus: handle.current_focus(),
-                    trigger: GrabTrigger::Tip,
-                    location: handle.current_location(),
-                },
-                focus: handle.current_focus(),
-            },
-        );
+        let grab = data.down_grab(GrabStartData {
+            focus: handle.current_focus(),
+            trigger: GrabTrigger::Tip,
+            location: handle.current_location(),
+        });
+        handle.set_grab(self, data, event.time, event.serial, Focus::Keep, grab);
     }
 
     fn up(&mut self, data: &mut D, handle: &mut TabletToolInnerHandle<'_, D>, event: &UpEvent) {
@@ -248,6 +239,15 @@ impl<D: TabletSeatHandler + 'static> TabletToolGrab<D> for DefaultGrab {
 pub struct DownGrab<D: TabletSeatHandler> {
     start_data: GrabStartData<D>,
     focus: Option<(<D as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
+}
+
+impl<D: TabletSeatHandler> DownGrab<D> {
+    pub(in crate::input) fn new(start_data: GrabStartData<D>) -> Self {
+        Self {
+            focus: start_data.focus.clone(),
+            start_data,
+        }
+    }
 }
 
 impl<D: TabletSeatHandler + 'static> fmt::Debug for DownGrab<D> {
