@@ -138,7 +138,10 @@ use self::{
     touch::TouchGrab,
 };
 use crate::{
-    input::pointer::{ClickGrab, GrabStartData as PointerGrabStartData, PointerGrab},
+    input::{
+        pointer::{ClickGrab, GrabStartData as PointerGrabStartData, PointerGrab},
+        touch::{GrabStartData as TouchGrabStartData, TouchDownGrab},
+    },
     utils::{Serial, user_data::UserDataMap},
 };
 
@@ -176,6 +179,15 @@ pub trait SeatHandler: Sized + 'static {
     /// return your own [`PointerGrab`] implementation.
     fn click_grab(&mut self, start_data: PointerGrabStartData<Self>) -> impl PointerGrab<Self> {
         ClickGrab::new(start_data)
+    }
+
+    /// Provides the implicit touch grab for down events
+    ///
+    /// When the user presses down on the touchscreen, an implicit grab is installed. If your
+    /// compositor needs custom behavior for this grab, you can implement this trait item and
+    /// return your own [`TouchGrab`] implementation.
+    fn touch_down_grab(&mut self, start_data: TouchGrabStartData<Self>) -> impl TouchGrab<Self> {
+        TouchDownGrab::new(start_data)
     }
 }
 /// Delegate type for all [Seat] globals.
