@@ -370,10 +370,11 @@ fn get_non_master_fd<P: AsRef<Path>>(path: P) -> Result<OwnedFd, Error> {
 
     // Attempt to drop master unconditionally. EINVAL means the fd never had
     // master to begin with (common on drivers like nvidia-drm that mark all
-    // clients as authenticated regardless of master status)
+    // clients as authenticated regardless of master status). EPERM means
+    // the file descriptor is not authenticated in the first place.
     match drm_ffi::auth::release_master(fd.as_fd()) {
         Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::InvalidInput => {}
+        Err(e) if e.kind() == io::ErrorKind::InvalidInput || e.kind() == io::ErrorKind::PermissionDenied => {}
         Err(e) => return Err(Error::UnableToDropMaster(e)),
     }
 
