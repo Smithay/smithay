@@ -48,8 +48,7 @@
 //! // You're now ready to go!
 //! ```
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use _session_lock::ext_session_lock_manager_v1::{ExtSessionLockManagerV1, Request};
 use _session_lock::ext_session_lock_v1::ExtSessionLockV1;
@@ -71,10 +70,22 @@ pub use surface::{
 
 const MANAGER_VERSION: u32 = 1;
 
+#[derive(Debug)]
+enum LockStatus {
+    Unlocked,
+    Locked(ExtSessionLockV1),
+}
+
+impl LockStatus {
+    fn is_locked_by(&self, session_lock: &ExtSessionLockV1) -> bool {
+        matches!(self, Self::Locked(owning_session_lock) if owning_session_lock == session_lock)
+    }
+}
+
 /// State of the [`ExtSessionLockManagerV1`] Global.
 #[derive(Debug)]
 pub struct SessionLockManagerState {
-    pub(crate) locked_outputs: Vec<WlOutput>,
+    lock_status: Arc<Mutex<LockStatus>>,
 }
 
 impl SessionLockManagerState {
@@ -94,7 +105,7 @@ impl SessionLockManagerState {
         display.create_global::<D, ExtSessionLockManagerV1, _>(MANAGER_VERSION, data);
 
         Self {
-            locked_outputs: Vec::new(),
+            lock_status: Arc::new(Mutex::new(LockStatus::Unlocked)),
         }
     }
 }
@@ -146,8 +157,8 @@ where
         match request {
             Request::Lock { id } => {
                 let lock_state = SessionLockState::new();
-                let lock_status = lock_state.lock_status.clone();
                 let lock = data_init.init(id, lock_state);
+                let lock_status = Arc::clone(&state.lock_state().lock_status);
                 state.lock(SessionLocker::new(lock, lock_status));
             }
             Request::Destroy => (),
@@ -187,7 +198,7 @@ pub trait SessionLockHandler {
 #[derive(Debug)]
 pub struct SessionLocker {
     lock: Option<ExtSessionLockV1>,
-    lock_status: Arc<AtomicBool>,
+    lock_status: Arc<Mutex<LockStatus>>,
 }
 
 impl Drop for SessionLocker {
@@ -200,7 +211,7 @@ impl Drop for SessionLocker {
 }
 
 impl SessionLocker {
-    fn new(lock: ExtSessionLockV1, lock_status: Arc<AtomicBool>) -> Self {
+    fn new(lock: ExtSessionLockV1, lock_status: Arc<Mutex<LockStatus>>) -> Self {
         Self {
             lock: Some(lock),
             lock_status,
@@ -215,7 +226,7 @@ impl SessionLocker {
     /// Notify the client that the session lock was successful.
     pub fn lock(mut self) {
         if let Some(lock) = self.lock.take() {
-            self.lock_status.store(true, Ordering::Relaxed);
+            *self.lock_status.lock().unwrap() = LockStatus::Locked(lock.clone());
             lock.locked();
         }
     }
