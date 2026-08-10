@@ -113,6 +113,13 @@ The `SpaceElement::geometry` impl for `X11Surface` is no longer equivalent to it
 `X11Surface::geometry` has been renamed to `X11Surface::last_configure`. `X11Surface::geometry` now returns the bounding
 box minus the surface's frame extents.
 
+`SessionLockHandler::unlock` will no longer be called if the `ext_session_lock_v1` instance that sent the
+`unlock_and_destroy` request is not the same instance as the one that successfully locked the session.
+
+`SessionLockHandler::new_surface` can be called for multiple `SessionLocker` instances that could be in-flight at the same
+time. `LockSurface::ext_session_lock` has been added to allow the compositor to disambiguate, and associate lock surfaces
+with the correct lock instance.
+
 ### Additions
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
