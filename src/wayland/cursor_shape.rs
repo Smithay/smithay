@@ -308,8 +308,7 @@ where
                         }
 
                         let cursor_icon = shape_to_cursor_icon(shape);
-                        state
-                            .tablet_tool_image(&handle.arc.descriptor, CursorImageStatus::Named(cursor_icon));
+                        state.tablet_tool_image(&handle, CursorImageStatus::Named(cursor_icon));
                     }
                 }
             }

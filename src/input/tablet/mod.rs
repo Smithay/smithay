@@ -27,7 +27,7 @@
 //! #             GestureHoldBeginEvent, GestureHoldEndEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
 //! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget, FrameMarker},
-//! #   tablet::{Tablet, tool::{self, TabletToolTarget}},
+//! #   tablet::{Tablet, tool::{self, TabletToolHandle, TabletToolTarget}},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
 //!
@@ -123,7 +123,7 @@
 //! impl TabletSeatHandler for State {
 //!     type ToolFocus = Target;
 //!
-//!     fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
+//!     fn tablet_tool_image(&mut self, tool: &TabletToolHandle<Self>, image: CursorImageStatus) {
 //!         // handle new image for the given tool.
 //!     }
 //! }
@@ -319,7 +319,7 @@ pub trait TabletSeatHandler: SeatHandler + Sized {
     type ToolFocus: TabletToolTarget<Self> + PartialEq + Clone + 'static;
 
     /// Callback that will be notified whenever a client requests to set a custom tool image.
-    fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
+    fn tablet_tool_image(&mut self, tool: &TabletToolHandle<Self>, image: CursorImageStatus) {
         let _ = tool;
         let _ = image;
     }
