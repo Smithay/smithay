@@ -9,7 +9,7 @@
 //!
 //! ```
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
-//! use smithay::input::tablet::{TabletSeatHandler, TabletSeatTrait};
+//! use smithay::input::tablet::{tool::TabletToolHandle, TabletSeatHandler, TabletSeatTrait};
 //! use smithay::backend::input::TabletToolDescriptor;
 //! use smithay::wayland::tablet_manager::{TabletManagerState};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
@@ -56,7 +56,7 @@
 //! impl TabletSeatHandler for State {
 //!     type ToolFocus = WlSurface;
 //!
-//!     fn tablet_tool_image(&mut self, tool: &TabletToolDescriptor, image: CursorImageStatus) {
+//!     fn tablet_tool_image(&mut self, tool: &TabletToolHandle<Self>, image: CursorImageStatus) {
 //!         // handle new image for the given tool.
 //!     }
 //! }
