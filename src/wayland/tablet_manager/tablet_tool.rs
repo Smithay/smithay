@@ -442,6 +442,16 @@ where
                     return;
                 }
 
+                let Some(seat) = state
+                    .seat_state()
+                    .seats
+                    .iter()
+                    .find(|seat| seat.tablet_seat().get_tool(handle.descriptor()).is_some())
+                    .cloned()
+                else {
+                    return;
+                };
+
                 let cursor_image = match surface {
                     Some(surface) => {
                         if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
@@ -486,7 +496,7 @@ where
                     None => CursorImageStatus::Hidden,
                 };
 
-                state.tablet_tool_image(&handle, cursor_image);
+                state.tablet_tool_image(&seat, &handle, cursor_image);
             }
             zwp_tablet_tool_v2::Request::Destroy => {
                 // Nothing to do
