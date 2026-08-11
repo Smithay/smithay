@@ -73,8 +73,12 @@ const MANAGER_VERSION: u32 = 1;
 
 #[derive(Debug)]
 enum LockStatus {
+    /// The session is unlocked.
     Unlocked,
+    /// The session has been locked, and is owned by the specified instance.
     Locked(ExtSessionLockV1),
+    /// The session was locked, but the locking client disconnected without unlocking.
+    Defunct,
 }
 
 impl LockStatus {
