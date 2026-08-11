@@ -84,7 +84,7 @@ use crate::{
         Seat, SeatHandler,
         tablet::{TabletSeat, TabletSeatHandler},
     },
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor::CompositorHandler},
+    wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor::CompositorHandler, seat::WaylandFocus},
 };
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
@@ -157,6 +157,7 @@ where
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
     D: SeatHandler + TabletSeatHandler + 'static,
     D: CompositorHandler,
+    <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
 {
     fn request(
         &self,

@@ -662,7 +662,7 @@ pub(crate) struct TabletToolInternal<D: TabletSeatHandler> {
     previous_focus: Option<<D as TabletSeatHandler>::ToolFocus>,
 
     location: Option<Point<f64, Logical>>,
-    tablet: Option<Tablet>,
+    pub(crate) tablet: Option<Tablet>,
     current_buttons: Vec<u32>,
     pressed_buttons: Vec<u32>,
     tip_down: bool,

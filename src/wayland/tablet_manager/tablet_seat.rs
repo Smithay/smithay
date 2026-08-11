@@ -8,6 +8,7 @@ use crate::{
     wayland::{
         Dispatch2,
         compositor::CompositorHandler,
+        seat::WaylandFocus,
         tablet_manager::{TabletToolUserData, tablet::TabletUserData},
     },
 };
@@ -23,6 +24,7 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
         D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
+        <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
         D: 'static,
     {
         let mut inner = self.arc.lock().unwrap();

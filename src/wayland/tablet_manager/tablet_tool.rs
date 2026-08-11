@@ -23,7 +23,7 @@ use crate::{
             },
         },
     },
-    utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
+    utils::{Client as ClientCoords, Clock, Monotonic, Point, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
         Dispatch2,
         compositor::{self, CompositorHandler},
@@ -43,6 +43,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
                 wp_tablet_tool: WpTabletToolHandle {
                     bound: true,
                     last_proximity_in: Default::default(),
+                    last_down: Default::default(),
                     known_instances: Default::default(),
                 },
             }),
@@ -79,6 +80,7 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
     where
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
+        <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
     {
         self.add_wp_tool_with_grab(state, dh, tool_desc, || Box::new(tool::grab::DefaultGrab))
     }
@@ -101,6 +103,7 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
     where
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
+        <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
         F: Fn() -> Box<dyn TabletToolGrab<D>> + Send + 'static,
     {
         let inner = &mut self.arc.lock().unwrap();
@@ -136,6 +139,7 @@ pub struct TabletToolUserData<D: TabletSeatHandler> {
 pub(crate) struct WpTabletToolHandle {
     pub(crate) bound: bool,
     pub(crate) last_proximity_in: Mutex<Option<Serial>>,
+    pub(crate) last_down: Mutex<Option<Serial>>,
     known_instances: Mutex<Vec<Weak<ZwpTabletToolV2>>>,
 }
 
@@ -152,6 +156,7 @@ impl WpTabletToolHandle {
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         D: TabletSeatHandler,
+        <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
         D: 'static,
     {
         if !self.bound {
@@ -209,6 +214,30 @@ impl WpTabletToolHandle {
 
         wp_tool.done();
         self.known_instances.lock().unwrap().push(wp_tool.downgrade());
+
+        let guard = handle.arc.inner.lock().unwrap();
+        if let Some((focus, _location)) = &guard.focus {
+            if focus.same_client_as(&wp_tool.id()) {
+                if let Some(surface) = focus.wl_surface() {
+                    let tablet = guard.tablet.as_ref().unwrap();
+                    if let Some(wp_tablet) =
+                        tablet.arc.wp_tablet.focused_tablet_for_seat(&surface, &seat.id())
+                    {
+                        let serial = self.last_proximity_in.lock().unwrap().unwrap();
+                        wp_tool.proximity_in(serial.into(), &wp_tablet, &surface);
+
+                        if let Some(serial) = *self.last_down.lock().unwrap() {
+                            wp_tool.down(serial.into());
+                        }
+
+                        // TODO: send axis, motion, button.
+
+                        let time = Clock::<Monotonic>::new().now().as_millis();
+                        wp_tool.frame(time);
+                    }
+                }
+            }
+        }
     }
 
     fn proximity_in<D: TabletSeatHandler + 'static>(
@@ -239,8 +268,11 @@ impl WpTabletToolHandle {
     }
 
     fn down(&self, surface: &WlSurface, event: &DownEvent) {
+        let serial = event.serial;
+        *self.last_down.lock().unwrap() = Some(serial);
+
         self.for_each_focused_tool(surface, |wp_tool| {
-            wp_tool.down(event.serial.0);
+            wp_tool.down(serial.0);
         });
     }
 
@@ -248,6 +280,8 @@ impl WpTabletToolHandle {
         self.for_each_focused_tool(surface, |wp_tool| {
             wp_tool.up();
         });
+
+        *self.last_down.lock().unwrap() = None;
     }
 
     fn motion<D: TabletSeatHandler + 'static>(&self, surface: &WlSurface, event: &MotionEvent) {
