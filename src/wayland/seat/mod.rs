@@ -232,6 +232,7 @@ where
     D: Dispatch<WlTouch, TouchUserData<D>>,
     D: SeatHandler,
     D: CompositorHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
@@ -258,7 +259,7 @@ where
                 );
 
                 if let Some(ref ptr_handle) = inner.pointer {
-                    ptr_handle.wl_pointer.new_pointer(pointer);
+                    ptr_handle.wl_pointer.new_pointer::<D>(pointer);
                 } else {
                     // we should send a protocol error... but the protocol does not allow
                     // us, so this pointer will just remain inactive ¯\_(ツ)_/¯

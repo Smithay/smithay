@@ -702,7 +702,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
 pub(crate) struct PointerInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
     pending_focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
-    location: Point<f64, Logical>,
+    pub(crate) location: Point<f64, Logical>,
     grab: GrabStatus<dyn PointerGrab<D>>,
     pressed_buttons: Vec<u32>,
 }

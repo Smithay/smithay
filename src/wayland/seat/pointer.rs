@@ -66,8 +66,27 @@ pub(crate) struct WlPointerHandle {
 }
 
 impl WlPointerHandle {
-    pub(super) fn new_pointer(&self, pointer: WlPointer) {
+    pub(super) fn new_pointer<D: SeatHandler + 'static>(&self, pointer: WlPointer)
+    where
+        <D as SeatHandler>::PointerFocus: WaylandFocus,
+    {
         self.known_pointers.lock().unwrap().push(pointer.downgrade());
+
+        let data = pointer.data::<PointerUserData<D>>().unwrap();
+        let guard = data.handle.as_ref().unwrap().inner.lock().unwrap();
+        if let Some((focus, location)) = &guard.focus {
+            if focus.same_client_as(&pointer.id()) {
+                if let Some(surface) = focus.wl_surface() {
+                    let serial = self.last_enter.lock().unwrap().unwrap();
+                    let client_scale = data.client_scale.load(Ordering::Acquire);
+                    let location = (guard.location - *location).to_client(client_scale);
+                    pointer.enter(serial.into(), &surface, location.x, location.y);
+                    if pointer.version() >= 5 {
+                        pointer.frame();
+                    }
+                }
+            }
+        }
     }
 
     fn enter<D: SeatHandler + 'static>(&self, surface: &WlSurface, event: &MotionEvent) {
