@@ -48,6 +48,7 @@
 //! // You're now ready to go!
 //! ```
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use _session_lock::ext_session_lock_manager_v1::{ExtSessionLockManagerV1, Request};
@@ -157,9 +158,10 @@ where
         match request {
             Request::Lock { id } => {
                 let lock_state = SessionLockState::new();
+                let done = Arc::clone(&lock_state.done);
                 let lock = data_init.init(id, lock_state);
                 let lock_status = Arc::clone(&state.lock_state().lock_status);
-                state.lock(SessionLocker::new(lock, lock_status));
+                state.lock(SessionLocker::new(lock, lock_status, done));
             }
             Request::Destroy => (),
             _ => unreachable!(),
@@ -186,6 +188,14 @@ pub trait SessionLockHandler {
     fn unlock(&mut self);
 
     /// Add a new lock surface for an output.
+    ///
+    /// Note that this may be called for surfaces created on different [`SessionLocker`] instances
+    /// if more than one client is racing to lock the screen, so you should match [`LockSurface`]
+    /// instances with [`SessionLocker`] instances using the underlying [`ExtSessionLockV1`]
+    /// instance of both.
+    ///
+    /// Once you have dropped the [`SessionLocker`] instances that will not be locking the session,
+    /// this function will no longer be called for surfaces created by those locker instances.
     fn new_surface(&mut self, surface: LockSurface, output: WlOutput);
 
     /// A surface has acknowledged a configure serial.
@@ -199,6 +209,7 @@ pub trait SessionLockHandler {
 pub struct SessionLocker {
     lock: Option<ExtSessionLockV1>,
     lock_status: Arc<Mutex<LockStatus>>,
+    done: Arc<AtomicBool>,
 }
 
 impl Drop for SessionLocker {
@@ -206,15 +217,17 @@ impl Drop for SessionLocker {
         // If the session wasn't locked, we notify clients about the failure.
         if let Some(lock) = self.lock.take() {
             lock.finished();
+            self.done.store(true, Ordering::Release);
         }
     }
 }
 
 impl SessionLocker {
-    fn new(lock: ExtSessionLockV1, lock_status: Arc<Mutex<LockStatus>>) -> Self {
+    fn new(lock: ExtSessionLockV1, lock_status: Arc<Mutex<LockStatus>>, done: Arc<AtomicBool>) -> Self {
         Self {
             lock: Some(lock),
             lock_status,
+            done,
         }
     }
 
