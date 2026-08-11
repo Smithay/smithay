@@ -1,5 +1,6 @@
 //! ext-session-lock lock.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::wayland::compositor::SurfaceAttributes;
@@ -20,12 +21,14 @@ const LOCK_SURFACE_ROLE: &str = "ext_session_lock_surface_v1";
 /// [`ExtSessionLockV1`] state.
 #[derive(Debug)]
 pub struct SessionLockState {
+    pub(super) done: Arc<AtomicBool>,
     locked_outputs: Mutex<Vec<WlOutput>>,
 }
 
 impl SessionLockState {
     pub(super) fn new() -> Self {
         Self {
+            done: Arc::new(AtomicBool::new(false)),
             locked_outputs: Default::default(),
         }
     }
@@ -78,6 +81,7 @@ where
 
                 let data = ExtLockSurfaceUserData {
                     surface: surface.downgrade(),
+                    done: Arc::clone(&self.done),
                 };
                 let lock_surface = data_init.init(id, data);
 
@@ -101,12 +105,14 @@ where
                 // Add pre-commit hook for updating surface state.
                 compositor::add_pre_commit_hook::<D, _>(&surface, LockSurface::pre_commit_hook);
 
-                // Call compositor handler.
-                let lock_surface = LockSurface::new(lock.clone(), surface, lock_surface);
-                state.new_surface(lock_surface.clone(), output);
+                if !self.done.load(Ordering::Acquire) {
+                    // Call compositor handler.
+                    let lock_surface = LockSurface::new(lock.clone(), surface, lock_surface);
+                    state.new_surface(lock_surface.clone(), output);
 
-                // Send initial configure when the interface is bound.
-                lock_surface.send_configure();
+                    // Send initial configure when the interface is bound.
+                    lock_surface.send_configure();
+                }
             }
             Request::UnlockAndDestroy => {
                 // Ensure session is locked, and with the same lock instance.

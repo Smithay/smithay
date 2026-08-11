@@ -1,6 +1,7 @@
 //! ext-session-lock surface.
 
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::backend::renderer::buffer_dimensions;
 use crate::utils::{IsAlive, Logical, SERIAL_COUNTER, Serial, Size};
@@ -23,6 +24,7 @@ pub struct ExtLockSurfaceUserData {
     // `ExtSessionLockSurfaceV1`. So this reference needs to be weak to avoid a
     // cycle.
     pub(crate) surface: Weak<WlSurface>,
+    pub(super) done: Arc<AtomicBool>,
 }
 
 impl<D> Dispatch2<ExtSessionLockSurfaceV1, D> for ExtLockSurfaceUserData
@@ -53,7 +55,11 @@ where
                 });
 
                 match configure {
-                    Some(configure) => state.ack_configure(surface.clone(), configure),
+                    Some(configure) => {
+                        if !self.done.load(Ordering::Acquire) {
+                            state.ack_configure(surface.clone(), configure);
+                        }
+                    }
                     None => lock_surface.post_error(
                         Error::InvalidSerial,
                         format!("wrong configure serial: {}", <u32>::from(serial)),
