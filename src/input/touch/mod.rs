@@ -44,6 +44,8 @@ pub struct TouchHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<TouchInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_instances: Arc<Mutex<Vec<Weak<wayland_server::protocol::wl_touch::WlTouch>>>>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) last_down: Arc<Mutex<HashMap<TouchSlot, Serial>>>,
     pub(crate) span: tracing::Span,
 }
 
@@ -60,6 +62,7 @@ impl<D: SeatHandler> fmt::Debug for TouchHandle<D> {
         f.debug_struct("TouchHandle")
             .field("inner", &self.inner)
             .field("known_instances", &self.known_instances)
+            .field("last_down", &self.last_down)
             .finish()
     }
 }
@@ -71,6 +74,8 @@ impl<D: SeatHandler> Clone for TouchHandle<D> {
             inner: self.inner.clone(),
             #[cfg(feature = "wayland_frontend")]
             known_instances: self.known_instances.clone(),
+            #[cfg(feature = "wayland_frontend")]
+            last_down: self.last_down.clone(),
             span: self.span.clone(),
         }
     }
@@ -93,7 +98,7 @@ impl<D: SeatHandler> std::cmp::PartialEq for TouchHandle<D> {
 impl<D: SeatHandler> std::cmp::Eq for TouchHandle<D> {}
 
 pub(crate) struct TouchInternal<D: SeatHandler> {
-    focus: HashMap<TouchSlot, TouchSlotState<D>>,
+    pub(crate) focus: HashMap<TouchSlot, TouchSlotState<D>>,
     pending_frame: Option<FrameMarker>,
     default_grab: Box<dyn Fn() -> Box<dyn TouchGrab<D>> + Send + 'static>,
     grab: GrabStatus<dyn TouchGrab<D>>,
@@ -107,9 +112,10 @@ impl<D: SeatHandler> Drop for TouchInternal<D> {
     }
 }
 
-struct TouchSlotState<D: SeatHandler> {
-    focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
+pub(crate) struct TouchSlotState<D: SeatHandler> {
+    pub(crate) focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
     frame_pending: Option<<D as SeatHandler>::TouchFocus>,
+    pub(crate) location: Point<f64, Logical>,
     pending: FrameMarker,
     current: Option<FrameMarker>,
 }
@@ -119,6 +125,7 @@ impl<D: SeatHandler> fmt::Debug for TouchSlotState<D> {
         f.debug_struct("TouchSlotState")
             .field("focus", &self.focus)
             .field("frame_pending", &self.frame_pending)
+            .field("location", &self.location)
             .field("pending", &self.pending)
             .field("current", &self.current)
             .finish()
@@ -260,6 +267,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
             inner: Arc::new(Mutex::new(TouchInternal::new(default_grab))),
             #[cfg(feature = "wayland_frontend")]
             known_instances: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "wayland_frontend")]
+            last_down: Arc::new(Mutex::new(HashMap::new())),
             span: info_span!("input_touch"),
         }
     }
@@ -578,11 +587,13 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
             .and_modify(|state| {
                 state.pending = marker;
                 state.frame_pending = None;
+                state.location = event.location;
                 state.focus.clone_from(&focus);
             })
             .or_insert_with(|| TouchSlotState {
                 focus,
                 frame_pending: None,
+                location: event.location,
                 pending: marker,
                 current: None,
             });
@@ -622,6 +633,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
             return;
         };
         state.pending = marker;
+        state.location = event.location;
         if let Some((focus, loc)) = state.focus.as_ref() {
             let mut new_event = event.clone();
             new_event.location -= *loc;

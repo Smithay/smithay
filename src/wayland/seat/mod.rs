@@ -234,6 +234,7 @@ where
     D: CompositorHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::TouchFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
