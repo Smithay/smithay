@@ -56,7 +56,7 @@
 //! impl TabletSeatHandler for State {
 //!     type ToolFocus = WlSurface;
 //!
-//!     fn tablet_tool_image(&mut self, tool: &TabletToolHandle<Self>, image: CursorImageStatus) {
+//!     fn tablet_tool_image(&mut self, seat: &Seat<Self>, tool: &TabletToolHandle<Self>, image: CursorImageStatus) {
 //!         // handle new image for the given tool.
 //!     }
 //! }
