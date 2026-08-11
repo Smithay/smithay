@@ -230,6 +230,9 @@ check X11Surface::is_hidden() at mapping time and minimize the window appropriat
 Space::refresh() now clears stale outputs before emitting any enter events so no wl_surface.enter events
 are emitted with a stale wl_output anymore.
 
+The XWayland WM implementation previously incorrectly prefixed large transfers from X11 windows with
+the four INCR bytes.
+
 ## 0.7.0
 
 ### Breaking changes
