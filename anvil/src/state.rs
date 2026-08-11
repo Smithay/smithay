@@ -388,20 +388,31 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         pointer: &PointerHandle<Self>,
         _constraint: Option<&PointerConstraint>,
     ) {
-        if let Some((hint_surface, hint_location)) = &self.cursor_position_hint {
-            let origin = self
-                .space
-                .elements()
-                .find_map(|window| {
-                    (window.wl_surface().as_deref() == Some(hint_surface)).then(|| window.geometry())
-                })
-                .unwrap_or_default()
-                .loc
-                .to_f64();
+        let Some((hint_surface, hint_location)) = self.cursor_position_hint.take() else {
+            return;
+        };
 
-            pointer.set_location(origin + *hint_location);
+        // If the constraint was broken by the pointer forcibly leaving the surface, then it doesn't
+        // make much sense to warp it.
+        //
+        // Furthermore, when the constraint is removed as part of the pointer leaving the surface,
+        // this call happens with locked pointer data, and calling set_location() will try to lock
+        // it again and deadlock.
+        if pointer.last_enter().is_none() {
+            return;
         }
-        self.cursor_position_hint = None;
+
+        let origin = self
+            .space
+            .elements()
+            .find_map(|window| {
+                (window.wl_surface().as_deref() == Some(&hint_surface)).then(|| window.geometry())
+            })
+            .unwrap_or_default()
+            .loc
+            .to_f64();
+
+        pointer.set_location(origin + hint_location);
     }
 
     fn cursor_position_hint(
