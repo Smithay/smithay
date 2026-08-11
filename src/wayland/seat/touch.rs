@@ -8,11 +8,14 @@ use wayland_server::{
 };
 
 use super::SeatHandler;
-use crate::input::touch::TouchHandle;
-use crate::input::touch::TouchTarget;
 use crate::wayland::Dispatch2;
 use crate::wayland::compositor::CompositorHandler;
 use crate::wayland::seat::wl_surface::WlSurface;
+use crate::{input::touch::TouchHandle, wayland::seat::WaylandFocus};
+use crate::{
+    input::touch::TouchTarget,
+    utils::{Clock, Monotonic},
+};
 use crate::{
     input::{
         Seat,
@@ -21,10 +24,46 @@ use crate::{
     utils::iter::new_locked_obj_iter_from_vec,
 };
 
-impl<D: SeatHandler> TouchHandle<D> {
+impl<D: SeatHandler> TouchHandle<D>
+where
+    <D as SeatHandler>::TouchFocus: WaylandFocus,
+{
     pub(crate) fn new_touch(&self, touch: WlTouch) {
         let mut guard = self.known_instances.lock().unwrap();
         guard.push(touch.downgrade());
+
+        let mut time = None;
+        let data = touch.data::<TouchUserData<D>>().unwrap();
+        let guard = self.inner.lock().unwrap();
+        let mut sent = false;
+        for (slot, state) in &guard.focus {
+            if let Some((focus, location)) = &state.focus {
+                if focus.same_client_as(&touch.id()) {
+                    if let Some(surface) = focus.wl_surface() {
+                        let serial = data.handle.as_ref().unwrap().last_down.lock().unwrap()[slot];
+                        let time = *time.get_or_insert_with(|| Clock::<Monotonic>::new().now().as_millis());
+                        let client_scale = data.client_scale.load(Ordering::Acquire);
+                        let location = (state.location - *location).to_client(client_scale);
+
+                        touch.down(
+                            serial.into(),
+                            time,
+                            &surface,
+                            (*slot).into(),
+                            location.x,
+                            location.y,
+                        );
+                        sent = true;
+
+                        // TODO: send shape, orientation.
+                    }
+                }
+            }
+        }
+
+        if sent {
+            touch.frame();
+        }
     }
 }
 
@@ -83,6 +122,10 @@ where
         let serial = event.serial;
         let slot = event.slot;
 
+        if let Some(touch) = seat.get_touch() {
+            touch.last_down.lock().unwrap().insert(slot, serial);
+        }
+
         for_each_focused_touch(seat, self, |touch| {
             let client_scale = touch
                 .data::<TouchUserData<D>>()
@@ -106,7 +149,11 @@ where
         let slot = event.slot;
         for_each_focused_touch(seat, self, |touch| {
             touch.up(serial.into(), event.time, slot.into());
-        })
+        });
+
+        if let Some(touch) = seat.get_touch() {
+            touch.last_down.lock().unwrap().remove(&slot);
+        }
     }
 
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
@@ -135,7 +182,11 @@ where
 
         for_each_focused_touch(seat, self, |touch| {
             touch.cancel();
-        })
+        });
+
+        if let Some(touch) = seat.get_touch() {
+            touch.last_down.lock().unwrap().clear();
+        }
     }
 
     fn shape(&self, seat: &Seat<D>, _data: &mut D, event: &ShapeEvent) {
