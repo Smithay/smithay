@@ -484,7 +484,7 @@ where
                     None => CursorImageStatus::Hidden,
                 };
 
-                state.tablet_tool_image(handle.descriptor(), cursor_image);
+                state.tablet_tool_image(&handle, cursor_image);
             }
             zwp_tablet_tool_v2::Request::Destroy => {
                 // Nothing to do
