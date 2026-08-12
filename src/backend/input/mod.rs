@@ -14,7 +14,7 @@ pub use tablet::{
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_pointer;
 
-use crate::utils::{Logical, Point, Raw, Size};
+use crate::utils::{Clock, Logical, Monotonic, Point, Raw, Size};
 
 /// Input timestamp in microseconds, with an undefined base.
 ///
@@ -23,6 +23,16 @@ use crate::utils::{Logical, Point, Raw, Size};
 pub struct InputTime(u64);
 
 impl InputTime {
+    /// Current input time, for synthesizing input events that do not come from
+    /// the input backend.
+    ///
+    /// This assumes the input backend uses `CLOCK_MONOTONIC` timestamps. This
+    /// is guaranteed by `libinput` and `libei` timestamps, but is not required
+    /// by Wayland itself. In practice, this should be true across backends.
+    pub fn now() -> Self {
+        Self::from_millis(Clock::<Monotonic>::new().now().as_millis())
+    }
+
     /// Input time from milliseconds
     pub fn from_millis(milliseconds: u32) -> Self {
         Self(u64::from(milliseconds) * 1000)

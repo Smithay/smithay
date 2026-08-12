@@ -9,7 +9,7 @@ use crate::{
     backend::input::{Axis, AxisRelativeDirection, AxisSource, ButtonState, InputTime},
     input::{GrabStatus, Seat, SeatHandler},
     utils::Serial,
-    utils::{Clock, IsAlive, Logical, Monotonic, Point},
+    utils::{IsAlive, Logical, Point},
 };
 
 mod cursor_image;
@@ -754,7 +754,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 &MotionEvent {
                     location,
                     serial,
-                    time: InputTime::from_millis(Clock::<Monotonic>::new().now().as_millis()),
+                    time: InputTime::now(),
                 },
             );
         }
