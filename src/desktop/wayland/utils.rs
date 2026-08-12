@@ -242,7 +242,7 @@ pub fn send_frames_surface_tree<T, F>(
                 .map(|preferred_output| preferred_output == *output)
                 .unwrap_or(false);
 
-            let frame_overdue = surface_frame_throttling_state.update(time, throttle);
+            let frame_overdue = surface_frame_throttling_state.is_overdue(time, throttle);
 
             // We only want to send frame callbacks on the primary scan-out output
             // or if we have no output and the frame is overdue, this can only
@@ -250,6 +250,8 @@ pub fn send_frames_surface_tree<T, F>(
             let send_frame_callback = on_primary_scanout_output || frame_overdue;
 
             if send_frame_callback {
+                surface_frame_throttling_state.update_last_sent(time);
+
                 // the surface may not have any user_data if it is a subsurface and has not
                 // yet been committed
                 for callback in states
@@ -490,18 +492,18 @@ pub fn surface_presentation_feedback_flags_from_states(
 struct SurfaceFrameThrottlingState(Mutex<Option<Duration>>);
 
 impl SurfaceFrameThrottlingState {
-    pub fn update(&self, time: Duration, throttle: Option<Duration>) -> bool {
+    pub fn is_overdue(&self, time: Duration, throttle: Option<Duration>) -> bool {
         if let Some(throttle) = throttle {
-            let mut guard = self.0.lock().unwrap();
-            let send_throttled_frame = guard
+            let guard = self.0.lock().unwrap();
+            guard
                 .map(|last| time.saturating_sub(last) > throttle)
-                .unwrap_or(true);
-            if send_throttled_frame {
-                *guard = Some(time);
-            }
-            send_throttled_frame
+                .unwrap_or(true)
         } else {
             false
         }
+    }
+
+    pub fn update_last_sent(&self, time: Duration) {
+        *self.0.lock().unwrap() = Some(time);
     }
 }
