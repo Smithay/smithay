@@ -686,7 +686,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 keycode,
                 KeyState::Released,
                 SCOUNTER.next_serial(),
-                InputTime::from_millis(0),
+                InputTime::now(),
                 |_, _, _| FilterResult::Forward::<bool>,
             );
         }
@@ -724,7 +724,7 @@ impl AnvilState<UdevData> {
                             &MotionEvent {
                                 location,
                                 serial: SCOUNTER.next_serial(),
-                                time: InputTime::from_micros(self.clock.now().as_micros()),
+                                time: InputTime::now(),
                             },
                         );
                         pointer.frame(self);
@@ -762,7 +762,7 @@ impl AnvilState<UdevData> {
                             &MotionEvent {
                                 location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
-                                time: InputTime::from_micros(self.clock.now().as_micros()),
+                                time: InputTime::now(),
                             },
                         );
                         pointer.frame(self);
@@ -801,7 +801,7 @@ impl AnvilState<UdevData> {
                             &MotionEvent {
                                 location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
-                                time: InputTime::from_micros(self.clock.now().as_micros()),
+                                time: InputTime::now(),
                             },
                         );
                         pointer.frame(self);
@@ -1046,7 +1046,7 @@ impl AnvilState<UdevData> {
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
             let tool = tablet_seat.get_tool(&evt.tool());
-            let time = InputTime::from_micros(self.clock.now().as_micros());
+            let time = InputTime::now();
 
             pointer.motion(
                 self,

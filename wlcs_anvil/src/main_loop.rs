@@ -218,7 +218,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
         WlcsEvent::PointerMoveAbsolute { location, .. } => {
             let serial = SCOUNTER.next_serial();
             let under = state.surface_under(location);
-            let time = InputTime::from_micros(state.clock.now().as_micros());
+            let time = InputTime::now();
             let ptr = state.pointer.clone();
             ptr.motion(
                 state,
@@ -235,7 +235,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
             let pointer_location = state.pointer.current_location() + delta;
             let serial = SCOUNTER.next_serial();
             let under = state.surface_under(pointer_location);
-            let time = InputTime::from_micros(state.clock.now().as_micros());
+            let time = InputTime::now();
             let ptr = state.pointer.clone();
             ptr.motion(
                 state,
@@ -274,7 +274,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
                     .unwrap()
                     .set_focus(state, under.map(Into::into), serial);
             }
-            let time = InputTime::from_micros(state.clock.now().as_micros());
+            let time = InputTime::now();
             ptr.button(
                 state,
                 &ButtonEvent {
@@ -288,7 +288,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
         }
         WlcsEvent::PointerButtonUp { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
-            let time = InputTime::from_micros(state.clock.now().as_micros());
+            let time = InputTime::now();
             let ptr = state.seat.get_pointer().unwrap();
             ptr.button(
                 state,

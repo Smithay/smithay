@@ -1069,14 +1069,7 @@ impl<D: XwmHandler + SeatHandler> DndFocus<D> for X11Surface {
                 source: offer.source.clone(),
             });
 
-            DndFocus::motion(
-                self,
-                data,
-                Some(&mut offer),
-                seat,
-                location,
-                InputTime::from_millis(0),
-            );
+            DndFocus::motion(self, data, Some(&mut offer), seat, location, InputTime::now());
             Some(offer)
         }
     }
