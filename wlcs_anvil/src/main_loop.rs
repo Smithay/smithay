@@ -225,6 +225,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
                 under,
                 &MotionEvent {
                     location,
+                    is_warp: false,
                     serial,
                     time,
                 },
@@ -242,6 +243,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
                 under.clone(),
                 &MotionEvent {
                     location: pointer_location,
+                    is_warp: false,
                     serial,
                     time,
                 },

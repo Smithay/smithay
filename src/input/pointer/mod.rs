@@ -753,6 +753,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 None,
                 &MotionEvent {
                     location,
+                    is_warp: false,
                     serial,
                     time: InputTime::now(),
                 },
@@ -782,6 +783,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 focus,
                 &MotionEvent {
                     location,
+                    is_warp: false,
                     serial,
                     time,
                 },
@@ -800,6 +802,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         if let Some((focus, loc)) = focus {
             let event = MotionEvent {
                 location: event.location - loc,
+                is_warp: event.is_warp,
                 serial: event.serial,
                 time: event.time,
             };
@@ -941,6 +944,8 @@ pub enum Focus {
 pub struct MotionEvent {
     /// Location of the pointer in compositor space
     pub location: Point<f64, Logical>,
+    /// Motion is a warp
+    pub is_warp: bool,
     /// Serial of the event
     pub serial: Serial,
     /// Timestamp of the event, with microsecond granularity

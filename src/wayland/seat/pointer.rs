@@ -28,6 +28,7 @@ use crate::{
     wayland::{
         Dispatch2, compositor,
         pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint},
+        relative_pointer::WpRelativePointerHandle,
     },
 };
 
@@ -114,7 +115,12 @@ impl WlPointerHandle {
         *self.last_enter.lock().unwrap() = None;
     }
 
-    fn motion<D: SeatHandler + 'static>(&self, surface: &WlSurface, event: &MotionEvent) {
+    fn motion<D: SeatHandler + 'static>(
+        &self,
+        wp_relative: &WpRelativePointerHandle,
+        surface: &WlSurface,
+        event: &MotionEvent,
+    ) {
         self.for_each_focused_pointer(surface, |ptr| {
             let client_scale = ptr
                 .data::<PointerUserData<D>>()
@@ -122,7 +128,24 @@ impl WlPointerHandle {
                 .client_scale
                 .load(Ordering::Acquire);
             let location = event.location.to_client(client_scale);
-            ptr.motion(event.time.millis(), location.x, location.y);
+            if event.is_warp {
+                if ptr.version() >= wl_pointer::EVT_WARP_SINCE {
+                    ptr.warp(location.x, location.y);
+                } else {
+                    wp_relative.relative_motion_for_wl_pointer::<D>(
+                        surface,
+                        &ptr,
+                        &RelativeMotionEvent {
+                            delta: (0., 0.).into(),
+                            delta_unaccel: (0., 0.).into(),
+                            time: event.time,
+                        },
+                    );
+                    ptr.motion(event.time.millis(), location.x, location.y);
+                }
+            } else {
+                ptr.motion(event.time.millis(), location.x, location.y);
+            }
         })
     }
 
@@ -293,7 +316,7 @@ where
 
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         if let Some(pointer) = seat.get_pointer() {
-            pointer.wl_pointer.motion::<D>(self, event);
+            pointer.wl_pointer.motion::<D>(&pointer.wp_relative, self, event);
         }
     }
 

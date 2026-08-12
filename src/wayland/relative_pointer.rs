@@ -92,9 +92,9 @@ use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
     backend::{ClientId, GlobalId},
-    protocol::wl_surface::WlSurface,
+    protocol::{wl_pointer::WlPointer, wl_surface::WlSurface},
 };
 
 use crate::{
@@ -112,6 +112,28 @@ pub(crate) struct WpRelativePointerHandle {
     known_relative_pointers: Mutex<Vec<ZwpRelativePointerV1>>,
 }
 
+fn send_relative_motion<D: SeatHandler + 'static>(ptr: &ZwpRelativePointerV1, event: &RelativeMotionEvent) {
+    let client_scale = ptr
+        .data::<RelativePointerUserData<D>>()
+        .unwrap()
+        .client_scale
+        .load(Ordering::Acquire);
+    let delta = event.delta.to_client(client_scale);
+    let delta_unaccel = event.delta_unaccel;
+
+    let utime = event.time.micros();
+    let utime_hi = (utime >> 32) as u32;
+    let utime_lo = (utime & 0xffffffff) as u32;
+    ptr.relative_motion(
+        utime_hi,
+        utime_lo,
+        delta.x,
+        delta.y,
+        delta_unaccel.x,
+        delta_unaccel.y,
+    );
+}
+
 impl WpRelativePointerHandle {
     fn new_relative_pointer(&self, pointer: ZwpRelativePointerV1) {
         self.known_relative_pointers.lock().unwrap().push(pointer);
@@ -123,25 +145,22 @@ impl WpRelativePointerHandle {
         event: &RelativeMotionEvent,
     ) {
         self.for_each_focused_pointer(surface, |ptr| {
-            let client_scale = ptr
-                .data::<RelativePointerUserData<D>>()
-                .unwrap()
-                .client_scale
-                .load(Ordering::Acquire);
-            let delta = event.delta.to_client(client_scale);
-            let delta_unaccel = event.delta_unaccel;
+            send_relative_motion::<D>(&ptr, event);
+        })
+    }
 
-            let utime = event.time.micros();
-            let utime_hi = (utime >> 32) as u32;
-            let utime_lo = (utime & 0xffffffff) as u32;
-            ptr.relative_motion(
-                utime_hi,
-                utime_lo,
-                delta.x,
-                delta.y,
-                delta_unaccel.x,
-                delta_unaccel.y,
-            );
+    // Send relative motion only to relative pointer instances created from given
+    // `wl_pointer`.
+    pub(super) fn relative_motion_for_wl_pointer<D: SeatHandler + 'static>(
+        &self,
+        surface: &WlSurface,
+        pointer: &WlPointer,
+        event: &RelativeMotionEvent,
+    ) {
+        self.for_each_focused_pointer(surface, |ptr| {
+            if ptr.data::<RelativePointerUserData<D>>().unwrap().wl_pointer == *pointer {
+                send_relative_motion::<D>(&ptr, event);
+            }
         })
     }
 
@@ -159,6 +178,7 @@ impl WpRelativePointerHandle {
 #[derive(Debug)]
 pub struct RelativePointerUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
+    wl_pointer: Weak<WlPointer>,
     client_scale: Arc<AtomicF64>,
 }
 
@@ -209,6 +229,7 @@ where
                 let data = pointer.data::<PointerUserData<D>>().unwrap();
                 let user_data = RelativePointerUserData {
                     handle: data.handle.clone(),
+                    wl_pointer: pointer.downgrade(),
                     client_scale: data.client_scale.clone(),
                 };
                 let pointer = data_init.init(id, user_data);

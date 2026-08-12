@@ -671,6 +671,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             under,
             &MotionEvent {
                 location: pos,
+                is_warp: false,
                 serial,
                 time: evt.time(),
             },
@@ -723,6 +724,7 @@ impl AnvilState<UdevData> {
                             under,
                             &MotionEvent {
                                 location,
+                                is_warp: false,
                                 serial: SCOUNTER.next_serial(),
                                 time: InputTime::now(),
                             },
@@ -761,6 +763,7 @@ impl AnvilState<UdevData> {
                             under,
                             &MotionEvent {
                                 location: pointer_location,
+                                is_warp: false,
                                 serial: SCOUNTER.next_serial(),
                                 time: InputTime::now(),
                             },
@@ -800,6 +803,7 @@ impl AnvilState<UdevData> {
                             under,
                             &MotionEvent {
                                 location: pointer_location,
+                                is_warp: false,
                                 serial: SCOUNTER.next_serial(),
                                 time: InputTime::now(),
                             },
@@ -976,6 +980,7 @@ impl AnvilState<UdevData> {
             under,
             &MotionEvent {
                 location: pointer_location,
+                is_warp: false,
                 serial,
                 time: evt.time(),
             },
@@ -1032,6 +1037,7 @@ impl AnvilState<UdevData> {
             under,
             &MotionEvent {
                 location: pointer_location,
+                is_warp: false,
                 serial,
                 time: evt.time(),
             },
@@ -1053,6 +1059,7 @@ impl AnvilState<UdevData> {
                 under.clone(),
                 &MotionEvent {
                     location: pointer_location,
+                    is_warp: false,
                     serial: SCOUNTER.next_serial(),
                     time,
                 },
@@ -1111,6 +1118,7 @@ impl AnvilState<UdevData> {
                 under.clone(),
                 &MotionEvent {
                     location: pointer_location,
+                    is_warp: false,
                     serial: SCOUNTER.next_serial(),
                     time: evt.time(),
                 },

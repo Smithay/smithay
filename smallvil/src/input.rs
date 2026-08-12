@@ -48,6 +48,7 @@ impl Smallvil {
                     under,
                     &MotionEvent {
                         location: pos,
+                        is_warp: false,
                         serial,
                         time: event.time(),
                     },
