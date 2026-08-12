@@ -1097,7 +1097,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
         let _ = mods;
         let serial = SERIAL_COUNTER.next_serial();
-        let time = InputTime::from_millis(0);
+        let time = InputTime::now();
         for keycode in transitioned {
             // modifiers may have changed as a modifier key was released; let input_forward
             // re-derive and send the current state.
@@ -1435,25 +1435,11 @@ where
             let release = SERIAL_COUNTER.next_serial();
             if let Some((focus, _)) = guard.focus.as_mut() {
                 let handle = KeysymHandle { xkb: &xkb, keycode };
-                focus.key(
-                    &seat,
-                    data,
-                    handle,
-                    KeyState::Pressed,
-                    press,
-                    InputTime::from_millis(0),
-                );
+                focus.key(&seat, data, handle, KeyState::Pressed, press, InputTime::now());
             }
             if let Some((focus, _)) = guard.focus.as_mut() {
                 let handle = KeysymHandle { xkb: &xkb, keycode };
-                focus.key(
-                    &seat,
-                    data,
-                    handle,
-                    KeyState::Released,
-                    release,
-                    InputTime::from_millis(0),
-                );
+                focus.key(&seat, data, handle, KeyState::Released, release, InputTime::now());
             }
         }
 

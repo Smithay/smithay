@@ -181,7 +181,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         event.key_code(),
                         event.state(),
                         0.into(),
-                        InputTime::from_millis(0),
+                        InputTime::now(),
                         |_, _, _| {
                             //
                             FilterResult::Forward
