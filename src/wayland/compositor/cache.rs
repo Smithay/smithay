@@ -90,6 +90,14 @@ impl<T> CachedState<T> {
     pub fn pending(&mut self) -> &mut T {
         &mut self.pending
     }
+
+    pub(crate) fn update_all(&mut self, mut update: impl FnMut(&mut T)) {
+        update(&mut self.pending);
+        for (_, state) in &mut self.cache {
+            update(state);
+        }
+        update(&mut self.current);
+    }
 }
 
 trait Cache: Downcast {

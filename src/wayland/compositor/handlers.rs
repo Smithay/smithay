@@ -1,5 +1,5 @@
 use std::sync::{
-    Mutex,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -23,8 +23,8 @@ use crate::utils::{
 use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 use super::{
-    AlreadyHasRole, BufferAssignment, CompositorHandler, Damage, Rectangle, RectangleKind, RegionAttributes,
-    SurfaceAttributes,
+    AlreadyHasRole, BufferAssignment, CompositorHandler, Damage, HookId, Rectangle, RectangleKind,
+    RegionAttributes, SurfaceAttributes,
     cache::Cacheable,
     tree::{Location, PrivateSurfaceData},
 };
@@ -458,12 +458,51 @@ where
                     return;
                 }
 
-                data_init.init(
+                let pending_position = Arc::new(Mutex::new(None));
+                let subsurface = data_init.init(
                     id,
                     SubsurfaceUserData {
                         surface: surface.clone(),
+                        pending_position: pending_position.clone(),
+                        pre_commit_hook: Mutex::new(None),
                     },
                 );
+
+                let weak_subsurface = subsurface.downgrade();
+                let weak_surface = surface.downgrade();
+                let weak_parent = parent.downgrade();
+                let hook = PrivateSurfaceData::add_pre_commit_hook(&parent, move |_, _, parent| {
+                    let Some(location) = pending_position.lock().unwrap().take() else {
+                        return;
+                    };
+                    let Ok(subsurface) = weak_subsurface.upgrade() else {
+                        return;
+                    };
+                    let Ok(surface) = weak_surface.upgrade() else {
+                        return;
+                    };
+                    let Ok(expected_parent) = weak_parent.upgrade() else {
+                        return;
+                    };
+                    if parent != &expected_parent
+                        || PrivateSurfaceData::get_parent(&surface).as_ref() != Some(parent)
+                    {
+                        return;
+                    }
+                    PrivateSurfaceData::with_states(parent, |state| {
+                        state
+                            .cached_state
+                            .get::<ParentCommitSubsurfaceState>()
+                            .pending()
+                            .set_position(&subsurface, &surface, parent, location);
+                    });
+                });
+                *subsurface
+                    .data::<SubsurfaceUserData>()
+                    .unwrap()
+                    .pre_commit_hook
+                    .lock()
+                    .unwrap() = Some(hook);
 
                 super::with_states(&surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
@@ -485,6 +524,8 @@ where
 #[derive(Debug)]
 pub struct SubsurfaceUserData {
     surface: WlSurface,
+    pending_position: Arc<Mutex<Option<Point<i32, Logical>>>>,
+    pre_commit_hook: Mutex<Option<HookId>>,
 }
 
 impl SubsurfaceUserData {
@@ -499,6 +540,75 @@ pub struct SubsurfaceCachedState {
     /// Location of the top-left corner of this subsurface
     /// relative to its parent coordinate space
     pub location: Point<i32, Logical>,
+}
+
+#[derive(Debug, Default)]
+struct ParentCommitSubsurfaceState {
+    positions: Vec<(
+        wayland_server::Weak<WlSubsurface>,
+        wayland_server::Weak<WlSurface>,
+        wayland_server::Weak<WlSurface>,
+        Point<i32, Logical>,
+    )>,
+}
+
+impl ParentCommitSubsurfaceState {
+    fn set_position(
+        &mut self,
+        subsurface: &WlSubsurface,
+        surface: &WlSurface,
+        parent: &WlSurface,
+        location: Point<i32, Logical>,
+    ) {
+        if let Some(pending) = self
+            .positions
+            .iter_mut()
+            .find(|(_, pending, _, _)| pending == surface)
+        {
+            *pending = (
+                subsurface.downgrade(),
+                surface.downgrade(),
+                parent.downgrade(),
+                location,
+            );
+        } else {
+            self.positions.push((
+                subsurface.downgrade(),
+                surface.downgrade(),
+                parent.downgrade(),
+                location,
+            ));
+        }
+    }
+}
+
+impl Cacheable for ParentCommitSubsurfaceState {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
+        Self {
+            positions: std::mem::take(&mut self.positions),
+        }
+    }
+
+    fn merge_into(self, _into: &mut Self, _dh: &DisplayHandle) {
+        for (subsurface, surface, parent, location) in self.positions {
+            if subsurface.upgrade().is_err() {
+                continue;
+            }
+            let Ok(surface) = surface.upgrade() else {
+                continue;
+            };
+            let Ok(parent) = parent.upgrade() else {
+                continue;
+            };
+            if PrivateSurfaceData::get_parent(&surface).as_ref() != Some(&parent) {
+                continue;
+            }
+            PrivateSurfaceData::with_states(&surface, |state| {
+                let mut state = state.cached_state.get::<SubsurfaceCachedState>();
+                state.update_all(|state| state.location = location);
+            });
+        }
+    }
 }
 
 impl Default for SubsurfaceCachedState {
@@ -569,16 +679,12 @@ where
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
                 let client_scale = state.client_compositor_state(client).client_scale();
-                PrivateSurfaceData::with_states(&self.surface, |state| {
-                    state
-                        .cached_state
-                        .get::<SubsurfaceCachedState>()
-                        .pending()
-                        .location = Point::<i32, Client>::from((x, y))
+                *self.pending_position.lock().unwrap() = Some(
+                    Point::<i32, Client>::from((x, y))
                         .to_f64()
                         .to_logical(client_scale)
-                        .to_i32_round();
-                })
+                        .to_i32_round(),
+                );
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {
                 if let Err(()) = PrivateSurfaceData::reorder(&self.surface, Location::After, &sibling) {
@@ -625,6 +731,11 @@ where
         _client_id: wayland_server::backend::ClientId,
         _object: &WlSubsurface,
     ) {
+        if let Some(parent) = PrivateSurfaceData::get_parent(&self.surface)
+            && let Some(hook) = self.pre_commit_hook.lock().unwrap().take()
+        {
+            PrivateSurfaceData::remove_pre_commit_hook(&parent, &hook);
+        }
         PrivateSurfaceData::unset_parent(&self.surface);
         PrivateSurfaceData::with_states(&self.surface, |state| {
             state
