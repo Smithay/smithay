@@ -936,6 +936,7 @@ mod tests {
         child.commit();
         subsurface.set_sync();
         child.commit();
+        subsurface.set_position(71, 41);
         parent.commit();
         event_queue.roundtrip(&mut ClientState).unwrap();
         release_blocker.store(true, Ordering::Release);
@@ -947,8 +948,8 @@ mod tests {
                 (false, (0, 0).into()),
                 (false, (0, 0).into()),
                 (true, (37, 23).into()),
-                (false, (37, 23).into()),
-                (true, (37, 23).into()),
+                (false, (71, 41).into()),
+                (true, (71, 41).into()),
             ]
         );
     }

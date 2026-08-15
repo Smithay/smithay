@@ -91,7 +91,12 @@ impl<T> CachedState<T> {
         &mut self.pending
     }
 
-    pub(crate) fn update_all(&mut self, mut update: impl FnMut(&mut T)) {
+    /// Override pending, committed and current snapshots of this state.
+    ///
+    /// This is useful when the lifetime of a state is controlled by another
+    /// object's commit, so already committed snapshots must not restore stale
+    /// values when they are applied later.
+    pub(crate) fn override_all(&mut self, mut update: impl FnMut(&mut T)) {
         update(&mut self.pending);
         for (_, state) in &mut self.cache {
             update(state);
