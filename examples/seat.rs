@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use smithay::backend::input::InputTime;
 use smithay::input::{Seat, SeatHandler, SeatState, keyboard::FilterResult};
 use smithay::reexports::wayland_server::{
     Display, ListeningSocket,
@@ -66,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             smithay::backend::input::Keycode::from(9u32),
             smithay::backend::input::KeyState::Pressed,
             0.into(),
-            0,
+            InputTime::now(),
             |_, _, _| {
                 if false {
                     FilterResult::Intercept(0)

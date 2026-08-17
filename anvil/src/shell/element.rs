@@ -1,9 +1,14 @@
 use std::{borrow::Cow, time::Duration};
 
 use smithay::{
-    backend::renderer::{
-        ImportAll, ImportMem, Renderer, Texture,
-        element::{AsRenderElements, solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement},
+    backend::{
+        input::InputTime,
+        renderer::{
+            ImportAll, ImportMem, Renderer, Texture,
+            element::{
+                AsRenderElements, solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement,
+            },
+        },
     },
     desktop::{
         Window, WindowSurface, WindowSurfaceType, space::SpaceElement, utils::OutputPresentationFeedback,
@@ -212,7 +217,7 @@ impl<BackendData: Backend> PointerTarget<AnvilState<BackendData>> for SSD {
         _seat: &Seat<AnvilState<BackendData>>,
         _data: &mut AnvilState<BackendData>,
         _serial: Serial,
-        _time: u32,
+        _time: InputTime,
     ) {
         let mut state = self.0.decoration_state();
         if state.is_ssd {
@@ -447,7 +452,7 @@ impl<BackendData: Backend> TabletToolTarget<AnvilState<BackendData>> for SSD {
         _seat: &Seat<AnvilState<BackendData>>,
         _data: &mut AnvilState<BackendData>,
         _tool_descriptor: &smithay::backend::input::TabletToolDescriptor,
-        _time: u32,
+        _time: InputTime,
     ) {
     }
 }

@@ -14,7 +14,7 @@ use wayland_server::{
 };
 
 use crate::{
-    backend::input::{Axis, AxisSource, ButtonState},
+    backend::input::{Axis, AxisSource, ButtonState, InputTime},
     input::{
         Seat,
         pointer::{
@@ -28,6 +28,7 @@ use crate::{
     wayland::{
         Dispatch2, compositor,
         pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint},
+        relative_pointer::WpRelativePointerHandle,
     },
 };
 
@@ -103,7 +104,7 @@ impl WlPointerHandle {
         })
     }
 
-    fn leave(&self, surface: &WlSurface, serial: Serial, _time: u32) {
+    fn leave(&self, surface: &WlSurface, serial: Serial, _time: InputTime) {
         self.for_each_focused_pointer(surface, |ptr| {
             ptr.leave(serial.into(), surface);
             if ptr.version() >= 5 {
@@ -114,7 +115,12 @@ impl WlPointerHandle {
         *self.last_enter.lock().unwrap() = None;
     }
 
-    fn motion<D: SeatHandler + 'static>(&self, surface: &WlSurface, event: &MotionEvent) {
+    fn motion<D: SeatHandler + 'static>(
+        &self,
+        wp_relative: &WpRelativePointerHandle,
+        surface: &WlSurface,
+        event: &MotionEvent,
+    ) {
         self.for_each_focused_pointer(surface, |ptr| {
             let client_scale = ptr
                 .data::<PointerUserData<D>>()
@@ -122,13 +128,35 @@ impl WlPointerHandle {
                 .client_scale
                 .load(Ordering::Acquire);
             let location = event.location.to_client(client_scale);
-            ptr.motion(event.time, location.x, location.y);
+            if event.is_warp {
+                if ptr.version() >= wl_pointer::EVT_WARP_SINCE {
+                    ptr.warp(location.x, location.y);
+                } else {
+                    wp_relative.relative_motion_for_wl_pointer::<D>(
+                        surface,
+                        &ptr,
+                        &RelativeMotionEvent {
+                            delta: (0., 0.).into(),
+                            delta_unaccel: (0., 0.).into(),
+                            time: event.time,
+                        },
+                    );
+                    ptr.motion(event.time.millis(), location.x, location.y);
+                }
+            } else {
+                ptr.motion(event.time.millis(), location.x, location.y);
+            }
         })
     }
 
     fn button(&self, surface: &WlSurface, event: &ButtonEvent) {
         self.for_each_focused_pointer(surface, |ptr| {
-            ptr.button(event.serial.into(), event.time, event.button, event.state.into());
+            ptr.button(
+                event.serial.into(),
+                event.time.millis(),
+                event.button,
+                event.state.into(),
+            );
         })
     }
 
@@ -183,7 +211,7 @@ impl WlPointerHandle {
                 }
                 // stop
                 if details.stop.0 {
-                    ptr.axis_stop(details.time, WlAxis::HorizontalScroll);
+                    ptr.axis_stop(details.time.millis(), WlAxis::HorizontalScroll);
 
                     compositor::with_states(surface, |states| {
                         if let Some(data) = states.data_map.get::<Mutex<V120UserData>>() {
@@ -192,7 +220,7 @@ impl WlPointerHandle {
                     });
                 }
                 if details.stop.1 {
-                    ptr.axis_stop(details.time, WlAxis::VerticalScroll);
+                    ptr.axis_stop(details.time.millis(), WlAxis::VerticalScroll);
 
                     compositor::with_states(surface, |states| {
                         if let Some(data) = states.data_map.get::<Mutex<V120UserData>>() {
@@ -215,7 +243,7 @@ impl WlPointerHandle {
                     );
                 }
                 ptr.axis(
-                    details.time,
+                    details.time.millis(),
                     WlAxis::HorizontalScroll,
                     details.axis.0 * client_scale,
                 );
@@ -225,7 +253,7 @@ impl WlPointerHandle {
                     ptr.axis_relative_direction(WlAxis::VerticalScroll, details.relative_direction.1.into());
                 }
                 ptr.axis(
-                    details.time,
+                    details.time.millis(),
                     WlAxis::VerticalScroll,
                     details.axis.1 * client_scale,
                 );
@@ -267,7 +295,7 @@ where
         }
     }
 
-    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: InputTime) {
         if let Some(pointer) = seat.get_pointer() {
             pointer.wp_pointer_gestures.leave::<D>(self, serial, time);
             pointer.wl_pointer.leave(self, serial, time);
@@ -288,7 +316,7 @@ where
 
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         if let Some(pointer) = seat.get_pointer() {
-            pointer.wl_pointer.motion::<D>(self, event);
+            pointer.wl_pointer.motion::<D>(&pointer.wp_relative, self, event);
         }
     }
 

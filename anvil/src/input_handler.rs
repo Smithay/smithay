@@ -9,8 +9,8 @@ use smithay::{backend::renderer::DebugFlags, input::tablet};
 
 use smithay::{
     backend::input::{
-        self, Axis, AxisSource, Device, DeviceCapability, Event, InputBackend, InputEvent, KeyState,
-        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, TouchEvent,
+        self, Axis, AxisSource, Device, DeviceCapability, Event, InputBackend, InputEvent, InputTime,
+        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, TouchEvent,
     },
     desktop::{WindowSurfaceType, layer_map_for_output},
     input::{
@@ -137,7 +137,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let state = evt.state();
         debug!(?keycode, ?state, "key");
         let serial = SCOUNTER.next_serial();
-        let time = Event::time_msec(&evt);
+        let time = Event::time(&evt);
         let mut suppressed_keys = self.suppressed_keys.clone();
         let keyboard = self.seat.get_keyboard().unwrap();
 
@@ -233,7 +233,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 button,
                 state: state.try_into().unwrap(),
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
             },
         );
         pointer.frame(self);
@@ -405,7 +405,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let vertical_amount_discrete = evt.amount_v120(input::Axis::Vertical);
 
         {
-            let mut frame = AxisFrame::new(evt.time_msec()).source(evt.source());
+            let mut frame = AxisFrame::new(evt.time()).source(evt.source());
             if horizontal_amount != 0.0 {
                 frame = frame.relative_direction(Axis::Horizontal, evt.relative_direction(Axis::Horizontal));
                 frame = frame.value(Axis::Horizontal, horizontal_amount);
@@ -475,7 +475,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 slot: evt.slot(),
                 location: touch_location,
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
             },
         );
     }
@@ -490,7 +490,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             &UpEvent {
                 slot: evt.slot(),
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
             },
         )
     }
@@ -510,7 +510,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             &smithay::input::touch::MotionEvent {
                 slot: evt.slot(),
                 location: touch_location,
-                time: evt.time_msec(),
+                time: evt.time(),
             },
         );
     }
@@ -671,8 +671,9 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             under,
             &MotionEvent {
                 location: pos,
+                is_warp: false,
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
             },
         );
         pointer.frame(self);
@@ -686,7 +687,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 keycode,
                 KeyState::Released,
                 SCOUNTER.next_serial(),
-                0,
+                InputTime::now(),
                 |_, _, _| FilterResult::Forward::<bool>,
             );
         }
@@ -723,8 +724,9 @@ impl AnvilState<UdevData> {
                             under,
                             &MotionEvent {
                                 location,
+                                is_warp: false,
                                 serial: SCOUNTER.next_serial(),
-                                time: self.clock.now().as_millis(),
+                                time: InputTime::now(),
                             },
                         );
                         pointer.frame(self);
@@ -761,8 +763,9 @@ impl AnvilState<UdevData> {
                             under,
                             &MotionEvent {
                                 location: pointer_location,
+                                is_warp: false,
                                 serial: SCOUNTER.next_serial(),
-                                time: self.clock.now().as_millis(),
+                                time: InputTime::now(),
                             },
                         );
                         pointer.frame(self);
@@ -800,8 +803,9 @@ impl AnvilState<UdevData> {
                             under,
                             &MotionEvent {
                                 location: pointer_location,
+                                is_warp: false,
                                 serial: SCOUNTER.next_serial(),
-                                time: self.clock.now().as_millis(),
+                                time: InputTime::now(),
                             },
                         );
                         pointer.frame(self);
@@ -923,7 +927,7 @@ impl AnvilState<UdevData> {
             &RelativeMotionEvent {
                 delta: evt.delta(),
                 delta_unaccel: evt.delta_unaccel(),
-                utime: evt.time(),
+                time: evt.time(),
             },
         );
 
@@ -976,8 +980,9 @@ impl AnvilState<UdevData> {
             under,
             &MotionEvent {
                 location: pointer_location,
+                is_warp: false,
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
             },
         );
         pointer.frame(self);
@@ -1032,8 +1037,9 @@ impl AnvilState<UdevData> {
             under,
             &MotionEvent {
                 location: pointer_location,
+                is_warp: false,
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
             },
         );
         pointer.frame(self);
@@ -1046,13 +1052,14 @@ impl AnvilState<UdevData> {
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
             let tool = tablet_seat.get_tool(&evt.tool());
-            let time = self.clock.now().as_millis();
+            let time = InputTime::now();
 
             pointer.motion(
                 self,
                 under.clone(),
                 &MotionEvent {
                     location: pointer_location,
+                    is_warp: false,
                     serial: SCOUNTER.next_serial(),
                     time,
                 },
@@ -1111,8 +1118,9 @@ impl AnvilState<UdevData> {
                 under.clone(),
                 &MotionEvent {
                     location: pointer_location,
+                    is_warp: false,
                     serial: SCOUNTER.next_serial(),
-                    time: evt.time_msec(),
+                    time: evt.time(),
                 },
             );
             pointer.frame(self);
@@ -1139,7 +1147,7 @@ impl AnvilState<UdevData> {
                                 location: pointer_location,
                                 axis: Some(frame),
                                 serial: SCOUNTER.next_serial(),
-                                time: evt.time_msec(),
+                                time: evt.time(),
                             },
                         );
                     }
@@ -1148,7 +1156,7 @@ impl AnvilState<UdevData> {
                             self,
                             &tablet::tool::ProximityOutEvent {
                                 serial: SCOUNTER.next_serial(),
-                                time: evt.time_msec(),
+                                time: evt.time(),
                             },
                         );
                     }
@@ -1157,7 +1165,7 @@ impl AnvilState<UdevData> {
                 // Doing this in an idle handler would allow other events (e.g. buttons) to be
                 // sent as part of the same frame, which is closer to what the protocol
                 // expect, and let well behaved clients accumulate events.
-                tool.frame(self, evt.time_msec());
+                tool.frame(self, evt.time());
             }
         }
     }
@@ -1174,7 +1182,7 @@ impl AnvilState<UdevData> {
                         self,
                         &tablet::tool::DownEvent {
                             serial,
-                            time: evt.time_msec(),
+                            time: evt.time(),
                         },
                     );
 
@@ -1186,13 +1194,13 @@ impl AnvilState<UdevData> {
                         self,
                         &tablet::tool::UpEvent {
                             serial,
-                            time: evt.time_msec(),
+                            time: evt.time(),
                         },
                     );
                 }
             }
 
-            tool.frame(self, evt.time_msec());
+            tool.frame(self, evt.time());
         }
     }
 
@@ -1206,11 +1214,11 @@ impl AnvilState<UdevData> {
                     serial: SCOUNTER.next_serial(),
                     button: evt.button(),
                     state: evt.button_state(),
-                    time: evt.time_msec(),
+                    time: evt.time(),
                 },
             );
 
-            tool.frame(self, evt.time_msec());
+            tool.frame(self, evt.time());
         }
     }
 
@@ -1221,7 +1229,7 @@ impl AnvilState<UdevData> {
             self,
             &GestureSwipeBeginEvent {
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
                 fingers: evt.fingers(),
             },
         );
@@ -1232,7 +1240,7 @@ impl AnvilState<UdevData> {
         pointer.gesture_swipe_update(
             self,
             &GestureSwipeUpdateEvent {
-                time: evt.time_msec(),
+                time: evt.time(),
                 delta: evt.delta(),
             },
         );
@@ -1245,7 +1253,7 @@ impl AnvilState<UdevData> {
             self,
             &GestureSwipeEndEvent {
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
                 cancelled: evt.cancelled(),
             },
         );
@@ -1258,7 +1266,7 @@ impl AnvilState<UdevData> {
             self,
             &GesturePinchBeginEvent {
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
                 fingers: evt.fingers(),
             },
         );
@@ -1269,7 +1277,7 @@ impl AnvilState<UdevData> {
         pointer.gesture_pinch_update(
             self,
             &GesturePinchUpdateEvent {
-                time: evt.time_msec(),
+                time: evt.time(),
                 delta: evt.delta(),
                 scale: evt.scale(),
                 rotation: evt.rotation(),
@@ -1284,7 +1292,7 @@ impl AnvilState<UdevData> {
             self,
             &GesturePinchEndEvent {
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
                 cancelled: evt.cancelled(),
             },
         );
@@ -1297,7 +1305,7 @@ impl AnvilState<UdevData> {
             self,
             &GestureHoldBeginEvent {
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
                 fingers: evt.fingers(),
             },
         );
@@ -1310,7 +1318,7 @@ impl AnvilState<UdevData> {
             self,
             &GestureHoldEndEvent {
                 serial,
-                time: evt.time_msec(),
+                time: evt.time(),
                 cancelled: evt.cancelled(),
             },
         );

@@ -47,13 +47,13 @@ use crate::{
             display::EGLDisplay,
             native,
         },
-        input::InputEvent,
+        input::{InputEvent, InputTime},
         renderer::{
             Bind,
             gles::{GlesError, GlesRenderer},
         },
     },
-    utils::{Clock, Monotonic, Physical, Rectangle, Size},
+    utils::{Physical, Rectangle, Size},
 };
 
 mod input;
@@ -117,7 +117,6 @@ where
     let mut window_event_loop_inner = WinitEventLoopInner {
         window_attributes: attributes,
         scale_factor: 1.0,
-        clock: Clock::<Monotonic>::new(),
         key_counter: 0,
         // Will be initialized after window creation
         window: None,
@@ -389,7 +388,6 @@ struct WinitEventLoopInner {
     window_attributes: WindowAttributes,
     window: Option<Arc<dyn WinitWindow>>,
     window_create_error: Option<Error>,
-    clock: Clock<Monotonic>,
     key_counter: u32,
     is_x11: bool,
     scale_factor: f64,
@@ -452,8 +450,9 @@ struct WinitEventLoopApp<'a, F: FnMut(WinitEvent)> {
 }
 
 impl<F: FnMut(WinitEvent)> WinitEventLoopApp<'_, F> {
-    fn timestamp(&self) -> u64 {
-        self.inner.clock.now().as_micros()
+    fn timestamp(&self) -> InputTime {
+        // TODO Get input time from X11 or Wayland?
+        InputTime::now()
     }
 }
 
