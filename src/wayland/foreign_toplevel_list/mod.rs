@@ -128,11 +128,16 @@ pub struct ForeignToplevelHandle {
 }
 
 impl ForeignToplevelHandle {
-    fn new(title: String, app_id: String, instances: Vec<Weak<ExtForeignToplevelHandleV1>>) -> Self {
+    fn new(
+        title: String,
+        app_id: String,
+        identifier: String,
+        instances: Vec<Weak<ExtForeignToplevelHandleV1>>,
+    ) -> Self {
         Self {
             inner: Arc::new((
                 Mutex::new(ForeignToplevelHandleInner {
-                    identifier: Alphanumeric.sample_string(&mut rand::rng(), 32),
+                    identifier,
                     title,
                     app_id,
                     instances,
@@ -337,9 +342,40 @@ impl ForeignToplevelListState {
     where
         D: ForeignToplevelListHandler + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
     {
+        self.new_toplevel_with_identifier::<D>(
+            title,
+            app_id,
+            Alphanumeric.sample_string(&mut rand::rng(), 32),
+        )
+    }
+
+    /// Create a new [`ForeignToplevelHandle`] using an arbitrary identifier.
+    ///
+    /// This function is similar to [`new_toplevel`], but lets the compositor specify the toplevel
+    /// identifier. The identifier should be a non-empty string composed of up to 32 printable ascii
+    /// characters.
+    ///
+    /// [`new_toplevel`]: ForeignToplevelListState::new_toplevel
+    pub fn new_toplevel_with_identifier<D>(
+        &mut self,
+        title: impl Into<String>,
+        app_id: impl Into<String>,
+        identifier: impl Into<String>,
+    ) -> ForeignToplevelHandle
+    where
+        D: ForeignToplevelListHandler + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
+    {
+        let identifier = identifier.into();
+        assert!(
+            !identifier.is_empty() && identifier.len() <= 32 && identifier.is_ascii(),
+            "{} is not a valid identifier",
+            identifier
+        );
+
         let handle = ForeignToplevelHandle::new(
             title.into(),
             app_id.into(),
+            identifier,
             Vec::with_capacity(self.list_instances.len()),
         );
 
