@@ -66,6 +66,7 @@ impl PopupManager {
         D: SeatHandler + 'static,
         <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
         <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+        <D as SeatHandler>::TouchFocus: From<<D as SeatHandler>::KeyboardFocus>,
     {
         let surface = popup.wl_surface();
         assert_eq!(
@@ -113,13 +114,7 @@ impl PopupManager {
             }
         };
 
-        Ok(PopupGrab::new(
-            toplevel_popups,
-            root,
-            serial,
-            previous_serial,
-            seat.get_keyboard(),
-        ))
+        Ok(PopupGrab::new(toplevel_popups, root, serial, previous_serial))
     }
 
     fn add_popup(&mut self, popup: PopupKind) -> Result<(), DeadResource> {
