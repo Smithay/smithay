@@ -560,14 +560,9 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
         self.arc.lock().unwrap().tools.len()
     }
 
-    /// Run a callback on all available tablet tools
-    pub fn with_tools<T>(
-        &self,
-        callback: impl FnOnce(&HashMap<TabletToolDescriptor, TabletToolHandle<D>>) -> T,
-    ) -> T {
-        let guard = self.arc.lock().unwrap();
-
-        callback(&guard.tools)
+    /// Get a map of all tablet tools known by this [`TabletSeat`].
+    pub fn get_tools(&self) -> HashMap<TabletToolDescriptor, TabletToolHandle<D>> {
+        self.arc.lock().unwrap().tools.clone()
     }
 
     /// Remove tablet tool device
