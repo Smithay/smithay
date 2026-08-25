@@ -30,6 +30,15 @@ use crate::{
 
 const VERSION: u32 = 1;
 
+/// Reason for Constraint remove
+#[derive(Debug)]
+pub enum ConstraintRemove {
+    /// Client call destroy
+    Destroyed(PointerConstraint),
+    /// Compositor pointer leave surface
+    PointerLeave(Option<RegionAttributes>),
+}
+
 /// Handler for pointer constraints
 pub trait PointerConstraintsHandler: SeatHandler {
     /// Pointer lock or confinement constraint created for `pointer` on `surface`
@@ -39,12 +48,12 @@ pub trait PointerConstraintsHandler: SeatHandler {
 
     /// Pointer constraint removed for `pointer` on `surface`
     ///
-    /// Don't use [`with_pointer_constraint`] to access the constraint
+    /// Use [`with_pointer_constraint`] to access the constraint.
     fn remove_constraint(
         &mut self,
         _surface: &WlSurface,
         _pointer: &PointerHandle<Self>,
-        _constraint: Option<&PointerConstraint>,
+        _constraint_remove: ConstraintRemove,
     ) {
     }
 
@@ -154,7 +163,7 @@ impl<D: SeatHandler + PointerConstraintsHandler + 'static> PointerConstraintRef<
     ///
     /// This is sent automatically when the surface loses pointer focus, but
     /// may also be invoked while the surface is focused.
-    pub fn deactivate(self, state: &mut D, surface: &WlSurface, pointer: &PointerHandle<D>) {
+    pub fn deactivate(self) {
         let deactivated = match self.entry.get() {
             PointerConstraint::Confined(confined) => {
                 if confined.active.swap(false, Ordering::SeqCst) {
@@ -173,11 +182,6 @@ impl<D: SeatHandler + PointerConstraintsHandler + 'static> PointerConstraintRef<
                 }
             }
         };
-
-        if deactivated {
-            let constraint = self.entry.get();
-            state.remove_constraint(surface, pointer, Some(constraint));
-        }
 
         if deactivated && self.lifetime() == WEnum::Value(Lifetime::Oneshot) {
             self.entry.remove_entry();
@@ -366,19 +370,17 @@ fn remove_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
     surface: &WlSurface,
     pointer: &PointerHandle<D>,
 ) {
-    let (is_removed, constraint) = with_constraint_data::<D, _, _>(surface, |data| {
+    let is_removed = with_constraint_data::<D, _, _>(surface, |data| {
         if let Some(data) = data {
             if let Some(constraint) = data.constraints.remove(pointer) {
-                return (true, Some(constraint));
+                return Some(constraint);
             }
         }
-        (false, None)
+        None
     });
 
-    if is_removed {
-        if let Some(constraint) = constraint {
-            state.remove_constraint(surface, pointer, Some(&constraint));
-        }
+    if let Some(constraint) = is_removed {
+        state.remove_constraint(surface, pointer, ConstraintRemove::Destroyed(constraint));
     }
 }
 
