@@ -27,7 +27,7 @@ use crate::{
     utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
         Dispatch2, compositor,
-        pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint},
+        pointer_constraints::{ConstraintRemove, PointerConstraintsHandler, with_pointer_constraint},
     },
 };
 
@@ -277,11 +277,21 @@ where
             pointer.wp_pointer_gestures.leave::<D>(self, serial, time);
             pointer.wl_pointer.leave(self, serial, time);
 
-            with_pointer_constraint(self, &pointer, |constraint| {
+            if let Some(region) = with_pointer_constraint(self, &pointer, |constraint| {
                 if let Some(constraint) = constraint {
-                    constraint.deactivate(data, self, &pointer);
+                    if constraint.is_active() {
+                        let region = constraint.region().cloned();
+                        constraint.deactivate();
+                        Some(region)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
-            });
+            }) {
+                data.remove_constraint(self, &pointer, ConstraintRemove::PointerLeave(region));
+            }
         }
 
         compositor::with_states(self, |states| {

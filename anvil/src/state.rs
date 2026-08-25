@@ -65,7 +65,8 @@ use smithay::{
         },
         output::{OutputHandler, OutputManagerState},
         pointer_constraints::{
-            PointerConstraint, PointerConstraintsHandler, PointerConstraintsState, with_pointer_constraint,
+            ConstraintRemove, PointerConstraint, PointerConstraintsHandler, PointerConstraintsState,
+            with_pointer_constraint,
         },
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
@@ -386,33 +387,41 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         &mut self,
         _surface: &WlSurface,
         pointer: &PointerHandle<Self>,
-        _constraint: Option<&PointerConstraint>,
+        constraint_remove: ConstraintRemove,
     ) {
+        // Clear cursor_position_hint to prevent a oneshot PointerLocked constraint
+        // from causing this function to be called again during PointerLeave and
+        // unexpectedly changing the cursor position.
         let Some((hint_surface, hint_location)) = self.cursor_position_hint.take() else {
             return;
         };
 
-        // If the constraint was broken by the pointer forcibly leaving the surface, then it doesn't
-        // make much sense to warp it.
-        //
-        // Furthermore, when the constraint is removed as part of the pointer leaving the surface,
-        // this call happens with locked pointer data, and calling set_location() will try to lock
-        // it again and deadlock.
-        if pointer.last_enter().is_none() {
-            return;
+        match constraint_remove {
+            ConstraintRemove::Destroyed(pointer_constraint) => match pointer_constraint {
+                PointerConstraint::Confined(_confined_pointer) => return,
+                PointerConstraint::Locked(locked_pointer) => {
+                    let origin = self
+                        .space
+                        .elements()
+                        .find_map(|window| {
+                            (window.wl_surface().as_deref() == Some(&hint_surface)).then(|| window.geometry())
+                        })
+                        .unwrap_or_default()
+                        .loc
+                        .to_f64();
+
+                    let surface_location = origin + hint_location;
+                    if let Some(region) = locked_pointer.region()
+                        && region.contains(hint_location.to_i32_floor())
+                    {
+                        pointer.set_location(surface_location);
+                    } else {
+                        pointer.set_location(surface_location);
+                    }
+                }
+            },
+            ConstraintRemove::PointerLeave(_region) => return,
         }
-
-        let origin = self
-            .space
-            .elements()
-            .find_map(|window| {
-                (window.wl_surface().as_deref() == Some(&hint_surface)).then(|| window.geometry())
-            })
-            .unwrap_or_default()
-            .loc
-            .to_f64();
-
-        pointer.set_location(origin + hint_location);
     }
 
     fn cursor_position_hint(
