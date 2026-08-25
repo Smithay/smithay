@@ -40,7 +40,7 @@ pub use uniform::*;
 use crate::{backend::renderer::FrameContext, gpu_span_location};
 use profiler::SpanLocation;
 
-use self::version::GlVersion;
+use self::version::{GLES_3_2, GlVersion};
 
 use super::{
     Bind, Blit, BlitFrame, Color32F, ContextId, DebugFlags, ExportMem, Frame, ImportDma, ImportMem,
@@ -387,6 +387,10 @@ pub struct GlesRenderer {
     pub(crate) extensions: Vec<String>,
     is_software: bool,
     capabilities: Vec<Capability>,
+    /// Whether `GetGraphicsResetStatus` is safe to call: core in GLES 3.2+, otherwise only
+    /// present at all if `GL_EXT_robustness`/`GL_KHR_robustness` is advertised. Calling it
+    /// without either would call into an unloaded function pointer.
+    has_robustness_query: bool,
 
     // shaders
     tex_program: GlesTexProgram,
@@ -465,6 +469,36 @@ impl fmt::Debug for GlesRenderer {
     }
 }
 
+/// Collapses runs of the *same* driver debug message.
+///
+/// Some driver-reported conditions - a lost GL context above all - make every subsequent GL call
+/// report the identical message, so a single GPU reset can emit hundreds of them in under a
+/// second. Journald floods of exactly this kind have hard-frozen the machine during GPU-reset
+/// recovery, so log a repeating message on a 1, 2, 4, 8, ... schedule instead of every time: the
+/// message and the fact that it is repeating both still show up, at a bounded cost. Any different
+/// message resets the run and is logged immediately.
+fn is_repeat_flood(message: &str) -> bool {
+    use std::{
+        collections::hash_map::DefaultHasher,
+        hash::{Hash, Hasher},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static LAST_HASH: AtomicU64 = AtomicU64::new(0);
+    static REPEATS: AtomicU64 = AtomicU64::new(0);
+
+    let mut hasher = DefaultHasher::new();
+    message.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    if LAST_HASH.swap(hash, Ordering::Relaxed) != hash {
+        REPEATS.store(0, Ordering::Relaxed);
+        return false;
+    }
+    // Log only when the repeat count reaches a power of two.
+    !(REPEATS.fetch_add(1, Ordering::Relaxed) + 1).is_power_of_two()
+}
+
 extern "system" fn gl_debug_log(
     _source: ffi::types::GLenum,
     gltype: ffi::types::GLenum,
@@ -479,6 +513,9 @@ extern "system" fn gl_debug_log(
         let _guard = span.enter();
         let msg = CStr::from_ptr(message);
         let message_utf8 = msg.to_string_lossy();
+        if is_repeat_flood(&message_utf8) {
+            return;
+        }
         match gltype {
             ffi::DEBUG_TYPE_ERROR | ffi::DEBUG_TYPE_UNDEFINED_BEHAVIOR => {
                 error!("[GL] {}", message_utf8)
@@ -717,6 +754,11 @@ impl GlesRenderer {
 
         let profiler = profiler::GpuProfiler::new(&gl, &exts);
 
+        let has_robustness_query = gl_version >= GLES_3_2
+            || exts
+                .iter()
+                .any(|ext| ext == "GL_EXT_robustness" || ext == "GL_KHR_robustness");
+
         let renderer = GlesRenderer {
             gl,
             egl: context,
@@ -727,6 +769,7 @@ impl GlesRenderer {
             is_software,
             gl_version,
             capabilities,
+            has_robustness_query,
 
             tex_program,
             solid_program,
@@ -749,6 +792,18 @@ impl GlesRenderer {
         };
         renderer.egl.unbind()?;
         Ok(renderer)
+    }
+
+    /// Checks whether the GL context has been lost (e.g. due to a GPU reset).
+    ///
+    /// Framebuffer completeness checks fail in ways indistinguishable from other errors once the
+    /// context is lost, so callers should prefer this check over reporting a generic binding error.
+    fn graphics_reset_status(&self) -> Option<u32> {
+        if !self.has_robustness_query {
+            return None;
+        }
+        let status = unsafe { self.gl.GetGraphicsResetStatus() };
+        (status != ffi::NO_ERROR).then_some(status)
     }
 
     fn bind_texture<'a>(&mut self, texture: &'a GlesTexture) -> Result<GlesTarget<'a>, GlesError> {
@@ -782,6 +837,9 @@ impl GlesRenderer {
 
                 if status != ffi::FRAMEBUFFER_COMPLETE {
                     self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    if let Some(reset_status) = self.graphics_reset_status() {
+                        return Err(GlesError::ContextLost(reset_status));
+                    }
                     return Err(GlesError::FramebufferBindingError);
                 }
             }
@@ -1601,6 +1659,9 @@ impl Bind<Dmabuf> for GlesRenderer {
                             self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
                             self.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
                             ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
+                            if let Some(reset_status) = self.graphics_reset_status() {
+                                return Err(GlesError::ContextLost(reset_status));
+                            }
                             return Err(GlesError::FramebufferBindingError);
                         }
                         let buf = GlesBuffer(Rc::new(GlesBufferInner {
@@ -1662,6 +1723,9 @@ impl Bind<GlesRenderbuffer> for GlesRenderer {
 
                 if status != ffi::FRAMEBUFFER_COMPLETE {
                     self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    if let Some(reset_status) = self.graphics_reset_status() {
+                        return Err(GlesError::ContextLost(reset_status));
+                    }
                     return Err(GlesError::FramebufferBindingError);
                 }
             }
@@ -1860,8 +1924,14 @@ impl Blit for GlesRenderer {
 
         let status = unsafe { self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
         if status != ffi::FRAMEBUFFER_COMPLETE {
+            // Query reset status *before* unbind() releases the current context - once no
+            // context is current, GetGraphicsResetStatus has nothing to query.
+            let reset_status = self.graphics_reset_status();
             drop(scope);
             let _ = self.unbind();
+            if let Some(reset_status) = reset_status {
+                return Err(GlesError::ContextLost(reset_status));
+            }
             return Err(GlesError::FramebufferBindingError);
         }
 
@@ -2529,6 +2599,13 @@ impl GlesFrame<'_, '_> {
 
         if self.finished.swap(true, Ordering::SeqCst) {
             return Ok(SyncPoint::signaled());
+        }
+
+        // Goes through the guarded helper rather than calling `GetGraphicsResetStatus`
+        // directly: on GLES < 3.2 without GL_EXT_robustness/GL_KHR_robustness, the entry
+        // point may not be loaded at all.
+        if let Some(reset_status) = self.renderer.graphics_reset_status() {
+            return Err(GlesError::ContextLost(reset_status));
         }
 
         let finish_gpu_span = self

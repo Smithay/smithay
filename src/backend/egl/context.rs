@@ -287,6 +287,19 @@ impl EGLContext {
             }
         }
 
+        let has_robustness = display
+            .extensions()
+            .iter()
+            .any(|x| x == "EGL_EXT_create_context_robustness");
+        if has_robustness {
+            context_attributes.push(ffi::egl::CONTEXT_OPENGL_ROBUST_ACCESS_EXT as i32);
+            context_attributes.push(ffi::egl::TRUE as i32);
+            context_attributes.push(ffi::egl::CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT as i32);
+            context_attributes.push(ffi::egl::LOSE_CONTEXT_ON_RESET_EXT as i32);
+        } else {
+            warn!("EGL_EXT_create_context_robustness not supported, GPU resets may abort the process");
+        }
+
         context_attributes.push(ffi::egl::NONE as i32);
 
         trace!("Creating EGL context...");

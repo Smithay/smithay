@@ -1822,11 +1822,46 @@ impl MultiTexture {
         <A::Device as ApiDevice>::Renderer: ImportDma,
     {
         let mut tex = self.0.lock().unwrap();
+        let current_id = renderer.context_id().erased();
+
         if let Some(GpuSingleTexture::Dma { texture, dmabuf, .. }) =
-            tex.textures.get_mut(&renderer.context_id().erased())
+            tex.textures.get_mut(&current_id)
         {
+            // Normal path: a dmabuf already imported for this exact context. Re-import it in
+            // place (e.g. when the underlying GL texture was invalidated but the context survived).
             *texture = Box::new(renderer.import_dmabuf(dmabuf, None)?) as Box<_>;
+            return Ok(());
         }
+
+        // Recovery path: after a GPU reset the renderer is recreated with a *new* `ContextId`,
+        // so any dmabuf imported under an older, now-dead context is orphaned (looked up by the
+        // old id and never found). Re-import the first available dmabuf into the new renderer
+        // and re-key it to the new context instead of dropping it - otherwise every client
+        // surface fails with "import for wrong devices" and GPU-accelerated (wgpu/Vulkan) apps
+        // panic on the invalid texture.
+        let stale_entry = tex.textures.iter().find_map(|(id, entry)| match entry {
+            GpuSingleTexture::Dma { dmabuf, .. } => Some((id.clone(), dmabuf.clone())),
+            _ => None,
+        });
+
+        if let Some((stale_id, dmabuf)) = stale_entry {
+            let imported = Box::new(renderer.import_dmabuf(&dmabuf, None)?) as Box<_>;
+            // Drop only the specific stale entry that was consumed above, and insert the
+            // freshly imported texture under the new id. Other contexts' entries (e.g. a
+            // different, unaffected GPU in a multi-GPU setup) are left untouched - they
+            // weren't part of this device's context loss and blowing them away would just
+            // force redundant reimports on GPUs that never lost anything.
+            tex.textures.remove(&stale_id);
+            tex.textures.insert(
+                current_id,
+                GpuSingleTexture::Dma {
+                    texture: imported,
+                    dmabuf,
+                    sync: None,
+                },
+            );
+        }
+
         Ok(())
     }
 

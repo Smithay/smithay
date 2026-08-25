@@ -161,6 +161,16 @@ impl std::convert::From<SwapBuffersError> for GraphicsSwapBuffersError {
 #[error("`eglMakeCurrent` failed: {0}")]
 pub struct MakeCurrentError(#[from] EGLError);
 
+impl MakeCurrentError {
+    /// Whether this failure was caused by the context having been lost, e.g. because the GPU
+    /// was reset. Callers that only care about generic activation failures vs. a lost context
+    /// (which typically warrants recreating the renderer rather than just retrying) can use
+    /// this instead of matching on the wrapped [`EGLError`] directly.
+    pub fn is_context_lost(&self) -> bool {
+        matches!(self.0, EGLError::ContextLost)
+    }
+}
+
 impl From<MakeCurrentError> for GraphicsSwapBuffersError {
     #[inline]
     fn from(err: MakeCurrentError) -> GraphicsSwapBuffersError {
