@@ -259,13 +259,13 @@ fn handle_dnd<D, S>(
     match request {
         Request::Accept { mime_type, .. } => {
             if let Some(source) = source.as_ref() {
-                if let Some(mtype) = mime_type {
-                    data.accepted = source
+                data.accepted = match &mime_type {
+                    Some(mtype) => source
                         .metadata()
-                        .is_some_and(|meta| meta.mime_types.contains(&mtype));
-                } else {
-                    data.accepted = false;
-                }
+                        .is_some_and(|meta| meta.mime_types.contains(mtype)),
+                    None => false,
+                };
+                source.accepted(mime_type);
             } else if data.finished {
                 offer.post_error(
                     wl_data_offer::Error::InvalidFinish,

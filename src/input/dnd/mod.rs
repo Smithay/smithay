@@ -64,6 +64,15 @@ pub trait Source: IsAlive + Send + Sync + 'static {
     ///
     /// If this returns `None` the source is not managed by smithay (e.g. client_local)
     fn metadata(&self) -> Option<SourceMetadata>;
+    /// The target accepted a mime-type, or rejected the offer when `None`
+    ///
+    /// Proxying implementations, such as a nested compositor forwarding a
+    /// drag to its own clients, need this to relay the target's choice to
+    /// the upstream source. Sources that originate their own data can
+    /// ignore it.
+    fn accepted(&self, mime_type: Option<String>) {
+        let _ = mime_type;
+    }
     /// An action was selected by the target
     fn choose_action(&self, action: DndAction);
     /// The target requests data to be transferred to the given file descriptor for the given mime-type
