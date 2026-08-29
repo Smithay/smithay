@@ -1886,3 +1886,6 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
 
     fn unset(&mut self, _data: &mut D) {}
 }
+
+#[cfg(test)]
+mod tests;
