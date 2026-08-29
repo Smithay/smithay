@@ -833,13 +833,20 @@ impl GlesRenderer {
         self.is_software
     }
 
-    fn export_sync_point(&self) -> Option<SyncPoint> {
+    fn export_sync_point(&mut self) -> Option<SyncPoint> {
         if self.capabilities.contains(&Capability::ExportFence) {
-            if let Ok(fence) = EGLFence::create(self.egl.display()) {
-                unsafe {
-                    self.gl.Flush();
+            match EGLFence::create(self.egl.display()) {
+                Ok(fence) => {
+                    unsafe {
+                        self.gl.Flush();
+                    }
+                    return Some(SyncPoint::from(fence));
                 }
-                return Some(SyncPoint::from(fence));
+                Err(err) => {
+                    warn!(?err, "Disabling EGL fence export after runtime failure");
+                    self.capabilities
+                        .retain(|capability| *capability != Capability::ExportFence);
+                }
             }
         }
         None
