@@ -63,12 +63,15 @@ where
     with_surface_tree_downward(
         surface,
         location,
-        |_, states, loc: &Point<i32, Logical>| {
+        |wl_surface, states, loc: &Point<i32, Logical>| {
             let mut loc = *loc;
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
-                loc += surface_view.offset;
+                // Assume the location parameter provides the root location.
+                if wl_surface != surface {
+                    loc += surface_view.offset;
+                }
                 // Update the bounding box.
                 bounding_box = bounding_box.merge(Rectangle::new(loc, surface_view.dst));
 
@@ -104,12 +107,15 @@ where
     with_surface_tree_downward(
         surface,
         location.into(),
-        |_, states, location: &Point<i32, Logical>| {
+        |wl_surface, states, location: &Point<i32, Logical>| {
             let mut location = *location;
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
-                location += surface_view.offset;
+                // Assume the location parameter provides the surface location.
+                if wl_surface != surface {
+                    location += surface_view.offset;
+                }
                 if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
                     TraversalAction::DoChildren(location)
                 } else {
@@ -125,7 +131,9 @@ where
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
-                location += surface_view.offset;
+                if wl_surface != surface {
+                    location += surface_view.offset;
+                }
 
                 let contains_the_point = data
                     .map(|data| {
