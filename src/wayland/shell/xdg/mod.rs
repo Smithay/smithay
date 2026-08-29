@@ -436,6 +436,8 @@ xdg_role!(
     /// for the xdg_popup state to take effect.
     #[derive(Debug)]
     XdgPopupSurfaceRoleAttributes {
+        active: bool,
+
         /// Holds the parent for the xdg_popup.
         ///
         /// The parent is allowed to remain unset as long
@@ -1971,6 +1973,9 @@ impl PopupSurface {
                 .unwrap()
                 .lock()
                 .unwrap();
+            if !role.active {
+                return Ok(None);
+            }
             if role.parent.is_none() {
                 return Err((
                     xdg_surface::Error::NotConstructed,

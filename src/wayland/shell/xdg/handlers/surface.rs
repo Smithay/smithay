@@ -172,6 +172,7 @@ where
                 let shell = &self.wm_base;
 
                 let attributes = XdgPopupSurfaceRoleAttributes {
+                    active: true,
                     parent: parent_surface,
                     server_pending: Some(PopupState {
                         // Set the positioner data as the popup geometry
