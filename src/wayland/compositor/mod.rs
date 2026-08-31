@@ -648,7 +648,7 @@ impl CompositorClientState {
     /// surface belonging to this client.
     pub fn blocker_cleared<D: CompositorHandler + 'static>(&self, state: &mut D, dh: &DisplayHandle) {
         let transactions = if let Some(queue) = self.queue.lock().unwrap().as_mut() {
-            queue.take_ready()
+            queue.take_ready().0
         } else {
             Vec::new()
         };

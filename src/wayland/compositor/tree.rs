@@ -324,18 +324,18 @@ impl PrivateSurfaceData {
             // release the mutex, as applying the transaction will try to lock it
             std::mem::drop(my_data);
             // trigger the queue
-            let transactions = queue.take_ready();
+            let (transactions, pending_transactions_count) = queue.take_ready();
             // release the queue lock
             std::mem::drop(queue_guard);
 
-            // If empty, there is likely at least one blocker that has been cancelled or is pending, so notify compositor to handle it.
-            if transactions.is_empty() {
+            // apply might call commit, which might call blocker_cleared, so we need to free the queue before applying
+            for transaction in transactions {
+                transaction.apply(dh, state)
+            }
+
+            // there is likely at least one blocker is pending, so notify compositor to handle it.
+            if pending_transactions_count > 0 {
                 state.schedule_barrier(surface);
-            } else {
-                // apply might call commit, which might call blocker_cleared, so we need to free the queue before applying
-                for transaction in transactions {
-                    transaction.apply(dh, state)
-                }
             }
         }
     }

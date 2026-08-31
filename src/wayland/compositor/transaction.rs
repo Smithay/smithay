@@ -290,9 +290,10 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn take_ready(&mut self) -> Vec<Transaction> {
+    pub(crate) fn take_ready(&mut self) -> (Vec<Transaction>, u32) {
         // FIXME: Get rid of this allocation here
         let mut ready_transactions = Vec::new();
+        let mut pending_transactions_count = 0u32;
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -311,6 +312,7 @@ impl TransactionQueue {
                     continue;
                 }
                 BlockerState::Pending => {
+                    pending_transactions_count += 1;
                     skip = true;
                 }
                 BlockerState::Released => {}
@@ -346,6 +348,6 @@ impl TransactionQueue {
             }
         }
 
-        ready_transactions
+        (ready_transactions, pending_transactions_count)
     }
 }
