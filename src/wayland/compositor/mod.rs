@@ -598,6 +598,14 @@ pub trait CompositorHandler {
     /// using a pre-commit hook (see [`add_pre_commit_hook`]).
     fn commit(&mut self, surface: &WlSurface);
 
+    /// Surface barrier handler
+    ///
+    /// When this is called, there is likely at least one blocker in a cancelled or pending state,
+    /// preventing the surface commit from calling [`CompositorHandler::commit`].
+    ///
+    /// This allows compositor to check `CommitTimerBarrierStateUserData` and release it at the appropriate time.
+    fn schedule_barrier(&mut self, _surface: &WlSurface) {}
+
     /// The surface was destroyed.
     ///
     /// This allows the compositor to clean up any uses of the surface.

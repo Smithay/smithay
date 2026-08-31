@@ -327,9 +327,15 @@ impl PrivateSurfaceData {
             let transactions = queue.take_ready();
             // release the queue lock
             std::mem::drop(queue_guard);
-            // apply might call commit, which might call blocker_cleared, so we need to free the queue before applying
-            for transaction in transactions {
-                transaction.apply(dh, state)
+
+            // If empty, there is likely at least one blocker that has been cancelled or is pending, so notify compositor to handle it.
+            if transactions.is_empty() {
+                state.schedule_barrier(surface);
+            } else {
+                // apply might call commit, which might call blocker_cleared, so we need to free the queue before applying
+                for transaction in transactions {
+                    transaction.apply(dh, state)
+                }
             }
         }
     }
