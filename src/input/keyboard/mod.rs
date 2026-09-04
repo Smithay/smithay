@@ -224,6 +224,41 @@ impl KeyboardSource {
     }
 }
 
+#[cfg(any(feature = "wayland_frontend", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeyboardInputInterception {
+    Forward,
+    Intercept,
+}
+
+#[cfg(any(feature = "wayland_frontend", test))]
+/// Intercepts keyboard input after [`KeyboardGrab`] routing.
+///
+/// If a press is intercepted, its matching release remains assigned to the same interceptor if it
+/// reaches this stage; the compositor filter or a routing grab may consume the release earlier.
+/// Replacing or removing the interceptor while the key is held causes such a release to be dropped.
+pub(crate) trait KeyboardInputInterceptor<D: SeatHandler> {
+    #[allow(clippy::too_many_arguments)]
+    fn input(
+        &mut self,
+        data: &mut D,
+        seat: &Seat<D>,
+        source: KeyboardSource,
+        keycode: Keycode,
+        state: KeyState,
+        modifiers: Option<ModifiersState>,
+        serial: Serial,
+        time: InputTime,
+    ) -> KeyboardInputInterception;
+}
+
+#[cfg(any(feature = "wayland_frontend", test))]
+#[derive(Debug, Clone, Copy)]
+enum InterceptedPressOwner {
+    Active(KeyboardSource),
+    Detached,
+}
+
 pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
@@ -237,6 +272,12 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     led_mapping: LedMapping,
     pub(crate) led_state: LedState,
     grab: GrabStatus<dyn KeyboardGrab<D>>,
+    #[cfg(any(feature = "wayland_frontend", test))]
+    input_interceptor: Option<Box<dyn KeyboardInputInterceptor<D>>>,
+    #[cfg(any(feature = "wayland_frontend", test))]
+    intercepted_pressed_keys: HashMap<Keycode, InterceptedPressOwner>,
+    #[cfg(any(feature = "wayland_frontend", test))]
+    forwarded_modifiers_dirty: bool,
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
@@ -294,6 +335,12 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             led_mapping,
             led_state,
             grab: GrabStatus::None,
+            #[cfg(any(feature = "wayland_frontend", test))]
+            input_interceptor: None,
+            #[cfg(any(feature = "wayland_frontend", test))]
+            intercepted_pressed_keys: HashMap::new(),
+            #[cfg(any(feature = "wayland_frontend", test))]
+            forwarded_modifiers_dirty: false,
         })
     }
 
@@ -314,6 +361,12 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                     return (false, false, false);
                 }
                 self.pressed_keys.insert(keycode);
+                #[cfg(any(feature = "wayland_frontend", test))]
+                {
+                    // A release can be consumed before post-routing dispatch. A fresh combined
+                    // key-down starts a new cycle, so any leftover owner is necessarily stale.
+                    self.intercepted_pressed_keys.remove(&keycode);
+                }
                 xkb::KeyDirection::Down
             }
             KeyState::Released => {
@@ -368,7 +421,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         transitioned
     }
 
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
+    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, _source: KeyboardSource, f: F)
     where
         F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {
@@ -383,7 +436,12 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                         self.grab = GrabStatus::None;
                         f(
                             data,
-                            &mut KeyboardInnerHandle { inner: self, seat },
+                            &mut KeyboardInnerHandle {
+                                inner: self,
+                                seat,
+                                #[cfg(any(feature = "wayland_frontend", test))]
+                                source: _source,
+                            },
                             &mut DefaultGrab,
                         );
                         return;
@@ -391,14 +449,24 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                 }
                 f(
                     data,
-                    &mut KeyboardInnerHandle { inner: self, seat },
+                    &mut KeyboardInnerHandle {
+                        inner: self,
+                        seat,
+                        #[cfg(any(feature = "wayland_frontend", test))]
+                        source: _source,
+                    },
                     &mut **handler,
                 );
             }
             GrabStatus::None => {
                 f(
                     data,
-                    &mut KeyboardInnerHandle { inner: self, seat },
+                    &mut KeyboardInnerHandle {
+                        inner: self,
+                        seat,
+                        #[cfg(any(feature = "wayland_frontend", test))]
+                        source: _source,
+                    },
                     &mut DefaultGrab,
                 );
             }
@@ -975,6 +1043,27 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         inner.grab = GrabStatus::None;
     }
 
+    #[cfg(any(feature = "wayland_frontend", test))]
+    pub(crate) fn set_input_interceptor<I>(&self, interceptor: I)
+    where
+        I: KeyboardInputInterceptor<D> + 'static,
+    {
+        let mut inner = self.arc.internal.lock().unwrap();
+        for owner in inner.intercepted_pressed_keys.values_mut() {
+            *owner = InterceptedPressOwner::Detached;
+        }
+        inner.input_interceptor = Some(Box::new(interceptor));
+    }
+
+    #[cfg(any(feature = "wayland_frontend", test))]
+    pub(crate) fn unset_input_interceptor(&self) {
+        let mut inner = self.arc.internal.lock().unwrap();
+        for owner in inner.intercepted_pressed_keys.values_mut() {
+            *owner = InterceptedPressOwner::Detached;
+        }
+        inner.input_interceptor = None;
+    }
+
     /// Check if this keyboard is currently grabbed with this serial
     pub fn has_grab(&self, serial: Serial) -> bool {
         let guard = self.arc.internal.lock().unwrap();
@@ -984,7 +1073,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
     }
 
-    /// Check if this keyboard is currently being grabbed
+    /// Check if this keyboard currently has a [`KeyboardGrab`]
     pub fn is_grabbed(&self) -> bool {
         let guard = self.arc.internal.lock().unwrap();
         !matches!(guard.grab, GrabStatus::None)
@@ -1080,7 +1169,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             return Some(val);
         }
 
-        self.input_forward(data, keycode, state, serial, time, mods_changed);
+        self.input_forward_from_source(source, data, keycode, state, serial, time, mods_changed);
         None
     }
 
@@ -1101,7 +1190,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         for keycode in transitioned {
             // modifiers may have changed as a modifier key was released; let input_forward
             // re-derive and send the current state.
-            self.input_forward(data, keycode, KeyState::Released, serial, time, true);
+            self.input_forward_from_source(source, data, keycode, KeyState::Released, serial, time, true);
         }
     }
 
@@ -1157,7 +1246,31 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         time: InputTime,
         mods_changed: bool,
     ) {
+        self.input_forward_from_source(
+            KeyboardSource::MAIN,
+            data,
+            keycode,
+            state,
+            serial,
+            time,
+            mods_changed,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn input_forward_from_source(
+        &self,
+        source: KeyboardSource,
+        data: &mut D,
+        keycode: Keycode,
+        state: KeyState,
+        serial: Serial,
+        time: InputTime,
+        mods_changed: bool,
+    ) {
         let mut guard = self.arc.internal.lock().unwrap();
+
+        #[cfg(not(any(feature = "wayland_frontend", test)))]
         match state {
             KeyState::Pressed => {
                 guard.forwarded_pressed_keys.insert(keycode);
@@ -1167,16 +1280,23 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             }
         };
 
-        // forward to client if no keybinding is triggered.
-        // Modifiers are only sent when the shared seat state actually changed; the client
-        // resolves the following key event against them, so they must precede the key (handled
-        // in `KeyboardInnerHandle::input`).
+        // With interception enabled, releases stay visible until routing completes so an
+        // interceptor cannot steal a release for a key that was already forwarded.
         let seat = self.get_seat(data);
         let mods = guard.mods_state;
         let modifiers = mods_changed.then_some(mods);
-        guard.with_grab(data, &seat, |data, handle, grab| {
+        guard.with_grab(data, &seat, source, |data, handle, grab| {
             grab.input(data, handle, keycode, state, modifiers, serial, time);
         });
+
+        #[cfg(any(feature = "wayland_frontend", test))]
+        // A consumed release must not remain advertised to a later focus or keep stale
+        // interception ownership.
+        if state == KeyState::Released {
+            guard.forwarded_pressed_keys.remove(&keycode);
+            guard.intercepted_pressed_keys.remove(&keycode);
+        }
+
         if guard.focus.is_some() {
             trace!("Input forwarded to client");
         } else {
@@ -1195,7 +1315,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus.clone_from(&focus);
         let seat = self.get_seat(data);
-        guard.with_grab(data, &seat, |data, handle, grab| {
+        guard.with_grab(data, &seat, KeyboardSource::MAIN, |data, handle, grab| {
             grab.set_focus(data, handle, focus, serial);
         });
     }
@@ -1472,14 +1592,19 @@ where
 pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
     inner: &'a mut KbdInternal<D>,
     seat: &'a Seat<D>,
+    #[cfg(any(feature = "wayland_frontend", test))]
+    source: KeyboardSource,
 }
 
 impl<D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'_, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("KeyboardInnerHandle")
+        let mut debug = f.debug_struct("KeyboardInnerHandle");
+        debug
             .field("inner", &self.inner)
-            .field("seat", &self.seat.arc.name)
-            .finish()
+            .field("seat", &self.seat.arc.name);
+        #[cfg(any(feature = "wayland_frontend", test))]
+        debug.field("source", &self.source);
+        debug.finish()
     }
 }
 
@@ -1546,10 +1671,84 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         serial: Serial,
         time: InputTime,
     ) {
-        let (focus, _) = match self.inner.focus.as_mut() {
-            Some(focus) => focus,
-            None => return,
+        #[cfg(any(feature = "wayland_frontend", test))]
+        {
+            // Keep releases paired with the sink that received the corresponding press.
+            let release_for_forwarded_press =
+                key_state == KeyState::Released && self.inner.forwarded_pressed_keys.contains(&keycode);
+
+            if key_state == KeyState::Released {
+                if let Some(owner) = self.inner.intercepted_pressed_keys.remove(&keycode) {
+                    if let InterceptedPressOwner::Active(owner_source) = owner {
+                        if let Some(interceptor) = self.inner.input_interceptor.as_mut() {
+                            // The intercepted press owns this release; it cannot be retargeted.
+                            let _ = interceptor.input(
+                                data,
+                                self.seat,
+                                owner_source,
+                                keycode,
+                                key_state,
+                                modifiers,
+                                serial,
+                                time,
+                            );
+                        }
+                    }
+                    if modifiers.is_some() {
+                        self.inner.forwarded_modifiers_dirty = true;
+                    }
+                    return;
+                }
+            }
+
+            if release_for_forwarded_press {
+                self.inner.forwarded_pressed_keys.remove(&keycode);
+            } else if let Some(interceptor) = self.inner.input_interceptor.as_mut() {
+                let result = interceptor.input(
+                    data,
+                    self.seat,
+                    self.source,
+                    keycode,
+                    key_state,
+                    modifiers,
+                    serial,
+                    time,
+                );
+
+                if result == KeyboardInputInterception::Intercept {
+                    if key_state == KeyState::Pressed {
+                        self.inner
+                            .intercepted_pressed_keys
+                            .insert(keycode, InterceptedPressOwner::Active(self.source));
+                    }
+                    // Resync modifiers before the next event delivered to the target.
+                    if modifiers.is_some() {
+                        self.inner.forwarded_modifiers_dirty = true;
+                    }
+                    return;
+                }
+            }
+
+            // A press that reached the normal keyboard path stays part of the logical pressed
+            // state even when there is no current focus. A later focus must advertise it in enter.
+            if key_state == KeyState::Pressed {
+                self.inner.forwarded_pressed_keys.insert(keycode);
+            }
+        }
+
+        if self.inner.focus.is_none() {
+            return;
+        }
+
+        #[cfg(any(feature = "wayland_frontend", test))]
+        // Send the current modifier state if an intercepted transition made the target stale.
+        let modifiers = if self.inner.forwarded_modifiers_dirty && modifiers.is_none() {
+            Some(self.inner.mods_state)
+        } else {
+            modifiers
         };
+
+        let (focus, _) = self.inner.focus.as_mut().unwrap();
 
         #[cfg(feature = "wayland_frontend")]
         if let Some(keyboard_handle) = self.seat.get_keyboard() {
@@ -1567,6 +1766,10 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         // updated modifier state.
         if let Some(mods) = modifiers {
             focus.modifiers(self.seat, data, mods, serial);
+            #[cfg(any(feature = "wayland_frontend", test))]
+            {
+                self.inner.forwarded_modifiers_dirty = false;
+            }
         }
         focus.key(self.seat, data, key, key_state, serial, time);
     }
@@ -1625,6 +1828,10 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
                     let (keys, mods) = self.focus_enter_state();
 
                     focus.replace(old_focus, self.seat, data, keys, mods, serial);
+                    #[cfg(any(feature = "wayland_frontend", test))]
+                    {
+                        self.inner.forwarded_modifiers_dirty = false;
+                    }
                     data.focus_changed(self.seat, Some(&focus));
                 }
                 (focus, None) => {
@@ -1632,6 +1839,10 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
 
                     focus.enter(self.seat, data, keys, serial);
                     focus.modifiers(self.seat, data, mods, serial);
+                    #[cfg(any(feature = "wayland_frontend", test))]
+                    {
+                        self.inner.forwarded_modifiers_dirty = false;
+                    }
                     data.focus_changed(self.seat, Some(&focus));
                 }
             }
@@ -1675,3 +1886,6 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
 
     fn unset(&mut self, _data: &mut D) {}
 }
+
+#[cfg(test)]
+mod tests;
