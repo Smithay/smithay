@@ -244,6 +244,10 @@ connectors when a dock is unplugged, or across suspend/resume) leaked their CRTC
 indefinitely, which could accumulate until a newly connected output could no longer be assigned a
 CRTC.
 
+`DrmScanner` now reports a connected connector again when it becomes mapped to a CRTC on a later
+scan. This lets compositors activate an output that was initially connected while every
+compatible CRTC was occupied, then became usable after another output disconnected.
+
 XWayland now honors WM_HINTS request to map the window in IconicState(minimized). Compositors should
 check X11Surface::is_hidden() at mapping time and minimize the window appropriately.
 
