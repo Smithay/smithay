@@ -501,6 +501,80 @@ pub struct SubsurfaceCachedState {
     pub location: Point<i32, Logical>,
 }
 
+#[derive(Debug, Default)]
+struct ParentCommitSubsurfaceState {
+    positions: Vec<PendingSubsurfacePosition>,
+}
+
+#[derive(Debug)]
+struct PendingSubsurfacePosition {
+    subsurface: wayland_server::Weak<WlSubsurface>,
+    surface: wayland_server::Weak<WlSurface>,
+    parent: wayland_server::Weak<WlSurface>,
+    location: Point<i32, Logical>,
+}
+
+impl ParentCommitSubsurfaceState {
+    fn set_position(
+        &mut self,
+        subsurface: &WlSubsurface,
+        surface: &WlSurface,
+        parent: &WlSurface,
+        location: Point<i32, Logical>,
+    ) {
+        let position = PendingSubsurfacePosition {
+            subsurface: subsurface.downgrade(),
+            surface: surface.downgrade(),
+            parent: parent.downgrade(),
+            location,
+        };
+        if let Some(pending) = self
+            .positions
+            .iter_mut()
+            .find(|pending| pending.surface == *surface)
+        {
+            *pending = position;
+        } else {
+            self.positions.push(position);
+        }
+    }
+}
+
+impl Cacheable for ParentCommitSubsurfaceState {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
+        Self {
+            positions: std::mem::take(&mut self.positions),
+        }
+    }
+
+    fn merge_into(self, _into: &mut Self, _dh: &DisplayHandle) {
+        for position in self.positions {
+            let PendingSubsurfacePosition {
+                subsurface,
+                surface,
+                parent,
+                location,
+            } = position;
+            if subsurface.upgrade().is_err() {
+                continue;
+            }
+            let Ok(surface) = surface.upgrade() else {
+                continue;
+            };
+            let Ok(parent) = parent.upgrade() else {
+                continue;
+            };
+            if PrivateSurfaceData::get_parent(&surface).as_ref() != Some(&parent) {
+                continue;
+            }
+            PrivateSurfaceData::with_states(&surface, |state| {
+                let mut state = state.cached_state.get::<SubsurfaceCachedState>();
+                state.override_all(|state| state.location = location);
+            });
+        }
+    }
+}
+
 impl Default for SubsurfaceCachedState {
     fn default() -> Self {
         SubsurfaceCachedState {
@@ -569,16 +643,20 @@ where
         match request {
             wl_subsurface::Request::SetPosition { x, y } => {
                 let client_scale = state.client_compositor_state(client).client_scale();
-                PrivateSurfaceData::with_states(&self.surface, |state| {
+                let location = Point::<i32, Client>::from((x, y))
+                    .to_f64()
+                    .to_logical(client_scale)
+                    .to_i32_round();
+                let Some(parent) = PrivateSurfaceData::get_parent(&self.surface) else {
+                    return;
+                };
+                PrivateSurfaceData::with_states(&parent, |state| {
                     state
                         .cached_state
-                        .get::<SubsurfaceCachedState>()
+                        .get::<ParentCommitSubsurfaceState>()
                         .pending()
-                        .location = Point::<i32, Client>::from((x, y))
-                        .to_f64()
-                        .to_logical(client_scale)
-                        .to_i32_round();
-                })
+                        .set_position(subsurface, &self.surface, &parent, location);
+                });
             }
             wl_subsurface::Request::PlaceAbove { sibling } => {
                 if let Err(()) = PrivateSurfaceData::reorder(&self.surface, Location::After, &sibling) {
