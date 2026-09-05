@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::Rng;
+use rand::RngExt;
 use smithay::utils::{Physical, Rectangle, Size};
 
 fn element_visible_size(test_element: Rectangle<i32, Physical>, opaque_regions: &[Rectangle<i32, Physical>]) {

@@ -170,7 +170,7 @@ impl PopupGrabInner {
                 }
             }
             PopupUngrabStrategy::All => {
-                let grabs = guard.active_grabs.drain(..).collect::<Vec<_>>();
+                let grabs = std::mem::take(&mut guard.active_grabs);
 
                 if let Some(grab) = grabs.first() {
                     let dismissed = PopupManager::dismiss_popup(root, grab);
