@@ -260,7 +260,7 @@ impl EGLBuffer {
 
     /// Returns the underlying images
     pub fn into_images(mut self) -> Vec<EGLImage> {
-        self.images.drain(..).collect()
+        std::mem::take(&mut self.images)
     }
 }
 
