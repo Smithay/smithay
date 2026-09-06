@@ -2529,17 +2529,32 @@ impl Frame for GlesFrame<'_, '_> {
 
     #[profiling::function]
     fn finish(mut self) -> Result<SyncPoint, Self::Error> {
-        self.finish_internal()
+        self.finish_internal_impl(true)
+            .map(|opt| opt.unwrap_or_else(SyncPoint::signaled))
     }
 }
 
 impl GlesFrame<'_, '_> {
     #[profiling::function]
-    fn finish_internal(&mut self) -> Result<SyncPoint, GlesError> {
+    pub fn finish_without_export(mut self) -> Result<(), GlesError> {
+        self.finish_internal_impl(false).map(|_| ())
+    }
+
+    #[profiling::function]
+    pub(crate) fn finish_internal(&mut self) -> Result<SyncPoint, GlesError> {
+        self.finish_internal_impl(true)
+            .map(|opt| opt.unwrap_or_else(SyncPoint::signaled))
+    }
+
+    fn finish_internal_impl(&mut self, export_fence: bool) -> Result<Option<SyncPoint>, GlesError> {
         let _guard = self.span.enter();
 
         if self.finished.swap(true, Ordering::SeqCst) {
-            return Ok(SyncPoint::signaled());
+            return Ok(if export_fence {
+                Some(SyncPoint::signaled())
+            } else {
+                None
+            });
         }
 
         let finish_gpu_span = self
@@ -2570,20 +2585,26 @@ impl GlesFrame<'_, '_> {
             self.renderer.profiler.exit(&self.renderer.gl, span);
         }
 
-        // if we support egl fences we should use it
-        if let Some(sync_point) = self.renderer.export_sync_point() {
-            // Sync after glFlush in export_sync_point() and right before returning.
-            self.renderer.profiler.sync_gpu(&self.renderer.gl);
-            return Ok(sync_point);
+        if export_fence {
+            // if we support egl fences we should use it
+            if let Some(sync_point) = self.renderer.export_sync_point() {
+                // Sync after glFlush in export_sync_point() and right before returning.
+                self.renderer.profiler.sync_gpu(&self.renderer.gl);
+                return Ok(Some(sync_point));
+            }
         }
 
         self.renderer.profiler.sync_gpu(&self.renderer.gl);
 
-        // as a last option we force finish, this is unlikely to happen
-        unsafe {
-            self.renderer.gl.Finish();
+        if export_fence {
+            // as a last option we force finish, this is unlikely to happen
+            unsafe {
+                self.renderer.gl.Finish();
+            }
+            Ok(Some(SyncPoint::signaled()))
+        } else {
+            Ok(None)
         }
-        Ok(SyncPoint::signaled())
     }
 
     /// Overrides the default texture shader used, if none is specified.
