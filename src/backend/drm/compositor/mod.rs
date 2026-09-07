@@ -667,6 +667,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         plane: plane::Handle,
         state: PlaneState<B, F>,
         allow_modeset: bool,
+        allow_partial_update: bool,
     ) -> Result<(), DrmError> {
         let current_config = match self.plane_state_mut(plane) {
             Some(config) => config,
@@ -675,7 +676,10 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         let backup = current_config.clone();
         *current_config = state;
 
-        let res = surface.test_state(self.build_planes(surface, supports_fencing, true), allow_modeset);
+        let res = surface.test_state(
+            self.build_planes(surface, supports_fencing, allow_partial_update),
+            allow_modeset,
+        );
 
         if res.is_err() {
             // test failed, restore previous state
@@ -1572,7 +1576,7 @@ where
             }),
         };
 
-        match current_frame_state.test_state(drm, supports_fencing, drm.plane(), plane_state, true) {
+        match current_frame_state.test_state(drm, supports_fencing, drm.plane(), plane_state, true, false) {
             Ok(_) => Ok((swapchain, use_opaque)),
             Err(err) => {
                 warn!(
@@ -3436,6 +3440,7 @@ where
                     plane_info.handle,
                     plane_state,
                     false,
+                    true,
                 )
                 .is_ok()
         };
@@ -4057,6 +4062,7 @@ where
                     plane.handle,
                     plane_state,
                     false,
+                    true,
                 )
                 .is_ok()
         };
