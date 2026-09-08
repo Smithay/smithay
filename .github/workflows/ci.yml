@@ -132,6 +132,12 @@ jobs:
               run: sudo apt-get update; sudo apt-get install -y libdrm-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
             - name: Downgrade to minimal dependencies
               run: cargo -Z minimal-versions generate-lockfile
+              # Needed to convert url -> string in winit
+            - name: Selectively upgrade url
+              run: cargo update -p url@2.0.0 --precise 2.3.0
+              # Needed to fix WlTouch trait bounds
+            - name: Selectively upgrade client-toolkit
+              run: cargo update -p smithay-client-toolkit@0.21.0 --precise 0.21.1
             - name: Rust toolchain
               uses: dtolnay/rust-toolchain@1.87
             - name: Check
