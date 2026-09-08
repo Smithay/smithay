@@ -138,6 +138,8 @@ is used for timestamps for synthesized events.
 - Add `WmWindowProperty::Other` to forward unrecognized X11 property changes to the compositor.
 
 
+- The wlr virtual pointer protocol is now available in `smithay::wayland::virtual_pointer`.
+
 - `Xkb::keymap_as_string` returns the active keymap as `XKB_KEYMAP_FORMAT_TEXT_V1`.
 
 - `XkbContext::set_modifier_mask` applies raw xkb modifier masks to a keyboard
