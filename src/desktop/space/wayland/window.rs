@@ -1,8 +1,10 @@
+#[cfg(feature = "xwayland")]
+use crate::backend::renderer::element::utils::CropRenderElement;
 use crate::{
     backend::renderer::{
         ImportAll, Renderer,
         element::{
-            AsRenderElements, Kind,
+            AsRenderElements, Kind, NamespacedElement,
             surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
         },
     },
@@ -13,6 +15,15 @@ use crate::{
 };
 
 use super::{WindowOutputUserData, output_update};
+
+crate::backend::renderer::element::render_elements! {
+    /// Render elements produced by a desktop window.
+    #[derive(Debug)]
+    pub WindowRenderElement<R> where R: ImportAll;
+    Wayland=WaylandSurfaceRenderElement<R>,
+    #[cfg(feature = "xwayland")]
+    X11=NamespacedElement<CropRenderElement<WaylandSurfaceRenderElement<R>>>,
+}
 
 impl SpaceElement for Window {
     fn geometry(&self) -> Rectangle<i32, Logical> {
@@ -89,10 +100,10 @@ where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
 {
-    type RenderElement = WaylandSurfaceRenderElement<R>;
+    type RenderElement = WindowRenderElement<R>;
 
     #[profiling::function]
-    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
+    fn render_elements<C: From<Self::RenderElement>>(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
@@ -101,7 +112,7 @@ where
     ) -> Vec<C> {
         match self.underlying_surface() {
             WindowSurface::Wayland(s) => {
-                let mut render_elements: Vec<C> = Vec::new();
+                let mut render_elements = Vec::new();
                 let surface = s.wl_surface();
                 let popup_render_elements =
                     PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
@@ -118,21 +129,30 @@ where
                         )
                     });
 
-                render_elements.extend(popup_render_elements);
+                render_elements.extend(popup_render_elements.map(WindowRenderElement::Wayland));
 
-                render_elements.extend(render_elements_from_surface_tree(
-                    renderer,
-                    surface,
-                    location,
-                    scale,
-                    alpha,
-                    Kind::Unspecified,
-                ));
+                render_elements.extend(
+                    render_elements_from_surface_tree(
+                        renderer,
+                        surface,
+                        location,
+                        scale,
+                        alpha,
+                        Kind::Unspecified,
+                    )
+                    .into_iter()
+                    .map(WindowRenderElement::Wayland),
+                );
 
-                render_elements
+                render_elements.into_iter().map(C::from).collect()
             }
             #[cfg(feature = "xwayland")]
-            WindowSurface::X11(s) => AsRenderElements::render_elements(s, renderer, location, scale, alpha),
+            WindowSurface::X11(s) => AsRenderElements::render_elements::<WindowRenderElement<R>>(
+                s, renderer, location, scale, alpha,
+            )
+            .into_iter()
+            .map(C::from)
+            .collect(),
         }
     }
 }
