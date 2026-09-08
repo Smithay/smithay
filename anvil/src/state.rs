@@ -398,7 +398,7 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
 
         match constraint_remove {
             ConstraintRemove::Destroyed(pointer_constraint) => match pointer_constraint {
-                PointerConstraint::Confined(_confined_pointer) => return,
+                PointerConstraint::Confined(_confined_pointer) => {}
                 PointerConstraint::Locked(locked_pointer) => {
                     let origin = self
                         .space
@@ -420,7 +420,7 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
                     }
                 }
             },
-            ConstraintRemove::PointerLeave(_region) => return,
+            ConstraintRemove::PointerLeave(_region) => {}
         }
     }
 
