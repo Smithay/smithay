@@ -4,6 +4,16 @@
 
 ### Breaking changes
 
+`wayland::virtual_keyboard` no longer sends key events to focused clients on its
+own. A virtual keyboard is now an regular input device:
+`VirtualKeyboardManagerState::new` requires the state to implement the new
+`VirtualKeyboardHandler`, which receives `InputEvent<VirtualKeyboardBackend>`s
+for the compositor to handle like real devices (so special keys, compositor
+bindings, idle handling and focus works properly). The compositor has to
+activate the device's keymap (`VirtualKeyboardDevice::keymap`) before processing
+its key events. `VirtualKeyboardUserData` is no longer generic over the state
+type.
+
 `crate::wayland::selection::data_device::start_dnd` was removed in favor of exposing the
 underlying `DnDGrab` and associated types to make it possible to write external Drag&Drop sources
 and targets (e.g. for other shell implementations). See the `Additions`-section for more info.
@@ -126,6 +136,13 @@ is used for timestamps for synthesized events.
 ### Additions
 
 - Add `WmWindowProperty::Other` to forward unrecognized X11 property changes to the compositor.
+
+
+- `Xkb::keymap_as_string` returns the active keymap as `XKB_KEYMAP_FORMAT_TEXT_V1`.
+
+- `XkbContext::set_modifier_mask` applies raw xkb modifier masks to a keyboard
+  for clients that report modifier state directly instead of through key presses
+  (e.g., `zwp_virtual_keyboard_v1.modifiers`).
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
 
