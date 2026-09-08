@@ -168,7 +168,6 @@ pub(crate) struct SharedSurfaceState {
     title: String,
     class: String,
     instance: String,
-    icons: Vec<X11SurfaceIcon>,
     startup_id: Option<String>,
     pid: Option<u32>,
     protocols: Protocols,
@@ -378,7 +377,6 @@ impl X11Surface {
                 title: String::from(""),
                 class: String::from(""),
                 instance: String::from(""),
-                icons: Vec::new(),
                 startup_id: None,
                 pid: None,
                 protocols: Vec::new(),
@@ -1101,9 +1099,31 @@ impl X11Surface {
         self.state.lock().unwrap().class.clone()
     }
 
-    /// Returns all icons supplied by the underlying X11 window.
-    pub fn icons(&self) -> Vec<X11SurfaceIcon> {
-        self.state.lock().unwrap().icons.clone()
+    /// Fetches all icons supplied by the underlying X11 window.
+    pub fn icons(&self) -> Result<Vec<X11SurfaceIcon>, ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let property = match conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._NET_WM_ICON,
+                AtomEnum::CARDINAL,
+                0,
+                MAX_NET_WM_ICON_CARDINALS,
+            )?
+            .reply_unchecked()
+        {
+            Ok(Some(reply)) if reply.bytes_after == 0 => {
+                reply.value32().map(|values| values.collect::<Vec<_>>())
+            }
+            Ok(None) | Ok(Some(_)) | Err(ConnectionError::ParseError(_)) => None,
+            Err(err) => return Err(err),
+        };
+
+        Ok(property
+            .as_deref()
+            .and_then(parse_net_wm_icons)
+            .unwrap_or_default())
     }
 
     /// Returns the current window instance of the underlying X11 window
@@ -1553,7 +1573,6 @@ impl X11Surface {
     pub(super) fn update_properties(&self) -> Result<(), ConnectionError> {
         self.update_title()?;
         self.update_class()?;
-        self.update_icons()?;
         self.update_protocols()?;
         self.update_hints()?;
         self.update_normal_hints()?;
@@ -1580,7 +1599,6 @@ impl X11Surface {
 
     pub(super) fn update_property(&self, atom: Atom) -> Result<Option<WmWindowProperty>, ConnectionError> {
         if let Some(property) = classify_net_wm_icon_property(atom, self.atoms._NET_WM_ICON) {
-            self.update_icons()?;
             return Ok(Some(property));
         }
 
@@ -1659,31 +1677,6 @@ impl X11Surface {
         state.class = class;
         state.instance = instance;
 
-        Ok(())
-    }
-
-    fn update_icons(&self) -> Result<(), ConnectionError> {
-        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let property = match conn
-            .get_property(
-                false,
-                self.window,
-                self.atoms._NET_WM_ICON,
-                AtomEnum::CARDINAL,
-                0,
-                MAX_NET_WM_ICON_CARDINALS,
-            )?
-            .reply_unchecked()
-        {
-            Ok(Some(reply)) if reply.bytes_after == 0 => {
-                reply.value32().map(|values| values.collect::<Vec<_>>())
-            }
-            Ok(None) | Ok(Some(_)) | Err(ConnectionError::ParseError(_)) => None,
-            Err(err) => return Err(err),
-        };
-
-        let mut state = self.state.lock().unwrap();
-        replace_net_wm_icons(&mut state.icons, property.as_deref());
         Ok(())
     }
 
@@ -2584,10 +2577,6 @@ fn parse_net_wm_icons_bounded(data: &[u32], max_cardinals: usize) -> Option<Vec<
     }
 
     Some(icons)
-}
-
-fn replace_net_wm_icons(icons: &mut Vec<X11SurfaceIcon>, property: Option<&[u32]>) {
-    *icons = property.and_then(parse_net_wm_icons).unwrap_or_default();
 }
 
 fn fetch_opaque_regions(
