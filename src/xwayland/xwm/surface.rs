@@ -81,6 +81,17 @@ pub struct X11Surface {
     user_data: Arc<UserDataMap>,
 }
 
+/// Pixels are stored unchanged in the EWMH-specified 0xAARRGGBB format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct X11SurfaceIcon {
+    /// Width of the icon in pixels.
+    pub width: u32,
+    /// Height of the icon in pixels.
+    pub height: u32,
+    /// Pixel data in row-major order.
+    pub pixels: Vec<u32>,
+}
+
 /// Possible errors when calling [X11Surface::send_ping]
 #[derive(Debug, thiserror::Error)]
 pub enum PingError {
@@ -157,6 +168,7 @@ pub(crate) struct SharedSurfaceState {
     title: String,
     class: String,
     instance: String,
+    icons: Vec<X11SurfaceIcon>,
     startup_id: Option<String>,
     pid: Option<u32>,
     protocols: Protocols,
@@ -283,6 +295,7 @@ pub enum WmWindowType {
 pub enum WmWindowProperty {
     Title,
     Class,
+    Icon,
     Protocols,
     Hints,
     NormalHints,
@@ -365,6 +378,7 @@ impl X11Surface {
                 title: String::from(""),
                 class: String::from(""),
                 instance: String::from(""),
+                icons: Vec::new(),
                 startup_id: None,
                 pid: None,
                 protocols: Vec::new(),
@@ -1087,6 +1101,11 @@ impl X11Surface {
         self.state.lock().unwrap().class.clone()
     }
 
+    /// Returns all icons supplied by the underlying X11 window.
+    pub fn icons(&self) -> Vec<X11SurfaceIcon> {
+        self.state.lock().unwrap().icons.clone()
+    }
+
     /// Returns the current window instance of the underlying X11 window
     pub fn instance(&self) -> String {
         self.state.lock().unwrap().instance.clone()
@@ -1534,6 +1553,7 @@ impl X11Surface {
     pub(super) fn update_properties(&self) -> Result<(), ConnectionError> {
         self.update_title()?;
         self.update_class()?;
+        self.update_icons()?;
         self.update_protocols()?;
         self.update_hints()?;
         self.update_normal_hints()?;
@@ -1559,6 +1579,11 @@ impl X11Surface {
     }
 
     pub(super) fn update_property(&self, atom: Atom) -> Result<Option<WmWindowProperty>, ConnectionError> {
+        if let Some(property) = classify_net_wm_icon_property(atom, self.atoms._NET_WM_ICON) {
+            self.update_icons()?;
+            return Ok(Some(property));
+        }
+
         match atom {
             atom if atom == self.atoms._NET_WM_NAME || atom == AtomEnum::WM_NAME.into() => {
                 self.update_title()?;
@@ -1634,6 +1659,31 @@ impl X11Surface {
         state.class = class;
         state.instance = instance;
 
+        Ok(())
+    }
+
+    fn update_icons(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let property = match conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._NET_WM_ICON,
+                AtomEnum::CARDINAL,
+                0,
+                MAX_NET_WM_ICON_CARDINALS,
+            )?
+            .reply_unchecked()
+        {
+            Ok(Some(reply)) if reply.bytes_after == 0 => {
+                reply.value32().map(|values| values.collect::<Vec<_>>())
+            }
+            Ok(None) | Ok(Some(_)) | Err(ConnectionError::ParseError(_)) => None,
+            Err(err) => return Err(err),
+        };
+
+        let mut state = self.state.lock().unwrap();
+        replace_net_wm_icons(&mut state.icons, property.as_deref());
         Ok(())
     }
 
@@ -2494,6 +2544,50 @@ impl WaylandFocus for X11Surface {
     fn wl_surface(&self) -> Option<Cow<'_, WlSurface>> {
         X11Surface::wl_surface(self).map(Cow::Owned)
     }
+}
+
+const MAX_NET_WM_ICON_CARDINALS: u32 = 512 * 1024;
+
+fn classify_net_wm_icon_property(atom: Atom, icon_atom: Atom) -> Option<WmWindowProperty> {
+    (atom == icon_atom).then_some(WmWindowProperty::Icon)
+}
+
+fn parse_net_wm_icons(data: &[u32]) -> Option<Vec<X11SurfaceIcon>> {
+    parse_net_wm_icons_bounded(data, MAX_NET_WM_ICON_CARDINALS as usize)
+}
+
+fn parse_net_wm_icons_bounded(data: &[u32], max_cardinals: usize) -> Option<Vec<X11SurfaceIcon>> {
+    if data.len() > max_cardinals {
+        return None;
+    }
+
+    let mut icons = Vec::new();
+    let mut offset = 0usize;
+
+    while offset < data.len() {
+        let width = *data.get(offset)?;
+        let height = *data.get(offset.checked_add(1)?)?;
+        offset = offset.checked_add(2)?;
+
+        let pixel_count = width.checked_mul(height)?;
+        let pixel_count = usize::try_from(pixel_count).ok()?;
+        let end = offset.checked_add(pixel_count)?;
+        let pixels = data.get(offset..end)?.to_vec();
+        if width != 0 && height != 0 {
+            icons.push(X11SurfaceIcon {
+                width,
+                height,
+                pixels,
+            });
+        }
+        offset = end;
+    }
+
+    Some(icons)
+}
+
+fn replace_net_wm_icons(icons: &mut Vec<X11SurfaceIcon>, property: Option<&[u32]>) {
+    *icons = property.and_then(parse_net_wm_icons).unwrap_or_default();
 }
 
 fn fetch_opaque_regions(
