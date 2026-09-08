@@ -953,7 +953,7 @@ impl OutputDamageTracker {
             // return the element damage so that we can re-use the allocation
             std::mem::swap(&mut self.element_damage, &mut element_damage);
             std::mem::swap(&mut self.element_opaque_regions, &mut element_opaque_regions);
-            frame.finish()
+            frame.finish(true)
         })();
 
         match render_res {

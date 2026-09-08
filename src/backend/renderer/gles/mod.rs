@@ -2528,21 +2528,16 @@ impl Frame for GlesFrame<'_, '_> {
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<SyncPoint, Self::Error> {
-        self.finish_internal_impl(true)
+    fn finish(mut self, exportable: bool) -> Result<SyncPoint, Self::Error> {
+        self.finish_internal_impl(exportable)
             .map(|opt| opt.unwrap_or_else(SyncPoint::signaled))
     }
 }
 
 impl GlesFrame<'_, '_> {
     #[profiling::function]
-    pub fn finish_without_export(mut self) -> Result<(), GlesError> {
-        self.finish_internal_impl(false).map(|_| ())
-    }
-
-    #[profiling::function]
-    pub(crate) fn finish_internal(&mut self) -> Result<SyncPoint, GlesError> {
-        self.finish_internal_impl(true)
+    pub(crate) fn finish_internal(&mut self, exportable: bool) -> Result<SyncPoint, GlesError> {
+        self.finish_internal_impl(exportable)
             .map(|opt| opt.unwrap_or_else(SyncPoint::signaled))
     }
 
@@ -3294,7 +3289,7 @@ impl GlesFrame<'_, '_> {
 
 impl Drop for GlesFrame<'_, '_> {
     fn drop(&mut self) {
-        match self.finish_internal() {
+        match self.finish_internal(false) {
             Ok(sync) => {
                 let _ = sync.wait(); // nothing we can do
             }
