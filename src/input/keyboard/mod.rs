@@ -164,6 +164,14 @@ impl Xkb {
         &self.state
     }
 
+    /// The active keymap as `XKB_KEYMAP_FORMAT_TEXT_V1`.
+    ///
+    /// This identical to what gets sent to clients, so it can be compared
+    /// against keymaps received from them.
+    pub fn keymap_as_string(&self) -> String {
+        self.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1)
+    }
+
     /// Get the active layout of the keyboard.
     pub fn active_layout(&self) -> Layout {
         (0..self.keymap.num_layouts())
@@ -575,6 +583,32 @@ impl XkbContext<'_> {
             0,
             layout.0,
         );
+
+        if state != 0 {
+            self.mods_state.update_with(&xkb.state);
+            *self.mods_changed = true;
+        }
+
+        *self.leds_changed = self.leds_state.update_with(&xkb.state, self.leds_mapping);
+    }
+
+    /// Set the modifier state from raw masks.
+    ///
+    /// The arguments are the raw xkb depressed, latched and locked modifier
+    /// masks, and the locked layout group index, e.g. as specified by the
+    /// `modifiers` request of `zwp_virtual_keyboard_v1`.
+    pub fn set_modifier_mask(
+        &mut self,
+        mods_depressed: u32,
+        mods_latched: u32,
+        mods_locked: u32,
+        group: u32,
+    ) {
+        let mut xkb = self.xkb.lock().unwrap();
+
+        let state = xkb
+            .state
+            .update_mask(mods_depressed, mods_latched, mods_locked, 0, 0, group);
 
         if state != 0 {
             self.mods_state.update_with(&xkb.state);
