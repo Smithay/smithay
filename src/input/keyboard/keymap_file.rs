@@ -1,7 +1,6 @@
 use std::ffi::CString;
 use std::os::unix::io::{AsFd, BorrowedFd};
 
-use sha2::{Digest, Sha256};
 use tracing::error;
 use xkbcommon::xkb::{self, KEYMAP_FORMAT_TEXT_V1, Keymap};
 
@@ -11,12 +10,33 @@ use crate::utils::SealedFile;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct KeymapFileId([u8; 32]);
 
+// Generates a 32-byte (256-bit) hash using `std::hash::DefaultHasher`.
+// This is sufficient to prevent keymap collisions, but it is not cryptographically
+// secure or guaranteed to be stable across different Rust versions.
+fn hash(data: &[u8]) -> [u8; 32] {
+    use std::hash::{DefaultHasher, Hasher};
+    let mut output = [0u8; 32];
+    let mut prev_hash: Option<[u8; 8]> = None;
+
+    for i in (0..32).step_by(8) {
+        let mut hasher = DefaultHasher::new();
+        if let Some(prev_hash_val) = prev_hash {
+            hasher.write(&prev_hash_val);
+        }
+        hasher.write(data);
+        let hash = hasher.finish().to_le_bytes();
+        output[i..i + 8].copy_from_slice(&hash);
+        prev_hash = Some(hash);
+    }
+
+    output
+}
+
 impl KeymapFileId {
     fn for_keymap(keymap: &str) -> Self {
-        // Use a hash, so `keymap` events aren't sent when keymap hasn't changed, particularly
-        // with `virtual-keyboard-unstable-v1`.
-        #[allow(deprecated)]
-        Self(Sha256::digest(keymap).as_slice().try_into().unwrap())
+        // Use a hash to avoid sending redundant `keymap` events when the keymap has not changed,
+        // which is particularly useful for `virtual-keyboard-unstable-v1`.
+        Self(hash(keymap.as_bytes()))
     }
 }
 
@@ -101,5 +121,31 @@ impl KeymapFile {
     /// Get this keymap's unique ID.
     pub(crate) fn id(&self) -> KeymapFileId {
         self.id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xkbcommon::xkb;
+
+    #[test]
+    fn test_keymap_file_id() {
+        let id1 = KeymapFileId::for_keymap("keymap data 1");
+        let id2 = KeymapFileId::for_keymap("keymap data 2");
+        let id3 = KeymapFileId::for_keymap("keymap data 1");
+
+        assert_ne!(id1, id2);
+        assert_eq!(id1, id3);
+    }
+
+    #[test]
+    fn test_keymap_file_creation() {
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let xkb_config = crate::input::keyboard::XkbConfig::default();
+        let keymap = xkb_config.compile_keymap(&context).unwrap();
+        let keymap_file = KeymapFile::new(&keymap);
+
+        assert_ne!(keymap_file.id().0, [0u8; 32]);
     }
 }
