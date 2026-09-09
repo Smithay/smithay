@@ -41,6 +41,9 @@ impl Version {
     /// Version 1.3 of the Vulkan API.
     pub const VERSION_1_3: Version = Version::from_raw(vk::API_VERSION_1_3);
 
+    /// Version 1.4 of the Vulkan API.
+    //pub const VERSION_1_4: Version = Version::from_raw(vk::API_VERSION_1_4);
+
     /// The version of Smithay.
     pub const SMITHAY: Version = Version {
         // TODO: May be useful to place the version information in a single spot that isn't just Vulkan

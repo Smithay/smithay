@@ -174,7 +174,7 @@ impl DrmSyncPoint {
         ctx.device
             .upgrade()
             .ok_or::<io::Error>(io::ErrorKind::InvalidInput.into())?
-            .syncobj_timeline_wait(&[ctx.syncobj], &[self.point], timeout_nsec, false, false, false)?;
+            .syncobj_timeline_wait(&[ctx.syncobj], &[self.point], timeout_nsec, true, false, false)?;
         Ok(())
     }
 

@@ -74,6 +74,76 @@ fn gl_generate() {
     }
 }
 
+#[cfg(feature = "renderer_vulkan")]
+fn vulkan_compile() {
+    use std::{
+        env, fs, io,
+        path::{Path, PathBuf},
+    };
+
+    let dest = PathBuf::from(&env::var("OUT_DIR").unwrap()).join("vk");
+    match fs::create_dir(&dest) {
+        Ok(()) => {}
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(other) => {
+            panic!("Failed to create directory in OUT_DIR: {}", other);
+        }
+    }
+
+    let compiler = shaderc::Compiler::new().unwrap();
+    let mut options = shaderc::CompileOptions::new().unwrap();
+    options.add_macro_definition("EP", Some("main"));
+
+    for entry in std::fs::read_dir(Path::new("src/backend/renderer/vulkan/shaders"))
+        .expect("Unable to find vulkan shader dir.")
+        .filter_map(Result::ok)
+    {
+        if entry.file_type().is_ok_and(|t| t.is_file()) {
+            let shader_path = entry.path();
+            let file_name = shader_path.file_name().unwrap().to_string_lossy();
+            if !file_name.ends_with(".glsl") {
+                continue;
+            }
+
+            let dst = dest.join(Path::new(file_name.as_ref()));
+            println!("cargo::rerun-if-changed={}", shader_path.display());
+
+            let Ok(src) = fs::read_to_string(&shader_path) else {
+                println!(
+                    "cargo:warning=Unable to read vulkan shader {}, skipping",
+                    &file_name
+                );
+                continue;
+            };
+
+            let bin = match compiler.compile_into_spirv(
+                &src,
+                shaderc::ShaderKind::Compute,
+                &file_name,
+                "main",
+                Some(&options),
+            ) {
+                Ok(bin) => bin,
+                Err(err) => {
+                    println!(
+                        "cargo:error=Unable to compile vulkan shader {}: {}",
+                        &file_name, err
+                    );
+                    panic!("shaderc error");
+                }
+            };
+
+            if fs::write(&dst, bin.as_binary_u8()).is_err() {
+                println!(
+                    "cargo:error=Unable to write vulkan shader binary at {}, skipping",
+                    dst.display()
+                );
+                panic!("shaderc error");
+            }
+        }
+    }
+}
+
 #[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_fd_for_plane")))]
 fn test_gbm_bo_fd_for_plane() {
     let gbm = match pkg_config::probe_library("gbm") {
@@ -128,6 +198,9 @@ fn test_gbm_bo_create_with_modifiers2() {
 fn main() {
     #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
     gl_generate();
+
+    #[cfg(feature = "renderer_vulkan")]
+    vulkan_compile();
 
     #[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_fd_for_plane")))]
     test_gbm_bo_fd_for_plane();

@@ -7,7 +7,7 @@ use smithay::{
             dmabuf::{AnyError, Dmabuf, DmabufAllocator},
             dumb::DumbAllocator,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
-            vulkan::{ImageUsageFlags, VulkanAllocator},
+            vulkan::VulkanAllocator,
             Allocator, Fourcc, Modifier,
         },
         drm::{DrmDeviceFd, DrmNode},
@@ -16,7 +16,7 @@ use smithay::{
             gles::{GlesRenderbuffer, GlesRenderer},
             Bind, Color32F, ExportMem, Frame, ImportDma, Offscreen, Renderer,
         },
-        vulkan::{version::Version, Instance, PhysicalDevice},
+        vulkan::{image::ImageUsageFlags, version::Version, Instance, PhysicalDevice},
     },
     utils::{DeviceFd, Rectangle, Transform},
 };

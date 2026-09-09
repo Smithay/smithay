@@ -2,6 +2,7 @@ use std::fmt;
 use std::num::Saturating;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
+use bytemuck::{Pod, Zeroable};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_output::Transform as WlTransform;
 
@@ -398,6 +399,9 @@ pub struct Point<N, Kind> {
     _kind: std::marker::PhantomData<Kind>,
 }
 
+unsafe impl<N: Pod, Kind: 'static> Pod for Point<N, Kind> {}
+unsafe impl<N: Zeroable, Kind> Zeroable for Point<N, Kind> {}
+
 impl<N, Kind> Point<N, Kind> {
     /// Create a new Point
     pub const fn new(x: N, y: N) -> Point<N, Kind> {
@@ -780,6 +784,9 @@ pub struct Size<N, Kind> {
     pub h: N,
     _kind: std::marker::PhantomData<Kind>,
 }
+
+unsafe impl<N: Pod, Kind: 'static> Pod for Size<N, Kind> {}
+unsafe impl<N: Zeroable, Kind> Zeroable for Size<N, Kind> {}
 
 impl<N: Coordinate, Kind> Size<N, Kind> {
     /// Create a new Size
@@ -1188,6 +1195,9 @@ pub struct Rectangle<N, Kind> {
     /// Size of the rectangle, as (width, height)
     pub size: Size<N, Kind>,
 }
+
+unsafe impl<N: Pod, Kind: 'static> Pod for Rectangle<N, Kind> {}
+unsafe impl<N: Zeroable, Kind> Zeroable for Rectangle<N, Kind> {}
 
 impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     /// Convert the underlying numerical type to another
