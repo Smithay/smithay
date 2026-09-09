@@ -13,7 +13,7 @@ which talks about the protocol.
 
 Additionally it can help to familiarize yourself with the viewpoint of clients. The [wayland-book](https://wayland-book.com/) is a good resource here.
 
-There is also an (unfurtonately stalled - at the time of writing this document -) effort to write a [smithay book](https://smithay.github.io/book/) to
+There is also an (unfortunately stalled - at the time of writing this document -) effort to write a [smithay book](https://smithay.github.io/book/) to
 cover similar topics, but focused on [wayland-rs](https://github.com/Smithay/wayland-rs) (the underlying Rust-based Wayland implementation) rather than
 [libwayland](https://gitlab.freedesktop.org/wayland/wayland/). At least the client side of this is a worthwhile read as well.
 
