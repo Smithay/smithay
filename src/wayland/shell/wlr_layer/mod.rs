@@ -484,6 +484,10 @@ impl LayerSurface {
         compositor::with_states(surface, |states| {
             let mut role = states.data_map.get::<LayerSurfaceData>().unwrap().lock().unwrap();
 
+            if !role.surface.alive() {
+                return;
+            }
+
             let mut guard_layer = states.cached_state.get::<LayerSurfaceCachedState>();
             let pending = guard_layer.pending();
 
