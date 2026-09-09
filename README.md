@@ -71,6 +71,9 @@ Rust.
 - `libgbm`
 - [`libseat`](https://git.sr.ht/~kennylevinsen/seatd)
 - `xwayland`
+- `libEGL`
+- `libpixman`
+- `libdisplay-info`
 
 ## Contact us
 
