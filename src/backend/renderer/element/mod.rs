@@ -709,7 +709,7 @@ where
 ///
 /// See [`Id::namespaced`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct NamespacedElement<E: Element> {
+pub struct NamespacedElement<E> {
     inner: E,
     namespace: Id,
 }
