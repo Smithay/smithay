@@ -93,7 +93,7 @@ impl InputMethodHandle {
         f(&mut inner);
     }
 
-    /// Indicates that an input method has grabbed a keyboard
+    /// Whether the input-method client currently holds a protocol keyboard grab
     pub fn keyboard_grabbed(&self) -> bool {
         let inner = self.inner.lock().unwrap();
         let keyboard = inner.keyboard_grab.inner.lock().unwrap();
@@ -274,22 +274,20 @@ where
                 }
             }
             zwp_input_method_v2::Request::GrabKeyboard { keyboard } => {
-                let input_method = self.handle.inner.lock().unwrap();
-                self.keyboard_handle.set_grab(
-                    state,
-                    input_method.keyboard_grab.clone(),
-                    SERIAL_COUNTER.next_serial(),
-                );
+                let keyboard_grab = self.handle.inner.lock().unwrap().keyboard_grab.clone();
                 let instance = data_init.init(
                     keyboard,
                     InputMethodKeyboardUserData {
-                        handle: input_method.keyboard_grab.clone(),
+                        handle: keyboard_grab.clone(),
                         keyboard_handle: self.keyboard_handle.clone(),
                     },
                 );
-                let mut keyboard = input_method.keyboard_grab.inner.lock().unwrap();
-                keyboard.grab = Some(instance.clone());
-                keyboard.text_input_handle = self.text_input_handle.clone();
+                {
+                    let mut keyboard = keyboard_grab.inner.lock().unwrap();
+                    keyboard.grab = Some(instance.clone());
+                    keyboard.text_input_handle = self.text_input_handle.clone();
+                }
+                self.keyboard_handle.set_input_interceptor(keyboard_grab);
                 let guard = self.keyboard_handle.arc.internal.lock().unwrap();
                 instance.repeat_info(guard.repeat_rate, guard.repeat_delay);
                 let keymap_file = self.keyboard_handle.arc.keymap.lock().unwrap();
@@ -319,8 +317,24 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _input_method: &ZwpInputMethodV2) {
-        self.handle.inner.lock().unwrap().instance = None;
+    fn destroyed(&self, _state: &mut D, _client: ClientId, input_method: &ZwpInputMethodV2) {
+        let keyboard_grab = {
+            let mut inner = self.handle.inner.lock().unwrap();
+            let is_current = inner
+                .instance
+                .as_ref()
+                .is_some_and(|instance| instance.object == *input_method);
+
+            if !is_current {
+                return;
+            }
+
+            inner.instance = None;
+            inner.keyboard_grab.clone()
+        };
+
+        keyboard_grab.inner.lock().unwrap().grab = None;
+        self.keyboard_handle.unset_input_interceptor();
         self.text_input_handle.leave();
     }
 }
