@@ -305,6 +305,13 @@ impl SessionRef {
     pub fn user_data(&self) -> &UserDataMap {
         &self.user_data
     }
+
+    /// The client that created this session.
+    ///
+    /// Returns `None` once the client has disconnected.
+    pub fn client(&self) -> Option<Client> {
+        self.obj.client()
+    }
 }
 
 /// An owned capture session.
@@ -519,6 +526,13 @@ impl CursorSessionRef {
     /// Access the [`UserDataMap`] for storing compositor-specific session data.
     pub fn user_data(&self) -> &UserDataMap {
         &self.user_data
+    }
+
+    /// The client that created this session.
+    ///
+    /// Returns `None` once the client has disconnected.
+    pub fn client(&self) -> Option<Client> {
+        self.obj.client()
     }
 }
 
