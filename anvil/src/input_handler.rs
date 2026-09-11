@@ -29,6 +29,7 @@ use smithay::{
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer},
+        virtual_keyboard::{VirtualKeyboardBackend, VirtualKeyboardHandler, VirtualKeyboardSpecialEvent},
     },
 };
 
@@ -36,7 +37,7 @@ use smithay::backend::input::AbsolutePositionEvent;
 
 #[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::output::Output;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::state::Backend;
 #[cfg(feature = "udev")]
@@ -1397,5 +1398,50 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
         Some(KeyAction::ToggleDecorations)
     } else {
         None
+    }
+}
+
+impl<BackendData: Backend> VirtualKeyboardHandler for AnvilState<BackendData> {
+    fn process_virtual_keyboard_event(&mut self, event: InputEvent<VirtualKeyboardBackend>) {
+        let keyboard = self.seat.get_keyboard().unwrap();
+
+        match event {
+            // The device's keycodes only mean anything under its own keymap, so
+            // activate it before processing events. Anvil never switches back;
+            // a real compositor should track which device the seat keymap came
+            // from and restore its configured one when a physical key arrives.
+            InputEvent::DeviceAdded { device }
+            | InputEvent::Special(VirtualKeyboardSpecialEvent::KeymapChanged { device }) => {
+                let Some(keymap) = device.keymap() else {
+                    return;
+                };
+                if let Err(err) = keyboard.set_keymap_from_string(self, keymap.to_string()) {
+                    warn!(?err, "Failed to apply virtual keyboard keymap");
+                }
+            }
+            InputEvent::Keyboard { event } => {
+                match self.keyboard_key_to_action::<VirtualKeyboardBackend>(event) {
+                    action @ (KeyAction::None
+                    | KeyAction::Quit
+                    | KeyAction::Run(_)
+                    | KeyAction::TogglePreview
+                    | KeyAction::ToggleDecorations) => self.process_common_key_action(action),
+                    // VT switching and output changes are out-of-scope for virtual keyboards.
+                    action => debug!(?action, "ignoring key action from a virtual keyboard"),
+                }
+            }
+            InputEvent::Special(VirtualKeyboardSpecialEvent::Modifiers {
+                mods_depressed,
+                mods_latched,
+                mods_locked,
+                group,
+                ..
+            }) => {
+                keyboard.with_xkb_state(self, |mut context| {
+                    context.set_modifier_mask(mods_depressed, mods_latched, mods_locked, group)
+                });
+            }
+            _ => (),
+        }
     }
 }
