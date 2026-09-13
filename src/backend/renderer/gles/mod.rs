@@ -763,20 +763,29 @@ impl GlesRenderer {
                 sync_lock.wait_for_all(&self.gl);
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+
+                // glFramebufferTexture2D only accepts FRAMEBUFFER on GLES 2.0,
+                // READ_FRAMEBUFFER and DRAW_FRAMEBUFFER need GLES 3.0 and higher.
+                // FRAMEBUFFER equals DRAW_FRAMEBUFFER on GLES 3.0, so the extra
+                // READ attach below keeps the blit read path covered.
                 self.gl.FramebufferTexture2D(
-                    ffi::READ_FRAMEBUFFER,
+                    ffi::FRAMEBUFFER,
                     ffi::COLOR_ATTACHMENT0,
                     ffi::TEXTURE_2D,
                     texture.0.texture,
                     0,
                 );
-                self.gl.FramebufferTexture2D(
-                    ffi::DRAW_FRAMEBUFFER,
-                    ffi::COLOR_ATTACHMENT0,
-                    ffi::TEXTURE_2D,
-                    texture.0.texture,
-                    0,
-                );
+
+                if self.gl_version >= version::GLES_3_0 {
+                    self.gl.FramebufferTexture2D(
+                        ffi::READ_FRAMEBUFFER,
+                        ffi::COLOR_ATTACHMENT0,
+                        ffi::TEXTURE_2D,
+                        texture.0.texture,
+                        0,
+                    );
+                }
+
                 let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
