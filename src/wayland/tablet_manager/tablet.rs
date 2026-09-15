@@ -3,9 +3,7 @@ use std::sync::{Arc, Mutex};
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2, zwp_tablet_v2::ZwpTabletV2,
 };
-use wayland_server::{
-    Client, Dispatch, DisplayHandle, Resource, Weak, backend::ObjectId, protocol::wl_surface::WlSurface,
-};
+use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak, protocol::wl_surface::WlSurface};
 
 use crate::{
     input::tablet::{Tablet, TabletDescriptor, TabletRc, TabletSeat, TabletSeatHandler, WeakTablet},
@@ -70,7 +68,7 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
 #[derive(Debug)]
 pub struct TabletUserData {
     tablet: WeakTablet,
-    seat_id: ObjectId,
+    tablet_seat: Weak<ZwpTabletSeatV2>,
 }
 
 #[derive(Default, Debug)]
@@ -101,7 +99,7 @@ impl WpTabletHandle {
                 seat.version(),
                 TabletUserData {
                     tablet: tablet.downgrade(),
-                    seat_id: seat.id(),
+                    tablet_seat: seat.downgrade(),
                 },
             )
             .unwrap();
@@ -126,12 +124,12 @@ impl WpTabletHandle {
     pub(crate) fn focused_tablet_for_seat(
         &self,
         surface: &WlSurface,
-        seat_id: &ObjectId,
+        tablet_seat: &Weak<ZwpTabletSeatV2>,
     ) -> Option<ZwpTabletV2> {
         self.known_instances.lock().unwrap().iter().find_map(|tablet| {
             tablet.upgrade().ok().filter(|wp_tablet| {
                 Resource::id(wp_tablet).same_client_as(&surface.id())
-                    && &wp_tablet.data::<TabletUserData>().unwrap().seat_id == seat_id
+                    && &wp_tablet.data::<TabletUserData>().unwrap().tablet_seat == tablet_seat
             })
         })
     }
