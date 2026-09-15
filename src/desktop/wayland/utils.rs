@@ -215,6 +215,9 @@ where
 /// throttle threshold. If the threshold is `None` this will never send frame callbacks
 /// for a surface that is not visible. Specifying [`Duration::ZERO`] as the throttle threshold
 /// will always send frame callbacks for non visible surfaces.
+///
+/// Surfaces the renderer knows to have no buffer, and their subsurfaces, never receive frame
+/// callbacks, the same way they are not rendered.
 pub fn send_frames_surface_tree<T, F>(
     surface: &wl_surface::WlSurface,
     output: &Output,
@@ -230,8 +233,19 @@ pub fn send_frames_surface_tree<T, F>(
     with_surface_tree_downward(
         surface,
         (),
-        |_, _, &()| TraversalAction::DoChildren(()),
+        |_, states, &()| {
+            if surface_is_unmapped(states) {
+                TraversalAction::SkipChildren
+            } else {
+                TraversalAction::DoChildren(())
+            }
+        },
         |surface, states, &()| {
+            // the processor still runs for a surface whose children were skipped
+            if surface_is_unmapped(states) {
+                return;
+            }
+
             states
                 .data_map
                 .insert_if_missing_threadsafe(SurfaceFrameThrottlingState::default);
@@ -486,6 +500,15 @@ pub fn surface_presentation_feedback_flags_from_states(
     } else {
         wp_presentation_feedback::Kind::empty()
     }
+}
+
+/// Whether the renderer state shows no buffer to draw. Surfaces without renderer state are
+/// not considered unmapped, so compositors managing buffers themselves keep receiving callbacks.
+fn surface_is_unmapped(states: &SurfaceData) -> bool {
+    states
+        .data_map
+        .get::<RendererSurfaceStateUserData>()
+        .is_some_and(|d| d.lock().unwrap().surface_view.is_none())
 }
 
 #[derive(Debug, Default)]
