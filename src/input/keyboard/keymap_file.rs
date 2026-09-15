@@ -1,7 +1,7 @@
 use std::ffi::CString;
 use std::os::unix::io::{AsFd, BorrowedFd};
 
-use sha2::{Digest, Sha256};
+use siphasher::sip128::SipHasher;
 use tracing::error;
 use xkbcommon::xkb::{self, KEYMAP_FORMAT_TEXT_V1, Keymap};
 
@@ -9,14 +9,13 @@ use crate::utils::SealedFile;
 
 /// Unique ID for a keymap
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct KeymapFileId([u8; 32]);
+pub struct KeymapFileId([u8; 16]);
 
 impl KeymapFileId {
     fn for_keymap(keymap: &str) -> Self {
         // Use a hash, so `keymap` events aren't sent when keymap hasn't changed, particularly
         // with `virtual-keyboard-unstable-v1`.
-        #[allow(deprecated)]
-        Self(Sha256::digest(keymap).as_slice().try_into().unwrap())
+        Self(SipHasher::new().hash(keymap.as_bytes()).as_bytes())
     }
 }
 
@@ -101,5 +100,31 @@ impl KeymapFile {
     /// Get this keymap's unique ID.
     pub(crate) fn id(&self) -> KeymapFileId {
         self.id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xkbcommon::xkb;
+
+    #[test]
+    fn test_keymap_file_id() {
+        let id1 = KeymapFileId::for_keymap("keymap data 1");
+        let id2 = KeymapFileId::for_keymap("keymap data 2");
+        let id3 = KeymapFileId::for_keymap("keymap data 1");
+
+        assert_ne!(id1, id2);
+        assert_eq!(id1, id3);
+    }
+
+    #[test]
+    fn test_keymap_file_creation() {
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let xkb_config = crate::input::keyboard::XkbConfig::default();
+        let keymap = xkb_config.compile_keymap(&context).unwrap();
+        let keymap_file = KeymapFile::new(&keymap);
+
+        assert_ne!(keymap_file.id().0, [0_u8; 16]);
     }
 }
