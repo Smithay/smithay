@@ -1511,7 +1511,7 @@ where
 {
     fn flush_frame(&mut self) -> Result<(), Error<R, T>> {
         if self.target.is_some() {
-            let _ = self.finish_internal()?;
+            let _ = self.finish_internal(false)?;
             // now the frame is gone, lets use our unholy ptr till the end of this call:
             // SAFETY:
             // - The renderer will never be invalid because the lifetime of the frame must be shorter than the renderer.
@@ -1545,9 +1545,9 @@ where
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
-    fn finish_internal(&mut self) -> Result<sync::SyncPoint, Error<R, T>> {
+    fn finish_internal(&mut self, exportable: bool) -> Result<sync::SyncPoint, Error<R, T>> {
         if let Some(frame) = self.frame.take() {
-            let sync = frame.finish().map_err(Error::Render)?;
+            let sync = frame.finish(exportable).map_err(Error::Render)?;
 
             // now the frame is gone, lets use our unholy ptr till the end of this call:
             // SAFETY:
@@ -1592,7 +1592,7 @@ where
                             1.0,
                         )
                         .map_err(Error::Target)?;
-                    let sync = frame.finish().map_err(Error::Target)?;
+                    let sync = frame.finish(true).map_err(Error::Target)?;
                     render
                         .renderer_mut()
                         .cleanup_texture_cache()
@@ -1700,7 +1700,7 @@ where
                             .map_err(Error::Target)?;
                     }
                 }
-                let sync = frame.finish().map_err(Error::Target)?;
+                let sync = frame.finish(true).map_err(Error::Target)?;
                 render
                     .renderer_mut()
                     .cleanup_texture_cache()
@@ -1730,7 +1730,7 @@ where
     <<T::Device as ApiDevice>::Renderer as RendererSuper>::Error: 'static,
 {
     fn drop(&mut self) {
-        if let Err(err) = self.finish_internal() {
+        if let Err(err) = self.finish_internal(false) {
             warn!("Ignored error finishing MultiFrame on drop: {}", err);
         }
     }
@@ -2128,8 +2128,8 @@ where
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
-        self.finish_internal()
+    fn finish(mut self, exportable: bool) -> Result<sync::SyncPoint, Self::Error> {
+        self.finish_internal(exportable)
     }
 }
 
@@ -2567,7 +2567,7 @@ where
             1.0,
         )
         .map_err(Error::Render)?;
-    *existing_sync_point = Some(frame.finish().map_err(Error::Render)?);
+    *existing_sync_point = Some(frame.finish(true).map_err(Error::Render)?);
 
     // shadow buffer contains our copy and is readable by target and the original buffer was never migrated
     Ok(())

@@ -658,14 +658,14 @@ impl Frame for PixmanFrame<'_, '_> {
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<SyncPoint, Self::Error> {
-        self.finish_internal()
+    fn finish(mut self, exportable: bool) -> Result<SyncPoint, Self::Error> {
+        self.finish_internal(exportable)
     }
 }
 
 impl PixmanFrame<'_, '_> {
     #[profiling::function]
-    fn finish_internal(&mut self) -> Result<SyncPoint, PixmanError> {
+    fn finish_internal(&mut self, _exportable: bool) -> Result<SyncPoint, PixmanError> {
         if self.finished.swap(true, Ordering::SeqCst) {
             return Ok(SyncPoint::signaled());
         }
@@ -685,7 +685,7 @@ impl PixmanFrame<'_, '_> {
 
 impl Drop for PixmanFrame<'_, '_> {
     fn drop(&mut self) {
-        match self.finish_internal() {
+        match self.finish_internal(false) {
             Ok(sync) => {
                 let _ = sync.wait();
             }

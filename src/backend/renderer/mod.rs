@@ -359,7 +359,7 @@ pub trait Frame {
     /// Leaking the frame instead will leak resources and can cause any of the previous effects.
     /// Leaking might make the renderer return Errors and force it's recreation.
     /// Leaking may not cause otherwise undefined behavior and program execution will always continue normally.
-    fn finish(self) -> Result<sync::SyncPoint, Self::Error>;
+    fn finish(self, exportable: bool) -> Result<sync::SyncPoint, Self::Error>;
 }
 
 /// Helper trait for [`Frame`]s, that allow referencing the underlying renderer
