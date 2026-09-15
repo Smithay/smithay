@@ -19,6 +19,8 @@ use wayland_server::{
 
 use crate::wayland::{Dispatch2, GlobalDispatch2};
 
+pub mod workspace;
+
 const MANAGER_VERSION: u32 = 1;
 
 /// Handler for workspace protocol
@@ -64,7 +66,7 @@ pub struct WorkspaceManagerGlobalData {
 #[derive(Debug)]
 pub struct WorkspaceManagerState {
     global: GlobalId,
-    pub(crate) _display: DisplayHandle,
+    pub(crate) display: DisplayHandle,
 
     pub(crate) instances: Vec<ExtWorkspaceManagerV1>,
     pub(crate) done_needed: Arc<AtomicBool>,
@@ -100,7 +102,7 @@ impl WorkspaceManagerState {
 
         Self {
             global,
-            _display: display.clone(),
+            display: display.clone(),
             instances: Default::default(),
             done_needed: Arc::new(AtomicBool::new(false)),
         }
