@@ -302,6 +302,10 @@ impl LockSurface {
         compositor::with_states(surface, |states| {
             let role = states.data_map.get::<LockSurfaceData>().unwrap().lock().unwrap();
 
+            if !role.surface.is_alive() {
+                return;
+            }
+
             let Some(last_acked) = role.last_acked else {
                 role.surface.post_error(
                     ext_session_lock_surface_v1::Error::CommitBeforeFirstAck,
