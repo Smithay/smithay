@@ -4,14 +4,14 @@ use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::{self, 
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1;
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
 use wayland_server::protocol::wl_surface;
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak};
 
 use crate::utils::{
     Serial,
     alive_tracker::{AliveTracker, IsAlive},
 };
 use crate::wayland::shell::xdg::XdgPopupSurfaceData;
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor, shell::wlr_layer::Layer};
+use crate::wayland::{GlobalData, compositor, shell::wlr_layer::Layer};
 
 use super::{
     Anchor, KeyboardInteractivity, LayerSurfaceAttributes, LayerSurfaceCachedState, LayerSurfaceData,
@@ -24,10 +24,8 @@ use super::LAYER_SURFACE_ROLE;
  * layer_shell
  */
 
-impl<D> GlobalDispatch2<ZwlrLayerShellV1, D> for WlrLayerShellGlobalData
+impl<D> GlobalDispatch<ZwlrLayerShellV1, D> for WlrLayerShellGlobalData
 where
-    D: Dispatch<ZwlrLayerShellV1, GlobalData>,
-    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
     D: 'static,
 {
@@ -47,9 +45,8 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwlrLayerShellV1, D> for GlobalData
+impl<D> Dispatch<ZwlrLayerShellV1, D> for GlobalData
 where
-    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
     D: 'static,
 {
@@ -75,7 +72,7 @@ where
                     Err(layer) => {
                         shell.post_error(
                             zwlr_layer_shell_v1::Error::InvalidLayer,
-                            format!("invalid layer: {layer:?}"),
+                            &format!("invalid layer: {layer:?}"),
                         );
                         return;
                     }
@@ -171,7 +168,7 @@ impl IsAlive for ZwlrLayerSurfaceV1 {
     }
 }
 
-impl<D> Dispatch2<ZwlrLayerSurfaceV1, D> for WlrLayerSurfaceUserData
+impl<D> Dispatch<ZwlrLayerSurfaceV1, D> for WlrLayerSurfaceUserData
 where
     D: WlrLayerShellHandler,
 {
@@ -198,7 +195,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error(err, msg);
+                        layer_surface.post_error(err, &msg);
                     }
                 };
             }
@@ -232,7 +229,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error(err, msg);
+                        layer_surface.post_error(err, &msg);
                     }
                 };
             }
@@ -244,7 +241,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error(err, msg);
+                        layer_surface.post_error(err, &msg);
                     }
                 };
             }
@@ -265,7 +262,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error(err, msg);
+                        layer_surface.post_error(err, &msg);
                     }
                 };
             }
@@ -316,7 +313,7 @@ where
                     None => {
                         layer_surface.post_error(
                             zwlr_layer_surface_v1::Error::InvalidSurfaceState,
-                            format!("wrong configure serial: {}", <u32>::from(serial)),
+                            &format!("wrong configure serial: {}", <u32>::from(serial)),
                         );
                         return;
                     }
@@ -334,7 +331,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client_id: wayland_server::backend::ClientId,
+        _client_id: &wayland_server::backend::ClientId,
         layer_surface: &ZwlrLayerSurfaceV1,
     ) {
         self.alive_tracker.destroy_notify();

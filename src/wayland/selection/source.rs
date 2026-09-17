@@ -48,7 +48,7 @@ impl SelectionSourceProvider {
 
     /// Send the data with the specified `mime_type` using the given `fd`.
     pub fn send(&self, mime_type: String, fd: OwnedFd) {
-        selection_dispatch!(self; Self(source) => source.send(mime_type, fd.as_fd()))
+        selection_dispatch!(self; Self(source) => source.send(&mime_type, fd.as_fd()))
     }
 
     /// Check whether the given selection source contains provided `mime_type`.

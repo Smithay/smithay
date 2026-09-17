@@ -22,8 +22,6 @@
 //!         dbg!(wl_surface);
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::{
@@ -48,7 +46,7 @@ use wayland_server::{
 use crate::{
     utils::HookId,
     wayland::{
-        Dispatch2, GlobalData, GlobalDispatch2,
+        GlobalData,
         compositor::{self, Cacheable},
         shell::xdg::XdgShellSurfaceUserData,
         shm::ShmBufferUserData,
@@ -235,7 +233,7 @@ impl XdgToplevelIconManager {
     /// Creates a new delegate type for handling xdg toplevel icon events.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: XdgToplevelIconHandler + GlobalDispatch<XdgToplevelIconManagerV1, XdgToplevelIconManagerUserData>,
+        D: XdgToplevelIconHandler,
     {
         let data = Arc::new(Mutex::new(ManagerGlobalData::default()));
         let global = display
@@ -267,10 +265,8 @@ impl XdgToplevelIconManager {
     }
 }
 
-impl<D: XdgToplevelIconHandler> GlobalDispatch2<XdgToplevelIconManagerV1, D>
+impl<D: XdgToplevelIconHandler> GlobalDispatch<XdgToplevelIconManagerV1, D>
     for XdgToplevelIconManagerUserData
-where
-    D: Dispatch<XdgToplevelIconManagerV1, GlobalData>,
 {
     fn bind(
         &self,
@@ -289,10 +285,7 @@ where
     }
 }
 
-impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconManagerV1, D> for GlobalData
-where
-    D: Dispatch<XdgToplevelIconV1, XdgToplevelIconUserData>,
-{
+impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconManagerV1, D> for GlobalData {
     fn request(
         &self,
         state: &mut D,
@@ -335,7 +328,7 @@ where
     }
 }
 
-impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelIconUserData {
+impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, D> for XdgToplevelIconUserData {
     fn request(
         &self,
         _state: &mut D,
@@ -352,8 +345,7 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
                 if self.is_immutable() {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::Immutable,
-                        "Request made after the icon has been assigned to a toplevel via 'set_icon'"
-                            .to_string(),
+                        "Request made after the icon has been assigned to a toplevel via 'set_icon'",
                     );
                 }
 
@@ -363,15 +355,14 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
                 if self.is_immutable() {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::Immutable,
-                        "Request made after the icon has been assigned to a toplevel via 'set_icon'"
-                            .to_string(),
+                        "Request made after the icon has been assigned to a toplevel via 'set_icon'",
                     );
                 }
 
                 let Some(shm) = buffer.data::<ShmBufferUserData>() else {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::InvalidBuffer,
-                        "The wl_buffer must be backed by wl_shm".to_string(),
+                        "The wl_buffer must be backed by wl_shm",
                     );
                     return;
                 };
@@ -379,7 +370,7 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
                 if shm.data.width != shm.data.height {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::InvalidBuffer,
-                        "The wl_buffer must be a square".to_string(),
+                        "The wl_buffer must be a square",
                     );
                     return;
                 };
@@ -402,7 +393,7 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _resource: &XdgToplevelIconV1) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _resource: &XdgToplevelIconV1) {
         self.unregister_all_hooks();
     }
 }

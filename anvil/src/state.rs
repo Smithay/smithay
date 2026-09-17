@@ -15,7 +15,6 @@ use smithay::{
             RenderElementStates, default_primary_scanout_output_compare, utils::select_dmabuf_feedback,
         },
     },
-    delegate_dispatch2,
     desktop::{
         PopupKind, PopupManager, Space,
         space::SpaceElement,
@@ -124,9 +123,9 @@ pub struct ClientState {
 }
 impl ClientData for ClientState {
     /// Notification that a client was initialized
-    fn initialized(&self, _client_id: ClientId) {}
+    fn initialized(&self, _client_id: &ClientId) {}
     /// Notification that a client is disconnected
-    fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
+    fn disconnected(&self, _client_id: &ClientId, _reason: DisconnectReason) {}
 }
 
 #[derive(Debug)]
@@ -647,8 +646,6 @@ impl<BackendData: Backend> ImageCopyCaptureHandler for AnvilState<BackendData> {
     }
 }
 
-delegate_dispatch2!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
@@ -876,7 +873,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 {
                     commit_timer_state.signal_until(frame_target);
                     let client = surface.client().unwrap();
-                    clients.insert(client.id(), client);
+                    clients.insert(client.id().clone(), client);
                 }
             });
         });
@@ -891,7 +888,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 {
                     commit_timer_state.signal_until(frame_target);
                     let client = surface.client().unwrap();
-                    clients.insert(client.id(), client);
+                    clients.insert(client.id().clone(), client);
                 }
             });
         }
@@ -908,7 +905,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 {
                     commit_timer_state.signal_until(frame_target);
                     let client = surface.client().unwrap();
-                    clients.insert(client.id(), client);
+                    clients.insert(client.id().clone(), client);
                 }
             });
         }
@@ -922,7 +919,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 {
                     commit_timer_state.signal_until(frame_target);
                     let client = surface.client().unwrap();
-                    clients.insert(client.id(), client);
+                    clients.insert(client.id().clone(), client);
                 }
             });
         }
@@ -971,7 +968,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     if let Some(fifo_barrier) = fifo_barrier {
                         fifo_barrier.signal();
                         let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
+                        clients.insert(client.id().clone(), client);
                     }
                 }
             });
@@ -1016,7 +1013,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     if let Some(fifo_barrier) = fifo_barrier {
                         fifo_barrier.signal();
                         let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
+                        clients.insert(client.id().clone(), client);
                     }
                 }
             });
@@ -1062,7 +1059,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     if let Some(fifo_barrier) = fifo_barrier {
                         fifo_barrier.signal();
                         let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
+                        clients.insert(client.id().clone(), client);
                     }
                 }
             });
@@ -1093,7 +1090,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     if let Some(fifo_barrier) = fifo_barrier {
                         fifo_barrier.signal();
                         let client = surface.client().unwrap();
-                        clients.insert(client.id(), client);
+                        clients.insert(client.id().clone(), client);
                     }
                 }
             });

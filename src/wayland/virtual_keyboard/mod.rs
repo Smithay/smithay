@@ -48,8 +48,6 @@
 //!
 //! # struct State;
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # let mut display = Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //!
@@ -79,8 +77,10 @@ use wayland_server::{
 use xkbcommon::xkb;
 
 use crate::backend::input::{InputEvent, InputTime, KeyState};
+use crate::input::SeatHandler;
 use crate::input::keyboard::{KeyboardSource, KeymapFile};
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
+use crate::wayland::seat::WaylandFocus;
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -115,11 +115,8 @@ impl VirtualKeyboardManagerState {
     /// Initialize a virtual keyboard manager global.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, VirtualKeyboardManagerGlobalData>,
-        D: Dispatch<ZwpVirtualKeyboardManagerV1, GlobalData>,
-        D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
-        D: VirtualKeyboardHandler,
-        D: 'static,
+        D: SeatHandler + VirtualKeyboardHandler + 'static,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = VirtualKeyboardManagerGlobalData {
@@ -136,12 +133,10 @@ impl VirtualKeyboardManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpVirtualKeyboardManagerV1, D> for VirtualKeyboardManagerGlobalData
+impl<D> GlobalDispatch<ZwpVirtualKeyboardManagerV1, D> for VirtualKeyboardManagerGlobalData
 where
-    D: Dispatch<ZwpVirtualKeyboardManagerV1, GlobalData>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
-    D: VirtualKeyboardHandler,
-    D: 'static,
+    D: SeatHandler + VirtualKeyboardHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn bind(
         &self,
@@ -159,11 +154,10 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpVirtualKeyboardManagerV1, D> for GlobalData
+impl<D> Dispatch<ZwpVirtualKeyboardManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
-    D: VirtualKeyboardHandler,
-    D: 'static,
+    D: SeatHandler + VirtualKeyboardHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
         &self,
@@ -220,7 +214,7 @@ impl VirtualKeyboardUserData {
     }
 }
 
-impl<D> Dispatch2<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData
+impl<D> Dispatch<ZwpVirtualKeyboardV1, D> for VirtualKeyboardUserData
 where
     D: VirtualKeyboardHandler + 'static,
 {
@@ -235,10 +229,10 @@ where
     ) {
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                let keymap = if format == KeymapFormat::NoKeymap as u32 {
+                let keymap = if format == u32::from(KeymapFormat::NoKeymap) {
                     // Use the current seat keymap to process keycodes.
                     None
-                } else if format == KeymapFormat::XkbV1 as u32 {
+                } else if format == u32::from(KeymapFormat::XkbV1) {
                     match compile_keymap(fd, size as usize) {
                         Some(keymap) => Some(KeymapFile::new(&keymap)),
                         // Client will get a `no_keymap` error on the next `key`
@@ -345,7 +339,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, virtual_keyboard: &ZwpVirtualKeyboardV1) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, virtual_keyboard: &ZwpVirtualKeyboardV1) {
         // The device only exists once a keymap request was accepted.
         if !self.data.has_keymap.load(Ordering::Relaxed) {
             return;

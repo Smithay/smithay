@@ -184,12 +184,12 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                     // the currently focused one as a client.
                     let client_id = match device {
                         SelectionDevice::WlrDataControl(device) => {
-                            dh.get_client(device.id()).ok().map(|c| c.id())
+                            dh.get_client(device.id()).ok().map(|c| c.id().clone())
                         }
                         SelectionDevice::ExtDataControl(device) => {
-                            dh.get_client(device.id()).ok().map(|c| c.id())
+                            dh.get_client(device.id()).ok().map(|c| c.id().clone())
                         }
-                        _ => client.map(|c| c.id()),
+                        _ => client.map(|c| c.id().clone()),
                     };
 
                     let client_id = match client_id {
@@ -197,7 +197,7 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                         None => continue,
                     };
 
-                    let offer = SelectionOffer::new::<D>(dh, device, client_id, selection.clone());
+                    let offer = SelectionOffer::new::<D>(dh, device, &client_id, selection.clone());
 
                     device.offer(&offer);
 

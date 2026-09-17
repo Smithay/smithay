@@ -291,5 +291,3 @@ impl ClientData for ClientState {
         tracing::info!("disconnected");
     }
 }
-
-smithay::delegate_dispatch2!(App);

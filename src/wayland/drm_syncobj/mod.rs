@@ -34,8 +34,6 @@
 //! } else {
 //!     None
 //! };
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::{
@@ -58,10 +56,7 @@ use super::{
     compositor::{self, BufferAssignment, Cacheable, HookId, SurfaceAttributes, with_states},
     dmabuf::get_dmabuf,
 };
-use crate::{
-    backend::drm::DrmDeviceFd,
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
-};
+use crate::{backend::drm::DrmDeviceFd, wayland::GlobalData};
 
 mod sync_point;
 pub use sync_point::*;
@@ -133,8 +128,7 @@ impl DrmSyncobjState {
     /// The `import_device` will be used to import the syncobj fds, and wait on them.
     pub fn new<D>(display: &DisplayHandle, import_device: DrmDeviceFd) -> Self
     where
-        D: GlobalDispatch<WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>,
-        D: 'static,
+        D: DrmSyncobjHandler + 'static,
     {
         Self::new_with_filter::<D, _>(display, import_device, |_| true)
     }
@@ -144,8 +138,7 @@ impl DrmSyncobjState {
     /// The `import_device` will be used to import the syncobj fds, and wait on them.
     pub fn new_with_filter<D, F>(display: &DisplayHandle, import_device: DrmDeviceFd, filter: F) -> Self
     where
-        D: GlobalDispatch<WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>,
-        D: 'static,
+        D: DrmSyncobjHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let global = display.create_global::<D, WpLinuxDrmSyncobjManagerV1, DrmSyncobjGlobalData>(
@@ -204,9 +197,9 @@ impl<'a> CloseGuard<'a> {
     }
 }
 
-impl<D> GlobalDispatch2<WpLinuxDrmSyncobjManagerV1, D> for DrmSyncobjGlobalData
+impl<D> GlobalDispatch<WpLinuxDrmSyncobjManagerV1, D> for DrmSyncobjGlobalData
 where
-    D: Dispatch<WpLinuxDrmSyncobjManagerV1, GlobalData>,
+    D: DrmSyncobjHandler,
 {
     fn bind(
         &self,
@@ -242,17 +235,17 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                 if pending.acquire_point.is_some() && new_buffer.is_none() {
                     syncobj_surface.post_error(
                         wp_linux_drm_syncobj_surface_v1::Error::NoBuffer,
-                        "acquire point without buffer".to_string(),
+                        "acquire point without buffer",
                     );
                 } else if pending.acquire_point.is_some() && pending.release_point.is_none() {
                     syncobj_surface.post_error(
                         wp_linux_drm_syncobj_surface_v1::Error::NoReleasePoint,
-                        "acquire point without release point".to_string(),
+                        "acquire point without release point",
                     );
                 } else if pending.acquire_point.is_none() && pending.release_point.is_some() {
                     syncobj_surface.post_error(
                         wp_linux_drm_syncobj_surface_v1::Error::NoAcquirePoint,
-                        "release point without acquire point".to_string(),
+                        "release point without acquire point",
                     );
                 } else if let (Some(acquire), Some(release)) =
                     (pending.acquire_point.as_ref(), pending.release_point.as_ref())
@@ -260,7 +253,7 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                     if acquire.timeline == release.timeline && release.point <= acquire.point {
                         syncobj_surface.post_error(
                             wp_linux_drm_syncobj_surface_v1::Error::ConflictingPoints,
-                            format!(
+                            &format!(
                                 "release point {} is not greater than acquire point {}",
                                 release.point, acquire.point
                             ),
@@ -270,7 +263,7 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                         if get_dmabuf(buffer).is_err() {
                             syncobj_surface.post_error(
                                 wp_linux_drm_syncobj_surface_v1::Error::UnsupportedBuffer,
-                                "sync points with non-dmabuf buffer".to_string(),
+                                "sync points with non-dmabuf buffer",
                             );
                         }
                     }
@@ -296,10 +289,8 @@ fn destruction_hook<D: DrmSyncobjHandler>(_data: &mut D, surface: &WlSurface) {
     });
 }
 
-impl<D> Dispatch2<WpLinuxDrmSyncobjManagerV1, D> for GlobalData
+impl<D> Dispatch<WpLinuxDrmSyncobjManagerV1, D> for GlobalData
 where
-    D: Dispatch<WpLinuxDrmSyncobjSurfaceV1, DrmSyncobjSurfaceData>,
-    D: Dispatch<WpLinuxDrmSyncobjTimelineV1, DrmSyncobjTimelineData>,
     D: DrmSyncobjHandler,
 {
     fn request(
@@ -323,7 +314,7 @@ where
                 if already_exists {
                     resource.post_error(
                         wp_linux_drm_syncobj_manager_v1::Error::SurfaceExists,
-                        "the surface already has a syncobj_surface object associated".to_string(),
+                        "the surface already has a syncobj_surface object associated",
                     );
                     return;
                 }
@@ -354,13 +345,13 @@ where
                         Some(Err(err)) => {
                             resource.post_error(
                                 wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline,
-                                format!("failed to import syncobj timeline: {err}"),
+                                &format!("failed to import syncobj timeline: {err}"),
                             );
                         }
                         None => {
                             resource.post_error(
                                 wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline,
-                                "failed to import syncobj timeline: No device".to_string(),
+                                "failed to import syncobj timeline: No device",
                             );
                         }
                     }
@@ -385,7 +376,7 @@ pub struct DrmSyncobjSurfaceData {
     destruction_hook_id: HookId,
 }
 
-impl<D> Dispatch2<WpLinuxDrmSyncobjSurfaceV1, D> for DrmSyncobjSurfaceData
+impl<D> Dispatch<WpLinuxDrmSyncobjSurfaceV1, D> for DrmSyncobjSurfaceData
 where
     D: DrmSyncobjHandler,
 {
@@ -486,7 +477,7 @@ pub struct DrmSyncobjTimelineData {
     timeline: DrmTimeline,
 }
 
-impl<D: DrmSyncobjHandler> Dispatch2<WpLinuxDrmSyncobjTimelineV1, D> for DrmSyncobjTimelineData {
+impl<D: DrmSyncobjHandler> Dispatch<WpLinuxDrmSyncobjTimelineV1, D> for DrmSyncobjTimelineData {
     fn request(
         &self,
         _state: &mut D,
@@ -505,7 +496,7 @@ impl<D: DrmSyncobjHandler> Dispatch2<WpLinuxDrmSyncobjTimelineV1, D> for DrmSync
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         _resource: &WpLinuxDrmSyncobjTimelineV1,
     ) {
         if let Some(state) = state.drm_syncobj_state() {

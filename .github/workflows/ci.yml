@@ -133,8 +133,6 @@ jobs:
             - name: Downgrade to minimal dependencies
               run: cargo -Z minimal-versions generate-lockfile
               # Needed to fix WlTouch trait bounds
-            - name: Selectively upgrade client-toolkit
-              run: cargo update -p smithay-client-toolkit@0.21.0 --precise 0.21.1
             - name: Rust toolchain
               uses: dtolnay/rust-toolchain@1.87
             - name: Check
