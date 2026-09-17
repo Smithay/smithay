@@ -34,8 +34,6 @@
 //!    }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 //!

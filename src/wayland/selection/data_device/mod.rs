@@ -70,8 +70,6 @@
 //!     // ... override default implementations here to customize handling ...
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 

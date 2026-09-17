@@ -64,8 +64,6 @@
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 mod handlers;

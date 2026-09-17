@@ -14,8 +14,6 @@
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # let mut display = Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //!

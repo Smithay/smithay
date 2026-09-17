@@ -20,8 +20,6 @@
 //! // insert the FifoManagerState into your state
 //! // ..
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 //!

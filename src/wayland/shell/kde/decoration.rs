@@ -26,8 +26,6 @@
 //!         &self.kde_decoration_state
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::{

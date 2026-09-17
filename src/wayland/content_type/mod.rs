@@ -17,8 +17,6 @@
 //! struct ClientState { compositor_state: CompositorClientState }
 //! impl wayland_server::backend::ClientData for ClientState {}
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
 //!        &mut self.compositor_state

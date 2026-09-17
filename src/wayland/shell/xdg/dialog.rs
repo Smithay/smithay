@@ -77,8 +77,6 @@
 //! }
 //! # impl PointerConstraintsHandler for State {}
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You are ready to go!
 
 use wayland_protocols::xdg::dialog::v1::server::{

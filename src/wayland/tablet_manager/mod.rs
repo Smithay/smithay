@@ -61,8 +61,6 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }

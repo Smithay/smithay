@@ -22,8 +22,6 @@
 //!         dbg!(wl_surface);
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::{

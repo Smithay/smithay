@@ -89,8 +89,6 @@
 //! }
 //! # impl PointerConstraintsHandler for State {}
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You are ready to go!
 // TODO: Describe how to change decoration mode.
 

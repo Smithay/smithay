@@ -119,9 +119,6 @@
 //!     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32) { /* ... */ }
 //!     fn send_selection(&mut self, xwm: XwmId, selection: SelectionTarget, mime_type: String, fd: OwnedFd) { /* ... */ }
 //! }
-//!
-//! // implement Dispatch for your state.
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::collections::HashMap;

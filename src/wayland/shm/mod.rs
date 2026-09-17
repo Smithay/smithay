@@ -48,8 +48,6 @@
 //!         &self.shm_state
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! Then, when you have a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)

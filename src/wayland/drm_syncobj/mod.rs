@@ -34,8 +34,6 @@
 //! } else {
 //!     None
 //! };
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::{

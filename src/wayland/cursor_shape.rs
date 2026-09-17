@@ -106,8 +106,6 @@
 //! # }
 //!
 //! let state = CursorShapeManagerState::new::<State>(&display.handle());
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::Request as ShapeRequest;

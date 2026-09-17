@@ -66,8 +66,6 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! let state = ImageCopyCaptureState::new::<State>(&display_handle);
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ## Session Lifecycle

@@ -41,8 +41,6 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // On input you should notify the idle_notifier
 //! // state.idle_notifier.notify_activity(&seat);
 //! ```

@@ -25,8 +25,6 @@
 //!         // Blur region is stored in wl_surface [BackgroundEffectSurfaceCachedState]
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::{

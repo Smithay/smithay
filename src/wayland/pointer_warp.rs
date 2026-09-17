@@ -42,8 +42,6 @@
 //!         // Pointer warp was requested by the client
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::atomic::Ordering;

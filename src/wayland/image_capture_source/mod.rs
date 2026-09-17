@@ -54,8 +54,6 @@
 //!
 //! let image_capture_source = ImageCaptureSourceState::new();
 //! let output_capture_source = OutputCaptureSourceState::new::<State>(&display_handle);
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ### With Toplevel Capture
@@ -107,8 +105,6 @@
 //! let image_capture_source = ImageCaptureSourceState::new();
 //! let output_capture_source = OutputCaptureSourceState::new::<State>(&display_handle);
 //! let toplevel_capture_source = ToplevelCaptureSourceState::new::<State>(&display_handle);
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ### Custom Capture Sources

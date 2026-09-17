@@ -72,8 +72,6 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! // First a DmabufState must be created. This type is used to create some "DmabufGlobal"s
@@ -177,8 +175,6 @@
 //!     dmabuf_state,
 //!     dmabuf_global,
 //! };
-//!
-//! smithay::delegate_dispatch2!(State);
 //!
 //! // Rest of the compositor goes here...
 //! ```

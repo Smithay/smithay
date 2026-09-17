@@ -92,8 +92,6 @@
 //! #     }
 //! # }
 //! let state = PointerGesturesState::new::<State>(&display.handle());
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::{Arc, Mutex, atomic::Ordering};

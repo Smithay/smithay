@@ -21,8 +21,6 @@
 //!         println!("Ring got called");
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use wayland_protocols::xdg::system_bell::v1::server::xdg_system_bell_v1::{self, XdgSystemBellV1};

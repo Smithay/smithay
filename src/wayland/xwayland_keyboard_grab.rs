@@ -39,9 +39,6 @@
 //!         todo!()
 //!     }
 //! }
-//!
-//! // implement Dispatch for the keyboard grab types
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use wayland_protocols::xwayland::keyboard_grab::zv1::server::{

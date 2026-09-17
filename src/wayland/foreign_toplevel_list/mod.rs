@@ -9,8 +9,6 @@
 //!     foreign_toplevel_list: ForeignToplevelListState,
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! impl ForeignToplevelListHandler for State {
 //!     fn foreign_toplevel_list_state(&mut self) -> &mut ForeignToplevelListState {
 //!         &mut self.foreign_toplevel_list

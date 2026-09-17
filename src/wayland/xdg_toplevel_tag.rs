@@ -26,8 +26,6 @@
 //!         dbg!(description);
 //!     }
 //! }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::{Arc, Mutex};

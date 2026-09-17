@@ -102,8 +102,6 @@
 //! }
 //! # impl PointerConstraintsHandler for State {}
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 //!

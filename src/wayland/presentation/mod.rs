@@ -18,8 +18,6 @@
 //!     1 // the id of the clock
 //! );
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 //!

@@ -49,8 +49,6 @@
 //!   fn lease_destroyed(&mut self, node: DrmNode, lease_id: u32) { self.active_leases.retain(|l| l.id() != lease_id); }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! # let drm_device: DrmDevice = todo!();

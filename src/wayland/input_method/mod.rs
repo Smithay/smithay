@@ -24,8 +24,6 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //!
