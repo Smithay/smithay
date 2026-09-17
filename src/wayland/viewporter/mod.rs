@@ -59,7 +59,7 @@ use wayland_server::{
 
 use crate::{
     utils::{Client, Logical, Rectangle, Size},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 
 use super::compositor::{self, Cacheable, CompositorHandler, SurfaceData, with_states};
@@ -79,10 +79,7 @@ impl ViewporterState {
     /// the event loop in the future.
     pub fn new<D>(display: &DisplayHandle) -> ViewporterState
     where
-        D: GlobalDispatch<wp_viewporter::WpViewporter, GlobalData>
-            + Dispatch<wp_viewporter::WpViewporter, GlobalData>
-            + Dispatch<wp_viewport::WpViewport, ViewportState>
-            + 'static,
+        D: CompositorHandler + 'static,
     {
         ViewporterState {
             global: display.create_global::<D, wp_viewporter::WpViewporter, _>(1, GlobalData),
@@ -95,10 +92,9 @@ impl ViewporterState {
     }
 }
 
-impl<D> GlobalDispatch2<wp_viewporter::WpViewporter, D> for GlobalData
+impl<D> GlobalDispatch<wp_viewporter::WpViewporter, D> for GlobalData
 where
-    D: Dispatch<wp_viewporter::WpViewporter, GlobalData>,
-    D: Dispatch<wp_viewport::WpViewport, ViewportState>,
+    D: CompositorHandler,
 {
     fn bind(
         &self,
@@ -112,9 +108,9 @@ where
     }
 }
 
-impl<D> Dispatch2<wp_viewporter::WpViewporter, D> for GlobalData
+impl<D> Dispatch<wp_viewporter::WpViewporter, D> for GlobalData
 where
-    D: Dispatch<wp_viewport::WpViewport, ViewportState>,
+    D: CompositorHandler,
 {
     fn request(
         &self,
@@ -184,7 +180,7 @@ where
     }
 }
 
-impl<D> Dispatch2<wp_viewport::WpViewport, D> for ViewportState
+impl<D> Dispatch<wp_viewport::WpViewport, D> for ViewportState
 where
     D: CompositorHandler,
 {

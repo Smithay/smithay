@@ -5,13 +5,11 @@ use std::sync::{Arc, Mutex};
 
 use crate::wayland::compositor::SurfaceAttributes;
 use crate::wayland::compositor::{self, BufferAssignment};
-use _session_lock::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1;
 use _session_lock::ext_session_lock_v1::{Error, ExtSessionLockV1, Request};
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock};
 use wayland_server::protocol::wl_output::WlOutput;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource};
 
-use crate::wayland::Dispatch2;
 use crate::wayland::session_lock::surface::{ExtLockSurfaceUserData, LockSurface, LockSurfaceAttributes};
 use crate::wayland::session_lock::{LockStatus, SessionLockHandler};
 
@@ -34,11 +32,9 @@ impl SessionLockState {
     }
 }
 
-impl<D> Dispatch2<ExtSessionLockV1, D> for SessionLockState
+impl<D> Dispatch<ExtSessionLockV1, D> for SessionLockState
 where
-    D: Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData>,
-    D: SessionLockHandler,
-    D: 'static,
+    D: SessionLockHandler + 'static,
 {
     fn request(
         &self,

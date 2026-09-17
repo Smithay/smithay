@@ -3,7 +3,6 @@ use std::sync::atomic::Ordering;
 use crate::{
     utils::Serial,
     wayland::{
-        Dispatch2,
         compositor::{self, with_states},
         shell::xdg::{PopupCachedState, SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
     },
@@ -11,11 +10,11 @@ use crate::{
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
-use wayland_server::{DataInit, DisplayHandle, Resource, backend::ClientId};
+use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId};
 
 use super::{PopupConfigure, XdgShellHandler, XdgShellSurfaceUserData, XdgSurfaceUserData};
 
-impl<D> Dispatch2<XdgPopup, D> for XdgShellSurfaceUserData
+impl<D> Dispatch<XdgPopup, D> for XdgShellSurfaceUserData
 where
     D: XdgShellHandler,
     D: 'static,

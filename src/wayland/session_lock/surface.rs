@@ -12,9 +12,8 @@ use tracing::trace_span;
 use wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, DataInit, DisplayHandle, Resource, Weak};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
-use crate::wayland::Dispatch2;
 use crate::wayland::session_lock::SessionLockHandler;
 
 /// User data for ext-session-lock surfaces.
@@ -27,7 +26,7 @@ pub struct ExtLockSurfaceUserData {
     pub(super) done: Arc<AtomicBool>,
 }
 
-impl<D> Dispatch2<ExtSessionLockSurfaceV1, D> for ExtLockSurfaceUserData
+impl<D> Dispatch<ExtSessionLockSurfaceV1, D> for ExtLockSurfaceUserData
 where
     D: SessionLockHandler,
     D: 'static,

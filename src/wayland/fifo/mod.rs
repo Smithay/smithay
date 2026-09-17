@@ -89,10 +89,7 @@ use wayland_server::{
     protocol::wl_surface::WlSurface,
 };
 
-use crate::wayland::{
-    Dispatch2, GlobalDispatch2,
-    compositor::{add_blocker, add_pre_commit_hook},
-};
+use crate::wayland::compositor::{add_blocker, add_pre_commit_hook};
 
 use super::compositor::{Barrier, Cacheable, is_sync_subsurface, with_states};
 
@@ -110,8 +107,6 @@ impl FifoManagerState {
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpFifoManagerV1, FifoManagerData>,
-        D: Dispatch<WpFifoManagerV1, FifoManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, true)
@@ -123,8 +118,6 @@ impl FifoManagerState {
     /// remove or disable this global in the future.
     pub fn unmanaged<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpFifoManagerV1, FifoManagerData>,
-        D: Dispatch<WpFifoManagerV1, FifoManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, false)
@@ -132,7 +125,6 @@ impl FifoManagerState {
 
     fn new_internal<D>(display: &DisplayHandle, is_managed: bool) -> Self
     where
-        D: GlobalDispatch<WpFifoManagerV1, FifoManagerData>,
         D: 'static,
     {
         let global = display.create_global::<D, WpFifoManagerV1, _>(1, FifoManagerData { is_managed });
@@ -157,9 +149,8 @@ pub struct FifoManagerData {
     is_managed: bool,
 }
 
-impl<D> GlobalDispatch2<WpFifoManagerV1, D> for FifoManagerData
+impl<D> GlobalDispatch<WpFifoManagerV1, D> for FifoManagerData
 where
-    D: Dispatch<WpFifoManagerV1, FifoManagerData>,
     D: 'static,
 {
     fn bind(
@@ -174,9 +165,8 @@ where
     }
 }
 
-impl<D> Dispatch2<WpFifoManagerV1, D> for FifoManagerData
+impl<D> Dispatch<WpFifoManagerV1, D> for FifoManagerData
 where
-    D: Dispatch<WpFifoV1, FifoData>,
     D: 'static,
 {
     fn request(
@@ -286,7 +276,7 @@ struct FifoMarker(Option<WpFifoV1>);
 #[derive(Debug)]
 pub struct FifoData(Weak<WlSurface>);
 
-impl<D> Dispatch2<WpFifoV1, D> for FifoData
+impl<D> Dispatch<WpFifoV1, D> for FifoData
 where
     D: 'static,
 {

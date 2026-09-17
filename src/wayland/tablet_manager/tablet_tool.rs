@@ -25,7 +25,6 @@ use crate::{
     },
     utils::{Client as ClientCoords, Clock, Monotonic, Point, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
-        Dispatch2,
         compositor::{self, CompositorHandler},
         seat::{CURSOR_IMAGE_ROLE, WaylandFocus},
     },
@@ -78,7 +77,6 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
         tool_desc: &TabletToolDescriptor,
     ) -> TabletToolHandle<D>
     where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
     {
@@ -101,7 +99,6 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
         default_grab: F,
     ) -> TabletToolHandle<D>
     where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
         F: Fn() -> Box<dyn TabletToolGrab<D>> + Send + 'static,
@@ -153,7 +150,6 @@ impl WpTabletToolHandle {
         handle: TabletToolHandle<D>,
         desc: &TabletToolDescriptor,
     ) where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         D: TabletSeatHandler,
         <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
@@ -410,7 +406,7 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
     }
 }
 
-impl<D> Dispatch2<ZwpTabletToolV2, D> for TabletToolUserData<D>
+impl<D> Dispatch<ZwpTabletToolV2, D> for TabletToolUserData<D>
 where
     D: TabletSeatHandler,
     <D as TabletSeatHandler>::ToolFocus: WaylandFocus,

@@ -31,7 +31,7 @@ use wayland_server::{
     protocol::wl_surface::WlSurface,
 };
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
 /// Handler for xdg ring request
 pub trait XdgSystemBellHandler: 'static {
@@ -49,7 +49,7 @@ impl XdgSystemBellState {
     /// Register new [XdgSystemBellV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: XdgSystemBellHandler + GlobalDispatch<XdgSystemBellV1, GlobalData>,
+        D: XdgSystemBellHandler,
     {
         let global_id = display.create_global::<D, XdgSystemBellV1, _>(1, GlobalData);
         Self { global_id }
@@ -61,10 +61,7 @@ impl XdgSystemBellState {
     }
 }
 
-impl<D: XdgSystemBellHandler> GlobalDispatch2<XdgSystemBellV1, D> for GlobalData
-where
-    D: Dispatch<XdgSystemBellV1, GlobalData>,
-{
+impl<D: XdgSystemBellHandler> GlobalDispatch<XdgSystemBellV1, D> for GlobalData {
     fn bind(
         &self,
         _state: &mut D,
@@ -77,7 +74,7 @@ where
     }
 }
 
-impl<D: XdgSystemBellHandler> Dispatch2<XdgSystemBellV1, D> for GlobalData {
+impl<D: XdgSystemBellHandler> Dispatch<XdgSystemBellV1, D> for GlobalData {
     fn request(
         &self,
         state: &mut D,

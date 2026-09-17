@@ -83,11 +83,11 @@ use wayland_protocols::wp::primary_selection::zv1::{
 };
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_seat::WlSeat;
-use wayland_server::{Client, DisplayHandle, GlobalDispatch};
+use wayland_server::{Client, DisplayHandle};
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::selection::SelectionTarget,
+    wayland::{seat::WaylandFocus, selection::SelectionTarget},
 };
 
 mod device;
@@ -129,8 +129,9 @@ impl PrimarySelectionState {
     /// Register new [`PrimaryDeviceManager`] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<PrimaryDeviceManager, PrimaryDeviceManagerGlobalData> + 'static,
-        D: PrimarySelectionHandler,
+        D: PrimarySelectionHandler + 'static,
+        <D as SeatHandler>::PointerFocus: WaylandFocus,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     {
         Self::new_with_filter::<D, _>(display, |_| true)
     }
@@ -140,8 +141,9 @@ impl PrimarySelectionState {
     /// Filters can be used to limit visibility of a global to certain clients.
     pub fn new_with_filter<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<PrimaryDeviceManager, PrimaryDeviceManagerGlobalData> + 'static,
-        D: PrimarySelectionHandler,
+        D: PrimarySelectionHandler + 'static,
+        <D as SeatHandler>::PointerFocus: WaylandFocus,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = PrimaryDeviceManagerGlobalData {
@@ -307,19 +309,16 @@ mod handlers {
     use std::cell::RefCell;
 
     use tracing::error;
-    use wayland_protocols::wp::primary_selection::zv1::server::{
-        zwp_primary_selection_device_manager_v1::{
-            self as primary_device_manager, ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
-        },
-        zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice,
-        zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource,
+    use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::{
+        self as primary_device_manager, ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
     };
-    use wayland_server::{Dispatch, DisplayHandle};
+    use wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 
     use crate::{
         input::{Seat, SeatHandler},
         wayland::{
-            Dispatch2, GlobalData, GlobalDispatch2,
+            GlobalData,
+            seat::WaylandFocus,
             selection::{device::SelectionDevice, seat_data::SeatData},
         },
     };
@@ -329,12 +328,10 @@ mod handlers {
         PrimaryDeviceManagerGlobalData, device::PrimaryDeviceUserData, source::PrimarySourceUserData,
     };
 
-    impl<D> GlobalDispatch2<PrimaryDeviceManager, D> for PrimaryDeviceManagerGlobalData
+    impl<D> GlobalDispatch<PrimaryDeviceManager, D> for PrimaryDeviceManagerGlobalData
     where
-        D: Dispatch<PrimaryDeviceManager, GlobalData>,
-        D: Dispatch<PrimarySource, PrimarySourceUserData>,
-        D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
         D: PrimarySelectionHandler,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         D: 'static,
     {
         fn bind(
@@ -353,12 +350,11 @@ mod handlers {
         }
     }
 
-    impl<D> Dispatch2<PrimaryDeviceManager, D> for GlobalData
+    impl<D> Dispatch<PrimaryDeviceManager, D> for GlobalData
     where
-        D: Dispatch<PrimarySource, PrimarySourceUserData>,
-        D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
         D: PrimarySelectionHandler,
         D: SeatHandler,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         D: 'static,
     {
         fn request(

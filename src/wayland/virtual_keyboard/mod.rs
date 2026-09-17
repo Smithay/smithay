@@ -46,15 +46,14 @@
 //! ```
 //!
 
-use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
-    zwp_virtual_keyboard_manager_v1::{self, ZwpVirtualKeyboardManagerV1},
-    zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
+use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::{
+    self, ZwpVirtualKeyboardManagerV1,
 };
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, backend::GlobalId};
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::{GlobalData, seat::WaylandFocus},
 };
 
 use self::virtual_keyboard_handle::VirtualKeyboardHandle;
@@ -79,7 +78,8 @@ pub struct VirtualKeyboardManagerGlobalData {
 
 fn create_global_with_filter<D, F>(display: &DisplayHandle, filter: F) -> GlobalId
 where
-    D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, VirtualKeyboardManagerGlobalData> + 'static,
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
 {
     let data = VirtualKeyboardManagerGlobalData {
@@ -93,11 +93,8 @@ impl VirtualKeyboardManagerState {
     /// Initialize a virtual keyboard manager global.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, VirtualKeyboardManagerGlobalData>,
-        D: Dispatch<ZwpVirtualKeyboardManagerV1, GlobalData>,
-        D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
-        D: SeatHandler,
-        D: 'static,
+        D: SeatHandler + 'static,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let global = create_global_with_filter::<D, F>(display, filter);
@@ -111,12 +108,10 @@ impl VirtualKeyboardManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpVirtualKeyboardManagerV1, D> for VirtualKeyboardManagerGlobalData
+impl<D> GlobalDispatch<ZwpVirtualKeyboardManagerV1, D> for VirtualKeyboardManagerGlobalData
 where
-    D: Dispatch<ZwpVirtualKeyboardManagerV1, GlobalData>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
-    D: SeatHandler,
-    D: 'static,
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn bind(
         &self,
@@ -134,11 +129,10 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpVirtualKeyboardManagerV1, D> for GlobalData
+impl<D> Dispatch<ZwpVirtualKeyboardManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
-    D: SeatHandler,
-    D: 'static,
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
         &self,

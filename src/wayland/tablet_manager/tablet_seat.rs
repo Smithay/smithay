@@ -1,16 +1,9 @@
-use wayland_protocols::wp::tablet::zv2::server::{
-    zwp_tablet_seat_v2::ZwpTabletSeatV2, zwp_tablet_tool_v2::ZwpTabletToolV2, zwp_tablet_v2::ZwpTabletV2,
-};
+use wayland_protocols::wp::tablet::zv2::server::zwp_tablet_seat_v2::ZwpTabletSeatV2;
 use wayland_server::{Client, Dispatch, DisplayHandle, Resource};
 
 use crate::{
     input::tablet::{TabletSeat, TabletSeatHandler},
-    wayland::{
-        Dispatch2,
-        compositor::CompositorHandler,
-        seat::WaylandFocus,
-        tablet_manager::{TabletToolUserData, tablet::TabletUserData},
-    },
+    wayland::{compositor::CompositorHandler, seat::WaylandFocus},
 };
 
 impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
@@ -21,8 +14,6 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
         seat: &ZwpTabletSeatV2,
         client: &Client,
     ) where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
         D: 'static,
@@ -52,7 +43,7 @@ pub struct TabletSeatUserData<D: TabletSeatHandler> {
     pub(super) handle: TabletSeat<D>,
 }
 
-impl<D> Dispatch2<ZwpTabletSeatV2, D> for TabletSeatUserData<D>
+impl<D> Dispatch<ZwpTabletSeatV2, D> for TabletSeatUserData<D>
 where
     D: TabletSeatHandler + 'static,
 {

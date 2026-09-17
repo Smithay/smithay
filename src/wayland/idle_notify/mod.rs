@@ -69,7 +69,7 @@ use wayland_server::{
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 
 /// Handler trait for ext-idle-notify
@@ -121,7 +121,6 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
     /// Create new [`ExtIdleNotifierV1`] global.
     pub fn new(display: &DisplayHandle, loop_handle: LoopHandle<'static, D>) -> Self
     where
-        D: GlobalDispatch<ExtIdleNotifierV1, GlobalData>,
         D: IdleNotifierHandler,
         D: 'static,
     {
@@ -244,9 +243,8 @@ impl<D: IdleNotifierHandler + SeatHandler> IdleNotifierState<D> {
     }
 }
 
-impl<D> GlobalDispatch2<ExtIdleNotifierV1, D> for GlobalData
+impl<D> GlobalDispatch<ExtIdleNotifierV1, D> for GlobalData
 where
-    D: Dispatch<ExtIdleNotifierV1, GlobalData>,
     D: IdleNotifierHandler,
     D: 'static,
 {
@@ -262,9 +260,8 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtIdleNotifierV1, D> for GlobalData
+impl<D> Dispatch<ExtIdleNotifierV1, D> for GlobalData
 where
-    D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
     D: IdleNotifierHandler,
     D: 'static,
 {
@@ -334,7 +331,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtIdleNotificationV1, D> for IdleNotificationUserData
+impl<D> Dispatch<ExtIdleNotificationV1, D> for IdleNotificationUserData
 where
     D: IdleNotifierHandler,
 {

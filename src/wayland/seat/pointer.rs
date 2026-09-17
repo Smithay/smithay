@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use portable_atomic::AtomicF64;
 use wayland_server::{
-    Client, DisplayHandle, Resource, Weak,
+    Client, Dispatch, DisplayHandle, Resource, Weak,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_pointer::{
@@ -26,7 +26,7 @@ use crate::{
     },
     utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
-        Dispatch2, compositor,
+        compositor,
         pointer_constraints::{ConstraintRemove, PointerConstraintsHandler, with_pointer_constraint},
     },
 };
@@ -387,7 +387,7 @@ pub struct PointerUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch2<WlPointer, D> for PointerUserData<D>
+impl<D> Dispatch<WlPointer, D> for PointerUserData<D>
 where
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,

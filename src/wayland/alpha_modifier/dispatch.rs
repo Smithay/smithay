@@ -3,14 +3,15 @@ use wayland_protocols::wp::alpha_modifier::v1::server::{
     wp_alpha_modifier_v1::{self, WpAlphaModifierV1},
 };
 
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource, backend::ClientId};
+use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
+};
 
 use super::{AlphaModifierSurfaceCachedState, AlphaModifierSurfaceData, AlphaModifierSurfaceUserData};
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor};
+use crate::wayland::{GlobalData, compositor};
 
-impl<D> GlobalDispatch2<WpAlphaModifierV1, D> for GlobalData
+impl<D> GlobalDispatch<WpAlphaModifierV1, D> for GlobalData
 where
-    D: Dispatch<WpAlphaModifierV1, GlobalData>,
     D: 'static,
 {
     fn bind(
@@ -25,9 +26,8 @@ where
     }
 }
 
-impl<D> Dispatch2<WpAlphaModifierV1, D> for GlobalData
+impl<D> Dispatch<WpAlphaModifierV1, D> for GlobalData
 where
-    D: Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData>,
     D: 'static,
 {
     fn request(
@@ -72,7 +72,7 @@ where
     }
 }
 
-impl<D> Dispatch2<WpAlphaModifierSurfaceV1, D> for AlphaModifierSurfaceUserData {
+impl<D> Dispatch<WpAlphaModifierSurfaceV1, D> for AlphaModifierSurfaceUserData {
     fn request(
         &self,
         _state: &mut D,

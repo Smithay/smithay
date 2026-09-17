@@ -1,10 +1,10 @@
 use std::sync::Mutex;
 
-use crate::{utils::Rectangle, utils::Serial, wayland::Dispatch2};
+use crate::{utils::Rectangle, utils::Serial};
 
 use wayland_protocols::xdg::shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 
-use wayland_server::{DataInit, DisplayHandle, Resource, WEnum};
+use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource};
 
 use super::{PositionerState, XdgShellHandler};
 
@@ -18,7 +18,7 @@ pub struct XdgPositionerUserData {
     pub(crate) inner: Mutex<PositionerState>,
 }
 
-impl<D> Dispatch2<XdgPositioner, D> for XdgPositionerUserData
+impl<D> Dispatch<XdgPositioner, D> for XdgPositionerUserData
 where
     D: XdgShellHandler,
     D: 'static,
@@ -55,21 +55,15 @@ where
                 }
             }
             xdg_positioner::Request::SetAnchor { anchor } => {
-                if let WEnum::Value(anchor) = anchor {
-                    state.anchor_edges = anchor;
-                }
+                state.anchor_edges = anchor;
             }
             xdg_positioner::Request::SetGravity { gravity } => {
-                if let WEnum::Value(gravity) = gravity {
-                    state.gravity = gravity;
-                }
+                state.gravity = gravity;
             }
             xdg_positioner::Request::SetConstraintAdjustment {
                 constraint_adjustment,
             } => {
-                if let WEnum::Value(constraint_adjustment) = constraint_adjustment {
-                    state.constraint_adjustment = constraint_adjustment;
-                }
+                state.constraint_adjustment = constraint_adjustment;
             }
             xdg_positioner::Request::SetOffset { x, y } => {
                 state.offset = (x, y).into();

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use tracing::debug;
 use wayland_server::{
-    Client, DataInit, DisplayHandle, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
     protocol::{
         wl_data_device::{self, WlDataDevice},
         wl_seat::WlSeat,
@@ -13,7 +13,7 @@ use crate::{
     input::{Seat, SeatHandler, dnd::DndFocus},
     utils::Serial,
     wayland::{
-        Dispatch2, compositor,
+        compositor,
         seat::WaylandFocus,
         selection::{
             SelectionTarget,
@@ -36,10 +36,9 @@ pub struct DataDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch2<WlDataDevice, D> for DataDeviceUserData
+impl<D> Dispatch<WlDataDevice, D> for DataDeviceUserData
 where
     D: DataDeviceHandler,
-    D: SeatHandler,
     <D as SeatHandler>::PointerFocus: DndFocus<D>,
     <D as SeatHandler>::TouchFocus: DndFocus<D>,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,

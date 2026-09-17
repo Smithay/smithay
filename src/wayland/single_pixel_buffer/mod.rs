@@ -46,11 +46,9 @@
 //! ```
 
 use wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
-use wayland_server::{
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, backend::GlobalId, protocol::wl_buffer::WlBuffer,
-};
+use wayland_server::{DisplayHandle, Resource, backend::GlobalId, protocol::wl_buffer::WlBuffer};
 
-use crate::wayland::GlobalData;
+use crate::wayland::{GlobalData, buffer::BufferHandler};
 
 mod handlers;
 
@@ -67,9 +65,7 @@ impl SinglePixelBufferState {
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpSinglePixelBufferManagerV1, GlobalData>,
-        D: Dispatch<WpSinglePixelBufferManagerV1, GlobalData>,
-        D: 'static,
+        D: BufferHandler + 'static,
     {
         let global = display.create_global::<D, WpSinglePixelBufferManagerV1, _>(1, GlobalData);
 

@@ -7,10 +7,7 @@ use wayland_server::{
     Client, Dispatch, DisplayHandle, Resource, Weak, backend::ObjectId, protocol::wl_surface::WlSurface,
 };
 
-use crate::{
-    input::tablet::{Tablet, TabletDescriptor, TabletRc, TabletSeat, TabletSeatHandler, WeakTablet},
-    wayland::Dispatch2,
-};
+use crate::input::tablet::{Tablet, TabletDescriptor, TabletRc, TabletSeat, TabletSeatHandler, WeakTablet};
 
 impl Tablet {
     fn new_bound(descriptor: TabletDescriptor) -> Self {
@@ -41,8 +38,7 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
     /// [`TabletToolHandle`]: crate::input::tablet::tool::TabletToolHandle
     pub fn add_wp_tablet(&self, dh: &DisplayHandle, tablet_desc: &TabletDescriptor) -> Tablet
     where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
-        D: 'static,
+        D: TabletSeatHandler + 'static,
     {
         let inner = &mut *self.arc.lock().unwrap();
 
@@ -88,7 +84,6 @@ impl WpTabletHandle {
         tablet: Tablet,
         desc: &TabletDescriptor,
     ) where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: 'static,
     {
         if !self.bound {
@@ -151,7 +146,7 @@ impl Drop for WpTabletHandle {
     }
 }
 
-impl<D> Dispatch2<ZwpTabletV2, D> for TabletUserData
+impl<D> Dispatch<ZwpTabletV2, D> for TabletUserData
 where
     D: 'static,
 {

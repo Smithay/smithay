@@ -33,14 +33,13 @@
 //! ```
 
 use _idle_inhibit::zwp_idle_inhibit_manager_v1::{Request, ZwpIdleInhibitManagerV1};
-use _idle_inhibit::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
 use wayland_protocols::wp::idle_inhibit::zv1::server as _idle_inhibit;
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
+use crate::wayland::GlobalData;
 use crate::wayland::idle_inhibit::inhibitor::IdleInhibitorState;
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 pub mod inhibitor;
 
@@ -56,7 +55,6 @@ impl IdleInhibitManagerState {
     /// Create new [`zwp_idle_inhibit_manager`](ZwpIdleInhibitManagerV1) global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpIdleInhibitManagerV1, GlobalData>,
         D: IdleInhibitHandler,
         D: 'static,
     {
@@ -71,9 +69,8 @@ impl IdleInhibitManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpIdleInhibitManagerV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpIdleInhibitManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpIdleInhibitManagerV1, GlobalData>,
     D: IdleInhibitHandler,
     D: 'static,
 {
@@ -89,9 +86,8 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpIdleInhibitManagerV1, D> for GlobalData
+impl<D> Dispatch<ZwpIdleInhibitManagerV1, D> for GlobalData
 where
-    D: Dispatch<ZwpIdleInhibitorV1, IdleInhibitorState>,
     D: IdleInhibitHandler,
     D: 'static,
 {

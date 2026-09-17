@@ -41,9 +41,7 @@ use crate::wayland::{
 use wayland_protocols::ext::background_effect::v1::server::ext_background_effect_manager_v1::{
     self, ExtBackgroundEffectManagerV1,
 };
-use wayland_server::{
-    DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface::WlSurface,
-};
+use wayland_server::{DisplayHandle, Resource, Weak, backend::GlobalId, protocol::wl_surface::WlSurface};
 
 pub use ext_background_effect_manager_v1::Capability;
 
@@ -144,7 +142,7 @@ impl BackgroundEffectState {
     /// Regiseter new [ExtBackgroundEffectManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> BackgroundEffectState
     where
-        D: ExtBackgroundEffectHandler + GlobalDispatch<ExtBackgroundEffectManagerV1, GlobalData>,
+        D: ExtBackgroundEffectHandler,
     {
         let global = display.create_global::<D, ExtBackgroundEffectManagerV1, _>(1, GlobalData);
         BackgroundEffectState { global }

@@ -17,7 +17,7 @@ use wayland_protocols::wp::pointer_constraints::zv1::server::{
     zwp_pointer_constraints_v1::{self, Lifetime, ZwpPointerConstraintsV1},
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum, backend::GlobalId,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::GlobalId,
     protocol::wl_surface::WlSurface,
 };
 
@@ -25,7 +25,7 @@ use super::compositor::{self, RegionAttributes};
 use crate::{
     input::{SeatHandler, pointer::PointerHandle},
     utils::{Logical, Point},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
+    wayland::{GlobalData, seat::PointerUserData},
 };
 
 const VERSION: u32 = 1;
@@ -77,7 +77,7 @@ pub struct ConfinedPointer {
     handle: zwp_confined_pointer_v1::ZwpConfinedPointerV1,
     region: Option<RegionAttributes>,
     pending_region: Option<RegionAttributes>,
-    lifetime: WEnum<Lifetime>,
+    lifetime: Lifetime,
     active: AtomicBool,
 }
 
@@ -94,7 +94,7 @@ pub struct LockedPointer {
     handle: zwp_locked_pointer_v1::ZwpLockedPointerV1,
     region: Option<RegionAttributes>,
     pending_region: Option<RegionAttributes>,
-    lifetime: WEnum<Lifetime>,
+    lifetime: Lifetime,
     cursor_position_hint: Option<Point<f64, Logical>>,
     pending_cursor_position_hint: Option<Point<f64, Logical>>,
     active: AtomicBool,
@@ -183,7 +183,7 @@ impl<D: SeatHandler + PointerConstraintsHandler + 'static> PointerConstraintRef<
             }
         };
 
-        if deactivated && self.lifetime() == WEnum::Value(Lifetime::Oneshot) {
+        if deactivated && self.lifetime() == Lifetime::Oneshot {
             self.entry.remove_entry();
         }
     }
@@ -207,7 +207,7 @@ impl PointerConstraint {
         }
     }
 
-    fn lifetime(&self) -> WEnum<Lifetime> {
+    fn lifetime(&self) -> Lifetime {
         match self {
             PointerConstraint::Confined(confined) => confined.lifetime,
             PointerConstraint::Locked(locked) => locked.lifetime,
@@ -241,12 +241,7 @@ impl PointerConstraintsState {
     /// Create a new pointer constraints global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpPointerConstraintsV1, GlobalData>,
-        D: Dispatch<ZwpPointerConstraintsV1, GlobalData>,
-        D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
-        D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
-        D: SeatHandler,
-        D: 'static,
+        D: PointerConstraintsHandler + 'static,
     {
         let global = display.create_global::<D, ZwpPointerConstraintsV1, _>(VERSION, GlobalData);
 
@@ -384,13 +379,9 @@ fn remove_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
     }
 }
 
-impl<D> Dispatch2<ZwpPointerConstraintsV1, D> for GlobalData
+impl<D> Dispatch<ZwpPointerConstraintsV1, D> for GlobalData
 where
-    D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
-    D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
-    D: SeatHandler,
-    D: PointerConstraintsHandler,
-    D: 'static,
+    D: PointerConstraintsHandler + 'static,
 {
     fn request(
         &self,
@@ -474,9 +465,9 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<ZwpPointerConstraintsV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpPointerConstraintsV1, D> for GlobalData
 where
-    D: Dispatch<ZwpPointerConstraintsV1, GlobalData> + SeatHandler + 'static,
+    D: PointerConstraintsHandler + 'static,
 {
     fn bind(
         &self,
@@ -490,7 +481,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpConfinedPointerV1, D> for PointerConstraintUserData<D>
+impl<D> Dispatch<ZwpConfinedPointerV1, D> for PointerConstraintUserData<D>
 where
     D: SeatHandler,
     D: PointerConstraintsHandler,
@@ -538,7 +529,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpLockedPointerV1, D> for PointerConstraintUserData<D>
+impl<D> Dispatch<ZwpLockedPointerV1, D> for PointerConstraintUserData<D>
 where
     D: SeatHandler,
     D: PointerConstraintsHandler,

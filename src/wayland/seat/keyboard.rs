@@ -2,7 +2,7 @@ use std::{cell::RefCell, fmt};
 
 use tracing::{instrument, trace, warn};
 use wayland_server::{
-    Client, DisplayHandle, Resource,
+    Client, Dispatch, DisplayHandle, Resource,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
@@ -19,7 +19,6 @@ use crate::{
     },
     utils::{HookId, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
-        Dispatch2,
         compositor::{add_destruction_hook, remove_destruction_hook, with_states},
         input_method::InputMethodSeat,
         text_input::TextInputSeat,
@@ -117,7 +116,7 @@ impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch2<WlKeyboard, D> for KeyboardUserData<D>
+impl<D> Dispatch<WlKeyboard, D> for KeyboardUserData<D>
 where
     D: 'static,
     D: SeatHandler,

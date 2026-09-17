@@ -102,12 +102,11 @@ use std::{
 };
 
 use wayland_server::{
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
+    DisplayHandle, Resource,
     backend::GlobalId,
     protocol::{
         wl_buffer,
         wl_shm::{self, WlShm},
-        wl_shm_pool::WlShmPool,
     },
 };
 
@@ -142,12 +141,7 @@ impl ShmState {
     /// remove this global in the future.
     pub fn new<D>(display: &DisplayHandle, formats: impl IntoIterator<Item = wl_shm::Format>) -> ShmState
     where
-        D: GlobalDispatch<WlShm, GlobalData>
-            + Dispatch<WlShm, GlobalData>
-            + Dispatch<WlShmPool, ShmPoolUserData>
-            + BufferHandler
-            + ShmHandler
-            + 'static,
+        D: ShmHandler + 'static,
     {
         let mut formats = formats.into_iter().collect::<HashSet<_>>();
 
@@ -182,7 +176,7 @@ impl ShmState {
 }
 
 /// Shm global handler
-pub trait ShmHandler {
+pub trait ShmHandler: BufferHandler {
     /// Return the Shm global state
     fn shm_state(&self) -> &ShmState;
 }
@@ -298,15 +292,11 @@ where
 /// Returns the bpp of the format
 ///
 /// Note: This will return 0 for formats that don't have a specified width.
-pub fn wl_bytes_per_pixel(format: WEnum<wl_shm::Format>) -> i32 {
-    match format {
-        WEnum::Value(f) => {
-            shm_format_to_fourcc(f).map_or(0, |fourcc| get_bpp(fourcc).map_or(0, |bpp| bpp / 8))
-        }
-        WEnum::Unknown(_) => 0,
-    }
-    .try_into()
-    .unwrap()
+pub fn wl_bytes_per_pixel(format: wl_shm::Format) -> i32 {
+    shm_format_to_fourcc(format)
+        .map_or(0, |fourcc| get_bpp(fourcc).map_or(0, |bpp| bpp / 8))
+        .try_into()
+        .unwrap()
 }
 
 macro_rules! shm_format_table {

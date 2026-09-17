@@ -55,9 +55,7 @@ use std::sync::{
 use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_manager_v1::WpContentTypeManagerV1, wp_content_type_v1,
 };
-use wayland_server::{
-    DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId, protocol::wl_surface::WlSurface,
-};
+use wayland_server::{DisplayHandle, Resource, Weak, backend::GlobalId, protocol::wl_surface::WlSurface};
 
 use super::compositor::Cacheable;
 
@@ -156,7 +154,7 @@ impl ContentTypeState {
     /// Regiseter new [WpContentTypeManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> ContentTypeState
     where
-        D: GlobalDispatch<WpContentTypeManagerV1, GlobalData> + 'static,
+        D: 'static,
     {
         let global = display.create_global::<D, WpContentTypeManagerV1, _>(1, GlobalData);
 

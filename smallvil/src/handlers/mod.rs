@@ -86,5 +86,3 @@ impl WaylandDndGrabHandler for Smallvil {
 //
 
 impl OutputHandler for Smallvil {}
-
-smithay::delegate_dispatch2!(Smallvil);

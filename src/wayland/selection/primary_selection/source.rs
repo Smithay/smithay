@@ -3,14 +3,11 @@ use std::{cell::RefCell, sync::Mutex};
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::{
     self as primary_source, ZwpPrimarySelectionSourceV1 as PrimarySource,
 };
-use wayland_server::{DisplayHandle, backend::ClientId};
+use wayland_server::{Dispatch, DisplayHandle, backend::ClientId};
 
 use crate::{
     input::Seat,
-    wayland::{
-        Dispatch2,
-        selection::{offer::OfferReplySource, seat_data::SeatData, source::SelectionSourceProvider},
-    },
+    wayland::selection::{offer::OfferReplySource, seat_data::SeatData, source::SelectionSourceProvider},
 };
 
 use super::PrimarySelectionHandler;
@@ -38,7 +35,7 @@ impl PrimarySourceUserData {
     }
 }
 
-impl<D> Dispatch2<PrimarySource, D> for PrimarySourceUserData
+impl<D> Dispatch<PrimarySource, D> for PrimarySourceUserData
 where
     D: PrimarySelectionHandler,
     D: 'static,

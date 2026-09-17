@@ -235,7 +235,7 @@ where
                     let size = window.surface_size();
                     let surface = unsafe {
                         wegl::WlEglSurface::new_from_raw(
-                            handle.surface.as_ptr() as *mut _,
+                            std::ptr::NonNull::new(handle.surface.as_ptr() as *mut _).unwrap(),
                             size.width as i32,
                             size.height as i32,
                         )

@@ -2,13 +2,12 @@ use std::sync::{Arc, atomic::Ordering};
 
 use portable_atomic::AtomicF64;
 use wayland_server::{
-    Client, DisplayHandle, Resource,
+    Client, Dispatch, DisplayHandle, Resource,
     backend::ClientId,
     protocol::wl_touch::{self, WlTouch},
 };
 
 use super::SeatHandler;
-use crate::wayland::Dispatch2;
 use crate::wayland::compositor::CompositorHandler;
 use crate::wayland::seat::wl_surface::WlSurface;
 use crate::{input::touch::TouchHandle, wayland::seat::WaylandFocus};
@@ -216,7 +215,7 @@ pub struct TouchUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch2<WlTouch, D> for TouchUserData<D>
+impl<D> Dispatch<WlTouch, D> for TouchUserData<D>
 where
     D: SeatHandler,
     D: 'static,

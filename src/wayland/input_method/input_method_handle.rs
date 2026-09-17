@@ -4,11 +4,7 @@ use std::{
 };
 
 use tracing::warn;
-use wayland_protocols_misc::zwp_input_method_v2::server::{
-    zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
-    zwp_input_method_v2::{self, ZwpInputMethodV2},
-    zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
-};
+use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::{self, ZwpInputMethodV2};
 use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, Resource, protocol::wl_keyboard::KeymapFormat,
 };
@@ -17,7 +13,7 @@ use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface};
 use crate::{
     input::{SeatHandler, keyboard::KeyboardHandle},
     utils::{Logical, Rectangle, SERIAL_COUNTER, alive_tracker::AliveTracker},
-    wayland::{Dispatch2, compositor, seat::WaylandFocus, text_input::TextInputHandle},
+    wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
@@ -185,10 +181,8 @@ impl<D: SeatHandler> fmt::Debug for InputMethodUserData<D> {
     }
 }
 
-impl<D> Dispatch2<ZwpInputMethodV2, D> for InputMethodUserData<D>
+impl<D> Dispatch<ZwpInputMethodV2, D> for InputMethodUserData<D>
 where
-    D: Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData>,
-    D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>>,
     D: SeatHandler,
     D: InputMethodHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
