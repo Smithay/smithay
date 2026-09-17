@@ -130,7 +130,7 @@ impl AlphaModifierSurfaceData {
     }
 }
 
-/// User data of [WpAlphaModifierSurfaceV1] object
+/// User data of [`WpAlphaModifierSurfaceV1`][wayland_protocols::wp::alpha_modifier::v1::server::wp_alpha_modifier_surface_v1] object
 #[derive(Debug)]
 pub struct AlphaModifierSurfaceUserData(Mutex<Weak<WlSurface>>);
 
