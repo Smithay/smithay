@@ -13,8 +13,7 @@ use wayland_server::protocol::wl_buffer;
 /// # For buffer abstractions
 ///
 /// Buffer abstractions (such as [`shm`](crate::wayland::shm)) should require this trait in their
-/// [`delegate_dispatch`](wayland_server::delegate_dispatch) implementations to notify the compositor when a
-/// buffer is destroyed.
+/// mplementations to notify the compositor when a buffer is destroyed.
 pub trait BufferHandler {
     /// Called when the client has destroyed the buffer.
     ///
