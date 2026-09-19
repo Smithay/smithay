@@ -19,6 +19,9 @@ use wayland_server::{
 
 use crate::wayland::{Dispatch2, GlobalDispatch2};
 
+pub mod group;
+use group::WorkspaceGroup;
+
 pub mod workspace;
 use workspace::Workspace;
 
@@ -70,6 +73,7 @@ pub struct WorkspaceManagerState {
     pub(crate) display: DisplayHandle,
 
     pub(crate) workspaces: Vec<Workspace>,
+    pub(crate) groups: Vec<WorkspaceGroup>,
 
     pub(crate) instances: Vec<ExtWorkspaceManagerV1>,
     pub(crate) done_needed: Arc<AtomicBool>,
@@ -108,6 +112,7 @@ impl WorkspaceManagerState {
             display: display.clone(),
 
             workspaces: Default::default(),
+            groups: Default::default(),
 
             instances: Default::default(),
             done_needed: Arc::new(AtomicBool::new(false)),

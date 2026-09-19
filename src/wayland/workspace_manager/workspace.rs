@@ -10,13 +10,19 @@ use wayland_protocols::ext::workspace::v1::server::{
     ext_workspace_handle_v1::{self, ExtWorkspaceHandleV1, State, WorkspaceCapabilities},
     ext_workspace_manager_v1::ExtWorkspaceManagerV1,
 };
-use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId};
+use wayland_server::{
+    Client, Dispatch, DisplayHandle, Resource, Weak,
+    backend::{ClientId, ObjectId},
+};
 
 use crate::{
     utils::user_data::UserDataMap,
     wayland::{
         Dispatch2,
-        workspace_manager::{WorkspaceHandler, WorkspaceManagerState},
+        workspace_manager::{
+            WorkspaceHandler, WorkspaceManagerState,
+            group::{WeakWorkspaceGroup, WorkspaceGroup},
+        },
     },
 };
 
@@ -25,7 +31,7 @@ const WORKSPACE_VERSION: u32 = 1;
 /// Handle to a Workspace.
 #[derive(Debug, Clone)]
 pub struct Workspace {
-    inner: Arc<(Mutex<Inner>, UserDataMap)>,
+    pub(crate) inner: Arc<(Mutex<Inner>, UserDataMap)>,
 }
 
 /// Weak version of [`Workspace`].
@@ -43,7 +49,9 @@ pub(crate) struct Inner {
     state: State,
     capabilities: WorkspaceCapabilities,
 
-    instances: Vec<ExtWorkspaceHandleV1>,
+    pub(crate) group: Option<WeakWorkspaceGroup>,
+
+    pub(crate) instances: Vec<ExtWorkspaceHandleV1>,
     done_needed: Option<Arc<AtomicBool>>,
 }
 
@@ -196,6 +204,17 @@ impl Workspace {
         self.inner.0.lock().unwrap().set_capabilities(capabilities);
     }
 
+    /// Gets the `Workspace`'s group, if any.
+    pub fn group(&self) -> Option<WorkspaceGroup> {
+        self.inner
+            .0
+            .lock()
+            .unwrap()
+            .group
+            .as_ref()
+            .and_then(WeakWorkspaceGroup::upgrade)
+    }
+
     pub(super) fn new_instance<D>(
         &self,
         client: &Client,
@@ -249,6 +268,13 @@ impl WeakWorkspace {
 }
 
 impl Inner {
+    pub(crate) fn instance_with_manager(&self, manager: &ObjectId) -> Option<&ExtWorkspaceHandleV1> {
+        self.instances.iter().find(|i| {
+            Resource::id(*i).same_client_as(manager)
+                && &i.data::<WorkspaceData>().unwrap().manager.id() == manager
+        })
+    }
+
     fn set_name(&mut self, name: String) {
         if self.name != name {
             self.name = name;
@@ -382,6 +408,10 @@ impl WorkspaceManagerState {
     pub fn remove_workspace(&mut self, workspace: Workspace) {
         self.workspaces.retain(|w| w != &workspace);
 
+        if let Some(group) = workspace.group() {
+            group.workspace_leave(&workspace);
+        }
+
         let mut inner = workspace.inner.0.lock().unwrap();
 
         for instance in inner.instances.drain(..) {
@@ -508,6 +538,7 @@ impl Builder {
                 coordinates,
                 state,
                 capabilities,
+                group: None,
                 instances: Vec::with_capacity(capacity),
                 done_needed: Some(done_needed),
             }),
