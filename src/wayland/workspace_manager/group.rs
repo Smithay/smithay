@@ -11,7 +11,9 @@ use wayland_protocols::ext::workspace::v1::server::{
     ext_workspace_group_handle_v1::{self, ExtWorkspaceGroupHandleV1, GroupCapabilities},
     ext_workspace_manager_v1::ExtWorkspaceManagerV1,
 };
-use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId};
+use wayland_server::{
+    Client, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId, protocol::wl_output::WlOutput,
+};
 
 use crate::{
     output::{Output, WeakOutput},
@@ -232,6 +234,10 @@ impl WorkspaceGroup {
             extracted.for_each(std::mem::drop);
         }
     }
+
+    pub(crate) fn on_output_bind(&self, client: &Client, output: &WlOutput) {
+        self.inner.0.lock().unwrap().on_output_bind(client.id(), output);
+    }
 }
 
 impl WeakWorkspaceGroup {
@@ -242,7 +248,7 @@ impl WeakWorkspaceGroup {
 }
 
 impl Inner {
-    fn add_output(&mut self, _handle: &WorkspaceGroup, output: &Output) {
+    fn add_output(&mut self, handle: &WorkspaceGroup, output: &Output) {
         if self.outputs.iter().any(|o| o == output) {
             return;
         }
@@ -263,12 +269,17 @@ impl Inner {
             self.need_done();
         }
 
-        // TODO: add marker to output so next time a client bind it, and output_enter can be sent.
-
+        output
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .workspace_groups
+            .insert(handle.downgrade());
         self.outputs.push(output.downgrade());
     }
 
-    fn remove_output(&mut self, _handle: &WorkspaceGroup, output: &Output) {
+    fn remove_output(&mut self, handle: &WorkspaceGroup, output: &Output) {
         let Some(pos) = self.outputs.iter().position(|o| o == output) else {
             return;
         };
@@ -290,9 +301,37 @@ impl Inner {
             self.need_done();
         }
 
-        // TODO: remove output <-> workspace group marker.
-
+        output
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .workspace_groups
+            .remove(&handle.downgrade());
         self.outputs.retain(|o| o != output);
+    }
+
+    fn on_output_bind(&mut self, client: ClientId, output: &WlOutput) {
+        // This is safe as done_needed is only ever removed after all output_leave in remove_group.
+        // We want this to know whether to send done now, or let the user trigger it as part of
+        // whatever action they were doing.
+        let send_done = !self.done_needed.as_ref().unwrap().load(Ordering::Acquire);
+
+        for instance in self
+            .instances
+            .iter()
+            .filter(|i| i.client().is_some_and(|c| c.id() == client))
+        {
+            instance.output_enter(output);
+
+            if send_done {
+                let Ok(manager) = instance.data::<WorkspaceGroupData>().unwrap().manager.upgrade() else {
+                    continue;
+                };
+
+                manager.done();
+            }
+        }
     }
 
     fn add_workspace(&mut self, handle: &WorkspaceGroup, workspace: &Workspace) {
