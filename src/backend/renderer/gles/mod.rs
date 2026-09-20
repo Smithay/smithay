@@ -324,7 +324,7 @@ impl Default for GlesCleanup {
 }
 
 impl GlesCleanup {
-    fn cleanup(&self, egl: &EGLContext, gl: &ffi::Gles2) {
+    fn cleanup(&self, egl: &EGLContext, gl: &ffi::Gles2) -> Result<(), MakeCurrentError> {
         let receiver = match self.receiver.try_lock() {
             Ok(receiver) => receiver,
             Err(TryLockError::Poisoned(err)) => {
@@ -333,10 +333,21 @@ impl GlesCleanup {
             }
             Err(TryLockError::WouldBlock) => {
                 // Another thread is running `cleanup`, so just return
-                return;
+                return Ok(());
             }
         };
-        for resource in receiver.try_iter() {
+        let Ok(first) = receiver.try_recv() else {
+            return Ok(());
+        };
+        // Only activate the context once there is something to destroy: activating an idle
+        // GPU's context wakes it from runtime suspend.
+        if !egl.is_current() {
+            if let Err(err) = unsafe { egl.make_current() } {
+                let _ = self.sender.send(first);
+                return Err(err);
+            }
+        }
+        for resource in std::iter::once(first).chain(receiver.try_iter()) {
             match resource {
                 CleanupResource::Texture(texture) => unsafe {
                     gl.DeleteTextures(1, &texture);
@@ -366,6 +377,7 @@ impl GlesCleanup {
                 },
             }
         }
+        Ok(())
     }
 }
 
@@ -816,7 +828,7 @@ impl GlesRenderer {
             self.egl.make_current()?;
         }
         unsafe { self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0) };
-        self.cleanup();
+        self.cleanup()?;
         self.egl.unbind()?;
         Ok(())
     }
@@ -826,10 +838,11 @@ impl GlesRenderer {
     }
 
     #[profiling::function]
-    fn cleanup(&mut self) {
+    fn cleanup(&mut self) -> Result<(), GlesError> {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
         self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
-        self.gles_cleanup().cleanup(&self.egl, &self.gl);
+        self.gles_cleanup().cleanup(&self.egl, &self.gl)?;
+        Ok(())
     }
 
     /// Returns the supported [`Capabilities`](Capability) of this renderer.
@@ -2353,22 +2366,14 @@ impl Renderer for GlesRenderer {
 
     #[profiling::function]
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
-        unsafe {
-            self.egl.make_current()?;
-        }
-        self.cleanup();
-        Ok(())
+        self.cleanup()
     }
 
     #[profiling::function]
     fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
-        unsafe {
-            self.egl.make_current()?;
-        }
         self.dmabuf_cache.clear();
         self.buffers.clear();
-        self.cleanup();
-        Ok(())
+        self.cleanup()
     }
 }
 
@@ -2570,7 +2575,7 @@ impl GlesFrame<'_, '_> {
                 .renderer
                 .profiler
                 .enter(gpu_span_location!("cleanup"), &self.renderer.gl);
-            self.renderer.cleanup();
+            self.renderer.cleanup()?;
             self.renderer.profiler.exit(&self.renderer.gl, scope);
         }
 
@@ -3609,5 +3614,61 @@ mod tests {
         assert_eq!(tex_mat * top_right, Vec3::new(1f32, 0f32, 1f32));
         assert_eq!(tex_mat * bottom_right, Vec3::new(0f32, 0f32, 1f32));
         assert_eq!(tex_mat * bottom_left, Vec3::new(0f32, 1f32, 1f32));
+    }
+}
+
+#[cfg(test)]
+mod context_activation_tests {
+    use super::*;
+    use crate::backend::egl::EGLDisplay;
+
+    // Prefer software rendering so the tests can run without a GPU: Mesa offers a software
+    // device even on a machine with no DRM node.
+    fn test_renderer() -> GlesRenderer {
+        let mut devices = EGLDevice::enumerate()
+            .expect("EGL device enumeration failed; Mesa provides the software device these tests need")
+            .collect::<Vec<_>>();
+        devices.sort_by_key(|device| !device.is_software());
+        devices
+            .into_iter()
+            .find_map(|device| {
+                let display = unsafe { EGLDisplay::new(device) }.ok()?;
+                let context = EGLContext::new(&display).ok()?;
+                unsafe { GlesRenderer::new(context) }.ok()
+            })
+            .expect("no usable EGL device; Mesa provides the software device these tests need")
+    }
+
+    fn drain_and_unbind(renderer: &mut GlesRenderer) {
+        renderer.cleanup_texture_cache().unwrap();
+        renderer.egl_context().unbind().unwrap();
+        assert!(!renderer.egl_context().is_current());
+    }
+
+    #[test]
+    fn cleanup_texture_cache_leaves_an_idle_context_unbound() {
+        let mut renderer = test_renderer();
+        drain_and_unbind(&mut renderer);
+
+        renderer.cleanup_texture_cache().unwrap();
+
+        assert!(!renderer.egl_context().is_current());
+    }
+
+    #[test]
+    fn cleanup_texture_cache_frees_a_dropped_texture_from_an_unbound_context() {
+        let mut renderer = test_renderer();
+        let texture = renderer
+            .import_memory(&[0u8; 4], Fourcc::Argb8888, Size::from((1, 1)), false)
+            .unwrap();
+        let texture_id = texture.tex_id();
+        assert_eq!(unsafe { renderer.gl.IsTexture(texture_id) }, ffi::TRUE);
+        drain_and_unbind(&mut renderer);
+        drop(texture);
+
+        renderer.cleanup_texture_cache().unwrap();
+
+        unsafe { renderer.egl_context().make_current().unwrap() };
+        assert_eq!(unsafe { renderer.gl.IsTexture(texture_id) }, ffi::FALSE);
     }
 }
