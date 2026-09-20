@@ -7,6 +7,7 @@ use std::{
 
 use portable_atomic::AtomicBool;
 use wayland_protocols::ext::workspace::v1::server::{
+    ext_workspace_group_handle_v1::ExtWorkspaceGroupHandleV1,
     ext_workspace_handle_v1::{self, ExtWorkspaceHandleV1, State, WorkspaceCapabilities},
     ext_workspace_manager_v1::ExtWorkspaceManagerV1,
 };
@@ -20,7 +21,7 @@ use crate::{
     wayland::{
         Dispatch2,
         workspace_manager::{
-            WorkspaceHandler, WorkspaceManagerState,
+            PendingRequest, WorkspaceHandler, WorkspaceManagerObjectData, WorkspaceManagerState,
             group::{WeakWorkspaceGroup, WorkspaceGroup},
         },
     },
@@ -70,6 +71,14 @@ pub struct Builder {
     coordinates: Vec<u32>,
     state: State,
     capabilities: WorkspaceCapabilities,
+}
+
+#[derive(Debug)]
+pub(crate) enum PendingWorkspaceRequest {
+    Activate,
+    Deactivate,
+    Assign(Weak<ExtWorkspaceGroupHandleV1>),
+    Remove,
 }
 
 impl Workspace {
@@ -257,6 +266,24 @@ impl Workspace {
         }
 
         inner.instances.push(instance);
+    }
+
+    pub(super) fn remove_instance(&self, manager: &ExtWorkspaceManagerV1, with_events: bool) {
+        let mut inner = self.inner.0.lock().unwrap();
+
+        let manager_id = Resource::id(manager);
+        let extracted = inner.instances.extract_if(.., |i| {
+            Resource::id(i).same_client_as(&manager_id)
+                && i.data::<WorkspaceData>().unwrap().manager.id() == manager_id
+        });
+
+        if with_events {
+            for instance in extracted {
+                instance.removed();
+            }
+        } else {
+            extracted.for_each(std::mem::drop);
+        }
     }
 }
 
@@ -446,50 +473,64 @@ where
             return;
         };
 
-        let Some(_manager_resource) = self.manager.upgrade().ok() else {
+        let Some(manager) = self.manager.upgrade().ok() else {
             return;
         };
 
         let capabilities = handle.capabilities();
 
         use ext_workspace_handle_v1::Request;
-        match request {
+        let pending = match request {
             Request::Destroy => {
                 self.destroyed(state, client.id(), resource);
+                return;
             }
             Request::Activate if capabilities.contains(WorkspaceCapabilities::Activate) => {
-                todo!()
+                WorkspaceHandler::activate(state, resource);
+                PendingWorkspaceRequest::Activate
             }
             Request::Deactivate if capabilities.contains(WorkspaceCapabilities::Deactivate) => {
-                todo!()
+                WorkspaceHandler::deactivate(state, resource);
+                PendingWorkspaceRequest::Deactivate
             }
-            Request::Assign { workspace_group: _ }
-                if capabilities.contains(WorkspaceCapabilities::Assign) =>
-            {
-                todo!()
+            Request::Assign { workspace_group } if capabilities.contains(WorkspaceCapabilities::Assign) => {
+                WorkspaceHandler::assign(state, resource, &workspace_group);
+                PendingWorkspaceRequest::Assign(workspace_group.downgrade())
             }
             Request::Remove if capabilities.contains(WorkspaceCapabilities::Remove) => {
-                todo!()
+                WorkspaceHandler::remove(state, resource);
+                PendingWorkspaceRequest::Remove
             }
-            _ => {}
-        }
+            _ => {
+                return;
+            }
+        };
 
-        todo!()
+        WorkspaceManagerObjectData::add_pending(
+            &manager,
+            PendingRequest::Workspace(resource.downgrade(), pending),
+        );
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ExtWorkspaceHandleV1) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtWorkspaceHandleV1) {
         let Some(handle) = self.handle.upgrade() else {
             return;
         };
 
-        //TODO: Decide what should be done for pending requests.
-        //Maybe the more straightforward thing to do would be to store pairs handle <-> requests,
-        //since we're allowed to ignore requests.
-
         let mut workspace = handle.inner.0.lock().unwrap();
-        workspace.instances.retain(|i| i != resource);
 
-        todo!()
+        if let Ok(manager) = self.manager.upgrade() {
+            WorkspaceManagerObjectData::remove_pending(&manager, Resource::id(resource));
+        }
+
+        if let Some(pos) = workspace
+            .instances
+            .iter()
+            .position(|w| Resource::id(w) == Resource::id(resource))
+        {
+            let instance = workspace.instances.remove(pos);
+            WorkspaceHandler::workspace_destroyed(state, &instance);
+        }
     }
 }
 

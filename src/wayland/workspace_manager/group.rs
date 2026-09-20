@@ -19,7 +19,7 @@ use crate::{
     wayland::{
         Dispatch2,
         workspace_manager::{
-            WorkspaceHandler, WorkspaceManagerState,
+            PendingRequest, WorkspaceHandler, WorkspaceManagerObjectData, WorkspaceManagerState,
             workspace::{self, WeakWorkspace, Workspace},
         },
     },
@@ -56,6 +56,11 @@ pub(crate) struct Inner {
 pub struct WorkspaceGroupData {
     handle: WeakWorkspaceGroup,
     manager: Weak<ExtWorkspaceManagerV1>,
+}
+
+#[derive(Debug)]
+pub(crate) enum PendingGroupRequest {
+    CreateWorkspace(String),
 }
 
 impl WorkspaceGroup {
@@ -198,6 +203,34 @@ impl WorkspaceGroup {
         }
 
         inner.instances.push(instance);
+    }
+
+    pub(super) fn remove_instance(&self, manager: &ExtWorkspaceManagerV1, with_events: bool) {
+        let mut inner = self.inner.0.lock().unwrap();
+
+        let manager_id = Resource::id(manager);
+        let workspaces: Vec<Workspace> = inner.workspaces.iter().filter_map(|w| w.upgrade()).collect();
+
+        let extracted = inner.instances.extract_if(.., |i| {
+            Resource::id(i).same_client_as(&manager_id)
+                && i.data::<WorkspaceGroupData>().unwrap().manager.id() == manager_id
+        });
+
+        if with_events {
+            for instance in extracted {
+                for workspace in workspaces.iter() {
+                    let w_inner = workspace.inner.0.lock().unwrap();
+
+                    if let Some(w_instance) = w_inner.instance_with_manager(&manager_id) {
+                        instance.workspace_leave(w_instance);
+                    }
+                }
+
+                instance.removed();
+            }
+        } else {
+            extracted.for_each(std::mem::drop);
+        }
     }
 }
 
@@ -441,33 +474,50 @@ where
             return;
         };
 
-        let Some(_manager_resource) = self.manager.upgrade().ok() else {
+        let Some(manager) = self.manager.upgrade().ok() else {
             return;
         };
 
         let capabilities = handle.capabilities();
 
         use ext_workspace_group_handle_v1::Request;
-        match request {
-            Request::CreateWorkspace { workspace: _ }
+        let pending = match request {
+            Request::CreateWorkspace { workspace }
                 if capabilities.contains(GroupCapabilities::CreateWorkspace) =>
             {
-                todo!();
+                WorkspaceHandler::create_workspace(state, resource, workspace.clone());
+                PendingGroupRequest::CreateWorkspace(workspace.clone())
             }
             Request::Destroy => {
                 self.destroyed(state, client.id(), resource);
+                return;
             }
-            _ => {}
-        }
+            _ => {
+                return;
+            }
+        };
+
+        WorkspaceManagerObjectData::add_pending(
+            &manager,
+            PendingRequest::Group(resource.downgrade(), pending),
+        );
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ExtWorkspaceGroupHandleV1) {
+    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtWorkspaceGroupHandleV1) {
         let Some(handle) = self.handle.upgrade() else {
             return;
         };
 
         let mut group = handle.inner.0.lock().unwrap();
-        group.instances.retain(|i| i != resource);
+
+        if let Ok(manager) = self.manager.upgrade() {
+            WorkspaceManagerObjectData::remove_pending(&manager, Resource::id(resource));
+        }
+
+        if let Some(pos) = group.instances.iter().position(|i| i.id() == resource.id()) {
+            let instance = group.instances.remove(pos);
+            WorkspaceHandler::group_destroyed(state, &instance);
+        }
     }
 }
 
