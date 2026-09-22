@@ -378,7 +378,11 @@ xdg_role!(
         pub app_id: Option<String>,
         /// An `zxdg_toplevel_decoration_v1::configure` event has been sent
         /// to the client.
-        pub initial_decoration_configure_sent: bool
+        pub initial_decoration_configured: bool,
+        /// A decoration object was destroyed and no surface commit has happened since.
+        pub decoration_destroyed_without_commit: bool,
+        /// Decoration mode to use for the next initial decoration configure.
+        pub initial_decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>
     },
     /// Represents the xdg_toplevel pending state
     #[derive(Debug, Default, Clone)]
@@ -1499,16 +1503,22 @@ impl ToplevelSurface {
                     .lock()
                     .unwrap();
 
-                let pending = self
+                let mut pending = self
                     .get_pending_state(&mut attributes)
                     .unwrap_or_else(|| attributes.current_server_state());
+                if decoration.is_some()
+                    && !attributes.initial_decoration_configured
+                    && let Some(mode) = attributes.initial_decoration_mode.take()
+                {
+                    pending.decoration_mode = Some(mode);
+                }
                 // retrieve the current state before adding it to the
                 // pending state so that we can compare what has changed
                 let current = attributes.current_server_state();
 
                 // test if we should send the decoration mode, either because it changed
                 // or we never sent it
-                let decoration_mode_changed = !attributes.initial_decoration_configure_sent
+                let decoration_mode_changed = !attributes.initial_decoration_configured
                     || (pending.decoration_mode != current.decoration_mode);
 
                 // test if we should send a bounds configure event, either because the
@@ -1528,7 +1538,7 @@ impl ToplevelSurface {
                 attributes.pending_configures.push(configure.clone());
                 attributes.initial_configure_sent = true;
                 if decoration.is_some() {
-                    attributes.initial_decoration_configure_sent = true;
+                    attributes.initial_decoration_configured = true;
                 }
 
                 (
@@ -1589,6 +1599,11 @@ impl ToplevelSurface {
     ) {
         let _span = trace_span!("xdg-toplevel pre-commit", surface = %surface.id()).entered();
 
+        enum CommitError {
+            Xdg(xdg_surface::Error, &'static str),
+            Decoration(&'static str),
+        }
+
         let error = compositor::with_states(surface, |states| {
             let mut role = states
                 .data_map
@@ -1613,21 +1628,26 @@ impl ToplevelSurface {
             // Need to check had_buffer_before in case the client attaches a null buffer for the
             // initial commit---we don't want to consider that as "got unmapped" and reset role.
             let got_unmapped = had_buffer_before && !has_buffer;
-
             if has_buffer {
                 let Some(last_acked) = role.last_acked.clone() else {
-                    return Some((
+                    return Some(CommitError::Xdg(
                         xdg_surface::Error::UnconfiguredBuffer,
                         "must ack the initial configure before attaching buffer",
                     ));
                 };
-
                 // The surface remains, or became mapped, track the last acked state.
                 pending.last_acked = Some(last_acked);
             } else {
                 // The surface remains, or became, unmapped, meaning that it's in the initial
                 // configure stage.
                 pending.last_acked = None;
+            }
+
+            if role.decoration_destroyed_without_commit {
+                role.decoration_destroyed_without_commit = false;
+                if let Some(last_acked) = pending.last_acked.as_mut() {
+                    last_acked.state.decoration_mode = Some(zxdg_toplevel_decoration_v1::Mode::ClientSide);
+                }
             }
 
             if got_unmapped {
@@ -1654,10 +1674,17 @@ impl ToplevelSurface {
                 current_capabilities.replace(default_capabilities.capabilities.iter().copied());
             }
 
-            None
+            if has_buffer && !role.initial_decoration_configured {
+                CommitError::Decoration(
+                    "must wait for the initial decoration configure before attaching buffer",
+                )
+                .into()
+            } else {
+                None
+            }
         });
 
-        if let Some((error, msg)) = error {
+        if let Some(error) = error {
             // The surface attached a buffer without acking the initial configure.
             let toplevels = &state.xdg_shell_state().known_toplevels;
             if let Some(toplevel) = toplevels.iter().find(|handle| handle.wl_surface == *surface) {
@@ -1665,7 +1692,17 @@ impl ToplevelSurface {
                     .shell_surface
                     .data::<self::handlers::XdgShellSurfaceUserData>()
                     .unwrap();
-                data.xdg_surface.post_error(error, msg);
+                match error {
+                    CommitError::Xdg(error, msg) => data.xdg_surface.post_error(error, msg),
+                    CommitError::Decoration(msg) => {
+                        if let Some(decoration) = data.decoration.lock().unwrap().as_ref()
+                            && decoration.version() < 2
+                        {
+                            decoration
+                                .post_error(zxdg_toplevel_decoration_v1::Error::UnconfiguredBuffer, msg);
+                        }
+                    }
+                }
             } else {
                 error!("surface missing from known toplevels");
             }
