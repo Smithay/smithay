@@ -9,13 +9,18 @@ use smithay::{backend::renderer::DebugFlags, input::tablet};
 
 use smithay::{
     backend::input::{
-        self, Axis, AxisSource, Device, DeviceCapability, Event, InputBackend, InputEvent, InputTime,
+        self, Axis, AxisSource, Device, DeviceCapability, Event, GestureBeginEvent, GestureEndEvent,
+        GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _, InputBackend, InputEvent, InputTime,
         KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, TouchEvent,
     },
     desktop::{WindowSurfaceType, layer_map_for_output},
     input::{
         keyboard::{FilterResult, Keysym, ModifiersState, keysyms as xkb},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
+        pointer::{
+            GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
+            GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+        },
         tablet::{TabletDescriptor, TabletSeatTrait},
         touch::{DownEvent, UpEvent},
     },
@@ -43,17 +48,12 @@ use crate::state::Backend;
 use smithay::{
     backend::{
         input::{
-            GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
             PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
             TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
         },
         session::Session,
     },
-    input::pointer::{
-        GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
-        GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
-        RelativeMotionEvent,
-    },
+    input::pointer::RelativeMotionEvent,
     reexports::wayland_server::DisplayHandle,
     wayland::{
         pointer_constraints::{PointerConstraint, with_pointer_constraint},
@@ -237,6 +237,108 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             },
         );
         pointer.frame(self);
+    }
+
+    fn on_gesture_swipe_begin<B: InputBackend>(&mut self, evt: B::GestureSwipeBeginEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_swipe_begin(
+            self,
+            &GestureSwipeBeginEvent {
+                serial,
+                time: evt.time(),
+                fingers: evt.fingers(),
+            },
+        );
+    }
+
+    fn on_gesture_swipe_update<B: InputBackend>(&mut self, evt: B::GestureSwipeUpdateEvent) {
+        let pointer = self.pointer.clone();
+        pointer.gesture_swipe_update(
+            self,
+            &GestureSwipeUpdateEvent {
+                time: evt.time(),
+                delta: evt.delta(),
+            },
+        );
+    }
+
+    fn on_gesture_swipe_end<B: InputBackend>(&mut self, evt: B::GestureSwipeEndEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_swipe_end(
+            self,
+            &GestureSwipeEndEvent {
+                serial,
+                time: evt.time(),
+                cancelled: evt.cancelled(),
+            },
+        );
+    }
+
+    fn on_gesture_pinch_begin<B: InputBackend>(&mut self, evt: B::GesturePinchBeginEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_pinch_begin(
+            self,
+            &GesturePinchBeginEvent {
+                serial,
+                time: evt.time(),
+                fingers: evt.fingers(),
+            },
+        );
+    }
+
+    fn on_gesture_pinch_update<B: InputBackend>(&mut self, evt: B::GesturePinchUpdateEvent) {
+        let pointer = self.pointer.clone();
+        pointer.gesture_pinch_update(
+            self,
+            &GesturePinchUpdateEvent {
+                time: evt.time(),
+                delta: evt.delta(),
+                scale: evt.scale(),
+                rotation: evt.rotation(),
+            },
+        );
+    }
+
+    fn on_gesture_pinch_end<B: InputBackend>(&mut self, evt: B::GesturePinchEndEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_pinch_end(
+            self,
+            &GesturePinchEndEvent {
+                serial,
+                time: evt.time(),
+                cancelled: evt.cancelled(),
+            },
+        );
+    }
+
+    fn on_gesture_hold_begin<B: InputBackend>(&mut self, evt: B::GestureHoldBeginEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_hold_begin(
+            self,
+            &GestureHoldBeginEvent {
+                serial,
+                time: evt.time(),
+                fingers: evt.fingers(),
+            },
+        );
+    }
+
+    fn on_gesture_hold_end<B: InputBackend>(&mut self, evt: B::GestureHoldEndEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_hold_end(
+            self,
+            &GestureHoldEndEvent {
+                serial,
+                time: evt.time(),
+                cancelled: evt.cancelled(),
+            },
+        );
     }
 
     fn update_keyboard_focus(&mut self, location: Point<f64, Logical>, serial: Serial) {
@@ -643,6 +745,16 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             }
             InputEvent::PointerButton { event } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(event),
+
+            InputEvent::GestureSwipeBegin { event, .. } => self.on_gesture_swipe_begin::<B>(event),
+            InputEvent::GestureSwipeUpdate { event, .. } => self.on_gesture_swipe_update::<B>(event),
+            InputEvent::GestureSwipeEnd { event, .. } => self.on_gesture_swipe_end::<B>(event),
+            InputEvent::GesturePinchBegin { event, .. } => self.on_gesture_pinch_begin::<B>(event),
+            InputEvent::GesturePinchUpdate { event, .. } => self.on_gesture_pinch_update::<B>(event),
+            InputEvent::GesturePinchEnd { event, .. } => self.on_gesture_pinch_end::<B>(event),
+            InputEvent::GestureHoldBegin { event, .. } => self.on_gesture_hold_begin::<B>(event),
+            InputEvent::GestureHoldEnd { event, .. } => self.on_gesture_hold_end::<B>(event),
+
             InputEvent::TouchDown { event } => self.on_touch_down::<B>(event),
             InputEvent::TouchUp { event } => self.on_touch_up::<B>(event),
             InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(event),
@@ -1212,108 +1324,6 @@ impl AnvilState<UdevData> {
 
             tool.frame(self, evt.time());
         }
-    }
-
-    fn on_gesture_swipe_begin<B: InputBackend>(&mut self, evt: B::GestureSwipeBeginEvent) {
-        let serial = SCOUNTER.next_serial();
-        let pointer = self.pointer.clone();
-        pointer.gesture_swipe_begin(
-            self,
-            &GestureSwipeBeginEvent {
-                serial,
-                time: evt.time(),
-                fingers: evt.fingers(),
-            },
-        );
-    }
-
-    fn on_gesture_swipe_update<B: InputBackend>(&mut self, evt: B::GestureSwipeUpdateEvent) {
-        let pointer = self.pointer.clone();
-        pointer.gesture_swipe_update(
-            self,
-            &GestureSwipeUpdateEvent {
-                time: evt.time(),
-                delta: evt.delta(),
-            },
-        );
-    }
-
-    fn on_gesture_swipe_end<B: InputBackend>(&mut self, evt: B::GestureSwipeEndEvent) {
-        let serial = SCOUNTER.next_serial();
-        let pointer = self.pointer.clone();
-        pointer.gesture_swipe_end(
-            self,
-            &GestureSwipeEndEvent {
-                serial,
-                time: evt.time(),
-                cancelled: evt.cancelled(),
-            },
-        );
-    }
-
-    fn on_gesture_pinch_begin<B: InputBackend>(&mut self, evt: B::GesturePinchBeginEvent) {
-        let serial = SCOUNTER.next_serial();
-        let pointer = self.pointer.clone();
-        pointer.gesture_pinch_begin(
-            self,
-            &GesturePinchBeginEvent {
-                serial,
-                time: evt.time(),
-                fingers: evt.fingers(),
-            },
-        );
-    }
-
-    fn on_gesture_pinch_update<B: InputBackend>(&mut self, evt: B::GesturePinchUpdateEvent) {
-        let pointer = self.pointer.clone();
-        pointer.gesture_pinch_update(
-            self,
-            &GesturePinchUpdateEvent {
-                time: evt.time(),
-                delta: evt.delta(),
-                scale: evt.scale(),
-                rotation: evt.rotation(),
-            },
-        );
-    }
-
-    fn on_gesture_pinch_end<B: InputBackend>(&mut self, evt: B::GesturePinchEndEvent) {
-        let serial = SCOUNTER.next_serial();
-        let pointer = self.pointer.clone();
-        pointer.gesture_pinch_end(
-            self,
-            &GesturePinchEndEvent {
-                serial,
-                time: evt.time(),
-                cancelled: evt.cancelled(),
-            },
-        );
-    }
-
-    fn on_gesture_hold_begin<B: InputBackend>(&mut self, evt: B::GestureHoldBeginEvent) {
-        let serial = SCOUNTER.next_serial();
-        let pointer = self.pointer.clone();
-        pointer.gesture_hold_begin(
-            self,
-            &GestureHoldBeginEvent {
-                serial,
-                time: evt.time(),
-                fingers: evt.fingers(),
-            },
-        );
-    }
-
-    fn on_gesture_hold_end<B: InputBackend>(&mut self, evt: B::GestureHoldEndEvent) {
-        let serial = SCOUNTER.next_serial();
-        let pointer = self.pointer.clone();
-        pointer.gesture_hold_end(
-            self,
-            &GestureHoldEndEvent {
-                serial,
-                time: evt.time(),
-                cancelled: evt.cancelled(),
-            },
-        );
     }
 
     fn clamp_coords(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {

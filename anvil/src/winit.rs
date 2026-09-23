@@ -81,6 +81,8 @@ impl DmabufHandler for AnvilState<WinitData> {
 }
 
 impl Backend for WinitData {
+    const HAS_GESTURES: bool = true;
+
     fn seat_name(&self) -> String {
         String::from("winit")
     }

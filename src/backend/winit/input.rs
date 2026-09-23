@@ -33,7 +33,10 @@ impl Device for WinitVirtualDevice {
     fn has_capability(&self, capability: DeviceCapability) -> bool {
         matches!(
             capability,
-            DeviceCapability::Keyboard | DeviceCapability::Pointer | DeviceCapability::Touch
+            DeviceCapability::Keyboard
+                | DeviceCapability::Pointer
+                | DeviceCapability::Touch
+                | DeviceCapability::Gesture
         )
     }
 
