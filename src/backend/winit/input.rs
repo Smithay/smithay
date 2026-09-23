@@ -453,6 +453,7 @@ impl Event<WinitInput> for WinitGestureHoldBeginEvent {
 
 impl GestureBeginEvent<WinitInput> for WinitGestureHoldBeginEvent {
     fn fingers(&self) -> u32 {
+        // winit's HoldGesture carries no finger count; winit-wayland drops 1-finger holds, so every hold observed here has ≥ 2 fingers.
         2
     }
 }
