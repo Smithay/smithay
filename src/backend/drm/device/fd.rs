@@ -5,6 +5,7 @@ use std::{
 };
 use tracing::{error, info, warn};
 
+use crate::backend::drm::{DrmNode, NodeType};
 use crate::utils::{DevPath, DeviceFd};
 
 #[derive(Debug)]
@@ -71,13 +72,18 @@ impl DrmDeviceFd {
             privileged: false,
         };
 
+        // Render nodes have no master; the kernel refuses SET_MASTER on them.
+        let render_node = DrmNode::from_file(&dev.fd).is_ok_and(|node| node.ty() == NodeType::Render);
+
         // We want to modeset, so we better be the master, if we run via a tty session.
         // This is only needed on older kernels. Newer kernels grant this permission,
         // if no other process is already the *master*. So we skip over this error.
-        if dev.acquire_master_lock().is_err() {
-            warn!("Unable to become drm master, assuming unprivileged mode");
-        } else {
-            dev.privileged = true;
+        if !render_node {
+            if dev.acquire_master_lock().is_err() {
+                warn!("Unable to become drm master, assuming unprivileged mode");
+            } else {
+                dev.privileged = true;
+            }
         }
 
         DrmDeviceFd(Arc::new(dev))
