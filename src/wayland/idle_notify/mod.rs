@@ -348,7 +348,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, notification: &ExtIdleNotificationV1) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, notification: &ExtIdleNotificationV1) {
         let state = state.idle_notifier_state();
         if let Some(notifications) = state.notifications.get_mut(&self.seat) {
             notifications.retain(|x| x != notification);

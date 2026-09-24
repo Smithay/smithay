@@ -72,7 +72,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, source: &WlDataSource) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, source: &WlDataSource) {
         self.alive_tracker.destroy_notify();
 
         // Remove the source from the used ones.

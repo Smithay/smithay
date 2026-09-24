@@ -490,7 +490,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGestureSwipeV1) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, object: &ZwpPointerGestureSwipeV1) {
         if let Some(ref handle) = self.handle {
             handle
                 .wp_pointer_gestures
@@ -522,7 +522,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGesturePinchV1) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, object: &ZwpPointerGesturePinchV1) {
         if let Some(ref handle) = self.handle {
             handle
                 .wp_pointer_gestures
@@ -554,7 +554,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGestureHoldV1) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, object: &ZwpPointerGestureHoldV1) {
         if let Some(ref handle) = self.handle {
             handle
                 .wp_pointer_gestures

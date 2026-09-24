@@ -161,7 +161,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client_id: ClientId, xdg_toplevel: &XdgToplevel) {
+    fn destroyed(&self, state: &mut D, _client_id: &ClientId, xdg_toplevel: &XdgToplevel) {
         self.alive_tracker.destroy_notify();
         self.decoration.lock().unwrap().take();
 
@@ -296,11 +296,11 @@ pub fn send_toplevel_configure(
             ::std::mem::forget(capabilities);
             unsafe { Vec::from_raw_parts(ptr as *mut u8, len * 4, cap * 4) }
         };
-        resource.wm_capabilities(capabilities);
+        resource.wm_capabilities(&capabilities);
     }
 
     // Send the toplevel configure
-    resource.configure(width, height, states);
+    resource.configure(width, height, &states);
 
     // Send the base xdg_surface configure event to mark
     // The configure as finished

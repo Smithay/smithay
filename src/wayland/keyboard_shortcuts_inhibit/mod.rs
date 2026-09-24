@@ -43,7 +43,7 @@ impl SeatInhibitors {
         self.0.iter().any(|i| i.is_active())
     }
 
-    fn remove(&mut self, id: ObjectId) -> Option<KeyboardShortcutsInhibitor> {
+    fn remove(&mut self, id: &ObjectId) -> Option<KeyboardShortcutsInhibitor> {
         self.0
             .iter()
             .position(|i| i.inhibitor.id() == id)

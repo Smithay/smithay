@@ -496,7 +496,7 @@ impl<D: DrmSyncobjHandler> Dispatch<WpLinuxDrmSyncobjTimelineV1, D> for DrmSynco
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         _resource: &WpLinuxDrmSyncobjTimelineV1,
     ) {
         if let Some(state) = state.drm_syncobj_state() {

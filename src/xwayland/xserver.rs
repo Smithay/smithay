@@ -380,7 +380,7 @@ pub struct XWaylandClientData {
 }
 
 impl ClientData for XWaylandClientData {
-    fn disconnected(&self, _client_id: ClientId, reason: DisconnectReason) {
+    fn disconnected(&self, _client_id: &ClientId, reason: DisconnectReason) {
         if let DisconnectReason::ProtocolError(err) = reason {
             error!("Xwayland disconnected: {}", err);
         }

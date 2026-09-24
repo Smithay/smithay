@@ -55,7 +55,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     }
 
     /// Return the raw [`ZwpTabletToolV2`] instance for a particular [`Client`]
-    pub fn client_tools<'a>(&'a self, client: &Client) -> impl Iterator<Item = ZwpTabletToolV2> + 'a {
+    pub fn client_tools<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = ZwpTabletToolV2> + 'a {
         let guard = self.arc.wp_tablet_tool.known_instances.lock().unwrap();
         new_locked_obj_iter_from_vec(guard, client.id())
     }
@@ -166,7 +166,7 @@ impl WpTabletToolHandle {
                 seat.version(),
                 TabletToolUserData {
                     handle: handle.downgrade(),
-                    seat_id: seat.id(),
+                    seat_id: seat.id().clone(),
                     client_scale,
                 },
             )
@@ -489,7 +489,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, tool: &ZwpTabletToolV2) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, tool: &ZwpTabletToolV2) {
         let Some(handle) = self.handle.upgrade() else {
             return;
         };

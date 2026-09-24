@@ -97,7 +97,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client_id: ClientId, wm_base: &XdgWmBase) {
+    fn destroyed(&self, state: &mut D, _client_id: &ClientId, wm_base: &XdgWmBase) {
         XdgShellHandler::client_destroyed(state, ShellClient::new(wm_base));
         self.alive_tracker.destroy_notify();
     }

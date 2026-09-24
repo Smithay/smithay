@@ -297,7 +297,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, seat: &WlSeat) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, seat: &WlSeat) {
         self.arc
             .inner
             .lock()

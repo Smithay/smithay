@@ -137,7 +137,7 @@ where
                     let mut guard = self.build.lock().unwrap();
 
                     XdgActivationTokenData::new(
-                        Some(client.id()),
+                        Some(client.id().clone()),
                         guard.serial.take(),
                         guard.app_id.take(),
                         guard.surface.take(),

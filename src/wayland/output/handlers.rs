@@ -111,7 +111,7 @@ impl<D> Dispatch<WlOutput, D> for OutputUserData {
     ) {
     }
 
-    fn destroyed(&self, _state: &mut D, _client_id: wayland_server::backend::ClientId, output: &WlOutput) {
+    fn destroyed(&self, _state: &mut D, _client_id: &wayland_server::backend::ClientId, output: &WlOutput) {
         if let Some(o) = self.output.upgrade() {
             o.inner
                 .0
@@ -213,7 +213,7 @@ impl<D> Dispatch<ZxdgOutputV1, D> for XdgOutputUserData {
     fn destroyed(
         &self,
         _state: &mut D,
-        _client_id: wayland_server::backend::ClientId,
+        _client_id: &wayland_server::backend::ClientId,
         xdg_output: &ZxdgOutputV1,
     ) {
         self.xdg_output

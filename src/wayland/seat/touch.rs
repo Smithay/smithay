@@ -76,7 +76,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     }
 
     /// Return all raw [`WlTouch`] instances for a particular [`Client`]
-    pub fn client_touch<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlTouch> + 'a {
+    pub fn client_touch<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = WlTouch> + 'a {
         let guard = self.known_instances.lock().unwrap();
         new_locked_obj_iter_from_vec(guard, client.id())
     }
@@ -231,7 +231,7 @@ where
     ) {
     }
 
-    fn destroyed(&self, _state: &mut D, _client_id: ClientId, touch: &WlTouch) {
+    fn destroyed(&self, _state: &mut D, _client_id: &ClientId, touch: &WlTouch) {
         if let Some(ref handle) = self.handle {
             handle
                 .known_instances

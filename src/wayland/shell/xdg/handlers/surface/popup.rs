@@ -71,7 +71,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client_id: ClientId, xdg_popup: &XdgPopup) {
+    fn destroyed(&self, state: &mut D, _client_id: &ClientId, xdg_popup: &XdgPopup) {
         self.alive_tracker.destroy_notify();
 
         // remove this surface from the known ones (as well as any leftover dead surface)

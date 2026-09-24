@@ -331,7 +331,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client_id: wayland_server::backend::ClientId,
+        _client_id: &wayland_server::backend::ClientId,
         layer_surface: &ZwlrLayerSurfaceV1,
     ) {
         self.alive_tracker.destroy_notify();

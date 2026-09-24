@@ -145,7 +145,7 @@ impl<D> Dispatch<ZwpInputPopupSurfaceV2, D> for InputMethodPopupSurfaceUserData 
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _object: &ZwpInputPopupSurfaceV2) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _object: &ZwpInputPopupSurfaceV2) {
         self.alive_tracker.destroy_notify();
     }
 }

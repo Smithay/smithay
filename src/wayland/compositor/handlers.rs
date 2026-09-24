@@ -332,7 +332,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client_id: wayland_server::backend::ClientId, surface: &WlSurface) {
+    fn destroyed(&self, state: &mut D, _client_id: &wayland_server::backend::ClientId, surface: &WlSurface) {
         // We let the destruction hooks run first and then tell the compositor handler the surface was
         // destroyed.
         self.alive_tracker.destroy_notify();
@@ -611,7 +611,7 @@ where
     fn destroyed(
         &self,
         _state: &mut D,
-        _client_id: wayland_server::backend::ClientId,
+        _client_id: &wayland_server::backend::ClientId,
         _object: &WlSubsurface,
     ) {
         PrivateSurfaceData::unset_parent(&self.surface);

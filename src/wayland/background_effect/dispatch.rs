@@ -125,7 +125,7 @@ impl<D: ExtBackgroundEffectHandler> Dispatch<ExtBackgroundEffectSurfaceV1, D>
     fn destroyed(
         &self,
         _state: &mut D,
-        _client_id: wayland_server::backend::ClientId,
+        _client_id: &wayland_server::backend::ClientId,
         _object: &ExtBackgroundEffectSurfaceV1,
     ) {
         // No-op: cleanup is handled by double-buffering and surface destruction

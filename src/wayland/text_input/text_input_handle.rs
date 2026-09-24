@@ -54,7 +54,7 @@ impl TextInput {
             .instances
             .iter()
             .filter(|instance| instance.instance.id().same_client_as(&surface_id))
-            .find(|instance| &instance.instance.id() == active_id)
+            .find(|instance| instance.instance.id() == active_id)
         {
             f(&text_input.instance, surface, text_input.serial);
         }
@@ -298,14 +298,14 @@ where
                 let _ = pending_state;
                 let active_text_input_id = &mut guard.active_text_input_id;
 
-                if active_text_input_id.is_some() && *active_text_input_id != Some(resource.id()) {
+                if active_text_input_id.is_some() && active_text_input_id.as_ref() != Some(resource.id()) {
                     debug!("discarding text_input request since we already have an active one");
                     return;
                 }
 
                 match new_state.enable {
                     Some(true) => {
-                        *active_text_input_id = Some(resource.id());
+                        *active_text_input_id = Some(resource.id().clone());
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
                         self.input_method_handle.activate_input_method(state, &focus);
@@ -318,7 +318,7 @@ where
                         return;
                     }
                     None => {
-                        if *active_text_input_id != Some(resource.id()) {
+                        if active_text_input_id.as_ref() != Some(resource.id()) {
                             debug!("discarding text_input requests before enabling it");
                             return;
                         }
@@ -362,7 +362,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, text_input: &ZwpTextInputV3) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, text_input: &ZwpTextInputV3) {
         let destroyed_id = text_input.id();
         let deactivate_im = {
             let mut inner = self.handle.inner.lock().unwrap();

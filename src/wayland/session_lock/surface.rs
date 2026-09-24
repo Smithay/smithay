@@ -73,7 +73,7 @@ where
     fn destroyed(
         &self,
         _state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         _resource: &ExtSessionLockSurfaceV1,
     ) {
         if let Ok(surface) = self.surface.upgrade() {

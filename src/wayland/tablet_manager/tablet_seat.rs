@@ -58,7 +58,7 @@ where
     ) {
     }
 
-    fn destroyed(&self, _state: &mut D, _client: wayland_server::backend::ClientId, seat: &ZwpTabletSeatV2) {
+    fn destroyed(&self, _state: &mut D, _client: &wayland_server::backend::ClientId, seat: &ZwpTabletSeatV2) {
         self.handle
             .arc
             .lock()

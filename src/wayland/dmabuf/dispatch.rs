@@ -41,7 +41,7 @@ where
         }
     }
 
-    fn destroyed(&self, data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer) {
+    fn destroyed(&self, data: &mut D, _client: &ClientId, buffer: &wl_buffer::WlBuffer) {
         data.buffer_destroyed(buffer);
     }
 }

@@ -252,7 +252,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpRelativePointerV1) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, object: &ZwpRelativePointerV1) {
         if let Some(ref handle) = self.handle {
             handle
                 .wp_relative

@@ -217,7 +217,7 @@ where
         }
     }
 
-    fn destroyed(&self, data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer) {
+    fn destroyed(&self, data: &mut D, _client: &ClientId, buffer: &wl_buffer::WlBuffer) {
         // Clone to drop the mutex guard
         let destruction_hooks = self.destruction_hooks.lock().unwrap().clone();
         for hook in destruction_hooks.iter() {

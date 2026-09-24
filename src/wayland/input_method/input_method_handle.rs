@@ -313,7 +313,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _input_method: &ZwpInputMethodV2) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _input_method: &ZwpInputMethodV2) {
         self.handle.inner.lock().unwrap().instance = None;
         self.text_input_handle.leave();
     }

@@ -449,7 +449,7 @@ impl DmabufFeedback {
     /// Send this feedback to the provided [`ZwpLinuxDmabufFeedbackV1`](zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1)
     pub fn send(&self, feedback: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1) {
         if feedback.version() <= 5 {
-            feedback.main_device(self.0.main_device.to_ne_bytes().to_vec());
+            feedback.main_device(&self.0.main_device.to_ne_bytes());
         }
         feedback.format_table(
             self.0.format_table.file.as_fd(),
@@ -462,14 +462,14 @@ impl DmabufFeedback {
             .iter()
             .filter(|tranche| tranche.version_range.contains(&feedback.version()))
         {
-            feedback.tranche_target_device(tranche.target_device.to_ne_bytes().to_vec());
+            feedback.tranche_target_device(&tranche.target_device.to_ne_bytes());
             let mut flags = tranche.flags;
             if feedback.version() <= 5 {
                 flags.remove(TrancheFlags::Sampling);
             }
             feedback.tranche_flags(flags);
             feedback.tranche_formats(
-                tranche
+                &tranche
                     .indices
                     .iter()
                     .flat_map(|i| (*i as u16).to_ne_bytes())
@@ -752,7 +752,7 @@ impl DmabufState {
     /// This operation is permanent and there is no way to re-enable a global.
     pub fn disable_global<D: 'static>(&mut self, display: &DisplayHandle, global: &DmabufGlobal) {
         if let Some(global_state) = self.globals.get(&global.id) {
-            display.disable_global::<D>(global_state.id.clone());
+            display.disable_global::<D>(&global_state.id);
         }
     }
 
@@ -763,7 +763,7 @@ impl DmabufState {
     pub fn destroy_global<D: 'static>(&mut self, display: &DisplayHandle, global: DmabufGlobal) {
         if global_id::remove(global.id) {
             if let Some(global_state) = self.globals.remove(&global.id) {
-                display.remove_global::<D>(global_state.id);
+                display.remove_global::<D>(&global_state.id);
             }
         }
     }

@@ -287,11 +287,11 @@ impl Output {
     }
 
     /// This function returns all managed [WlOutput] matching the provided [Client]
-    pub fn client_outputs<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlOutput> + 'a {
+    pub fn client_outputs<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = WlOutput> + 'a {
         self.client_outputs_internal(client.id())
     }
 
-    fn client_outputs_internal(&self, client: ClientId) -> impl Iterator<Item = WlOutput> + '_ {
+    fn client_outputs_internal<'a>(&'a self, client: &'a ClientId) -> impl Iterator<Item = WlOutput> + 'a {
         let guard = self.inner.0.lock().unwrap();
 
         new_locked_obj_iter(guard, client, |inner| inner.instances.iter())
@@ -311,7 +311,7 @@ impl Output {
             drop(inner);
 
             if let Some(client) = client {
-                for output in self.client_outputs_internal(client) {
+                for output in self.client_outputs_internal(&client) {
                     surface.enter(&output);
                 }
             }
@@ -332,7 +332,7 @@ impl Output {
             drop(inner);
 
             if let Some(client) = client {
-                for output in self.client_outputs_internal(client) {
+                for output in self.client_outputs_internal(&client) {
                     surface.leave(&output);
                 }
             }
@@ -355,7 +355,7 @@ impl Output {
             };
 
             if let Ok(client) = handle.get_client(surface.id()) {
-                for output in self.client_outputs_internal(client) {
+                for output in self.client_outputs_internal(&client) {
                     surface.leave(&output);
                 }
             }

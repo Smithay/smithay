@@ -395,7 +395,7 @@ impl<D: XdgToplevelIconHandler> Dispatch<XdgToplevelIconV1, D> for XdgToplevelIc
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _resource: &XdgToplevelIconV1) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _resource: &XdgToplevelIconV1) {
         self.unregister_all_hooks();
     }
 }

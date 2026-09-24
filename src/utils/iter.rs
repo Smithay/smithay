@@ -9,10 +9,10 @@ pub struct LockedClientObjsIter<'a, T: 'static, G, F> {
     pub guard: MutexGuard<'a, G>,
 }
 
-pub(crate) fn new_locked_obj_iter_from_vec<T: Resource + 'static>(
-    guard: MutexGuard<'_, Vec<Weak<T>>>,
-    client: ClientId,
-) -> impl Iterator<Item = T> + '_ {
+pub(crate) fn new_locked_obj_iter_from_vec<'a, T: Resource + 'static>(
+    guard: MutexGuard<'a, Vec<Weak<T>>>,
+    client: &'a ClientId,
+) -> impl Iterator<Item = T> + 'a {
     new_locked_obj_iter(guard, client, |guard| guard.iter())
 }
 
@@ -23,7 +23,7 @@ pub(crate) fn new_locked_obj_iter<
     F: for<'b> FnOnce(&'b G) -> std::slice::Iter<'b, Weak<T>>,
 >(
     guard: MutexGuard<'a, G>,
-    client: ClientId,
+    client: &'a ClientId,
     iterator_fn: F,
 ) -> impl Iterator<Item = T> + 'a {
     let iterator = unsafe {
@@ -33,10 +33,9 @@ pub(crate) fn new_locked_obj_iter<
     };
 
     let iterator = iterator.filter_map(move |p| {
-        let client = &client;
         p.upgrade()
             .ok()
-            .filter(|p| p.client().is_some_and(|c| c.id() == *client))
+            .filter(|p| p.client().is_some_and(|c| c.id() == client))
     });
 
     LockedClientObjsIter::<'a, T, G, _>::new_internal(iterator, guard)

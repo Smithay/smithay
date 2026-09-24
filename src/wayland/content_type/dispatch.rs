@@ -121,7 +121,7 @@ impl<D> Dispatch<WpContentTypeV1, D> for ContentTypeUserData {
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _object: &WpContentTypeV1) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _object: &WpContentTypeV1) {
         // Nothing to do here, graceful Destroy is already handled with double buffering
         // and in case of client close WlSurface destroyed handler will clean up the data anyway,
         // so there is no point in queuing new update

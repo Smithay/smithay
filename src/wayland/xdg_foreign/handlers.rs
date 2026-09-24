@@ -102,7 +102,7 @@ where
     ) {
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, _resource: &ZxdgExportedV2) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, _resource: &ZxdgExportedV2) {
         // Revoke the previously exported surface.
         // This invalidates any relationship the importer may have set up using the xdg_imported created given the handle sent via xdg_exported.handle.
         invalidate_all_relationships(state, &self.handle);
@@ -238,7 +238,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ZxdgImportedV2) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, resource: &ZxdgImportedV2) {
         if let Some((_, exported_state)) = state
             .xdg_foreign_state()
             .exported

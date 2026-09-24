@@ -179,7 +179,7 @@ where
     fn destroyed(
         &self,
         _state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         _resource: &ZwpTabletManagerV2,
     ) {
     }

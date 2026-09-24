@@ -172,7 +172,7 @@ impl Id {
     #[cfg(feature = "wayland_frontend")]
     pub fn from_wayland_resource<R: Resource>(resource: &R) -> Self {
         Id {
-            inner: InnerId::WaylandResource(resource.id()),
+            inner: InnerId::WaylandResource(resource.id().clone()),
             namespace: None,
         }
     }

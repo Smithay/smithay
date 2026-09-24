@@ -62,7 +62,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, source: &ZwlrDataControlSourceV1) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, source: &ZwlrDataControlSourceV1) {
         // Remove the source from the used ones.
         let seat = match state
             .data_control_state()

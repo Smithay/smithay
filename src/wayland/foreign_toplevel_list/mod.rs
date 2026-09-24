@@ -504,7 +504,7 @@ impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelListV1, D> for Gl
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtForeignToplevelListV1) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, resource: &ExtForeignToplevelListV1) {
         state
             .foreign_toplevel_list_state()
             .list_instances
@@ -528,7 +528,7 @@ impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelHandleV1, D> for 
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ExtForeignToplevelHandleV1) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, resource: &ExtForeignToplevelHandleV1) {
         self.remove_instance(resource);
     }
 }

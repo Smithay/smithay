@@ -269,14 +269,14 @@ impl SessionRef {
 
         #[cfg(feature = "backend_drm")]
         if let Some(dma) = constraints.dma.as_ref() {
-            let node = Vec::from(dma.node.dev_id().to_ne_bytes());
-            self.obj.dmabuf_device(node);
+            let node = dma.node.dev_id().to_ne_bytes();
+            self.obj.dmabuf_device(&node);
             for (fmt, modifiers) in &dma.formats {
                 let modifiers = modifiers
                     .iter()
                     .flat_map(|modifier| u64::from(*modifier).to_ne_bytes())
                     .collect::<Vec<u8>>();
-                self.obj.dmabuf_format(*fmt as u32, modifiers);
+                self.obj.dmabuf_format(*fmt as u32, &modifiers);
             }
         }
 
@@ -438,14 +438,14 @@ impl CursorSessionRef {
             }
             #[cfg(feature = "backend_drm")]
             if let Some(dma) = constraints.dma.as_ref() {
-                let node = Vec::from(dma.node.dev_id().to_ne_bytes());
-                session_obj.dmabuf_device(node);
+                let node = dma.node.dev_id().to_ne_bytes();
+                session_obj.dmabuf_device(&node);
                 for (fmt, modifiers) in &dma.formats {
                     let modifiers = modifiers
                         .iter()
                         .flat_map(|modifier| u64::from(*modifier).to_ne_bytes())
                         .collect::<Vec<u8>>();
-                    session_obj.dmabuf_format(*fmt as u32, modifiers);
+                    session_obj.dmabuf_format(*fmt as u32, &modifiers);
                 }
             }
             session_obj.done();
@@ -1126,7 +1126,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureSessionV1,
     ) {
         let session_ref = SessionRef {
@@ -1208,14 +1208,14 @@ where
                     }
                     #[cfg(feature = "backend_drm")]
                     if let Some(dma) = constraints.dma.as_ref() {
-                        let node = Vec::from(dma.node.dev_id().to_ne_bytes());
-                        obj.dmabuf_device(node);
+                        let node = dma.node.dev_id().to_ne_bytes();
+                        obj.dmabuf_device(&node);
                         for (fmt, modifiers) in &dma.formats {
                             let modifiers = modifiers
                                 .iter()
                                 .flat_map(|modifier| u64::from(*modifier).to_ne_bytes())
                                 .collect::<Vec<u8>>();
-                            obj.dmabuf_format(*fmt as u32, modifiers);
+                            obj.dmabuf_format(*fmt as u32, &modifiers);
                         }
                     }
                     obj.done();
@@ -1231,7 +1231,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureCursorSessionV1,
     ) {
         let session_ref = CursorSessionRef {
@@ -1359,7 +1359,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureFrameV1,
     ) {
         let frame_ref = FrameRef {

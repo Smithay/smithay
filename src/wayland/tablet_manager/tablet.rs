@@ -96,7 +96,7 @@ impl WpTabletHandle {
                 seat.version(),
                 TabletUserData {
                     tablet: tablet.downgrade(),
-                    seat_id: seat.id(),
+                    seat_id: seat.id().clone(),
                 },
             )
             .unwrap();
@@ -161,7 +161,12 @@ where
     ) {
     }
 
-    fn destroyed(&self, _state: &mut D, _client: wayland_server::backend::ClientId, wp_tablet: &ZwpTabletV2) {
+    fn destroyed(
+        &self,
+        _state: &mut D,
+        _client: &wayland_server::backend::ClientId,
+        wp_tablet: &ZwpTabletV2,
+    ) {
         let Some(tablet) = self.tablet.upgrade() else {
             return;
         };

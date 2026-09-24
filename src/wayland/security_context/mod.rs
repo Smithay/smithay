@@ -208,7 +208,7 @@ where
                     sandbox_engine: builder.sandbox_engine,
                     app_id: builder.app_id,
                     instance_id: builder.instance_id,
-                    creator_client_id: client.id(),
+                    creator_client_id: client.id().clone(),
                 };
                 match listener_source {
                     Ok(listener_source) => state.context_created(listener_source, security_context),

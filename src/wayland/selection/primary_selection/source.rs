@@ -61,7 +61,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, source: &PrimarySource) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, source: &PrimarySource) {
         // Remove the source from the used ones.
         let seat = match state
             .primary_selection_state()

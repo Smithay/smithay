@@ -470,7 +470,7 @@ impl DrmLeaseState {
             for instance in &lease_connector.known_instances {
                 instance.withdrawn();
                 if let Some(client) = instance.client() {
-                    clients.insert(client.id());
+                    clients.insert(client.id().clone());
                 }
             }
         }
@@ -502,7 +502,7 @@ impl DrmLeaseState {
             for instance in connector.known_instances.drain(..) {
                 instance.withdrawn();
                 if let Some(client) = instance.client() {
-                    clients.insert(client.id());
+                    clients.insert(client.id().clone());
                 }
             }
             connector.enabled = false;
@@ -590,7 +590,7 @@ impl DrmLeaseState {
         D: DrmLeaseHandler + 'static,
     {
         if let Some(global) = self.global.take() {
-            self.dh.disable_global::<D>(global);
+            self.dh.disable_global::<D>(&global);
         }
     }
 }
@@ -749,7 +749,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1,
     ) {
         let drm_lease_state = state.drm_lease_state(self.node);
@@ -892,7 +892,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         _resource: &wp_drm_lease_v1::WpDrmLeaseV1,
     ) {
         let drm_lease_state = state.drm_lease_state(self.node);

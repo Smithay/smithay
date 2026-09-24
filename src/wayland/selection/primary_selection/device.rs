@@ -105,7 +105,7 @@ where
     fn destroyed(
         &self,
         _state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &PrimaryDevice,
     ) {
         if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {

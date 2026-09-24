@@ -84,7 +84,7 @@ use smallvec::SmallVec;
 use tracing::instrument;
 use wayland_server::{
     Client, DisplayHandle, Resource,
-    backend::{ClientId, GlobalId, Handle, ObjectData, ObjectId, protocol::Message},
+    backend::{ClientId, GlobalId, Handle, ObjectData, ObjectId, protocol::OwnedMessage},
     protocol::{
         wl_data_device_manager::{DndAction as WlDndAction, WlDataDeviceManager},
         wl_data_offer::{self, WlDataOffer},
@@ -220,8 +220,8 @@ where
         self: Arc<Self>,
         dh: &Handle,
         handler: &mut D,
-        _client_id: ClientId,
-        msg: Message<ObjectId, OwnedFd>,
+        _client_id: &ClientId,
+        msg: OwnedMessage<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((resource, request)) = WlDataOffer::parse_request(&dh, msg) {
@@ -235,8 +235,8 @@ where
         self: Arc<Self>,
         _handle: &Handle,
         _data: &mut D,
-        _client_id: ClientId,
-        _object_id: ObjectId,
+        _client_id: &ClientId,
+        _object_id: &ObjectId,
     ) {
     }
 }
@@ -456,7 +456,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
                 // create a data offer
                 let offer = handle
                     .create_object::<D>(
-                        client.clone(),
+                        &client,
                         WlDataOffer::interface(),
                         device.version(),
                         Arc::new(WlDndDataOffer {

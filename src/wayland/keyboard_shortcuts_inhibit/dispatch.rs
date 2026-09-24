@@ -58,7 +58,7 @@ where
     ) {
         match request {
             zwp_keyboard_shortcuts_inhibit_manager_v1::Request::InhibitShortcuts { id, surface, seat } => {
-                let seat_id = seat.id();
+                let seat_id = seat.id().clone();
 
                 if handler
                     .keyboard_shortcuts_inhibit_state()
@@ -123,7 +123,7 @@ where
         }
     }
 
-    fn destroyed(&self, handler: &mut D, _client: ClientId, wl_inhibitor: &ZwpKeyboardShortcutsInhibitorV1) {
+    fn destroyed(&self, handler: &mut D, _client: &ClientId, wl_inhibitor: &ZwpKeyboardShortcutsInhibitorV1) {
         self.is_active.store(false, atomic::Ordering::Release);
 
         let state = handler.keyboard_shortcuts_inhibit_state();

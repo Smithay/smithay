@@ -128,7 +128,7 @@ impl<D> Dispatch<WpAlphaModifierSurfaceV1, D> for AlphaModifierSurfaceUserData {
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _object: &WpAlphaModifierSurfaceV1) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _object: &WpAlphaModifierSurfaceV1) {
         // Nothing to do here, graceful Destroy is already handled with double buffering
         // and in case of client close WlSurface destroyed handler will clean up the data anyway,
         // so there is no point in queuing new update
