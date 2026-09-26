@@ -73,12 +73,12 @@ impl DrmDeviceFd {
         };
 
         // Render nodes have no master; the kernel refuses SET_MASTER on them.
-        let render_node = DrmNode::from_file(&dev.fd).is_ok_and(|node| node.ty() == NodeType::Render);
+        let is_render_node = DrmNode::from_file(&dev.fd).is_ok_and(|node| node.ty() == NodeType::Render);
 
         // We want to modeset, so we better be the master, if we run via a tty session.
         // This is only needed on older kernels. Newer kernels grant this permission,
         // if no other process is already the *master*. So we skip over this error.
-        if !render_node {
+        if !is_render_node {
             if dev.acquire_master_lock().is_err() {
                 warn!("Unable to become drm master, assuming unprivileged mode");
             } else {
