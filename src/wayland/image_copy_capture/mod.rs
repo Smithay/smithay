@@ -433,7 +433,7 @@ impl CursorSessionRef {
             return;
         }
 
-        if let Some(session_obj) = inner.session_obj.as_ref() {
+        if let Some(session_obj) = inner.session_obj.as_ref().filter(|obj| obj.is_alive()) {
             session_obj.buffer_size(constraints.size.w as u32, constraints.size.h as u32);
             for fmt in &constraints.shm {
                 session_obj.shm_format(*fmt);
@@ -561,7 +561,7 @@ impl Drop for CursorSession {
             return;
         }
 
-        if let Some(session_obj) = inner.session_obj.as_ref() {
+        if let Some(session_obj) = inner.session_obj.as_ref().filter(|obj| obj.is_alive()) {
             session_obj.stopped();
         }
         inner.constraints.take();
@@ -843,6 +843,11 @@ pub trait ImageCopyCaptureHandler:
 
     /// Called when a cursor session is destroyed.
     ///
+    /// A cursor session consists of two objects, the cursor session, and the
+    /// capture session from its `get_capture_session` request, which frames are
+    /// created on. This is called when either of them is destroyed, so it may
+    /// run twice for the same session.
+    ///
     /// Note: Destruction might happen explicitly by the client, or implicitly
     /// when the client quits. In case of implicit destruction the order the
     /// callbacks are called in is undefined.
@@ -882,6 +887,8 @@ pub struct SessionData {
 pub struct CursorSessionData {
     inner: Arc<Mutex<CursorSessionInner>>,
     user_data: Arc<UserDataMap>,
+    /// Cursor session to destroy.
+    cursor_obj: Option<ExtImageCopyCaptureCursorSessionV1>,
 }
 
 /// User data for frame protocol resources.
@@ -1064,7 +1071,14 @@ where
                     )));
                     inner.lock().unwrap().stopped = true;
                     let user_data = Arc::new(UserDataMap::new());
-                    let obj = data_init.init(session, CursorSessionData { inner, user_data });
+                    let obj = data_init.init(
+                        session,
+                        CursorSessionData {
+                            inner,
+                            user_data,
+                            cursor_obj: None,
+                        },
+                    );
                     // Note: cursor session doesn't have a stopped event
                     let _ = obj;
                     return;
@@ -1081,6 +1095,7 @@ where
                     CursorSessionData {
                         inner: inner.clone(),
                         user_data: user_data.clone(),
+                        cursor_obj: None,
                     },
                 );
 
@@ -1180,6 +1195,33 @@ where
             _ => unreachable!(),
         }
     }
+
+    fn destroyed(
+        &self,
+        state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &ExtImageCopyCaptureSessionV1,
+    ) {
+        let Some(cursor_obj) = self.cursor_obj.as_ref() else {
+            return;
+        };
+
+        for frame in self.inner.lock().unwrap().active_frames.drain(..) {
+            frame
+                .inner
+                .lock()
+                .unwrap()
+                .fail(&frame.obj, FailureReason::Stopped);
+        }
+
+        // This callback may be called again when the cursor session object
+        // itself is destroyed later.
+        state.cursor_session_destroyed(CursorSessionRef {
+            obj: cursor_obj.clone(),
+            inner: self.inner.clone(),
+            user_data: self.user_data.clone(),
+        });
+    }
 }
 
 impl<D> Dispatch2<ExtImageCopyCaptureCursorSessionV1, D> for CursorSessionData
@@ -1190,7 +1232,7 @@ where
         &self,
         _state: &mut D,
         _client: &Client,
-        _resource: &ExtImageCopyCaptureCursorSessionV1,
+        resource: &ExtImageCopyCaptureCursorSessionV1,
         request: ext_image_copy_capture_cursor_session_v1::Request,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
@@ -1209,6 +1251,7 @@ where
                     CursorSessionData {
                         inner: self.inner.clone(),
                         user_data: self.user_data.clone(),
+                        cursor_obj: Some(resource.clone()),
                     },
                 );
 
