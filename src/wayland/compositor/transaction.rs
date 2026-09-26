@@ -259,15 +259,19 @@ impl Transaction {
     }
 
     pub(crate) fn apply<C: CompositorHandler + 'static>(self, dh: &DisplayHandle, state: &mut C) {
-        for (surface, id) in self.surfaces {
-            let Ok(surface) = surface.upgrade() else {
-                continue;
-            };
+        let surfaces = self
+            .surfaces
+            .into_iter()
+            .filter_map(|(surface, id)| surface.upgrade().ok().map(|surface| (surface, id)))
+            .collect::<Vec<_>>();
 
-            PrivateSurfaceData::with_states(&surface, |states| {
-                states.cached_state.apply_state(id, dh);
+        for (surface, id) in &surfaces {
+            PrivateSurfaceData::with_states(surface, |states| {
+                states.cached_state.apply_state(*id, dh);
             });
+        }
 
+        for (surface, _) in surfaces {
             PrivateSurfaceData::invoke_post_commit_hooks::<C>(state, dh, &surface);
 
             tracing::trace!("Calling user implementation for wl_surface.commit");
