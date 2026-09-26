@@ -167,7 +167,7 @@ use wayland_server::{DisplayHandle, Resource};
 
 pub use x11rb::protocol::xproto::Window as X11Window;
 use x11rb::{
-    connection::Connection as _,
+    connection::{Connection as _, RequestConnection as _},
     errors::{ReplyError, ReplyOrIdError},
     properties::{WmHints, WmHintsState},
     protocol::{
@@ -175,6 +175,7 @@ use x11rb::{
         composite::{ConnectionExt as _, Redirect},
         randr::{ConnectionExt as _, Notify, NotifyMask},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
+        shape::{self, ConnectionExt as _},
         sync::{ConnectionExt as _, Counter},
         xfixes::ConnectionExt as _,
         xproto::{
@@ -421,6 +422,10 @@ pub trait XwmHandler {
     /// A window property has changed.
     fn property_notify(&mut self, xwm: XwmId, window: X11Surface, property: WmWindowProperty) {
         let _ = (xwm, window, property);
+    }
+    /// The X Shape bounding region of a window has changed.
+    fn shape_notify(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
     }
     /// Window requests to be maximized.
     fn maximize_request(&mut self, xwm: XwmId, window: X11Surface) {
@@ -1606,6 +1611,11 @@ where
                 geometry,
                 xwm.dnd.xdnd_active.clone(),
             );
+            surface.set_depth(geo.depth);
+            if conn.extension_information(shape::X11_EXTENSION_NAME)?.is_some() {
+                conn.shape_select_input(n.window, true)?;
+                surface.update_bounding_shape(None)?;
+            }
             surface.update_properties()?;
             xwm.windows.push(surface.clone());
 
@@ -2293,6 +2303,25 @@ where
             } else {
                 // selection was denied
                 send_selection_notify_resp(&conn, &n, false)?;
+            }
+        }
+        Event::ShapeNotify(n) => {
+            if n.shape_kind == shape::SK::BOUNDING
+                && let Some(surface) = xwm
+                    .windows
+                    .iter()
+                    .find(|x| x.window_id() == n.affected_window)
+                    .cloned()
+            {
+                surface.update_bounding_shape(Some((
+                    n.shaped,
+                    Rectangle::new(
+                        (n.extents_x as i32, n.extents_y as i32).into(),
+                        (n.extents_width as i32, n.extents_height as i32).into(),
+                    ),
+                )))?;
+                drop(_guard);
+                state.shape_notify(xwm_id, surface);
             }
         }
         Event::PropertyNotify(n) => {
