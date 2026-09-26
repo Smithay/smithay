@@ -78,7 +78,7 @@
 //!     *states.cached_state.get::<FifoCachedState>().pending()
 //! });
 //! ```
-use std::cell::RefCell;
+use std::{cell::RefCell, collections::VecDeque};
 
 use wayland_protocols::wp::fifo::v1::server::{
     wp_fifo_manager_v1::{self, WpFifoManagerV1},
@@ -95,6 +95,12 @@ use crate::wayland::{
 };
 
 use super::compositor::{Barrier, Cacheable, is_sync_subsurface, with_states};
+
+// XXX Way to clear and add in unmanaged mode?
+#[derive(Default)]
+struct FifoSurfaceData {
+    barriers: RefCell<VecDeque<Barrier>>,
+}
 
 /// State for the [`WpFifoManagerV1`] global
 #[derive(Debug)]
@@ -135,7 +141,7 @@ impl FifoManagerState {
         D: GlobalDispatch<WpFifoManagerV1, FifoManagerData>,
         D: 'static,
     {
-        let global = display.create_global::<D, WpFifoManagerV1, _>(1, FifoManagerData { is_managed });
+        let global = display.create_global::<D, WpFifoManagerV1, _>(2, FifoManagerData { is_managed });
 
         Self { global, is_managed }
     }
@@ -213,6 +219,16 @@ where
                         let fifo_barrier = with_states(surface, |states| {
                             let fifo_state = *states.cached_state.get::<FifoCachedState>().pending();
 
+                            if fifo_state.clear_barriers {
+                                if let Some(data) = states.data_map.get::<FifoSurfaceData>() {
+                                    let mut barriers = data.barriers.borrow_mut();
+                                    for barrier in barriers.iter() {
+                                        barrier.signal();
+                                    }
+                                    barriers.clear();
+                                }
+                            }
+
                             // The pending state will contain any previously set barrier on this surface
                             // In case this commit updates the barrier with `set_barrier`, but also mandates to
                             // wait for a previously set barrier it is important to first retrieve the previously
@@ -236,11 +252,16 @@ where
                             // is not blocked or into a transaction otherwise eventually ending in the current
                             // state when it is unblocked.
                             if fifo_state.set_barrier {
+                                let barrier = Barrier::new(false);
+                                let data = states.data_map.get_or_insert(FifoSurfaceData::default);
+                                let mut barriers = data.barriers.borrow_mut();
+                                while let Some(_) = barriers.pop_front_if(|b| b.is_signaled()) {}
+                                barriers.push_back(barrier.clone());
                                 states
                                     .cached_state
                                     .get::<FifoBarrierCachedState>()
                                     .pending()
-                                    .barrier = Some(Barrier::new(false));
+                                    .barrier = Some(barrier);
                             }
 
                             fifo_barrier
@@ -299,49 +320,44 @@ where
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        match request {
-            wp_fifo_v1::Request::SetBarrier => {
-                let Ok(surface) = self.0.upgrade() else {
-                    resource.post_error(
-                        wp_fifo_v1::Error::SurfaceDestroyed,
-                        "the surface associated with this fifo object has been destroyed".to_string(),
-                    );
-                    return;
-                };
-                with_states(&surface, move |states| {
-                    states.cached_state.get::<FifoCachedState>().pending().set_barrier = true;
-                });
-            }
-            wp_fifo_v1::Request::WaitBarrier => {
-                let Ok(surface) = self.0.upgrade() else {
-                    resource.post_error(
-                        wp_fifo_v1::Error::SurfaceDestroyed,
-                        "the surface associated with this fifo object has been destroyed".to_string(),
-                    );
-                    return;
-                };
-                with_states(&surface, move |states| {
+        if matches!(request, wp_fifo_v1::Request::Destroy) {
+            if let Ok(surface) = self.0.upgrade() {
+                with_states(&surface, |states| {
                     states
-                        .cached_state
-                        .get::<FifoCachedState>()
-                        .pending()
-                        .wait_barrier = true;
+                        .data_map
+                        .get::<RefCell<FifoMarker>>()
+                        .unwrap()
+                        .borrow_mut()
+                        .0 = None;
                 });
             }
-            wp_fifo_v1::Request::Destroy => {
-                if let Ok(surface) = self.0.upgrade() {
-                    with_states(&surface, |states| {
-                        states
-                            .data_map
-                            .get::<RefCell<FifoMarker>>()
-                            .unwrap()
-                            .borrow_mut()
-                            .0 = None;
-                    });
-                }
-            }
-            _ => unreachable!(),
+            return;
         }
+
+        let Ok(surface) = self.0.upgrade() else {
+            resource.post_error(
+                wp_fifo_v1::Error::SurfaceDestroyed,
+                "the surface associated with this fifo object has been destroyed".to_string(),
+            );
+            return;
+        };
+
+        with_states(&surface, move |states| {
+            let mut cached = states.cached_state.get::<FifoCachedState>();
+
+            match request {
+                wp_fifo_v1::Request::SetBarrier => {
+                    cached.pending().set_barrier = true;
+                }
+                wp_fifo_v1::Request::WaitBarrier => {
+                    cached.pending().wait_barrier = true;
+                }
+                wp_fifo_v1::Request::ClearBarriers => {
+                    cached.pending().clear_barriers = true;
+                }
+                _ => unreachable!(),
+            }
+        });
     }
 }
 
@@ -354,6 +370,9 @@ pub struct FifoCachedState {
     /// The content update requested to wait on a previously
     /// set barrier
     pub wait_barrier: bool,
+
+    /// The content requested previous barriers be cleared
+    pub clear_barriers: bool,
 }
 
 impl Cacheable for FifoCachedState {
