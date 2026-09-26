@@ -237,6 +237,9 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`DrmDeviceFd::new` no longer tries to become DRM master on a render node, which the kernel always
+refuses, so it no longer warns about it.
+
 `SimpleCrtcMapper` (in `smithay-drm-extras`) now releases the CRTC reservation of any connector that
 is no longer connected, including connectors that have disappeared from the resource list entirely
 rather than being reported as disconnected. Previously such connectors (for example DP-MST sink
