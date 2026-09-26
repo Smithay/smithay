@@ -1,11 +1,11 @@
 use smithay_client_toolkit::{
+    compositor::{CompositorHandler, FrameCallbackData},
     reexports::{
         calloop,
         calloop_wayland_source::WaylandSource,
         client::{
             self as wayland_client,
-            globals::GlobalList,
-            protocol::{wl_callback::WlCallback, wl_shm, wl_surface::WlSurface},
+            protocol::{wl_shm, wl_surface::WlSurface},
         },
     },
     shm::slot::{Buffer, SlotPool},
@@ -13,8 +13,8 @@ use smithay_client_toolkit::{
 
 use calloop::EventLoop;
 use wayland_client::{
-    Connection, Dispatch, QueueHandle, globals::GlobalListContents, globals::registry_queue_init,
-    protocol::wl_registry::WlRegistry,
+    Connection, QueueHandle,
+    globals::{GlobalList, GlobalListHandler},
 };
 
 pub fn init_logging() {
@@ -30,12 +30,13 @@ pub fn init_logging() {
 
 pub fn init_connection<APP>() -> (EventLoop<'static, APP>, GlobalList, QueueHandle<APP>)
 where
-    APP: Dispatch<WlRegistry, GlobalListContents> + 'static,
+    APP: GlobalListHandler + 'static,
 {
-    let conn = Connection::connect_to_env().unwrap();
+    let conn = unsafe { Connection::connect_to_env().unwrap() };
 
-    let (globals, event_queue) = registry_queue_init(&conn).unwrap();
+    let event_queue = conn.new_event_queue();
     let qh = event_queue.handle();
+    let globals = GlobalList::init(&conn, &qh).unwrap();
     let event_loop: EventLoop<APP> = EventLoop::try_new().unwrap();
     let loop_handle = event_loop.handle();
     WaylandSource::new(conn.clone(), event_queue)
@@ -70,8 +71,7 @@ pub fn draw<D>(
     height: u32,
     shift: &mut u32,
 ) where
-    D: 'static,
-    D: Dispatch<WlCallback, WlSurface>,
+    D: CompositorHandler + 'static,
 {
     let stride = width as i32 * 4;
 
@@ -100,7 +100,7 @@ pub fn draw<D>(
 
     wl_surface.damage_buffer(0, 0, width as i32, height as i32);
 
-    wl_surface.frame(qh, wl_surface.clone());
+    wl_surface.frame(qh, FrameCallbackData(wl_surface.clone()));
 
     buffer.attach_to(wl_surface).expect("buffer attach");
     wl_surface.commit();

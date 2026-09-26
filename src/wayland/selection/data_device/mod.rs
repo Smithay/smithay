@@ -70,8 +70,6 @@
 //!     // ... override default implementations here to customize handling ...
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 
@@ -85,8 +83,8 @@ use std::{
 use smallvec::SmallVec;
 use tracing::instrument;
 use wayland_server::{
-    Client, DisplayHandle, GlobalDispatch, Resource,
-    backend::{ClientId, GlobalId, Handle, ObjectData, ObjectId, protocol::Message},
+    Client, DisplayHandle, Resource,
+    backend::{ClientId, GlobalId, Handle, ObjectData, ObjectId, protocol::OwnedMessage},
     protocol::{
         wl_data_device_manager::{DndAction as WlDndAction, WlDataDeviceManager},
         wl_data_offer::{self, WlDataOffer},
@@ -103,7 +101,7 @@ use crate::{
         dnd::{DndAction, DndFocus, GrabType, OfferData, Source},
     },
     utils::{Logical, Point, Serial},
-    wayland::GlobalData,
+    wayland::{GlobalData, seat::WaylandFocus},
 };
 
 mod device;
@@ -222,8 +220,8 @@ where
         self: Arc<Self>,
         dh: &Handle,
         handler: &mut D,
-        _client_id: ClientId,
-        msg: Message<ObjectId, OwnedFd>,
+        _client_id: &ClientId,
+        msg: OwnedMessage<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((resource, request)) = WlDataOffer::parse_request(&dh, msg) {
@@ -237,8 +235,8 @@ where
         self: Arc<Self>,
         _handle: &Handle,
         _data: &mut D,
-        _client_id: ClientId,
-        _object_id: ObjectId,
+        _client_id: &ClientId,
+        _object_id: &ObjectId,
     ) {
     }
 }
@@ -324,9 +322,6 @@ fn handle_dnd<D, S>(
             preferred_action,
         } => {
             if let Some(source) = source.as_ref() {
-                let dnd_actions = dnd_actions.into_result().unwrap_or(WlDndAction::None);
-                let preferred_action = preferred_action.into_result().unwrap_or(WlDndAction::None);
-
                 // preferred_action must only contain one bitflag at the same time
                 if ![
                     WlDndAction::None,
@@ -461,7 +456,7 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
                 // create a data offer
                 let offer = handle
                     .create_object::<D>(
-                        client.clone(),
+                        &client,
                         WlDataOffer::interface(),
                         device.version(),
                         Arc::new(WlDndDataOffer {
@@ -582,8 +577,10 @@ impl DataDeviceState {
     /// Regiseter new [WlDataDeviceManager] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlDataDeviceManager, GlobalData> + 'static,
-        D: DataDeviceHandler,
+        D: DataDeviceHandler + 'static,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     {
         let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, GlobalData);
 
@@ -761,29 +758,28 @@ mod handlers {
 
     use tracing::error;
     use wayland_server::{
-        Dispatch, DisplayHandle,
-        protocol::{
-            wl_data_device::WlDataDevice,
-            wl_data_device_manager::{self, WlDataDeviceManager},
-            wl_data_source::WlDataSource,
-        },
+        Dispatch, DisplayHandle, GlobalDispatch,
+        protocol::wl_data_device_manager::{self, WlDataDeviceManager},
     };
 
     use crate::{
-        input::Seat,
-        wayland::selection::{device::SelectionDevice, seat_data::SeatData},
-        wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+        input::{Seat, SeatHandler, dnd::DndFocus},
+        wayland::{
+            GlobalData,
+            seat::WaylandFocus,
+            selection::{device::SelectionDevice, seat_data::SeatData},
+        },
     };
 
     use super::DataDeviceHandler;
     use super::{device::DataDeviceUserData, source::DataSourceUserData};
 
-    impl<D> GlobalDispatch2<WlDataDeviceManager, D> for GlobalData
+    impl<D> GlobalDispatch<WlDataDeviceManager, D> for GlobalData
     where
-        D: Dispatch<WlDataDeviceManager, GlobalData>,
-        D: Dispatch<WlDataSource, DataSourceUserData>,
-        D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         D: 'static,
     {
         fn bind(
@@ -798,11 +794,12 @@ mod handlers {
         }
     }
 
-    impl<D> Dispatch2<WlDataDeviceManager, D> for GlobalData
+    impl<D> Dispatch<WlDataDeviceManager, D> for GlobalData
     where
-        D: Dispatch<WlDataSource, DataSourceUserData>,
-        D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
+        <D as SeatHandler>::PointerFocus: DndFocus<D>,
+        <D as SeatHandler>::TouchFocus: DndFocus<D>,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         D: 'static,
     {
         fn request(

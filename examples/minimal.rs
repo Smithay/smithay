@@ -291,5 +291,3 @@ impl ClientData for ClientState {
         println!("disconnected");
     }
 }
-
-smithay::delegate_dispatch2!(App);

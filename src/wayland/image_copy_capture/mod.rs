@@ -66,8 +66,6 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! let state = ImageCopyCaptureState::new::<State>(&display_handle);
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ## Session Lifecycle
@@ -112,10 +110,10 @@ use crate::wayland::image_capture_source::ImageCaptureSource;
 
 // Buffer validation imports
 use crate::backend::renderer::{BufferType, buffer_type};
+use crate::wayland::GlobalData;
 #[cfg(feature = "backend_drm")]
 use crate::wayland::dmabuf::get_dmabuf;
 use crate::wayland::shm::with_buffer_contents;
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 // Re-export FailureReason for convenience
 pub use wayland_protocols::ext::image_copy_capture::v1::server::ext_image_copy_capture_frame_v1::FailureReason as CaptureFailureReason;
@@ -271,14 +269,14 @@ impl SessionRef {
 
         #[cfg(feature = "backend_drm")]
         if let Some(dma) = constraints.dma.as_ref() {
-            let node = Vec::from(dma.node.dev_id().to_ne_bytes());
-            self.obj.dmabuf_device(node);
+            let node = dma.node.dev_id().to_ne_bytes();
+            self.obj.dmabuf_device(&node);
             for (fmt, modifiers) in &dma.formats {
                 let modifiers = modifiers
                     .iter()
                     .flat_map(|modifier| u64::from(*modifier).to_ne_bytes())
                     .collect::<Vec<u8>>();
-                self.obj.dmabuf_format(*fmt as u32, modifiers);
+                self.obj.dmabuf_format(*fmt as u32, &modifiers);
             }
         }
 
@@ -440,14 +438,14 @@ impl CursorSessionRef {
             }
             #[cfg(feature = "backend_drm")]
             if let Some(dma) = constraints.dma.as_ref() {
-                let node = Vec::from(dma.node.dev_id().to_ne_bytes());
-                session_obj.dmabuf_device(node);
+                let node = dma.node.dev_id().to_ne_bytes();
+                session_obj.dmabuf_device(&node);
                 for (fmt, modifiers) in &dma.formats {
                     let modifiers = modifiers
                         .iter()
                         .flat_map(|modifier| u64::from(*modifier).to_ne_bytes())
                         .collect::<Vec<u8>>();
-                    session_obj.dmabuf_format(*fmt as u32, modifiers);
+                    session_obj.dmabuf_format(*fmt as u32, &modifiers);
                 }
             }
             session_obj.done();
@@ -769,15 +767,7 @@ impl Drop for Frame {
 /// Handler trait for the image copy capture protocol.
 ///
 /// Implement this on your compositor's state type to handle capture requests.
-pub trait ImageCopyCaptureHandler:
-    GlobalDispatch<ExtImageCopyCaptureManagerV1, ImageCopyCaptureGlobalData>
-    + Dispatch<ExtImageCopyCaptureManagerV1, GlobalData>
-    + Dispatch<ExtImageCopyCaptureSessionV1, SessionData>
-    + Dispatch<ExtImageCopyCaptureSessionV1, CursorSessionData>
-    + Dispatch<ExtImageCopyCaptureCursorSessionV1, CursorSessionData>
-    + Dispatch<ExtImageCopyCaptureFrameV1, FrameData>
-    + 'static
-{
+pub trait ImageCopyCaptureHandler: 'static {
     /// Returns a mutable reference to the [`ImageCopyCaptureState`] delegate type.
     fn image_copy_capture_state(&mut self) -> &mut ImageCopyCaptureState;
 
@@ -954,7 +944,7 @@ impl ImageCopyCaptureState {
 // Dispatch implementations
 // ============================================================================
 
-impl<D> GlobalDispatch2<ExtImageCopyCaptureManagerV1, D> for ImageCopyCaptureGlobalData
+impl<D> GlobalDispatch<ExtImageCopyCaptureManagerV1, D> for ImageCopyCaptureGlobalData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -974,7 +964,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureManagerV1, D> for GlobalData
+impl<D> Dispatch<ExtImageCopyCaptureManagerV1, D> for GlobalData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1014,10 +1004,7 @@ where
                     return;
                 };
 
-                let draw_cursors = options
-                    .into_result()
-                    .map(|o| o.contains(ext_image_copy_capture_manager_v1::Options::PaintCursors))
-                    .unwrap_or(false);
+                let draw_cursors = options.contains(ext_image_copy_capture_manager_v1::Options::PaintCursors);
                 let inner = Arc::new(Mutex::new(SessionInner::new(
                     capture_source.clone(),
                     draw_cursors,
@@ -1107,7 +1094,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for SessionData
+impl<D> Dispatch<ExtImageCopyCaptureSessionV1, D> for SessionData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1139,7 +1126,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureSessionV1,
     ) {
         let session_ref = SessionRef {
@@ -1152,7 +1139,7 @@ where
 }
 
 // Dispatch for session created from cursor session's get_capture_session
-impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for CursorSessionData
+impl<D> Dispatch<ExtImageCopyCaptureSessionV1, D> for CursorSessionData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1182,7 +1169,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureCursorSessionV1, D> for CursorSessionData
+impl<D> Dispatch<ExtImageCopyCaptureCursorSessionV1, D> for CursorSessionData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1221,14 +1208,14 @@ where
                     }
                     #[cfg(feature = "backend_drm")]
                     if let Some(dma) = constraints.dma.as_ref() {
-                        let node = Vec::from(dma.node.dev_id().to_ne_bytes());
-                        obj.dmabuf_device(node);
+                        let node = dma.node.dev_id().to_ne_bytes();
+                        obj.dmabuf_device(&node);
                         for (fmt, modifiers) in &dma.formats {
                             let modifiers = modifiers
                                 .iter()
                                 .flat_map(|modifier| u64::from(*modifier).to_ne_bytes())
                                 .collect::<Vec<u8>>();
-                            obj.dmabuf_format(*fmt as u32, modifiers);
+                            obj.dmabuf_format(*fmt as u32, &modifiers);
                         }
                     }
                     obj.done();
@@ -1244,7 +1231,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureCursorSessionV1,
     ) {
         let session_ref = CursorSessionRef {
@@ -1256,7 +1243,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtImageCopyCaptureFrameV1, D> for FrameData
+impl<D> Dispatch<ExtImageCopyCaptureFrameV1, D> for FrameData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1372,7 +1359,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &ExtImageCopyCaptureFrameV1,
     ) {
         let frame_ref = FrameRef {

@@ -1,4 +1,3 @@
-use std::os::unix::io::OwnedFd;
 use std::sync::Arc;
 
 use tracing::debug;
@@ -13,7 +12,7 @@ use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_offer_v1:
 };
 use wayland_server::DisplayHandle;
 use wayland_server::backend::ObjectId;
-use wayland_server::backend::protocol::Message;
+use wayland_server::backend::protocol::OwnedMessage;
 use wayland_server::backend::{ClientId, Handle, ObjectData};
 use wayland_server::protocol::wl_data_offer;
 use wayland_server::protocol::wl_seat::WlSeat;
@@ -68,7 +67,7 @@ impl SelectionOffer {
     pub fn new<D>(
         dh: &DisplayHandle,
         device: &SelectionDevice,
-        client_id: ClientId,
+        client_id: &ClientId,
         data: OfferReplySource<D::SelectionUserData>,
     ) -> Self
     where
@@ -127,8 +126,8 @@ where
         self: Arc<Self>,
         dh: &Handle,
         handle: &mut D,
-        _: ClientId,
-        msg: Message<ObjectId, OwnedFd>,
+        _: &ClientId,
+        msg: OwnedMessage<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
 
@@ -192,5 +191,5 @@ where
         None
     }
 
-    fn destroyed(self: Arc<Self>, _: &Handle, _: &mut D, _: ClientId, _: ObjectId) {}
+    fn destroyed(self: Arc<Self>, _: &Handle, _: &mut D, _: &ClientId, _: &ObjectId) {}
 }

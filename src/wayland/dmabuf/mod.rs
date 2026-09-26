@@ -72,8 +72,6 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! // First a DmabufState must be created. This type is used to create some "DmabufGlobal"s
@@ -178,8 +176,6 @@
 //!     dmabuf_global,
 //! };
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // Rest of the compositor goes here...
 //! ```
 
@@ -203,7 +199,7 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
-    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
+    Client, DisplayHandle, Resource,
     backend::{GlobalId, InvalidId},
     protocol::{
         wl_buffer::{self, WlBuffer},
@@ -453,7 +449,7 @@ impl DmabufFeedback {
     /// Send this feedback to the provided [`ZwpLinuxDmabufFeedbackV1`](zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1)
     pub fn send(&self, feedback: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1) {
         if feedback.version() <= 5 {
-            feedback.main_device(self.0.main_device.to_ne_bytes().to_vec());
+            feedback.main_device(&self.0.main_device.to_ne_bytes());
         }
         feedback.format_table(
             self.0.format_table.file.as_fd(),
@@ -466,14 +462,14 @@ impl DmabufFeedback {
             .iter()
             .filter(|tranche| tranche.version_range.contains(&feedback.version()))
         {
-            feedback.tranche_target_device(tranche.target_device.to_ne_bytes().to_vec());
+            feedback.tranche_target_device(&tranche.target_device.to_ne_bytes());
             let mut flags = tranche.flags;
             if feedback.version() <= 5 {
                 flags.remove(TrancheFlags::Sampling);
             }
             feedback.tranche_flags(flags);
             feedback.tranche_formats(
-                tranche
+                &tranche
                     .indices
                     .iter()
                     .flat_map(|i| (*i as u16).to_ne_bytes())
@@ -597,10 +593,7 @@ impl DmabufState {
         formats: impl IntoIterator<Item = Format>,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: BufferHandler + DmabufHandler + 'static,
     {
         self.create_global_with_filter::<D, _>(display, formats, |_| true)
     }
@@ -620,10 +613,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let formats = formats.into_iter().collect::<Vec<_>>();
@@ -644,10 +634,7 @@ impl DmabufState {
         default_feedback: &DmabufFeedback,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
     {
         self.create_global_with_filter_and_default_feedback::<D, _>(display, default_feedback, |_| true)
     }
@@ -666,10 +653,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         self.create_global_with_filter_and_optional_default_feedback::<D, _>(
@@ -688,10 +672,7 @@ impl DmabufState {
         filter: F,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: DmabufHandler + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let id = global_id::next();
@@ -771,7 +752,7 @@ impl DmabufState {
     /// This operation is permanent and there is no way to re-enable a global.
     pub fn disable_global<D: 'static>(&mut self, display: &DisplayHandle, global: &DmabufGlobal) {
         if let Some(global_state) = self.globals.get(&global.id) {
-            display.disable_global::<D>(global_state.id.clone());
+            display.disable_global::<D>(&global_state.id);
         }
     }
 
@@ -782,7 +763,7 @@ impl DmabufState {
     pub fn destroy_global<D: 'static>(&mut self, display: &DisplayHandle, global: DmabufGlobal) {
         if global_id::remove(global.id) {
             if let Some(global_state) = self.globals.remove(&global.id) {
-                display.remove_global::<D>(global_state.id);
+                display.remove_global::<D>(&global_state.id);
             }
         }
     }
@@ -878,11 +859,7 @@ impl ImportNotifier {
     /// This can return [`InvalidId`] if the client the buffer was imported from has died.
     pub fn successful<D>(mut self) -> Result<WlBuffer, InvalidId>
     where
-        D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-            + Dispatch<wl_buffer::WlBuffer, Dmabuf>
-            + BufferHandler
-            + DmabufHandler
-            + 'static,
+        D: BufferHandler + DmabufHandler + 'static,
     {
         let client = self.inner.client();
 
@@ -1055,7 +1032,7 @@ impl DmabufParamsData {
         width: i32,
         height: i32,
         format: u32,
-        flags: WEnum<zwp_linux_buffer_params_v1::Flags>,
+        flags: zwp_linux_buffer_params_v1::Flags,
         _node: Option<libc::dev_t>,
     ) -> Option<Dmabuf> {
         // We cannot create a dmabuf if the parameters have already been used.

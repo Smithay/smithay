@@ -2,8 +2,6 @@
 
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_output, delegate_pointer, delegate_pointer_constraints, delegate_registry,
-    delegate_seat, delegate_shm, delegate_xdg_shell, delegate_xdg_window,
     output::{OutputHandler, OutputState},
     reexports::{
         calloop, client as wayland_client,
@@ -12,7 +10,6 @@ use smithay_client_toolkit::{
             zwp_pointer_constraints_v1,
         },
     },
-    registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
         Capability, SeatHandler, SeatState,
@@ -33,11 +30,11 @@ use smithay_client_toolkit::{
 };
 
 use wayland_client::{
-    Connection, QueueHandle, delegate_noop,
+    Connection, Noop, QueueHandle,
+    globals::GlobalListHandler,
     protocol::{
         wl_output::{self, WlOutput},
         wl_pointer::WlPointer,
-        wl_region::WlRegion,
         wl_seat,
         wl_surface::{self, WlSurface},
     },
@@ -60,7 +57,6 @@ fn main() {
     let pool = SlotPool::new(256 * 256 * 4, &shm).unwrap();
 
     let mut simple_window = App {
-        registry_state: RegistryState::new(&globals),
         output_state: OutputState::new(&globals, &qh),
         compositor_state,
         seat_state: SeatState::new(&globals, &qh),
@@ -87,7 +83,6 @@ fn main() {
 }
 
 struct App {
-    registry_state: RegistryState,
     output_state: OutputState,
     compositor_state: CompositorState,
     seat_state: SeatState,
@@ -160,7 +155,7 @@ impl WindowHandler for App {
         }
 
         if let Some(pointer) = &self.pointer {
-            let region = self.compositor_state.wl_compositor().create_region(qh, ());
+            let region = self.compositor_state.wl_compositor().create_region(qh, Noop);
             let w = self.width as i32;
             let h = self.height as i32;
 
@@ -207,19 +202,6 @@ impl App {
         );
     }
 }
-
-delegate_compositor!(App);
-delegate_output!(App);
-delegate_shm!(App);
-
-delegate_xdg_shell!(App);
-delegate_xdg_window!(App);
-
-delegate_registry!(App);
-delegate_seat!(App);
-delegate_pointer!(App);
-delegate_pointer_constraints!(App);
-delegate_noop!(App: WlRegion);
 
 impl SeatHandler for App {
     fn seat_state(&mut self) -> &mut SeatState {
@@ -347,9 +329,6 @@ impl ShmHandler for App {
     }
 }
 
-impl ProvidesRegistryState for App {
-    fn registry(&mut self) -> &mut RegistryState {
-        &mut self.registry_state
-    }
+impl GlobalListHandler for App {
     registry_handlers![OutputState,];
 }

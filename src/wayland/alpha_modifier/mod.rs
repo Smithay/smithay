@@ -20,8 +20,6 @@
 //! struct ClientState { compositor_state: CompositorClientState }
 //! impl wayland_server::backend::ClientData for ClientState {}
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
 //!        &mut self.compositor_state
@@ -54,13 +52,8 @@ use std::sync::{
     atomic::{self, AtomicBool},
 };
 
-use wayland_protocols::wp::alpha_modifier::v1::server::{
-    wp_alpha_modifier_surface_v1::WpAlphaModifierSurfaceV1, wp_alpha_modifier_v1::WpAlphaModifierV1,
-};
-use wayland_server::{
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak, backend::GlobalId,
-    protocol::wl_surface::WlSurface,
-};
+use wayland_protocols::wp::alpha_modifier::v1::server::wp_alpha_modifier_v1::WpAlphaModifierV1;
+use wayland_server::{DisplayHandle, Resource, Weak, backend::GlobalId, protocol::wl_surface::WlSurface};
 
 use super::compositor::Cacheable;
 
@@ -137,7 +130,7 @@ impl AlphaModifierSurfaceData {
     }
 }
 
-/// User data of [WpAlphaModifierSurfaceV1] object
+/// User data of [`WpAlphaModifierSurfaceV1`][wayland_protocols::wp::alpha_modifier::v1::server::wp_alpha_modifier_surface_v1] object
 #[derive(Debug)]
 pub struct AlphaModifierSurfaceUserData(Mutex<Weak<WlSurface>>);
 
@@ -161,10 +154,7 @@ impl AlphaModifierState {
     /// Regiseter new [WpAlphaModifierV1] global
     pub fn new<D>(display: &DisplayHandle) -> AlphaModifierState
     where
-        D: GlobalDispatch<WpAlphaModifierV1, GlobalData>
-            + Dispatch<WpAlphaModifierV1, GlobalData>
-            + Dispatch<WpAlphaModifierSurfaceV1, AlphaModifierSurfaceUserData>
-            + 'static,
+        D: 'static,
     {
         let global = display.create_global::<D, WpAlphaModifierV1, _>(1, GlobalData);
 

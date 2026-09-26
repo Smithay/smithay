@@ -38,7 +38,7 @@ impl SelectionDevice {
         selection_dispatch!(self; Self(device) => device.version())
     }
 
-    pub fn id(&self) -> ObjectId {
+    pub fn id(&self) -> &ObjectId {
         selection_dispatch!(self; Self(device) => device.id())
     }
 

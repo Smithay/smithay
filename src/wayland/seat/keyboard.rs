@@ -2,7 +2,7 @@ use std::{cell::RefCell, fmt};
 
 use tracing::{instrument, trace, warn};
 use wayland_server::{
-    Client, DisplayHandle, Resource,
+    Client, Dispatch, DisplayHandle, Resource,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
@@ -19,7 +19,6 @@ use crate::{
     },
     utils::{HookId, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
-        Dispatch2,
         compositor::{add_destruction_hook, remove_destruction_hook, with_states},
         input_method::InputMethodSeat,
         text_input::TextInputSeat,
@@ -44,7 +43,7 @@ where
     }
 
     /// Return all raw [`WlKeyboard`] instances for a particular [`Client`]
-    pub fn client_keyboards<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlKeyboard> + 'a {
+    pub fn client_keyboards<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = WlKeyboard> + 'a {
         let guard = self.arc.known_kbds.lock().unwrap();
 
         new_locked_obj_iter_from_vec(guard, client.id())
@@ -79,7 +78,7 @@ where
             if focused.same_client_as(&kbd.id()) {
                 let serialized = guard.mods_state.serialized;
                 let keys = serialize_pressed_keys(guard.pressed_keys.iter().copied());
-                kbd.enter((*serial).into(), &focused.wl_surface().unwrap(), keys);
+                kbd.enter((*serial).into(), &focused.wl_surface().unwrap(), &keys);
                 // Modifiers must be send after enter event.
                 kbd.modifiers(
                     (*serial).into(),
@@ -117,7 +116,7 @@ impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
     }
 }
 
-impl<D> Dispatch2<WlKeyboard, D> for KeyboardUserData<D>
+impl<D> Dispatch<WlKeyboard, D> for KeyboardUserData<D>
 where
     D: 'static,
     D: SeatHandler,
@@ -133,7 +132,7 @@ where
     ) {
     }
 
-    fn destroyed(&self, _state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard) {
+    fn destroyed(&self, _state: &mut D, _client_id: &ClientId, keyboard: &WlKeyboard) {
         if let Some(ref handle) = self.handle {
             handle
                 .arc
@@ -214,7 +213,7 @@ pub(crate) fn enter_internal<D: SeatHandler + 'static>(
     *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = Some(serial);
     let serialized_keys = serialize_pressed_keys(keys);
     for_each_focused_kbds(seat, surface, |kbd| {
-        kbd.enter(serial.into(), surface, serialized_keys.clone())
+        kbd.enter(serial.into(), surface, &serialized_keys)
     });
 
     let seat_clone = seat.clone();

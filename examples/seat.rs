@@ -106,5 +106,3 @@ impl CompositorHandler for App {
 
     fn commit(&mut self, _surface: &WlSurface) {}
 }
-
-smithay::delegate_dispatch2!(App);

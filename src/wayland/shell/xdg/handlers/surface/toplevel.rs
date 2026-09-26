@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use crate::{
     utils::Serial,
     wayland::{
-        Dispatch2, compositor,
+        compositor,
         shell::{
             is_valid_parent,
             xdg::{ToplevelCachedState, XdgToplevelSurfaceData},
@@ -16,14 +16,14 @@ use wayland_protocols::xdg::{
     shell::server::xdg_toplevel::{self, XdgToplevel},
 };
 
-use wayland_server::{DataInit, DisplayHandle, Resource, WEnum, backend::ClientId, protocol::wl_surface};
+use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource, backend::ClientId, protocol::wl_surface};
 
 use super::{
     SurfaceCachedState, ToplevelConfigure, XdgShellHandler, XdgShellSurfaceUserData, XdgSurfaceUserData,
     XdgToplevelSurfaceRoleAttributes,
 };
 
-impl<D> Dispatch2<XdgToplevel, D> for XdgShellSurfaceUserData
+impl<D> Dispatch<XdgToplevel, D> for XdgShellSurfaceUserData
 where
     D: XdgShellHandler,
     D: 'static,
@@ -119,13 +119,11 @@ where
                 XdgShellHandler::move_request(state, handle, seat, serial);
             }
             xdg_toplevel::Request::Resize { seat, serial, edges } => {
-                if let WEnum::Value(edges) = edges {
-                    // This has to be handled by the compositor
-                    let handle = make_toplevel_handle(toplevel);
-                    let serial = Serial::from(serial);
+                // This has to be handled by the compositor
+                let handle = make_toplevel_handle(toplevel);
+                let serial = Serial::from(serial);
 
-                    XdgShellHandler::resize_request(state, handle, seat, serial, edges);
-                }
+                XdgShellHandler::resize_request(state, handle, seat, serial, edges);
             }
             xdg_toplevel::Request::SetMaxSize { width, height } => {
                 with_toplevel_pending_state(self, |toplevel_data| {
@@ -163,7 +161,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client_id: ClientId, xdg_toplevel: &XdgToplevel) {
+    fn destroyed(&self, state: &mut D, _client_id: &ClientId, xdg_toplevel: &XdgToplevel) {
         self.alive_tracker.destroy_notify();
         self.decoration.lock().unwrap().take();
 
@@ -298,11 +296,11 @@ pub fn send_toplevel_configure(
             ::std::mem::forget(capabilities);
             unsafe { Vec::from_raw_parts(ptr as *mut u8, len * 4, cap * 4) }
         };
-        resource.wm_capabilities(capabilities);
+        resource.wm_capabilities(&capabilities);
     }
 
     // Send the toplevel configure
-    resource.configure(width, height, states);
+    resource.configure(width, height, &states);
 
     // Send the base xdg_surface configure event to mark
     // The configure as finished

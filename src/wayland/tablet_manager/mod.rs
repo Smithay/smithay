@@ -61,8 +61,6 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
@@ -84,14 +82,9 @@ use crate::{
         Seat, SeatHandler,
         tablet::{TabletSeat, TabletSeatHandler},
     },
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor::CompositorHandler, seat::WaylandFocus},
+    wayland::{GlobalData, compositor::CompositorHandler, seat::WaylandFocus},
 };
-use wayland_protocols::wp::tablet::zv2::server::{
-    zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
-    zwp_tablet_seat_v2::ZwpTabletSeatV2,
-    zwp_tablet_tool_v2::ZwpTabletToolV2,
-    zwp_tablet_v2::ZwpTabletV2,
-};
+use wayland_protocols::wp::tablet::zv2::server::zwp_tablet_manager_v2::{self, ZwpTabletManagerV2};
 
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, backend::GlobalId};
 const MANAGER_VERSION: u32 = 1;
@@ -114,12 +107,8 @@ impl TabletManagerState {
     /// Initialize a tablet manager global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpTabletManagerV2, GlobalData>,
-        D: Dispatch<ZwpTabletManagerV2, GlobalData>,
-        D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData<D>>,
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
-        D: TabletSeatHandler,
-        D: 'static,
+        D: CompositorHandler + SeatHandler + TabletSeatHandler + 'static,
+        <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
     {
         let global = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, GlobalData);
 
@@ -132,11 +121,10 @@ impl TabletManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwpTabletManagerV2, D> for GlobalData
+impl<D> GlobalDispatch<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpTabletManagerV2, GlobalData>,
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData<D>>,
-    D: TabletSeatHandler,
+    D: CompositorHandler + SeatHandler + TabletSeatHandler + 'static,
+    <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
 {
     fn bind(
         &self,
@@ -150,13 +138,9 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpTabletManagerV2, D> for GlobalData
+impl<D> Dispatch<ZwpTabletManagerV2, D> for GlobalData
 where
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData<D>>,
-    D: Dispatch<ZwpTabletV2, TabletUserData>,
-    D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
-    D: SeatHandler + TabletSeatHandler + 'static,
-    D: CompositorHandler,
+    D: CompositorHandler + SeatHandler + TabletSeatHandler + 'static,
     <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
 {
     fn request(
@@ -195,7 +179,7 @@ where
     fn destroyed(
         &self,
         _state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         _resource: &ZwpTabletManagerV2,
     ) {
     }

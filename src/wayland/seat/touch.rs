@@ -2,13 +2,12 @@ use std::sync::{Arc, atomic::Ordering};
 
 use portable_atomic::AtomicF64;
 use wayland_server::{
-    Client, DisplayHandle, Resource,
+    Client, Dispatch, DisplayHandle, Resource,
     backend::ClientId,
     protocol::wl_touch::{self, WlTouch},
 };
 
 use super::SeatHandler;
-use crate::wayland::Dispatch2;
 use crate::wayland::compositor::CompositorHandler;
 use crate::wayland::seat::wl_surface::WlSurface;
 use crate::{input::touch::TouchHandle, wayland::seat::WaylandFocus};
@@ -77,7 +76,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     }
 
     /// Return all raw [`WlTouch`] instances for a particular [`Client`]
-    pub fn client_touch<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlTouch> + 'a {
+    pub fn client_touch<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = WlTouch> + 'a {
         let guard = self.known_instances.lock().unwrap();
         new_locked_obj_iter_from_vec(guard, client.id())
     }
@@ -216,7 +215,7 @@ pub struct TouchUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch2<WlTouch, D> for TouchUserData<D>
+impl<D> Dispatch<WlTouch, D> for TouchUserData<D>
 where
     D: SeatHandler,
     D: 'static,
@@ -232,7 +231,7 @@ where
     ) {
     }
 
-    fn destroyed(&self, _state: &mut D, _client_id: ClientId, touch: &WlTouch) {
+    fn destroyed(&self, _state: &mut D, _client_id: &ClientId, touch: &WlTouch) {
         if let Some(ref handle) = self.handle {
             handle
                 .known_instances

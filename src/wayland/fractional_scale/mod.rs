@@ -34,8 +34,6 @@
 //!    }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 //!
@@ -71,7 +69,7 @@ use wayland_server::{
 
 use super::compositor::{SurfaceData, with_states};
 
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
 /// State of the wp_fractional_scale_manager_v1 Global
 #[derive(Debug)]
@@ -83,11 +81,7 @@ impl FractionalScaleManagerState {
     /// Create new [`wp_fraction_scale_manager`](wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_manager_v1) global.
     pub fn new<D>(display: &DisplayHandle) -> FractionalScaleManagerState
     where
-        D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
-            + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
-            + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>
-            + 'static,
-        D: FractionalScaleHandler,
+        D: FractionalScaleHandler + 'static,
     {
         FractionalScaleManagerState {
             global: display
@@ -103,10 +97,8 @@ impl FractionalScaleManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, D> for GlobalData
+impl<D> GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, D> for GlobalData
 where
-    D: Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, GlobalData>
-        + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>,
     D: FractionalScaleHandler,
 {
     fn bind(
@@ -121,9 +113,8 @@ where
     }
 }
 
-impl<D> Dispatch2<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, D> for GlobalData
+impl<D> Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, D> for GlobalData
 where
-    D: Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, FractionalScaleData>,
     D: FractionalScaleHandler,
 {
     fn request(
@@ -179,7 +170,7 @@ where
 #[derive(Debug)]
 pub struct FractionalScaleData(Weak<wl_surface::WlSurface>);
 
-impl<D> Dispatch2<wp_fractional_scale_v1::WpFractionalScaleV1, D> for FractionalScaleData
+impl<D> Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, D> for FractionalScaleData
 where
     D: FractionalScaleHandler,
 {

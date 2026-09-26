@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use portable_atomic::AtomicF64;
 use wayland_server::{
-    Client, DisplayHandle, Resource, Weak,
+    Client, Dispatch, DisplayHandle, Resource, Weak,
     backend::{ClientId, ObjectId},
     protocol::{
         wl_pointer::{
@@ -26,7 +26,7 @@ use crate::{
     },
     utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
-        Dispatch2, compositor,
+        compositor,
         pointer_constraints::{ConstraintRemove, PointerConstraintsHandler, with_pointer_constraint},
     },
 };
@@ -53,7 +53,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     }
 
     /// Return all raw [`WlPointer`] instances for a particular [`Client`]
-    pub fn client_pointers<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlPointer> + 'a {
+    pub fn client_pointers<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = WlPointer> + 'a {
         let guard = self.wl_pointer.known_pointers.lock().unwrap();
         new_locked_obj_iter_from_vec(guard, client.id())
     }
@@ -387,7 +387,7 @@ pub struct PointerUserData<D: SeatHandler> {
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
-impl<D> Dispatch2<WlPointer, D> for PointerUserData<D>
+impl<D> Dispatch<WlPointer, D> for PointerUserData<D>
 where
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
@@ -475,7 +475,7 @@ where
         };
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, pointer: &WlPointer) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, pointer: &WlPointer) {
         if let Some(ref handle) = self.handle {
             handle
                 .wl_pointer

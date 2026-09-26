@@ -6,11 +6,11 @@ use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{
     self, ChangeCause, ContentHint, ContentPurpose, ZwpTextInputV3,
 };
 use wayland_server::backend::{ClientId, ObjectId};
-use wayland_server::{Resource, protocol::wl_surface::WlSurface};
+use wayland_server::{Dispatch, Resource, protocol::wl_surface::WlSurface};
 
 use crate::input::SeatHandler;
 use crate::utils::{Logical, Rectangle};
-use crate::wayland::{Dispatch2, input_method::InputMethodHandle};
+use crate::wayland::input_method::InputMethodHandle;
 
 #[derive(Default, Debug)]
 pub(crate) struct TextInput {
@@ -54,7 +54,7 @@ impl TextInput {
             .instances
             .iter()
             .filter(|instance| instance.instance.id().same_client_as(&surface_id))
-            .find(|instance| &instance.instance.id() == active_id)
+            .find(|instance| instance.instance.id() == active_id)
         {
             f(&text_input.instance, surface, text_input.serial);
         }
@@ -214,7 +214,7 @@ pub struct TextInputUserData {
     pub(crate) input_method_handle: InputMethodHandle,
 }
 
-impl<D> Dispatch2<ZwpTextInputV3, D> for TextInputUserData
+impl<D> Dispatch<ZwpTextInputV3, D> for TextInputUserData
 where
     D: SeatHandler,
     D: 'static,
@@ -275,15 +275,19 @@ where
             zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
                 pending_state.surrounding_text = Some((text, cursor as u32, anchor as u32));
             }
-            zwp_text_input_v3::Request::SetTextChangeCause { cause } => {
+            zwp_text_input_v3::Request::SetTextChangeCause { mut cause } => {
                 // Guard against clients sending us unknown values from future versions.
-                let cause = cause.into_result().unwrap_or(ChangeCause::Other);
+                if cause.available_since().is_some_and(|v| v > resource.version()) {
+                    cause = ChangeCause::Other;
+                }
                 pending_state.text_change_cause = Some(cause);
             }
-            zwp_text_input_v3::Request::SetContentType { hint, purpose } => {
+            zwp_text_input_v3::Request::SetContentType { hint, mut purpose } => {
                 // Guard against clients sending us unknown values from future versions.
                 let hint = ContentHint::from_bits_truncate(u32::from(hint));
-                let purpose = purpose.into_result().unwrap_or(ContentPurpose::Normal);
+                if purpose.available_since().is_some_and(|v| v > resource.version()) {
+                    purpose = ContentPurpose::Normal;
+                }
                 pending_state.content_type = Some((hint, purpose));
             }
             zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
@@ -294,14 +298,14 @@ where
                 let _ = pending_state;
                 let active_text_input_id = &mut guard.active_text_input_id;
 
-                if active_text_input_id.is_some() && *active_text_input_id != Some(resource.id()) {
+                if active_text_input_id.is_some() && active_text_input_id.as_ref() != Some(resource.id()) {
                     debug!("discarding text_input request since we already have an active one");
                     return;
                 }
 
                 match new_state.enable {
                     Some(true) => {
-                        *active_text_input_id = Some(resource.id());
+                        *active_text_input_id = Some(resource.id().clone());
                         // Drop the guard before calling to other subsystem.
                         drop(guard);
                         self.input_method_handle.activate_input_method(state, &focus);
@@ -314,7 +318,7 @@ where
                         return;
                     }
                     None => {
-                        if *active_text_input_id != Some(resource.id()) {
+                        if active_text_input_id.as_ref() != Some(resource.id()) {
                             debug!("discarding text_input requests before enabling it");
                             return;
                         }
@@ -358,7 +362,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, text_input: &ZwpTextInputV3) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, text_input: &ZwpTextInputV3) {
         let destroyed_id = text_input.id();
         let deactivate_im = {
             let mut inner = self.handle.inner.lock().unwrap();

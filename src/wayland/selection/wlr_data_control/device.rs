@@ -5,10 +5,9 @@ use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1
     self, ZwlrDataControlDeviceV1,
 };
 use wayland_server::protocol::wl_seat::WlSeat;
-use wayland_server::{Client, DisplayHandle, Resource};
+use wayland_server::{Client, Dispatch, DisplayHandle, Resource};
 
 use crate::input::Seat;
-use crate::wayland::Dispatch2;
 use crate::wayland::selection::device::SelectionDevice;
 use crate::wayland::selection::offer::OfferReplySource;
 use crate::wayland::selection::seat_data::SeatData;
@@ -24,7 +23,7 @@ pub struct DataControlDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> Dispatch2<ZwlrDataControlDeviceV1, D> for DataControlDeviceUserData
+impl<D> Dispatch<ZwlrDataControlDeviceV1, D> for DataControlDeviceUserData
 where
     D: DataControlHandler,
     D: 'static,
@@ -134,7 +133,7 @@ where
     fn destroyed(
         &self,
         _state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         resource: &ZwlrDataControlDeviceV1,
     ) {
         if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {

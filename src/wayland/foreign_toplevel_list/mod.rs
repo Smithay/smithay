@@ -9,8 +9,6 @@
 //!     foreign_toplevel_list: ForeignToplevelListState,
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! impl ForeignToplevelListHandler for State {
 //!     fn foreign_toplevel_list_state(&mut self) -> &mut ForeignToplevelListState {
 //!         &mut self.foreign_toplevel_list
@@ -46,10 +44,7 @@ use wayland_server::{
     backend::{ClientId, GlobalId},
 };
 
-use crate::{
-    utils::user_data::UserDataMap,
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
-};
+use crate::{utils::user_data::UserDataMap, wayland::GlobalData};
 
 /// Handler for foreign toplevel list protocol
 pub trait ForeignToplevelListHandler: 'static {
@@ -297,8 +292,7 @@ impl ForeignToplevelListState {
     /// Register new [ExtForeignToplevelListV1] global
     pub fn new<D>(dh: &DisplayHandle) -> Self
     where
-        D: ForeignToplevelListHandler
-            + GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>,
+        D: ForeignToplevelListHandler,
     {
         Self::new_with_filter::<D>(dh, |_| true)
     }
@@ -309,8 +303,7 @@ impl ForeignToplevelListState {
         can_view: impl Fn(&Client) -> bool + Send + Sync + 'static,
     ) -> Self
     where
-        D: ForeignToplevelListHandler
-            + GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>,
+        D: ForeignToplevelListHandler,
     {
         let global = dh.create_global::<D, ExtForeignToplevelListV1, _>(
             1,
@@ -340,7 +333,7 @@ impl ForeignToplevelListState {
         app_id: impl Into<String>,
     ) -> ForeignToplevelHandle
     where
-        D: ForeignToplevelListHandler + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
+        D: ForeignToplevelListHandler,
     {
         self.new_toplevel_with_identifier::<D>(
             title,
@@ -363,7 +356,7 @@ impl ForeignToplevelListState {
         identifier: impl Into<String>,
     ) -> ForeignToplevelHandle
     where
-        D: ForeignToplevelListHandler + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
+        D: ForeignToplevelListHandler,
     {
         let identifier = identifier.into();
         assert!(
@@ -443,11 +436,10 @@ impl std::fmt::Debug for ForeignToplevelListGlobalData {
     }
 }
 
-impl<D: ForeignToplevelListHandler> GlobalDispatch2<ExtForeignToplevelListV1, D>
+impl<D: ForeignToplevelListHandler> GlobalDispatch<ExtForeignToplevelListV1, D>
     for ForeignToplevelListGlobalData
 where
-    D: Dispatch<ExtForeignToplevelListV1, GlobalData>
-        + Dispatch<ExtForeignToplevelHandleV1, ForeignToplevelHandle>,
+    D: ForeignToplevelListHandler,
 {
     fn bind(
         &self,
@@ -492,7 +484,7 @@ where
     }
 }
 
-impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelListV1, D> for GlobalData {
+impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelListV1, D> for GlobalData {
     fn request(
         &self,
         state: &mut D,
@@ -512,7 +504,7 @@ impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelListV1, D> for G
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtForeignToplevelListV1) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, resource: &ExtForeignToplevelListV1) {
         state
             .foreign_toplevel_list_state()
             .list_instances
@@ -520,7 +512,7 @@ impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelListV1, D> for G
     }
 }
 
-impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelHandleV1, D> for ForeignToplevelHandle {
+impl<D: ForeignToplevelListHandler> Dispatch<ExtForeignToplevelHandleV1, D> for ForeignToplevelHandle {
     fn request(
         &self,
         _state: &mut D,
@@ -536,7 +528,7 @@ impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelHandleV1, D> for
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ExtForeignToplevelHandleV1) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, resource: &ExtForeignToplevelHandleV1) {
         self.remove_instance(resource);
     }
 }

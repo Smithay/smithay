@@ -64,8 +64,6 @@
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 mod handlers;
@@ -84,7 +82,7 @@ use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
 use wayland_server::{
-    Client, DisplayHandle, GlobalDispatch, Resource,
+    Client, DisplayHandle, Resource,
     backend::{ClientId, GlobalId},
     protocol::{
         wl_output::{Mode as WMode, Subpixel as WlSubpixel, Transform, WlOutput},
@@ -94,7 +92,7 @@ use wayland_server::{
 
 use crate::{
     utils::{Logical, Point},
-    wayland::GlobalData,
+    wayland::{GlobalData, compositor::CompositorHandler},
 };
 
 pub use self::handlers::XdgOutputUserData;
@@ -112,7 +110,7 @@ pub struct WlOutputData {
 }
 
 /// Events initiated by the clients interacting with outputs
-pub trait OutputHandler {
+pub trait OutputHandler: CompositorHandler {
     /// A client bound a new `wl_output` instance.
     fn output_bound(&mut self, _output: Output, _wl_output: WlOutput) {}
 }
@@ -128,9 +126,7 @@ impl OutputManagerState {
     /// Create new output manager with xdg output support
     pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlOutput, WlOutputData>,
-        D: GlobalDispatch<ZxdgOutputManagerV1, GlobalData>,
-        D: 'static,
+        D: OutputHandler + 'static,
     {
         let xdg_output_manager = display.create_global::<D, ZxdgOutputManagerV1, _>(3, GlobalData);
 
@@ -203,8 +199,7 @@ impl Output {
     /// multiple times.
     pub fn create_global<D>(&self, display: &DisplayHandle) -> GlobalId
     where
-        D: GlobalDispatch<WlOutput, WlOutputData>,
-        D: 'static,
+        D: OutputHandler + 'static,
     {
         info!(output = self.name(), "Creating new wl_output");
         self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
@@ -292,11 +287,11 @@ impl Output {
     }
 
     /// This function returns all managed [WlOutput] matching the provided [Client]
-    pub fn client_outputs<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlOutput> + 'a {
+    pub fn client_outputs<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = WlOutput> + 'a {
         self.client_outputs_internal(client.id())
     }
 
-    fn client_outputs_internal(&self, client: ClientId) -> impl Iterator<Item = WlOutput> + '_ {
+    fn client_outputs_internal<'a>(&'a self, client: &'a ClientId) -> impl Iterator<Item = WlOutput> + 'a {
         let guard = self.inner.0.lock().unwrap();
 
         new_locked_obj_iter(guard, client, |inner| inner.instances.iter())
@@ -316,7 +311,7 @@ impl Output {
             drop(inner);
 
             if let Some(client) = client {
-                for output in self.client_outputs_internal(client) {
+                for output in self.client_outputs_internal(&client) {
                     surface.enter(&output);
                 }
             }
@@ -337,7 +332,7 @@ impl Output {
             drop(inner);
 
             if let Some(client) = client {
-                for output in self.client_outputs_internal(client) {
+                for output in self.client_outputs_internal(&client) {
                     surface.leave(&output);
                 }
             }
@@ -360,7 +355,7 @@ impl Output {
             };
 
             if let Ok(client) = handle.get_client(surface.id()) {
-                for output in self.client_outputs_internal(client) {
+                for output in self.client_outputs_internal(&client) {
                     surface.leave(&output);
                 }
             }

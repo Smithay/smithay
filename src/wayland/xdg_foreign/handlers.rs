@@ -6,10 +6,12 @@ use wayland_protocols::xdg::foreign::zv2::server::{
     zxdg_imported_v2::{self, ZxdgImportedV2},
     zxdg_importer_v2::{self, ZxdgImporterV2},
 };
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource, backend::ClientId};
+use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
+};
 
 use crate::wayland::{
-    Dispatch2, GlobalData, GlobalDispatch2, compositor,
+    GlobalData, compositor,
     shell::{
         is_valid_parent,
         xdg::{XDG_TOPLEVEL_ROLE, XdgShellHandler, XdgToplevelSurfaceData},
@@ -22,9 +24,9 @@ use super::{ExportedState, XdgExportedUserData, XdgForeignHandle, XdgForeignHand
 // Export
 //
 
-impl<D> GlobalDispatch2<ZxdgExporterV2, D> for GlobalData
+impl<D> GlobalDispatch<ZxdgExporterV2, D> for GlobalData
 where
-    D: Dispatch<ZxdgExporterV2, GlobalData>,
+    D: XdgForeignHandler,
 {
     fn bind(
         &self,
@@ -38,9 +40,8 @@ where
     }
 }
 
-impl<D> Dispatch2<ZxdgExporterV2, D> for GlobalData
+impl<D> Dispatch<ZxdgExporterV2, D> for GlobalData
 where
-    D: Dispatch<ZxdgExportedV2, XdgExportedUserData>,
     D: XdgForeignHandler,
 {
     fn request(
@@ -86,7 +87,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZxdgExportedV2, D> for XdgExportedUserData
+impl<D> Dispatch<ZxdgExportedV2, D> for XdgExportedUserData
 where
     D: XdgForeignHandler + XdgShellHandler,
 {
@@ -101,7 +102,7 @@ where
     ) {
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, _resource: &ZxdgExportedV2) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, _resource: &ZxdgExportedV2) {
         // Revoke the previously exported surface.
         // This invalidates any relationship the importer may have set up using the xdg_imported created given the handle sent via xdg_exported.handle.
         invalidate_all_relationships(state, &self.handle);
@@ -113,9 +114,9 @@ where
 // Import
 //
 
-impl<D> GlobalDispatch2<ZxdgImporterV2, D> for GlobalData
+impl<D> GlobalDispatch<ZxdgImporterV2, D> for GlobalData
 where
-    D: Dispatch<ZxdgImporterV2, GlobalData>,
+    D: XdgForeignHandler,
 {
     fn bind(
         &self,
@@ -129,9 +130,9 @@ where
     }
 }
 
-impl<D: XdgForeignHandler> Dispatch2<ZxdgImporterV2, D> for GlobalData
+impl<D: XdgForeignHandler> Dispatch<ZxdgImporterV2, D> for GlobalData
 where
-    D: Dispatch<ZxdgImportedV2, XdgImportedUserData>,
+    D: XdgForeignHandler,
 {
     fn request(
         &self,
@@ -172,7 +173,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZxdgImportedV2, D> for XdgImportedUserData
+impl<D> Dispatch<ZxdgImportedV2, D> for XdgImportedUserData
 where
     D: XdgForeignHandler + XdgShellHandler,
 {
@@ -237,7 +238,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ZxdgImportedV2) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, resource: &ZxdgImportedV2) {
         if let Some((_, exported_state)) = state
             .xdg_foreign_state()
             .exported
