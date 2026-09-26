@@ -19,6 +19,7 @@
 //! two traits for the winit backend.
 
 use std::io::Error as IoError;
+use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,6 +27,8 @@ use calloop::generic::Generic;
 use calloop::{EventSource, Interest, PostAction, Readiness, Token};
 use tracing::{debug, info, info_span, instrument, trace, warn};
 use wayland_egl as wegl;
+use winit::dpi::LogicalPosition;
+use winit::event::TouchPhase;
 use winit::platform::scancode::PhysicalKeyExtScancode;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::{
@@ -117,6 +120,7 @@ where
     let mut window_event_loop_inner = WinitEventLoopInner {
         window_attributes: attributes,
         scale_factor: 1.0,
+        pinch_gesture_state: PinchGestureState::default(),
         key_counter: 0,
         // Will be initialized after window creation
         window: None,
@@ -391,8 +395,54 @@ struct WinitEventLoopInner {
     key_counter: u32,
     is_x11: bool,
     scale_factor: f64,
+    pinch_gesture_state: PinchGestureState,
 }
 
+#[derive(Debug)]
+struct PinchGestureState {
+    scale: f64,
+    rotation: f64,
+    pan: LogicalPosition<f64>,
+}
+
+impl Default for PinchGestureState {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            rotation: 0.0,
+            pan: (0., 0.).into(),
+        }
+    }
+}
+
+impl PinchGestureState {
+    fn reset(&mut self) {
+        self.scale = 1.0;
+        self.take_pending();
+    }
+
+    fn push_rotation(&mut self, delta_ccw_deg: f64) {
+        self.rotation -= delta_ccw_deg;
+    }
+
+    fn push_pan(&mut self, delta_pan: LogicalPosition<f64>) {
+        self.pan.x += delta_pan.x;
+        self.pan.y += delta_pan.y;
+    }
+
+    fn push_scale(&mut self, delta: f64) {
+        if delta.is_finite() {
+            self.scale += delta;
+        }
+    }
+
+    fn take_pending(&mut self) -> (f64, LogicalPosition<f64>) {
+        let rotation = mem::take(&mut self.rotation);
+        let pan = mem::take(&mut self.pan);
+
+        (rotation, pan)
+    }
+}
 /// Abstracted event loop of a [`WinitWindow`].
 ///
 /// You can register it into `calloop` or call
@@ -640,6 +690,93 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                     event: WinitTouchCancelledEvent {
                         time: self.timestamp(),
                         id: finger_id.into_raw() as u64,
+                    },
+                };
+                (self.callback)(WinitEvent::Input(event));
+            }
+            WindowEvent::RotationGesture { delta, phase, .. } => match phase {
+                TouchPhase::Started => {
+                    self.inner.pinch_gesture_state.take_pending();
+                }
+                TouchPhase::Moved => self.inner.pinch_gesture_state.push_rotation(delta as f64),
+                _ => {
+                    self.inner.pinch_gesture_state.take_pending();
+                }
+            },
+            WindowEvent::PanGesture { delta, phase, .. } => {
+                match phase {
+                    TouchPhase::Started => {
+                        self.inner.pinch_gesture_state.take_pending();
+                    }
+                    TouchPhase::Moved => {
+                        let logical_delta: LogicalPosition<f64> = delta.to_logical(self.inner.scale_factor);
+                        self.inner.pinch_gesture_state.push_pan(logical_delta);
+                    }
+                    _ => {
+                        self.inner.pinch_gesture_state.take_pending();
+                    }
+                };
+            }
+            WindowEvent::HoldGesture { phase, .. } => {
+                let event = match phase {
+                    TouchPhase::Started => Some(InputEvent::GestureHoldBegin {
+                        event: WinitGestureHoldBeginEvent {
+                            time: self.timestamp(),
+                        },
+                    }),
+                    TouchPhase::Moved => None,
+                    TouchPhase::Ended => Some(InputEvent::GestureHoldEnd {
+                        event: WinitGestureHoldEndEvent {
+                            time: self.timestamp(),
+                            cancelled: false,
+                        },
+                    }),
+                    TouchPhase::Cancelled => Some(InputEvent::GestureHoldEnd {
+                        event: WinitGestureHoldEndEvent {
+                            time: self.timestamp(),
+                            cancelled: true,
+                        },
+                    }),
+                };
+
+                if let Some(event) = event {
+                    (self.callback)(WinitEvent::Input(event));
+                }
+            }
+            WindowEvent::PinchGesture { delta, phase, .. } => {
+                let event = match phase {
+                    TouchPhase::Started => {
+                        self.inner.pinch_gesture_state.reset();
+                        InputEvent::GesturePinchBegin {
+                            event: WinitGesturePinchBeginEvent {
+                                time: self.timestamp(),
+                            },
+                        }
+                    }
+                    TouchPhase::Moved => {
+                        self.inner.pinch_gesture_state.push_scale(delta);
+                        let (rotation, pan) = self.inner.pinch_gesture_state.take_pending();
+                        InputEvent::GesturePinchUpdate {
+                            event: WinitGesturePinchUpdateEvent {
+                                time: self.timestamp(),
+                                scale: self.inner.pinch_gesture_state.scale,
+                                rotation,
+                                delta_x: pan.x,
+                                delta_y: pan.y,
+                            },
+                        }
+                    }
+                    TouchPhase::Ended => InputEvent::GesturePinchEnd {
+                        event: WinitGesturePinchEndEvent {
+                            time: self.timestamp(),
+                            cancelled: false,
+                        },
+                    },
+                    TouchPhase::Cancelled => InputEvent::GesturePinchEnd {
+                        event: WinitGesturePinchEndEvent {
+                            time: self.timestamp(),
+                            cancelled: true,
+                        },
                     },
                 };
                 (self.callback)(WinitEvent::Input(event));
