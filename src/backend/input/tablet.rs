@@ -334,3 +334,24 @@ impl<B: InputBackend> TabletToolButtonEvent<B> for UnusedEvent {
         match *self {}
     }
 }
+
+/// Common methods tablet pad button events implement
+pub trait TabletPadButtonEvent<B: InputBackend>: Event<B> {
+    /// Returns the numerical button code of the tablet pad button.
+    ///
+    /// Buttons on tablet pads are numbered sequentially starting from 0.
+    fn button(&self) -> u32;
+
+    /// State of the button
+    fn state(&self) -> ButtonState;
+}
+
+impl<B: InputBackend> TabletPadButtonEvent<B> for UnusedEvent {
+    fn button(&self) -> u32 {
+        match *self {}
+    }
+
+    fn state(&self) -> ButtonState {
+        match *self {}
+    }
+}

@@ -606,6 +606,7 @@ impl InputBackend for LibinputInputBackend {
     type TabletToolProximityEvent = event::tablet_tool::TabletToolProximityEvent;
     type TabletToolTipEvent = event::tablet_tool::TabletToolTipEvent;
     type TabletToolButtonEvent = event::tablet_tool::TabletToolButtonEvent;
+    type TabletPadButtonEvent = event::tablet_pad::TabletPadButtonEvent;
 
     type SwitchToggleEvent = event::switch::SwitchToggleEvent;
 
@@ -855,6 +856,22 @@ impl EventSource for LibinputInputBackend {
                         }
                         _ => {
                             trace!("Unknown libinput tablet event");
+                        }
+                    },
+                    libinput::Event::TabletPad(tablet_pad_event) => match tablet_pad_event {
+                        event::TabletPadEvent::Button(event) => {
+                            callback(InputEvent::TabletPadButton { event }, &mut ());
+                        }
+                        event::TabletPadEvent::Ring(event) => {
+                            // Handle ring events if needed
+                            trace!("Tablet pad ring event: {:?}", event);
+                        }
+                        event::TabletPadEvent::Strip(event) => {
+                            // Handle strip events if needed
+                            trace!("Tablet pad strip event: {:?}", event);
+                        }
+                        _ => {
+                            trace!("Unknown libinput tablet pad event");
                         }
                     },
                     libinput::Event::Switch(switch_event) => match switch_event {
