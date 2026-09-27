@@ -212,7 +212,7 @@ struct SessionInner {
     constraints: Option<BufferConstraints>,
     draw_cursors: bool,
     source: ImageCaptureSource,
-    active_frames: Vec<FrameRef>,
+    active_frame: Option<FrameRef>,
 }
 
 impl SessionInner {
@@ -222,7 +222,7 @@ impl SessionInner {
             constraints: None,
             draw_cursors,
             source,
-            active_frames: Vec::new(),
+            active_frame: None,
         }
     }
 }
@@ -343,8 +343,8 @@ impl Drop for Session {
             return;
         }
 
-        // Fail all active frames
-        for frame in inner.active_frames.drain(..) {
+        // Fail the active frame
+        if let Some(frame) = inner.active_frame.take() {
             frame
                 .inner
                 .lock()
@@ -385,7 +385,7 @@ struct CursorSessionInner {
     source: ImageCaptureSource,
     position: Option<crate::utils::Point<i32, BufferCoords>>,
     hotspot: crate::utils::Point<i32, BufferCoords>,
-    active_frames: Vec<FrameRef>,
+    active_frame: Option<FrameRef>,
     pointer: WlPointer,
 }
 
@@ -398,7 +398,7 @@ impl CursorSessionInner {
             source,
             position: None,
             hotspot: crate::utils::Point::from((0, 0)),
-            active_frames: Vec::new(),
+            active_frame: None,
             pointer,
         }
     }
@@ -566,7 +566,7 @@ impl Drop for CursorSession {
         }
         inner.constraints.take();
 
-        for frame in inner.active_frames.drain(..) {
+        if let Some(frame) = inner.active_frame.take() {
             frame
                 .inner
                 .lock()
@@ -635,7 +635,7 @@ impl FrameInner {
 
 /// A cloneable reference to a capture frame.
 ///
-/// Used for tracking active frames within a session.
+/// Used for tracking the active frame within a session.
 #[derive(Clone, Debug)]
 pub struct FrameRef {
     obj: ExtImageCopyCaptureFrameV1,
@@ -1000,7 +1000,7 @@ where
                         constraints: None,
                         draw_cursors: false,
                         source: ImageCaptureSource::new(),
-                        active_frames: Vec::new(),
+                        active_frame: None,
                     }));
                     let user_data = Arc::new(UserDataMap::new());
                     let obj = data_init.init(
@@ -1122,14 +1122,17 @@ where
     ) {
         match request {
             ext_image_copy_capture_session_v1::Request::CreateFrame { frame } => {
+                if self.inner.lock().unwrap().active_frame.is_some() {
+                    resource.post_error(
+                        ext_image_copy_capture_session_v1::Error::DuplicateFrame,
+                        "create_frame sent before the previous frame was destroyed",
+                    );
+                    return;
+                }
                 let constraints = self.inner.lock().unwrap().constraints.clone();
                 let inner = Arc::new(Mutex::new(FrameInner::new(resource.clone(), constraints)));
                 let obj = data_init.init(frame, FrameData { inner: inner.clone() });
-                self.inner
-                    .lock()
-                    .unwrap()
-                    .active_frames
-                    .push(FrameRef { obj, inner });
+                self.inner.lock().unwrap().active_frame = Some(FrameRef { obj, inner });
             }
             ext_image_copy_capture_session_v1::Request::Destroy => {}
             _ => unreachable!(),
@@ -1167,14 +1170,17 @@ where
     ) {
         match request {
             ext_image_copy_capture_session_v1::Request::CreateFrame { frame } => {
+                if self.inner.lock().unwrap().active_frame.is_some() {
+                    resource.post_error(
+                        ext_image_copy_capture_session_v1::Error::DuplicateFrame,
+                        "create_frame sent before the previous frame was destroyed",
+                    );
+                    return;
+                }
                 let constraints = self.inner.lock().unwrap().constraints.clone();
                 let inner = Arc::new(Mutex::new(FrameInner::new(resource.clone(), constraints)));
                 let obj = data_init.init(frame, FrameData { inner: inner.clone() });
-                self.inner
-                    .lock()
-                    .unwrap()
-                    .active_frames
-                    .push(FrameRef { obj, inner });
+                self.inner.lock().unwrap().active_frame = Some(FrameRef { obj, inner });
             }
             ext_image_copy_capture_session_v1::Request::Destroy => {}
             _ => unreachable!(),
@@ -1334,7 +1340,7 @@ where
                 // Try regular sessions first
                 for session in &copy_capture_state.sessions {
                     let session_inner = session.inner.lock().unwrap();
-                    if session_inner.active_frames.iter().any(|f| f == &frame_ref) {
+                    if session_inner.active_frame.as_ref() == Some(&frame_ref) {
                         drop(session_inner);
                         let session_ref = session.clone();
                         let frame = Frame {
@@ -1349,7 +1355,7 @@ where
                 // Try cursor sessions
                 for session in &copy_capture_state.cursor_sessions {
                     let session_inner = session.inner.lock().unwrap();
-                    if session_inner.active_frames.iter().any(|f| f == &frame_ref) {
+                    if session_inner.active_frame.as_ref() == Some(&frame_ref) {
                         drop(session_inner);
                         let session_ref = session.clone();
                         let frame = Frame {
@@ -1380,22 +1386,22 @@ where
             inner: self.inner.clone(),
         };
 
-        // Remove from active frames in sessions
+        // Remove the frame from whichever session holds it
         for session in &state.image_copy_capture_state().sessions {
             session
                 .inner
                 .lock()
                 .unwrap()
-                .active_frames
-                .retain(|f| f != &frame_ref);
+                .active_frame
+                .take_if(|f| f == &frame_ref);
         }
         for session in &state.image_copy_capture_state().cursor_sessions {
             session
                 .inner
                 .lock()
                 .unwrap()
-                .active_frames
-                .retain(|f| f != &frame_ref);
+                .active_frame
+                .take_if(|f| f == &frame_ref);
         }
 
         state.frame_aborted(frame_ref);
