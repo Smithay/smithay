@@ -271,6 +271,10 @@ callbacks to surfaces whose renderer state has no buffer, or to their subsurface
 context current when resources are queued for destruction. This avoids waking idle GPUs and
 blocking the compositor while they resume.
 
+`ext_image_copy_capture_session_v1` now raises the `duplicate_frame` protocol error when a client
+calls `create_frame` while the session still has an active frame, as the protocol requires. Previously
+the request was accepted and the extra frame was silently added to the session.
+
 ## 0.7.0
 
 ### Breaking changes
