@@ -271,17 +271,19 @@ where
         &self,
         state: &mut D,
         _: &Client,
-        _: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
+        resource: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
         request: zxdg_toplevel_decoration_v1::Request,
         _dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
-        use self::zxdg_toplevel_decoration_v1::Request;
+        use self::zxdg_toplevel_decoration_v1::{Error, Request};
 
         match request {
             Request::SetMode { mode } => {
                 if let WEnum::Value(mode) = mode {
                     state.request_mode(self.clone(), mode);
+                } else {
+                    resource.post_error(Error::InvalidMode, "invalid decoration mode");
                 }
             }
 
