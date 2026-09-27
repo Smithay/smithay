@@ -128,11 +128,25 @@ where
                 }
             }
             xdg_toplevel::Request::SetMaxSize { width, height } => {
+                if width < 0 || height < 0 {
+                    toplevel.post_error(
+                        xdg_toplevel::Error::InvalidSize,
+                        "The max size cannot be negative",
+                    );
+                    return;
+                }
                 with_toplevel_pending_state(self, |toplevel_data| {
                     toplevel_data.max_size = (width, height).into();
                 });
             }
             xdg_toplevel::Request::SetMinSize { width, height } => {
+                if width < 0 || height < 0 {
+                    toplevel.post_error(
+                        xdg_toplevel::Error::InvalidSize,
+                        "The min size cannot be negative",
+                    );
+                    return;
+                }
                 with_toplevel_pending_state(self, |toplevel_data| {
                     toplevel_data.min_size = (width, height).into();
                 });
