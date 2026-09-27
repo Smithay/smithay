@@ -237,6 +237,8 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+The `xdg_toplevel` request handler now posts an `invalid_size` error when a client performs a `set_max_size` or `set_min_size` request with a negative width or height.
+
 `DrmDeviceFd::new` no longer tries to become DRM master on a render node, which the kernel always
 refuses, so it no longer warns about it.
 
