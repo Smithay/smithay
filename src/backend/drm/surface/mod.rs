@@ -333,13 +333,21 @@ impl DrmSurface {
     /// Doing so might cause [`DrmSurface::commit_pending`] to return `true`.
     /// Check [`DrmSurface::vrr_supported`], which indicates if VRR can be
     /// used without a modeset on the attached connectors.
+    ///
+    /// Disabling VRR on legacy DRM is a no-op. Enabling VRR returns [`Error::UnknownProperty`].
     pub fn use_vrr(&self, vrr: bool) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.use_vrr(vrr),
-            DrmSurfaceInternal::Legacy(_) => Err(Error::UnknownProperty {
-                handle: self.crtc.into(),
-                name: "VRR_ENABLED",
-            }),
+            DrmSurfaceInternal::Legacy(_) => {
+                if vrr {
+                    Err(Error::UnknownProperty {
+                        handle: self.crtc.into(),
+                        name: "VRR_ENABLED",
+                    })
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 
