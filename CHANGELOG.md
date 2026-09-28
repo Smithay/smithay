@@ -237,6 +237,9 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`DrmSurface::use_vrr(false)` now succeeds as a no-op when using legacy DRM. Attempts to enable VRR
+on legacy DRM still return `UnknownProperty`.
+
 The `xdg_toplevel` request handler now posts an `invalid_size` error when a client performs a `set_max_size` or `set_min_size` request with a negative width or height.
 
 `DrmDeviceFd::new` no longer tries to become DRM master on a render node, which the kernel always
