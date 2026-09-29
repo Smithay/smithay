@@ -1563,12 +1563,10 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
             keycode,
         };
 
-        // Modifiers must be sent before the key event so the client resolves the key against the
-        // updated modifier state.
+        focus.key(self.seat, data, key, key_state, serial, time);
         if let Some(mods) = modifiers {
             focus.modifiers(self.seat, data, mods, serial);
         }
-        focus.key(self.seat, data, key, key_state, serial, time);
     }
 
     /// Iterate over the currently pressed keys.
