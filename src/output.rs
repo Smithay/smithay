@@ -59,6 +59,8 @@ use tracing::{info, instrument};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
+#[cfg(feature = "wayland_frontend")]
+use crate::wayland::workspace_manager::group::WeakWorkspaceGroup;
 #[cfg(feature = "backend_drm")]
 use drm::control::{Mode as DrmMode, ModeFlags, connector::SubPixel as DrmSubPixel};
 #[cfg(feature = "wayland_frontend")]
@@ -235,6 +237,8 @@ pub(crate) struct Inner {
     pub(crate) xdg_output: Option<XdgOutput>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) surfaces: HashSet<WlWeak<WlSurface>>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) workspace_groups: HashSet<WeakWorkspaceGroup>,
 }
 
 /// An abstract output.
@@ -280,6 +284,8 @@ impl Output {
                 xdg_output: None,
                 #[cfg(feature = "wayland_frontend")]
                 surfaces: HashSet::new(),
+                #[cfg(feature = "wayland_frontend")]
+                workspace_groups: HashSet::new(),
             }),
             UserDataMap::default(),
         ));

@@ -93,6 +93,14 @@ where
             }
         }
 
+        for group in &inner.workspace_groups {
+            let Some(group) = group.upgrade() else {
+                continue;
+            };
+
+            group.on_output_bind(client, &output);
+        }
+
         inner.instances.push(output.downgrade());
 
         drop(inner);
