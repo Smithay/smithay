@@ -131,7 +131,7 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
 #[derive(Debug)]
 pub struct TabletToolUserData<D: TabletSeatHandler> {
     pub(crate) handle: WeakTabletToolHandle<D>,
-    seat_id: ObjectId,
+    tablet_seat: Weak<ZwpTabletSeatV2>,
     client_scale: Arc<AtomicF64>,
 }
 
@@ -170,7 +170,7 @@ impl WpTabletToolHandle {
                 seat.version(),
                 TabletToolUserData {
                     handle: handle.downgrade(),
-                    seat_id: seat.id(),
+                    tablet_seat: seat.downgrade(),
                     client_scale,
                 },
             )
@@ -220,8 +220,10 @@ impl WpTabletToolHandle {
             if focus.same_client_as(&wp_tool.id()) {
                 if let Some(surface) = focus.wl_surface() {
                     let tablet = guard.tablet.as_ref().unwrap();
-                    if let Some(wp_tablet) =
-                        tablet.arc.wp_tablet.focused_tablet_for_seat(&surface, &seat.id())
+                    if let Some(wp_tablet) = tablet
+                        .arc
+                        .wp_tablet
+                        .focused_tablet_for_seat(&surface, &seat.downgrade())
                     {
                         let serial = self.last_proximity_in.lock().unwrap().unwrap();
                         wp_tool.proximity_in(serial.into(), &wp_tablet, &surface);
@@ -249,9 +251,9 @@ impl WpTabletToolHandle {
         *self.last_proximity_in.lock().unwrap() = Some(serial);
 
         self.for_each_focused_tool(surface, |wp_tool| {
-            let seat_id = &wp_tool.data::<TabletToolUserData<D>>().unwrap().seat_id;
+            let tablet_seat = &wp_tool.data::<TabletToolUserData<D>>().unwrap().tablet_seat;
 
-            let Some(wp_tablet) = tablet.arc.wp_tablet.focused_tablet_for_seat(surface, seat_id) else {
+            let Some(wp_tablet) = tablet.arc.wp_tablet.focused_tablet_for_seat(surface, tablet_seat) else {
                 return;
             };
 
@@ -440,6 +442,16 @@ where
                     return;
                 }
 
+                let Some(seat) = state
+                    .seat_state()
+                    .seats
+                    .iter()
+                    .find(|seat| seat.tablet_seat().get_tool(handle.descriptor()).is_some())
+                    .cloned()
+                else {
+                    return;
+                };
+
                 let cursor_image = match surface {
                     Some(surface) => {
                         if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
@@ -484,7 +496,7 @@ where
                     None => CursorImageStatus::Hidden,
                 };
 
-                state.tablet_tool_image(handle.descriptor(), cursor_image);
+                state.tablet_tool_image(&seat, &handle, cursor_image);
             }
             zwp_tablet_tool_v2::Request::Destroy => {
                 // Nothing to do
