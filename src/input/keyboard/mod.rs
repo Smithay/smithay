@@ -1,12 +1,12 @@
 //! Keyboard-related types for smithay's input abstraction
 
 use crate::backend::input::{InputTime, KeyState};
-use crate::utils::{IsAlive, SERIAL_COUNTER, Serial};
-use downcast_rs::{Downcast, impl_downcast};
+use crate::utils::{AsAny, IsAlive, SERIAL_COUNTER, Serial};
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "wayland_frontend")]
 use std::sync::RwLock;
 use std::{
+    any::Any,
     default::Default,
     fmt, io,
     sync::{Arc, Mutex},
@@ -663,7 +663,7 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait KeyboardGrab<D: SeatHandler>: Downcast {
+pub trait KeyboardGrab<D: SeatHandler>: AsAny + Any + 'static {
     /// An input was reported.
     ///
     /// `modifiers` are only passed when their state actually changes. The modifier must be
@@ -695,8 +695,6 @@ pub trait KeyboardGrab<D: SeatHandler>: Downcast {
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
 }
-
-impl_downcast!(KeyboardGrab<D> where D: SeatHandler);
 
 /// An handle to a keyboard handler
 ///
