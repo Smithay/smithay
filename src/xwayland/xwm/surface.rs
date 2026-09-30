@@ -52,6 +52,7 @@ use x11rb::{
     properties::{WmClass, WmHints, WmSizeHints},
     protocol::{
         res::{ClientIdSpec, query_client_ids},
+        shape::{self, ConnectionExt as _},
         sync::{Alarm, ConnectionExt as _, Counter, CreateAlarmAux, Int64, TESTTYPE, VALUETYPE},
         xproto::{
             Atom, AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask,
@@ -64,6 +65,9 @@ use x11rb::{
 };
 
 use super::{X11Wm, XwmId, send_configure_notify};
+
+const MAX_RENDER_SHAPE_RECTS: usize = 256;
+const MAX_STORED_SHAPE_RECTS: usize = 4096;
 
 /// X11 window managed by an [`X11Wm`](super::X11Wm)
 #[derive(Debug, Clone)]
@@ -169,6 +173,9 @@ pub(crate) struct SharedSurfaceState {
     pub(crate) opacity: Option<u32>,
     opaque_region: Option<RegionAttributes>,
     opaque_region_dirty: bool,
+    depth: Option<u8>,
+    bounding_shape: Option<Arc<[Rectangle<i32, Logical>]>>,
+    bounding_shape_extents: Option<Rectangle<i32, Logical>>,
     frame_extents: FrameExtents<i32, Physical>,
     pending_enter: Option<(
         Box<dyn std::any::Any + Send + 'static>,
@@ -377,6 +384,9 @@ impl X11Surface {
                 opacity: None,
                 opaque_region: None,
                 opaque_region_dirty: true,
+                depth: None,
+                bounding_shape: None,
+                bounding_shape_extents: None,
                 frame_extents: Default::default(),
                 pending_enter: None,
                 pending_ping_timestamp: None,
@@ -395,6 +405,91 @@ impl X11Surface {
     /// X11 protocol id of the underlying window
     pub fn window_id(&self) -> X11Window {
         self.window
+    }
+
+    pub(crate) fn set_depth(&self, depth: u8) {
+        self.state.lock().unwrap().depth = Some(depth);
+    }
+
+    /// Returns the X Shape bounding rectangles, if the window is shaped.
+    pub fn bounding_shape(&self) -> Option<Arc<[Rectangle<i32, Logical>]>> {
+        self.state.lock().unwrap().bounding_shape.clone()
+    }
+
+    /// Returns the X Shape bounding rectangles when they are needed to clip
+    /// a window without an alpha channel.
+    pub fn render_shape(&self) -> Option<Arc<[Rectangle<i32, Logical>]>> {
+        let state = self.state.lock().unwrap();
+        if state.depth == Some(32) {
+            return None;
+        }
+        let shape = state.bounding_shape.clone()?;
+        if shape.len() > MAX_RENDER_SHAPE_RECTS {
+            return state.bounding_shape_extents.map(|extents| Arc::from([extents]));
+        }
+        Some(shape)
+    }
+
+    pub(crate) fn update_bounding_shape(
+        &self,
+        notify: Option<(bool, Rectangle<i32, Physical>)>,
+    ) -> Result<(), ReplyError> {
+        let Some(conn) = self.conn.upgrade() else {
+            return Ok(());
+        };
+        let client_scale = self
+            .client_scale
+            .as_ref()
+            .map(|scale| scale.load(Ordering::Acquire))
+            .unwrap_or(1.);
+        let (shaped, extents) = if let Some((shaped, extents)) = notify {
+            (shaped, extents.to_f64().to_logical(client_scale).to_i32_round())
+        } else {
+            let reply = conn.shape_query_extents(self.window)?.reply()?;
+            let extents = Rectangle::<i32, Physical>::new(
+                (
+                    reply.bounding_shape_extents_x as i32,
+                    reply.bounding_shape_extents_y as i32,
+                )
+                    .into(),
+                (
+                    reply.bounding_shape_extents_width as i32,
+                    reply.bounding_shape_extents_height as i32,
+                )
+                    .into(),
+            )
+            .to_f64()
+            .to_logical(client_scale)
+            .to_i32_round();
+            (reply.bounding_shaped, extents)
+        };
+        let shape = if shaped {
+            let rectangles = conn
+                .shape_get_rectangles(self.window, shape::SK::BOUNDING)?
+                .reply()?;
+            let mut rectangles = rectangles
+                .rectangles
+                .into_iter()
+                .filter_map(|rect| {
+                    let rect = Rectangle::<i32, Physical>::new(
+                        (rect.x as i32, rect.y as i32).into(),
+                        (rect.width as i32, rect.height as i32).into(),
+                    );
+                    (!rect.is_empty()).then(|| rect.to_f64().to_logical(client_scale).to_i32_round())
+                })
+                .collect::<Vec<_>>();
+            if rectangles.len() > MAX_STORED_SHAPE_RECTS {
+                rectangles.clear();
+                rectangles.push(extents);
+            }
+            Some(rectangles.into())
+        } else {
+            None
+        };
+        let mut state = self.state.lock().unwrap();
+        state.bounding_shape = shape;
+        state.bounding_shape_extents = shaped.then_some(extents);
+        Ok(())
     }
 
     /// X11 protocol id of the reparented window, if any
@@ -2057,10 +2152,18 @@ impl X11Surface {
         location: impl Into<Point<i32, Logical>>,
         surface_type: WindowSurfaceType,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
+        let location = location.into();
         if !surface_type.contains(WindowSurfaceType::TOPLEVEL) {
             return None;
         }
         if self.xdnd_active.load(Ordering::Acquire) && self.is_override_redirect() {
+            return None;
+        }
+        if let Some(shape) = self.bounding_shape()
+            && !shape
+                .iter()
+                .any(|rect| rect.to_f64().contains(point - location.to_f64()))
+        {
             return None;
         }
         if let Some(surface) = X11Surface::wl_surface(self).as_ref() {
