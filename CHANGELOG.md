@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0
+
 ### Breaking changes
 
 `crate::wayland::selection::data_device::start_dnd` was removed in favor of exposing the
