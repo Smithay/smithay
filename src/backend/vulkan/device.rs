@@ -147,6 +147,14 @@ impl Device {
         } else {
             None
         };
+        let khr_external_fence_fd = if extensions.iter().any(|ext| ext == &khr::external_fence_fd::NAME) {
+            Some(khr::external_fence_fd::Device::new(
+                phd.instance().handle(),
+                &device,
+            ))
+        } else {
+            None
+        };
 
         Ok(Device(Arc::new(InnerDevice {
             vk: device,
@@ -154,6 +162,7 @@ impl Device {
             khr_external_memory_fd,
             ext_image_drm_format_modifier,
             ext_host_image_copy,
+            khr_external_fence_fd,
 
             mem_properties,
             formats: phd.drm_formats(),
@@ -188,6 +197,10 @@ impl Device {
 
     pub fn vk_ext_host_image_copy(&self) -> Option<&ext::host_image_copy::Device> {
         self.0.ext_host_image_copy.as_ref()
+    }
+
+    pub fn vk_khr_external_fence_fd(&self) -> Option<&khr::external_fence_fd::Device> {
+        self.0.khr_external_fence_fd.as_ref()
     }
 
     pub fn memory_properties(&self) -> &PhysicalDeviceMemoryProperties {
@@ -231,6 +244,7 @@ struct InnerDevice {
     khr_external_memory_fd: Option<khr::external_memory_fd::Device>,
     ext_image_drm_format_modifier: Option<ext::image_drm_format_modifier::Device>,
     ext_host_image_copy: Option<ext::host_image_copy::Device>,
+    khr_external_fence_fd: Option<khr::external_fence_fd::Device>,
 
     mem_properties: PhysicalDeviceMemoryProperties,
     formats: super::FormatList,

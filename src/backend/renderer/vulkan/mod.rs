@@ -9,9 +9,12 @@ use crate::{
         },
         drm::{sync::DrmSyncPoint, DrmDeviceFd},
         renderer::{
-            vulkan::shaders::{ClearPushConstants, TexPushConstants},
-            Bind, ContextId, ExportMem, Frame, ImportDma, ImportMem, Renderer, RendererSuper, Texture,
-            TextureMapping,
+            vulkan::{
+                shaders::{ClearPushConstants, TexPushConstants},
+                Error::FenceError,
+            },
+            Bind, Blit, BlitFrame, ContextId, ExportMem, Frame, ImportDma, ImportDmaWl, ImportMem,
+            ImportMemWl, Offscreen, Renderer, RendererSuper, Texture, TextureMapping,
         },
         vulkan::{
             device::{Device, DeviceError, QueueType, WeakDevice},
@@ -23,22 +26,35 @@ use crate::{
     },
     reexports::drm::node::DrmNode,
     utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Size, Transform},
+    wayland,
 };
 
 use ash::vk::{
     self, AccessFlags, BorderColor, CompareOp, DependencyFlags, DescriptorImageInfo, DescriptorType,
-    Extent3D, Fence, Filter, FormatFeatureFlags, HostImageCopyFlagsEXT, ImageAspectFlags, ImageLayout,
-    ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange, ImageToMemoryCopyEXT, MemoryMapFlags,
-    MemoryPropertyFlags, MemoryToImageCopyEXT, Offset3D, PipelineBindPoint, PipelineStageFlags,
-    Result as VkResult, SamplerAddressMode, SamplerCreateFlags, SamplerCreateInfo, SamplerMipmapMode,
-    SemaphoreWaitInfo, ShaderStageFlags, SubmitInfo, TimelineSemaphoreSubmitInfo, QUEUE_FAMILY_IGNORED,
+    Extent3D, ExternalFenceHandleTypeFlags, Fence, FenceCreateInfo, FenceImportFlags, Filter,
+    FormatFeatureFlags, HostImageCopyFlagsEXT, ImageAspectFlags, ImageLayout, ImageMemoryBarrier,
+    ImageSubresourceLayers, ImageSubresourceRange, ImageToMemoryCopyEXT, ImportFenceFdInfoKHR,
+    MemoryMapFlags, MemoryPropertyFlags, MemoryToImageCopyEXT, Offset3D, PipelineBindPoint,
+    PipelineStageFlags, Result as VkResult, SamplerAddressMode, SamplerCreateFlags, SamplerCreateInfo,
+    SamplerMipmapMode, SemaphoreWaitInfo, ShaderStageFlags, SubmitInfo, TimelineSemaphoreSubmitInfo,
+    QUEUE_FAMILY_IGNORED,
 };
 use gbm::Modifier;
 use indexmap::IndexSet;
+use tracing::trace;
+use wayland_server::protocol::wl_buffer;
 
-use std::{collections::HashMap, ffi::CStr, fmt, ptr::NonNull};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    ffi::CStr,
+    fmt,
+    os::fd::{AsRawFd, IntoRawFd},
+    ptr::NonNull,
+    sync::{Arc, Mutex},
+};
 
-use super::{sync::SyncPoint, Color32F};
+use super::{sync::SyncPoint, Color32F, TextureFilter};
 
 //mod buffer;
 mod capabilities;
@@ -57,11 +73,14 @@ pub use self::sync::*;
 pub struct VulkanRenderer {
     pub(crate) phd: PhysicalDevice,
     capabilities: Vec<Capability>,
-    dmabuf_cache: HashMap<WeakDmabuf, VulkanImage>,
+    dmabuf_tex_cache: HashMap<WeakDmabuf, VulkanImage>,
+    dmabuf_fb_cache: HashMap<WeakDmabuf, VulkanImage>,
 
     pipelines: Pipelines,
     cmd_pool: cmds::CommandPool,
     texture_sampler: vk::Sampler,
+    tex_up_filter: TextureFilter,
+    tex_down_filter: TextureFilter,
 
     seq_no: u64,
     timeline: sync::VulkanTimeline,
@@ -103,6 +122,8 @@ pub enum Error {
     CommandPoolError(#[source] VkResult),
     #[error("Failed to create vulkan command buffer")]
     CommandBufferError(#[source] VkResult),
+    #[error("Failed to create vulkan fence")]
+    FenceError(#[source] VkResult),
     #[error("Failed to create an image sampler")]
     SamplerError(#[source] VkResult),
     #[error("Failed to create vulkan semaphore")]
@@ -113,6 +134,10 @@ pub enum Error {
     DrmError(#[source] std::io::Error),
     #[error("Underlying Vulkan Device was destroyed")]
     DeadDevice,
+    #[error("Failure accessing wayland buffer")]
+    BufferAccessError(wayland::shm::BufferAccessError),
+    #[error("ForeignSyncInterrupted")]
+    ForeignSyncInterrupted,
 }
 
 impl VulkanRenderer {
@@ -154,6 +179,7 @@ impl VulkanRenderer {
         capabilities.extend(Capability::supports_dmabuf_memory(phd));
         capabilities.extend(Capability::supports_export_timeline(phd));
         capabilities.extend(Capability::supports_host_image_copy(phd));
+        capabilities.extend(Capability::supports_import_fence(phd));
 
         // Get extensions
         let extensions = Capability::as_extensions(&capabilities);
@@ -181,40 +207,19 @@ impl VulkanRenderer {
                 None
             })?;
 
-        let sampler = unsafe {
-            device
-                .vk()
-                .create_sampler(
-                    &SamplerCreateInfo::default()
-                        .flags(SamplerCreateFlags::empty())
-                        .mag_filter(Filter::LINEAR) // TODO
-                        .min_filter(Filter::LINEAR)
-                        .mipmap_mode(SamplerMipmapMode::NEAREST)
-                        .address_mode_u(SamplerAddressMode::CLAMP_TO_BORDER)
-                        .address_mode_v(SamplerAddressMode::CLAMP_TO_BORDER)
-                        .address_mode_w(SamplerAddressMode::CLAMP_TO_BORDER)
-                        .mip_lod_bias(0.0)
-                        .anisotropy_enable(false)
-                        .max_anisotropy(0.0)
-                        .compare_enable(false)
-                        .compare_op(CompareOp::NEVER)
-                        .min_lod(0.0)
-                        .max_lod(0.0)
-                        .border_color(BorderColor::FLOAT_TRANSPARENT_BLACK)
-                        .unnormalized_coordinates(false),
-                    None,
-                )
-                .map_err(Error::SamplerError)?
-        };
+        let texture_sampler = create_sampler(device.vk(), TextureFilter::Linear, TextureFilter::Linear)?;
 
         Ok(VulkanRenderer {
             phd: phd.clone(),
             device,
             capabilities,
-            dmabuf_cache: HashMap::new(),
+            dmabuf_tex_cache: HashMap::new(),
+            dmabuf_fb_cache: HashMap::new(),
             pipelines,
             cmd_pool,
-            texture_sampler: sampler,
+            texture_sampler,
+            tex_up_filter: TextureFilter::Linear,
+            tex_down_filter: TextureFilter::Linear,
             seq_no: 0,
             node,
             timeline,
@@ -229,7 +234,46 @@ impl VulkanRenderer {
                 .map_err(Error::SemaphoreError)?
         };
         self.cmd_pool.clean_old_buffers(val);
+        self.dmabuf_tex_cache.retain(|dmabuf, _| !dmabuf.is_gone());
+        self.dmabuf_fb_cache.retain(|dmabuf, _| !dmabuf.is_gone());
         Ok(())
+    }
+}
+
+fn create_sampler(
+    device: &ash::Device,
+    mag: TextureFilter,
+    min: TextureFilter,
+) -> Result<vk::Sampler, Error> {
+    unsafe {
+        device
+            .create_sampler(
+                &SamplerCreateInfo::default()
+                    .flags(SamplerCreateFlags::empty())
+                    .mag_filter(match mag {
+                        TextureFilter::Nearest => Filter::NEAREST,
+                        TextureFilter::Linear => Filter::LINEAR,
+                    })
+                    .min_filter(match min {
+                        TextureFilter::Nearest => Filter::NEAREST,
+                        TextureFilter::Linear => Filter::LINEAR,
+                    })
+                    .mipmap_mode(SamplerMipmapMode::NEAREST)
+                    .address_mode_u(SamplerAddressMode::CLAMP_TO_BORDER)
+                    .address_mode_v(SamplerAddressMode::CLAMP_TO_BORDER)
+                    .address_mode_w(SamplerAddressMode::CLAMP_TO_BORDER)
+                    .mip_lod_bias(0.0)
+                    .anisotropy_enable(false)
+                    .max_anisotropy(0.0)
+                    .compare_enable(false)
+                    .compare_op(CompareOp::NEVER)
+                    .min_lod(0.0)
+                    .max_lod(0.0)
+                    .border_color(BorderColor::FLOAT_TRANSPARENT_BLACK)
+                    .unnormalized_coordinates(false),
+                None,
+            )
+            .map_err(Error::SamplerError)
     }
 }
 
@@ -250,20 +294,29 @@ impl Renderer for VulkanRenderer {
         self.device.context()
     }
 
-    fn downscale_filter(&mut self, filter: super::TextureFilter) -> Result<(), Self::Error> {
-        todo!()
+    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        if self.tex_down_filter != filter {
+            self.texture_sampler = create_sampler(self.device.vk(), self.tex_up_filter, filter)?;
+            self.tex_down_filter = filter;
+        }
+        Ok(())
     }
 
-    fn upscale_filter(&mut self, filter: super::TextureFilter) -> Result<(), Self::Error> {
-        todo!()
+    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> {
+        if self.tex_up_filter != filter {
+            self.texture_sampler = create_sampler(self.device.vk(), filter, self.tex_down_filter)?;
+            self.tex_up_filter = filter;
+        }
+        Ok(())
     }
 
     fn set_debug_flags(&mut self, flags: super::DebugFlags) {
-        todo!()
+        // TODO
     }
 
     fn debug_flags(&self) -> super::DebugFlags {
-        todo!()
+        // TODO
+        super::DebugFlags::empty()
     }
 
     fn render<'frame, 'buffer>(
@@ -286,10 +339,39 @@ impl Renderer for VulkanRenderer {
     }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
-        todo!()
+        if self.capabilities.contains(&Capability::ImportFence) {
+            if let Some(device_ext_fence_fd) = self.device.vk_khr_external_fence_fd() {
+                if let Some(fd) = sync.export() {
+                    let fence = unsafe {
+                        self.device
+                            .vk()
+                            .create_fence(&FenceCreateInfo::default(), None)
+                            .map_err(Error::FenceError)?
+                    };
+                    let info = ImportFenceFdInfoKHR::default()
+                        .fd(fd.into_raw_fd())
+                        .fence(fence)
+                        .handle_type(ExternalFenceHandleTypeFlags::SYNC_FD);
+                    unsafe {
+                        device_ext_fence_fd
+                            .import_fence_fd(&info)
+                            .map_err(Error::FenceError)?;
+                        return self
+                            .device
+                            .vk()
+                            .queue_submit(*self.device.queue(), &[], fence)
+                            .map_err(Error::SubmitError);
+                    }
+                }
+            }
+        }
+
+        sync.wait().map_err(|_| Error::ForeignSyncInterrupted)
     }
 
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
+        self.dmabuf_tex_cache.clear();
+        self.dmabuf_fb_cache.clear();
         Ok(())
     }
 }
@@ -300,18 +382,19 @@ impl ImportMem for VulkanRenderer {
         data: &[u8],
         format: Fourcc,
         size: Size<i32, BufferCoords>,
-        _flipped: bool, // TODO
+        flipped: bool,
     ) -> Result<Self::TextureId, Self::Error> {
         use ash::ext::host_image_copy;
+
+        // TODO:
+        assert!(!flipped);
 
         let device_copy = self
             .device
             .vk_ext_host_image_copy()
             .ok_or(Error::MissingExtension(host_image_copy::NAME))?;
 
-        //let vk_format = get_vk_format(format).ok_or(Error::ImageError(ImageError::UnsupportedFormat))?;
-        let image = VulkanImage::new_exportable(
-            // TODO: Non-exportable with explicit drm format
+        let image = VulkanImage::new_exact_modifier(
             &self.device,
             size.w as u32,
             size.h as u32,
@@ -367,11 +450,59 @@ impl ImportMem for VulkanRenderer {
 
     fn update_memory(
         &mut self,
-        texture: &Self::TextureId,
+        image: &VulkanImage,
         data: &[u8],
         region: Rectangle<i32, BufferCoords>,
     ) -> Result<(), Self::Error> {
-        todo!()
+        use ash::ext::host_image_copy;
+
+        let device_copy = self
+            .device
+            .vk_ext_host_image_copy()
+            .ok_or(Error::MissingExtension(host_image_copy::NAME))?;
+
+        unsafe {
+            device_copy
+                .transition_image_layout(&[vk::HostImageLayoutTransitionInfoEXT::default()
+                    .old_layout(ImageLayout::UNDEFINED)
+                    .new_layout(ImageLayout::GENERAL)
+                    .image(*image.vk())
+                    .subresource_range(
+                        ImageSubresourceRange::default()
+                            .aspect_mask(ImageAspectFlags::COLOR)
+                            .layer_count(1)
+                            .level_count(1),
+                    )])
+                .map_err(Error::HostImageTransitionError)?;
+            device_copy
+                .copy_memory_to_image(
+                    &vk::CopyMemoryToImageInfoEXT::default()
+                        .flags(HostImageCopyFlagsEXT::MEMCPY)
+                        .dst_image(*image.vk())
+                        .dst_image_layout(ImageLayout::GENERAL)
+                        .regions(&[MemoryToImageCopyEXT::default()
+                            .host_pointer(data.as_ptr() as *const _)
+                            .memory_row_length(0)
+                            .memory_image_height(0)
+                            .image_subresource(
+                                ImageSubresourceLayers::default()
+                                    .aspect_mask(ImageAspectFlags::COLOR)
+                                    .mip_level(0)
+                                    .base_array_layer(0)
+                                    .layer_count(1),
+                            )
+                            .image_offset(Offset3D::default().x(region.loc.x).y(region.loc.y))
+                            .image_extent(
+                                Extent3D::default()
+                                    .depth(1)
+                                    .width(region.size.w as u32)
+                                    .height(region.size.h as u32),
+                            )]),
+                )
+                .map_err(Error::HostImageCopyError)?;
+        }
+
+        Ok(())
     }
 
     fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>> {
@@ -394,18 +525,166 @@ impl ImportMem for VulkanRenderer {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
+impl ImportMemWl for VulkanRenderer {
+    fn import_shm_buffer(
+        &mut self,
+        buffer: &wl_buffer::WlBuffer,
+        surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, BufferCoords>],
+    ) -> Result<Self::TextureId, Self::Error> {
+        use crate::wayland::shm::{shm_format_to_fourcc, with_buffer_contents};
+        use ash::ext::host_image_copy;
+        struct VulkanImageWrapper(VulkanImage);
+
+        let device_copy = self
+            .device
+            .vk_ext_host_image_copy()
+            .ok_or(Error::MissingExtension(host_image_copy::NAME))?;
+
+        // why not store a `VulkanImage`? because the user might do so.
+        // this is guaranteed a non-public internal type, so we are good.
+        type CacheMap = HashMap<ContextId<VulkanImage>, VulkanImageWrapper>;
+
+        let mut surface_lock = surface.as_ref().map(|surface_data| {
+            surface_data
+                .data_map
+                .get_or_insert_threadsafe(|| Arc::new(Mutex::new(CacheMap::new())))
+                .lock()
+                .unwrap()
+        });
+
+        with_buffer_contents(buffer, |ptr, len, data| {
+            let offset = data.offset;
+            let width = data.width;
+            let height = data.height;
+            let stride = data.stride;
+            let fourcc =
+                shm_format_to_fourcc(data.format).ok_or(Error::ImageError(ImageError::UnsupportedFormat))?;
+            let bpp = get_bpp(fourcc).ok_or(Error::ImageError(ImageError::UnsupportedFormat))?;
+            assert!((offset + (height - 1) * stride + width * bpp as i32) as usize <= len);
+
+            let mut upload_full = false;
+            let id = self.context_id();
+            let image = surface_lock
+                .as_ref()
+                .and_then(|cache| cache.get(&id).map(|wrap| &wrap.0).cloned())
+                .filter(|texture| texture.size() == (width, height).into())
+                .map(Result::<_, ImageError>::Ok)
+                .unwrap_or_else(|| {
+                    upload_full = true;
+                    let new = VulkanImage::new_exact_modifier(
+                        &self.device,
+                        width as u32,
+                        height as u32,
+                        fourcc,
+                        std::iter::once(Modifier::Linear),
+                        vk::ImageUsageFlags::HOST_TRANSFER_EXT | vk::ImageUsageFlags::SAMPLED,
+                    )?;
+                    if let Some(cache) = surface_lock.as_mut() {
+                        cache.insert(id, VulkanImageWrapper(new.clone()));
+                    }
+                    Ok(new)
+                })?;
+
+            unsafe {
+                device_copy
+                    .transition_image_layout(&[vk::HostImageLayoutTransitionInfoEXT::default()
+                        .old_layout(ImageLayout::UNDEFINED)
+                        .new_layout(ImageLayout::GENERAL)
+                        .image(*image.vk())
+                        .subresource_range(
+                            ImageSubresourceRange::default()
+                                .aspect_mask(ImageAspectFlags::COLOR)
+                                .layer_count(1)
+                                .level_count(1),
+                        )])
+                    .map_err(Error::HostImageTransitionError)?;
+
+                let regions = if upload_full || damage.is_empty() {
+                    Cow::<[_]>::Borrowed(&[MemoryToImageCopyEXT::default()
+                        .host_pointer(ptr.offset(offset as isize) as *const _)
+                        .memory_row_length(stride as u32 / bpp as u32)
+                        .memory_image_height(height as u32)
+                        .image_subresource(
+                            ImageSubresourceLayers::default()
+                                .aspect_mask(ImageAspectFlags::COLOR)
+                                .mip_level(0)
+                                .base_array_layer(0)
+                                .layer_count(1),
+                        )
+                        .image_offset(Offset3D::default())
+                        .image_extent(
+                            Extent3D::default()
+                                .depth(1)
+                                .width(width as u32)
+                                .height(height as u32),
+                        )])
+                } else {
+                    Cow::Owned(
+                        damage
+                            .iter()
+                            .map(|rect| {
+                                MemoryToImageCopyEXT::default()
+                                    .host_pointer(ptr.offset(offset as isize) as *const _)
+                                    .memory_row_length(stride as u32 / bpp as u32)
+                                    .memory_image_height(height as u32)
+                                    .image_subresource(
+                                        ImageSubresourceLayers::default()
+                                            .aspect_mask(ImageAspectFlags::COLOR)
+                                            .mip_level(0)
+                                            .base_array_layer(0)
+                                            .layer_count(1),
+                                    )
+                                    .image_offset(Offset3D::default().x(rect.loc.x).y(rect.loc.y))
+                                    .image_extent(
+                                        Extent3D::default()
+                                            .depth(1)
+                                            .width(rect.size.w as u32)
+                                            .height(rect.size.h as u32),
+                                    )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                };
+
+                device_copy
+                    .copy_memory_to_image(
+                        &vk::CopyMemoryToImageInfoEXT::default()
+                            .flags(HostImageCopyFlagsEXT::MEMCPY)
+                            .dst_image(*image.vk())
+                            .dst_image_layout(ImageLayout::GENERAL)
+                            .regions(&regions),
+                    )
+                    .map_err(Error::HostImageCopyError)?;
+            }
+
+            Ok(image)
+        })
+        .map_err(Error::BufferAccessError)?
+    }
+}
+
 impl ImportDma for VulkanRenderer {
     fn import_dmabuf(
         &mut self,
         dmabuf: &Dmabuf,
         _damage: Option<&[Rectangle<i32, BufferCoords>]>,
     ) -> Result<Self::TextureId, Self::Error> {
-        VulkanImage::new_from_dmabuf(
+        let key = dmabuf.weak();
+        if let Some(image) = self.dmabuf_tex_cache.get(&key).cloned() {
+            trace!("Re-using image {:?} for {:?}", image, dmabuf);
+            return Ok(image);
+        }
+
+        let image = VulkanImage::new_from_dmabuf(
             &self.device,
             dmabuf,
             ImageUsageFlags::SAMPLED | ImageUsageFlags::TRANSFER_SRC,
         )
-        .map_err(Error::ImageError)
+        .map_err(Error::ImageError)?;
+        self.dmabuf_tex_cache.insert(key, image.clone());
+        Ok(image)
     }
 
     fn dmabuf_formats(&self) -> FormatSet {
@@ -416,6 +695,8 @@ impl ImportDma for VulkanRenderer {
         self.device.formats().any(|entry| entry.format == format)
     }
 }
+#[cfg(feature = "wayland_frontend")]
+impl ImportDmaWl for VulkanRenderer {}
 
 pub enum VulkanMapping {
     Mapped(NonNull<u8>, usize, VulkanImage, WeakDevice),
@@ -899,7 +1180,7 @@ impl Frame for VulkanFrame<'_, '_> {
     }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
-        todo!()
+        self.renderer.wait(sync) // TODO: Can we do better and insert waiting into the current command recording?
     }
 
     fn finish(self) -> Result<SyncPoint, Self::Error> {
@@ -1121,12 +1402,19 @@ impl Bind<VulkanImage> for VulkanRenderer {
 
 impl Bind<Dmabuf> for VulkanRenderer {
     fn bind<'a>(&mut self, target: &'a mut Dmabuf) -> Result<Self::Framebuffer<'a>, Self::Error> {
+        let key = target.weak();
+        if let Some(image) = self.dmabuf_fb_cache.get(&key).cloned() {
+            trace!("Re-using image {:?} for {:?}", image, target);
+            return Ok(VulkanFramebuffer(image));
+        }
+
         let image = VulkanImage::new_from_dmabuf(
             &self.device,
             target,
             ImageUsageFlags::STORAGE | ImageUsageFlags::TRANSFER_SRC,
         )
         .map_err(Error::ImageError)?;
+        self.dmabuf_fb_cache.insert(key, image.clone());
         Ok(VulkanFramebuffer(image))
     }
 
@@ -1154,5 +1442,160 @@ impl Bind<Dmabuf> for VulkanRenderer {
             })
             .ok()
             .map(FormatSet::from_formats)
+    }
+}
+
+impl Offscreen<VulkanImage> for VulkanRenderer {
+    fn create_buffer(&mut self, fourcc: Fourcc, size: Size<i32, BufferCoords>) -> Result<VulkanImage, Error> {
+        let format = get_vk_format(fourcc).ok_or(Error::ImageError(ImageError::UnsupportedFormat))?;
+        VulkanImage::new(
+            &self.device,
+            size.w as u32,
+            size.h as u32,
+            format,
+            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::STORAGE,
+            false,
+        )
+        .map_err(Error::from)
+    }
+}
+
+impl VulkanRenderer {
+    fn blit_internal(
+        &mut self,
+        from: &VulkanFramebuffer,
+        to: &mut VulkanFramebuffer,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<u64, Error> {
+        let buf = self.cmd_pool.create_and_begin_buffer()?;
+
+        unsafe {
+            self.device.vk().cmd_blit_image(
+                buf,
+                *from.0.vk(),
+                ImageLayout::GENERAL,
+                *to.0.vk(),
+                ImageLayout::GENERAL,
+                &[vk::ImageBlit::default()
+                    .src_subresource(
+                        ImageSubresourceLayers::default()
+                            .aspect_mask(ImageAspectFlags::COLOR)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .mip_level(0),
+                    )
+                    .src_offsets([
+                        Offset3D::default().x(src.loc.x).y(src.loc.y),
+                        Offset3D::default()
+                            .x(src.loc.x + src.size.w)
+                            .y(src.loc.y + src.size.h),
+                    ])
+                    .dst_subresource(
+                        ImageSubresourceLayers::default()
+                            .aspect_mask(ImageAspectFlags::COLOR)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .mip_level(0),
+                    )
+                    .dst_offsets([
+                        Offset3D::default().x(dst.loc.x).y(dst.loc.y),
+                        Offset3D::default()
+                            .x(dst.loc.x + dst.size.w)
+                            .y(dst.loc.y + dst.size.h),
+                    ])],
+                match filter {
+                    TextureFilter::Linear => vk::Filter::LINEAR,
+                    TextureFilter::Nearest => vk::Filter::NEAREST,
+                },
+            );
+            self.device
+                .vk()
+                .end_command_buffer(buf)
+                .map_err(Error::CommandBufferError)?;
+        }
+
+        self.seq_no += 1;
+        let next_seq_no = [self.seq_no];
+        let mut timeline_info = TimelineSemaphoreSubmitInfo::default().signal_semaphore_values(&next_seq_no);
+
+        unsafe {
+            self.device
+                .vk()
+                .queue_submit(
+                    *self.device.queue(),
+                    &[SubmitInfo::default()
+                        .command_buffers(&[buf])
+                        .signal_semaphores(&[self.timeline.vk])
+                        .push_next(&mut timeline_info)],
+                    Fence::null(),
+                )
+                .map_err(Error::SubmitError)?;
+        }
+
+        self.cmd_pool.store_pending_buffer(buf, self.seq_no, None);
+
+        Ok(self.seq_no)
+    }
+}
+
+impl Blit for VulkanRenderer {
+    fn blit(
+        &mut self,
+        from: &VulkanFramebuffer,
+        to: &mut VulkanFramebuffer,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<SyncPoint, Self::Error> {
+        self.cleanup()?;
+
+        let seq_no = self.blit_internal(from, to, src, dst, filter)?;
+
+        if let Some(timeline) = self.timeline.drm.as_ref() {
+            Ok(DrmSyncPoint {
+                timeline: timeline.clone(),
+                point: seq_no,
+            }
+            .into())
+        } else {
+            // TODO: vulkan syncpoint
+            while let Err(VkResult::TIMEOUT) = unsafe {
+                self.device.vk().wait_semaphores(
+                    &SemaphoreWaitInfo::default()
+                        .semaphores(&[self.timeline.vk])
+                        .values(&[seq_no]),
+                    u64::MAX,
+                )
+            } {}
+            Ok(SyncPoint::signaled())
+        }
+    }
+}
+
+impl<'frame, 'buffer> BlitFrame<VulkanFramebuffer> for VulkanFrame<'frame, 'buffer> {
+    fn blit_to(
+        &mut self,
+        to: &mut VulkanFramebuffer,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        let seq_no = self.renderer.blit_internal(self.fb, to, src, dst, filter)?;
+        self.last_sequence = Some(seq_no);
+        Ok(())
+    }
+
+    fn blit_from(
+        &mut self,
+        from: &VulkanFramebuffer,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Self::Error> {
+        let seq_no = self.renderer.blit_internal(from, self.fb, src, dst, filter)?;
+        self.last_sequence = Some(seq_no);
+        Ok(())
     }
 }

@@ -80,6 +80,9 @@ use wayland_server::protocol::{wl_buffer, wl_shm, wl_surface::WlSurface};
 #[cfg(all(feature = "backend_gbm", feature = "backend_egl", feature = "renderer_gl"))]
 pub mod gbm;
 
+#[cfg(feature = "renderer_vulkan")]
+pub mod vulkan;
+
 /// Tracks available gpus from a given [`GraphicsApi`]
 #[derive(Debug)]
 pub struct GpuManager<A: GraphicsApi> {

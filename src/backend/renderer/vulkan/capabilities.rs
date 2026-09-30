@@ -6,10 +6,12 @@ use std::{
 use ash::{
     ext, khr,
     vk::{
+        ExternalFenceFeatureFlags, ExternalFenceHandleTypeFlags, ExternalFenceProperties,
         ExternalSemaphoreFeatureFlags, ExternalSemaphoreHandleTypeFlags, ExternalSemaphoreProperties,
-        PhysicalDeviceExternalSemaphoreInfo, PhysicalDeviceFeatures2, PhysicalDeviceHostImageCopyFeaturesEXT,
-        PhysicalDeviceVulkan11Features, PhysicalDeviceVulkan12Features, PhysicalDeviceVulkan13Features,
-        SemaphoreType, SemaphoreTypeCreateInfo,
+        PhysicalDeviceExternalFenceInfo, PhysicalDeviceExternalSemaphoreInfo, PhysicalDeviceFeatures2,
+        PhysicalDeviceHostImageCopyFeaturesEXT, PhysicalDeviceVulkan11Features,
+        PhysicalDeviceVulkan12Features, PhysicalDeviceVulkan13Features, SemaphoreType,
+        SemaphoreTypeCreateInfo,
     },
 };
 
@@ -20,6 +22,7 @@ pub enum Capability {
     DmabufMemory,
     HostImageCopy,
     ExportTimeline,
+    ImportFence,
 }
 
 pub struct Features {
@@ -140,6 +143,26 @@ impl Capability {
         Some(Capability::HostImageCopy)
     }
 
+    pub fn supports_import_fence(phd: &PhysicalDevice) -> Option<Capability> {
+        if !phd.has_device_extension(khr::external_fence_fd::NAME) {
+            return None;
+        }
+
+        let external_info =
+            PhysicalDeviceExternalFenceInfo::default().handle_type(ExternalFenceHandleTypeFlags::OPAQUE_FD);
+        let mut fence_props = ExternalFenceProperties::default();
+        unsafe {
+            phd.instance()
+                .handle()
+                .get_physical_device_external_fence_properties(phd.handle(), &external_info, &mut fence_props)
+        };
+
+        fence_props
+            .external_fence_features
+            .contains(ExternalFenceFeatureFlags::IMPORTABLE)
+            .then_some(Capability::ImportFence)
+    }
+
     pub fn supports_dmabuf_memory(phd: &PhysicalDevice) -> Option<Capability> {
         for ext in [
             khr::external_memory_fd::NAME,
@@ -164,6 +187,7 @@ impl Capability {
                 ] as &'static [&CStr],
                 Capability::HostImageCopy => &[ext::host_image_copy::NAME],
                 Capability::ExportTimeline => &[khr::external_semaphore_fd::NAME],
+                Capability::ImportFence => &[khr::external_fence_fd::NAME],
             })
             .copied()
             .collect()

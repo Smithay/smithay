@@ -86,7 +86,30 @@ impl VulkanImage {
             format,
             usage,
             linear,
+            false,
             Option::<(_, Option<Modifier>)>::None,
+            None,
+        )
+    }
+
+    pub fn new_exact_modifier(
+        device: &Device,
+        width: u32,
+        height: u32,
+        format: Fourcc,
+        modifiers: impl Iterator<Item = Modifier>,
+        usage: vk::ImageUsageFlags,
+    ) -> Result<Self, Error> {
+        let vk_format = super::format::get_vk_format(format).ok_or(Error::UnsupportedFormat)?;
+        Self::new_internal(
+            device,
+            width,
+            height,
+            vk_format,
+            usage,
+            false,
+            false,
+            Some((format, modifiers)),
             None,
         )
     }
@@ -107,6 +130,7 @@ impl VulkanImage {
             vk_format,
             usage,
             false,
+            true,
             Some((format, modifiers)),
             None,
         )
@@ -142,6 +166,7 @@ impl VulkanImage {
             vk_format,
             usage,
             false,
+            false,
             Option::<(_, Option<Modifier>)>::None,
             Some(dmabuf),
         )
@@ -154,6 +179,7 @@ impl VulkanImage {
         vk_format: vk::Format,
         vk_usage: vk::ImageUsageFlags,
         linear: bool,
+        exportable: bool,
         modifiers: Option<(Fourcc, impl IntoIterator<Item = Modifier>)>,
         dmabuf: Option<&Dmabuf>,
     ) -> Result<Self, Error> {
@@ -219,7 +245,7 @@ impl VulkanImage {
             image_create_info = image_create_info.push_next(&mut modifier_image_create_info);
         };
 
-        if modifiers.is_some() || dmabuf.is_some() {
+        if exportable || dmabuf.is_some() {
             external_image_create_info = vk::ExternalMemoryImageCreateInfo::default()
                 .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
 
@@ -236,7 +262,7 @@ impl VulkanImage {
             memory: vk::DeviceMemory::null(),
             device: device.downgrade(),
             view: None,
-            dmabuf_exportable: modifiers.is_some() || dmabuf.is_some(),
+            dmabuf_exportable: exportable || dmabuf.is_some(),
             dmabuf_plane_count: dmabuf.map(|dmabuf| dmabuf.num_planes() as u32).unwrap_or(0),
         };
 
