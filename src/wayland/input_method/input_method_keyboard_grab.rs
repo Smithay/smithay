@@ -9,10 +9,9 @@ use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboa
 use wayland_server::backend::ClientId;
 
 use crate::input::{
-    SeatHandler,
+    Seat, SeatHandler,
     keyboard::{
-        GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
-        ModifiersState,
+        KeyboardHandle, KeyboardInputInterception, KeyboardInputInterceptor, KeyboardSource, ModifiersState,
     },
 };
 use crate::wayland::text_input::TextInputHandle;
@@ -34,53 +33,50 @@ pub struct InputMethodKeyboardGrab {
     pub(crate) inner: Arc<Mutex<InputMethodKeyboard>>,
 }
 
-impl<D> KeyboardGrab<D> for InputMethodKeyboardGrab
+impl<D> KeyboardInputInterceptor<D> for InputMethodKeyboardGrab
 where
     D: SeatHandler + 'static,
 {
     fn input(
         &mut self,
         _data: &mut D,
-        _handle: &mut KeyboardInnerHandle<'_, D>,
+        _seat: &Seat<D>,
+        source: KeyboardSource,
         keycode: Keycode,
         key_state: KeyState,
         modifiers: Option<ModifiersState>,
         serial: Serial,
         time: InputTime,
-    ) {
-        let inner = self.inner.lock().unwrap();
-        let keyboard = inner.grab.as_ref().unwrap();
-        inner
-            .text_input_handle
-            .active_text_input_serial_or_default(serial.0, |serial| {
-                keyboard.key(serial, time.millis(), keycode.raw() - 8, key_state.into());
-                if let Some(serialized) = modifiers.map(|m| m.serialized) {
-                    keyboard.modifiers(
-                        serial,
-                        serialized.depressed,
-                        serialized.latched,
-                        serialized.locked,
-                        serialized.layout_effective,
-                    )
-                }
-            });
-    }
+    ) -> KeyboardInputInterception {
+        // The protocol grab only applies to physical keyboard input.
+        if source != KeyboardSource::Physical {
+            return KeyboardInputInterception::Forward;
+        }
 
-    fn set_focus(
-        &mut self,
-        data: &mut D,
-        handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<<D as SeatHandler>::KeyboardFocus>,
-        serial: crate::utils::Serial,
-    ) {
-        handle.set_focus(data, focus, serial)
-    }
+        let (keyboard, text_input_handle) = {
+            let inner = self.inner.lock().unwrap();
+            let Some(keyboard) = inner.grab.clone() else {
+                // The grab may have been destroyed before the interceptor is cleared.
+                return KeyboardInputInterception::Forward;
+            };
+            (keyboard, inner.text_input_handle.clone())
+        };
 
-    fn start_data(&self) -> &KeyboardGrabStartData<D> {
-        &KeyboardGrabStartData { focus: None }
-    }
+        text_input_handle.active_text_input_serial_or_default(serial.0, |serial| {
+            keyboard.key(serial, time.millis(), keycode.raw() - 8, key_state.into());
+            if let Some(serialized) = modifiers.map(|m| m.serialized) {
+                keyboard.modifiers(
+                    serial,
+                    serialized.depressed,
+                    serialized.latched,
+                    serialized.locked,
+                    serialized.layout_effective,
+                )
+            }
+        });
 
-    fn unset(&mut self, _data: &mut D) {}
+        KeyboardInputInterception::Intercept
+    }
 }
 
 /// User data of ZwpInputKeyboardGrabV2 object
@@ -99,9 +95,20 @@ impl<D: SeatHandler> fmt::Debug for InputMethodKeyboardUserData<D> {
 }
 
 impl<D: SeatHandler + 'static> Dispatch2<ZwpInputMethodKeyboardGrabV2, D> for InputMethodKeyboardUserData<D> {
-    fn destroyed(&self, state: &mut D, _client: ClientId, _object: &ZwpInputMethodKeyboardGrabV2) {
-        self.handle.inner.lock().unwrap().grab = None;
-        self.keyboard_handle.unset_grab(state);
+    fn destroyed(&self, _state: &mut D, _client: ClientId, object: &ZwpInputMethodKeyboardGrabV2) {
+        let was_current = {
+            let mut inner = self.handle.inner.lock().unwrap();
+            if inner.grab.as_ref().is_some_and(|grab| grab == object) {
+                inner.grab = None;
+                true
+            } else {
+                false
+            }
+        };
+
+        if was_current {
+            self.keyboard_handle.unset_input_interceptor();
+        }
     }
 
     fn request(
