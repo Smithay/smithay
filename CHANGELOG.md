@@ -278,6 +278,11 @@ blocking the compositor while they resume.
 calls `create_frame` while the session still has an active frame, as the protocol requires. Previously
 the request was accepted and the extra frame was silently added to the session.
 
+`GlesRenderer` binds a texture, or a dmabuf imported as one, through the same framebuffer for as
+long as the texture lives, instead of making a framebuffer for every bind. A target bound every
+frame no longer pays the framebuffer's creation and completeness check each time, and the NVIDIA
+driver no longer holds memory for each framebuffer deleted before anything was drawn through it.
+
 ## 0.7.0
 
 ### Breaking changes
