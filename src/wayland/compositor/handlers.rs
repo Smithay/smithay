@@ -390,20 +390,28 @@ where
         let client_scale = state.client_compositor_state(client).client_scale();
 
         match request {
-            wl_region::Request::Add { x, y, width, height } => guard.rects.push((
-                RectangleKind::Add,
-                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
-                    .to_f64()
-                    .to_logical(client_scale)
-                    .to_i32_round(),
-            )),
-            wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
-                RectangleKind::Subtract,
-                Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
-                    .to_f64()
-                    .to_logical(client_scale)
-                    .to_i32_round(),
-            )),
+            wl_region::Request::Add { x, y, width, height } => {
+                if width > 0 && height > 0 {
+                    guard.rects.push((
+                        RectangleKind::Add,
+                        Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
+                            .to_f64()
+                            .to_logical(client_scale)
+                            .to_i32_round(),
+                    ));
+                }
+            }
+            wl_region::Request::Subtract { x, y, width, height } => {
+                if width > 0 && height > 0 {
+                    guard.rects.push((
+                        RectangleKind::Subtract,
+                        Rectangle::<i32, Client>::new((x, y).into(), (width, height).into())
+                            .to_f64()
+                            .to_logical(client_scale)
+                            .to_i32_round(),
+                    ));
+                }
+            }
             wl_region::Request::Destroy => {
                 // all is handled by our destructor
             }
