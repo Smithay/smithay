@@ -2412,7 +2412,7 @@ where
                 &[x11rb::NONE],
             )?;
         }
-        Event::FocusIn(n) => {
+        Event::FocusIn(n) if n.detail != NotifyDetail::POINTER => {
             if xwm.windows.iter().any(|x| x.window_id() == n.event) {
                 conn.change_property32(
                     PropMode::REPLACE,
