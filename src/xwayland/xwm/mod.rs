@@ -181,8 +181,8 @@ use x11rb::{
             AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
             ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
             CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat, InputFocus,
-            NotifyDetail, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen, StackMode,
-            Visualid, WindowClass,
+            NotifyDetail, NotifyMode, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
+            StackMode, Visualid, WindowClass,
         },
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
@@ -2412,7 +2412,10 @@ where
                 &[x11rb::NONE],
             )?;
         }
-        Event::FocusIn(n) if n.detail != NotifyDetail::POINTER => {
+        Event::FocusIn(n)
+            if n.detail != NotifyDetail::POINTER
+                && !matches!(n.mode, NotifyMode::GRAB | NotifyMode::UNGRAB) =>
+        {
             if xwm.windows.iter().any(|x| x.window_id() == n.event) {
                 conn.change_property32(
                     PropMode::REPLACE,
