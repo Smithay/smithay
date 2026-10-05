@@ -92,7 +92,7 @@ use smithay::{
         single_pixel_buffer::SinglePixelBufferState,
         socket::ListeningSocketSource,
         tablet_manager::TabletManagerState,
-        text_input::TextInputManagerState,
+        text_input::{TextInputActivation, TextInputManagerState},
         viewporter::ViewporterState,
         virtual_keyboard::VirtualKeyboardManagerState,
         xdg_activation::{
@@ -437,6 +437,8 @@ impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData>
         }
     }
 }
+
+impl<BackendData: Backend> TextInputActivation for AnvilState<BackendData> {}
 
 impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {

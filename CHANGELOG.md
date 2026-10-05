@@ -123,6 +123,8 @@ with the correct lock instance.
 `backend::input` and `input` now use `backend::input::InputTime` for timestamps instead of `u32` or `u64`. `InputTime::now()`
 is used for timestamps for synthesized events.
 
+`TextInputActivation` must be implemented. It allows for hooks to be run when a text input is `activated` and `deactivated`.
+
 ### Additions
 
 - Add `WmWindowProperty::Other` to forward unrecognized X11 property changes to the compositor.

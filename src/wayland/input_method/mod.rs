@@ -7,7 +7,7 @@
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
 //! use smithay::wayland::input_method::{InputMethodManagerState, InputMethodHandler, PopupSurface};
-//! use smithay::wayland::text_input::TextInputManagerState;
+//! use smithay::wayland::text_input::{TextInputActivation, TextInputManagerState};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::reexports::wayland_server::Client;
@@ -49,6 +49,8 @@
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
 //! #     fn commit(&mut self, surface: &WlSurface) {}
 //! # }
+//!
+//! impl TextInputActivation for State {}
 //!
 //! // Add the seat state to your state and create manager globals
 //! InputMethodManagerState::new::<State, _>(&display_handle, |_client| true);
