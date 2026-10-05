@@ -8,7 +8,7 @@
 //! ```
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! # use smithay::wayland::compositor::{CompositorHandler, CompositorState, CompositorClientState};
-//! use smithay::wayland::text_input::TextInputManagerState;
+//! use smithay::wayland::text_input::{TextInputActivation, TextInputManagerState};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //! # use smithay::wayland::pointer_constraints::PointerConstraintsHandler;
 //! # use smithay::reexports::wayland_server::Client;
@@ -35,6 +35,8 @@
 //! }
 //! # impl PointerConstraintsHandler for State {}
 //!
+//! impl TextInputActivation for State {}
+//!
 //! // Add the seat state to your state and create manager global
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
@@ -48,7 +50,7 @@
 
 use wayland_protocols::wp::text_input::zv3::server::{
     zwp_text_input_manager_v3::{self, ZwpTextInputManagerV3},
-    zwp_text_input_v3::ZwpTextInputV3,
+    zwp_text_input_v3::{ContentHint, ContentPurpose, ZwpTextInputV3},
 };
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, backend::GlobalId};
 
@@ -65,6 +67,15 @@ use super::input_method::InputMethodHandle;
 const MANAGER_VERSION: u32 = 1;
 
 mod text_input_handle;
+
+/// Hooks for text input activation
+pub trait TextInputActivation {
+    /// Code to run after text input is activated
+    fn activated(&mut self, _content_type: Option<(ContentHint, ContentPurpose)>) {}
+
+    /// Code to run after text input is deactivated
+    fn deactivated(&mut self) {}
+}
 
 /// Extends [Seat] with text input functionality
 pub trait TextInputSeat {
