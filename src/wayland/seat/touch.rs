@@ -29,18 +29,18 @@ where
     <D as SeatHandler>::TouchFocus: WaylandFocus,
 {
     pub(crate) fn new_touch(&self, touch: WlTouch) {
-        let mut guard = self.known_instances.lock().unwrap();
+        let mut guard = self.arc.known_instances.lock().unwrap();
         guard.push(touch.downgrade());
 
         let mut time = None;
         let data = touch.data::<TouchUserData<D>>().unwrap();
-        let guard = self.inner.lock().unwrap();
+        let guard = self.arc.inner.lock().unwrap();
         let mut sent = false;
         for (slot, state) in &guard.focus {
             if let Some((focus, location)) = &state.focus {
                 if focus.same_client_as(&touch.id()) {
                     if let Some(surface) = focus.wl_surface() {
-                        let serial = data.handle.as_ref().unwrap().last_down.lock().unwrap()[slot];
+                        let serial = data.handle.as_ref().unwrap().arc.last_down.lock().unwrap()[slot];
                         let time = *time.get_or_insert_with(|| Clock::<Monotonic>::new().now().as_millis());
                         let client_scale = data.client_scale.load(Ordering::Acquire);
                         let location = (state.location - *location).to_client(client_scale);
@@ -78,7 +78,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
 
     /// Return all raw [`WlTouch`] instances for a particular [`Client`]
     pub fn client_touch<'a>(&'a self, client: &Client) -> impl Iterator<Item = WlTouch> + 'a {
-        let guard = self.known_instances.lock().unwrap();
+        let guard = self.arc.known_instances.lock().unwrap();
         new_locked_obj_iter_from_vec(guard, client.id())
     }
 }
@@ -89,7 +89,7 @@ fn for_each_focused_touch<D: SeatHandler + 'static>(
     mut f: impl FnMut(WlTouch),
 ) {
     if let Some(touch) = seat.get_touch() {
-        let mut inner = touch.known_instances.lock().unwrap();
+        let mut inner = touch.arc.known_instances.lock().unwrap();
         for ptr in &mut *inner {
             let Ok(ptr) = ptr.upgrade() else {
                 continue;
@@ -123,7 +123,7 @@ where
         let slot = event.slot;
 
         if let Some(touch) = seat.get_touch() {
-            touch.last_down.lock().unwrap().insert(slot, serial);
+            touch.arc.last_down.lock().unwrap().insert(slot, serial);
         }
 
         for_each_focused_touch(seat, self, |touch| {
@@ -152,7 +152,7 @@ where
         });
 
         if let Some(touch) = seat.get_touch() {
-            touch.last_down.lock().unwrap().remove(&slot);
+            touch.arc.last_down.lock().unwrap().remove(&slot);
         }
     }
 
@@ -185,7 +185,7 @@ where
         });
 
         if let Some(touch) = seat.get_touch() {
-            touch.last_down.lock().unwrap().clear();
+            touch.arc.last_down.lock().unwrap().clear();
         }
     }
 
@@ -235,6 +235,7 @@ where
     fn destroyed(&self, _state: &mut D, _client_id: ClientId, touch: &WlTouch) {
         if let Some(ref handle) = self.handle {
             handle
+                .arc
                 .known_instances
                 .lock()
                 .unwrap()

@@ -431,7 +431,7 @@ where
                 };
                 let gesture = data_init.init(id, user_data);
                 if let Some(handle) = &data.handle {
-                    handle.wp_pointer_gestures.new_swipe_gesture(gesture);
+                    handle.arc.wp_pointer_gestures.new_swipe_gesture(gesture);
                 }
             }
             zwp_pointer_gestures_v1::Request::GetPinchGesture { id, pointer } => {
@@ -443,7 +443,7 @@ where
                 };
                 let gesture = data_init.init(id, user_data);
                 if let Some(handle) = &data.handle {
-                    handle.wp_pointer_gestures.new_pinch_gesture(gesture);
+                    handle.arc.wp_pointer_gestures.new_pinch_gesture(gesture);
                 }
             }
             zwp_pointer_gestures_v1::Request::GetHoldGesture { id, pointer } => {
@@ -455,7 +455,7 @@ where
                 };
                 let gesture = data_init.init(id, user_data);
                 if let Some(handle) = &data.handle {
-                    handle.wp_pointer_gestures.new_hold_gesture(gesture);
+                    handle.arc.wp_pointer_gestures.new_hold_gesture(gesture);
                 }
             }
             zwp_pointer_gestures_v1::Request::Release => {}
@@ -503,6 +503,7 @@ where
     fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGestureSwipeV1) {
         if let Some(ref handle) = self.handle {
             handle
+                .arc
                 .wp_pointer_gestures
                 .known_swipe_gestures
                 .lock()
@@ -535,6 +536,7 @@ where
     fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGesturePinchV1) {
         if let Some(ref handle) = self.handle {
             handle
+                .arc
                 .wp_pointer_gestures
                 .known_pinch_gestures
                 .lock()
@@ -567,6 +569,7 @@ where
     fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGestureHoldV1) {
         if let Some(ref handle) = self.handle {
             handle
+                .arc
                 .wp_pointer_gestures
                 .known_hold_gestures
                 .lock()
