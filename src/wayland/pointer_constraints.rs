@@ -6,7 +6,7 @@ use std::{
     collections::{HashMap, hash_map},
     ops,
     sync::{
-        Mutex,
+        Mutex, Weak,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -23,7 +23,10 @@ use wayland_server::{
 
 use super::compositor::{self, RegionAttributes};
 use crate::{
-    input::{SeatHandler, pointer::PointerHandle},
+    input::{
+        SeatHandler,
+        pointer::{PointerHandle, PointerRc},
+    },
     utils::{Logical, Point},
     wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
 };
@@ -263,7 +266,7 @@ impl PointerConstraintsState {
 #[derive(Debug)]
 pub struct PointerConstraintUserData<D: SeatHandler> {
     surface: WlSurface,
-    pointer: Option<PointerHandle<D>>,
+    arc: Weak<PointerRc<D>>,
 }
 
 struct PointerConstraintData<D: SeatHandler + 'static> {
@@ -410,15 +413,16 @@ where
                 lifetime,
             } => {
                 let region = region.as_ref().map(compositor::get_region_attributes);
-                let pointer = pointer.data::<PointerUserData<D>>().unwrap().handle.clone();
+                let arc = pointer.data::<PointerUserData<D>>().unwrap().arc.clone();
                 let handle = data_init.init(
                     id,
                     PointerConstraintUserData {
                         surface: surface.clone(),
-                        pointer: pointer.clone(),
+                        arc: arc.clone(),
                     },
                 );
-                if let Some(pointer) = pointer {
+                if let Some(arc) = arc.upgrade() {
+                    let pointer = PointerHandle { arc };
                     add_constraint(
                         pointer_constraints,
                         &surface,
@@ -444,15 +448,16 @@ where
                 lifetime,
             } => {
                 let region = region.as_ref().map(compositor::get_region_attributes);
-                let pointer = pointer.data::<PointerUserData<D>>().unwrap().handle.clone();
+                let arc = pointer.data::<PointerUserData<D>>().unwrap().arc.clone();
                 let handle = data_init.init(
                     id,
                     PointerConstraintUserData {
                         surface: surface.clone(),
-                        pointer: pointer.clone(),
+                        arc: arc.clone(),
                     },
                 );
-                if let Some(pointer) = pointer {
+                if let Some(arc) = arc.upgrade() {
+                    let pointer = PointerHandle { arc };
                     add_constraint(
                         pointer_constraints,
                         &surface,
@@ -505,7 +510,7 @@ where
         _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let Some(pointer) = &self.pointer else {
+        let Some(pointer) = &self.arc.upgrade().map(|arc| PointerHandle { arc }) else {
             return;
         };
 
@@ -530,7 +535,7 @@ where
         _client: wayland_server::backend::ClientId,
         _resource: &ZwpConfinedPointerV1,
     ) {
-        let Some(pointer) = &self.pointer else {
+        let Some(pointer) = &self.arc.upgrade().map(|arc| PointerHandle { arc }) else {
             return;
         };
 
@@ -553,7 +558,7 @@ where
         _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let Some(pointer) = &self.pointer else {
+        let Some(pointer) = &self.arc.upgrade().map(|arc| PointerHandle { arc }) else {
             return;
         };
 
@@ -583,7 +588,7 @@ where
         _client: wayland_server::backend::ClientId,
         _resource: &ZwpLockedPointerV1,
     ) {
-        let Some(pointer) = &self.pointer else {
+        let Some(pointer) = &self.arc.upgrade().map(|arc| PointerHandle { arc }) else {
             return;
         };
 

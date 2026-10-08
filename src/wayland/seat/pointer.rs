@@ -21,7 +21,7 @@ use crate::{
             AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, GestureHoldBeginEvent,
             GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
             GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent,
-            PointerHandle, PointerTarget, RelativeMotionEvent,
+            PointerHandle, PointerRc, PointerTarget, RelativeMotionEvent,
         },
     },
     utils::{Client as ClientCoords, Point, Serial, iter::new_locked_obj_iter_from_vec},
@@ -48,8 +48,10 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// May return `None` for a valid `WlPointer` that was created without
     /// the pointer capability.
-    pub fn from_resource(seat: &WlPointer) -> Option<Self> {
-        seat.data::<PointerUserData<D>>()?.handle.clone()
+    pub fn from_resource(pointer: &WlPointer) -> Option<Self> {
+        Some(Self {
+            arc: pointer.data::<PointerUserData<D>>()?.arc.upgrade()?,
+        })
     }
 
     /// Return all raw [`WlPointer`] instances for a particular [`Client`]
@@ -73,16 +75,18 @@ impl WlPointerHandle {
         self.known_pointers.lock().unwrap().push(pointer.downgrade());
 
         let data = pointer.data::<PointerUserData<D>>().unwrap();
-        let guard = data.handle.as_ref().unwrap().arc.inner.lock().unwrap();
-        if let Some((focus, location)) = &guard.focus {
-            if focus.same_client_as(&pointer.id()) {
-                if let Some(surface) = focus.wl_surface() {
-                    let serial = self.last_enter.lock().unwrap().unwrap();
-                    let client_scale = data.client_scale.load(Ordering::Acquire);
-                    let location = (guard.location - *location).to_client(client_scale);
-                    pointer.enter(serial.into(), &surface, location.x, location.y);
-                    if pointer.version() >= 5 {
-                        pointer.frame();
+        if let Some(arc) = data.arc.upgrade() {
+            let guard = arc.inner.lock().unwrap();
+            if let Some((focus, location)) = &guard.focus {
+                if focus.same_client_as(&pointer.id()) {
+                    if let Some(surface) = focus.wl_surface() {
+                        let serial = self.last_enter.lock().unwrap().unwrap();
+                        let client_scale = data.client_scale.load(Ordering::Acquire);
+                        let location = (guard.location - *location).to_client(client_scale);
+                        pointer.enter(serial.into(), &surface, location.x, location.y);
+                        if pointer.version() >= 5 {
+                            pointer.frame();
+                        }
                     }
                 }
             }
@@ -404,7 +408,7 @@ where
 /// User data for pointer
 #[derive(Debug)]
 pub struct PointerUserData<D: SeatHandler> {
-    pub(crate) handle: Option<PointerHandle<D>>,
+    pub(crate) arc: std::sync::Weak<PointerRc<D>>,
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
@@ -430,12 +434,12 @@ where
                 hotspot_x,
                 hotspot_y,
             } => {
-                let handle = match &self.handle {
-                    Some(handle) => handle,
+                let handle = match self.arc.upgrade() {
+                    Some(arc) => PointerHandle { arc },
                     None => return,
                 };
 
-                if !allow_setting_cursor(handle, Serial(serial), &pointer.id()) {
+                if !allow_setting_cursor(&handle, Serial(serial), &pointer.id()) {
                     return;
                 }
 
@@ -482,7 +486,7 @@ where
                     .seat_state()
                     .seats
                     .iter()
-                    .find(|seat| seat.get_pointer().map(|h| h == *handle).unwrap_or(false))
+                    .find(|seat| seat.get_pointer().map(|h| h == handle).unwrap_or(false))
                     .cloned();
 
                 if let Some(seat) = seat {
@@ -497,10 +501,8 @@ where
     }
 
     fn destroyed(&self, _state: &mut D, _: ClientId, pointer: &WlPointer) {
-        if let Some(ref handle) = self.handle {
-            handle
-                .arc
-                .wl_pointer
+        if let Some(arc) = self.arc.upgrade() {
+            arc.wl_pointer
                 .known_pointers
                 .lock()
                 .unwrap()

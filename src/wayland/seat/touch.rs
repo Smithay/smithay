@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{Arc, Weak, atomic::Ordering};
 
 use portable_atomic::AtomicF64;
 use wayland_server::{
@@ -13,7 +13,7 @@ use crate::wayland::compositor::CompositorHandler;
 use crate::wayland::seat::wl_surface::WlSurface;
 use crate::{input::touch::TouchHandle, wayland::seat::WaylandFocus};
 use crate::{
-    input::touch::TouchTarget,
+    input::touch::{TouchRc, TouchTarget},
     utils::{Clock, Monotonic},
 };
 use crate::{
@@ -40,22 +40,25 @@ where
             if let Some((focus, location)) = &state.focus {
                 if focus.same_client_as(&touch.id()) {
                     if let Some(surface) = focus.wl_surface() {
-                        let serial = data.handle.as_ref().unwrap().arc.last_down.lock().unwrap()[slot];
-                        let time = *time.get_or_insert_with(|| Clock::<Monotonic>::new().now().as_millis());
-                        let client_scale = data.client_scale.load(Ordering::Acquire);
-                        let location = (state.location - *location).to_client(client_scale);
+                        if let Some(arc) = data.arc.upgrade() {
+                            let serial = arc.last_down.lock().unwrap()[slot];
+                            let time =
+                                *time.get_or_insert_with(|| Clock::<Monotonic>::new().now().as_millis());
+                            let client_scale = data.client_scale.load(Ordering::Acquire);
+                            let location = (state.location - *location).to_client(client_scale);
 
-                        touch.down(
-                            serial.into(),
-                            time,
-                            &surface,
-                            (*slot).into(),
-                            location.x,
-                            location.y,
-                        );
-                        sent = true;
+                            touch.down(
+                                serial.into(),
+                                time,
+                                &surface,
+                                (*slot).into(),
+                                location.x,
+                                location.y,
+                            );
+                            sent = true;
 
-                        // TODO: send shape, orientation.
+                            // TODO: send shape, orientation.
+                        }
                     }
                 }
             }
@@ -73,7 +76,9 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// May return `None` for a valid `WlTouch` that was created without
     /// the touch capability.
     pub fn from_resource(seat: &WlTouch) -> Option<Self> {
-        seat.data::<TouchUserData<D>>()?.handle.clone()
+        Some(Self {
+            arc: seat.data::<TouchUserData<D>>()?.arc.upgrade()?,
+        })
     }
 
     /// Return all raw [`WlTouch`] instances for a particular [`Client`]
@@ -212,7 +217,7 @@ where
 /// User data for touch
 #[derive(Debug)]
 pub struct TouchUserData<D: SeatHandler> {
-    pub(crate) handle: Option<TouchHandle<D>>,
+    pub(crate) arc: Weak<TouchRc<D>>,
     pub(crate) client_scale: Arc<AtomicF64>,
 }
 
@@ -233,10 +238,8 @@ where
     }
 
     fn destroyed(&self, _state: &mut D, _client_id: ClientId, touch: &WlTouch) {
-        if let Some(ref handle) = self.handle {
-            handle
-                .arc
-                .known_instances
+        if let Some(arc) = self.arc.upgrade() {
+            arc.known_instances
                 .lock()
                 .unwrap()
                 .retain(|p| p.id() != touch.id());
