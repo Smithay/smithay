@@ -74,7 +74,7 @@ use std::{
     borrow::Cow,
     fmt,
     sync::{
-        Arc,
+        Arc, Weak,
         atomic::{AtomicU32, Ordering},
     },
 };
@@ -200,10 +200,13 @@ impl<D: SeatHandler + 'static> Seat<D> {
     }
 
     /// Attempt to retrieve a [`Seat`] from an existing resource
+    ///
+    /// May return `None` for a valid `WlSeat` if the `Seat` has since been
+    /// removed.
     pub fn from_resource(seat: &WlSeat) -> Option<Self> {
-        seat.data::<SeatUserData<D>>()
-            .map(|d| d.arc.clone())
-            .map(|arc| Self { arc })
+        Some(Self {
+            arc: seat.data::<SeatUserData<D>>()?.arc.upgrade()?,
+        })
     }
 
     /// Retrieves [`WlSeat`] resources for a given client
@@ -227,7 +230,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
 
 /// User data for seat
 pub struct SeatUserData<D: SeatHandler> {
-    arc: Arc<SeatRc<D>>,
+    arc: Weak<SeatRc<D>>,
     // Protocol states that `missing_capability` should be sent if capability is
     // not advertised, *or* previously advertised on seat.
     sent_capabilities: AtomicU32,
@@ -270,18 +273,23 @@ where
                     return;
                 }
 
-                let inner = self.arc.inner.lock().unwrap();
+                let ptr_handle = self
+                    .arc
+                    .upgrade()
+                    .and_then(|arc| arc.inner.lock().unwrap().pointer.clone());
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
                 let pointer = data_init.init(
                     id,
                     PointerUserData {
-                        handle: inner.pointer.clone(),
+                        arc: ptr_handle
+                            .as_ref()
+                            .map_or_else(Weak::new, |h| Arc::downgrade(&h.arc)),
                         client_scale,
                     },
                 );
 
-                if let Some(ref ptr_handle) = inner.pointer {
+                if let Some(ptr_handle) = &ptr_handle {
                     ptr_handle.arc.wl_pointer.new_pointer::<D>(pointer);
                 } else {
                     // we should send a protocol error... but the protocol does not allow
@@ -294,16 +302,21 @@ where
                     return;
                 }
 
-                let inner = self.arc.inner.lock().unwrap();
+                let kbd_handle = self
+                    .arc
+                    .upgrade()
+                    .and_then(|arc| arc.inner.lock().unwrap().keyboard.clone());
 
                 let keyboard = data_init.init(
                     id,
                     KeyboardUserData {
-                        handle: inner.keyboard.clone(),
+                        arc: kbd_handle
+                            .as_ref()
+                            .map_or_else(Weak::new, |h| Arc::downgrade(&h.arc)),
                     },
                 );
 
-                if let Some(ref h) = inner.keyboard {
+                if let Some(h) = &kbd_handle {
                     h.new_kbd(keyboard);
                 } else {
                     // same as pointer, should error but cannot
@@ -321,18 +334,23 @@ where
                     return;
                 }
 
-                let inner = self.arc.inner.lock().unwrap();
+                let touch_handle = self
+                    .arc
+                    .upgrade()
+                    .and_then(|arc| arc.inner.lock().unwrap().touch.clone());
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
                 let touch = data_init.init(
                     id,
                     TouchUserData {
-                        handle: inner.touch.clone(),
+                        arc: touch_handle
+                            .as_ref()
+                            .map_or_else(Weak::new, |h| Arc::downgrade(&h.arc)),
                         client_scale,
                     },
                 );
 
-                if let Some(ref h) = inner.touch {
+                if let Some(h) = &touch_handle {
                     h.new_touch(touch);
                 } else {
                     // same as pointer, should error but cannot
@@ -346,12 +364,13 @@ where
     }
 
     fn destroyed(&self, _state: &mut D, _: ClientId, seat: &WlSeat) {
-        self.arc
-            .inner
-            .lock()
-            .unwrap()
-            .known_seats
-            .retain(|s| s.id() != seat.id());
+        if let Some(arc) = self.arc.upgrade() {
+            arc.inner
+                .lock()
+                .unwrap()
+                .known_seats
+                .retain(|s| s.id() != seat.id());
+        }
     }
 }
 
@@ -377,7 +396,7 @@ where
         let capabilities = inner.compute_caps();
 
         let data = SeatUserData {
-            arc: self.arc.clone(),
+            arc: Arc::downgrade(&self.arc),
             sent_capabilities: AtomicU32::new(u32::from(capabilities)),
         };
 
@@ -387,7 +406,7 @@ where
             resource.name(self.arc.name.clone());
         }
 
-        resource.capabilities(capabilities);
+        resource.capabilities(inner.compute_caps());
         inner.known_seats.push(resource.downgrade());
     }
 }

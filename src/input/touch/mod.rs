@@ -57,7 +57,7 @@ pub(crate) struct TouchRc<D: SeatHandler> {
 impl<D: SeatHandler> fmt::Debug for TouchHandle<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TouchHandle")
-            .field("inner", &self.arc, inner)
+            .field("inner", &self.arc.inner)
             .finish()
     }
 }
