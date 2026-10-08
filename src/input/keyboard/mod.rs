@@ -1146,37 +1146,50 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// Prefer using [`KeyboardHandle::input`] if this decision can be done synchronously
     /// in the `filter` closure.
+    ///
+    /// `None` return means that the input was absorbed because it was already held/released
+    /// beforehand, and must not be passed to [`KeyboardHandle::input_forward`].
     pub fn input_intercept<T, F>(
         &self,
         data: &mut D,
         keycode: Keycode,
         state: KeyState,
         filter: F,
-    ) -> (T, bool)
+    ) -> Option<(T, bool)>
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
     {
         trace!("Handling keystroke");
 
         let mut guard = self.arc.internal.lock().unwrap();
-        let (mods_changed, leds_changed, _is_transition) =
+        let (mods_changed, leds_changed, is_transition) =
             guard.key_input(KeyboardSource::MAIN, keycode, state);
         let led_state = guard.led_state;
         let mods_state = guard.mods_state;
         let xkb = guard.xkb.clone();
         std::mem::drop(guard);
 
-        let key_handle = KeysymHandle { xkb: &xkb, keycode };
-
-        trace!(mods_state = ?mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
-        let filter_result = filter(data, &mods_state, key_handle);
-
         if leds_changed {
             let seat = self.get_seat(data);
             data.led_state_changed(&seat, led_state);
         }
 
-        (filter_result, mods_changed)
+        // The event was absorbed because another source is holding this keycode: don't
+        // double-run the filter (avoids re-triggering shortcuts) and don't forward a duplicate.
+        if !is_transition {
+            // If is_transition is false, the key hasn't hit xkb, so mods_changed cannot be true.
+            debug_assert!(
+                !mods_changed,
+                "mods cannot change for a key already held/released"
+            );
+            return None;
+        }
+
+        let key_handle = KeysymHandle { xkb: &xkb, keycode };
+        trace!(mods_state = ?mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
+        let filter_result = filter(data, &mods_state, key_handle);
+
+        Some((filter_result, mods_changed))
     }
 
     /// Forward a key event to the focused client
