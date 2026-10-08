@@ -28,10 +28,9 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use downcast_rs::{Downcast, impl_downcast};
 use wayland_server::DisplayHandle;
 
-use crate::utils::Serial;
+use crate::utils::{AsAny, Serial};
 
 /// Trait representing a value that can be used in double-buffered storage
 ///
@@ -92,12 +91,10 @@ impl<T> CachedState<T> {
     }
 }
 
-trait Cache: Downcast {
+trait Cache: AsAny + 'static {
     fn commit(&self, commit_id: Option<Serial>, dh: &DisplayHandle);
     fn apply_state(&self, commit_id: Serial, dh: &DisplayHandle);
 }
-
-impl_downcast!(Cache);
 
 impl<T: Cacheable + 'static> Cache for Mutex<CachedState<T>> {
     fn commit(&self, commit_id: Option<Serial>, dh: &DisplayHandle) {
@@ -168,14 +165,14 @@ impl MultiCache {
 
     fn find_or_insert<T: Cacheable + Send + 'static>(&self) -> &Mutex<CachedState<T>> {
         for cache in &self.caches {
-            if let Some(v) = (**cache).as_any().downcast_ref() {
+            if let Some(v) = cache.as_any().downcast_ref() {
                 return v;
             }
         }
         // if we reach here, then the value is not yet in the list, insert it
         self.caches
             .push(Box::new(Mutex::new(CachedState::<T>::default())) as Box<_>);
-        (*self.caches[self.caches.len() - 1])
+        self.caches[self.caches.len() - 1]
             .as_any()
             .downcast_ref()
             .unwrap()
@@ -190,7 +187,7 @@ impl MultiCache {
     pub fn has<T: Cacheable + Send + 'static>(&self) -> bool {
         self.caches
             .iter()
-            .any(|c| (**c).as_any().is::<Mutex<CachedState<T>>>())
+            .any(|c| c.as_any().is::<Mutex<CachedState<T>>>())
     }
 
     /// Commits the pending state, invoking Cacheable::commit()
