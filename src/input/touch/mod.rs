@@ -41,18 +41,24 @@ pub struct FrameMarker(usize);
 /// When sending events using this handle, they will be intercepted by a touch
 /// grab if any is active. See the [`TouchGrab`] trait for details.
 pub struct TouchHandle<D: SeatHandler> {
-    pub(crate) inner: Arc<Mutex<TouchInternal<D>>>,
+    pub(crate) arc: Arc<TouchRc<D>>,
+}
+
+pub(crate) struct TouchRc<D: SeatHandler> {
+    pub(crate) inner: Mutex<TouchInternal<D>>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_instances: Arc<Mutex<Vec<Weak<wayland_server::protocol::wl_touch::WlTouch>>>>,
+    pub(crate) known_instances: Mutex<Vec<Weak<wayland_server::protocol::wl_touch::WlTouch>>>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) last_down: Arc<Mutex<HashMap<TouchSlot, Serial>>>,
+    pub(crate) last_down: Mutex<HashMap<TouchSlot, Serial>>,
     pub(crate) span: tracing::Span,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
 impl<D: SeatHandler> fmt::Debug for TouchHandle<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TouchHandle").field("inner", &self.inner).finish()
+        f.debug_struct("TouchHandle")
+            .field("inner", &self.arc, inner)
+            .finish()
     }
 }
 
@@ -60,9 +66,9 @@ impl<D: SeatHandler> fmt::Debug for TouchHandle<D> {
 impl<D: SeatHandler> fmt::Debug for TouchHandle<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TouchHandle")
-            .field("inner", &self.inner)
-            .field("known_instances", &self.known_instances)
-            .field("last_down", &self.last_down)
+            .field("inner", &self.arc.inner)
+            .field("known_instances", &self.arc.known_instances)
+            .field("last_down", &self.arc.last_down)
             .finish()
     }
 }
@@ -71,12 +77,7 @@ impl<D: SeatHandler> Clone for TouchHandle<D> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone(),
-            #[cfg(feature = "wayland_frontend")]
-            known_instances: self.known_instances.clone(),
-            #[cfg(feature = "wayland_frontend")]
-            last_down: self.last_down.clone(),
-            span: self.span.clone(),
+            arc: self.arc.clone(),
         }
     }
 }
@@ -84,14 +85,14 @@ impl<D: SeatHandler> Clone for TouchHandle<D> {
 impl<D: SeatHandler> std::hash::Hash for TouchHandle<D> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.inner).hash(state)
+        Arc::as_ptr(&self.arc).hash(state)
     }
 }
 
 impl<D: SeatHandler> std::cmp::PartialEq for TouchHandle<D> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
+        Arc::ptr_eq(&self.arc, &other.arc)
     }
 }
 
@@ -264,29 +265,31 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         F: Fn() -> Box<dyn TouchGrab<D>> + Send + 'static,
     {
         TouchHandle {
-            inner: Arc::new(Mutex::new(TouchInternal::new(default_grab))),
-            #[cfg(feature = "wayland_frontend")]
-            known_instances: Arc::new(Mutex::new(Vec::new())),
-            #[cfg(feature = "wayland_frontend")]
-            last_down: Arc::new(Mutex::new(HashMap::new())),
-            span: info_span!("input_touch"),
+            arc: Arc::new(TouchRc {
+                inner: Mutex::new(TouchInternal::new(default_grab)),
+                #[cfg(feature = "wayland_frontend")]
+                known_instances: Mutex::new(Vec::new()),
+                #[cfg(feature = "wayland_frontend")]
+                last_down: Mutex::new(HashMap::new()),
+                span: info_span!("input_touch"),
+            }),
         }
     }
 
     /// Change the current grab on this touch to the provided grab
     ///
     /// Overwrites any current grab.
-    #[instrument(level = "debug", parent = &self.span, skip(self, data, grab))]
+    #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, grab))]
     pub fn set_grab<G: TouchGrab<D> + 'static>(&self, data: &mut D, grab: G, serial: Serial) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().set_grab(data, &seat, serial, grab);
+        self.arc.inner.lock().unwrap().set_grab(data, &seat, serial, grab);
     }
 
     /// Remove any current grab on this touch, resetting it to the default behavior
-    #[instrument(level = "debug", parent = &self.span, skip(self, data))]
+    #[instrument(level = "debug", parent = &self.arc.span, skip(self, data))]
     pub fn unset_grab(&self, data: &mut D) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().unset_grab(data, &seat);
+        self.arc.inner.lock().unwrap().unset_grab(data, &seat);
     }
 
     /// Check if this touch is currently grabbed with this serial
@@ -296,7 +299,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
 
     /// Check if this touch is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.arc.inner.lock().unwrap();
         !matches!(guard.grab, GrabStatus::None)
     }
 
@@ -307,7 +310,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
 
     /// Calls `f` with the active grab, if any.
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn TouchGrab<D>) -> T) -> Option<T> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.arc.inner.lock().unwrap();
         if let GrabStatus::Active(s, g) = &guard.grab {
             Some(f(*s, &**g))
         } else {
@@ -329,7 +332,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
     ) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.down(data, handle, focus, event);
@@ -338,7 +341,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
 
     /// Notify that a touch point disappeared
     pub fn up(&self, data: &mut D, event: &UpEvent) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.up(data, handle, event);
@@ -363,7 +366,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.motion(data, handle, focus, event);
@@ -374,7 +377,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     ///
     /// This needs to be called after one or move calls to [`TouchHandle::down`] or [`TouchHandle::motion`]
     pub fn frame(&self, data: &mut D) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.frame(data, handle);
@@ -387,7 +390,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// This will remove all current focus targets, and no further events will be sent
     /// until a new touch point appears.
     pub fn cancel(&self, data: &mut D) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.cancel(data, handle);
@@ -396,7 +399,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
 
     /// Notify that a touch point has changed its shape.
     pub fn shape(&self, data: &mut D, event: &ShapeEvent) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.shape(data, handle, event);
@@ -405,7 +408,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
 
     /// Notify that a touch point has changed its orientation.
     pub fn orientation(&self, data: &mut D, event: &OrientationEvent) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
         inner.with_grab(data, &seat, |data, handle, grab| {
             grab.orientation(data, handle, event);

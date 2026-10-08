@@ -213,7 +213,7 @@ where
                 };
                 let pointer = data_init.init(id, user_data);
                 if let Some(handle) = &data.handle {
-                    handle.wp_relative.new_relative_pointer(pointer);
+                    handle.arc.wp_relative.new_relative_pointer(pointer);
                 }
             }
             zwp_relative_pointer_manager_v1::Request::Destroy => {}
@@ -261,6 +261,7 @@ where
     fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpRelativePointerV1) {
         if let Some(ref handle) = self.handle {
             handle
+                .arc
                 .wp_relative
                 .known_relative_pointers
                 .lock()
