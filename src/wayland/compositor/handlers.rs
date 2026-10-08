@@ -210,6 +210,10 @@ where
                 });
             }
             wl_surface::Request::Damage { x, y, width, height } => {
+                if width <= 0 || height <= 0 {
+                    return;
+                }
+
                 let client_scale = state.client_compositor_state(client).client_scale();
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
@@ -302,7 +306,7 @@ where
                 }
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
-                if width < 0 || height < 0 {
+                if width <= 0 || height <= 0 {
                     return;
                 }
 
