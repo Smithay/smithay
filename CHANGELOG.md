@@ -135,6 +135,21 @@ is used for timestamps for synthesized events.
 
 `TextInputActivation` must be implemented. It allows for hooks to be run when a text input is `activated` and `deactivated`.
 
+`KeyboardHandle::input_intercept()` now has a `source` argument and early-returns `None` when the key was already pressed/released, matching the behavior of `KeyboardHandle::input()`.
+
+```diff
+-let (res, mods_changed) = keyboard.input_intercept(data, keycode, state, filter);
++let Some((res, mods_changed)) = keyboard.input_intercept(
++    KeyboardSource::MAIN,
++    data,
++    keycode,
++    state,
++    filter,
++) else {
++    return;
++};
+```
+
 ### Additions
 
 - Add `WmWindowProperty::Other` to forward unrecognized X11 property changes to the compositor.
