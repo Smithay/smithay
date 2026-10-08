@@ -124,15 +124,13 @@ use wayland_server::{Dispatch, DisplayHandle, backend::GlobalId};
 
 use crate::input::SeatHandler;
 use crate::input::WeakSeat;
-use crate::input::pointer::{CursorIcon, CursorImageStatus};
+use crate::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use crate::input::tablet::TabletSeatHandler;
 use crate::utils::Serial;
 use crate::wayland::seat::{WaylandFocus, pointer::allow_setting_cursor};
 use crate::wayland::tablet_manager::TabletToolUserData;
 use crate::wayland::tablet_manager::tablet_tool;
 use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
-
-use super::seat::PointerUserData;
 
 /// State of the cursor shape manager.
 #[derive(Debug)]
@@ -197,8 +195,7 @@ where
                 cursor_shape_device,
                 pointer,
             } => {
-                let pointer_data = pointer.data::<PointerUserData<D>>();
-                let handle = match pointer_data.and_then(|data| data.handle.as_ref()) {
+                let handle = match PointerHandle::from_resource(&pointer) {
                     Some(handle) => handle,
                     None => return,
                 };
@@ -207,7 +204,7 @@ where
                     .seat_state()
                     .seats
                     .iter()
-                    .find(|seat| seat.get_pointer().map(|h| &h == handle).unwrap_or(false))
+                    .find(|seat| seat.get_pointer().map(|h| h == handle).unwrap_or(false))
                     .cloned()
                 else {
                     return;
