@@ -280,7 +280,7 @@ where
                 );
 
                 if let Some(ref ptr_handle) = inner.pointer {
-                    ptr_handle.wl_pointer.new_pointer::<D>(pointer);
+                    ptr_handle.arc.wl_pointer.new_pointer::<D>(pointer);
                 } else {
                     // we should send a protocol error... but the protocol does not allow
                     // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
