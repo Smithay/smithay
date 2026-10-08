@@ -1087,29 +1087,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
-        trace!("Handling keystroke");
-
-        let mut guard = self.arc.internal.lock().unwrap();
-        let (mods_changed, leds_changed, is_transition) = guard.key_input(source, keycode, state);
-        let led_state = guard.led_state;
-        let mods_state = guard.mods_state;
-        let xkb = guard.xkb.clone();
-        std::mem::drop(guard);
-
-        if leds_changed {
-            let seat = self.get_seat(data);
-            data.led_state_changed(&seat, led_state);
-        }
-
-        // The event was absorbed because another source is holding this keycode: don't
-        // double-run the filter (avoids re-triggering shortcuts) and don't forward a duplicate.
-        if !is_transition {
-            return None;
-        }
-
-        let key_handle = KeysymHandle { xkb: &xkb, keycode };
-        trace!(mods_state = ?mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
-        if let FilterResult::Intercept(val) = filter(data, &mods_state, key_handle) {
+        let (filter_result, mods_changed) = self.input_intercept(source, data, keycode, state, filter)?;
+        if let FilterResult::Intercept(val) = filter_result {
             trace!("Input was intercepted by filter");
             return Some(val);
         }
@@ -1144,13 +1123,14 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Useful in conjunction with [`KeyboardHandle::input_forward`] in case you want
     /// to asynchronously decide if the event should be forwarded to the focused client.
     ///
-    /// Prefer using [`KeyboardHandle::input`] if this decision can be done synchronously
-    /// in the `filter` closure.
+    /// Prefer using [`KeyboardHandle::input`] or [`KeyboardHandle::input_from_source`] if this
+    /// decision can be done synchronously in the `filter` closure.
     ///
     /// `None` return means that the input was absorbed because it was already held/released
     /// beforehand, and must not be passed to [`KeyboardHandle::input_forward`].
     pub fn input_intercept<T, F>(
         &self,
+        source: KeyboardSource,
         data: &mut D,
         keycode: Keycode,
         state: KeyState,
@@ -1162,8 +1142,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         trace!("Handling keystroke");
 
         let mut guard = self.arc.internal.lock().unwrap();
-        let (mods_changed, leds_changed, is_transition) =
-            guard.key_input(KeyboardSource::MAIN, keycode, state);
+        let (mods_changed, leds_changed, is_transition) = guard.key_input(source, keycode, state);
         let led_state = guard.led_state;
         let mods_state = guard.mods_state;
         let xkb = guard.xkb.clone();
