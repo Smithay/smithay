@@ -63,8 +63,10 @@ pub trait TouchGrab<D: SeatHandler>: Send + Downcast {
     /// If you don't, the rest of the compositor will behave as if the motion event never occurred.
     ///
     /// **Note** that this is **not** intended to update the focus of the touch point, the focus
-    /// is only set on a down event. The focus provided to this function can be used to find DnD
-    /// targets during touch motion.
+    /// is only set on a down event. If the provided focus is the same surface as the locked
+    /// focus of the touch point, its location is adopted as the current origin of that surface
+    /// (see [`TouchHandle::motion`](super::TouchHandle::motion)). The focus provided to this
+    /// function can also be used to find DnD targets during touch motion.
     fn motion(
         &mut self,
         data: &mut D,

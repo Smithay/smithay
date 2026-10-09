@@ -363,8 +363,12 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     ///   on top of a client surface).
     ///
     /// **Note** that this will **not** update the focus of the touch point, the focus
-    /// is only set on [`TouchHandle::down`]. The focus provided to this function
-    /// can be used to find DnD targets during touch motion.
+    /// is only set on [`TouchHandle::down`]. If the provided focus is the same surface
+    /// as the locked focus of the touch point, its location is adopted as the current
+    /// origin of that surface: the surface-local coordinates of the motion event stay
+    /// correct when the surface moves while being touched (e.g. a layer-shell surface
+    /// dragged by the finger). The focus provided to this function can also be used to
+    /// find DnD targets during touch motion.
     pub fn motion(
         &self,
         data: &mut D,
@@ -503,8 +507,12 @@ impl<D: SeatHandler + 'static> TouchInnerHandle<'_, D> {
     ///   on top of a client surface).
     ///
     /// **Note** that this will **not** update the focus of the touch point, the focus
-    /// is only set on [`TouchHandle::down`]. The focus provided to this function
-    /// can be used to find DnD targets during touch motion.
+    /// is only set on [`TouchHandle::down`]. If the provided focus is the same surface
+    /// as the locked focus of the touch point, its location is adopted as the current
+    /// origin of that surface: the surface-local coordinates of the motion event stay
+    /// correct when the surface moves while being touched (e.g. a layer-shell surface
+    /// dragged by the finger). The focus provided to this function can also be used to
+    /// find DnD targets during touch motion.
     pub fn motion(
         &mut self,
         data: &mut D,
@@ -625,7 +633,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         let marker = self.frame_marker();
@@ -634,6 +642,17 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         };
         state.pending = marker;
         state.location = event.location;
+        // The focused surface may have moved since touch-down (e.g. a layer-shell
+        // surface being dragged by the finger). The touch focus itself stays locked
+        // to the surface from touch-down, but the compositor reports the surface's
+        // current location with every motion, so adopt it while it is still the
+        // same surface: the surface-local coordinates stay correct as it moves.
+        if let Some((new_focus, new_loc)) = &focus
+            && let Some((stored_focus, loc)) = state.focus.as_mut()
+            && stored_focus == new_focus
+        {
+            *loc = *new_loc;
+        }
         if let Some((focus, loc)) = state.focus.as_ref() {
             let mut new_event = event.clone();
             new_event.location -= *loc;
