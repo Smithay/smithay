@@ -212,8 +212,7 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
                 .create_buffer_object(width, height, fourcc, flags)
                 .map(|bo| GbmBuffer::from_bo_with_node(bo, true, self.drm_node));
         } else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "unsupported combination of flags and modifiers",
             ));
         };
