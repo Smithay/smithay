@@ -252,7 +252,7 @@ pub fn run_udev() {
     info!("Using {} as primary gpu.", primary_gpu);
 
     let gpus = GpuManager::new(GbmGlesBackend::with_factory(|display| {
-        let context = EGLContext::new_with_priority(display, ContextPriority::High)?;
+        let context = EGLContext::new_with_priority(display, ContextPriority::RealTime)?;
         let mut capabilities = unsafe { GlesRenderer::supported_capabilities(&context)? };
         if std::env::var("ANVIL_GLES_DISABLE_INSTANCING").is_ok() {
             capabilities.retain(|capability| *capability != Capability::Instancing);

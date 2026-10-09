@@ -35,11 +35,19 @@ pub struct EGLContext {
 /// Defines the priority for an [`EGLContext`]
 ///
 /// see: <https://registry.khronos.org/EGL/extensions/IMG/EGL_IMG_context_priority.txt>
+/// see: <https://registry.khronos.org/EGL/extensions/NV/EGL_NV_context_priority_realtime.txt>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ContextPriority {
+    /// RealTime priority
+    ///
+    /// Note: This might require special system privileges like `CAP_SYS_NICE`
+    /// or having DRM master to succeed.
+    /// This will fall back to High if realtime isn't supported.
+    RealTime,
     /// High priority
     ///
-    /// Note: This might require special system privileges like `CAP_SYS_NICE` to succeed.
+    /// Note: This might require special system privileges like `CAP_SYS_NICE`
+    /// or having DRM master to succeed.
     High,
     /// Medium priority
     ///
@@ -56,6 +64,7 @@ impl TryFrom<ffi::egl::types::EGLenum> for ContextPriority {
     #[inline]
     fn try_from(value: ffi::egl::types::EGLenum) -> Result<Self, Self::Error> {
         let priority = match value {
+            ffi::egl::CONTEXT_PRIORITY_REALTIME_NV => ContextPriority::RealTime,
             ffi::egl::CONTEXT_PRIORITY_HIGH_IMG => ContextPriority::High,
             ffi::egl::CONTEXT_PRIORITY_MEDIUM_IMG => ContextPriority::Medium,
             ffi::egl::CONTEXT_PRIORITY_LOW_IMG => ContextPriority::Low,
@@ -69,6 +78,7 @@ impl From<ContextPriority> for ffi::egl::types::EGLenum {
     #[inline]
     fn from(value: ContextPriority) -> Self {
         match value {
+            ContextPriority::RealTime => ffi::egl::CONTEXT_PRIORITY_REALTIME_NV,
             ContextPriority::High => ffi::egl::CONTEXT_PRIORITY_HIGH_IMG,
             ContextPriority::Medium => ffi::egl::CONTEXT_PRIORITY_MEDIUM_IMG,
             ContextPriority::Low => ffi::egl::CONTEXT_PRIORITY_LOW_IMG,
@@ -124,7 +134,8 @@ impl EGLContext {
     ///
     /// Note: The priority is a hint that might be ignored by the underlying platform.
     /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
-    /// ignored.
+    /// ignored. If using a realtime priority, it will silently fall back to high if
+    /// `EGL_NV_context_priority_realtime isn't supported.
     pub fn new_with_priority(display: &EGLDisplay, priority: ContextPriority) -> Result<EGLContext, Error> {
         Self::new_internal(display, None, None, Some(priority))
     }
@@ -142,7 +153,8 @@ impl EGLContext {
     ///
     /// Note: The priority is a hint that might be ignored by the underlying platform.
     /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
-    /// ignored.
+    /// ignored. If using a realtime priority, it will silently fall back to high if
+    /// `EGL_NV_context_priority_realtime isn't supported.
     pub fn new_with_config_and_priority(
         display: &EGLDisplay,
         attributes: GlAttributes,
@@ -161,7 +173,8 @@ impl EGLContext {
     ///
     /// Note: The priority is a hint that might be ignored by the underlying platform.
     /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
-    /// ignored.
+    /// ignored. If using a realtime priority, it will silently fall back to high if
+    /// `EGL_NV_context_priority_realtime isn't supported.
     pub fn new_shared_with_priority(
         display: &EGLDisplay,
         share: &EGLContext,
@@ -184,7 +197,8 @@ impl EGLContext {
     ///
     /// Note: The priority is a hint that might be ignored by the underlying platform.
     /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
-    /// ignored.
+    /// ignored. If using a realtime priority, it will silently fall back to high if
+    /// `EGL_NV_context_priority_realtime isn't supported.
     pub fn new_shared_with_config_and_priority(
         display: &EGLDisplay,
         share: &EGLContext,
@@ -203,6 +217,9 @@ impl EGLContext {
     ) -> Result<EGLContext, Error> {
         let span = info_span!(parent: &display.span, "egl_context", ptr = tracing::field::Empty, shared = tracing::field::Empty);
         let _guard = span.enter();
+        // Shadow our input priority, since we might have to modify this
+        // later when validating realtime availability
+        let mut priority = priority;
 
         if let Some(shared) = shared {
             span.record("shared", shared.context as usize);
@@ -275,15 +292,24 @@ impl EGLContext {
             .extensions()
             .iter()
             .any(|x| x == "EGL_IMG_context_priority");
-        if let Some(priority) = priority {
+        let has_realtime_context_priority = display
+            .extensions()
+            .iter()
+            .any(|x| x == "EGL_NV_context_priority_realtime");
+        if let Some(ref mut priority) = priority {
             if !has_context_priority {
                 warn!(
                     ?priority,
                     "ignoring requested context priority, EGL_IMG_context_priority not supported"
                 );
             } else {
+                // We don't tell the client if realtime is supported or not, but we can fall back
+                // to high if it's set.
+                if *priority == ContextPriority::RealTime && !has_realtime_context_priority {
+                    *priority = ContextPriority::High;
+                }
                 context_attributes.push(ffi::egl::CONTEXT_PRIORITY_LEVEL_IMG as i32);
-                context_attributes.push(Into::<ffi::egl::types::EGLenum>::into(priority) as i32);
+                context_attributes.push(Into::<ffi::egl::types::EGLenum>::into(*priority) as i32);
             }
         }
 
@@ -330,7 +356,11 @@ impl EGLContext {
             None
         };
 
-        if priority.is_some() && has_context_priority && priority != context_priority {
+        if priority.is_some()
+            && has_realtime_context_priority
+            && has_context_priority
+            && priority != context_priority
+        {
             warn!(requested = ?priority, got = ?context_priority, "failed to set context priority");
         }
 
