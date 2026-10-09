@@ -70,7 +70,14 @@ pub(crate) mod keyboard;
 pub(crate) mod pointer;
 mod touch;
 
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+};
 
 use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
 use crate::wayland::{Dispatch2, GlobalDispatch2};
@@ -140,6 +147,10 @@ impl<D: SeatHandler> Inner<D> {
         for seat in &self.known_seats {
             if let Ok(seat) = seat.upgrade() {
                 seat.capabilities(capabilities);
+
+                let data = seat.data::<SeatUserData<D>>().unwrap();
+                data.sent_capabilities
+                    .fetch_or(u32::from(capabilities), Ordering::SeqCst);
             }
         }
     }
@@ -217,6 +228,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
 /// User data for seat
 pub struct SeatUserData<D: SeatHandler> {
     arc: Arc<SeatRc<D>>,
+    sent_capabilities: AtomicU32,
 }
 
 impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
@@ -241,13 +253,21 @@ where
         &self,
         state: &mut D,
         client: &wayland_server::Client,
-        _resource: &WlSeat,
+        seat: &WlSeat,
         request: wl_seat::Request,
         _dh: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
+        let sent_capabilities =
+            wl_seat::Capability::from_bits_retain(self.sent_capabilities.load(Ordering::SeqCst));
+
         match request {
             wl_seat::Request::GetPointer { id } => {
+                if !sent_capabilities.contains(wl_seat::Capability::Pointer) {
+                    seat.post_error(wl_seat::Error::MissingCapability, "missing pointer capability");
+                    return;
+                }
+
                 let inner = self.arc.inner.lock().unwrap();
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
@@ -267,6 +287,11 @@ where
                 }
             }
             wl_seat::Request::GetKeyboard { id } => {
+                if !sent_capabilities.contains(wl_seat::Capability::Keyboard) {
+                    seat.post_error(wl_seat::Error::MissingCapability, "missing keyboard capability");
+                    return;
+                }
+
                 let inner = self.arc.inner.lock().unwrap();
 
                 let keyboard = data_init.init(
@@ -283,6 +308,11 @@ where
                 }
             }
             wl_seat::Request::GetTouch { id } => {
+                if !sent_capabilities.contains(wl_seat::Capability::Touch) {
+                    seat.post_error(wl_seat::Error::MissingCapability, "missing touch capability");
+                    return;
+                }
+
                 let inner = self.arc.inner.lock().unwrap();
 
                 let client_scale = state.client_compositor_state(client).clone_client_scale();
@@ -334,8 +364,13 @@ where
         resource: New<WlSeat>,
         data_init: &mut DataInit<'_, D>,
     ) {
+        let mut inner = self.arc.inner.lock().unwrap();
+
+        let capabilities = inner.compute_caps();
+
         let data = SeatUserData {
             arc: self.arc.clone(),
+            sent_capabilities: AtomicU32::new(u32::from(capabilities)),
         };
 
         let resource = data_init.init(resource, data);
@@ -344,8 +379,7 @@ where
             resource.name(self.arc.name.clone());
         }
 
-        let mut inner = self.arc.inner.lock().unwrap();
-        resource.capabilities(inner.compute_caps());
+        resource.capabilities(capabilities);
         inner.known_seats.push(resource.downgrade());
     }
 }
