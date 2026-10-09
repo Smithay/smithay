@@ -12,7 +12,7 @@ fps_ticker = {version = "1.0.0", optional = true}
 image = {version = "0.25.1", default-features = false, optional = true, features = ["png"]}
 rand = "0.8"
 tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_debug"] }
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 thiserror = "1"
 xcursor = {version = "0.3.3", optional = true}
 xkbcommon = "0.8.0"
@@ -37,7 +37,7 @@ gl_generator = "0.14"
 
 [features]
 debug = ["fps_ticker", "image/png", "renderdoc"]
-default = ["egl", "winit", "x11", "udev", "xwayland"]
+default = ["winit", "x11", "udev", "xwayland"]
 egl = ["smithay/use_system_lib", "smithay/backend_egl"]
 test_all_features = ["default", "debug"]
 udev = [
@@ -51,6 +51,7 @@ udev = [
   "smithay/backend_session_libseat",
   "image",
   "smithay/renderer_gl",
+  "smithay/renderer_vulkan",
   "smithay/renderer_pixman",
   "smithay/renderer_multi",
   "xcursor",

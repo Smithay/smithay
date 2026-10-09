@@ -18,14 +18,14 @@ use smithay::{
         allocator::{
             dmabuf::{Dmabuf, DmabufAllocator},
             gbm::{GbmAllocator, GbmBufferFlags},
-            vulkan::{ImageUsageFlags, VulkanAllocator},
+            vulkan::VulkanAllocator,
         },
         egl::{EGLContext, EGLDisplay},
         renderer::{
             damage::OutputDamageTracker, element::AsRenderElements, gles::GlesRenderer, Bind, ImportDma,
             ImportMemWl,
         },
-        vulkan::{version::Version, Instance, PhysicalDevice},
+        vulkan::{image::ImageUsageFlags, version::Version, Instance, PhysicalDevice},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
     delegate_dmabuf,

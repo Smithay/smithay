@@ -48,8 +48,12 @@ use smithay::{
             damage::Error as OutputDamageTrackerError,
             element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElementStates},
             gles::{Capability, GlesRenderer},
-            multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
-            DebugFlags, ImportDma, ImportMemWl,
+            multigpu::{
+                gbm::GbmGlesBackend,
+                vulkan::{self, GbmVulkanBackend},
+                GpuManager, MultiRenderer,
+            },
+            Bind, DebugFlags, ImportDma, ImportMemWl,
         },
         session::{
             libseat::{self, LibSeatSession},
@@ -116,12 +120,7 @@ const SUPPORTED_FORMATS: &[Fourcc] = &[
 ];
 const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
-type UdevRenderer<'a> = MultiRenderer<
-    'a,
-    'a,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
-    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
->;
+type UdevRenderer<'a> = MultiRenderer<'a, 'a, GbmVulkanBackend<DrmDeviceFd>, GbmVulkanBackend<DrmDeviceFd>>;
 
 #[derive(Debug, PartialEq)]
 struct UdevOutputId {
@@ -135,7 +134,7 @@ pub struct UdevData {
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     syncobj_state: Option<DrmSyncobjState>,
     primary_gpu: DrmNode,
-    gpus: GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
+    gpus: GpuManager<GbmVulkanBackend<DrmDeviceFd>>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, MemoryRenderBuffer)>,
     pointer_element: PointerElement,
@@ -252,15 +251,7 @@ pub fn run_udev() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    let gpus = GpuManager::new(GbmGlesBackend::with_factory(|display| {
-        let context = EGLContext::new_with_priority(display, ContextPriority::High)?;
-        let mut capabilities = unsafe { GlesRenderer::supported_capabilities(&context)? };
-        if std::env::var("ANVIL_GLES_DISABLE_INSTANCING").is_ok() {
-            capabilities.retain(|capability| *capability != Capability::Instancing);
-        }
-        Ok(unsafe { GlesRenderer::with_capabilities(context, capabilities)? })
-    }))
-    .unwrap();
+    let gpus = GpuManager::new(GbmVulkanBackend::new(GbmBufferFlags::RENDERING).unwrap()).unwrap();
 
     let data = UdevData {
         dh: display_handle.clone(),
@@ -440,6 +431,7 @@ pub fn run_udev() {
         state.backend_data.fps_texture = Some(fps_texture);
     }
 
+    /*
     #[cfg(feature = "egl")]
     {
         info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration",);
@@ -448,6 +440,7 @@ pub fn run_udev() {
             Err(err) => info!(?err, "Failed to initialize EGL hardware-acceleration"),
         }
     }
+    */
 
     // init dmabuf support with format list from our primary gpu
     let dmabuf_formats = renderer.dmabuf_formats();
@@ -690,7 +683,9 @@ enum DeviceAddError {
     #[error("Failed to access drm node: {0}")]
     DrmNode(CreateDrmNodeError),
     #[error("Failed to add device to GpuManager: {0}")]
-    AddNode(egl::Error),
+    EglAddNode(egl::Error),
+    #[error("Failed to add device to GpuManager: {0}")]
+    AddNode(vulkan::Error),
     #[error("The device has no render node")]
     NoRenderNode,
     #[error("Primary GPU is missing")]
@@ -701,7 +696,7 @@ fn get_surface_dmabuf_feedback(
     primary_gpu: DrmNode,
     render_node: Option<DrmNode>,
     scanout_node: DrmNode,
-    gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
+    gpus: &mut GpuManager<GbmVulkanBackend<DrmDeviceFd>>,
     surface: &DrmSurface,
 ) -> Option<SurfaceDmabufFeedback> {
     let primary_formats = gpus.single_renderer(&primary_gpu).ok()?.dmabuf_formats();
@@ -777,6 +772,19 @@ impl AnvilState<UdevData> {
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
         let gbm = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;
 
+        if std::env::var("ANVIL_DISABLE_EVDI").is_ok() {
+            match drm.get_driver() {
+                Ok(x) if x.name == "evdi" => {
+                    return Ok(());
+                }
+                Ok(x) => {}
+                Err(err) => {
+                    warn!("Failed to query drm driver: {}", err);
+                    return Ok(());
+                }
+            }
+        }
+
         let registration_token = self
             .handle
             .insert_source(
@@ -794,8 +802,8 @@ impl AnvilState<UdevData> {
             .unwrap();
 
         let mut try_initialize_gpu = || {
-            let display = unsafe { EGLDisplay::new(gbm.clone()).map_err(DeviceAddError::AddNode)? };
-            let egl_device = EGLDevice::device_for_display(&display).map_err(DeviceAddError::AddNode)?;
+            let display = unsafe { EGLDisplay::new(gbm.clone()).map_err(DeviceAddError::EglAddNode)? };
+            let egl_device = EGLDevice::device_for_display(&display).map_err(DeviceAddError::EglAddNode)?;
 
             if egl_device.is_software() {
                 return Err(DeviceAddError::NoRenderNode);
@@ -846,10 +854,8 @@ impl AnvilState<UdevData> {
             .gpus
             .single_renderer(&render_node.unwrap_or(self.backend_data.primary_gpu))
             .unwrap();
-        let render_formats = renderer
-            .as_mut()
-            .egl_context()
-            .dmabuf_render_formats()
+        let render_formats = Bind::<Dmabuf>::supported_formats(renderer.as_ref())
+            .unwrap()
             .iter()
             .filter(|format| render_node.is_some() || format.modifier == Modifier::Linear)
             .copied()
