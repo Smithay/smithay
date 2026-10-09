@@ -305,6 +305,12 @@ where
                     h.new_kbd(keyboard);
                 } else {
                     // same as pointer, should error but cannot
+
+                    // Protocol spec says this should be sent immediately on creation, so send
+                    // for inert object.
+                    if keyboard.version() >= 4 {
+                        keyboard.repeat_info(0, 0);
+                    }
                 }
             }
             wl_seat::Request::GetTouch { id } => {
