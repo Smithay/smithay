@@ -22,12 +22,13 @@ use crate::backend::{
         vulkan::VulkanAllocator,
         Allocator,
     },
-    drm::{CreateDrmNodeError, DrmNode},
+    drm::DrmNode,
     renderer::{
         multigpu::{ApiDevice, GraphicsApi},
         vulkan::{Error as RendererError, VulkanRenderer},
     },
     vulkan::{instance::InstanceError, Instance, PhysicalDevice, UnsupportedProperty, Version},
+    SwapBuffersError,
 };
 
 pub struct VulkanBackend {
@@ -68,9 +69,19 @@ pub enum Error {
     /// VulkanRenderer error
     #[error(transparent)]
     Renderer(#[from] RendererError),
-    /// Error creating a drm node
-    #[error(transparent)]
-    DrmNode(#[from] CreateDrmNodeError),
+}
+
+impl From<Error> for SwapBuffersError {
+    #[inline]
+    fn from(err: Error) -> SwapBuffersError {
+        match err {
+            x @ Error::Instance(_)
+            | x @ Error::Enumeration(_)
+            | x @ Error::NoMatchingPhysicalDevice
+            | x @ Error::DrmProperty(_) => SwapBuffersError::ContextLost(Box::new(x)),
+            Error::Renderer(x) => x.into(),
+        }
+    }
 }
 
 impl fmt::Debug for VulkanBackend {
