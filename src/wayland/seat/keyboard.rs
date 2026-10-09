@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt};
+use std::{cell::RefCell, fmt, sync::Weak};
 
 use tracing::{instrument, trace, warn};
 use wayland_server::{
@@ -15,7 +15,7 @@ use crate::{
     backend::input::{InputTime, KeyState, Keycode},
     input::{
         Seat, SeatHandler, WeakSeat,
-        keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
+        keyboard::{KbdRc, KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
     },
     utils::{HookId, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
@@ -100,19 +100,21 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// May return `None` for a valid `WlKeyboard` that was created without
     /// the keyboard capability.
     pub fn from_resource(seat: &WlKeyboard) -> Option<Self> {
-        seat.data::<KeyboardUserData<D>>()?.handle.clone()
+        Some(KeyboardHandle {
+            arc: seat.data::<KeyboardUserData<D>>()?.arc.upgrade()?,
+        })
     }
 }
 
 /// User data for keyboard
 pub struct KeyboardUserData<D: SeatHandler> {
-    pub(crate) handle: Option<KeyboardHandle<D>>,
+    pub(crate) arc: Weak<KbdRc<D>>,
 }
 
 impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KeyboardUserData")
-            .field("handle", &self.handle)
+            .field("arc", &self.arc)
             .finish()
     }
 }
@@ -134,13 +136,8 @@ where
     }
 
     fn destroyed(&self, _state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard) {
-        if let Some(ref handle) = self.handle {
-            handle
-                .arc
-                .known_kbds
-                .lock()
-                .unwrap()
-                .retain(|k| k.id() != keyboard.id())
+        if let Some(arc) = self.arc.upgrade() {
+            arc.known_kbds.lock().unwrap().retain(|k| k.id() != keyboard.id())
         }
     }
 }
