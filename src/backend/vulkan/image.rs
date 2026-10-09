@@ -7,7 +7,11 @@ use drm::node::DrmNode;
 
 use super::device::WeakDevice;
 use crate::backend::{
-    allocator::{dmabuf::Dmabuf, format::has_alpha, Buffer, Format, Fourcc, Modifier},
+    allocator::{
+        dmabuf::Dmabuf,
+        format::{get_transparent, has_alpha},
+        Buffer, Format, Fourcc, Modifier,
+    },
     vulkan::{format::component_mapping_for_format, Device},
 };
 
@@ -187,12 +191,12 @@ impl VulkanImage {
             .map(|(fourcc, modifiers)| (fourcc, modifiers.into_iter().map(u64::from).collect::<Vec<_>>()))
             .unzip();
         let has_alpha = fourcc.is_none_or(|fourcc| has_alpha(fourcc));
+        let fourcc = fourcc.map(|fourcc| get_transparent(fourcc).unwrap_or(fourcc));
         let mut modifier_list = modifiers.as_deref().map(|modifiers| {
             vk::ImageDrmFormatModifierListCreateInfoEXT::default().drm_format_modifiers(modifiers)
         });
-        let tiling = modifiers
-            .as_deref()
-            .map(|_| vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
+        let tiling = (modifiers.is_some() || dmabuf.is_some())
+            .then_some(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
             .unwrap_or_else(|| {
                 if linear {
                     vk::ImageTiling::LINEAR

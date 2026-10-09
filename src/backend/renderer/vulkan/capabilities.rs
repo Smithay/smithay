@@ -20,7 +20,7 @@ use crate::backend::vulkan::{version::Version, PhysicalDevice};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Capability {
     DmabufMemory,
-    HostImageCopy,
+    HostMemory,
     ExportTimeline,
     ImportFence,
 }
@@ -135,12 +135,12 @@ impl Capability {
             .then_some(Capability::ExportTimeline)
     }
 
-    pub fn supports_host_image_copy(phd: &PhysicalDevice) -> Option<Capability> {
-        if !phd.has_device_extension(ext::host_image_copy::NAME) {
+    pub fn supports_host_memory(phd: &PhysicalDevice) -> Option<Capability> {
+        if !phd.has_device_extension(ext::external_memory_host::NAME) {
             return None;
         }
 
-        Some(Capability::HostImageCopy)
+        Some(Capability::HostMemory)
     }
 
     pub fn supports_import_fence(phd: &PhysicalDevice) -> Option<Capability> {
@@ -185,7 +185,7 @@ impl Capability {
                     ext::image_drm_format_modifier::NAME,
                     ext::external_memory_dma_buf::NAME,
                 ] as &'static [&CStr],
-                Capability::HostImageCopy => &[ext::host_image_copy::NAME],
+                Capability::HostMemory => &[ext::external_memory_host::NAME],
                 Capability::ExportTimeline => &[khr::external_semaphore_fd::NAME],
                 Capability::ImportFence => &[khr::external_fence_fd::NAME],
             })

@@ -5,8 +5,9 @@ use crate::backend::{
 use ash::{
     ext, khr,
     vk::{
-        self, DeviceCreateInfo, DeviceQueueCreateInfo, PhysicalDeviceFeatures2,
-        PhysicalDeviceMemoryProperties, Queue, QueueFlags,
+        self, DeviceCreateInfo, DeviceQueueCreateInfo, PhysicalDeviceExternalMemoryHostPropertiesEXT,
+        PhysicalDeviceFeatures2, PhysicalDeviceMemoryProperties, PhysicalDeviceProperties2, Queue,
+        QueueFlags,
     },
     Device as VkDevice,
 };
@@ -139,10 +140,19 @@ impl Device {
         } else {
             None
         };
-        let ext_host_image_copy = if extensions.iter().any(|ext| ext == &ext::host_image_copy::NAME) {
-            Some(ext::host_image_copy::Device::new(
-                phd.instance().handle(),
-                &device,
+        let ext_external_memory_host = if extensions
+            .iter()
+            .any(|ext| ext == &ext::external_memory_host::NAME)
+        {
+            let mut host_props = PhysicalDeviceExternalMemoryHostPropertiesEXT::default();
+            let mut props = PhysicalDeviceProperties2::default().push_next(&mut host_props);
+            unsafe {
+                phd.get_properties(&mut props);
+            }
+
+            Some((
+                ext::external_memory_host::Device::new(phd.instance().handle(), &device),
+                host_props.min_imported_host_pointer_alignment,
             ))
         } else {
             None
@@ -161,7 +171,7 @@ impl Device {
             khr_external_semaphore_fd,
             khr_external_memory_fd,
             ext_image_drm_format_modifier,
-            ext_host_image_copy,
+            ext_external_memory_host,
             khr_external_fence_fd,
 
             mem_properties,
@@ -195,8 +205,8 @@ impl Device {
         self.0.ext_image_drm_format_modifier.as_ref()
     }
 
-    pub fn vk_ext_host_image_copy(&self) -> Option<&ext::host_image_copy::Device> {
-        self.0.ext_host_image_copy.as_ref()
+    pub fn vk_ext_external_memory_host(&self) -> Option<&(ext::external_memory_host::Device, u64)> {
+        self.0.ext_external_memory_host.as_ref()
     }
 
     pub fn vk_khr_external_fence_fd(&self) -> Option<&khr::external_fence_fd::Device> {
@@ -243,7 +253,7 @@ struct InnerDevice {
     khr_external_semaphore_fd: Option<khr::external_semaphore_fd::Device>,
     khr_external_memory_fd: Option<khr::external_memory_fd::Device>,
     ext_image_drm_format_modifier: Option<ext::image_drm_format_modifier::Device>,
-    ext_host_image_copy: Option<ext::host_image_copy::Device>,
+    ext_external_memory_host: Option<(ext::external_memory_host::Device, u64)>,
     khr_external_fence_fd: Option<khr::external_fence_fd::Device>,
 
     mem_properties: PhysicalDeviceMemoryProperties,
