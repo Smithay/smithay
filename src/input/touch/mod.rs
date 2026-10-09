@@ -647,11 +647,10 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         // to the surface from touch-down, but the compositor reports the surface's
         // current location with every motion, so adopt it while it is still the
         // same surface: the surface-local coordinates stay correct as it moves.
-        if let Some((new_focus, new_loc)) = &focus
-            && let Some((stored_focus, loc)) = state.focus.as_mut()
-            && stored_focus == new_focus
-        {
-            *loc = *new_loc;
+        if let (Some((new_focus, new_loc)), Some((stored_focus, loc))) = (focus, state.focus.as_mut()) {
+            if *stored_focus == new_focus {
+                *loc = new_loc;
+            }
         }
         if let Some((focus, loc)) = state.focus.as_ref() {
             let mut new_event = event.clone();

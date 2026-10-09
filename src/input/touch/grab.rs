@@ -252,10 +252,10 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut TouchInnerHandle<'_, D>,
-        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        handle.motion(data, self.start_data.focus.clone(), event)
+        handle.motion(data, focus, event)
     }
 
     fn frame(&mut self, data: &mut D, handle: &mut TouchInnerHandle<'_, D>) {
