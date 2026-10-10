@@ -12,6 +12,25 @@
 //! device is removed when the client destroys the keyboard, after releasing any
 //! held keys (see [`InputEvent::DeviceRemoved`]).
 //!
+//! Modifiers set directly through the `modifiers` request are not reset on
+//! DeviceRemoved since the masks are absolute, and a virtual keyboard using the
+//! seat's keymap shares its modifier state with the other devices. The
+//! compositor is responsible for choosing if/how to reconcile the modifier
+//! state on virtual keyboard removal (e.g., by tracking the bits set by it).
+//!
+//! Some clients (e.g., IMEs like fcitx) grab the keyboard and forward unhandled
+//! keys through a virtual keyboard of their own. Those must not be passed back
+//! to the grab, otherwise it may loop infinitely.
+//!
+//! ```ignore
+//! let grab_client = seat.input_method().keyboard_grab_client();
+//! if grab_client.is_some() && grab_client == device.client() {
+//!     keyboard.input_forward_bypassing_grab(state, keycode, key_state, serial, time, true);
+//! } else {
+//!     keyboard.input_from_source(device.source(), state, keycode, key_state, serial, time, filter);
+//! }
+//! ```
+//!
 //! Since the keycodes belong to the client's keymap, not the seat, it must be
 //! activated (see [`VirtualKeyboardDevice::keymap`]) before handling them. A
 //! client may send the `no_keymap` format to use the existing seat keymap, in
@@ -60,6 +79,7 @@ use wayland_server::{
 use xkbcommon::xkb;
 
 use crate::backend::input::{InputEvent, InputTime, KeyState};
+use crate::input::keyboard::KeyboardSource;
 use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 const MANAGER_VERSION: u32 = 1;
@@ -164,7 +184,7 @@ where
                             has_keymap: AtomicBool::new(false),
                             keymap: Mutex::new(None),
                             pressed_keys: Mutex::new(Vec::new()),
-                            modifiers_set: AtomicBool::new(false),
+                            source: KeyboardSource::new_auxiliary(),
                         }),
                     },
                 );
@@ -188,7 +208,7 @@ struct VirtualKeyboardData {
     has_keymap: AtomicBool,
     keymap: Mutex<Option<Arc<str>>>,
     pressed_keys: Mutex<Vec<u32>>,
-    modifiers_set: AtomicBool,
+    source: KeyboardSource,
 }
 
 impl VirtualKeyboardUserData {
@@ -308,10 +328,6 @@ where
                     return;
                 }
 
-                // Tracked so `destroyed` can release set modifiers.
-                let any = (mods_depressed | mods_latched | mods_locked | group) != 0;
-                self.data.modifiers_set.store(any, Ordering::Relaxed);
-
                 state.process_virtual_keyboard_event(InputEvent::Special(
                     VirtualKeyboardSpecialEvent::Modifiers {
                         device: self.device(virtual_keyboard),
@@ -352,19 +368,17 @@ where
             });
         }
 
-        // Also clear set modifiers.
-        if self.data.modifiers_set.swap(false, Ordering::Relaxed) {
-            state.process_virtual_keyboard_event(InputEvent::Special(
-                VirtualKeyboardSpecialEvent::Modifiers {
-                    device: device.clone(),
-                    mods_depressed: 0,
-                    mods_latched: 0,
-                    mods_locked: 0,
-                    group: 0,
-                },
-            ));
-        }
-
+        // Modifiers set through the `modifiers` request are deliberately not
+        // cleared since the masks are absolute, and a virtual keyboard using
+        // the seat's keymap (either by sending `no_keymap`, or the same one)
+        // shares the seat's xkb state, so an all-zero mask would clear
+        // modifiers set by other devices. A virtual keyboard with its own
+        // keymap doesn't have this problem, since the seat's xkb state is
+        // rebuilt when the compositor switches keymaps back.
+        //
+        // The compositor should reconcile the modifier state itself on
+        // DeviceRemoved (e.g., based on the bits the virtual keyboard actually
+        // changed).
         state.process_virtual_keyboard_event(InputEvent::DeviceRemoved { device });
     }
 }

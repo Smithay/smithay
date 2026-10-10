@@ -11,8 +11,12 @@ own. A virtual keyboard is now an regular input device:
 for the compositor to handle like real devices (so special keys, compositor
 bindings, idle handling and focus works properly). The compositor has to
 activate the device's keymap (`VirtualKeyboardDevice::keymap`) before processing
-its key events. `VirtualKeyboardUserData` is no longer generic over the state
-type.
+its key events. Modifiers set with the `modifiers` request are not reset when
+the device is destroyed (the masks are absolute, so that would also clear state
+not set by the device, like locks set by other devices on a shared keymap). The
+compositor is responsible for reconciling the modifier state on `DeviceRemoved`
+(e.g., by tracking the bits set by it). `VirtualKeyboardUserData` is no longer
+generic over the state type.
 
 `crate::wayland::selection::data_device::start_dnd` was removed in favor of exposing the
 underlying `DnDGrab` and associated types to make it possible to write external Drag&Drop sources
@@ -162,6 +166,16 @@ is used for timestamps for synthesized events.
 - `XkbContext::set_modifier_mask` applies raw xkb modifier masks to a keyboard
   for clients that report modifier state directly instead of through key presses
   (e.g., `zwp_virtual_keyboard_v1.modifiers`).
+
+- `KeyboardHandle::input_forward_bypassing_grab` sends a key skipping the active
+  grab, which can be used by compositors to prevent infinite loops when a client
+  with a grab forwards a key through its own virtual keyboard, which can be
+  tracked with `InputMethodHandle::keyboard_grab_client` and
+  `VirtualKeyboardDevice::client`.
+
+- `VirtualKeyboardDevice::source` gives each virtual keyboard its own
+  `KeyboardSource` so keys pressed on multiple devices are released when the
+  last one is released.
 
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
 
