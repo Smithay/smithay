@@ -11,8 +11,12 @@ own. A virtual keyboard is now an regular input device:
 for the compositor to handle like real devices (so special keys, compositor
 bindings, idle handling and focus works properly). The compositor has to
 activate the device's keymap (`VirtualKeyboardDevice::keymap`) before processing
-its key events. `VirtualKeyboardUserData` is no longer generic over the state
-type.
+its key events. Modifiers set with the `modifiers` request are not reset when
+the device is destroyed (the masks are absolute, so that would also clear state
+not set by the device, like locks set by other devices on a shared keymap). The
+compositor is responsible for reconciling the modifier state on `DeviceRemoved`
+(e.g., by tracking the bits set by it). `VirtualKeyboardUserData` is no longer
+generic over the state type.
 
 `crate::wayland::selection::data_device::start_dnd` was removed in favor of exposing the
 underlying `DnDGrab` and associated types to make it possible to write external Drag&Drop sources
