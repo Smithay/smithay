@@ -4,10 +4,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1;
-use wayland_server::Resource;
 use wayland_server::protocol::wl_seat::WlSeat;
+use wayland_server::{Client, Resource};
 
 use crate::backend::input::{self, InputBackend, InputTime, UnusedEvent};
+use crate::input::keyboard::KeyboardSource;
 
 use super::VirtualKeyboardData;
 
@@ -80,6 +81,20 @@ impl VirtualKeyboardDevice {
     /// The seat this virtual keyboard was created for.
     pub fn wl_seat(&self) -> &WlSeat {
         &self.data.seat
+    }
+
+    /// The client that created this virtual keyboard, if it's still alive.
+    pub fn client(&self) -> Option<Client> {
+        self.keyboard.client()
+    }
+
+    /// The [`KeyboardSource`] for this device's key events.
+    ///
+    /// Pass this to `KeyboardHandle::input_from_source` so a key event sent for
+    /// a key already down isn't released prematurely (i.e., so it's released on
+    /// the last release rather than the first one).
+    pub fn source(&self) -> KeyboardSource {
+        self.data.source
     }
 
     /// The client's keymap, as `XKB_KEYMAP_FORMAT_TEXT_V1`.

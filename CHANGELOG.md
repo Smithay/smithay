@@ -167,6 +167,16 @@ is used for timestamps for synthesized events.
   for clients that report modifier state directly instead of through key presses
   (e.g., `zwp_virtual_keyboard_v1.modifiers`).
 
+- `KeyboardHandle::input_forward_bypassing_grab` sends a key skipping the active
+  grab, which can be used by compositors to prevent infinite loops when a client
+  with a grab forwards a key through its own virtual keyboard, which can be
+  tracked with `InputMethodHandle::keyboard_grab_client` and
+  `VirtualKeyboardDevice::client`.
+
+- `VirtualKeyboardDevice::source` gives each virtual keyboard its own
+  `KeyboardSource` so keys pressed on multiple devices are released when the
+  last one is released.
+
 - ExtBackgroundEffect protocol is now available in `smithay::wayland::background_effect` module.
 
 `crate::input::dnd` was introduced to enable implementation of Drag&Drop operations on custom types.
