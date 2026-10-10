@@ -110,6 +110,20 @@ impl InputMethodHandle {
         keyboard.grab.is_some()
     }
 
+    /// The client of the input method that has grabbed the keyboard, if any.
+    ///
+    /// This is necessary since input methods like fcitx typically grab the
+    /// keyboard, and forward unhandled keys through its own virtual keyboard.
+    /// These may result in an infinite loop if forwarded back through the grab.
+    /// The compositor should compare the client of virtual keyboards with this,
+    /// and forward keys from them with
+    /// [`KeyboardHandle::input_forward_bypassing_grab`].
+    pub fn keyboard_grab_client(&self) -> Option<Client> {
+        let inner = self.inner.lock().unwrap();
+        let keyboard = inner.keyboard_grab.inner.lock().unwrap();
+        keyboard.grab.as_ref()?.client()
+    }
+
     pub(crate) fn set_text_input_rectangle<D: SeatHandler + 'static>(
         &self,
         state: &mut D,

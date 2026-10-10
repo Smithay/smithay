@@ -1183,6 +1183,44 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         time: InputTime,
         mods_changed: bool,
     ) {
+        self.forward(data, keycode, state, serial, time, mods_changed, false);
+    }
+
+    /// Forward a key event to the focused client, bypassing the active grab, if any.
+    ///
+    /// This can be used by compositors to prevent infinite loops when a client
+    /// with a grab (e.g., fcitx) forwards a key through its own virtual keyboard, which
+    /// can be tracked with `InputMethodHandle::keyboard_grab_client`.
+    ///
+    /// Like [`KeyboardHandle::input_forward`], this doesn't update the xkb state, and
+    /// `mods_changed` only controls whether a `modifiers` event is sent along with the
+    /// key. While a grab is active the focus doesn't receive modifier updates (they go
+    /// to the grab), so the compositor has no way of knowing if the client's modifiers
+    /// are stale, and it's safe to pass `true` in this case, since a redundant
+    /// `modifiers` event is harmless.
+    pub fn input_forward_bypassing_grab(
+        &self,
+        data: &mut D,
+        keycode: Keycode,
+        state: KeyState,
+        serial: Serial,
+        time: InputTime,
+        mods_changed: bool,
+    ) {
+        self.forward(data, keycode, state, serial, time, mods_changed, true);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn forward(
+        &self,
+        data: &mut D,
+        keycode: Keycode,
+        state: KeyState,
+        serial: Serial,
+        time: InputTime,
+        mods_changed: bool,
+        bypass_grab: bool,
+    ) {
         let mut guard = self.arc.internal.lock().unwrap();
         match state {
             KeyState::Pressed => {
@@ -1200,9 +1238,17 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let seat = self.get_seat(data);
         let mods = guard.mods_state;
         let modifiers = mods_changed.then_some(mods);
-        guard.with_grab(data, &seat, |data, handle, grab| {
-            grab.input(data, handle, keycode, state, modifiers, serial, time);
-        });
+        if bypass_grab {
+            let mut handle = KeyboardInnerHandle {
+                inner: &mut guard,
+                seat: &seat,
+            };
+            DefaultGrab.input(data, &mut handle, keycode, state, modifiers, serial, time);
+        } else {
+            guard.with_grab(data, &seat, |data, handle, grab| {
+                grab.input(data, handle, keycode, state, modifiers, serial, time);
+            });
+        }
         if guard.focus.is_some() {
             trace!("Input forwarded to client");
         } else {
