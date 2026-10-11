@@ -914,6 +914,17 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
             }
 
             if self.tip_down {
+                // Compat with other compositors, more on this in https://github.com/Smithay/smithay/pull/1851
+                // tldr: Spec-wise there is no reason to send this, but some clients depend on this
+                focused.axis(
+                    seat,
+                    data,
+                    descriptor,
+                    AxisFrame {
+                        pressure: Some(0.0),
+                        ..Default::default()
+                    },
+                );
                 focused.up(
                     seat,
                     data,
@@ -1013,6 +1024,17 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
     fn up(&mut self, data: &mut D, seat: &Seat<D>, descriptor: &TabletToolDescriptor, event: &UpEvent) {
         if self.tip_down {
             if let Some((focused, _)) = self.focus.as_mut() {
+                // Compat with other compositors, more on this in https://github.com/Smithay/smithay/pull/1851
+                // tldr: Spec-wise there is no reason to send this, but some clients depend on this
+                focused.axis(
+                    seat,
+                    data,
+                    descriptor,
+                    AxisFrame {
+                        pressure: Some(0.0),
+                        ..Default::default()
+                    },
+                );
                 focused.up(seat, data, descriptor, event);
             }
         }
