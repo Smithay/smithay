@@ -17,7 +17,7 @@ use tracing::{debug, info, info_span, instrument, trace};
 use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
 pub use xkbcommon::xkb::{self, ContextFlags, Keycode, Keysym, keysyms};
 
-use super::{GrabStatus, Seat, SeatHandler};
+use super::{Grab, GrabOp, Seat, SeatHandler};
 
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{Resource, Weak};
@@ -244,7 +244,6 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) repeat_delay: i32,
     led_mapping: LedMapping,
     pub(crate) led_state: LedState,
-    grab: GrabStatus<dyn KeyboardGrab<D>>,
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
@@ -297,7 +296,6 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             repeat_delay,
             led_mapping,
             led_state,
-            grab: GrabStatus::None,
         })
     }
 
@@ -371,6 +369,21 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         }
         transitioned
     }
+
+    /// The forwarded held keys and modifier state to announce to a newly-focused target on a
+    /// focus change, from the seat's shared state.
+    fn focus_enter_state(&self) -> (Vec<KeysymHandle<'_>>, ModifiersState) {
+        (
+            self.forwarded_pressed_keys
+                .iter()
+                .map(|keycode| KeysymHandle {
+                    xkb: &self.xkb,
+                    keycode: *keycode,
+                })
+                .collect(),
+            self.mods_state,
+        )
+    }
 }
 
 /// Errors that can be encountered when creating a keyboard handler
@@ -386,6 +399,9 @@ pub enum Error {
 
 pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
+    // NOTE: If both grab an internal mutex are held, grab should be acquired first.
+    // And internal mutex should not be held over a callback.
+    grab: Mutex<Option<Grab<dyn KeyboardGrab<D>>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) keymap: Mutex<KeymapFile>,
     #[cfg(feature = "wayland_frontend")]
@@ -400,7 +416,10 @@ pub(crate) struct KbdRc<D: SeatHandler> {
 #[cfg(not(feature = "wayland_frontend"))]
 impl<D: SeatHandler> fmt::Debug for KbdRc<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("KbdRc").field("internal", &self.internal).finish()
+        f.debug_struct("KbdRc")
+            .field("internal", &self.internal)
+            .field("grab", &self.grab)
+            .finish()
     }
 }
 
@@ -409,6 +428,7 @@ impl<D: SeatHandler> fmt::Debug for KbdRc<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdRc")
             .field("internal", &self.internal)
+            .field("grab", &self.grab)
             .field("keymap", &self.keymap)
             .field("known_kbds", &self.known_kbds)
             .field("last_enter", &self.last_enter)
@@ -420,6 +440,13 @@ impl<D: SeatHandler> fmt::Debug for KbdRc<D> {
 pub struct KeysymHandle<'a> {
     xkb: &'a Mutex<Xkb>,
     keycode: Keycode,
+}
+
+impl<'a> KeysymHandle<'a> {
+    /// Create a new keymap handle for given xkb mutex and keycode
+    pub fn new(xkb: &'a Mutex<Xkb>, keycode: Keycode) -> Self {
+        Self { xkb, keycode }
+    }
 }
 
 impl fmt::Debug for KeysymHandle<'_> {
@@ -754,9 +781,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         drop(_guard);
         Ok(Self {
             arc: Arc::new(KbdRc {
+                internal: Mutex::new(internal),
+                grab: Mutex::new(None),
                 #[cfg(feature = "wayland_frontend")]
                 keymap: Mutex::new(keymap_file),
-                internal: Mutex::new(internal),
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
                 #[cfg(feature = "wayland_frontend")]
@@ -993,20 +1021,21 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// Overwrites any current grab.
     pub fn set_grab<G: KeyboardGrab<D> + 'static>(&self, data: &mut D, grab: G, serial: Serial) {
-        let mut inner = self.arc.internal.lock().unwrap();
-        if let GrabStatus::Active(_, handler) = &mut inner.grab {
-            handler.unset(data);
+        let mut grab_lock = self.arc.grab.lock().unwrap();
+        if let Some(mut grab) = grab_lock.take() {
+            grab.handler.unset(data);
         }
-        inner.grab = GrabStatus::Active(serial, Box::new(grab));
+        *grab_lock = Some(Grab {
+            serial,
+            handler: Box::new(grab),
+        });
     }
 
     /// Remove any current grab on this keyboard, resetting it to the default behavior
     pub fn unset_grab(&self, data: &mut D) {
-        let mut inner = self.arc.internal.lock().unwrap();
-        if let GrabStatus::Active(_, handler) = &mut inner.grab {
-            handler.unset(data);
+        if let Some(mut grab) = self.arc.grab.lock().unwrap().take() {
+            grab.handler.unset(data);
         }
-        inner.grab = GrabStatus::None;
     }
 
     /// Check if this keyboard is currently grabbed with this serial
@@ -1016,8 +1045,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
     /// Check if this keyboard is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
-        let guard = self.arc.internal.lock().unwrap();
-        !matches!(guard.grab, GrabStatus::None)
+        self.arc.grab.lock().unwrap().is_some()
     }
 
     /// Returns the start data for the grab, if any.
@@ -1027,12 +1055,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
     /// Calls `f` with the active grab, if any.
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn KeyboardGrab<D>) -> T) -> Option<T> {
-        let guard = self.arc.internal.lock().unwrap();
-        if let GrabStatus::Active(s, g) = &guard.grab {
-            Some(f(*s, &**g))
-        } else {
-            None
-        }
+        let grab = self.arc.grab.lock().unwrap();
+        grab.as_ref().map(|grab| f(grab.serial, &*grab.handler))
     }
 
     /// Run function on grab, with inner handle
@@ -1040,53 +1064,33 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     where
         F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {
-        let seat = self.get_seat(data);
-        let mut guard = self.arc.internal.lock().unwrap();
-        let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
-        match grab {
-            GrabStatus::Borrowed => panic!("Accessed a keyboard grab from within a keyboard grab access."),
-            GrabStatus::Active(_, ref mut handler) => {
-                // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some(ref surface) = handler.start_data().focus {
-                    if !surface.alive() {
-                        handler.unset(data);
-                        guard.grab = GrabStatus::None;
-                        f(
-                            data,
-                            &mut KeyboardInnerHandle {
-                                inner: &mut guard,
-                                seat: &seat,
-                            },
-                            &mut DefaultGrab,
-                        );
-                        return;
-                    }
-                }
-                f(
-                    data,
-                    &mut KeyboardInnerHandle {
-                        inner: &mut guard,
-                        seat: &seat,
-                    },
-                    &mut **handler,
-                );
-            }
-            GrabStatus::None => {
-                f(
-                    data,
-                    &mut KeyboardInnerHandle {
-                        inner: &mut guard,
-                        seat: &seat,
-                    },
-                    &mut DefaultGrab,
-                );
-            }
+        let mut grab = self.arc.grab.lock().unwrap();
+
+        // If this grab is associated with a surface that is no longer alive, discard it
+        if let Some(Grab { serial: _, handler }) = &mut *grab
+            && let Some(focus) = &handler.start_data().focus
+            && !focus.alive()
+        {
+            handler.unset(data);
+            *grab = None;
         }
 
-        if let GrabStatus::Borrowed = guard.grab {
-            // the grab has not been ended nor replaced, put it back in place
-            guard.grab = grab;
-        }
+        let handler = if let Some(Grab { serial: _, handler }) = &mut *grab {
+            &mut **handler
+        } else {
+            &mut DefaultGrab
+        };
+
+        let seat = self.get_seat(data);
+        let mut inner_handle = KeyboardInnerHandle {
+            inner: &self.arc.internal,
+            grab_op: GrabOp::Keep,
+            seat: &seat,
+        };
+
+        f(data, &mut inner_handle, handler);
+
+        inner_handle.grab_op.apply(&mut grab);
     }
 
     /// Handle a keystroke
@@ -1268,12 +1272,15 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         bypass_grab: bool,
     ) {
         self.run_grab_with_inner_handle(data, |data, handle, grab| {
+            let mut inner = handle.inner.lock().unwrap();
+            let has_focus = inner.focus.is_some();
+
             match state {
                 KeyState::Pressed => {
-                    handle.inner.forwarded_pressed_keys.insert(keycode);
+                    inner.forwarded_pressed_keys.insert(keycode);
                 }
                 KeyState::Released => {
-                    handle.inner.forwarded_pressed_keys.remove(&keycode);
+                    inner.forwarded_pressed_keys.remove(&keycode);
                 }
             };
 
@@ -1281,15 +1288,16 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             // Modifiers are only sent when the shared seat state actually changed; the client
             // resolves the following key event against them, so they must precede the key (handled
             // in `KeyboardInnerHandle::input`).
-            let mods = handle.inner.mods_state;
+            let mods = inner.mods_state;
             let modifiers = mods_changed.then_some(mods);
+            drop(inner);
             if bypass_grab {
                 DefaultGrab.input(data, handle, keycode, state, modifiers, serial, time);
             } else {
                 grab.input(data, handle, keycode, state, modifiers, serial, time);
             }
 
-            if handle.inner.focus.is_some() {
+            if has_focus {
                 trace!("Input forwarded to client");
             } else {
                 trace!("No client currently focused");
@@ -1306,7 +1314,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
         self.run_grab_with_inner_handle(data, |data, handle, grab| {
-            handle.inner.pending_focus.clone_from(&focus);
+            handle.inner.lock().unwrap().pending_focus.clone_from(&focus);
             grab.set_focus(data, handle, focus, serial);
         });
     }
@@ -1581,7 +1589,8 @@ where
 /// This inner handle is accessed from inside a keyboard grab logic, and directly
 /// sends event to the client
 pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
-    inner: &'a mut KbdInternal<D>,
+    inner: &'a Mutex<KbdInternal<D>>,
+    grab_op: GrabOp<dyn KeyboardGrab<D>>,
     seat: &'a Seat<D>,
 }
 
@@ -1606,7 +1615,7 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         grab: G,
     ) {
         handler.unset(data);
-        self.inner.grab = GrabStatus::Active(serial, Box::new(grab));
+        self.grab_op = GrabOp::Set(serial, Box::new(grab));
     }
 
     /// Remove any current grab on this keyboard, resetting it to the default behavior
@@ -1621,17 +1630,17 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         restore_focus: bool,
     ) {
         handler.unset(data);
-        self.inner.grab = GrabStatus::None;
+        self.grab_op = GrabOp::Unset;
         // restore the focus
         if restore_focus {
-            let focus = self.inner.pending_focus.clone();
+            let focus = self.inner.lock().unwrap().pending_focus.clone();
             self.set_focus(data, focus, serial);
         }
     }
 
     /// Access the current focus of this keyboard
-    pub fn current_focus(&self) -> Option<&<D as SeatHandler>::KeyboardFocus> {
-        self.inner.focus.as_ref().map(|f| &f.0)
+    pub fn current_focus(&self) -> Option<<D as SeatHandler>::KeyboardFocus> {
+        self.inner.lock().unwrap().focus.as_ref().map(|f| f.0.clone())
     }
 
     /// Access the keymap file currently used by this keyboard.
@@ -1643,17 +1652,17 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         f(&keymap_file)
     }
 
-    /// Convert a given keycode as a [`KeysymHandle`] modified by this keyboards state
-    pub fn keysym_handle(&self, keycode: Keycode) -> KeysymHandle<'_> {
-        KeysymHandle {
-            keycode,
-            xkb: &self.inner.xkb,
-        }
+    /// Get the reference to the xkb state.
+    ///
+    /// This can be used with [`KeysymHandle::new`] to examine how a keycode is modified
+    /// by this keyboard's state
+    pub fn xkb(&self) -> Arc<Mutex<Xkb>> {
+        self.inner.lock().unwrap().xkb.clone()
     }
 
     /// Get the current modifiers state
     pub fn modifier_state(&self) -> ModifiersState {
-        self.inner.mods_state
+        self.inner.lock().unwrap().mods_state
     }
 
     /// Send the input to the focused keyboards
@@ -1666,7 +1675,10 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         serial: Serial,
         time: InputTime,
     ) {
-        let (focus, _) = match self.inner.focus.as_mut() {
+        let mut inner = self.inner.lock().unwrap();
+        let inner = &mut *inner;
+
+        let (focus, _) = match inner.focus.as_mut() {
             Some(focus) => focus,
             None => return,
         };
@@ -1674,12 +1686,12 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         #[cfg(feature = "wayland_frontend")]
         if let Some(keyboard_handle) = self.seat.get_keyboard() {
             let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
-            let mods = self.inner.mods_state;
+            let mods = inner.mods_state;
             keyboard_handle.send_keymap(data, &Some(focus), &keymap_file, mods);
         }
 
         let key = KeysymHandle {
-            xkb: &self.inner.xkb,
+            xkb: &inner.xkb,
             keycode,
         };
 
@@ -1695,29 +1707,28 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         F: FnOnce(Vec<KeysymHandle<'_>>) -> R,
         R: 'static,
     {
+        let inner = self.inner.lock().unwrap();
+
+        let xkb = inner.xkb.clone();
+
+        // XXX use another helper function
+
         let handles = self
             .inner
+            .lock()
+            .unwrap()
             .pressed_keys
             .iter()
-            .map(|code| self.keysym_handle(*code))
+            .map(|code| KeysymHandle {
+                keycode: *code,
+                xkb: &xkb,
+            })
             .collect();
-        f(handles)
-    }
 
-    /// The forwarded held keys and modifier state to announce to a newly-focused target on a
-    /// focus change, from the seat's shared state.
-    fn focus_enter_state(&self) -> (Vec<KeysymHandle<'_>>, ModifiersState) {
-        (
-            self.inner
-                .forwarded_pressed_keys
-                .iter()
-                .map(|keycode| KeysymHandle {
-                    xkb: &self.inner.xkb,
-                    keycode: *keycode,
-                })
-                .collect(),
-            self.inner.mods_state,
-        )
+        // Don't hold inner lock across callback
+        drop(inner);
+
+        f(handles)
     }
 
     /// Set the current focus of this keyboard
@@ -1732,28 +1743,29 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: Serial,
     ) {
+        let mut inner = self.inner.lock().unwrap();
         if let Some(focus) = focus {
-            let old_focus = self.inner.focus.replace((focus.clone(), serial));
+            let old_focus = inner.focus.replace((focus.clone(), serial));
             match (focus, old_focus) {
                 (focus, Some((old_focus, _))) if focus == old_focus => {
                     trace!("Focus unchanged");
                 }
                 (focus, Some((old_focus, _))) => {
                     trace!("Focus set to new surface");
-                    let (keys, mods) = self.focus_enter_state();
+                    let (keys, mods) = inner.focus_enter_state();
 
                     focus.replace(old_focus, self.seat, data, keys, mods, serial);
                     data.focus_changed(self.seat, Some(&focus));
                 }
                 (focus, None) => {
-                    let (keys, mods) = self.focus_enter_state();
+                    let (keys, mods) = inner.focus_enter_state();
 
                     focus.enter(self.seat, data, keys, serial);
                     focus.modifiers(self.seat, data, mods, serial);
                     data.focus_changed(self.seat, Some(&focus));
                 }
             }
-        } else if let Some((old_focus, _)) = self.inner.focus.take() {
+        } else if let Some((old_focus, _)) = inner.focus.take() {
             trace!("Focus unset");
             old_focus.leave(self.seat, data, serial);
         }
