@@ -227,7 +227,7 @@ impl KeyboardSource {
 
     /// Mint a fresh, process-unique auxiliary source.
     pub fn new_auxiliary() -> Self {
-        static NEXT_AUX_SOURCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        static NEXT_AUX_SOURCE: portable_atomic::AtomicU64 = portable_atomic::AtomicU64::new(1);
         KeyboardSource::Auxiliary(NEXT_AUX_SOURCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
 }
