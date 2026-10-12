@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     backend::input::{Axis, AxisRelativeDirection, AxisSource, ButtonState, InputTime},
-    input::{GrabStatus, Seat, SeatHandler},
+    input::{GrabOp, Seat, SeatHandler},
     utils::Serial,
     utils::{IsAlive, Logical, Point},
 };
@@ -36,6 +36,9 @@ pub struct PointerHandle<D: SeatHandler> {
 
 pub(crate) struct PointerRc<D: SeatHandler> {
     pub(crate) inner: Mutex<PointerInternal<D>>,
+    // NOTE: If both grab an internal mutex are held, grab should be acquired first.
+    // And internal mutex should not be held over a callback.
+    grab: Mutex<Option<(Serial, Box<dyn PointerGrab<D>>)>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) wl_pointer: crate::wayland::seat::pointer::WlPointerHandle,
     #[cfg(feature = "wayland_frontend")]
@@ -145,6 +148,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         PointerHandle {
             arc: Arc::new(PointerRc {
                 inner: Mutex::new(PointerInternal::new()),
+                grab: Mutex::new(None),
                 #[cfg(feature = "wayland_frontend")]
                 wl_pointer: crate::wayland::seat::pointer::WlPointerHandle::default(),
                 #[cfg(feature = "wayland_frontend")]
@@ -165,22 +169,35 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, grab))]
     pub fn set_grab<G: PointerGrab<D> + 'static>(&self, data: &mut D, grab: G, serial: Serial, focus: Focus) {
         let seat = self.get_seat(data);
+
+        let mut grab_lock = self.arc.grab.lock().unwrap();
+        if let Some((_, handler)) = &mut *grab_lock {
+            handler.unset(data);
+        }
+        *grab_lock = Some((serial, Box::new(grab)));
+
         self.arc
             .inner
             .lock()
             .unwrap()
-            .set_grab(data, &seat, serial, grab, focus);
+            .post_set_grab(data, &seat, serial, focus);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     #[instrument(level = "debug", parent = &self.arc.span, skip(self, data))]
     pub fn unset_grab(&self, data: &mut D, serial: Serial, time: InputTime) {
         let seat = self.get_seat(data);
+
+        let mut grab_lock = self.arc.grab.lock().unwrap();
+        if let Some((_, mut handler)) = grab_lock.take() {
+            handler.unset(data);
+        }
+
         self.arc
             .inner
             .lock()
             .unwrap()
-            .unset_grab(data, &seat, serial, time, true);
+            .post_unset_grab(data, &seat, serial, time, true);
     }
 
     /// Check if this pointer is currently grabbed with this serial
@@ -190,8 +207,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 
     /// Check if this pointer is currently being grabbed
     pub fn is_grabbed(&self) -> bool {
-        let guard = self.arc.inner.lock().unwrap();
-        !matches!(guard.grab, GrabStatus::None)
+        self.arc.grab.lock().unwrap().is_some()
     }
 
     /// Returns the start data for the grab, if any.
@@ -201,8 +217,8 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 
     /// Calls `f` with the active grab, if any.
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn PointerGrab<D>) -> T) -> Option<T> {
-        let guard = self.arc.inner.lock().unwrap();
-        if let GrabStatus::Active(s, g) = &guard.grab {
+        let grab = self.arc.grab.lock().unwrap();
+        if let Some((s, g)) = &*grab {
             Some(f(*s, &**g))
         } else {
             None
@@ -214,52 +230,40 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     where
         F: FnOnce(&mut D, &mut PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
     {
-        let seat = self.get_seat(data);
-        let mut guard = self.arc.inner.lock().unwrap();
-        let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
-        match grab {
-            GrabStatus::Borrowed => panic!("Accessed a pointer grab from within a pointer grab access."),
-            GrabStatus::Active(_, ref mut handler) => {
-                // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
-                        handler.unset(data);
-                        guard.grab = GrabStatus::None;
-                        f(
-                            data,
-                            &mut PointerInnerHandle {
-                                inner: &mut guard,
-                                seat: &seat,
-                            },
-                            &mut DefaultGrab,
-                        );
-                        return;
-                    }
-                }
-                f(
-                    data,
-                    &mut PointerInnerHandle {
-                        inner: &mut guard,
-                        seat: &seat,
-                    },
-                    &mut **handler,
-                );
-            }
-            GrabStatus::None => {
-                f(
-                    data,
-                    &mut PointerInnerHandle {
-                        inner: &mut guard,
-                        seat: &seat,
-                    },
-                    &mut DefaultGrab,
-                );
-            }
-        }
+        let mut grab = self.arc.grab.lock().unwrap();
 
-        if let GrabStatus::Borrowed = guard.grab {
-            // The grab has not been ended nor replaced, put it back in place
-            guard.grab = grab;
+        let handler = if let Some((_, ref mut handler)) = *grab {
+            // If this grab is associated with a surface that is no longer alive, discard it
+            if let Some((ref focus, _)) = handler.start_data().focus
+                && !focus.alive()
+            {
+                handler.unset(data);
+                *grab = None;
+                &mut DefaultGrab
+            } else {
+                &mut **handler
+            }
+        } else {
+            &mut DefaultGrab
+        };
+
+        let seat = self.get_seat(data);
+        let mut inner_handle = PointerInnerHandle {
+            inner: &self.arc.inner,
+            grab_op: GrabOp::Keep,
+            seat: &seat,
+        };
+
+        f(data, &mut inner_handle, handler);
+
+        match inner_handle.grab_op {
+            GrabOp::Keep => {}
+            GrabOp::Unset => {
+                *grab = None;
+            }
+            GrabOp::Set(serial, handler) => {
+                *grab = Some((serial, handler));
+            }
         }
     }
 
@@ -282,7 +286,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         event: &MotionEvent,
     ) {
         self.run_grab_with_inner_handle(data, |data, handle, grab| {
-            handle.inner.pending_focus.clone_from(&focus);
+            handle.inner.lock().unwrap().pending_focus.clone_from(&focus);
             grab.motion(data, handle, focus, event);
         });
     }
@@ -300,7 +304,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         event: &RelativeMotionEvent,
     ) {
         self.run_grab_with_inner_handle(data, |data, handle, grab| {
-            handle.inner.pending_focus.clone_from(&focus);
+            handle.inner.lock().unwrap().pending_focus.clone_from(&focus);
             grab.relative_motion(data, handle, focus, event);
         });
     }
@@ -314,10 +318,15 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         self.run_grab_with_inner_handle(data, |data, handle, grab| {
             match event.state {
                 ButtonState::Pressed => {
-                    handle.inner.pressed_buttons.push(event.button);
+                    handle.inner.lock().unwrap().pressed_buttons.push(event.button);
                 }
                 ButtonState::Released => {
-                    handle.inner.pressed_buttons.retain(|b| *b != event.button);
+                    handle
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .pressed_buttons
+                        .retain(|b| *b != event.button);
                 }
             }
             grab.button(data, handle, event);
@@ -504,7 +513,8 @@ where
 /// This inner handle is accessed from inside a pointer grab logic, and directly
 /// sends event to the client
 pub struct PointerInnerHandle<'a, D: SeatHandler> {
-    inner: &'a mut PointerInternal<D>,
+    inner: &'a Mutex<PointerInternal<D>>,
+    grab_op: GrabOp<dyn PointerGrab<D>>,
     seat: &'a Seat<D>,
 }
 
@@ -530,7 +540,11 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         grab: G,
     ) {
         handler.unset(data);
-        self.inner.set_grab(data, self.seat, serial, grab, focus);
+        self.grab_op = GrabOp::Set(serial, Box::new(grab));
+        self.inner
+            .lock()
+            .unwrap()
+            .post_set_grab(data, self.seat, serial, focus);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
@@ -546,26 +560,29 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         restore_focus: bool,
     ) {
         handler.unset(data);
+        self.grab_op = GrabOp::Unset;
         self.inner
-            .unset_grab(data, self.seat, serial, time, restore_focus);
+            .lock()
+            .unwrap()
+            .post_unset_grab(data, self.seat, serial, time, restore_focus);
     }
 
     /// Access the current focus of this pointer
     pub fn current_focus(&self) -> Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)> {
-        self.inner.focus.clone()
+        self.inner.lock().unwrap().focus.clone()
     }
 
     /// Access the current location of this pointer in the global space
     pub fn current_location(&self) -> Point<f64, Logical> {
-        self.inner.location
+        self.inner.lock().unwrap().location
     }
 
     /// A list of the currently physically pressed buttons
     ///
     /// This still includes buttons that your grab have intercepted and not sent
     /// to the client.
-    pub fn current_pressed(&self) -> &[u32] {
-        &self.inner.pressed_buttons
+    pub fn current_pressed(&self) -> Vec<u32> {
+        self.inner.lock().unwrap().pressed_buttons.clone()
     }
 
     /// Notify that the pointer moved
@@ -585,7 +602,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        self.inner.motion(data, self.seat, focus, event);
+        self.inner.lock().unwrap().motion(data, self.seat, focus, event);
     }
 
     /// Notify about relative pointer motion
@@ -599,7 +616,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
-        self.inner.relative_motion(data, self.seat, focus, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .relative_motion(data, self.seat, focus, event);
     }
 
     /// Notify that a button was pressed
@@ -607,7 +627,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
     pub fn button(&mut self, data: &mut D, event: &ButtonEvent) {
-        if let Some((focused, _)) = self.inner.focus.as_mut() {
+        if let Some((focused, _)) = self.inner.lock().unwrap().focus.as_mut() {
             focused.button(self.seat, data, event);
         }
     }
@@ -617,7 +637,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// This will internally send the appropriate axis events to the client
     /// objects matching with the currently focused surface.
     pub fn axis(&mut self, data: &mut D, details: AxisFrame) {
-        if let Some((focused, _)) = self.inner.focus.as_mut() {
+        if let Some((focused, _)) = self.inner.lock().unwrap().focus.as_mut() {
             focused.axis(self.seat, data, details);
         }
     }
@@ -627,7 +647,7 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// This will internally send the appropriate frame event to the client
     /// objects matching with the currently focused surface.
     pub fn frame(&mut self, data: &mut D) {
-        if let Some((focused, _)) = self.inner.focus.as_mut() {
+        if let Some((focused, _)) = self.inner.lock().unwrap().focus.as_mut() {
             focused.frame(self.seat, data);
         }
     }
@@ -638,7 +658,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_swipe_begin(&mut self, data: &mut D, event: &GestureSwipeBeginEvent) {
-        self.inner.gesture_swipe_begin(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_swipe_begin(data, self.seat, event);
     }
 
     /// Notify about swipe gesture update
@@ -647,7 +670,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_swipe_update(&mut self, data: &mut D, event: &GestureSwipeUpdateEvent) {
-        self.inner.gesture_swipe_update(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_swipe_update(data, self.seat, event);
     }
 
     /// Notify about swipe gesture end
@@ -656,7 +682,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_swipe_end(&mut self, data: &mut D, event: &GestureSwipeEndEvent) {
-        self.inner.gesture_swipe_end(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_swipe_end(data, self.seat, event);
     }
 
     /// Notify about pinch gesture begin
@@ -665,7 +694,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_pinch_begin(&mut self, data: &mut D, event: &GesturePinchBeginEvent) {
-        self.inner.gesture_pinch_begin(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_pinch_begin(data, self.seat, event);
     }
 
     /// Notify about pinch gesture update
@@ -674,7 +706,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_pinch_update(&mut self, data: &mut D, event: &GesturePinchUpdateEvent) {
-        self.inner.gesture_pinch_update(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_pinch_update(data, self.seat, event);
     }
 
     /// Notify about pinch gesture end
@@ -683,7 +718,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_pinch_end(&mut self, data: &mut D, event: &GesturePinchEndEvent) {
-        self.inner.gesture_pinch_end(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_pinch_end(data, self.seat, event);
     }
 
     /// Notify about hold gesture begin
@@ -692,7 +730,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_hold_begin(&mut self, data: &mut D, event: &GestureHoldBeginEvent) {
-        self.inner.gesture_hold_begin(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_hold_begin(data, self.seat, event);
     }
 
     /// Notify about hold gesture end
@@ -701,7 +742,10 @@ impl<D: SeatHandler + 'static> PointerInnerHandle<'_, D> {
     /// objects matching with the currently focused surface, if the client uses
     /// the pointer gestures protocol.
     pub fn gesture_hold_end(&mut self, data: &mut D, event: &GestureHoldEndEvent) {
-        self.inner.gesture_hold_end(data, self.seat, event);
+        self.inner
+            .lock()
+            .unwrap()
+            .gesture_hold_end(data, self.seat, event);
     }
 }
 
@@ -709,7 +753,6 @@ pub(crate) struct PointerInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
     pending_focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
     pub(crate) location: Point<f64, Logical>,
-    grab: GrabStatus<dyn PointerGrab<D>>,
     pressed_buttons: Vec<u32>,
 }
 
@@ -720,7 +763,6 @@ impl<D: SeatHandler> fmt::Debug for PointerInternal<D> {
             .field("focus", &self.focus)
             .field("pending_focus", &self.pending_focus)
             .field("location", &self.location)
-            .field("grab", &self.grab)
             .field("pressed_buttons", &self.pressed_buttons)
             .field("image_callback", &"...")
             .finish()
@@ -733,24 +775,11 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
             focus: None,
             pending_focus: None,
             location: (0.0, 0.0).into(),
-            grab: GrabStatus::None,
             pressed_buttons: Vec::new(),
         }
     }
 
-    fn set_grab<G: PointerGrab<D> + 'static>(
-        &mut self,
-        data: &mut D,
-        seat: &Seat<D>,
-        serial: Serial,
-        grab: G,
-        focus: Focus,
-    ) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
-        }
-        self.grab = GrabStatus::Active(serial, Box::new(grab));
-
+    fn post_set_grab(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, focus: Focus) {
         if matches!(focus, Focus::Clear) {
             let location = self.location;
             self.motion(
@@ -766,7 +795,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
     }
 
-    fn unset_grab(
+    fn post_unset_grab(
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
@@ -774,10 +803,6 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         time: InputTime,
         restore_focus: bool,
     ) {
-        if let GrabStatus::Active(_, handler) = &mut self.grab {
-            handler.unset(data);
-        }
-        self.grab = GrabStatus::None;
         if restore_focus {
             // restore the focus
             let location = self.location;

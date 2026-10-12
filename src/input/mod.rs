@@ -742,6 +742,12 @@ impl<D: SeatHandler + 'static> Seat<D> {
     }
 }
 
+enum GrabOp<G: ?Sized> {
+    Keep,
+    Unset,
+    Set(Serial, Box<G>),
+}
+
 pub(super) enum GrabStatus<G: ?Sized> {
     None,
     Active(Serial, Box<G>),
