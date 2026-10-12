@@ -154,6 +154,15 @@ is used for timestamps for synthesized events.
 +};
 ```
 
+Input handles now use a separate mutex for grabs, so the inner mutex isn't held during execution of the grab
+(this prevents, for instance, a deadlock if the grab tries to use a mutex internally that another thread holds
+while using input handle methods that don't affect the grab.) As a result there are a few API changes:
+- `KeyboardInnerHandle::current_focus` now returns a clone of the focus instead of a reference
+- `KeyboardInnerHandle::keysym_handle` is removed in favor of an `::xkb()` that clones the `Xkb` instance, and
+   a `KeysymHandle::new` method
+- `PointerInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
+- `TabletToolInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
+
 ### Additions
 
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
