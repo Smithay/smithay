@@ -318,6 +318,61 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         }
     }
 
+    /// Run function on grab, with inner handle
+    fn run_grab_with_inner_handle<F>(&self, data: &mut D, seat: &Seat<D>, f: F)
+    where
+        F: FnOnce(&mut D, &mut TouchInnerHandle<'_, D>, &mut dyn TouchGrab<D>),
+    {
+        let mut guard = self.arc.inner.lock().unwrap();
+        let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
+        match grab {
+            GrabStatus::Borrowed => panic!("Accessed a touch grab from within a touch grab access."),
+            GrabStatus::Active(_, ref mut handler) => {
+                // If this grab is associated with a surface that is no longer alive, discard it
+                if let Some((ref focus, _)) = handler.start_data().focus {
+                    if !focus.alive() {
+                        handler.unset(data);
+                        guard.grab = GrabStatus::None;
+                        let mut default_grab = (guard.default_grab)();
+                        f(
+                            data,
+                            &mut TouchInnerHandle {
+                                inner: &mut guard,
+                                seat,
+                            },
+                            &mut *default_grab,
+                        );
+                        return;
+                    }
+                }
+                f(
+                    data,
+                    &mut TouchInnerHandle {
+                        inner: &mut guard,
+                        seat,
+                    },
+                    &mut **handler,
+                );
+            }
+            GrabStatus::None => {
+                let mut default_grab = (guard.default_grab)();
+                f(
+                    data,
+                    &mut TouchInnerHandle {
+                        inner: &mut guard,
+                        seat,
+                    },
+                    &mut *default_grab,
+                );
+            }
+        }
+
+        if let GrabStatus::Borrowed = guard.grab {
+            // the grab has not been ended nor replaced, put it back in place
+            guard.grab = grab;
+        }
+    }
+
     /// Notify that a new touch point appeared
     ///
     /// You provide the location of the touch, in the form of:
@@ -332,18 +387,16 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
     ) {
-        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        inner.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
             grab.down(data, handle, focus, event);
         });
     }
 
     /// Notify that a touch point disappeared
     pub fn up(&self, data: &mut D, event: &UpEvent) {
-        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        inner.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
             grab.up(data, handle, event);
         });
     }
@@ -366,9 +419,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        inner.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
             grab.motion(data, handle, focus, event);
         });
     }
@@ -377,9 +429,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     ///
     /// This needs to be called after one or move calls to [`TouchHandle::down`] or [`TouchHandle::motion`]
     pub fn frame(&self, data: &mut D) {
-        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        inner.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
             grab.frame(data, handle);
         });
     }
@@ -390,27 +441,24 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// This will remove all current focus targets, and no further events will be sent
     /// until a new touch point appears.
     pub fn cancel(&self, data: &mut D) {
-        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        inner.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
             grab.cancel(data, handle);
         });
     }
 
     /// Notify that a touch point has changed its shape.
     pub fn shape(&self, data: &mut D, event: &ShapeEvent) {
-        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        inner.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
             grab.shape(data, handle, event);
         });
     }
 
     /// Notify that a touch point has changed its orientation.
     pub fn orientation(&self, data: &mut D, event: &OrientationEvent) {
-        let mut inner = self.arc.inner.lock().unwrap();
         let seat = self.get_seat(data);
-        inner.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
             grab.orientation(data, handle, event);
         });
     }
@@ -710,46 +758,6 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         state.pending = marker;
         if let Some((focus, _)) = state.focus.as_ref() {
             focus.orientation(seat, data, event);
-        }
-    }
-
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
-    where
-        F: FnOnce(&mut D, &mut TouchInnerHandle<'_, D>, &mut dyn TouchGrab<D>),
-    {
-        let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
-        match grab {
-            GrabStatus::Borrowed => panic!("Accessed a touch grab from within a touch grab access."),
-            GrabStatus::Active(_, ref mut handler) => {
-                // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
-                        handler.unset(data);
-                        self.grab = GrabStatus::None;
-                        let mut default_grab = (self.default_grab)();
-                        f(
-                            data,
-                            &mut TouchInnerHandle { inner: self, seat },
-                            &mut *default_grab,
-                        );
-                        return;
-                    }
-                }
-                f(data, &mut TouchInnerHandle { inner: self, seat }, &mut **handler);
-            }
-            GrabStatus::None => {
-                let mut default_grab = (self.default_grab)();
-                f(
-                    data,
-                    &mut TouchInnerHandle { inner: self, seat },
-                    &mut *default_grab,
-                );
-            }
-        }
-
-        if let GrabStatus::Borrowed = self.grab {
-            // the grab has not been ended nor replaced, put it back in place
-            self.grab = grab;
         }
     }
 
