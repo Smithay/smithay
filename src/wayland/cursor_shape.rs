@@ -125,7 +125,7 @@ use wayland_server::{Dispatch, DisplayHandle, backend::GlobalId};
 use crate::input::SeatHandler;
 use crate::input::WeakSeat;
 use crate::input::pointer::{CursorIcon, CursorImageStatus};
-use crate::input::tablet::TabletSeatHandler;
+use crate::input::tablet::{TabletSeatHandler, TabletSeatTrait};
 use crate::utils::Serial;
 use crate::wayland::seat::{WaylandFocus, pointer::allow_setting_cursor};
 use crate::wayland::tablet_manager::TabletToolUserData;
@@ -303,13 +303,22 @@ where
                             return;
                         };
 
+                        let Some(seat) = state
+                            .seat_state()
+                            .seats
+                            .iter()
+                            .find(|seat| seat.tablet_seat().get_tool(handle.descriptor()).is_some())
+                            .cloned()
+                        else {
+                            return;
+                        };
+
                         if !tablet_tool::allow_setting_cursor(&handle, Serial(serial), &resource.id()) {
                             return;
                         }
 
                         let cursor_icon = shape_to_cursor_icon(shape);
-                        state
-                            .tablet_tool_image(&handle.arc.descriptor, CursorImageStatus::Named(cursor_icon));
+                        state.tablet_tool_image(&seat, &handle, CursorImageStatus::Named(cursor_icon));
                     }
                 }
             }
