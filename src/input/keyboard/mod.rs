@@ -994,10 +994,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Run function on grab, with inner handle
-    fn run_grab_with_inner_handle<F>(&self, data: &mut D, seat: &Seat<D>, f: F)
+    fn run_grab_with_inner_handle<F>(&self, data: &mut D, f: F)
     where
         F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {
+        let seat = self.get_seat(data);
         let mut guard = self.arc.internal.lock().unwrap();
         let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
         match grab {
@@ -1012,7 +1013,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                             data,
                             &mut KeyboardInnerHandle {
                                 inner: &mut guard,
-                                seat,
+                                seat: &seat,
                             },
                             &mut DefaultGrab,
                         );
@@ -1023,7 +1024,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                     data,
                     &mut KeyboardInnerHandle {
                         inner: &mut guard,
-                        seat,
+                        seat: &seat,
                     },
                     &mut **handler,
                 );
@@ -1033,7 +1034,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                     data,
                     &mut KeyboardInnerHandle {
                         inner: &mut guard,
-                        seat,
+                        seat: &seat,
                     },
                     &mut DefaultGrab,
                 );
@@ -1224,8 +1225,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         mods_changed: bool,
         bypass_grab: bool,
     ) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             match state {
                 KeyState::Pressed => {
                     handle.inner.forwarded_pressed_keys.insert(keycode);
@@ -1263,8 +1263,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
     #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             handle.inner.pending_focus.clone_from(&focus);
             grab.set_focus(data, handle, focus, serial);
         });
