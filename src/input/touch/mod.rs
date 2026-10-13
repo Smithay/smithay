@@ -319,10 +319,11 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     }
 
     /// Run function on grab, with inner handle
-    fn run_grab_with_inner_handle<F>(&self, data: &mut D, seat: &Seat<D>, f: F)
+    fn run_grab_with_inner_handle<F>(&self, data: &mut D, f: F)
     where
         F: FnOnce(&mut D, &mut TouchInnerHandle<'_, D>, &mut dyn TouchGrab<D>),
     {
+        let seat = self.get_seat(data);
         let mut guard = self.arc.inner.lock().unwrap();
         let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
         match grab {
@@ -338,7 +339,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
                             data,
                             &mut TouchInnerHandle {
                                 inner: &mut guard,
-                                seat,
+                                seat: &seat,
                             },
                             &mut *default_grab,
                         );
@@ -349,7 +350,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
                     data,
                     &mut TouchInnerHandle {
                         inner: &mut guard,
-                        seat,
+                        seat: &seat,
                     },
                     &mut **handler,
                 );
@@ -360,7 +361,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
                     data,
                     &mut TouchInnerHandle {
                         inner: &mut guard,
-                        seat,
+                        seat: &seat,
                     },
                     &mut *default_grab,
                 );
@@ -387,16 +388,14 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &DownEvent,
     ) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.down(data, handle, focus, event);
         });
     }
 
     /// Notify that a touch point disappeared
     pub fn up(&self, data: &mut D, event: &UpEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.up(data, handle, event);
         });
     }
@@ -419,8 +418,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.motion(data, handle, focus, event);
         });
     }
@@ -429,8 +427,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     ///
     /// This needs to be called after one or move calls to [`TouchHandle::down`] or [`TouchHandle::motion`]
     pub fn frame(&self, data: &mut D) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.frame(data, handle);
         });
     }
@@ -441,24 +438,21 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// This will remove all current focus targets, and no further events will be sent
     /// until a new touch point appears.
     pub fn cancel(&self, data: &mut D) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.cancel(data, handle);
         });
     }
 
     /// Notify that a touch point has changed its shape.
     pub fn shape(&self, data: &mut D, event: &ShapeEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.shape(data, handle, event);
         });
     }
 
     /// Notify that a touch point has changed its orientation.
     pub fn orientation(&self, data: &mut D, event: &OrientationEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.orientation(data, handle, event);
         });
     }
