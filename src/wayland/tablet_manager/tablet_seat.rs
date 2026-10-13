@@ -4,7 +4,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
 use wayland_server::{Client, Dispatch, DisplayHandle, Resource};
 
 use crate::{
-    input::tablet::{TabletSeat, TabletSeatHandler},
+    input::tablet::{TabletSeat, TabletSeatHandler, WeakTabletSeat},
     wayland::{
         Dispatch2,
         compositor::CompositorHandler,
@@ -49,7 +49,7 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
 /// User data of ZwpTabletSeatV2 object
 #[derive(Debug)]
 pub struct TabletSeatUserData<D: TabletSeatHandler> {
-    pub(super) handle: TabletSeat<D>,
+    pub(super) handle: WeakTabletSeat<D>,
 }
 
 impl<D> Dispatch2<ZwpTabletSeatV2, D> for TabletSeatUserData<D>
@@ -68,11 +68,13 @@ where
     }
 
     fn destroyed(&self, _state: &mut D, _client: wayland_server::backend::ClientId, seat: &ZwpTabletSeatV2) {
-        self.handle
-            .arc
-            .lock()
-            .unwrap()
-            .instances
-            .retain(|i| i.id() != seat.id());
+        if let Some(tablet_seat) = self.handle.upgrade() {
+            tablet_seat
+                .arc
+                .lock()
+                .unwrap()
+                .instances
+                .retain(|i| i.id() != seat.id());
+        }
     }
 }

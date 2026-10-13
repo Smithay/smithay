@@ -342,6 +342,13 @@ pub struct TabletSeat<D: TabletSeatHandler> {
     pub(crate) arc: Arc<Mutex<Inner<D>>>,
 }
 
+impl<D: TabletSeatHandler> TabletSeat<D> {
+    /// Create a weak reference to this tablet seat
+    pub fn downgrade(&self) -> WeakTabletSeat<D> {
+        WeakTabletSeat(Arc::downgrade(&self.arc))
+    }
+}
+
 impl<D: TabletSeatHandler> Default for TabletSeat<D> {
     fn default() -> Self {
         Self {
