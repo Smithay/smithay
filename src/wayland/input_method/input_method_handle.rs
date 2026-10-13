@@ -275,18 +275,11 @@ where
                     ti.delete_surrounding_text(before_length, after_length);
                 });
             }
-            zwp_input_method_v2::Request::Commit { serial } => {
-                let current_serial = self
-                    .handle
-                    .inner
-                    .lock()
-                    .unwrap()
-                    .instance
-                    .as_ref()
-                    .map(|i| i.serial)
-                    .unwrap_or(0);
-
-                self.text_input_handle.done(serial != current_serial);
+            zwp_input_method_v2::Request::Commit { serial: _ } => {
+                // A commit with an outdated serial must still be applied as normal
+                // (input-method-unstable-v2), and the text-input serial tracks the
+                // commits of the text input independently, so always send its own serial.
+                self.text_input_handle.done(false);
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
                 if compositor::give_role(&surface, INPUT_POPUP_SURFACE_ROLE).is_err()

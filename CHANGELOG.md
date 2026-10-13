@@ -287,6 +287,11 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`input_method_v2`: a `commit` with an outdated serial now sends the text input's own serial in
+`done`, instead of a fake serial of `0`. The protocol requires such a commit to be applied as
+normal; the fake serial made clients such as GTK and Qt skip sending their updated state back to
+the input method.
+
 `input_method_v2`: a second input method binding a seat that already has one is now the object told
 it is `unavailable`, per the protocol, leaving the existing instance in place. Previously the event
 went to the existing instance and the newcomer was dropped untracked. Destroying such an inert
