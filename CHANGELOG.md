@@ -333,6 +333,9 @@ blocking the compositor while they resume.
 calls `create_frame` while the session still has an active frame, as the protocol requires. Previously
 the request was accepted and the extra frame was silently added to the session.
 
+`xdg_positioner` geometry calculations now use saturating arithmetic, so extreme client-supplied
+anchor rectangle positions or offsets no longer cause overflow panics when overflow checks are enabled.
+
 ## 0.7.0
 
 ### Breaking changes
