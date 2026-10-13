@@ -210,10 +210,11 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     }
 
     /// Run function on grab, with inner handle
-    fn run_grab_with_inner_handle<F>(&self, data: &mut D, seat: &Seat<D>, f: F)
+    fn run_grab_with_inner_handle<F>(&self, data: &mut D, f: F)
     where
         F: FnOnce(&mut D, &mut PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
     {
+        let seat = self.get_seat(data);
         let mut guard = self.arc.inner.lock().unwrap();
         let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
         match grab {
@@ -228,7 +229,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
                             data,
                             &mut PointerInnerHandle {
                                 inner: &mut guard,
-                                seat,
+                                seat: &seat,
                             },
                             &mut DefaultGrab,
                         );
@@ -239,7 +240,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
                     data,
                     &mut PointerInnerHandle {
                         inner: &mut guard,
-                        seat,
+                        seat: &seat,
                     },
                     &mut **handler,
                 );
@@ -249,7 +250,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
                     data,
                     &mut PointerInnerHandle {
                         inner: &mut guard,
-                        seat,
+                        seat: &seat,
                     },
                     &mut DefaultGrab,
                 );
@@ -280,8 +281,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             handle.inner.pending_focus.clone_from(&focus);
             grab.motion(data, handle, focus, event);
         });
@@ -299,8 +299,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             handle.inner.pending_focus.clone_from(&focus);
             grab.relative_motion(data, handle, focus, event);
         });
@@ -312,8 +311,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// objects matching with the currently focused surface.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn button(&self, data: &mut D, event: &ButtonEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             match event.state {
                 ButtonState::Pressed => {
                     handle.inner.pressed_buttons.push(event.button);
@@ -331,8 +329,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// A single frame will group multiple scroll events as if they happened in the same instance.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn axis(&self, data: &mut D, details: AxisFrame) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.axis(data, handle, details);
         });
     }
@@ -342,8 +339,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// A frame groups associated events. This terminates the frame.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn frame(&self, data: &mut D) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.frame(data, handle);
         });
     }
@@ -355,8 +351,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_swipe_begin(&self, data: &mut D, event: &GestureSwipeBeginEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_swipe_begin(data, handle, event);
         });
     }
@@ -368,8 +363,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_swipe_update(&self, data: &mut D, event: &GestureSwipeUpdateEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_swipe_update(data, handle, event);
         });
     }
@@ -381,8 +375,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_swipe_end(&self, data: &mut D, event: &GestureSwipeEndEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_swipe_end(data, handle, event);
         });
     }
@@ -394,8 +387,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_pinch_begin(&self, data: &mut D, event: &GesturePinchBeginEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_pinch_begin(data, handle, event);
         });
     }
@@ -407,8 +399,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_pinch_update(&self, data: &mut D, event: &GesturePinchUpdateEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_pinch_update(data, handle, event);
         });
     }
@@ -420,8 +411,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_pinch_end(&self, data: &mut D, event: &GesturePinchEndEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_pinch_end(data, handle, event);
         });
     }
@@ -433,8 +423,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_hold_begin(&self, data: &mut D, event: &GestureHoldBeginEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_hold_begin(data, handle, event);
         });
     }
@@ -446,8 +435,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.arc.span, skip(self, data))]
     pub fn gesture_hold_end(&self, data: &mut D, event: &GestureHoldEndEvent) {
-        let seat = self.get_seat(data);
-        self.run_grab_with_inner_handle(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
             grab.gesture_hold_end(data, handle, event);
         });
     }
