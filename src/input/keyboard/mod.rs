@@ -1587,6 +1587,15 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         self.inner.focus.as_ref().map(|f| &f.0)
     }
 
+    /// Access the keymap file currently used by this keyboard.
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) fn with_keymap_file<R>(&self, f: impl FnOnce(&KeymapFile) -> R) -> R {
+        // Only the keyboard's internal state is locked by this handle, not its keymap file.
+        let keyboard = self.seat.get_keyboard().unwrap();
+        let keymap_file = keyboard.arc.keymap.lock().unwrap();
+        f(&keymap_file)
+    }
+
     /// Convert a given keycode as a [`KeysymHandle`] modified by this keyboards state
     pub fn keysym_handle(&self, keycode: Keycode) -> KeysymHandle<'_> {
         KeysymHandle {

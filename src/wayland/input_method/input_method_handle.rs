@@ -349,6 +349,8 @@ where
                 if let Err(err) = res {
                     warn!(err = ?err, "Failed to send keymap to client");
                 } else {
+                    keyboard.keymap_id = Some(keymap_file.id());
+
                     // Modifiers can be latched when taking the grab, thus we must send them to keep
                     // them in sync.
                     let mods = guard.mods_state.serialized;
