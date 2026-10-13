@@ -179,7 +179,7 @@ where
                 let instance = data_init.init(
                     tablet_seat,
                     TabletSeatUserData {
-                        handle: handle.clone(),
+                        handle: handle.downgrade(),
                     },
                 );
 
