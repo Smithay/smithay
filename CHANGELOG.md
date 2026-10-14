@@ -287,6 +287,11 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`ForeignToplevelListState::remove_toplevel` no longer removes a different toplevel from the list when
+a handle in front of it was dropped without being removed (the lazy cleanup that the documentation
+allows). Previously the removed entry was picked by its position among the live handles, so a live
+toplevel could be dropped from the list and was then not announced to clients binding the global later.
+
 `input_method_v2`: a second input method binding a seat that already has one is now the object told
 it is `unavailable`, per the protocol, leaving the existing instance in place. Previously the event
 went to the existing instance and the newcomer was dropped untracked. Destroying such an inert
