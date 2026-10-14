@@ -44,6 +44,11 @@ impl SealedFile {
             SealFlags::SEAL | SealFlags::SHRINK | SealFlags::GROW | SealFlags::WRITE,
         )?;
 
+        // Hand out a read-only fd. Some sandboxes (e.g. SELinux) refuse a
+        // client a writable fd it has no write permission for, even when sealed.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        let file = File::open(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+
         Ok(Self {
             file,
             size: data.len(),
@@ -110,5 +115,25 @@ impl AsRawFd for SealedFile {
 impl AsFd for SealedFile {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.file.as_fd()
+    }
+}
+
+// FreeBSD has no `/proc/self/fd` to reopen the memfd through.
+#[cfg(all(test, not(target_os = "freebsd")))]
+mod tests {
+    use super::SealedFile;
+    use rustix::fs::{OFlags, fcntl_getfl};
+    use std::os::unix::fs::FileExt;
+
+    #[test]
+    fn sealed_file_fd_is_read_only() {
+        let sealed = SealedFile::with_data(c"smithay-test", b"data").unwrap();
+
+        let access = fcntl_getfl(&sealed).unwrap() & OFlags::ACCMODE;
+        assert_eq!(access, OFlags::RDONLY);
+
+        let mut read = [0u8; 4];
+        sealed.file.read_exact_at(&mut read, 0).unwrap();
+        assert_eq!(&read, b"data");
     }
 }
