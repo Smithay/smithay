@@ -408,14 +408,10 @@ impl ForeignToplevelListState {
     pub fn remove_toplevel(&mut self, handle: &ForeignToplevelHandle) {
         handle.send_closed();
 
-        if let Some(pos) = self
-            .toplevels
-            .iter()
-            .filter_map(|h| h.upgrade())
-            .position(|h| Arc::ptr_eq(&h.inner, &handle.inner))
-        {
-            self.toplevels.remove(pos);
-        }
+        // Compare on the unfiltered list: the index of a filtered iterator would point at a
+        // different entry if a handle in front of this one was already dropped.
+        self.toplevels
+            .retain(|h| h.upgrade().is_some_and(|h| !Arc::ptr_eq(&h.inner, &handle.inner)));
     }
 
     /// Auto cleanup closed handles
@@ -538,5 +534,52 @@ impl<D: ForeignToplevelListHandler> Dispatch2<ExtForeignToplevelHandleV1, D> for
 
     fn destroyed(&self, _state: &mut D, _client: ClientId, resource: &ExtForeignToplevelHandleV1) {
         self.remove_instance(resource);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct State {
+        list: ForeignToplevelListState,
+    }
+
+    impl ForeignToplevelListHandler for State {
+        fn foreign_toplevel_list_state(&mut self) -> &mut ForeignToplevelListState {
+            &mut self.list
+        }
+    }
+
+    crate::delegate_dispatch2!(State);
+
+    fn titles(list: &ForeignToplevelListState) -> Vec<String> {
+        list.toplevels
+            .iter()
+            .filter_map(|h| h.upgrade())
+            .map(|h| h.title())
+            .collect()
+    }
+
+    #[test]
+    fn remove_toplevel_after_a_dropped_handle_keeps_the_others() {
+        let display = wayland_server::Display::<State>::new().unwrap();
+        let mut state = State {
+            list: ForeignToplevelListState::new::<State>(&display.handle()),
+        };
+        let a = state.list.new_toplevel::<State>("a", "a");
+        let b = state.list.new_toplevel::<State>("b", "b");
+        let c = state.list.new_toplevel::<State>("c", "c");
+
+        // Closed and dropped without remove_toplevel, to be cleaned up lazily.
+        a.send_closed();
+        drop(a);
+        state.list.remove_toplevel(&c);
+        assert!(c.is_closed());
+        assert_eq!(titles(&state.list), ["b"]);
+
+        state.list.cleanup_closed_handles();
+        assert_eq!(titles(&state.list), ["b"]);
+        assert!(!b.is_closed());
     }
 }
