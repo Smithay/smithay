@@ -114,8 +114,6 @@ pub enum Error {
     MissingExtension(&'static CStr),
     #[error(transparent)]
     DeviceError(#[from] DeviceError),
-    #[error("Failed host image transition")]
-    HostImageTransitionError(#[source] VkResult),
     #[error("Failed to copy from host memory to an image")]
     ImageMapError(#[source] VkResult),
     #[error("Failed to invalidate or flush mapped memory ranges")]
@@ -368,6 +366,27 @@ impl Renderer for VulkanRenderer {
     }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        if let Some(sync) = sync.get::<VulkanSync>() {
+            if sync.ctx().is_some_and(|id| id == self.device.context()) {
+                let semaphores = [sync.timeline.vk];
+                let values = [sync.seq];
+                let mut timeline_info =
+                    TimelineSemaphoreSubmitInfo::default().signal_semaphore_values(&values);
+                unsafe {
+                    self.device
+                        .vk()
+                        .queue_submit(
+                            *self.device.queue(),
+                            &[SubmitInfo::default()
+                                .wait_semaphores(&semaphores)
+                                .push_next(&mut timeline_info)],
+                            Fence::null(),
+                        )
+                        .map_err(Error::SubmitError)?;
+                }
+            }
+        }
+
         if self.capabilities.contains(&Capability::ImportFence) {
             if let Some(device_ext_fence_fd) = self.device.vk_khr_external_fence_fd() {
                 if let Some(fd) = sync.export() {
@@ -615,7 +634,6 @@ impl VulkanRenderer {
         region: Rectangle<i32, BufferCoords>,
         format: Fourcc,
     ) -> Result<VulkanMapping, Error> {
-        /*
         let layout = unsafe {
             self.device.vk().get_image_subresource_layout(
                 *image.vk(),
@@ -1114,29 +1132,16 @@ impl Frame for VulkanFrame<'_, '_> {
     }
 
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
-        self.renderer.wait(sync) // TODO: Can we do better and insert waiting into the current command recording?
+        self.renderer.wait(sync)
     }
 
     fn finish(self) -> Result<SyncPoint, Self::Error> {
         if let Some(point) = self.last_sequence {
-            if let Some(timeline) = self.renderer.timeline.drm.as_ref() {
-                Ok(DrmSyncPoint {
-                    timeline: timeline.clone(),
-                    point,
-                }
-                .into())
-            } else {
-                // TODO: vulkan syncpoint
-                while let Err(VkResult::TIMEOUT) = unsafe {
-                    self.renderer.device.vk().wait_semaphores(
-                        &SemaphoreWaitInfo::default()
-                            .semaphores(&[self.renderer.timeline.vk])
-                            .values(&[point]),
-                        u64::MAX,
-                    )
-                } {}
-                Ok(SyncPoint::signaled())
+            Ok(VulkanSync {
+                timeline: self.renderer.timeline.clone(),
+                seq: point,
             }
+            .into())
         } else {
             Ok(SyncPoint::signaled())
         }

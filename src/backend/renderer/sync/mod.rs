@@ -9,6 +9,9 @@ mod egl;
 #[cfg(feature = "backend_drm")]
 mod drm;
 
+#[cfg(feature = "renderer_vulkan")]
+mod vulkan;
+
 /// Waiting for the fence was interrupted for an unknown reason.
 ///
 /// This does not mean that the fence is signalled or not, neither that
