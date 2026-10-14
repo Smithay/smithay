@@ -219,6 +219,9 @@ impl TextureMapping for GlesMapping {
     fn format(&self) -> Fourcc {
         Texture::format(self).expect("Should never happen")
     }
+    fn stride(&self) -> usize {
+        gl_bpp(self.format, self.layout).expect("Should never happen") * self.size.w as usize
+    }
 }
 
 impl Drop for GlesMapping {

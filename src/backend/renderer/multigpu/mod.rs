@@ -2924,6 +2924,13 @@ where
             MultiTextureMapping::<A, B>(TextureMappingInternal::Or(x)) => TextureMapping::format(x),
         }
     }
+
+    fn stride(&self) -> usize {
+        match self {
+            MultiTextureMapping::<A, B>(TextureMappingInternal::Either(x)) => TextureMapping::stride(x),
+            MultiTextureMapping::<A, B>(TextureMappingInternal::Or(x)) => TextureMapping::stride(x),
+        }
+    }
 }
 
 impl<R: GraphicsApi, T: GraphicsApi> ExportMem for MultiRenderer<'_, '_, R, T>

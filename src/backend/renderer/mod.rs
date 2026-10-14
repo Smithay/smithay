@@ -264,6 +264,9 @@ pub trait TextureMapping: Texture {
     fn format(&self) -> Fourcc {
         Texture::format(self).expect("Texture Mappings need to have a format")
     }
+
+    /// Number of bytes of a single row of pixels
+    fn stride(&self) -> usize;
 }
 
 /// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].

@@ -1003,6 +1003,10 @@ impl TextureMapping for PixmanMapping {
     fn flipped(&self) -> bool {
         false
     }
+
+    fn stride(&self) -> usize {
+        self.0.stride()
+    }
 }
 
 impl ExportMem for PixmanRenderer {

@@ -13,6 +13,7 @@ use std::{
 
 use crate::backend::vulkan::{device::WeakDevice, Device};
 
+#[derive(Debug)]
 pub struct Buffer {
     device: WeakDevice,
 

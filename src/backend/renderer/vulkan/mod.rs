@@ -9,7 +9,10 @@ use crate::{
         },
         drm::{sync::DrmSyncPoint, DrmDeviceFd},
         renderer::{
-            vulkan::shaders::{ClearPushConstants, TexPushConstants},
+            vulkan::{
+                buffer::Buffer,
+                shaders::{ClearPushConstants, TexPushConstants},
+            },
             Bind, Blit, BlitFrame, ContextId, ExportMem, Frame, ImportDma, ImportDmaWl, ImportMem,
             ImportMemWl, Offscreen, Renderer, RendererSuper, Texture, TextureMapping,
         },
@@ -28,12 +31,13 @@ use crate::{
 };
 
 use ash::vk::{
-    self, AccessFlags, BorderColor, CompareOp, DependencyFlags, DescriptorImageInfo, DescriptorType,
-    Extent3D, ExternalFenceHandleTypeFlags, Fence, FenceCreateInfo, Filter, FormatFeatureFlags,
-    HostImageCopyFlagsEXT, ImageAspectFlags, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
-    ImageSubresourceRange, ImageToMemoryCopyEXT, ImportFenceFdInfoKHR, MemoryMapFlags, MemoryPropertyFlags,
-    MemoryToImageCopyEXT, Offset3D, PipelineBindPoint, PipelineStageFlags, Result as VkResult,
-    SamplerAddressMode, SamplerCreateFlags, SamplerCreateInfo, SamplerMipmapMode, SemaphoreWaitInfo,
+    self, AccessFlags, BorderColor, BufferImageCopy2, BufferUsageFlags, CompareOp, CopyImageToBufferInfo2,
+    DependencyFlags, DescriptorImageInfo, DescriptorType, Extent3D, ExternalFenceHandleTypeFlags, Fence,
+    FenceCreateInfo, Filter, FormatFeatureFlags, HostImageCopyFlagsEXT, ImageAspectFlags, ImageLayout,
+    ImageMemoryBarrier, ImageSubresourceLayers, ImageSubresourceRange, ImageToMemoryCopyEXT,
+    ImportFenceFdInfoKHR, MappedMemoryRange, MemoryMapFlags, MemoryPropertyFlags, MemoryToImageCopyEXT,
+    Offset3D, PipelineBindPoint, PipelineStageFlags, Result as VkResult, SamplerAddressMode,
+    SamplerCreateFlags, SamplerCreateInfo, SamplerMipmapMode, SemaphoreWaitFlags, SemaphoreWaitInfo,
     ShaderStageFlags, SubmitInfo, TimelineSemaphoreSubmitInfo, QUEUE_FAMILY_IGNORED,
 };
 use gbm::Modifier;
@@ -48,6 +52,7 @@ use std::{
     fmt,
     os::fd::{AsRawFd, IntoRawFd},
     ptr::NonNull,
+    slice,
     sync::{Arc, Mutex},
 };
 
@@ -112,7 +117,9 @@ pub enum Error {
     #[error("Failed host image transition")]
     HostImageTransitionError(#[source] VkResult),
     #[error("Failed to copy from host memory to an image")]
-    HostImageCopyError(#[source] VkResult),
+    ImageMapError(#[source] VkResult),
+    #[error("Failed to invalidate or flush mapped memory ranges")]
+    MapUpdateError(#[source] VkResult),
     #[error(transparent)]
     BufferError(#[from] BufferError),
     #[error(transparent)]
@@ -150,7 +157,7 @@ impl From<Error> for SwapBuffersError {
             | x @ Error::MissingExtension(_)
             | x @ Error::DeviceError(DeviceError::NoUsableQueue)
             | x @ Error::DeviceError(DeviceError::Vk(VkResult::ERROR_DEVICE_LOST))
-            | x @ Error::HostImageCopyError(VkResult::ERROR_DEVICE_LOST)
+            | x @ Error::ImageMapError(VkResult::ERROR_DEVICE_LOST)
             | x @ Error::CommandPoolError(VkResult::ERROR_DEVICE_LOST)
             | x @ Error::CommandBufferError(VkResult::ERROR_DEVICE_LOST)
             | x @ Error::FenceError(VkResult::ERROR_DEVICE_LOST)
@@ -558,32 +565,21 @@ impl ImportDma for VulkanRenderer {
 #[cfg(feature = "wayland_frontend")]
 impl ImportDmaWl for VulkanRenderer {}
 
-pub enum VulkanMapping {
-    Mapped(NonNull<u8>, usize, VulkanImage, WeakDevice),
-    Copied(Vec<u8>, VulkanImage),
-}
-
-impl fmt::Debug for VulkanMapping {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Mapped(_, _, image, _) => f
-                .debug_struct("VulkanMapping::Mapped")
-                .field("image", image)
-                .finish_non_exhaustive(),
-            Self::Copied(_, image) => f
-                .debug_struct("VulkanMapping::Copied")
-                .field("image", image)
-                .finish_non_exhaustive(),
-        }
-    }
+#[derive(Debug)]
+pub struct VulkanMapping {
+    ptr: NonNull<u8>,
+    stride: usize,
+    len: usize,
+    staging_buffer: Option<Buffer>,
+    staging_seq_no: Option<u64>,
+    image: VulkanImage,
+    device: WeakDevice,
 }
 
 impl Drop for VulkanMapping {
     fn drop(&mut self) {
-        if let VulkanMapping::Mapped(_, _, image, dev) = self {
-            if let Some(device) = dev.upgrade() {
-                unsafe { device.vk().unmap_memory(image.inner.memory) };
-            }
+        if let Some(device) = self.device.upgrade() {
+            unsafe { device.vk().unmap_memory(self.image.inner.memory) };
         }
     }
 }
@@ -592,22 +588,23 @@ impl TextureMapping for VulkanMapping {
     fn flipped(&self) -> bool {
         false
     }
+
+    fn stride(&self) -> usize {
+        self.stride
+    }
 }
 
 impl Texture for VulkanMapping {
     fn width(&self) -> u32 {
-        let (Self::Mapped(_, _, image, _) | Self::Copied(_, image)) = self;
-        image.width()
+        self.image.width()
     }
 
     fn height(&self) -> u32 {
-        let (Self::Mapped(_, _, image, _) | Self::Copied(_, image)) = self;
-        image.height()
+        self.image.height()
     }
 
     fn format(&self) -> Option<Fourcc> {
-        let (Self::Mapped(_, _, image, _) | Self::Copied(_, image)) = self;
-        get_drm_format(image.format())
+        get_drm_format(self.image.format())
     }
 }
 
@@ -635,6 +632,7 @@ impl VulkanRenderer {
         };
 
         if image.mem_bits().contains(MemoryPropertyFlags::HOST_VISIBLE) && image.is_linear() {
+            // TODO non coherent memory
             let ptr = unsafe {
                 self.device
                     .vk()
@@ -644,69 +642,110 @@ impl VulkanRenderer {
                         layout.size,
                         MemoryMapFlags::empty(),
                     )
-                    .map_err(Error::HostImageCopyError)? // TODO
+                    .map_err(Error::ImageMapError)?
             };
 
-            Ok(VulkanMapping::Mapped(
-                unsafe { NonNull::new_unchecked(ptr as *mut _) },
-                layout.size as usize,
-                image.clone(),
-                self.device.downgrade(),
-            ))
+            Ok(VulkanMapping {
+                ptr: unsafe { NonNull::new_unchecked((ptr as *mut u8).offset(layout.offset as isize)) },
+                len: layout.size as usize,
+                stride: layout.row_pitch as usize,
+                staging_buffer: None,
+                staging_seq_no: None,
+                image: image.clone(),
+                device: self.device.downgrade(),
+            })
         } else {
-            use ash::ext::host_image_copy;
+            let stride = get_drm_format(image.format())
+                .and_then(get_bpp)
+                .ok_or(ImageError::UnsupportedFormat)?
+                * region.size.w as usize;
+            let len = stride * region.size.h as usize;
 
-            let device_copy = self
-                .device
-                .vk_ext_host_image_copy()
-                .ok_or(Error::MissingExtension(host_image_copy::NAME))?;
+            let buffer = Buffer::new(&self.device, len, None, BufferUsageFlags::TRANSFER_DST, true)?;
+
+            let cmd = self.cmd_pool.create_and_begin_buffer()?;
             unsafe {
-                device_copy
-                    .transition_image_layout(&[vk::HostImageLayoutTransitionInfoEXT::default()
+                self.device.vk().cmd_pipeline_barrier(
+                    cmd,
+                    PipelineStageFlags::TRANSFER,
+                    PipelineStageFlags::TRANSFER,
+                    DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[ImageMemoryBarrier::default()
+                        .image(*image.vk())
                         .old_layout(ImageLayout::UNDEFINED)
                         .new_layout(ImageLayout::GENERAL)
-                        .image(*image.vk())
+                        .src_queue_family_index(QUEUE_FAMILY_IGNORED)
+                        .dst_queue_family_index(QUEUE_FAMILY_IGNORED)
+                        .src_access_mask(AccessFlags::empty())
+                        .dst_access_mask(AccessFlags::empty())
                         .subresource_range(
                             ImageSubresourceRange::default()
                                 .aspect_mask(ImageAspectFlags::COLOR)
                                 .layer_count(1)
                                 .level_count(1),
-                        )])
-                    .map_err(Error::HostImageTransitionError)?;
-
-                let mut data = Vec::with_capacity(layout.size as usize);
-                device_copy
-                    .copy_image_to_memory(
-                        &vk::CopyImageToMemoryInfoEXT::default()
-                            .flags(HostImageCopyFlagsEXT::empty())
-                            .src_image(*image.vk())
-                            .src_image_layout(ImageLayout::GENERAL)
-                            .regions(&[ImageToMemoryCopyEXT::default()
-                                .host_pointer(data.as_mut_ptr() as *mut _)
-                                .memory_image_height(image.height())
-                                .memory_row_length(layout.row_pitch as u32)
-                                .image_subresource(
-                                    ImageSubresourceLayers::default()
-                                        .aspect_mask(ImageAspectFlags::COLOR)
-                                        .mip_level(0)
-                                        .base_array_layer(0)
-                                        .layer_count(1),
-                                )
-                                .image_offset(Offset3D::default())
-                                .image_extent(
-                                    Extent3D::default()
-                                        .depth(1)
-                                        .width(image.width())
-                                        .height(image.height()),
-                                )]),
+                        )],
+                );
+                let regions = [BufferImageCopy2::default()
+                    .buffer_offset(0)
+                    .buffer_row_length(0)
+                    .buffer_image_height(0)
+                    .image_subresource(
+                        ImageSubresourceLayers::default()
+                            .aspect_mask(ImageAspectFlags::COLOR)
+                            .base_array_layer(0)
+                            .layer_count(1)
+                            .mip_level(0),
                     )
-                    .map_err(Error::HostImageCopyError)?;
-
-                Ok(VulkanMapping::Copied(data, image.clone()))
+                    .image_offset(Offset3D::default().x(region.loc.x).y(region.loc.y))
+                    .image_extent(
+                        Extent3D::default()
+                            .width(region.size.w as u32)
+                            .height(region.size.h as u32),
+                    )];
+                let info = CopyImageToBufferInfo2::default()
+                    .dst_buffer(*buffer.vk())
+                    .src_image(*image.vk())
+                    .src_image_layout(ImageLayout::GENERAL)
+                    .regions(&regions);
+                self.device.vk().cmd_copy_image_to_buffer2(cmd, &info);
+                self.device
+                    .vk()
+                    .end_command_buffer(cmd)
+                    .map_err(Error::CommandBufferError)?;
             }
+
+            self.seq_no += 1;
+            let next_seq_no = [self.seq_no];
+            let mut timeline_info =
+                TimelineSemaphoreSubmitInfo::default().signal_semaphore_values(&next_seq_no);
+
+            unsafe {
+                self.device
+                    .vk()
+                    .queue_submit(
+                        *self.device.queue(),
+                        &[SubmitInfo::default()
+                            .command_buffers(&[cmd])
+                            .signal_semaphores(&[self.timeline.vk])
+                            .push_next(&mut timeline_info)],
+                        Fence::null(),
+                    )
+                    .map_err(Error::SubmitError)?;
+            }
+            self.cmd_pool.store_pending_buffer(cmd, next_seq_no[0], None);
+
+            Ok(VulkanMapping {
+                ptr: buffer.mapped_ptr().unwrap().cast(),
+                len,
+                stride,
+                staging_buffer: Some(buffer),
+                staging_seq_no: Some(next_seq_no[0]),
+                image: image.clone(),
+                device: self.device.downgrade(),
+            })
         }
-        */
-        todo!()
     }
 }
 
@@ -739,12 +778,47 @@ impl ExportMem for VulkanRenderer {
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
     ) -> Result<&'a [u8], Self::Error> {
-        match texture_mapping {
-            VulkanMapping::Mapped(ptr, len, _, _) => {
-                Ok(unsafe { std::slice::from_raw_parts(ptr.as_ptr(), *len) })
+        if let Some(seq) = texture_mapping.staging_seq_no {
+            let semaphores = [self.timeline.vk];
+            let sequences = [seq];
+            let info = SemaphoreWaitInfo::default()
+                .semaphores(&semaphores)
+                .values(&sequences);
+            // TODO: Timeout
+            unsafe {
+                self.device
+                    .vk()
+                    .wait_semaphores(&info, u64::MAX)
+                    .map_err(Error::SemaphoreError)?;
             }
-            VulkanMapping::Copied(data, _) => Ok(&**data),
+
+            let layout = unsafe {
+                self.device.vk().get_image_subresource_layout(
+                    *texture_mapping.image.vk(),
+                    vk::ImageSubresource {
+                        aspect_mask: if texture_mapping.image.drm.is_some() {
+                            ImageAspectFlags::MEMORY_PLANE_0_EXT
+                        } else {
+                            ImageAspectFlags::COLOR
+                        },
+                        mip_level: 0,
+                        array_layer: 0,
+                    },
+                )
+            };
+
+            unsafe {
+                self.device
+                    .vk()
+                    .invalidate_mapped_memory_ranges(&[MappedMemoryRange::default()
+                        .memory(texture_mapping.image.inner.memory)
+                        .offset(layout.offset)
+                        .size(layout.size)])
+                    .map_err(Error::MapUpdateError)?;
+            }
         }
+
+        Ok(unsafe { slice::from_raw_parts(texture_mapping.ptr.as_ptr(), texture_mapping.len) })
     }
 }
 
