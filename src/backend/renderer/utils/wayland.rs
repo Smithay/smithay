@@ -24,7 +24,7 @@ use std::{
 
 use super::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, SurfaceView};
 use tracing::{error, instrument, warn};
-use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+use wayland_server::protocol::{wl_buffer::WlBuffer, wl_callback::WlCallback, wl_surface::WlSurface};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -59,6 +59,7 @@ unsafe impl Sync for RendererSurfaceState {}
 #[derive(Debug)]
 struct InnerBuffer {
     buffer: WlBuffer,
+    release_callback: Option<WlCallback>,
     #[cfg(feature = "backend_drm")]
     acquire_point: Option<DrmSyncPoint>,
     #[cfg(feature = "backend_drm")]
@@ -69,6 +70,9 @@ impl Drop for InnerBuffer {
     #[inline]
     fn drop(&mut self) {
         self.buffer.release();
+        if let Some(callback) = &self.release_callback {
+            callback.done(0);
+        }
         #[cfg(feature = "backend_drm")]
         if let Some(release_point) = &self.release_point {
             if let Err(err) = release_point.signal() {
@@ -86,10 +90,11 @@ pub struct Buffer {
 
 impl Buffer {
     /// Create a buffer with implicit sync
-    pub fn with_implicit(buffer: WlBuffer) -> Self {
+    pub fn with_implicit(buffer: WlBuffer, release_callback: Option<WlCallback>) -> Self {
         Self {
             inner: Arc::new(InnerBuffer {
                 buffer,
+                release_callback,
                 #[cfg(feature = "backend_drm")]
                 acquire_point: None,
                 #[cfg(feature = "backend_drm")]
@@ -100,9 +105,15 @@ impl Buffer {
 
     /// Create a buffer with explicit acquire and release sync points
     #[cfg(feature = "backend_drm")]
-    pub fn with_explicit(buffer: WlBuffer, acquire_point: DrmSyncPoint, release_point: DrmSyncPoint) -> Self {
+    pub fn with_explicit(
+        buffer: WlBuffer,
+        release_callback: Option<WlCallback>,
+        acquire_point: DrmSyncPoint,
+        release_point: DrmSyncPoint,
+    ) -> Self {
         Self {
             inner: Arc::new(InnerBuffer {
+                release_callback,
                 buffer,
                 acquire_point: Some(acquire_point),
                 release_point: Some(release_point),
@@ -154,6 +165,9 @@ impl RendererSurfaceState {
         let new_buffer = matches!(attrs.buffer, Some(BufferAssignment::NewBuffer(_)));
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer(buffer)) => {
+                // TODO protocol error if set without buffer
+                let release_callback = attrs.release_callback.take();
+
                 self.buffer_dimensions = buffer_dimensions(&buffer);
                 if self.buffer_dimensions.is_none() {
                     // This results in us rendering nothing (can happen e.g. for failed egl-buffer-calls),
@@ -169,6 +183,7 @@ impl RendererSurfaceState {
                     self.buffer = Some(Buffer {
                         inner: Arc::new(InnerBuffer {
                             buffer,
+                            release_callback,
                             #[cfg(feature = "backend_drm")]
                             acquire_point: syncobj_state.acquire_point.take(),
                             #[cfg(feature = "backend_drm")]

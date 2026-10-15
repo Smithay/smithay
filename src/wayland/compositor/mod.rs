@@ -249,6 +249,9 @@ pub struct SurfaceAttributes {
     /// associated with this commit has been displayed on the screen.
     pub frame_callbacks: Vec<wl_callback::WlCallback>,
 
+    /// Callback signalled when compositor no longer needs buffer for this surface.
+    pub release_callback: Option<wl_callback::WlCallback>,
+
     pub(crate) client_scale: f64,
 }
 
@@ -263,6 +266,7 @@ impl Default for SurfaceAttributes {
             input_region: None,
             damage: Vec::new(),
             frame_callbacks: Vec::new(),
+            release_callback: None,
             client_scale: 1.,
         }
     }
@@ -711,7 +715,7 @@ impl CompositorState {
     where
         D: GlobalDispatch<WlCompositor, GlobalData> + GlobalDispatch<WlSubcompositor, GlobalData> + 'static,
     {
-        Self::new_with_version::<D>(display, 6)
+        Self::new_with_version::<D>(display, 7)
     }
 
     fn new_with_version<D>(display: &DisplayHandle, version: u32) -> Self

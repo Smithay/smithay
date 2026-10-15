@@ -153,6 +153,12 @@ impl PrivateSurfaceData {
         if let Some(BufferAssignment::NewBuffer(buffer)) = guard.pending().buffer.take() {
             buffer.release();
         };
+        if let Some(release_callback) = guard.current().release_callback.take() {
+            release_callback.done(0);
+        }
+        if let Some(release_callback) = guard.pending().release_callback.take() {
+            release_callback.done(0);
+        }
 
         let hooks = my_data.destruction_hooks.clone();
         // don't hold the mutex while the hooks are invoked
