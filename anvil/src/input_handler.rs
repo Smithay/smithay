@@ -1425,7 +1425,7 @@ impl<BackendData: Backend> VirtualKeyboardHandler for AnvilState<BackendData> {
                 let Some(keymap) = device.keymap() else {
                     return;
                 };
-                if let Err(err) = keyboard.set_keymap_from_string(self, keymap.to_string()) {
+                if let Err(err) = keyboard.set_keymap_from_keymap_file(self, keymap) {
                     warn!(?err, "Failed to apply virtual keyboard keymap");
                 }
             }
