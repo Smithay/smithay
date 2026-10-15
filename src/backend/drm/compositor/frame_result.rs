@@ -343,7 +343,7 @@ where
                 .clear(Color32F::BLACK, &clear_damage)
                 .map_err(BlitFrameResultError::Rendering)?;
 
-            sync = Some(frame.finish().map_err(BlitFrameResultError::Rendering)?);
+            sync = Some(frame.finish(true).map_err(BlitFrameResultError::Rendering)?);
         }
 
         // first do the potential blit
@@ -410,7 +410,7 @@ where
                     .map_err(BlitFrameResultError::Rendering)?;
             }
 
-            Ok(frame.finish().map_err(BlitFrameResultError::Rendering)?)
+            Ok(frame.finish(true).map_err(BlitFrameResultError::Rendering)?)
         } else {
             Ok(sync.unwrap_or_default())
         }

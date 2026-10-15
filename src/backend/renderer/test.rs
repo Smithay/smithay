@@ -276,7 +276,7 @@ impl Frame for DummyFrame {
         sync.wait().map_err(|_| DummyError::SyncInterrupted)
     }
 
-    fn finish(self) -> Result<SyncPoint, Self::Error> {
+    fn finish(self, _exportable: bool) -> Result<SyncPoint, Self::Error> {
         Ok(SyncPoint::default())
     }
 }
