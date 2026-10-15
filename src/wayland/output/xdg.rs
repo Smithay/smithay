@@ -83,7 +83,10 @@ impl XdgOutput {
             xdg_output.done();
         }
 
-        wl_output.done();
+        // wl_output.done() only exists since wl_output version 2
+        if wl_output.version() >= 2 {
+            wl_output.done();
+        }
 
         inner.instances.push(xdg_output.downgrade());
     }
