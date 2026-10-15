@@ -8,7 +8,7 @@ use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::{Client, Resource};
 
 use crate::backend::input::{self, InputBackend, InputTime, UnusedEvent};
-use crate::input::keyboard::KeyboardSource;
+use crate::input::keyboard::{KeyboardSource, KeymapFile};
 
 use super::VirtualKeyboardData;
 
@@ -101,13 +101,13 @@ impl VirtualKeyboardDevice {
     ///
     /// This device's keycodes must be processed using the keymap, which isn't
     /// usually the default one, so it needs to be activated (e.g. with
-    /// [`KeyboardHandle::set_keymap_from_string`](crate::input::keyboard::KeyboardHandle::set_keymap_from_string))
+    /// [`KeyboardHandle::set_keymap_from_keymap_file`](crate::input::keyboard::KeyboardHandle::set_keymap_from_keymap_file))
     /// before processing the device's key events.
     ///
     /// [`None`] when the client sent the `no_keymap` format, meaning its
     /// keycodes are to be read with whatever keymap the seat already has, so
     /// there is nothing to activate. Also [`None`] before the device is added.
-    pub fn keymap(&self) -> Option<Arc<str>> {
+    pub fn keymap(&self) -> Option<KeymapFile> {
         self.data.keymap.lock().unwrap().clone()
     }
 }
