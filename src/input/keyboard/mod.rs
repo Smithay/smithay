@@ -375,48 +375,6 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         }
         transitioned
     }
-
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, f: F)
-    where
-        F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
-    {
-        let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
-        match grab {
-            GrabStatus::Borrowed => panic!("Accessed a keyboard grab from within a keyboard grab access."),
-            GrabStatus::Active(_, ref mut handler) => {
-                // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some(ref surface) = handler.start_data().focus {
-                    if !surface.alive() {
-                        handler.unset(data);
-                        self.grab = GrabStatus::None;
-                        f(
-                            data,
-                            &mut KeyboardInnerHandle { inner: self, seat },
-                            &mut DefaultGrab,
-                        );
-                        return;
-                    }
-                }
-                f(
-                    data,
-                    &mut KeyboardInnerHandle { inner: self, seat },
-                    &mut **handler,
-                );
-            }
-            GrabStatus::None => {
-                f(
-                    data,
-                    &mut KeyboardInnerHandle { inner: self, seat },
-                    &mut DefaultGrab,
-                );
-            }
-        }
-
-        if let GrabStatus::Borrowed = self.grab {
-            // the grab has not been ended nor replaced, put it back in place
-            self.grab = grab;
-        }
-    }
 }
 
 /// Errors that can be encountered when creating a keyboard handler
@@ -1035,6 +993,60 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
     }
 
+    /// Run function on grab, with inner handle
+    fn run_grab_with_inner_handle<F>(&self, data: &mut D, f: F)
+    where
+        F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
+    {
+        let seat = self.get_seat(data);
+        let mut guard = self.arc.internal.lock().unwrap();
+        let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
+        match grab {
+            GrabStatus::Borrowed => panic!("Accessed a keyboard grab from within a keyboard grab access."),
+            GrabStatus::Active(_, ref mut handler) => {
+                // If this grab is associated with a surface that is no longer alive, discard it
+                if let Some(ref surface) = handler.start_data().focus {
+                    if !surface.alive() {
+                        handler.unset(data);
+                        guard.grab = GrabStatus::None;
+                        f(
+                            data,
+                            &mut KeyboardInnerHandle {
+                                inner: &mut guard,
+                                seat: &seat,
+                            },
+                            &mut DefaultGrab,
+                        );
+                        return;
+                    }
+                }
+                f(
+                    data,
+                    &mut KeyboardInnerHandle {
+                        inner: &mut guard,
+                        seat: &seat,
+                    },
+                    &mut **handler,
+                );
+            }
+            GrabStatus::None => {
+                f(
+                    data,
+                    &mut KeyboardInnerHandle {
+                        inner: &mut guard,
+                        seat: &seat,
+                    },
+                    &mut DefaultGrab,
+                );
+            }
+        }
+
+        if let GrabStatus::Borrowed = guard.grab {
+            // the grab has not been ended nor replaced, put it back in place
+            guard.grab = grab;
+        }
+    }
+
     /// Handle a keystroke
     ///
     /// All keystrokes from the input backend should be fed _in order_ to this method of the
@@ -1213,39 +1225,34 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         mods_changed: bool,
         bypass_grab: bool,
     ) {
-        let mut guard = self.arc.internal.lock().unwrap();
-        match state {
-            KeyState::Pressed => {
-                guard.forwarded_pressed_keys.insert(keycode);
-            }
-            KeyState::Released => {
-                guard.forwarded_pressed_keys.remove(&keycode);
-            }
-        };
-
-        // forward to client if no keybinding is triggered.
-        // Modifiers are only sent when the shared seat state actually changed; the client
-        // resolves the following key event against them, so they must precede the key (handled
-        // in `KeyboardInnerHandle::input`).
-        let seat = self.get_seat(data);
-        let mods = guard.mods_state;
-        let modifiers = mods_changed.then_some(mods);
-        if bypass_grab {
-            let mut handle = KeyboardInnerHandle {
-                inner: &mut guard,
-                seat: &seat,
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
+            match state {
+                KeyState::Pressed => {
+                    handle.inner.forwarded_pressed_keys.insert(keycode);
+                }
+                KeyState::Released => {
+                    handle.inner.forwarded_pressed_keys.remove(&keycode);
+                }
             };
-            DefaultGrab.input(data, &mut handle, keycode, state, modifiers, serial, time);
-        } else {
-            guard.with_grab(data, &seat, |data, handle, grab| {
+
+            // forward to client if no keybinding is triggered.
+            // Modifiers are only sent when the shared seat state actually changed; the client
+            // resolves the following key event against them, so they must precede the key (handled
+            // in `KeyboardInnerHandle::input`).
+            let mods = handle.inner.mods_state;
+            let modifiers = mods_changed.then_some(mods);
+            if bypass_grab {
+                DefaultGrab.input(data, handle, keycode, state, modifiers, serial, time);
+            } else {
                 grab.input(data, handle, keycode, state, modifiers, serial, time);
-            });
-        }
-        if guard.focus.is_some() {
-            trace!("Input forwarded to client");
-        } else {
-            trace!("No client currently focused");
-        }
+            }
+
+            if handle.inner.focus.is_some() {
+                trace!("Input forwarded to client");
+            } else {
+                trace!("No client currently focused");
+            }
+        });
     }
 
     /// Set the current focus of this keyboard
@@ -1256,10 +1263,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
     #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
-        let mut guard = self.arc.internal.lock().unwrap();
-        guard.pending_focus.clone_from(&focus);
-        let seat = self.get_seat(data);
-        guard.with_grab(data, &seat, |data, handle, grab| {
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
+            handle.inner.pending_focus.clone_from(&focus);
             grab.set_focus(data, handle, focus, serial);
         });
     }
