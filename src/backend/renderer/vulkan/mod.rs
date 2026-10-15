@@ -433,18 +433,17 @@ impl ImportMem for VulkanRenderer {
         size: Size<i32, BufferCoords>,
         flipped: bool,
     ) -> Result<Self::TextureId, Self::Error> {
-        // TODO:
-        assert!(!flipped);
-
         let bpp = get_bpp(format).ok_or(ImageError::UnsupportedFormat)? / 8;
         let format = get_vk_format(format).ok_or(ImageError::UnsupportedFormat)?;
-        self.upload_from_slice(
+        let mut image = self.upload_from_slice(
             data,
             size,
             size.w as usize * bpp,
             format,
             ImageUsageFlags::SAMPLED,
-        )
+        )?;
+        image.flipped = flipped;
+        Ok(image)
     }
 
     fn update_memory(
@@ -1005,6 +1004,22 @@ impl Frame for VulkanFrame<'_, '_> {
             );
         }
 
+        let src_transform = if texture.flipped {
+            src_transform.y_invert()
+        } else {
+            src_transform
+        };
+        let src_transform = match src_transform {
+            Transform::Normal => 0,
+            Transform::_90 => 1,
+            Transform::_180 => 2,
+            Transform::_270 => 3,
+            Transform::Flipped => 4,
+            Transform::Flipped90 => 5,
+            Transform::Flipped180 => 6,
+            Transform::Flipped270 => 7,
+        };
+
         for chunk in damage.chunks(4) {
             let push_constants = TexPushConstants {
                 src_rect: Rectangle::new(
@@ -1015,16 +1030,7 @@ impl Frame for VulkanFrame<'_, '_> {
                     Point::new(dst.loc.x as f32, dst.loc.y as f32),
                     Size::new(dst.size.w as f32, dst.size.h as f32),
                 ),
-                src_transform: match src_transform {
-                    Transform::Normal => 0,
-                    Transform::_90 => 1,
-                    Transform::_180 => 2,
-                    Transform::_270 => 3,
-                    Transform::Flipped => 4,
-                    Transform::Flipped90 => 5,
-                    Transform::Flipped180 => 6,
-                    Transform::Flipped270 => 7,
-                },
+                src_transform,
                 alpha,
                 debug_flags: self.renderer.debug_flags.bits(),
                 damage_size: chunk.len() as u32,

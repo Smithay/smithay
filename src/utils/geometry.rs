@@ -1768,6 +1768,22 @@ impl Transform {
         }
     }
 
+    /// Inverts the Transform along the y-axis.
+    #[inline]
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    pub fn y_invert(&self) -> Transform {
+        match self {
+            Transform::Normal => Transform::Flipped180,
+            Transform::_90 => Transform::Flipped90,
+            Transform::_180 => Transform::Flipped,
+            Transform::_270 => Transform::Flipped270,
+            Transform::Flipped => Transform::_180,
+            Transform::Flipped90 => Transform::_90,
+            Transform::Flipped180 => Transform::Normal,
+            Transform::Flipped270 => Transform::_270,
+        }
+    }
+
     /// Transforms a point inside an area of a given size by applying this transformation.
     pub fn transform_point_in<N: Coordinate, Kind>(
         &self,

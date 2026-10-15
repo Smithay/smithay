@@ -25,6 +25,7 @@ pub struct VulkanImage {
     pub(crate) height: u32,
     pub(crate) format: vk::Format,
     pub(crate) has_alpha: bool,
+    pub(crate) flipped: bool,
     pub(crate) mem_types: MemoryPropertyFlags,
     pub(crate) usage: ImageUsageFlags,
     pub(crate) tiling: ImageTiling,
@@ -40,6 +41,7 @@ impl fmt::Debug for VulkanImage {
             .field("height", &self.height)
             .field("format", &self.format)
             .field("has_alpha", &self.has_alpha)
+            .field("flipped", &self.flipped)
             .field("usage", &self.usage)
             .field("drm", &self.drm)
             .field("inner", &self.inner)
@@ -415,6 +417,7 @@ impl VulkanImage {
             }),
             mem_types: mem_bits,
             has_alpha,
+            flipped: dmabuf.is_some_and(|dmabuf| dmabuf.y_inverted()),
             usage: vk_usage,
             tiling,
             #[cfg(feature = "backend_drm")]
