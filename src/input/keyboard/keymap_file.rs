@@ -3,7 +3,7 @@ use std::os::unix::io::{AsFd, BorrowedFd};
 
 use siphasher::sip128::SipHasher;
 use tracing::error;
-use xkbcommon::xkb::{self, KEYMAP_FORMAT_TEXT_V1, Keymap};
+use xkbcommon::xkb::{KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 use crate::utils::SealedFile;
 
@@ -43,22 +43,6 @@ impl KeymapFile {
             sealed: sealed.ok(),
             keymap,
         }
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) fn change_keymap(&mut self, keymap: &Keymap) {
-        let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-
-        let name = c"smithay-keymap-file";
-        let sealed = SealedFile::with_content(name, &CString::new(keymap.clone()).unwrap());
-
-        if let Err(err) = sealed.as_ref() {
-            error!("Error when creating sealed keymap file: {}", err);
-        }
-
-        self.id = KeymapFileId::for_keymap(&keymap);
-        self.sealed = sealed.ok();
-        self.keymap = keymap;
     }
 
     #[cfg(feature = "wayland_frontend")]
