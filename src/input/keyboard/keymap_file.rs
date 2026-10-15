@@ -88,7 +88,7 @@ impl KeymapFile {
     }
 
     /// Get this keymap's unique ID.
-    pub(crate) fn id(&self) -> KeymapFileId {
+    pub fn id(&self) -> KeymapFileId {
         self.0.id
     }
 }
