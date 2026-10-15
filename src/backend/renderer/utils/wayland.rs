@@ -7,6 +7,7 @@ use crate::{
     },
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
+        alpha_modifier::AlphaModifierSurfaceCachedState,
         compositor::{
             self, BufferAssignment, Damage, RectangleKind, SUBSURFACE_ROLE, SubsurfaceCachedState,
             SurfaceAttributes, SurfaceData, TraversalAction, add_destruction_hook, is_sync_subsurface,
@@ -44,6 +45,8 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<Buffer>,
     pub(crate) damage: DamageBag<i32, BufferCoord>,
+    /// Last seen `wp_alpha_modifier` multiplier, used to queue damage when it changes
+    pub(crate) alpha_multiplier: Option<u32>,
     pub(crate) renderer_seen: HashMap<ErasedContextId, CommitCounter>,
     pub(crate) textures: HashMap<ErasedContextId, Box<dyn Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
@@ -194,6 +197,20 @@ impl RendererSurfaceState {
         let surface_size = buffer_dimensions.to_logical(self.buffer_scale, self.buffer_transform);
         let surface_view = SurfaceView::from_states(states, surface_size, attrs.client_scale);
         let surface_view_changed = self.surface_view.replace(surface_view) != Some(surface_view);
+
+        // The wp_alpha_modifier multiplier is double-buffered surface state: it becomes
+        // active on commit without necessarily carrying any buffer damage. Queue full
+        // surface damage when it changed, so that incremental damage tracking (e.g.
+        // OutputDamageTracker) repaints the surface with the new opacity.
+        let alpha_multiplier = states
+            .cached_state
+            .get::<AlphaModifierSurfaceCachedState>()
+            .current()
+            .multiplier();
+        if self.alpha_multiplier != alpha_multiplier {
+            self.alpha_multiplier = alpha_multiplier;
+            self.damage.add([Rectangle::from_size(buffer_dimensions)]);
+        }
 
         // if we received a new buffer also process the attached damage
         if new_buffer {
@@ -350,6 +367,7 @@ impl RendererSurfaceState {
         self.buffer = None;
         self.textures.clear();
         self.damage.reset();
+        self.alpha_multiplier = None;
         self.surface_view = None;
         self.buffer_has_alpha = None;
         self.opaque_regions.clear();
