@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0
+
 ### Breaking changes
 
 `wayland::virtual_keyboard` no longer sends key events to focused clients on its
