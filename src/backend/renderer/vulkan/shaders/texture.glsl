@@ -13,10 +13,13 @@ layout(push_constant, std140) uniform PushConstants {
     vec4 dstRect;
     uint srcTransform;
     float alpha;
+    uint debugFlags;
 
     uint damageSize;
     ivec4 damage[4];
 } params;
+
+const uint DEBUG_TINT = 1u;
 
 vec2 applyTransform(vec2 uv, uint transform) {
     switch (transform) {
@@ -61,6 +64,9 @@ void main() {
             if (color.a < 1.0) {
                 vec4 blend = imageLoad(dst, ivec2(coord)).bgra - vec4(color.a);
                 color = color + blend;
+            }
+            if ((params.debugFlags & DEBUG_TINT) != 0) {
+                color = vec4(0.0, 0.2, 0.0, 0.2) + color * 0.8;
             }
             imageStore(dst, ivec2(coord), color.bgra);
             break;

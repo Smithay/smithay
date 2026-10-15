@@ -85,6 +85,7 @@ pub struct VulkanRenderer {
     texture_sampler: vk::Sampler,
     tex_up_filter: TextureFilter,
     tex_down_filter: TextureFilter,
+    debug_flags: super::DebugFlags,
 
     seq_no: u64,
     timeline: sync::VulkanTimeline,
@@ -247,6 +248,7 @@ impl VulkanRenderer {
             texture_sampler,
             tex_up_filter: TextureFilter::Linear,
             tex_down_filter: TextureFilter::Linear,
+            debug_flags: super::DebugFlags::empty(),
             seq_no: 0,
             node,
             timeline,
@@ -338,12 +340,11 @@ impl Renderer for VulkanRenderer {
     }
 
     fn set_debug_flags(&mut self, flags: super::DebugFlags) {
-        // TODO
+        self.debug_flags = flags;
     }
 
     fn debug_flags(&self) -> super::DebugFlags {
-        // TODO
-        super::DebugFlags::empty()
+        self.debug_flags
     }
 
     fn render<'frame, 'buffer>(
@@ -1025,6 +1026,7 @@ impl Frame for VulkanFrame<'_, '_> {
                     Transform::Flipped270 => 7,
                 },
                 alpha,
+                debug_flags: self.renderer.debug_flags.bits(),
                 damage_size: chunk.len() as u32,
                 damage: chunk
                     .iter()
@@ -1048,7 +1050,6 @@ impl Frame for VulkanFrame<'_, '_> {
                     .collect::<Vec<_>>()
                     .try_into()
                     .unwrap(),
-                _padding0: [0; 1],
             };
 
             unsafe {
