@@ -202,7 +202,7 @@ impl VulkanRenderer {
                 let dst = buffer.mapped_ptr().unwrap();
                 for region in regions {
                     let offset = (stride * region.loc.y as usize + region.loc.x as usize * bpp) as isize;
-                    let len = stride * region.size.h as usize + region.size.w as usize * bpp;
+                    let len = stride * (region.size.h as usize - 1) + region.size.w as usize * bpp;
                     unsafe {
                         std::ptr::copy_nonoverlapping(
                             data.as_ptr().offset(offset),
