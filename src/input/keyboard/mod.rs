@@ -824,7 +824,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         mods: ModifiersState,
     ) {
         let mut keymap_file = self.arc.keymap.lock().unwrap();
-        keymap_file.change_keymap(keymap);
+        *keymap_file = KeymapFile::new(keymap);
 
         self.send_keymap(data, focus, &keymap_file, mods);
     }
