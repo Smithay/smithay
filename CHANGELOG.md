@@ -292,6 +292,12 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`LibinputInputBackend` now processes events libinput has queued without making its file descriptor
+readable: the `DeviceAdded` events for devices already present after `Libinput::udev_assign_seat` and
+`Libinput::resume`, and `DeviceRemoved` after `Libinput::suspend`. Previously these waited for the next
+unrelated input event, so a compositor learned about its input devices only at the first key press or
+pointer motion, and applied per-device setup such as keyboard LEDs or libinput configuration only then.
+
 `ForeignToplevelListState::remove_toplevel` no longer removes a different toplevel from the list when
 a handle in front of it was dropped without being removed (the lazy cleanup that the documentation
 allows). Previously the removed entry was picked by its position among the live handles, so a live
