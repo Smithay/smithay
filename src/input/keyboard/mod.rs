@@ -989,6 +989,12 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         result
     }
 
+    /// Get [`KeymapFile`] containing the active keymap, as `XKB_KEYMAP_FORMAT_TEXT_V1`.
+    #[cfg(feature = "wayland_frontend")]
+    pub fn keymap_file(&self) -> KeymapFile {
+        self.arc.keymap.lock().unwrap().clone()
+    }
+
     /// Change the current grab on this keyboard to the provided grab
     ///
     /// Overwrites any current grab.
