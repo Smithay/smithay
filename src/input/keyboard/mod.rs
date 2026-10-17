@@ -1318,42 +1318,54 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
     /// Set the modifiers state.
     ///
+    /// Calls [`SeatHandler::led_state_changed`] if the LED state changed, without holding the
+    /// keyboard lock.
+    ///
     /// Note that the round-trip from XKB state to serialized form and back to XKB state is lossy,
     /// as documented in [`xkb::State::update_mask`].
-    pub fn set_modifier_state(&self, mods_state: ModifiersState) -> u32 {
-        let internal = &mut self.arc.internal.lock().unwrap();
+    pub fn set_modifier_state(&self, data: &mut D, mods_state: ModifiersState) -> u32 {
+        let (modifiers_changed, new_led_state) = {
+            let internal = &mut *self.arc.internal.lock().unwrap();
 
-        let (leds_changed, led_state, modifiers_changed, serialized) = {
-            let state = &mut internal.xkb.lock().unwrap().state;
+            let (leds_changed, led_state, modifiers_changed, serialized) = {
+                let state = &mut internal.xkb.lock().unwrap().state;
 
-            let serialized = mods_state.serialize_back(state);
+                let serialized = mods_state.serialize_back(state);
 
-            let modifiers_changed = state.update_mask(
-                serialized.depressed,
-                serialized.latched,
-                serialized.locked,
-                serialized.layout_effective & xkb::STATE_LAYOUT_DEPRESSED,
-                serialized.layout_effective & xkb::STATE_LAYOUT_LATCHED,
-                serialized.layout_effective & xkb::STATE_LAYOUT_LOCKED,
-            );
+                let modifiers_changed = state.update_mask(
+                    serialized.depressed,
+                    serialized.latched,
+                    serialized.locked,
+                    serialized.layout_effective & xkb::STATE_LAYOUT_DEPRESSED,
+                    serialized.layout_effective & xkb::STATE_LAYOUT_LATCHED,
+                    serialized.layout_effective & xkb::STATE_LAYOUT_LOCKED,
+                );
 
-            // Return early it nothing changed.
-            if modifiers_changed == 0 {
-                return 0;
+                // Return early it nothing changed.
+                if modifiers_changed == 0 {
+                    return 0;
+                }
+
+                let led_mapping = &internal.led_mapping;
+                let mut led_state = internal.led_state;
+                let leds_changed = led_state.update_with(state, led_mapping);
+
+                (leds_changed, led_state, modifiers_changed, serialized)
+            };
+
+            internal.mods_state = mods_state;
+            internal.mods_state.serialized = serialized;
+
+            if leds_changed {
+                internal.led_state = led_state;
             }
 
-            let led_mapping = &internal.led_mapping;
-            let mut led_state = internal.led_state;
-            let leds_changed = led_state.update_with(state, led_mapping);
-
-            (leds_changed, led_state, modifiers_changed, serialized)
+            (modifiers_changed, leds_changed.then_some(led_state))
         };
 
-        internal.mods_state = mods_state;
-        internal.mods_state.serialized = serialized;
-
-        if leds_changed {
-            internal.led_state = led_state;
+        if let Some(led_state) = new_led_state {
+            let seat = self.get_seat(data);
+            data.led_state_changed(&seat, led_state);
         }
 
         modifiers_changed
@@ -1746,3 +1758,6 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
 
     fn unset(&mut self, _data: &mut D) {}
 }
+
+#[cfg(test)]
+mod tests;

@@ -4,6 +4,11 @@
 
 ### Breaking changes
 
+`KeyboardHandle::set_modifier_state` now takes the compositor state (`data: &mut D`)
+and calls `SeatHandler::led_state_changed` when the LED state changes, like the other
+paths that change the modifier state. Previously callers had to update the LEDs
+themselves, and the change was silently missed.
+
 `wayland::virtual_keyboard` no longer sends key events to focused clients on its
 own. A virtual keyboard is now an regular input device:
 `VirtualKeyboardManagerState::new` requires the state to implement the new
