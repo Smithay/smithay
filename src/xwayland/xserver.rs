@@ -1,13 +1,13 @@
 use std::{
     env,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     os::fd::{BorrowedFd, OwnedFd},
     os::unix::{
         io::{AsRawFd, RawFd},
         net::UnixStream,
         process::CommandExt,
     },
-    process::{Child, Command},
+    process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     thread,
 };
@@ -85,6 +85,148 @@ pub enum XWaylandEvent {
     Error,
 }
 
+/// Builder for an [`XWayland`] instance, from [`XWayland::builder`].
+///
+/// Takes the same options as [`XWayland::spawn`], with the same defaults where
+/// it has one: a display number chosen by smithay, no extra environment or
+/// arguments, no abstract socket, and stdout and stderr discarded. In
+/// addition, [`XWaylandBuilder::customize`] can adjust the `Xwayland`
+/// [`Command`] before it is spawned.
+#[derive(Default)]
+pub struct XWaylandBuilder {
+    display: Option<u32>,
+    envs: Vec<(OsString, OsString)>,
+    args: Vec<OsString>,
+    open_abstract_socket: bool,
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
+    customize: Option<Box<dyn FnOnce(&mut Command)>>,
+}
+
+impl std::fmt::Debug for XWaylandBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("XWaylandBuilder")
+            .field("display", &self.display)
+            .field("envs", &self.envs)
+            .field("args", &self.args)
+            .field("open_abstract_socket", &self.open_abstract_socket)
+            .field("customize", &self.customize.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl XWaylandBuilder {
+    /// Use only this display number, rather than one smithay chooses.
+    pub fn display(mut self, display: u32) -> Self {
+        self.display = Some(display);
+        self
+    }
+
+    /// Set an additional environment variable for Xwayland.
+    pub fn env(mut self, key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) -> Self {
+        self.envs
+            .push((key.as_ref().to_owned(), value.as_ref().to_owned()));
+        self
+    }
+
+    /// Set additional environment variables for Xwayland.
+    pub fn envs<K, V>(mut self, envs: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        self.envs.extend(
+            envs.into_iter()
+                .map(|(k, v)| (k.as_ref().to_owned(), v.as_ref().to_owned())),
+        );
+        self
+    }
+
+    /// Pass an additional command-line argument to Xwayland.
+    pub fn arg(mut self, arg: impl AsRef<OsStr>) -> Self {
+        self.args.push(arg.as_ref().to_owned());
+        self
+    }
+
+    /// Pass additional command-line arguments to Xwayland.
+    pub fn args<A: AsRef<OsStr>>(mut self, args: impl IntoIterator<Item = A>) -> Self {
+        self.args.extend(args.into_iter().map(|a| a.as_ref().to_owned()));
+        self
+    }
+
+    /// Open an abstract socket as well as filesystem sockets (Linux only).
+    pub fn abstract_socket(mut self, open: bool) -> Self {
+        self.open_abstract_socket = open;
+        self
+    }
+
+    /// Where Xwayland's stdout goes. Discarded by default.
+    pub fn stdout(mut self, stdout: impl Into<Stdio>) -> Self {
+        self.stdout = Some(stdout.into());
+        self
+    }
+
+    /// Where Xwayland's stderr goes. Discarded by default.
+    pub fn stderr(mut self, stderr: impl Into<Stdio>) -> Self {
+        self.stderr = Some(stderr.into());
+        self
+    }
+
+    /// Adjust the `Xwayland` [`Command`] before it is spawned.
+    ///
+    /// Called once the arguments and environment are set up, and before
+    /// smithay registers its own `pre_exec` closure. That closure clears
+    /// `FD_CLOEXEC` on the descriptors it passes to Xwayland (the Wayland and
+    /// WM sockets, the display pipe and the listening sockets), and `pre_exec`
+    /// closures run in the order they are registered, so closures added here
+    /// run first. This makes it possible to:
+    ///
+    /// - mark every other inherited descriptor close-on-exec (for example with
+    ///   `close_range(3, ~0, CLOSE_RANGE_CLOEXEC)`), with the descriptors
+    ///   Xwayland needs still passed;
+    /// - drop privileges, for a compositor that runs as root but should run
+    ///   Xwayland as the session's user: `setgroups`, `setgid`, then `setuid`
+    ///   in a `pre_exec` closure.
+    ///
+    /// Prefer a `pre_exec` closure over [`CommandExt::uid`] and
+    /// [`CommandExt::gid`] for the latter: std applies those before any
+    /// `pre_exec` closure runs, and when the parent is root it also clears all
+    /// supplementary groups, so a later `setgroups` fails.
+    ///
+    /// The usual `pre_exec` rules apply: only async-signal-safe operations
+    /// between fork and exec. Calling this again replaces the earlier hook.
+    pub fn customize(mut self, customize: impl FnOnce(&mut Command) + 'static) -> Self {
+        self.customize = Some(Box::new(customize));
+        self
+    }
+
+    /// Spawn the XWayland server. As [`XWayland::spawn`]: `user_data` can
+    /// initialise the client's `XWaylandClientData::user_data` before it is
+    /// added to the display.
+    pub fn spawn(
+        self,
+        dh: &DisplayHandle,
+        user_data: impl FnOnce(&UserDataMap),
+    ) -> std::io::Result<(XWayland, Client)> {
+        let customize = self.customize;
+        XWayland::spawn_inner(
+            dh,
+            self.display,
+            self.envs,
+            self.args,
+            self.open_abstract_socket,
+            self.stdout.unwrap_or_else(Stdio::null),
+            self.stderr.unwrap_or_else(Stdio::null),
+            user_data,
+            move |command| {
+                if let Some(customize) = customize {
+                    customize(command);
+                }
+            },
+        )
+    }
+}
+
 impl XWayland {
     /// Spawns an XWayland server instance. `Xwayland` must be on the `PATH` and
     /// executable.
@@ -111,6 +253,9 @@ impl XWayland {
     /// handle can be inserted in your event loop, and If everything goes well,
     /// you'll eventually receive an `XWaylandEvent::Ready`, indicating that
     /// it's time to start the X11 window manager.
+    ///
+    /// For more control over how the process is started, see
+    /// [`XWayland::builder`].
     #[allow(clippy::too_many_arguments)]
     pub fn spawn<K, V, I, A, AI, F>(
         dh: &DisplayHandle,
@@ -130,10 +275,51 @@ impl XWayland {
         A: AsRef<OsStr>,
         F: FnOnce(&UserDataMap),
     {
+        Self::spawn_inner(
+            dh,
+            display.into(),
+            envs,
+            extra_args,
+            open_abstract_socket,
+            stdout.into(),
+            stderr.into(),
+            user_data,
+            |_| {},
+        )
+    }
+
+    /// Starts building an XWayland instance: the same options as
+    /// [`XWayland::spawn`], plus [`XWaylandBuilder::customize`] to adjust the
+    /// `Xwayland` [`Command`] before it is spawned.
+    pub fn builder() -> XWaylandBuilder {
+        XWaylandBuilder::default()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_inner<K, V, I, A, AI, F, C>(
+        dh: &DisplayHandle,
+        display: Option<u32>,
+        envs: I,
+        extra_args: AI,
+        open_abstract_socket: bool,
+        stdout: std::process::Stdio,
+        stderr: std::process::Stdio,
+        user_data: F,
+        customize: C,
+    ) -> std::io::Result<(Self, Client)>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+        AI: IntoIterator<Item = A>,
+        A: AsRef<OsStr>,
+        F: FnOnce(&UserDataMap),
+        C: FnOnce(&mut Command),
+    {
         let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
         let (wl_x11, wl_me) = UnixStream::pair()?;
 
-        let (lock, listen_sockets) = prepare_x11_sockets(display.into(), open_abstract_socket)?;
+        let (lock, listen_sockets) = prepare_x11_sockets(display, open_abstract_socket)?;
         let display_number = lock.display_number();
 
         // XWayland writes the the display number and a newline to this pipe when it's ready.
@@ -173,6 +359,10 @@ impl XWayland {
 
         command.env("WAYLAND_SOCKET", format!("{}", wl_x11.as_raw_fd()));
         command.envs(envs);
+
+        // Before smithay's own pre_exec, so the caller's closures run first
+        // and the descriptors Xwayland needs are made inheritable last.
+        customize(&mut command);
 
         unsafe {
             let wayland_socket_fd = wl_x11.as_raw_fd();

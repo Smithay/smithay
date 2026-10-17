@@ -156,6 +156,7 @@ is used for timestamps for synthesized events.
 
 ### Additions
 
+- Add `XWayland::builder()` / `XWaylandBuilder`, with the options of `XWayland::spawn` plus `customize`, a hook to adjust the `Xwayland` `Command` before it is spawned. Its `pre_exec` closures run before smithay's own, so a compositor can mark other inherited descriptors close-on-exec or run Xwayland as another user, and the descriptors smithay passes still reach it.
 - Add `WmWindowProperty::Other` to forward unrecognized X11 property changes to the compositor.
 
 
