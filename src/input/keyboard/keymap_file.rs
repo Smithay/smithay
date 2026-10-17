@@ -91,6 +91,10 @@ impl KeymapFile {
     pub fn id(&self) -> KeymapFileId {
         self.0.id
     }
+
+    pub(super) fn as_str(&self) -> &str {
+        &self.0.keymap
+    }
 }
 
 #[cfg(test)]
