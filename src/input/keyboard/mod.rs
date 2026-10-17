@@ -815,18 +815,18 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    #[instrument(parent = &self.arc.span, skip(self, data, keymap))]
+    #[instrument(parent = &self.arc.span, skip(self, data, keymap_file))]
     pub(crate) fn change_keymap(
         &self,
         data: &mut D,
         focus: &Option<&mut <D as SeatHandler>::KeyboardFocus>,
-        keymap: &xkb::Keymap,
+        keymap_file: KeymapFile,
         mods: ModifiersState,
     ) {
-        let mut keymap_file = self.arc.keymap.lock().unwrap();
-        keymap_file.change_keymap(keymap);
+        let mut keymap_file_lock = self.arc.keymap.lock().unwrap();
+        *keymap_file_lock = keymap_file;
 
-        self.send_keymap(data, focus, &keymap_file, mods);
+        self.send_keymap(data, focus, &keymap_file_lock, mods);
     }
 
     /// Send a new wl_keyboard keymap, without updating the internal keymap.
@@ -879,7 +879,15 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         true
     }
 
-    fn update_xkb_state(&self, data: &mut D, keymap: xkb::Keymap) {
+    fn update_xkb_state(
+        &self,
+        data: &mut D,
+        keymap: xkb::Keymap,
+        #[cfg(feature = "wayland_frontend")] keymap_file: Option<KeymapFile>,
+    ) {
+        #[cfg(feature = "wayland_frontend")]
+        let keymap_file = keymap_file.unwrap_or_else(|| KeymapFile::new(&keymap));
+
         let mut internal = self.arc.internal.lock().unwrap();
 
         let mut state = xkb::State::new(&keymap);
@@ -906,7 +914,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
 
         #[cfg(feature = "wayland_frontend")]
-        self.change_keymap(data, &focus, &keymap, mods);
+        self.change_keymap(data, &focus, keymap_file, mods);
 
         if leds_changed {
             let led_state = internal.led_state;
@@ -932,7 +940,34 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             debug!("Loading keymap from string failed");
             Error::BadKeymap
         })?;
-        self.update_xkb_state(data, keymap);
+        self.update_xkb_state(
+            data,
+            keymap,
+            #[cfg(feature = "wayland_frontend")]
+            None,
+        );
+        Ok(())
+    }
+
+    /// Change the [`Keymap`](xkb::Keymap) used by the keyboard.
+    ///
+    /// The input is a [`KeymapFile`] in XKB_KEYMAP_FORMAT_TEXT_V1 format.
+    #[cfg(feature = "wayland_frontend")]
+    pub fn set_keymap_from_keymap_file(&self, data: &mut D, keymap_file: KeymapFile) -> Result<(), Error> {
+        // Construct the Keymap internally instead of accepting one as input
+        // because libxkbcommon is not thread-safe.
+        let keymap = xkb::Keymap::new_from_string(
+            &self.arc.internal.lock().unwrap().xkb.lock().unwrap().context,
+            // TODO: Shouldn't require cloning allocation: https://github.com/rust-x-bindings/xkbcommon-rs/pull/75
+            keymap_file.as_str().to_owned(),
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .ok_or_else(|| {
+            debug!("Loading keymap from string failed");
+            Error::BadKeymap
+        })?;
+        self.update_xkb_state(data, keymap, Some(keymap_file));
         Ok(())
     }
 
@@ -944,7 +979,12 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 debug!("Loading keymap from XkbConfig failed");
                 Error::BadKeymap
             })?;
-        self.update_xkb_state(data, keymap);
+        self.update_xkb_state(
+            data,
+            keymap,
+            #[cfg(feature = "wayland_frontend")]
+            None,
+        );
         Ok(())
     }
 
@@ -987,6 +1027,12 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
 
         result
+    }
+
+    /// Get [`KeymapFile`] containing the active keymap, as XKB_KEYMAP_FORMAT_TEXT_V1`.
+    #[cfg(feature = "wayland_frontend")]
+    pub fn keymap_file(&self) -> KeymapFile {
+        self.arc.keymap.lock().unwrap().clone()
     }
 
     /// Change the current grab on this keyboard to the provided grab

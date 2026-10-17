@@ -79,7 +79,7 @@ use wayland_server::{
 use xkbcommon::xkb;
 
 use crate::backend::input::{InputEvent, InputTime, KeyState};
-use crate::input::keyboard::KeyboardSource;
+use crate::input::keyboard::{KeyboardSource, KeymapFile};
 use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 const MANAGER_VERSION: u32 = 1;
@@ -206,7 +206,7 @@ struct VirtualKeyboardData {
     /// Whether a keymap request was accepted. Even if set, there may still be
     /// no keymap if `no_keymap` was explicitly requested.
     has_keymap: AtomicBool,
-    keymap: Mutex<Option<Arc<str>>>,
+    keymap: Mutex<Option<KeymapFile>>,
     pressed_keys: Mutex<Vec<u32>>,
     source: KeyboardSource,
 }
@@ -240,7 +240,7 @@ where
                     None
                 } else if format == KeymapFormat::XkbV1 as u32 {
                     match compile_keymap(fd, size as usize) {
-                        Some(keymap) => Some(Arc::from(keymap)),
+                        Some(keymap) => Some(KeymapFile::new(&keymap)),
                         // Client will get a `no_keymap` error on the next `key`
                         // request if no other keymap requests have succeeded
                         // yet.
@@ -385,7 +385,7 @@ where
 
 /// Compile a client-supplied `xkb_v1` keymap, normalizing it to
 /// `XKB_KEYMAP_FORMAT_TEXT_V1`, and returning it if valid.
-fn compile_keymap(fd: OwnedFd, size: usize) -> Option<String> {
+fn compile_keymap(fd: OwnedFd, size: usize) -> Option<xkb::Keymap> {
     let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
     // SAFETY: we can map the keymap into the memory.
     let keymap = match unsafe {
@@ -408,5 +408,5 @@ fn compile_keymap(fd: OwnedFd, size: usize) -> Option<String> {
         }
     };
 
-    Some(keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1))
+    Some(keymap)
 }
