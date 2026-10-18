@@ -1438,22 +1438,19 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         others: impl IntoIterator<Item = Self>,
     ) -> Vec<Self> {
         for other in others {
-            let items = rects.len();
-            let mut checked = 0usize;
-            let mut index = 0usize;
-
             // If there is nothing left we can stop,
             // we won't be able to subtract any further
-            if items == 0 {
+            if rects.is_empty() {
                 return rects;
             }
 
-            while checked != items {
-                checked += 1;
+            // Walk the original rects back to front
+            let mut index = rects.len();
+            while index > 0 {
+                index -= 1;
 
                 // If there is no overlap there is nothing to subtract
                 let Some(intersection) = rects[index].intersection(other) else {
-                    index += 1;
                     continue;
                 };
 
@@ -2229,6 +2226,19 @@ mod tests {
                 Rectangle::<i32, Logical>::from_size((20, 100).into()),
             ]
         )
+    }
+
+    #[test]
+    fn rectangle_subtract_rects_many_checks_all_rects() {
+        let a = Rectangle::<i32, Logical>::new((0, 0).into(), (20, 2).into());
+        let b = Rectangle::<i32, Logical>::new((2, 4).into(), (2, 2).into());
+        let c = Rectangle::<i32, Logical>::new((4, 8).into(), (20, 2).into());
+        let other = Rectangle::<i32, Logical>::from_size((10, 10).into());
+
+        let rects = Rectangle::subtract_rects_many_in_place(vec![a, b, c], [other]);
+        assert_eq!(rects.len(), 2);
+        assert!(rects.contains(&Rectangle::new((10, 0).into(), (10, 2).into())));
+        assert!(rects.contains(&Rectangle::new((10, 8).into(), (14, 2).into())));
     }
 
     #[test]
