@@ -156,6 +156,11 @@ is used for timestamps for synthesized events.
 
 ### Additions
 
+- `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
+  whole environment, instead of only `PATH` and
+  `XDG_RUNTIME_DIR`. This lets `Xwayland` find GPU drivers installed outside
+  the default paths, for example through `LD_LIBRARY_PATH`.
+
 - Add `WmWindowProperty::Other` to forward unrecognized X11 property changes to the compositor.
 
 
