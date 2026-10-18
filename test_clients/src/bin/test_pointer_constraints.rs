@@ -172,7 +172,7 @@ impl WindowHandler for App {
                 .pointer_constraint_state
                 .confine_pointer(
                     self.window.wl_surface(),
-                    &pointer,
+                    pointer,
                     Some(&region),
                     zwp_pointer_constraints_v1::Lifetime::Persistent,
                     qh,
