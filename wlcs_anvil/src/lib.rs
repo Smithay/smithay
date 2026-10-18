@@ -171,9 +171,7 @@ impl Wlcs for AnvilDisplayServerHandle {
     }
 
     fn create_pointer(&mut self) -> Option<Self::Pointer> {
-        let Some(ref server) = self.server else {
-            return None;
-        };
+        let server = self.server.as_ref()?;
         Some(PointerHandle {
             device_id: DEVICE_ID.fetch_add(1, Ordering::Relaxed),
             sender: server.0.clone(),
@@ -181,9 +179,7 @@ impl Wlcs for AnvilDisplayServerHandle {
     }
 
     fn create_touch(&mut self) -> Option<Self::Touch> {
-        let Some(ref server) = self.server else {
-            return None;
-        };
+        let server = self.server.as_ref()?;
         Some(TouchHandle {
             device_id: DEVICE_ID.fetch_add(1, Ordering::Relaxed),
             sender: server.0.clone(),

@@ -1,3 +1,8 @@
+#![allow(
+    clippy::disallowed_macros,
+    reason = "stripped-down demo, terminal prints are its user-visible feedback"
+)]
+
 use std::sync::Arc;
 
 use smithay::delegate_dispatch2;
