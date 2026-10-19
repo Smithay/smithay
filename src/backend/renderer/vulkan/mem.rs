@@ -106,7 +106,8 @@ impl VulkanRenderer {
                 .map_err(Error::SubmitError)?;
         }
 
-        self.cmd_pool.store_pending_buffer(cmd, next_seq_no[0], None);
+        self.cmd_pool
+            .store_pending_buffer(cmd, next_seq_no[0], None, std::iter::once(img.clone()));
         unsafe { self.device.vk().device_wait_idle() }; // BIG TODO
 
         Ok(next_seq_no[0])

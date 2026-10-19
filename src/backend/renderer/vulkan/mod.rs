@@ -752,7 +752,8 @@ impl VulkanRenderer {
                     )
                     .map_err(Error::SubmitError)?;
             }
-            self.cmd_pool.store_pending_buffer(cmd, next_seq_no[0], None);
+            self.cmd_pool
+                .store_pending_buffer(cmd, next_seq_no[0], None, std::iter::once(image.clone()));
 
             Ok(VulkanMapping {
                 ptr: buffer.mapped_ptr().unwrap().cast(),
@@ -1126,9 +1127,12 @@ impl Frame for VulkanFrame<'_, '_> {
                 .map_err(Error::SubmitError)?;
         }
 
-        self.renderer
-            .cmd_pool
-            .store_pending_buffer(buf, next_seq_no[0], descriptor);
+        self.renderer.cmd_pool.store_pending_buffer(
+            buf,
+            next_seq_no[0],
+            descriptor,
+            [texture.clone(), self.fb.0.clone()],
+        );
         self.last_sequence = Some(next_seq_no[0]);
 
         Ok(())
@@ -1302,9 +1306,12 @@ impl VulkanFrame<'_, '_> {
                 .map_err(Error::SubmitError)?;
         }
 
-        self.renderer
-            .cmd_pool
-            .store_pending_buffer(buf, next_seq_no[0], descriptor);
+        self.renderer.cmd_pool.store_pending_buffer(
+            buf,
+            next_seq_no[0],
+            descriptor,
+            std::iter::once(self.fb.0.clone()),
+        );
         self.last_sequence = Some(next_seq_no[0]);
 
         Ok(())
@@ -1480,7 +1487,8 @@ impl VulkanRenderer {
                 .map_err(Error::SubmitError)?;
         }
 
-        self.cmd_pool.store_pending_buffer(buf, self.seq_no, None);
+        self.cmd_pool
+            .store_pending_buffer(buf, self.seq_no, None, [from.0.clone(), to.0.clone()]);
 
         Ok(self.seq_no)
     }

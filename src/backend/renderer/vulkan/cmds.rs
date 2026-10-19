@@ -1,7 +1,10 @@
 use super::Error;
 use crate::backend::{
     renderer::vulkan::shaders::DescriptorSet,
-    vulkan::device::{Device, WeakDevice},
+    vulkan::{
+        device::{Device, WeakDevice},
+        image::VulkanImage,
+    },
 };
 
 use ash::vk::{
@@ -14,7 +17,15 @@ use std::collections::VecDeque;
 pub struct CommandPool {
     device: WeakDevice,
     vk: VkCommandPool,
-    pending_buffers: VecDeque<(u64, CommandBuffer, Option<DescriptorSet>)>,
+    pending_buffers: VecDeque<PendingBuffer>,
+}
+
+#[derive(Debug)]
+struct PendingBuffer {
+    seq: u64,
+    cmd_buf: CommandBuffer,
+    desc_set: Option<DescriptorSet>,
+    images: Vec<VulkanImage>,
 }
 
 impl CommandPool {
@@ -60,12 +71,18 @@ impl CommandPool {
         buf: CommandBuffer,
         seq: u64,
         desc: impl Into<Option<DescriptorSet>>,
+        images: impl IntoIterator<Item = VulkanImage>,
     ) {
-        self.pending_buffers.push_back((seq, buf, desc.into()));
+        self.pending_buffers.push_back(PendingBuffer {
+            seq,
+            cmd_buf: buf,
+            desc_set: desc.into(),
+            images: images.into_iter().collect(),
+        });
     }
 
     pub fn clean_old_buffers(&mut self, seq: u64) {
-        let idx = self.pending_buffers.iter().position(|(s, _, _)| *s > seq);
+        let idx = self.pending_buffers.iter().position(|pending| pending.seq > seq);
 
         // TODO: truncate_front when stable
         let bufs = (if let Some(idx) = idx {
@@ -73,7 +90,7 @@ impl CommandPool {
         } else {
             self.pending_buffers.drain(..)
         })
-        .map(|(_, buf, _)| buf)
+        .map(|pending| pending.cmd_buf)
         .collect::<Vec<CommandBuffer>>();
 
         if let Some(device) = self.device.upgrade() {
@@ -92,7 +109,7 @@ impl Drop for CommandPool {
             let bufs = self
                 .pending_buffers
                 .drain(..)
-                .map(|(_, buf, _)| buf)
+                .map(|pending| pending.cmd_buf)
                 .collect::<Vec<_>>();
 
             unsafe {
