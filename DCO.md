@@ -1,7 +1,7 @@
 Developer Certificate of Origin
 Version 1.1
 
-Copyright (C) 2026 Smithay maintainers
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
 
 Everyone is permitted to copy and distribute verbatim copies of this
 license document, but changing it is not allowed.
