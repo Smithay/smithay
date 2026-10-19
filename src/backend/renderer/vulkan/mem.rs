@@ -99,7 +99,7 @@ impl VulkanRenderer {
                     *self.device.queue(),
                     &[SubmitInfo::default()
                         .command_buffers(&[cmd])
-                        .signal_semaphores(&[self.timeline.vk])
+                        .signal_semaphores(&[self.timeline.vk()])
                         .push_next(&mut timeline_info)],
                     Fence::null(),
                 )

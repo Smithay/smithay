@@ -56,11 +56,7 @@ impl Device {
             None
         };
 
-        Ok(VulkanTimeline {
-            device: self.downgrade(),
-            vk: semaphore,
-            drm,
-        })
+        Ok(VulkanTimeline::new(self, semaphore, drm))
     }
 
     pub(super) fn create_command_pool(&self) -> Result<CommandPool, Error> {

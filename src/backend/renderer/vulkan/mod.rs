@@ -259,7 +259,7 @@ impl VulkanRenderer {
         let val = unsafe {
             self.device
                 .vk()
-                .get_semaphore_counter_value(self.timeline.vk)
+                .get_semaphore_counter_value(self.timeline.vk())
                 .map_err(Error::SemaphoreError)?
         };
         self.cmd_pool.clean_old_buffers(val);
@@ -369,7 +369,7 @@ impl Renderer for VulkanRenderer {
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         if let Some(sync) = sync.get::<VulkanSync>() {
             if sync.ctx().is_some_and(|id| id == self.device.context()) {
-                let semaphores = [sync.timeline.vk];
+                let semaphores = [sync.timeline.vk()];
                 let values = [sync.seq];
                 let mut timeline_info =
                     TimelineSemaphoreSubmitInfo::default().signal_semaphore_values(&values);
@@ -746,7 +746,7 @@ impl VulkanRenderer {
                         *self.device.queue(),
                         &[SubmitInfo::default()
                             .command_buffers(&[cmd])
-                            .signal_semaphores(&[self.timeline.vk])
+                            .signal_semaphores(&[self.timeline.vk()])
                             .push_next(&mut timeline_info)],
                         Fence::null(),
                     )
@@ -797,7 +797,7 @@ impl ExportMem for VulkanRenderer {
         texture_mapping: &'a Self::TextureMapping,
     ) -> Result<&'a [u8], Self::Error> {
         if let Some(seq) = texture_mapping.staging_seq_no {
-            let semaphores = [self.timeline.vk];
+            let semaphores = [self.timeline.vk()];
             let sequences = [seq];
             let info = SemaphoreWaitInfo::default()
                 .semaphores(&semaphores)
@@ -1119,7 +1119,7 @@ impl Frame for VulkanFrame<'_, '_> {
                     *self.renderer.device.queue(),
                     &[SubmitInfo::default()
                         .command_buffers(&[buf])
-                        .signal_semaphores(&[self.renderer.timeline.vk])
+                        .signal_semaphores(&[self.renderer.timeline.vk()])
                         .push_next(&mut timeline_info)],
                     Fence::null(),
                 )
@@ -1295,7 +1295,7 @@ impl VulkanFrame<'_, '_> {
                     *self.renderer.device.queue(),
                     &[SubmitInfo::default()
                         .command_buffers(&[buf])
-                        .signal_semaphores(&[self.renderer.timeline.vk])
+                        .signal_semaphores(&[self.renderer.timeline.vk()])
                         .push_next(&mut timeline_info)],
                     Fence::null(),
                 )
@@ -1473,7 +1473,7 @@ impl VulkanRenderer {
                     *self.device.queue(),
                     &[SubmitInfo::default()
                         .command_buffers(&[buf])
-                        .signal_semaphores(&[self.timeline.vk])
+                        .signal_semaphores(&[self.timeline.vk()])
                         .push_next(&mut timeline_info)],
                     Fence::null(),
                 )
@@ -1499,9 +1499,9 @@ impl Blit for VulkanRenderer {
 
         let seq_no = self.blit_internal(from, to, src, dst, filter)?;
 
-        if let Some(timeline) = self.timeline.drm.as_ref() {
+        if let Some(timeline) = self.timeline.export() {
             Ok(DrmSyncPoint {
-                timeline: timeline.clone(),
+                timeline,
                 point: seq_no,
             }
             .into())
@@ -1510,7 +1510,7 @@ impl Blit for VulkanRenderer {
             while let Err(VkResult::TIMEOUT) = unsafe {
                 self.device.vk().wait_semaphores(
                     &SemaphoreWaitInfo::default()
-                        .semaphores(&[self.timeline.vk])
+                        .semaphores(&[self.timeline.vk()])
                         .values(&[seq_no]),
                     u64::MAX,
                 )
