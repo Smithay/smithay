@@ -1,9 +1,10 @@
 use ash::{
     ext,
     vk::{
-        self, BufferCreateInfo, BufferUsageFlags, ExternalMemoryHandleTypeFlags,
-        ImportMemoryHostPointerInfoEXT, MemoryAllocateInfo, MemoryHostPointerPropertiesEXT, MemoryMapFlags,
-        MemoryPropertyFlags, PhysicalDeviceMemoryProperties, SharingMode,
+        self, BufferCreateInfo, BufferUsageFlags, ExternalMemoryBufferCreateInfo,
+        ExternalMemoryHandleTypeFlags, ImportMemoryHostPointerInfoEXT, MemoryAllocateInfo,
+        MemoryHostPointerPropertiesEXT, MemoryMapFlags, MemoryPropertyFlags, PhysicalDeviceMemoryProperties,
+        SharingMode,
     },
 };
 use std::{
@@ -86,17 +87,19 @@ impl Buffer {
                 .fp()
                 .get_memory_host_pointer_properties_ext)(
                 device.vk().handle(),
-                ExternalMemoryHandleTypeFlags::HOST_ALLOCATION_EXT,
+                handle,
                 data as *const _,
                 &mut props as *mut _,
             )
         };
         res.result().map_err(Error::HostPtrQuery)?;
 
+        let mut external_info = ExternalMemoryBufferCreateInfo::default().handle_types(handle);
         let create_info = BufferCreateInfo::default()
             .usage(usage)
             .size(len as u64)
-            .sharing_mode(SharingMode::EXCLUSIVE);
+            .sharing_mode(SharingMode::EXCLUSIVE)
+            .push_next(&mut external_info);
 
         let buffer = unsafe {
             device
