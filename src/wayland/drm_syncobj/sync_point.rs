@@ -124,6 +124,7 @@ impl DrmSyncPoint {
     }
 
     /// Create an eventfd that will be signaled by the syncpoint
+    #[cfg(not(target_os = "openbsd"))]
     pub fn eventfd(&self) -> io::Result<Arc<OwnedFd>> {
         let fd = rustix::event::eventfd(
             0,
@@ -139,6 +140,11 @@ impl DrmSyncPoint {
         ctx.event_fds.retain(|(_, fd)| fd.upgrade().is_some());
         ctx.event_fds.push((self.point, Arc::downgrade(&fd)));
         Ok(fd)
+    }
+
+    #[cfg(target_os = "openbsd")]
+    pub fn eventfd(&self) -> io::Result<Arc<OwnedFd>> {
+        Err(io::Error::other("oh no!"))
     }
 
     /// Signal the sync point.
