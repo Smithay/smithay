@@ -181,8 +181,8 @@ use x11rb::{
             AtomEnum, CONFIGURE_NOTIFY_EVENT, ChangeWindowAttributesAux, Colormap, ColormapAlloc,
             ConfigWindow, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
             CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper, ImageFormat, InputFocus,
-            NotifyDetail, NotifyMode, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
-            StackMode, Visualid, WindowClass,
+            MapState, NotifyDetail, NotifyMode, PixmapWrapper, PropMode, Property, QueryExtensionReply,
+            Screen, StackMode, Visualid, WindowClass,
         },
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
@@ -1707,6 +1707,10 @@ where
 
                     drop(_guard);
                     state.map_window_request(xwm_id, surface);
+                } else {
+                    // Still in our frame (its unmap not handled yet): the
+                    // client wants it shown, so show it there.
+                    conn.map_window(r.window)?;
                 }
             }
         }
@@ -1855,7 +1859,31 @@ where
             }
         }
         Event::UnmapNotify(n) => {
-            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
+            // Only undo an unmap of a window that is in our frame and not
+            // shown again by now. A stale one (the client mapped the window
+            // again before we got to it) would otherwise reparent a mapped
+            // window, which unmaps it once more, round and round.
+            let current = match xwm.windows.iter().find(|x| x.window_id() == n.window) {
+                Some(surface) if !surface.is_override_redirect() => {
+                    surface.state.lock().unwrap().mapped_onto.is_some()
+                        && conn
+                            .get_window_attributes(n.window)?
+                            .reply()
+                            .map(|a| a.map_state != MapState::VIEWABLE)
+                            .unwrap_or(true)
+                }
+                _ => true,
+            };
+            if !current {
+                trace!(window = ?n.window, "ignoring a stale UnmapNotify");
+            }
+            if let Some(surface) = xwm
+                .windows
+                .iter()
+                .find(|x| x.window_id() == n.window)
+                .filter(|_| current)
+                .cloned()
+            {
                 xwm.client_list.retain(|w| *w != surface.window_id());
                 xwm.client_list_stacking.retain(|w| *w != surface.window_id());
                 {
