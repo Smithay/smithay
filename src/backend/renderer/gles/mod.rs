@@ -2790,7 +2790,7 @@ impl GlesFrame<'_, '_> {
 
         let mut tex_mat = build_texture_mat(src, dest, tex_size, transform);
         if texture.0.y_inverted {
-            tex_mat = Mat3::from_cols_array(&[1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0]) * tex_mat;
+            tex_mat = Mat3::from_cols_array(&[1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 1.0]) * tex_mat;
         }
 
         let render_texture = |renderer: &mut Self, damage: &[Rectangle<i32, Physical>]| {
