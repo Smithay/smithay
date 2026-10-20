@@ -2583,6 +2583,30 @@ type MemTexture<S, T> = (
     Option<Box<<<<T as GraphicsApi>::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>>,
 );
 
+/// Copies the tightly packed rows of a mapping of `damage` into `staging`, a buffer
+/// laid out like a whole texture of `size`, at the offset of `damage`.
+fn stage_damage(
+    data: &[u8],
+    damage: Rectangle<i32, BufferCoords>,
+    size: Size<i32, BufferCoords>,
+    bpp: usize,
+    staging: &mut [u8],
+) {
+    let row_len = damage.size.w as usize * bpp;
+    if row_len == 0 {
+        return;
+    }
+    let stride = size.w as usize * bpp;
+    for (row, src) in data
+        .chunks_exact(row_len)
+        .take(damage.size.h as usize)
+        .enumerate()
+    {
+        let offset = (damage.loc.y as usize + row) * stride + damage.loc.x as usize * bpp;
+        staging[offset..offset + row_len].copy_from_slice(src);
+    }
+}
+
 fn mem_copy<S, T>(
     src_texture: &<<S::Device as ApiDevice>::Renderer as RendererSuper>::TextureId,
     damage: Option<&[Rectangle<i32, BufferCoords>]>,
@@ -2677,6 +2701,10 @@ where
             }
         };
 
+        // `update_memory` expects data laid out like the whole texture, but a mapping
+        // of a damage rect holds only that rect's rows. Partial mappings are placed
+        // at their offset in a texture-sized staging buffer, shared by all of them.
+        let mut staging: Option<Vec<u8>> = None;
         for (mapping, damage) in mappings {
             let data = src.renderer_mut().map_texture(&mapping).map_err(Error::Render)?;
             if let Some(texture) = texture.as_mut() {
@@ -2685,6 +2713,16 @@ where
                     texture.size(),
                     damage,
                 );
+                let data = if damage == texture_rect {
+                    data
+                } else {
+                    let bpp = get_bpp(format).ok_or(Error::ImportFailed)? / 8;
+                    let staging = staging.get_or_insert_with(|| {
+                        vec![0; texture_rect.size.w as usize * texture_rect.size.h as usize * bpp]
+                    });
+                    stage_damage(data, damage, texture_rect.size, bpp, staging);
+                    &staging[..]
+                };
                 target
                     .renderer_mut()
                     .update_memory(texture, data, damage)
@@ -3924,5 +3962,38 @@ where
             .as_mut()
             .blit(from_fb, to_fb, src, dst, filter)
             .map_err(Error::Render)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stage_damage;
+    use crate::utils::Rectangle;
+
+    #[test]
+    fn stage_damage_places_rows_at_damage_offset() {
+        // 4x3 texture, 1 byte per pixel; a 2x2 damage rect at (1, 1).
+        let mut staging = vec![0u8; 4 * 3];
+        stage_damage(
+            &[1, 2, 3, 4],
+            Rectangle::new((1, 1).into(), (2, 2).into()),
+            (4, 3).into(),
+            1,
+            &mut staging,
+        );
+        assert_eq!(staging, [0, 0, 0, 0, 0, 1, 2, 0, 0, 3, 4, 0]);
+    }
+
+    #[test]
+    fn stage_damage_ignores_empty_rect() {
+        let mut staging = vec![0u8; 4];
+        stage_damage(
+            &[],
+            Rectangle::new((1, 1).into(), (0, 1).into()),
+            (2, 2).into(),
+            1,
+            &mut staging,
+        );
+        assert_eq!(staging, [0; 4]);
     }
 }
