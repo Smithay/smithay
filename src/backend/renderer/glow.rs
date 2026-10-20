@@ -373,16 +373,16 @@ impl Frame for GlowFrame<'_, '_> {
     }
 
     #[profiling::function]
-    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
-        self.finish_internal()
+    fn finish(mut self, exportable: bool) -> Result<sync::SyncPoint, Self::Error> {
+        self.finish_internal(exportable)
     }
 }
 
 impl GlowFrame<'_, '_> {
     #[profiling::function]
-    fn finish_internal(&mut self) -> Result<sync::SyncPoint, GlesError> {
+    fn finish_internal(&mut self, exportable: bool) -> Result<sync::SyncPoint, GlesError> {
         if let Some(frame) = self.frame.take() {
-            frame.finish()
+            frame.finish(exportable)
         } else {
             Ok(sync::SyncPoint::default())
         }
@@ -391,7 +391,7 @@ impl GlowFrame<'_, '_> {
 
 impl Drop for GlowFrame<'_, '_> {
     fn drop(&mut self) {
-        if let Err(err) = self.finish_internal() {
+        if let Err(err) = self.finish_internal(false) {
             warn!("Ignored error finishing GlowFrame on drop: {}", err);
         }
     }
