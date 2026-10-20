@@ -47,6 +47,7 @@ fn gl_generate() {
                 "EGL_KHR_fence_sync",
                 "EGL_ANDROID_native_fence_sync",
                 "EGL_IMG_context_priority",
+                "EGL_NV_context_priority_realtime",
             ],
         )
         .write_bindings(gl_generator::GlobalGenerator, &mut file)
