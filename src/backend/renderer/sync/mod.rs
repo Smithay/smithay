@@ -1,7 +1,7 @@
 //! Helper for synchronizing rendering operations
 use std::{error::Error, fmt, os::unix::io::OwnedFd, sync::Arc};
 
-use downcast_rs::{Downcast, impl_downcast};
+use crate::utils::AsAny;
 
 #[cfg(feature = "backend_egl")]
 mod egl;
@@ -21,7 +21,7 @@ impl fmt::Display for Interrupted {
 impl Error for Interrupted {}
 
 /// A fence that will be signaled in finite time
-pub trait Fence: std::fmt::Debug + Send + Sync + Downcast {
+pub trait Fence: std::fmt::Debug + Send + Sync + AsAny + 'static {
     /// Queries the state of the fence
     fn is_signaled(&self) -> bool;
 
@@ -35,7 +35,6 @@ pub trait Fence: std::fmt::Debug + Send + Sync + Downcast {
     /// Export this fence as a native fence fd
     fn export(&self) -> Option<OwnedFd>;
 }
-impl_downcast!(Fence);
 
 /// A sync point the will be signaled in finite time
 #[derive(Debug, Clone)]
@@ -68,7 +67,7 @@ impl SyncPoint {
     /// Returns `None` if the sync point does not contain a fence
     /// or contains a different type of fence
     pub fn get<F: Fence + 'static>(&self) -> Option<&F> {
-        self.fence.as_ref().and_then(|f| f.downcast_ref())
+        self.fence.as_ref()?.as_any().downcast_ref()
     }
 
     /// Queries the state of the sync point

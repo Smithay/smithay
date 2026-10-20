@@ -1,6 +1,4 @@
-use std::fmt;
-
-use downcast_rs::{Downcast, impl_downcast};
+use std::{any::Any, fmt};
 
 use crate::{
     backend::input::InputTime,
@@ -14,7 +12,7 @@ use crate::{
             },
         },
     },
-    utils::{Logical, Point},
+    utils::{AsAny, Logical, Point},
 };
 
 /// A trait to implemenent a tablet tool grab
@@ -38,7 +36,7 @@ use crate::{
 /// logic in the destructor, rather than trying to guess when the grab will end.
 ///
 /// [`TabletToolHandle`]: super::TabletToolHandle
-pub trait TabletToolGrab<D: TabletSeatHandler + 'static>: Send + Downcast {
+pub trait TabletToolGrab<D: TabletSeatHandler + 'static>: Send + AsAny + Any + 'static {
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData<D>;
 
@@ -131,8 +129,6 @@ pub trait TabletToolGrab<D: TabletSeatHandler + 'static>: Send + Downcast {
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
 }
-
-impl_downcast!(TabletToolGrab<D> where D: TabletSeatHandler);
 
 /// Event that caused the grab to start.
 #[derive(Debug, Clone, Copy)]
