@@ -65,7 +65,7 @@ use crate::{
         SwapBuffersError,
         allocator::{
             Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
-            dmabuf::{AnyError, Dmabuf},
+            dmabuf::{AnyError, Dmabuf, DmabufFlags},
             format::{FormatSet, get_bpp},
         },
         drm::DrmNode,
@@ -2426,6 +2426,34 @@ where
     }
 }
 
+/// Row pitch, in bytes, that linear shadow buffers are padded to. 256 bytes satisfies
+/// the linear pitch requirements of the common desktop GPUs.
+const SHADOW_PITCH_ALIGN: u32 = 256;
+
+/// Width to allocate a shadow buffer with, so that a linear allocation of `format`
+/// has a row pitch that is a multiple of [`SHADOW_PITCH_ALIGN`].
+fn shadow_alloc_width(width: u32, format: Fourcc) -> u32 {
+    match get_bpp(format).map(|bpp| bpp as u32 / 8) {
+        Some(bytes) if bytes > 0 && SHADOW_PITCH_ALIGN.is_multiple_of(bytes) => {
+            width.next_multiple_of(SHADOW_PITCH_ALIGN / bytes)
+        }
+        _ => width,
+    }
+}
+
+/// Describes the same memory as `dmabuf`, with the same planes, at a smaller `size`.
+fn crop_dmabuf(dmabuf: &Dmabuf, size: Size<i32, BufferCoords>) -> Option<Dmabuf> {
+    let format = dmabuf.format();
+    let mut builder = Dmabuf::builder(size, format.code, format.modifier, DmabufFlags::empty());
+    for plane in &dmabuf.0.planes {
+        builder.add_plane(plane.fd.clone(), plane.offset, plane.stride);
+    }
+    if let Some(node) = dmabuf.node() {
+        builder.set_node(node);
+    }
+    builder.build()
+}
+
 fn dma_shadow_copy<S, T>(
     src_texture: &<<S::Device as ApiDevice>::Renderer as RendererSuper>::TextureId,
     damage: Option<&[Rectangle<i32, BufferCoords>]>,
@@ -2504,15 +2532,20 @@ where
             return Err(Error::ImportFailed);
         }
 
-        let shadow_buffer = src
+        // Some drivers (seen with NVIDIA importing a linear buffer allocated on an
+        // Intel iGPU) accept a linear pitch that isn't a multiple of 64 bytes, but
+        // round it down when sampling, which shears the image. Allocate with padded
+        // rows and describe the buffer at the texture's size.
+        let padded_width = shadow_alloc_width(src_texture.width(), transfer_format);
+        let allocation = src
             .allocator()
-            .create_buffer(
-                src_texture.width(),
-                src_texture.height(),
-                transfer_format,
-                &modifiers,
-            )
+            .create_buffer(padded_width, src_texture.height(), transfer_format, &modifiers)
             .map_err(Error::AllocatorError)?;
+        let shadow_buffer = if padded_width == src_texture.width() {
+            allocation
+        } else {
+            crop_dmabuf(&allocation, src_texture.size()).ok_or(Error::ImportFailed)?
+        };
 
         let target_texture = if let Some(target) = target.as_mut() {
             Box::<<<T::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>::new(
@@ -2582,6 +2615,30 @@ type MemTexture<S, T> = (
     Option<Vec<BoxedTextureMappingAndDamage<S>>>,
     Option<Box<<<<T as GraphicsApi>::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>>,
 );
+
+/// Copies the tightly packed rows of a mapping of `damage` into `staging`, a buffer
+/// laid out like a whole texture of `size`, at the offset of `damage`.
+fn stage_damage(
+    data: &[u8],
+    damage: Rectangle<i32, BufferCoords>,
+    size: Size<i32, BufferCoords>,
+    bpp: usize,
+    staging: &mut [u8],
+) {
+    let row_len = damage.size.w as usize * bpp;
+    if row_len == 0 {
+        return;
+    }
+    let stride = size.w as usize * bpp;
+    for (row, src) in data
+        .chunks_exact(row_len)
+        .take(damage.size.h as usize)
+        .enumerate()
+    {
+        let offset = (damage.loc.y as usize + row) * stride + damage.loc.x as usize * bpp;
+        staging[offset..offset + row_len].copy_from_slice(src);
+    }
+}
 
 fn mem_copy<S, T>(
     src_texture: &<<S::Device as ApiDevice>::Renderer as RendererSuper>::TextureId,
@@ -2677,6 +2734,10 @@ where
             }
         };
 
+        // `update_memory` expects data laid out like the whole texture, but a mapping
+        // of a damage rect holds only that rect's rows. Partial mappings are placed
+        // at their offset in a texture-sized staging buffer, shared by all of them.
+        let mut staging: Option<Vec<u8>> = None;
         for (mapping, damage) in mappings {
             let data = src.renderer_mut().map_texture(&mapping).map_err(Error::Render)?;
             if let Some(texture) = texture.as_mut() {
@@ -2685,6 +2746,16 @@ where
                     texture.size(),
                     damage,
                 );
+                let data = if damage == texture_rect {
+                    data
+                } else {
+                    let bpp = get_bpp(format).ok_or(Error::ImportFailed)? / 8;
+                    let staging = staging.get_or_insert_with(|| {
+                        vec![0; texture_rect.size.w as usize * texture_rect.size.h as usize * bpp]
+                    });
+                    stage_damage(data, damage, texture_rect.size, bpp, staging);
+                    &staging[..]
+                };
                 target
                     .renderer_mut()
                     .update_memory(texture, data, damage)
@@ -3924,5 +3995,47 @@ where
             .as_mut()
             .blit(from_fb, to_fb, src, dst, filter)
             .map_err(Error::Render)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{shadow_alloc_width, stage_damage};
+    use crate::{backend::allocator::Fourcc, utils::Rectangle};
+
+    #[test]
+    fn shadow_alloc_width_pads_pitch_to_256_bytes() {
+        assert_eq!(shadow_alloc_width(882, Fourcc::Abgr8888), 896);
+        assert_eq!(shadow_alloc_width(896, Fourcc::Abgr8888), 896);
+        assert_eq!(shadow_alloc_width(1, Fourcc::Abgr8888), 64);
+        // 8 bytes per pixel
+        assert_eq!(shadow_alloc_width(33, Fourcc::Abgr16161616f), 64);
+    }
+
+    #[test]
+    fn stage_damage_places_rows_at_damage_offset() {
+        // 4x3 texture, 1 byte per pixel; a 2x2 damage rect at (1, 1).
+        let mut staging = vec![0u8; 4 * 3];
+        stage_damage(
+            &[1, 2, 3, 4],
+            Rectangle::new((1, 1).into(), (2, 2).into()),
+            (4, 3).into(),
+            1,
+            &mut staging,
+        );
+        assert_eq!(staging, [0, 0, 0, 0, 0, 1, 2, 0, 0, 3, 4, 0]);
+    }
+
+    #[test]
+    fn stage_damage_ignores_empty_rect() {
+        let mut staging = vec![0u8; 4];
+        stage_damage(
+            &[],
+            Rectangle::new((1, 1).into(), (0, 1).into()),
+            (2, 2).into(),
+            1,
+            &mut staging,
+        );
+        assert_eq!(staging, [0; 4]);
     }
 }
