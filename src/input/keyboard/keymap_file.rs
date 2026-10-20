@@ -1,9 +1,10 @@
 use std::ffi::CString;
 use std::os::unix::io::{AsFd, BorrowedFd};
+use std::sync::Arc;
 
 use siphasher::sip128::SipHasher;
 use tracing::error;
-use xkbcommon::xkb::{self, KEYMAP_FORMAT_TEXT_V1, Keymap};
+use xkbcommon::xkb::{KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 use crate::utils::SealedFile;
 
@@ -20,8 +21,13 @@ impl KeymapFileId {
 }
 
 /// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
+///
+/// This is a reference-counted wrapper over the file.
+#[derive(Clone, Debug)]
+pub struct KeymapFile(Arc<KeymapFileInner>);
+
 #[derive(Debug)]
-pub struct KeymapFile {
+struct KeymapFileInner {
     sealed: Option<SealedFile>,
     keymap: String,
     id: KeymapFileId,
@@ -38,27 +44,11 @@ impl KeymapFile {
             error!("Error when creating sealed keymap file: {}", err);
         }
 
-        Self {
+        Self(Arc::new(KeymapFileInner {
             id: KeymapFileId::for_keymap(&keymap),
             sealed: sealed.ok(),
             keymap,
-        }
-    }
-
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) fn change_keymap(&mut self, keymap: &Keymap) {
-        let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-
-        let name = c"smithay-keymap-file";
-        let sealed = SealedFile::with_content(name, &CString::new(keymap.clone()).unwrap());
-
-        if let Err(err) = sealed.as_ref() {
-            error!("Error when creating sealed keymap file: {}", err);
-        }
-
-        self.id = KeymapFileId::for_keymap(&keymap);
-        self.sealed = sealed.ok();
-        self.keymap = keymap;
+        }))
     }
 
     #[cfg(feature = "wayland_frontend")]
@@ -69,7 +59,7 @@ impl KeymapFile {
     {
         use std::{io::Write, path::PathBuf};
 
-        if let Some(file) = supports_sealed.then_some(self.sealed.as_ref()).flatten() {
+        if let Some(file) = supports_sealed.then_some(self.0.sealed.as_ref()).flatten() {
             cb(file.as_fd(), file.size());
         } else {
             let dir = std::env::var_os("XDG_RUNTIME_DIR")
@@ -77,10 +67,10 @@ impl KeymapFile {
                 .unwrap_or_else(std::env::temp_dir);
 
             let mut file = tempfile::tempfile_in(dir)?;
-            file.write_all(self.keymap.as_bytes())?;
+            file.write_all(self.0.keymap.as_bytes())?;
             file.flush()?;
 
-            cb(file.as_fd(), self.keymap.len());
+            cb(file.as_fd(), self.0.keymap.len());
         }
         Ok(())
     }
@@ -98,8 +88,12 @@ impl KeymapFile {
     }
 
     /// Get this keymap's unique ID.
-    pub(crate) fn id(&self) -> KeymapFileId {
-        self.id
+    pub fn id(&self) -> KeymapFileId {
+        self.0.id
+    }
+
+    pub(super) fn as_str(&self) -> &str {
+        &self.0.keymap
     }
 }
 
