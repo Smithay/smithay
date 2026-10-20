@@ -65,7 +65,7 @@ use crate::{
         SwapBuffersError,
         allocator::{
             Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
-            dmabuf::{AnyError, Dmabuf},
+            dmabuf::{AnyError, Dmabuf, DmabufFlags},
             format::{FormatSet, get_bpp},
         },
         drm::DrmNode,
@@ -2426,6 +2426,34 @@ where
     }
 }
 
+/// Row pitch, in bytes, that linear shadow buffers are padded to. 256 bytes satisfies
+/// the linear pitch requirements of the common desktop GPUs.
+const SHADOW_PITCH_ALIGN: u32 = 256;
+
+/// Width to allocate a shadow buffer with, so that a linear allocation of `format`
+/// has a row pitch that is a multiple of [`SHADOW_PITCH_ALIGN`].
+fn shadow_alloc_width(width: u32, format: Fourcc) -> u32 {
+    match get_bpp(format).map(|bpp| bpp as u32 / 8) {
+        Some(bytes) if bytes > 0 && SHADOW_PITCH_ALIGN.is_multiple_of(bytes) => {
+            width.next_multiple_of(SHADOW_PITCH_ALIGN / bytes)
+        }
+        _ => width,
+    }
+}
+
+/// Describes the same memory as `dmabuf`, with the same planes, at a smaller `size`.
+fn crop_dmabuf(dmabuf: &Dmabuf, size: Size<i32, BufferCoords>) -> Option<Dmabuf> {
+    let format = dmabuf.format();
+    let mut builder = Dmabuf::builder(size, format.code, format.modifier, DmabufFlags::empty());
+    for plane in &dmabuf.0.planes {
+        builder.add_plane(plane.fd.clone(), plane.offset, plane.stride);
+    }
+    if let Some(node) = dmabuf.node() {
+        builder.set_node(node);
+    }
+    builder.build()
+}
+
 fn dma_shadow_copy<S, T>(
     src_texture: &<<S::Device as ApiDevice>::Renderer as RendererSuper>::TextureId,
     damage: Option<&[Rectangle<i32, BufferCoords>]>,
@@ -2504,15 +2532,20 @@ where
             return Err(Error::ImportFailed);
         }
 
-        let shadow_buffer = src
+        // Some drivers (seen with NVIDIA importing a linear buffer allocated on an
+        // Intel iGPU) accept a linear pitch that isn't a multiple of 64 bytes, but
+        // round it down when sampling, which shears the image. Allocate with padded
+        // rows and describe the buffer at the texture's size.
+        let padded_width = shadow_alloc_width(src_texture.width(), transfer_format);
+        let allocation = src
             .allocator()
-            .create_buffer(
-                src_texture.width(),
-                src_texture.height(),
-                transfer_format,
-                &modifiers,
-            )
+            .create_buffer(padded_width, src_texture.height(), transfer_format, &modifiers)
             .map_err(Error::AllocatorError)?;
+        let shadow_buffer = if padded_width == src_texture.width() {
+            allocation
+        } else {
+            crop_dmabuf(&allocation, src_texture.size()).ok_or(Error::ImportFailed)?
+        };
 
         let target_texture = if let Some(target) = target.as_mut() {
             Box::<<<T::Device as ApiDevice>::Renderer as RendererSuper>::TextureId>::new(
@@ -3967,8 +4000,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::stage_damage;
-    use crate::utils::Rectangle;
+    use super::{shadow_alloc_width, stage_damage};
+    use crate::{backend::allocator::Fourcc, utils::Rectangle};
+
+    #[test]
+    fn shadow_alloc_width_pads_pitch_to_256_bytes() {
+        assert_eq!(shadow_alloc_width(882, Fourcc::Abgr8888), 896);
+        assert_eq!(shadow_alloc_width(896, Fourcc::Abgr8888), 896);
+        assert_eq!(shadow_alloc_width(1, Fourcc::Abgr8888), 64);
+        // 8 bytes per pixel
+        assert_eq!(shadow_alloc_width(33, Fourcc::Abgr16161616f), 64);
+    }
 
     #[test]
     fn stage_damage_places_rows_at_damage_offset() {
