@@ -115,6 +115,10 @@ fn main() {
     }
 }
 
+#[allow(
+    clippy::disallowed_macros,
+    reason = "the format list is this subcommand's output"
+)]
 fn format_test(render: Vec<String>, sample: Vec<String>) {
     for format in render
         .iter()
