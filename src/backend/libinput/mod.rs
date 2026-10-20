@@ -6,7 +6,7 @@ use crate::backend::input::{
 #[cfg(feature = "backend_session")]
 use crate::backend::session::{AsErrno, Session};
 use input as libinput;
-use input::event;
+use input::{AsRaw, event};
 
 use std::{
     io,
@@ -709,6 +709,17 @@ impl EventSource for LibinputInputBackend {
     type Metadata = ();
     type Ret = ();
     type Error = io::Error;
+
+    const NEEDS_EXTRA_LIFECYCLE_EVENTS: bool = true;
+
+    fn before_sleep(&mut self) -> calloop::Result<Option<(Readiness, Token)>> {
+        // Safety: the context pointer is valid for the lifetime of `self.context`.
+        let next = unsafe { libinput::ffi::libinput_next_event_type(self.context.as_raw_mut()) };
+        if next == libinput::ffi::libinput_event_type_LIBINPUT_EVENT_NONE {
+            return Ok(None);
+        }
+        Ok(self.token.map(|token| (Readiness::EMPTY, token)))
+    }
 
     #[profiling::function]
     fn process_events<F>(&mut self, _: Readiness, token: Token, mut callback: F) -> io::Result<PostAction>
