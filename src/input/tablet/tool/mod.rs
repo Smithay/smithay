@@ -163,6 +163,66 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
         }
     }
 
+    /// Run function on grab, with inner handle
+    fn run_grab_with_inner_handle<F>(&self, data: &mut D, descriptor: &TabletToolDescriptor, f: F)
+    where
+        F: FnOnce(&mut D, &mut TabletToolInnerHandle<'_, D>, &mut dyn TabletToolGrab<D>),
+    {
+        let seat = self.get_seat(data);
+        let mut guard = self.arc.inner.lock().unwrap();
+        let mut grab = std::mem::replace(&mut guard.grab, GrabStatus::Borrowed);
+        match grab {
+            GrabStatus::Borrowed => {
+                panic!("Accessed a tablet tool grab from within a tablet tool grab access.")
+            }
+            GrabStatus::Active(_, ref mut handler) => {
+                if let Some((ref focus, _)) = handler.start_data().focus {
+                    if !focus.alive() {
+                        handler.unset(data);
+                        guard.grab = GrabStatus::None;
+                        let mut default_grab = (guard.default_grab)();
+                        f(
+                            data,
+                            &mut TabletToolInnerHandle {
+                                inner: &mut guard,
+                                descriptor,
+                                seat: &seat,
+                            },
+                            &mut *default_grab,
+                        );
+                        return;
+                    }
+                }
+
+                f(
+                    data,
+                    &mut TabletToolInnerHandle {
+                        inner: &mut guard,
+                        descriptor,
+                        seat: &seat,
+                    },
+                    &mut **handler,
+                );
+            }
+            GrabStatus::None => {
+                let mut default_grab = (guard.default_grab)();
+                f(
+                    data,
+                    &mut TabletToolInnerHandle {
+                        inner: &mut guard,
+                        descriptor,
+                        seat: &seat,
+                    },
+                    &mut *default_grab,
+                );
+            }
+        }
+
+        if let GrabStatus::Borrowed = guard.grab {
+            guard.grab = grab;
+        }
+    }
+
     /// Notify that a tool entered physical proximity with a tablet.
     ///
     /// You must invoke this method before any other events. Failing to do so will make the
@@ -190,27 +250,25 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
         tablet: Tablet,
         event: &ProximityInEvent,
     ) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        let seat = self.get_seat(data);
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if handle.inner.in_proximity() {
+                tracing::warn!(
+                    "proximity_in was called, but the tool is already in proximity with a tablet."
+                );
+                handle.proximity_out_impl(
+                    data,
+                    &ProximityOutEvent {
+                        serial: event.serial,
+                        time: event.time,
+                    },
+                    grab,
+                );
+            }
 
-        if inner.in_proximity() {
-            tracing::warn!("proximity_in was called, but the tool is already in proximity with a tablet.");
-            inner.proximity_out_impl(
-                data,
-                &seat,
-                &self.arc.descriptor,
-                &ProximityOutEvent {
-                    serial: event.serial,
-                    time: event.time,
-                },
-            );
-        }
+            handle.inner.tablet = Some(tablet);
+            handle.inner.location = Some(event.location);
+            handle.inner.pending_focus.clone_from(&focus);
 
-        inner.tablet = Some(tablet);
-        inner.location = Some(event.location);
-        inner.pending_focus.clone_from(&focus);
-
-        inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.proximity_in(data, handle, focus, event);
         });
     }
@@ -222,15 +280,14 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     /// - Up, if the tool tip was down
     /// - ProximityOut
     pub fn proximity_out(&self, data: &mut D, event: &ProximityOutEvent) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() {
-            tracing::warn!("proximity_out was called, but the tool hasn't entered tablet proximity.");
-            return;
-        }
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if !handle.inner.in_proximity() {
+                tracing::warn!("proximity_out was called, but the tool hasn't entered tablet proximity.");
+                return;
+            }
 
-        let seat = self.get_seat(data);
-
-        inner.proximity_out_impl(data, &seat, &self.arc.descriptor, event);
+            handle.proximity_out_impl(data, event, grab);
+        });
     }
 
     /// Notify that a tool moved above a tablet.
@@ -248,16 +305,14 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
         focus: Option<(<D as TabletSeatHandler>::ToolFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() {
-            tracing::warn!("motion was called, but the tool hasn't entered tablet proximity.");
-            return;
-        }
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if !handle.inner.in_proximity() {
+                tracing::warn!("motion was called, but the tool hasn't entered tablet proximity.");
+                return;
+            }
 
-        inner.pending_focus.clone_from(&focus);
-        let seat = self.get_seat(data);
+            handle.inner.pending_focus.clone_from(&focus);
 
-        inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.motion(data, handle, focus, event);
         });
     }
@@ -267,15 +322,12 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     /// This will internally send the appropriate down event to the client objects matching the
     /// currently focused target.
     pub fn down(&self, data: &mut D, event: &DownEvent) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() {
-            tracing::warn!("down was called, but the tool hasn't entered tablet proximity.");
-            return;
-        }
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if !handle.inner.in_proximity() {
+                tracing::warn!("down was called, but the tool hasn't entered tablet proximity.");
+                return;
+            }
 
-        let seat = self.get_seat(data);
-
-        inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.down(data, handle, event);
         });
     }
@@ -285,15 +337,12 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     /// This will internally send the appropriate up event to the client objects matching the
     /// currently focused target.
     pub fn up(&self, data: &mut D, event: &UpEvent) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() {
-            tracing::warn!("up was called, but the tool hasn't entered tablet proximity.");
-            return;
-        }
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if !handle.inner.in_proximity() {
+                tracing::warn!("up was called, but the tool hasn't entered tablet proximity.");
+                return;
+            }
 
-        let seat = self.get_seat(data);
-
-        inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.up(data, handle, event);
         });
     }
@@ -303,21 +352,18 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     /// This will internally send the appropriate button event to the client objects matching with
     /// the currently focused target.
     pub fn button(&self, data: &mut D, event: &ButtonEvent) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() {
-            tracing::warn!("button was called, but the tool hasn't entered tablet proximity.");
-            return;
-        }
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if !handle.inner.in_proximity() {
+                tracing::warn!("button was called, but the tool hasn't entered tablet proximity.");
+                return;
+            }
 
-        let seat = self.get_seat(data);
+            if matches!(event.state, ButtonState::Pressed) {
+                handle.inner.current_buttons.push(event.button);
+            } else {
+                handle.inner.current_buttons.retain(|b| *b != event.button);
+            }
 
-        if matches!(event.state, ButtonState::Pressed) {
-            inner.current_buttons.push(event.button);
-        } else {
-            inner.current_buttons.retain(|b| *b != event.button);
-        }
-
-        inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.button(data, handle, event);
         });
     }
@@ -326,15 +372,12 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     ///
     /// A single frame will group multiple axis events as if they happened in the same instance.
     pub fn axis(&self, data: &mut D, frame: AxisFrame) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() {
-            tracing::warn!("axis was called, but the tool hasn't entered tablet proximity.");
-            return;
-        }
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if !handle.inner.in_proximity() {
+                tracing::warn!("axis was called, but the tool hasn't entered tablet proximity.");
+                return;
+            }
 
-        let seat = self.get_seat(data);
-
-        inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.axis(data, handle, frame);
         });
     }
@@ -343,20 +386,17 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     ///
     /// A frame groups associated events. This terminates the frame.
     pub fn frame(&self, data: &mut D, time: InputTime) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if !inner.in_proximity() && !inner.frame_pending {
-            tracing::warn!("frame was called, but the tool hasn't entered tablet proximity.");
-            return;
-        }
+        self.run_grab_with_inner_handle(data, &self.arc.descriptor, |data, handle, grab| {
+            if !handle.inner.in_proximity() && !handle.inner.frame_pending {
+                tracing::warn!("frame was called, but the tool hasn't entered tablet proximity.");
+                return;
+            }
 
-        // If we don't have a pending frame, skip.
-        if !inner.frame_pending {
-            return;
-        }
+            // If we don't have a pending frame, skip.
+            if !handle.inner.frame_pending {
+                return;
+            }
 
-        let seat = self.get_seat(data);
-
-        inner.with_grab(data, &seat, &self.arc.descriptor, |data, handle, grab| {
             grab.frame(data, handle, time);
         });
     }
@@ -645,6 +685,25 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
     pub fn descriptor(&self) -> &TabletToolDescriptor {
         self.descriptor
     }
+
+    fn proximity_out_impl(
+        &mut self,
+        data: &mut D,
+        event: &ProximityOutEvent,
+        grab: &mut dyn TabletToolGrab<D>,
+    ) {
+        grab.proximity_out(data, self, event);
+
+        // Now, reset everything so we don't get stale data later.
+        self.inner.tip_down = false;
+        self.inner.pressed_buttons.clear();
+        self.inner.current_buttons.clear();
+        self.inner.focus = None;
+        self.inner.pending_focus = None;
+        // We don't reset last_focus just yet as it's needed for the frame event.
+        self.inner.tablet = None;
+        self.inner.location = None;
+    }
 }
 
 pub(crate) struct TabletToolInternal<D: TabletSeatHandler> {
@@ -763,63 +822,6 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
                     },
                 );
             }
-        }
-    }
-
-    fn with_grab<F>(&mut self, data: &mut D, seat: &Seat<D>, descriptor: &TabletToolDescriptor, f: F)
-    where
-        F: FnOnce(&mut D, &mut TabletToolInnerHandle<'_, D>, &mut dyn TabletToolGrab<D>),
-    {
-        let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
-        match grab {
-            GrabStatus::Borrowed => {
-                panic!("Accessed a tablet tool grab from within a tablet tool grab access.")
-            }
-            GrabStatus::Active(_, ref mut handler) => {
-                if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
-                        handler.unset(data);
-                        self.grab = GrabStatus::None;
-                        let mut default_grab = (self.default_grab)();
-                        f(
-                            data,
-                            &mut TabletToolInnerHandle {
-                                inner: self,
-                                descriptor,
-                                seat,
-                            },
-                            &mut *default_grab,
-                        );
-                        return;
-                    }
-                }
-
-                f(
-                    data,
-                    &mut TabletToolInnerHandle {
-                        inner: self,
-                        descriptor,
-                        seat,
-                    },
-                    &mut **handler,
-                );
-            }
-            GrabStatus::None => {
-                let mut default_grab = (self.default_grab)();
-                f(
-                    data,
-                    &mut TabletToolInnerHandle {
-                        inner: self,
-                        descriptor,
-                        seat,
-                    },
-                    &mut *default_grab,
-                );
-            }
-        }
-
-        if let GrabStatus::Borrowed = self.grab {
-            self.grab = grab;
         }
     }
 
@@ -1077,28 +1079,6 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         }
 
         self.frame_pending = false;
-    }
-
-    fn proximity_out_impl(
-        &mut self,
-        data: &mut D,
-        seat: &Seat<D>,
-        descriptor: &TabletToolDescriptor,
-        event: &ProximityOutEvent,
-    ) {
-        self.with_grab(data, seat, descriptor, |data, handle, grab| {
-            grab.proximity_out(data, handle, event);
-        });
-
-        // Now, reset everything so we don't get stale data later.
-        self.tip_down = false;
-        self.pressed_buttons.clear();
-        self.current_buttons.clear();
-        self.focus = None;
-        self.pending_focus = None;
-        // We don't reset last_focus just yet as it's needed for the frame event.
-        self.tablet = None;
-        self.location = None;
     }
 }
 
