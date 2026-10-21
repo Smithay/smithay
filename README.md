@@ -60,6 +60,7 @@ Rust.
 - [Otto](https://github.com/nongio/otto): A gesture-driven stacking compositor.
 - [DriftWM](https://github.com/malbiruk/driftwm): A trackpad-first infinite canvas Wayland compositor.
 - [Denial](https://github.com/denialwm/denial): A stacking, tiling, and scrolling-tiling Wayland compositor with a Flutter-based shell.
+- [Clarion](https://github.com/123llyrr/clarion): A Wayland compositor with a native Vulkan 1.3 backend and HDR10/scRGB support
 
 ## System Dependencies
 
