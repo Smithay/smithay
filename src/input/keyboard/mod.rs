@@ -1435,7 +1435,7 @@ where
     /// **never** touched, so shortcut handling and physical-keyboard state are unaffected.
     /// `modifiers(0)` accompanies the injection keymap so any modifier the seat currently holds
     /// (e.g. a physically-held Shift) doesn't alter the injected characters.
-    pub fn inject_text_keysyms(&self, data: &mut D, keysyms: &[Keysym]) {
+    pub fn inject_text_keysyms(&self, data: &mut D, keysyms: &[Keysym], time: InputTime) {
         const FIRST: u32 = 9;
         let mut keycode_decls = String::new();
         let mut symbol_decls = String::new();
@@ -1499,11 +1499,11 @@ where
             let release = SERIAL_COUNTER.next_serial();
             if let Some((focus, _)) = guard.focus.as_mut() {
                 let handle = KeysymHandle { xkb: &xkb, keycode };
-                focus.key(&seat, data, handle, KeyState::Pressed, press, InputTime::now());
+                focus.key(&seat, data, handle, KeyState::Pressed, press, time);
             }
             if let Some((focus, _)) = guard.focus.as_mut() {
                 let handle = KeysymHandle { xkb: &xkb, keycode };
-                focus.key(&seat, data, handle, KeyState::Released, release, InputTime::now());
+                focus.key(&seat, data, handle, KeyState::Released, release, time);
             }
         }
 
