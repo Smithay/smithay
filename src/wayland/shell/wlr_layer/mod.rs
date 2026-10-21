@@ -561,7 +561,11 @@ impl LayerSurface {
                 let pending_configures = std::mem::take(&mut role.pending_configures);
                 role.reset();
                 role.pending_configures = pending_configures;
-                *guard_layer.pending() = Default::default();
+                let layer = pending.layer;
+                *guard_layer.pending() = LayerSurfaceCachedState {
+                    layer,
+                    ..Default::default()
+                };
             }
         });
     }
