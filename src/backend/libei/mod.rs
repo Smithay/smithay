@@ -5,7 +5,10 @@
 //!
 //! use reis::{calloop::EisListenerSource, eis};
 //! use smithay::{
-//!     backend::libei::{EiInput, EiInputEvent},
+//!     backend::{
+//!         input::InputEvent,
+//!         libei::{EiInput, EiInputEvent, SpecialEvent},
+//!     },
 //!     input::keyboard::XkbConfig,
 //! };
 //!
@@ -24,11 +27,12 @@
 //!                 seat.add_touch("virtual touch", &[]);
 //!             }
 //!             EiInputEvent::Disconnected => {}
+//!             EiInputEvent::Event(InputEvent::Special(SpecialEvent::TextKeysym { .. })) => {}
+//!             EiInputEvent::Event(InputEvent::Special(SpecialEvent::TextUtf8 { .. })) => {}
 //!             EiInputEvent::Event(event) => {
 //!                 // Pass input event to compositor's input event handling logic
 //!                 // ...
 //!             }
-//!             EiInputEvent::TextKeysym { .. } | EiInputEvent::TextUtf8 { .. } => {}
 //!         }
 //!     }).unwrap();
 //!     Ok(calloop::PostAction::Continue)
@@ -48,10 +52,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::backend::input::{InputEvent, KeyState};
+use crate::backend::input::InputEvent;
 
 mod input;
-pub use input::ScrollEvent;
+pub use input::{ScrollEvent, SpecialEvent};
 mod seat;
 pub use seat::{EiInputSeat, EiRegion};
 
@@ -144,20 +148,6 @@ pub enum EiInputEvent {
     Disconnected,
     /// An input event has been received from the client.
     Event(InputEvent<EiInput>),
-    /// The client injected a keysym via the `ei_text` interface. Unlike [`InputEvent::Keyboard`]
-    /// (which carries a keycode), this is keymap-independent; the compositor is responsible for
-    /// turning the keysym into input.
-    TextKeysym {
-        /// The XKB keysym.
-        keysym: u32,
-        /// Whether the keysym is pressed or released.
-        state: KeyState,
-    },
-    /// The client injected UTF-8 text via the `ei_text` interface.
-    TextUtf8 {
-        /// The UTF-8 text.
-        text: String,
-    },
 }
 
 impl EventSource for EiInput {
@@ -220,22 +210,6 @@ impl EventSource for EiInput {
                         seat.bind(request.capabilities);
                     }
                 }
-                Ok(EisRequestSourceEvent::Request(EisRequest::TextKeysym(event))) => {
-                    let state = match event.state {
-                        eis::keyboard::KeyState::Press => KeyState::Pressed,
-                        eis::keyboard::KeyState::Released => KeyState::Released,
-                    };
-                    cb(
-                        EiInputEvent::TextKeysym {
-                            keysym: event.keysym,
-                            state,
-                        },
-                        connection,
-                    );
-                }
-                Ok(EisRequestSourceEvent::Request(EisRequest::TextUtf8(event))) => {
-                    cb(EiInputEvent::TextUtf8 { text: event.text }, connection);
-                }
                 Ok(EisRequestSourceEvent::Request(request)) => {
                     if let Some(input_event) = convert_request(request) {
                         cb(EiInputEvent::Event(input_event), connection);
@@ -294,6 +268,8 @@ fn convert_request(request: EisRequest) -> Option<InputEvent<EiInput>> {
         EisRequest::ScrollDiscrete(event) => Some(InputEvent::PointerAxis {
             event: ScrollEvent::Discrete(event),
         }),
+        EisRequest::TextKeysym(event) => Some(InputEvent::Special(SpecialEvent::TextKeysym(event))),
+        EisRequest::TextUtf8(event) => Some(InputEvent::Special(SpecialEvent::TextUtf8(event))),
         EisRequest::TouchDown(event) => Some(InputEvent::TouchDown { event }),
         EisRequest::TouchUp(event) => Some(InputEvent::TouchUp { event }),
         EisRequest::TouchMotion(event) => Some(InputEvent::TouchMotion { event }),
@@ -309,11 +285,7 @@ fn convert_request(request: EisRequest) -> Option<InputEvent<EiInput>> {
             .device
             .has_capability(reis::request::DeviceCapability::Touch)
             .then_some(InputEvent::TouchFrame { event }),
-        // `TextKeysym`/`TextUtf8` are surfaced as `EiInputEvent::TextKeysym`/`TextUtf8` directly,
-        // so they never reach here.
-        EisRequest::TextKeysym(_)
-        | EisRequest::TextUtf8(_)
-        | EisRequest::Disconnect
+        EisRequest::Disconnect
         | EisRequest::Bind(_)
         | EisRequest::RequestDevice(_)
         | EisRequest::Ready(_)
