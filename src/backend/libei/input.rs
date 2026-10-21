@@ -6,7 +6,7 @@ use reis::{
 };
 use std::path::PathBuf;
 
-use crate::backend::input::{self, InputBackend, InputTime};
+use crate::backend::input::{self, InputBackend, InputTime, KeyState};
 
 use super::EiInput;
 
@@ -53,7 +53,7 @@ impl InputBackend for EiInput {
 
     type SwitchToggleEvent = input::UnusedEvent;
 
-    type SpecialEvent = input::UnusedEvent;
+    type SpecialEvent = SpecialEvent;
 }
 
 impl input::Device for request::Device {
@@ -109,11 +109,8 @@ impl input::KeyboardKeyEvent<EiInput> for request::KeyboardKey {
         input::Keycode::from(self.key + 8)
     }
 
-    fn state(&self) -> input::KeyState {
-        match self.state {
-            eis::keyboard::KeyState::Released => input::KeyState::Released,
-            eis::keyboard::KeyState::Press => input::KeyState::Pressed,
-        }
+    fn state(&self) -> KeyState {
+        KeyState::from(self.state)
     }
 
     fn count(&self) -> u32 {
@@ -295,4 +292,25 @@ impl input::TouchEvent<EiInput> for request::TouchCancel {
     fn slot(&self) -> input::TouchSlot {
         Some(self.touch_id).into()
     }
+}
+
+impl From<eis::keyboard::KeyState> for KeyState {
+    fn from(key_state: eis::keyboard::KeyState) -> Self {
+        match key_state {
+            reis::ei::keyboard::KeyState::Press => KeyState::Pressed,
+            reis::ei::keyboard::KeyState::Released => KeyState::Released,
+        }
+    }
+}
+
+/// Special event types that are unique to libei backend
+#[derive(Debug)]
+pub enum SpecialEvent {
+    /// The client injected a keysym via the `ei_text` interface. Unlike
+    /// [`InputEvent::Keyboard`][crate::backend::input::InputEvent]
+    /// (which carries a keycode), this is keymap-independent; the compositor is responsible for
+    /// turning the keysym into input.
+    TextKeysym(reis::request::TextKeysym),
+    /// The client injected UTF-8 text via the `ei_text` interface.
+    TextUtf8(reis::request::TextUtf8),
 }
