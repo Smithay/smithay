@@ -1,5 +1,8 @@
 use smithay::{
-    backend::libei::{EiInput, EiInputEvent},
+    backend::{
+        input::InputEvent,
+        libei::{EiInput, EiInputEvent, SpecialEvent},
+    },
     input::keyboard::XkbConfig,
     reexports::{
         calloop,
@@ -35,12 +38,12 @@ pub fn listen_eis(handle: &calloop::LoopHandle<'static, AnvilState<UdevData>>) {
                         seat.add_touch("virtual touch", &[]);
                     }
                     EiInputEvent::Disconnected => {}
+                    // Anvil doesn't add a text device to the libei seat
+                    EiInputEvent::Event(InputEvent::Special(SpecialEvent::TextKeysym { .. })) => {}
+                    EiInputEvent::Event(InputEvent::Special(SpecialEvent::TextUtf8 { .. })) => {}
                     EiInputEvent::Event(event) => {
                         let dh = data.display_handle.clone();
                         data.process_input_event(&dh, event);
-                    }
-                    EiInputEvent::TextKeysym { .. } | EiInputEvent::TextUtf8 { .. } => {
-                        // Anvil doesn't add a text device to the libei seat
                     }
                 })
                 .unwrap();
