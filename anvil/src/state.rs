@@ -44,10 +44,13 @@ use smithay::{
             protocol::wl_surface::WlSurface,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point, Rectangle, Serial, Time},
+    utils::{Clock, Logical, Monotonic, Point, Rectangle, Serial, Time, Transform},
     wayland::{
         commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState},
-        compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, with_states},
+        compositor::{
+            CompositorClientState, CompositorHandler, CompositorState, get_parent, send_surface_state,
+            with_states,
+        },
         dmabuf::DmabufFeedback,
         fifo::{FifoBarrierCachedState, FifoManagerState},
         fixes::FixesState,
@@ -555,6 +558,12 @@ impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
                 with_fractional_scale(states, |fractional_scale| {
                     fractional_scale.set_preferred_scale(output.current_scale().fractional_scale());
                 });
+                send_surface_state(
+                    &surface,
+                    states,
+                    output.current_scale().integer_scale(),
+                    Transform::Normal,
+                );
             }
         });
     }
@@ -694,7 +703,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             .expect("Failed to init wayland server source");
 
         // init globals
-        let compositor_state = CompositorState::new::<Self>(&dh);
+        let compositor_state = CompositorState::new_v6::<Self>(&dh);
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
@@ -954,6 +963,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     with_fractional_scale(states, |fraction_scale| {
                         fraction_scale.set_preferred_scale(output.current_scale().fractional_scale());
                     });
+                    send_surface_state(
+                        surface,
+                        states,
+                        output.current_scale().integer_scale(),
+                        Transform::Normal,
+                    );
                 }
 
                 if primary_scanout_output
@@ -999,6 +1014,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     with_fractional_scale(states, |fraction_scale| {
                         fraction_scale.set_preferred_scale(output.current_scale().fractional_scale());
                     });
+                    send_surface_state(
+                        surface,
+                        states,
+                        output.current_scale().integer_scale(),
+                        Transform::Normal,
+                    );
                 }
 
                 if primary_scanout_output
@@ -1045,6 +1066,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     with_fractional_scale(states, |fraction_scale| {
                         fraction_scale.set_preferred_scale(output.current_scale().fractional_scale());
                     });
+                    send_surface_state(
+                        surface,
+                        states,
+                        output.current_scale().integer_scale(),
+                        Transform::Normal,
+                    );
                 }
 
                 if primary_scanout_output
@@ -1076,6 +1103,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     with_fractional_scale(states, |fraction_scale| {
                         fraction_scale.set_preferred_scale(output.current_scale().fractional_scale());
                     });
+                    send_surface_state(
+                        surface,
+                        states,
+                        output.current_scale().integer_scale(),
+                        Transform::Normal,
+                    );
                 }
 
                 if primary_scanout_output
