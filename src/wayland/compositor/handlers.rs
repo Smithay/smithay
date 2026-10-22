@@ -99,6 +99,7 @@ where
                     },
                 );
             }
+            wl_compositor::Request::Release => {}
             _ => unreachable!(),
         }
     }
@@ -119,10 +120,11 @@ impl Cacheable for SurfaceAttributes {
             opaque_region: self.opaque_region.clone(),
             input_region: self.input_region.clone(),
             frame_callbacks: std::mem::take(&mut self.frame_callbacks),
+            release_callbacks: std::mem::take(&mut self.release_callbacks),
             client_scale: self.client_scale,
         }
     }
-    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
+    fn merge_into(mut self, into: &mut Self, _dh: &DisplayHandle) {
         if self.buffer.is_some() {
             if let Some(BufferAssignment::NewBuffer(buffer)) =
                 std::mem::replace(&mut into.buffer, self.buffer)
@@ -135,6 +137,9 @@ impl Cacheable for SurfaceAttributes {
                 if Some(&buffer) != new_buffer {
                     buffer.release();
                 }
+                for release_callback in std::mem::take(&mut self.release_callbacks) {
+                    release_callback.done(0);
+                }
             }
         }
         into.buffer_delta = self.buffer_delta;
@@ -145,6 +150,7 @@ impl Cacheable for SurfaceAttributes {
         into.input_region = self.input_region;
         into.frame_callbacks.extend(self.frame_callbacks);
         into.client_scale = self.client_scale;
+        into.release_callbacks.extend(self.release_callbacks);
     }
 }
 
@@ -266,11 +272,21 @@ where
             wl_surface::Request::Commit => {
                 let client_scale = state.client_compositor_state(client).client_scale();
                 PrivateSurfaceData::with_states(surface, |states| {
-                    states
-                        .cached_state
-                        .get::<SurfaceAttributes>()
-                        .pending()
-                        .client_scale = client_scale;
+                    let mut surface_attributes = states.cached_state.get::<SurfaceAttributes>();
+
+                    surface_attributes.pending().client_scale = client_scale;
+
+                    if !surface_attributes.pending().release_callbacks.is_empty()
+                        && !matches!(
+                            surface_attributes.pending().buffer,
+                            Some(BufferAssignment::NewBuffer(_))
+                        )
+                    {
+                        surface.post_error(
+                            wl_surface::Error::NoBuffer,
+                            "release callback requested without buffer",
+                        );
+                    }
                 });
 
                 PrivateSurfaceData::invoke_pre_commit_hooks(state, handle, surface);
@@ -331,6 +347,17 @@ where
                             .to_logical(client_scale)
                             .to_i32_round(),
                     );
+                });
+            }
+            wl_surface::Request::GetRelease { callback } => {
+                let callback = data_init.init(callback, GlobalData);
+                PrivateSurfaceData::with_states(surface, |states| {
+                    states
+                        .cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .release_callbacks
+                        .push(callback);
                 });
             }
             wl_surface::Request::Destroy => {
