@@ -179,7 +179,7 @@ pub enum Error {
     EventLoopCreation(#[from] winit::error::EventLoopError),
     /// Failed to initialize a window.
     #[error("Failed to initialize a window")]
-    WindowCreation(#[from] winit::error::RequestError),
+    WindowCreation(#[from] winit::error::CreateWindowError),
     #[error("Failed to create a surface for the window")]
     /// Surface creation error.
     Surface(Box<dyn std::error::Error>),
@@ -610,11 +610,12 @@ impl<F: FnMut(WinitEvent)> ApplicationHandler for WinitEventLoopApp<'_, F> {
                     _ => (),
                 }
             }
-            WindowEvent::MouseWheel { delta, .. } => {
+            WindowEvent::MouseWheel { delta, source, .. } => {
                 let event = InputEvent::PointerAxis {
                     event: WinitMouseWheelEvent {
                         time: self.timestamp(),
                         delta,
+                        source,
                     },
                 };
                 (self.callback)(WinitEvent::Input(event));
