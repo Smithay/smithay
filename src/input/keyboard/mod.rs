@@ -714,6 +714,21 @@ pub trait KeyboardGrab<D: SeatHandler>: Downcast {
         time: InputTime,
     );
 
+    /// The modifier state changed without a key event.
+    ///
+    /// This is used for `zwp_virtual_keyboard_v1.modifiers` requests and layout changes (through
+    /// [`KeyboardHandle::with_xkb_state`]), [`KeyboardHandle::advertise_modifier_state`], and
+    /// keymap changes.
+    fn modifiers(
+        &mut self,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        modifiers: ModifiersState,
+        serial: Serial,
+    ) {
+        handle.modifiers(data, modifiers, serial);
+    }
+
     /// A focus change was requested.
     fn set_focus(
         &mut self,
@@ -814,21 +829,6 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         })
     }
 
-    #[cfg(feature = "wayland_frontend")]
-    #[instrument(parent = &self.arc.span, skip(self, data, keymap))]
-    pub(crate) fn change_keymap(
-        &self,
-        data: &mut D,
-        focus: &Option<&mut <D as SeatHandler>::KeyboardFocus>,
-        keymap: &xkb::Keymap,
-        mods: ModifiersState,
-    ) {
-        let mut keymap_file = self.arc.keymap.lock().unwrap();
-        keymap_file.change_keymap(keymap);
-
-        self.send_keymap(data, focus, &keymap_file, mods);
-    }
-
     /// Send a new wl_keyboard keymap, without updating the internal keymap.
     ///
     /// Returns `true` if the keymap changed from the previous keymap.
@@ -897,16 +897,20 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         drop(xkb);
 
         let mods = internal.mods_state;
-        let focus = internal.focus.as_mut().map(|(focus, _)| focus);
 
-        #[cfg(not(feature = "wayland_frontend"))]
-        if let Some(focus) = focus.as_ref() {
-            let seat = self.get_seat(data);
-            focus.modifiers(&seat, data, mods, SERIAL_COUNTER.next_serial());
-        };
-
+        // Send the new keymap to all wl_keyboard objects, if changed.
         #[cfg(feature = "wayland_frontend")]
-        self.change_keymap(data, &focus, &keymap, mods);
+        {
+            let mut keymap_file = self.arc.keymap.lock().unwrap();
+            keymap_file.change_keymap(&keymap);
+            self.send_keymap(data, &None, &keymap_file, mods);
+        }
+
+        // Send the rebuild modifiers through the grab if required.
+        let seat = self.get_seat(data);
+        internal.with_grab(data, &seat, |data, handle, grab| {
+            grab.modifiers(data, handle, mods, SERIAL_COUNTER.next_serial());
+        });
 
         if leds_changed {
             let led_state = internal.led_state;
@@ -948,11 +952,33 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         Ok(())
     }
 
-    /// Access the underlying Xkb state and perform mutable operations on it, like
-    /// changing layouts.
+    /// Access the underlying Xkb state and perform mutable operations on it, like changing layouts.
     ///
-    /// The changes to the state are automatically broadcasted to the focused client on exit.
-    pub fn with_xkb_state<F, T>(&self, data: &mut D, mut callback: F) -> T
+    /// The changes to the state are automatically broadcasted to the focused client on exit
+    /// (through the grab, if any, see [`KeyboardGrab::modifiers`]).
+    pub fn with_xkb_state<F, T>(&self, data: &mut D, callback: F) -> T
+    where
+        F: FnMut(XkbContext<'_>) -> T,
+    {
+        self.with_xkb_state_impl(data, callback, false)
+    }
+
+    /// Like [`KeyboardHandle::with_xkb_state`], but modifier changes are sent to the focused client
+    /// directly, bypassing the active grab.
+    ///
+    /// This can be used by compositors to prevent infinite loops when a client with a grab (e.g.,
+    /// fcitx) forwards all `modifiers` events through its own virtual keyboard (see
+    /// [`KeyboardHandle::input_forward_bypassing_grab`]). Since modifiers are an absolute mask,
+    /// without this, it may be forwarded after other devices have already changed the state,
+    /// causing it to to itself change the state again, which would loop.
+    pub fn with_xkb_state_bypassing_grab<F, T>(&self, data: &mut D, callback: F) -> T
+    where
+        F: FnMut(XkbContext<'_>) -> T,
+    {
+        self.with_xkb_state_impl(data, callback, true)
+    }
+
+    fn with_xkb_state_impl<F, T>(&self, data: &mut D, mut callback: F, bypass_grab: bool) -> T
     where
         F: FnMut(XkbContext<'_>) -> T,
     {
@@ -972,10 +998,20 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             let result = callback(state);
 
             if mods_changed {
-                if let Some((focus, _)) = internal.focus.as_mut() {
-                    let seat = self.get_seat(data);
-                    focus.modifiers(&seat, data, internal.mods_state, SERIAL_COUNTER.next_serial());
-                };
+                let seat = self.get_seat(data);
+                let mods = internal.mods_state;
+                let serial = SERIAL_COUNTER.next_serial();
+                if bypass_grab {
+                    let mut handle = KeyboardInnerHandle {
+                        inner: internal,
+                        seat: &seat,
+                    };
+                    DefaultGrab.modifiers(data, &mut handle, mods, serial);
+                } else {
+                    internal.with_grab(data, &seat, |data, handle, grab| {
+                        grab.modifiers(data, handle, mods, serial);
+                    });
+                }
             }
 
             (result, leds_changed.then_some(internal.led_state))
@@ -1359,16 +1395,17 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         modifiers_changed
     }
 
-    /// Advertises changed modifier state using [`KeyboardTarget::modifiers`].
+    /// Advertises changed modifier state through the active grab (see [`KeyboardGrab::modifiers`]),
+    /// which, by default, sends it to the focus using [`KeyboardTarget::modifiers`].
     ///
     /// Use this with [`KeyboardHandle::set_modifier_state`] when necessary.
     pub fn advertise_modifier_state(&self, data: &mut D) {
         let internal = &mut *self.arc.internal.lock().unwrap();
-
-        if let Some((focus, _)) = internal.focus.as_mut() {
-            let seat = self.get_seat(data);
-            focus.modifiers(&seat, data, internal.mods_state, SERIAL_COUNTER.next_serial());
-        };
+        let seat = self.get_seat(data);
+        let mods = internal.mods_state;
+        internal.with_grab(data, &seat, |data, handle, grab| {
+            grab.modifiers(data, handle, mods, SERIAL_COUNTER.next_serial());
+        });
     }
 
     /// Get the current led state
@@ -1642,6 +1679,27 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         }
     }
 
+    /// Send the modifier state to the focused keyboards.
+    ///
+    /// Like [`Self::input`], this first ensures the focus has the current keymap.
+    pub fn modifiers(&mut self, data: &mut D, modifiers: ModifiersState, serial: Serial) {
+        let (focus, _) = match self.inner.focus.as_mut() {
+            Some(focus) => focus,
+            None => return,
+        };
+
+        #[cfg(feature = "wayland_frontend")]
+        if let Some(keyboard_handle) = self.seat.get_keyboard() {
+            let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
+            // A keymap change sends the modifiers too since we give send_keymap the focus.
+            if keyboard_handle.send_keymap(data, &Some(focus), &keymap_file, modifiers) {
+                return;
+            }
+        }
+
+        focus.modifiers(self.seat, data, modifiers, serial);
+    }
+
     /// Iterate over the currently pressed keys.
     pub fn with_pressed_keysyms<F, R>(&self, f: F) -> R
     where
@@ -1728,6 +1786,16 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
         time: InputTime,
     ) {
         handle.input(data, keycode, state, modifiers, serial, time)
+    }
+
+    fn modifiers(
+        &mut self,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        modifiers: ModifiersState,
+        serial: Serial,
+    ) {
+        handle.modifiers(data, modifiers, serial)
     }
 
     fn set_focus(
