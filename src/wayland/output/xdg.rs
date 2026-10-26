@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, atomic::Ordering};
 
 use tracing::trace;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
-use wayland_server::{Resource, Weak, protocol::wl_output::WlOutput};
+use wayland_server::{Resource, Weak, protocol::wl_output::{self, WlOutput}};
 
 use crate::utils::{Logical, Physical, Point, Size, Transform};
 
@@ -83,8 +83,7 @@ impl XdgOutput {
             xdg_output.done();
         }
 
-        // wl_output.done() only exists since wl_output version 2
-        if wl_output.version() >= 2 {
+        if wl_output.version() >= wl_output::EVT_DONE_SINCE {
             wl_output.done();
         }
 
