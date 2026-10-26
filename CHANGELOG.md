@@ -287,6 +287,12 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`xwayland::xwm` no longer undoes a stale `UnmapNotify` (one for a window the client mapped again
+before it was handled). Reparenting the mapped window unmapped it again, in an endless loop that
+destroyed the window's `wl_surface` on every round (an app mapping and unmapping a window in quick
+succession, like Zoom's annotation toolbar, froze). A `MapRequest` for a window whose unmap is still
+pending now maps it instead of being dropped.
+
 `ForeignToplevelListState::remove_toplevel` no longer removes a different toplevel from the list when
 a handle in front of it was dropped without being removed (the lazy cleanup that the documentation
 allows). Previously the removed entry was picked by its position among the live handles, so a live
