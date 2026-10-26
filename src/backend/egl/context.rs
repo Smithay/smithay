@@ -42,7 +42,6 @@ pub struct EGLContext {
 /// See: <https://registry.khronos.org/EGL/extensions/IMG/EGL_IMG_context_priority.txt>
 /// See: <https://registry.khronos.org/EGL/extensions/NV/EGL_NV_context_priority_realtime.txt>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[repr(C)]
 pub enum ContextPriority {
     /// RealTime priority
     ///
