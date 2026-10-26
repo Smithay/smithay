@@ -156,6 +156,12 @@ is used for timestamps for synthesized events.
 
 ### Additions
 
+- `KeyboardGrab::modifiers` is called for modifier changes that aren't associated with a key event
+  (`KeyboardHandle::with_xkb_state`, `advertise_modifier_state`, keymap changes). It a grab is
+  active, it is sent to the grab instead of the focus
+  (`KeyboardHandle::with_xkb_state_bypassing_grab` should be used to skip the grab, for `modifiers`
+  requests from an IME's own virtual keyboard, similar to `input_forward_bypassing_grab`).
+
 - Add `WmWindowProperty::Other` to forward unrecognized X11 property changes to the compositor.
 
 
@@ -286,6 +292,11 @@ additionally drops the buffers cached for copying between a render and a target 
 `Renderer` owns.
 
 ### Bugfixes
+
+- Modifier changes made with `XkbContext::set_modifier_mask` (e.g.
+  `zwp_virtual_keyboard_v1.modifiers`), `KeyboardHandle::advertise_modifier_state`, layout changes
+  and keymap changes are now sent to the active keyboard grab, so IMEs have the correct modifier
+  state.
 
 `ForeignToplevelListState::remove_toplevel` no longer removes a different toplevel from the list when
 a handle in front of it was dropped without being removed (the lazy cleanup that the documentation

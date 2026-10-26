@@ -51,28 +51,7 @@ where
         time: InputTime,
     ) {
         let mut inner = self.inner.lock().unwrap();
-
-        // The keyboard's keymap can change while the grab is active (e.g. when a virtual keyboard
-        // with its own keymap is in use, e.g., wtype's synthetic keymap), and the keycodes must be
-        // interpreted using it, so keep the grab in sync like wlroots does. The id is a hash of the
-        // content, so an input method sending the same keymap back through its own virtual keyboard
-        // will not result in a loop of keymap updates.
-        let keymap_changed = handle.with_keymap_file(|keymap_file| {
-            let id = keymap_file.id();
-            if inner.keymap_id == Some(id) {
-                return false;
-            }
-            let keyboard = inner.grab.as_ref().unwrap();
-            let res = keymap_file.with_fd(false, |fd, size| {
-                keyboard.keymap(KeymapFormat::XkbV1, fd, size as u32);
-            });
-            if let Err(err) = res {
-                warn!(err = ?err, "Failed to send keymap to client");
-                return false;
-            }
-            inner.keymap_id = Some(id);
-            true
-        });
+        let keymap_changed = send_keymap_if_changed(&mut inner, handle);
 
         // The client resets its state when it receives a new keymap, so send the full modifier
         // state before the key in that case. Otherwise, only send the modifiers if they changed.
@@ -105,6 +84,33 @@ where
             });
     }
 
+    fn modifiers(
+        &mut self,
+        _data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        modifiers: ModifiersState,
+        serial: Serial,
+    ) {
+        let mut inner = self.inner.lock().unwrap();
+
+        // The masks only mean anything under the current keymap, so send that first if it changed.
+        send_keymap_if_changed(&mut inner, handle);
+
+        let keyboard = inner.grab.as_ref().unwrap();
+        let serialized = modifiers.serialized;
+        inner
+            .text_input_handle
+            .active_text_input_serial_or_default(serial.0, |serial| {
+                keyboard.modifiers(
+                    serial,
+                    serialized.depressed,
+                    serialized.latched,
+                    serialized.locked,
+                    serialized.layout_effective,
+                );
+            });
+    }
+
     fn set_focus(
         &mut self,
         data: &mut D,
@@ -120,6 +126,35 @@ where
     }
 
     fn unset(&mut self, _data: &mut D) {}
+}
+
+/// Send the keyboard's keymap to the grab if it differs from the last one sent.
+///
+/// The keymap can change while the grab is active (e.g. when a virtual keyboard with its own keymap
+/// is in use, e.g., wtype's synthetic keymap), and the keycodes and modifier masks must be
+/// interpreted using it, so keep the grab in sync like wlroots does. The id is a hash of the
+/// content, so an input method sending the same keymap back through its own virtual keyboard will
+/// not result in a loop of keymap updates.
+fn send_keymap_if_changed<D: SeatHandler + 'static>(
+    inner: &mut InputMethodKeyboard,
+    handle: &KeyboardInnerHandle<'_, D>,
+) -> bool {
+    handle.with_keymap_file(|keymap_file| {
+        let id = keymap_file.id();
+        if inner.keymap_id == Some(id) {
+            return false;
+        }
+        let keyboard = inner.grab.as_ref().unwrap();
+        let res = keymap_file.with_fd(false, |fd, size| {
+            keyboard.keymap(KeymapFormat::XkbV1, fd, size as u32);
+        });
+        if let Err(err) = res {
+            warn!(err = ?err, "Failed to send keymap to client");
+            return false;
+        }
+        inner.keymap_id = Some(id);
+        true
+    })
 }
 
 /// User data of ZwpInputKeyboardGrabV2 object
