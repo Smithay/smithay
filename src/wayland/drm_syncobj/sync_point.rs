@@ -71,6 +71,18 @@ impl DrmTimelineDeviceSpecific {
     }
 }
 
+impl Drop for DrmTimelineDeviceSpecific {
+    fn drop(&mut self) {
+        // The handle was imported on `device` in `import`; once the timeline
+        // (or this device context, replaced in `update_device`) is gone,
+        // nothing refers to it anymore. `invalidate` already destroyed it and
+        // reset `device`, in which case this does nothing.
+        if let Some(device) = self.device.upgrade() {
+            let _ = device.destroy_syncobj(self.syncobj);
+        }
+    }
+}
+
 /// DRM timeline syncobj
 #[derive(Clone, Debug)]
 pub struct DrmTimeline(pub(super) Arc<DrmTimelineInner>);
