@@ -9,7 +9,7 @@ use xkbcommon::xkb::{KEYMAP_FORMAT_TEXT_V1, Keymap};
 use crate::utils::SealedFile;
 
 /// Unique ID for a keymap
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KeymapFileId([u8; 16]);
 
 impl KeymapFileId {
