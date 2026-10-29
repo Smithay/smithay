@@ -263,10 +263,6 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
     }
 }
 
-// This is OK because all parts of `xkb` will remain on the
-// same thread
-unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
-
 impl<D: SeatHandler + 'static> KbdInternal<D> {
     fn new(
         xkb_config: XkbConfig<'_>,
@@ -697,7 +693,7 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
-pub trait KeyboardGrab<D: SeatHandler>: Downcast {
+pub trait KeyboardGrab<D: SeatHandler>: Send + Downcast {
     /// An input was reported.
     ///
     /// `modifiers` are only passed when their state actually changes. The modifier must be
