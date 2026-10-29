@@ -105,6 +105,8 @@ pub(crate) fn mark_udmabuf_failed(buffer: &wl_buffer::WlBuffer) {
 }
 
 /// Blocks until the GPU is done reading the udmabuf of this shm buffer.
+///
+/// Renderers using `Texture::hold_buffer` are already done here, this covers the ones that don't.
 pub(crate) fn wait_udmabuf_idle(buffer: &wl_buffer::WlBuffer) {
     let Some(user_data) = buffer.data::<ShmBufferUserData>() else {
         return;
@@ -116,4 +118,14 @@ pub(crate) fn wait_udmabuf_idle(buffer: &wl_buffer::WlBuffer) {
     if let Err(err) = dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::WRITE) {
         tracing::warn!(?err, "Failed to wait for GPU reads of udmabuf");
     }
+}
+
+/// Whether the GPU reads this shm buffer's memory directly through udmabuf.
+pub(crate) fn is_udmabuf_backed(buffer: &wl_buffer::WlBuffer) -> bool {
+    buffer.data::<ShmBufferUserData>().is_some_and(|data| {
+        matches!(
+            *data.udmabuf.lock().unwrap(),
+            UdmabufState::Imported(_) | UdmabufState::Rejected(_)
+        )
+    })
 }

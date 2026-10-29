@@ -44,7 +44,7 @@ use std::{
     any::Any,
     collections::HashMap,
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use super::{
@@ -1746,6 +1746,8 @@ struct MultiTextureInternal {
     format: Option<Fourcc>,
     #[allow(dead_code)]
     buffer_format: Format,
+    /// Passed to the rendered texture, see [`Texture::hold_buffer`]
+    buffer: Option<Weak<dyn Any + Send + Sync>>,
 }
 // SAFETY: We require `Send` for textures of renderers suitable for the MultiRenderer.
 //  Type erasure just forces us to do this instead.
@@ -1796,10 +1798,12 @@ impl MultiTexture {
                     size,
                     format: None,
                     buffer_format,
+                    buffer: None,
                 }))
             });
         {
             let mut internal = internal.lock().unwrap();
+            internal.buffer = None;
             if internal.size != size || internal.buffer_format != buffer_format {
                 internal.textures.clear();
                 internal.format = None;
@@ -1816,6 +1820,7 @@ impl MultiTexture {
             size,
             format: None,
             buffer_format,
+            buffer: None,
         })))
     }
 
@@ -2020,6 +2025,9 @@ impl Texture for MultiTexture {
     fn format(&self) -> Option<Fourcc> {
         self.0.lock().unwrap().format
     }
+    fn hold_buffer(&self, buffer: Weak<dyn Any + Send + Sync>) {
+        self.0.lock().unwrap().buffer = Some(buffer);
+    }
 }
 
 impl<R: GraphicsApi, T: GraphicsApi> Frame for MultiFrame<'_, '_, '_, '_, R, T>
@@ -2094,7 +2102,11 @@ where
             .reimport::<R>(unsafe { (*self.render).renderer_mut() })
             .map_err(Error::Render)?;
 
+        let buffer = texture.0.lock().unwrap().buffer.clone();
         if let Some(texture) = texture.get::<R>(&render_id) {
+            if let Some(buffer) = buffer {
+                texture.hold_buffer(buffer);
+            }
             self.damage.extend(damage.iter().copied().map(|mut rect| {
                 rect.loc += dst.loc;
                 rect

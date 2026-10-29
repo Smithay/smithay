@@ -1,7 +1,10 @@
 use ffi::Gles2;
 
 use super::*;
-use std::sync::Arc;
+use std::{
+    any::Any,
+    sync::{Arc, Weak},
+};
 
 /// A handle to a GLES texture
 ///
@@ -66,6 +69,8 @@ impl GlesTexture {
 pub(super) struct TextureSync {
     read_sync: Mutex<Option<ffi::types::GLsync>>,
     write_sync: Mutex<Option<ffi::types::GLsync>>,
+    /// Client buffer this texture reads, see [`Texture::hold_buffer`]
+    pub(super) buffer: Mutex<Option<Weak<dyn Any + Send + Sync>>>,
 }
 
 unsafe fn wait_for_syncpoint(sync: &mut Option<ffi::types::GLsync>, gl: &Gles2) {
@@ -177,6 +182,13 @@ impl Texture for GlesTexture {
             fmt
         } else {
             fmt.and_then(get_opaque)
+        }
+    }
+
+    fn hold_buffer(&self, buffer: Weak<dyn Any + Send + Sync>) {
+        // Copies don't read the buffer
+        if self.0.egl_images.is_some() {
+            *self.0.sync.read().unwrap().buffer.lock().unwrap() = Some(buffer);
         }
     }
 }

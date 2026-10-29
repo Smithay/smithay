@@ -10,13 +10,13 @@
 use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform, ids::id_gen};
 use glam::Affine2;
 use std::{
-    any::TypeId,
+    any::{Any, TypeId},
     cmp::Ordering,
     error::Error,
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 
 #[cfg(feature = "wayland_frontend")]
@@ -249,6 +249,14 @@ pub trait Texture: fmt::Debug {
     /// Thus [`ExportMem::copy_texture`], if implemented, will not succeed for this texture.
     /// Note that this does **not** mean every texture with a format is guaranteed to be copyable.
     fn format(&self) -> Option<Fourcc>;
+
+    /// Keeps `buffer` alive until gpu is done reading this texture, if it is still alive when rendered
+    ///
+    /// Used for client buffers imported without a copy, to delay their release.
+    /// Renderers done reading textures by the end of a frame can ignore it.
+    fn hold_buffer(&self, buffer: Weak<dyn Any + Send + Sync>) {
+        let _ = buffer;
+    }
 }
 
 /// A downloaded texture buffer
@@ -443,6 +451,9 @@ pub trait Renderer: RendererSuper {
     /// This call can be used to clean-up resources in cases where either no [`Frame`] is used
     /// at all to prevent resource pile-up or in case of only infrequent access to lower
     /// system resource usage.
+    ///
+    /// Also releases buffers kept by [`Texture::hold_buffer`], so call it when a renderer stops rendering
+    /// (e.g. its output is turned off).
     fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }

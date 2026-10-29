@@ -19,7 +19,7 @@ use crate::{
 use std::{
     any::Any,
     collections::{HashMap, hash_map::Entry},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use super::{CommitCounter, DamageBag, DamageSet, DamageSnapshot, SurfaceView};
@@ -516,6 +516,10 @@ where
 
                 match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                     Some(Ok(m)) => {
+                        // client may write to it right after its release, without waiting for gpu
+                        if crate::wayland::shm::is_udmabuf_backed(buffer) {
+                            m.hold_buffer(Arc::downgrade(&buffer.inner) as Weak<dyn Any + Send + Sync>);
+                        }
                         e.insert(Box::new(m));
                         data.renderer_seen.insert(context_id, data.current_commit());
                     }
