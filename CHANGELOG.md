@@ -292,6 +292,11 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`OutputDamageTracker` no longer redraws an unchanged element when elements are added, removed or
+restacked above it. The z index it compares between frames is now counted from the bottom-most drawn
+element instead of the top-most one, so e.g. opening a popup or raising a window no longer damages a
+full-screen background below it.
+
 `LibinputInputBackend` now processes events libinput has queued without making its file descriptor
 readable: the `DeviceAdded` events for devices already present after `Libinput::udev_assign_seat` and
 `Libinput::resume`, and `DeviceRemoved` after `Libinput::suspend`. Previously these waited for the next
