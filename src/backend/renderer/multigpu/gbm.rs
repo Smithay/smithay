@@ -185,7 +185,8 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>,
                     let context =
                         EGLContext::new_with_priority(display, self.context_priority.unwrap_or_default())
                             .map_err(Error::Egl)?;
-                    unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into()
+                    let use_udmabuf = GlesRenderer::udmabuf_supported(display);
+                    unsafe { GlesRenderer::new(context, use_udmabuf).map_err(Error::Gl)? }.into()
                 };
 
                 Ok(GbmGlesDevice {
