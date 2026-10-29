@@ -14,6 +14,9 @@ pub(super) enum UdmabufState {
     NotTried,
     Failed,
     Imported(Dmabuf),
+    /// A renderer failed to import it. Kept, as another renderer may have imported it
+    /// earlier and still read it.
+    Rejected(Dmabuf),
 }
 
 /// Returns a [`Dmabuf`] backed by the same memory as this shm buffer, created via udmabuf.
@@ -93,6 +96,24 @@ fn create_udmabuf(_user_data: &ShmBufferUserData) -> io::Result<Dmabuf> {
 /// Marks the buffer as not importable via udmabuf.
 pub(crate) fn mark_udmabuf_failed(buffer: &wl_buffer::WlBuffer) {
     if let Some(user_data) = buffer.data::<ShmBufferUserData>() {
-        *user_data.udmabuf.lock().unwrap() = UdmabufState::Failed;
+        let mut state = user_data.udmabuf.lock().unwrap();
+        *state = match std::mem::take(&mut *state) {
+            UdmabufState::Imported(dmabuf) | UdmabufState::Rejected(dmabuf) => UdmabufState::Rejected(dmabuf),
+            UdmabufState::NotTried | UdmabufState::Failed => UdmabufState::Failed,
+        };
+    }
+}
+
+/// Blocks until the GPU is done reading the udmabuf of this shm buffer.
+pub(crate) fn wait_udmabuf_idle(buffer: &wl_buffer::WlBuffer) {
+    let Some(user_data) = buffer.data::<ShmBufferUserData>() else {
+        return;
+    };
+    let dmabuf = match &*user_data.udmabuf.lock().unwrap() {
+        UdmabufState::Imported(dmabuf) | UdmabufState::Rejected(dmabuf) => dmabuf.clone(),
+        UdmabufState::NotTried | UdmabufState::Failed => return,
+    };
+    if let Err(err) = dmabuf.sync_plane(0, DmabufSyncFlags::START | DmabufSyncFlags::WRITE) {
+        tracing::warn!(?err, "Failed to wait for GPU reads of udmabuf");
     }
 }
