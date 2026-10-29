@@ -156,6 +156,14 @@ is used for timestamps for synthesized events.
 
 ### Additions
 
+- `GlesRenderer`, `GlowRenderer` and the multi-GPU renderers import `wl_shm` buffers in `ImportAll`
+  without copying through udmabuf when possible, if their device passes
+  `UdmabufAllocator::is_supported_by`. Other renderers can opt in with `ImportDmaWl::prefers_udmabuf`.
+
+- `UdmabufAllocator::is_supported_by` indicate whether the driver of a drm device reads udmabufs
+  reliably, which currently excludes `nvidia-drm`, `i915` without LLC, `virtio_gpu` and `vmwgfx`.
+  `SMITHAY_UDMABUF_IMPORT=0` or `1` overrides it.
+
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
   whole environment, instead of only `PATH` and
   `XDG_RUNTIME_DIR`. This lets `Xwayland` find GPU drivers installed outside
