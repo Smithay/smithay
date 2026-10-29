@@ -61,3 +61,15 @@ impl std::fmt::Display for DeadResource {
 }
 
 impl std::error::Error for DeadResource {}
+
+/// Trait to upcast to `&dyn Any`
+pub trait AsAny: 'static {
+    /// Upcast to `&dyn Any`
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+impl<T: 'static> AsAny for T {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
