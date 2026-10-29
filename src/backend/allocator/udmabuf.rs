@@ -17,9 +17,10 @@ use crate::utils::Size;
 
 use rustix::{
     fs::{MemfdFlags, Mode, OFlags, SealFlags, fcntl_add_seals, ftruncate, memfd_create},
-    ioctl::{Ioctl, Opcode, ioctl, opcode},
+    ioctl::{Ioctl, Opcode, Setter, Updater, ioctl, opcode},
     param::page_size,
 };
+use tracing::{debug, info, warn};
 
 static PAGE_SIZE: LazyLock<usize> = LazyLock::new(page_size);
 
@@ -41,6 +42,52 @@ impl UdmabufAllocator {
     pub fn new() -> io::Result<UdmabufAllocator> {
         let fd = rustix::fs::open("/dev/udmabuf", OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty())?;
         Ok(UdmabufAllocator { dev: fd })
+    }
+
+    /// Whether the gpu of the given drm device can read udmabufs reliably, and faster than a copy.
+    ///
+    /// This is a conservative default: only tested drivers are allowed, so it may return `false`
+    /// for devices that would work. Compositors can replace it with their own check.
+    ///
+    /// `SMITHAY_UDMABUF_IMPORT` overrides the result.
+    pub fn is_supported_by(device: impl AsFd) -> bool {
+        static OVERRIDE: LazyLock<Option<bool>> = LazyLock::new(|| {
+            let value = std::env::var("SMITHAY_UDMABUF_IMPORT").ok()?;
+            let enabled = match value.to_lowercase().as_str() {
+                "1" | "true" | "yes" | "y" => true,
+                "0" | "false" | "no" | "n" => false,
+                _ => {
+                    warn!(value, "Ignoring invalid SMITHAY_UDMABUF_IMPORT");
+                    return None;
+                }
+            };
+            info!(enabled, "SMITHAY_UDMABUF_IMPORT is set");
+            Some(enabled)
+        });
+        if let Some(enabled) = *OVERRIDE {
+            return enabled;
+        }
+
+        let device = device.as_fd();
+        let driver = match drm_driver_name(device) {
+            Ok(driver) => driver,
+            Err(err) => {
+                debug!(?err, "Failed to query drm driver, not using udmabuf");
+                return false;
+            }
+        };
+
+        // Only integrated GPUs, discrete ones are faster without udmabuf
+        let supported = match driver.as_str() {
+            // Without LLC, the GPU may read stale data
+            "i915" => i915_has_llc(device).unwrap_or(false),
+            "amdgpu" => amdgpu_is_apu(device).unwrap_or(false),
+            "xe" => xe_is_integrated(device).unwrap_or(false),
+            // Untested or known to be broken
+            _ => false,
+        };
+        debug!(driver, supported, "Checked udmabuf support");
+        supported
     }
 
     /// Creates a [`Dmabuf`] from an existing allocation represented by a memfd.
@@ -118,6 +165,97 @@ impl Allocator for UdmabufAllocator {
         fcntl_add_seals(&mem_fd, SealFlags::SHRINK)?;
         self.create_buffer_from_memfd(mem_fd, 0, size, fourcc, width, height, stride as u32)
     }
+}
+
+fn drm_driver_name(device: BorrowedFd<'_>) -> io::Result<String> {
+    let mut name = Vec::new();
+    drm_ffi::get_version(device, Some(&mut name), None, None)?;
+    let name = name.into_iter().map(|c| c as u8).collect::<Vec<_>>();
+    Ok(String::from_utf8_lossy(&name).into_owned())
+}
+
+const DRM_COMMAND_BASE: u8 = drm_ffi::DRM_COMMAND_BASE as u8;
+
+fn i915_has_llc(device: BorrowedFd<'_>) -> io::Result<bool> {
+    #[repr(C)]
+    struct drm_i915_getparam {
+        param: i32,
+        value: *mut i32,
+    }
+    const DRM_IOCTL_I915_GETPARAM: Opcode =
+        opcode::read_write::<drm_i915_getparam>(b'd', DRM_COMMAND_BASE + 0x06);
+    const I915_PARAM_HAS_LLC: i32 = 17;
+
+    let mut value = 0;
+    let mut param = drm_i915_getparam {
+        param: I915_PARAM_HAS_LLC,
+        value: &mut value,
+    };
+    // SAFETY: The struct matches the kernel's, and `value` is writable.
+    unsafe { ioctl(device, Updater::<DRM_IOCTL_I915_GETPARAM, _>::new(&mut param))? };
+    Ok(value != 0)
+}
+
+fn amdgpu_is_apu(device: BorrowedFd<'_>) -> io::Result<bool> {
+    #[repr(C)]
+    struct drm_amdgpu_info {
+        return_pointer: u64,
+        return_size: u32,
+        query: u32,
+        query_args: [u64; 2],
+    }
+    const DRM_IOCTL_AMDGPU_INFO: Opcode = opcode::write::<drm_amdgpu_info>(b'd', DRM_COMMAND_BASE + 0x05);
+    const AMDGPU_INFO_DEV_INFO: u32 = 0x16;
+    const AMDGPU_IDS_FLAGS_FUSION: u64 = 0x1;
+    // `ids_flags` is at byte 136 of `drm_amdgpu_info_device`, the rest isn't needed
+    const IDS_FLAGS: usize = 136 / 8;
+
+    let mut dev_info = [0u64; IDS_FLAGS + 1];
+    let info = drm_amdgpu_info {
+        return_pointer: dev_info.as_mut_ptr() as u64,
+        return_size: std::mem::size_of_val(&dev_info) as u32,
+        query: AMDGPU_INFO_DEV_INFO,
+        query_args: [0; 2],
+    };
+    // SAFETY: The struct matches the kernel's, and `dev_info` has space for `return_size` bytes.
+    unsafe { ioctl(device, Setter::<DRM_IOCTL_AMDGPU_INFO, _>::new(info))? };
+    Ok(dev_info[IDS_FLAGS] & AMDGPU_IDS_FLAGS_FUSION != 0)
+}
+
+fn xe_is_integrated(device: BorrowedFd<'_>) -> io::Result<bool> {
+    #[repr(C)]
+    struct drm_xe_device_query {
+        extensions: u64,
+        query: u32,
+        size: u32,
+        data: u64,
+        reserved: [u64; 2],
+    }
+    const DRM_IOCTL_XE_DEVICE_QUERY: Opcode =
+        opcode::read_write::<drm_xe_device_query>(b'd', DRM_COMMAND_BASE);
+    const DRM_XE_DEVICE_QUERY_CONFIG: u32 = 2;
+    const DRM_XE_QUERY_CONFIG_FLAG_HAS_VRAM: u64 = 1 << 0;
+    // The flags are at byte 16 of `drm_xe_query_config`
+    const CONFIG_FLAGS: usize = 16 / 8;
+
+    let mut query = drm_xe_device_query {
+        extensions: 0,
+        query: DRM_XE_DEVICE_QUERY_CONFIG,
+        size: 0,
+        data: 0,
+        reserved: [0; 2],
+    };
+    // SAFETY: The struct matches the kernel's. With `size` 0, the kernel only writes the size it
+    // needs into `size`, nothing into `data`.
+    unsafe { ioctl(device, Updater::<DRM_IOCTL_XE_DEVICE_QUERY, _>::new(&mut query))? };
+    let mut config = vec![0u64; (query.size as usize).div_ceil(8)];
+    if config.len() <= CONFIG_FLAGS {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
+    query.data = config.as_mut_ptr() as u64;
+    // SAFETY: `config` has space for `size` bytes.
+    unsafe { ioctl(device, Updater::<DRM_IOCTL_XE_DEVICE_QUERY, _>::new(&mut query))? };
+    Ok(config[CONFIG_FLAGS] & DRM_XE_QUERY_CONFIG_FLAG_HAS_VRAM == 0)
 }
 
 fn udmabuf_from_memfd(
