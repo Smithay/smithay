@@ -552,6 +552,7 @@ impl InputBackend for WinitInput {
     type TabletToolProximityEvent = UnusedEvent;
     type TabletToolTipEvent = UnusedEvent;
     type TabletToolButtonEvent = UnusedEvent;
+    type TabletPadButtonEvent = UnusedEvent;
 
     type SwitchToggleEvent = UnusedEvent;
 
