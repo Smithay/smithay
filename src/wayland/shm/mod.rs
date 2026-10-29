@@ -456,7 +456,7 @@ shm_format_table! {
 }
 
 /// Details of the contents of a buffer relative to its pool
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BufferData {
     /// Offset of the start of the buffer relative to the beginning of the pool in bytes
     pub offset: i32,
