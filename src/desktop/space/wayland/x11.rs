@@ -2,8 +2,9 @@ use crate::{
     backend::renderer::{
         ImportAll, Renderer,
         element::{
-            Kind,
+            Element, Kind, NamespacedElement,
             surface::{WaylandSurfaceRenderElement, render_elements_from_surface_tree},
+            utils::CropRenderElement,
         },
     },
     desktop::{WindowSurfaceType, space::SpaceElement},
@@ -12,6 +13,16 @@ use crate::{
 };
 
 use super::{WindowOutputUserData, output_update};
+
+fn physical_shape_clip(
+    shape: Rectangle<i32, Logical>,
+    location: Point<i32, Physical>,
+    scale: Scale<f64>,
+) -> Rectangle<i32, Physical> {
+    let mut clip = shape.to_f64().to_physical(scale).to_i32_up();
+    clip.loc += location;
+    clip
+}
 
 impl SpaceElement for X11Surface {
     fn bbox(&self) -> Rectangle<i32, Logical> {
@@ -83,10 +94,10 @@ where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
 {
-    type RenderElement = WaylandSurfaceRenderElement<R>;
+    type RenderElement = NamespacedElement<CropRenderElement<WaylandSurfaceRenderElement<R>>>;
 
     #[profiling::function]
-    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
+    fn render_elements<C: From<Self::RenderElement>>(
         &self,
         renderer: &mut R,
         location: Point<i32, Physical>,
@@ -99,6 +110,38 @@ where
         if let Some(opacity) = self.state.lock().unwrap().opacity {
             alpha *= (opacity as f32) / (u32::MAX as f32);
         }
-        render_elements_from_surface_tree(renderer, &surface, location, scale, alpha, Kind::Unspecified)
+        let elements = render_elements_from_surface_tree::<R, WaylandSurfaceRenderElement<R>>(
+            renderer,
+            &surface,
+            location,
+            scale,
+            alpha,
+            Kind::Unspecified,
+        );
+        if let Some(shape) = self.render_shape() {
+            let mut cropped = Vec::new();
+            for (shape_index, shape_rect) in shape.iter().copied().enumerate() {
+                let clip = physical_shape_clip(shape_rect, location, scale);
+                cropped.extend(
+                    elements
+                        .iter()
+                        .cloned()
+                        .filter_map(|element| CropRenderElement::from_element(element, scale, clip))
+                        .map(|element| NamespacedElement::new(element, shape_index))
+                        .map(C::from),
+                );
+            }
+            cropped
+        } else {
+            elements
+                .into_iter()
+                .filter_map(|element| {
+                    let geometry = element.geometry(scale);
+                    CropRenderElement::from_element(element, scale, geometry)
+                })
+                .map(|element| NamespacedElement::new(element, 0))
+                .map(C::from)
+                .collect()
+        }
     }
 }
