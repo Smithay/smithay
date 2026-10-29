@@ -568,6 +568,7 @@ impl<B: Buffer, F: Framebuffer> Clone for PlaneState<B, F> {
 #[derive(Debug)]
 struct FrameState<B: Buffer, F: Framebuffer> {
     planes: SmallVec<[(plane::Handle, PlaneState<B, F>); 10]>,
+    omit_unchanged_cursor_plane: bool,
 }
 
 impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
@@ -644,7 +645,10 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
                 .map(|info| (info.handle, PlaneState::default())),
         );
 
-        FrameState { planes: tmp }
+        FrameState {
+            planes: tmp,
+            omit_unchanged_cursor_plane: false,
+        }
     }
 }
 
@@ -778,6 +782,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
             }
         }
 
+        let omit_unchanged_cursor_plane = self.omit_unchanged_cursor_plane;
         self.planes
             .iter_mut()
             .filter(move |(handle, state)| {
@@ -801,7 +806,15 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
                     // have to send planes we never used, but we include planes we want to reset or
                     // that explicitly changed represented by !state.skip and all planes currently in
                     // use represented by having an config defined.
-                    !state.skip || state.config.is_some()
+                    //
+                    // The exception is an unchanged cursor plane with
+                    // `FrameFlags::OMIT_UNCHANGED_CURSOR_PLANE`: the compositor may have moved it
+                    // itself since it was last committed, and committing its whole state again
+                    // would move it back. The primary plane is still part of every update.
+                    !state.skip
+                        || (state.config.is_some()
+                            && !(omit_unchanged_cursor_plane
+                                && surface.planes().cursor.iter().any(|info| info.handle == *handle)))
                 } else {
                     state.config.is_some() || surface.claim_plane(*handle).is_some()
                 }
@@ -1034,6 +1047,17 @@ bitflags::bitflags! {
         const ALLOW_CURSOR_PLANE_SCANOUT = 8;
         /// Return `EmptyFrame`, if only the cursor plane would have been updated
         const SKIP_CURSOR_ONLY_UPDATES = 16;
+        /// Leave an unchanged cursor plane out of partial updates
+        ///
+        /// By default every plane in use is part of every commit, even if it did not
+        /// change, because some drivers mishandle partial updates. A compositor that moves
+        /// the cursor plane between frames itself, e.g. with `drmModeMoveCursor` to get the
+        /// newest pointer position on screen at the next scanout, needs an unchanged cursor
+        /// plane to be left out: committing its whole state again would move it back to
+        /// the position last set by the `DrmCompositor`. The primary plane is still part
+        /// of every update. Full updates, e.g. after a modeset or
+        /// [`DrmCompositor::reset_state`], still contain the cursor plane.
+        const OMIT_UNCHANGED_CURSOR_PLANE = 32;
         /// Allow to realize the frame by assigning elements on any plane
         const ALLOW_SCANOUT = Self::ALLOW_PRIMARY_PLANE_SCANOUT.bits() | Self::ALLOW_OVERLAY_PLANE_SCANOUT.bits() | Self::ALLOW_CURSOR_PLANE_SCANOUT.bits();
         /// Safe default set of flags
@@ -1789,6 +1813,8 @@ where
 
             // This will create an empty frame state, all planes are skipped by default
             let mut next_frame_state = FrameState::from_planes(self.surface.plane(), &self.planes);
+            next_frame_state.omit_unchanged_cursor_plane =
+                frame_flags.contains(FrameFlags::OMIT_UNCHANGED_CURSOR_PLANE);
 
             // We want to set skip to false on all planes that previously had something assigned so that
             // they get cleared when they are not longer used
