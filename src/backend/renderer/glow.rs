@@ -534,7 +534,11 @@ impl ImportDma for GlowRenderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportDmaWl for GlowRenderer {}
+impl ImportDmaWl for GlowRenderer {
+    fn prefers_udmabuf(&self) -> bool {
+        self.gl.as_ref().prefers_udmabuf()
+    }
+}
 
 impl ExportMem for GlowRenderer {
     type TextureMapping = GlesMapping;

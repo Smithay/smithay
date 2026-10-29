@@ -183,6 +183,11 @@ impl Pool {
         self.inner.as_ref().unwrap().size()
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_ref().unwrap().fd.as_fd()
+    }
+
     pub fn with_data<T, F: FnOnce(*const u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         self.inner.as_ref().unwrap().with_data(f)
     }

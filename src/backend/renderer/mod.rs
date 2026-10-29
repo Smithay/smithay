@@ -637,6 +637,14 @@ pub trait ImportDmaWl: ImportDma {
             .expect("import_dma_buffer without checking buffer type?");
         self.import_dmabuf(dmabuf, Some(damage))
     }
+
+    /// Whether [`ImportAll`] should try to import shm buffers through udmabuf and [`ImportDma`]
+    /// before falling back to [`ImportMemWl`].
+    ///
+    /// Only return true if the GPU reads udmabufs reliably, see `UdmabufAllocator::is_supported_by`.
+    fn prefers_udmabuf(&self) -> bool {
+        false
+    }
 }
 
 /// Trait for Renderers supporting importing dmabufs.
@@ -701,6 +709,65 @@ pub trait ImportAll: Renderer {
     ) -> Option<Result<Self::TextureId, Self::Error>>;
 }
 
+/// Tries to import a shm buffer without copying, through udmabuf and [`ImportDma`].
+#[cfg(feature = "wayland_frontend")]
+fn import_shm_udmabuf<R: ImportDmaWl>(
+    renderer: &mut R,
+    buffer: &wl_buffer::WlBuffer,
+    damage: &[Rectangle<i32, BufferCoord>],
+) -> Option<R::TextureId> {
+    if !renderer.prefers_udmabuf() {
+        return None;
+    }
+
+    let dmabuf = crate::wayland::shm::try_udmabuf(buffer)?;
+    match renderer.import_dmabuf(&dmabuf, Some(damage)) {
+        Ok(texture) => Some(texture),
+        Err(err) => {
+            tracing::debug!(%err, "Failed to import udmabuf, falling back to shm import");
+            crate::wayland::shm::mark_udmabuf_failed(buffer);
+            None
+        }
+    }
+}
+
+/// Imports shm buffer, without copying if possible, see [`import_shm_udmabuf`]
+#[cfg(feature = "wayland_frontend")]
+fn import_shm<R: ImportMemWl + ImportDmaWl>(
+    renderer: &mut R,
+    buffer: &wl_buffer::WlBuffer,
+    surface: Option<&SurfaceData>,
+    damage: &[Rectangle<i32, BufferCoord>],
+) -> Result<R::TextureId, R::Error> {
+    use std::{collections::HashSet, sync::Mutex};
+
+    /// Renderer contexts whose last import of the surface went through udmabuf.
+    /// since their cached shm texture missed these frames, so the next copy must upload it in full.
+    #[derive(Debug, Default)]
+    struct UdmabufImported(Mutex<HashSet<Arc<InnerContextId>>>);
+
+    let context = renderer.context_id().0;
+    if let Some(texture) = import_shm_udmabuf(renderer, buffer, damage) {
+        if let Some(surface) = surface {
+            let imported = surface
+                .data_map
+                .get_or_insert_threadsafe(UdmabufImported::default);
+            imported.0.lock().unwrap().insert(context);
+        }
+        return Ok(texture);
+    }
+
+    let missed = surface
+        .and_then(|surface| surface.data_map.get::<UdmabufImported>())
+        .is_some_and(|imported| imported.0.lock().unwrap().remove(&context));
+    if missed {
+        if let Some(size) = buffer_dimensions(buffer) {
+            return renderer.import_shm_buffer(buffer, surface, &[Rectangle::from_size(size)]);
+        }
+    }
+    renderer.import_shm_buffer(buffer, surface, damage)
+}
+
 // TODO: Do this with specialization, when possible and do default implementations
 #[cfg(all(
     feature = "wayland_frontend",
@@ -716,7 +783,7 @@ impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<Self::TextureId, Self::Error>> {
         match buffer_type(buffer) {
-            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
+            Some(BufferType::Shm) => Some(import_shm(self, buffer, surface, damage)),
             Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer, surface, damage)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
@@ -736,7 +803,7 @@ impl<R: Renderer + ImportMemWl + ImportDmaWl> ImportAll for R {
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<Self::TextureId, Self::Error>> {
         match buffer_type(buffer) {
-            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
+            Some(BufferType::Shm) => Some(import_shm(self, buffer, surface, damage)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
         }

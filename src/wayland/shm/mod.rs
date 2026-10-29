@@ -113,6 +113,7 @@ use wayland_server::{
 
 mod handlers;
 mod pool;
+mod udmabuf;
 
 use crate::{
     backend::allocator::format::get_bpp,
@@ -120,7 +121,9 @@ use crate::{
     wayland::GlobalData,
 };
 
-use self::pool::Pool;
+use self::{pool::Pool, udmabuf::UdmabufState};
+
+pub(crate) use self::udmabuf::{mark_udmabuf_failed, try_udmabuf};
 
 use super::buffer::BufferHandler;
 
@@ -479,6 +482,7 @@ pub struct ShmBufferUserData {
     pub(crate) pool: Arc<Pool>,
     pub(crate) data: BufferData,
     destruction_hooks: Mutex<Vec<Hook<DestructionHook>>>,
+    udmabuf: Mutex<UdmabufState>,
 }
 
 impl ShmBufferUserData {
