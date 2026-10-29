@@ -303,6 +303,9 @@ a handle in front of it was dropped without being removed (the lazy cleanup that
 allows). Previously the removed entry was picked by its position among the live handles, so a live
 toplevel could be dropped from the list and was then not announced to clients binding the global later.
 
+`wl_keyboard.keymap` is now sent as a read-only fd. Clients confined by SELinux could be refused the
+writable fd and exit.
+
 `input_method_v2`: a second input method binding a seat that already has one is now the object told
 it is `unavailable`, per the protocol, leaving the existing instance in place. Previously the event
 went to the existing instance and the newcomer was dropped untracked. Destroying such an inert
