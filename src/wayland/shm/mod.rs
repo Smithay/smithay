@@ -123,6 +123,8 @@ use crate::{
 
 use self::{pool::Pool, udmabuf::UdmabufState};
 
+#[cfg(feature = "backend_gbm")]
+pub(crate) use self::udmabuf::is_udmabuf_backed;
 pub(crate) use self::udmabuf::{mark_udmabuf_failed, try_udmabuf, wait_udmabuf_idle};
 
 use super::buffer::BufferHandler;

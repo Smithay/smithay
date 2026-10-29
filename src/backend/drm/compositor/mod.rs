@@ -568,6 +568,10 @@ impl<B: Buffer, F: Framebuffer> Clone for PlaneState<B, F> {
 #[derive(Debug)]
 struct FrameState<B: Buffer, F: Framebuffer> {
     planes: SmallVec<[(plane::Handle, PlaneState<B, F>); 10]>,
+    /// Client buffers the GPU reads directly while rendering this frame (shm via udmabuf).
+    /// Keeping them alive delays their `wl_buffer.release` until the frame is showed,
+    /// when GPU is done reading them.
+    sampled_buffers: Vec<crate::backend::renderer::utils::Buffer>,
 }
 
 impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
@@ -644,7 +648,10 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
                 .map(|info| (info.handle, PlaneState::default())),
         );
 
-        FrameState { planes: tmp }
+        FrameState {
+            planes: tmp,
+            sampled_buffers: Vec::new(),
+        }
     }
 }
 
@@ -2229,6 +2236,13 @@ where
                         .map(DrmRenderElements::from)
                 }
             });
+            for element in primary_plane_elements.iter() {
+                if let Some(UnderlyingStorage::Wayland(buffer)) = element.underlying_storage(renderer) {
+                    if shm::is_udmabuf_backed(buffer) {
+                        next_frame_state.sampled_buffers.push(buffer.clone());
+                    }
+                }
+            }
             // Then render all remaining elements assigned to the primary plane
             let elements = overlay_plane_elements
                 .chain(
@@ -2517,6 +2531,7 @@ where
             self.queued_frame = None;
             self.pending_frame = None;
             self.current_frame = prepared_frame.frame;
+            self.current_frame.sampled_buffers.clear();
         }
 
         res
@@ -2618,6 +2633,7 @@ where
     pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
         if let Some(PendingFrame { mut frame, user_data }) = self.pending_frame.take() {
             std::mem::swap(&mut frame, &mut self.current_frame);
+            self.current_frame.sampled_buffers.clear();
             if self.queued_frame.is_some() {
                 self.submit()?;
             }
