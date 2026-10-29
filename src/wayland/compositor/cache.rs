@@ -90,6 +90,19 @@ impl<T> CachedState<T> {
     pub fn pending(&mut self) -> &mut T {
         &mut self.pending
     }
+
+    /// Override pending, committed and current snapshots of this state.
+    ///
+    /// This is useful when the lifetime of a state is controlled by another
+    /// object's commit, so already committed snapshots must not restore stale
+    /// values when they are applied later.
+    pub(crate) fn override_all(&mut self, mut update: impl FnMut(&mut T)) {
+        update(&mut self.pending);
+        for (_, state) in &mut self.cache {
+            update(state);
+        }
+        update(&mut self.current);
+    }
 }
 
 trait Cache: Downcast {
