@@ -542,19 +542,16 @@ impl OutputDamageTracker {
             let element_is_framebuffer_effect = element.is_framebuffer_effect();
 
             self.element_damage_index.push(self.damage.len());
-            if element_last_state
-                .map(|s| {
-                    !s.instance_matches(
-                        element_src,
-                        element_geometry,
-                        element_transform,
-                        element_alpha,
-                        render_element_z_index,
-                        element_is_framebuffer_effect,
-                    )
-                })
-                .unwrap_or(true)
-            {
+            if element_last_state.is_none_or(|s| {
+                !s.instance_matches(
+                    element_src,
+                    element_geometry,
+                    element_transform,
+                    element_alpha,
+                    render_element_z_index,
+                    element_is_framebuffer_effect,
+                )
+            }) {
                 if let Some(intersection) = element_geometry.intersection(output_geo) {
                     self.damage.push(intersection);
                 }
@@ -628,18 +625,16 @@ impl OutputDamageTracker {
         let mut force_effect_redraw = false;
 
         // add the damage for elements gone that are not covered an opaque region
-        let mut elements_gone = self
-            .last_state
-            .elements
-            .iter()
-            .filter(|(id, _)| {
-                element_render_states
-                    .states
-                    .get(id)
-                    .map(|state| state.presentation_state == RenderElementPresentationState::Skipped)
-                    .unwrap_or(true)
-            })
-            .peekable();
+        let mut elements_gone =
+            self.last_state
+                .elements
+                .iter()
+                .filter(|(id, _)| {
+                    element_render_states.states.get(id).is_none_or(|state| {
+                        state.presentation_state == RenderElementPresentationState::Skipped
+                    })
+                })
+                .peekable();
 
         if elements_gone.peek().is_some() {
             force_effect_redraw = true;

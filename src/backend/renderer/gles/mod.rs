@@ -605,9 +605,7 @@ impl GlesRenderer {
         context.make_current()?;
 
         // TODO: check for angle as well?
-        let is_software = EGLDevice::device_for_display(context.display())
-            .map(|dev| dev.is_software())
-            .unwrap_or(false);
+        let is_software = EGLDevice::device_for_display(context.display()).is_ok_and(|dev| dev.is_software());
 
         let supported_capabilities = Self::supported_capabilities(&context)?;
         let requested_capabilities = capabilities.into_iter().collect::<Vec<_>>();

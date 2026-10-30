@@ -300,7 +300,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         let point = point.into();
         self.outputs.iter().rev().filter(move |o| {
             let bbox = self.output_geometry(o);
-            bbox.map(|bbox| bbox.to_f64().contains(point)).unwrap_or(false)
+            bbox.is_some_and(|bbox| bbox.to_f64().contains(point))
         })
     }
 

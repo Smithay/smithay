@@ -75,7 +75,7 @@ impl SyncPoint {
     ///
     /// Will always return `true` in case the sync point does not contain a fence
     pub fn is_reached(&self) -> bool {
-        self.fence.as_ref().map(|f| f.is_signaled()).unwrap_or(true)
+        self.fence.as_ref().is_none_or(|f| f.is_signaled())
     }
 
     /// Blocks the current thread until the sync point is signaled
@@ -94,7 +94,7 @@ impl SyncPoint {
     ///
     /// Will always return `false` in case the sync point does not contain a fence
     pub fn is_exportable(&self) -> bool {
-        self.fence.as_ref().map(|f| f.is_exportable()).unwrap_or(false)
+        self.fence.as_ref().is_some_and(|f| f.is_exportable())
     }
 
     /// Export this [`SyncPoint`] as a native fence fd
