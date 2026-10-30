@@ -2516,7 +2516,9 @@ fn fetch_opaque_regions(
 
                 values
                     .collect::<Vec<_>>()
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .flat_map(|rect_values| {
                         let phys_rect = Rectangle::<i32, Physical>::new(
                             (rect_values[0] as i32, rect_values[1] as i32).into(),
