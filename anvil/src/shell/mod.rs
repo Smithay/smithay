@@ -67,7 +67,7 @@ fn fullscreen_output_geometry(
         .or_else(|| {
             let w = space
                 .elements()
-                .find(|window| window.wl_surface().map(|s| &*s == wl_surface).unwrap_or(false));
+                .find(|window| window.wl_surface().is_some_and(|s| &*s == wl_surface));
             w.and_then(|w| space.outputs_for_element(w).first().cloned())
         })
         .as_ref()
@@ -84,7 +84,7 @@ impl FullscreenSurface {
 
     pub fn get(&self) -> Option<WindowElement> {
         let mut window = self.0.borrow_mut();
-        if window.as_ref().map(|w| !w.alive()).unwrap_or(false) {
+        if window.as_ref().is_some_and(|w| !w.alive()) {
             *window = None;
         }
         window.clone()
@@ -280,7 +280,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     pub fn window_for_surface(&self, surface: &WlSurface) -> Option<WindowElement> {
         self.space
             .elements()
-            .find(|window| window.wl_surface().map(|s| &*s == surface).unwrap_or(false))
+            .find(|window| window.wl_surface().is_some_and(|s| &*s == surface))
             .cloned()
     }
 }
@@ -306,7 +306,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
 
     if let Some(window) = space
         .elements()
-        .find(|window| window.wl_surface().map(|s| &*s == surface).unwrap_or(false))
+        .find(|window| window.wl_surface().is_some_and(|s| &*s == surface))
         .cloned()
     {
         // send the initial configure if relevant

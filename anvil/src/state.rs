@@ -451,8 +451,7 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
             Seat::from_resource(&seat) == Some(self.seat.clone())
                 && keyboard
                     .last_enter()
-                    .map(|last_enter| serial.is_no_older_than(&last_enter))
-                    .unwrap_or(false)
+                    .is_some_and(|last_enter| serial.is_no_older_than(&last_enter))
         } else {
             false
         }
@@ -469,7 +468,7 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
             let w = self
                 .space
                 .elements()
-                .find(|window| window.wl_surface().map(|s| *s == surface).unwrap_or(false))
+                .find(|window| window.wl_surface().is_some_and(|s| *s == surface))
                 .cloned();
             if let Some(window) = w {
                 self.space.raise_element(&window, true);
@@ -966,11 +965,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     });
                 }
 
-                if primary_scanout_output
-                    .as_ref()
-                    .map(|o| o == output)
-                    .unwrap_or(true)
-                {
+                if primary_scanout_output.as_ref().is_none_or(|o| o == output) {
                     let fifo_barrier = states
                         .cached_state
                         .get::<FifoBarrierCachedState>()
@@ -1011,11 +1006,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     });
                 }
 
-                if primary_scanout_output
-                    .as_ref()
-                    .map(|o| o == output)
-                    .unwrap_or(true)
-                {
+                if primary_scanout_output.as_ref().is_none_or(|o| o == output) {
                     let fifo_barrier = states
                         .cached_state
                         .get::<FifoBarrierCachedState>()
@@ -1057,11 +1048,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     });
                 }
 
-                if primary_scanout_output
-                    .as_ref()
-                    .map(|o| o == output)
-                    .unwrap_or(true)
-                {
+                if primary_scanout_output.as_ref().is_none_or(|o| o == output) {
                     let fifo_barrier = states
                         .cached_state
                         .get::<FifoBarrierCachedState>()
@@ -1088,11 +1075,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     });
                 }
 
-                if primary_scanout_output
-                    .as_ref()
-                    .map(|o| o == output)
-                    .unwrap_or(true)
-                {
+                if primary_scanout_output.as_ref().is_none_or(|o| o == output) {
                     let fifo_barrier = states
                         .cached_state
                         .get::<FifoBarrierCachedState>()

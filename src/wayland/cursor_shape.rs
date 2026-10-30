@@ -204,7 +204,7 @@ where
                     .seat_state()
                     .seats
                     .iter()
-                    .find(|seat| seat.get_pointer().map(|h| h == handle).unwrap_or(false))
+                    .find(|seat| seat.get_pointer().is_some_and(|h| h == handle))
                     .cloned()
                 else {
                     return;

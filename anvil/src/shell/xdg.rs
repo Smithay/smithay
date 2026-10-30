@@ -251,11 +251,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .find(|element| element.wl_surface().as_deref() == Some(&surface));
             if let Some(window) = window {
                 use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-                let is_ssd = configure
-                    .state
-                    .decoration_mode
-                    .map(|mode| mode == Mode::ServerSide)
-                    .unwrap_or(false);
+                let is_ssd = configure.state.decoration_mode == Some(Mode::ServerSide);
                 window.set_ssd(is_ssd);
             }
         }
@@ -284,7 +280,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             let window = self
                 .space
                 .elements()
-                .find(|window| window.wl_surface().map(|s| &*s == wl_surface).unwrap_or(false))
+                .find(|window| window.wl_surface().is_some_and(|s| &*s == wl_surface))
                 .unwrap();
 
             surface.with_pending_state(|state| {
@@ -383,7 +379,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         if let Some(root) = find_popup_root_surface(&kind).ok().and_then(|root| {
             self.space
                 .elements()
-                .find(|w| w.wl_surface().map(|s| *s == root).unwrap_or(false))
+                .find(|w| w.wl_surface().is_some_and(|s| *s == root))
                 .cloned()
                 .map(KeyboardFocusTarget::from)
                 .or_else(|| {

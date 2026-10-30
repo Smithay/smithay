@@ -152,8 +152,7 @@ impl LayerSurfaceAttributes {
     fn has_pending_changes(&self) -> bool {
         self.server_pending
             .as_ref()
-            .map(|s| *s != self.current_server_state())
-            .unwrap_or(false)
+            .is_some_and(|s| *s != self.current_server_state())
     }
 }
 
