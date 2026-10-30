@@ -2284,6 +2284,10 @@ where
         }
         res
     }
+
+    fn prefers_udmabuf(&self) -> bool {
+        ImportDmaWl::prefers_udmabuf(self.render.renderer())
+    }
 }
 
 impl<R: GraphicsApi, T: GraphicsApi> ImportDma for MultiRenderer<'_, '_, R, T>
@@ -3736,7 +3740,7 @@ where
 impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> ImportDmaWl
     for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
 where
-    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf>,
+    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ImportDmaWl,
     <T::Device as ApiDevice>::Renderer: ExportMem + Bind<Dmabuf>,
     // TODO: comment
     R: 'static,
@@ -3774,6 +3778,10 @@ where
             }
         }
         res
+    }
+
+    fn prefers_udmabuf(&self) -> bool {
+        ImportDmaWl::prefers_udmabuf(self.guard.as_ref())
     }
 }
 

@@ -398,6 +398,8 @@ pub struct GlesRenderer {
     gl_version: GlVersion,
     pub(crate) extensions: Vec<String>,
     is_software: bool,
+    #[cfg(feature = "wayland_frontend")]
+    prefers_udmabuf: bool,
     capabilities: Vec<Capability>,
 
     // shaders
@@ -604,10 +606,11 @@ impl GlesRenderer {
 
         context.make_current()?;
 
+        let device = EGLDevice::device_for_display(context.display()).ok();
         // TODO: check for angle as well?
-        let is_software = EGLDevice::device_for_display(context.display())
-            .map(|dev| dev.is_software())
-            .unwrap_or(false);
+        let is_software = device.as_ref().is_some_and(|dev| dev.is_software());
+        #[cfg(feature = "wayland_frontend")]
+        let prefers_udmabuf = device.as_ref().is_some_and(udmabuf_supported);
 
         let supported_capabilities = Self::supported_capabilities(&context)?;
         let requested_capabilities = capabilities.into_iter().collect::<Vec<_>>();
@@ -737,6 +740,8 @@ impl GlesRenderer {
 
             extensions: exts,
             is_software,
+            #[cfg(feature = "wayland_frontend")]
+            prefers_udmabuf,
             gl_version,
             capabilities,
 
@@ -1334,7 +1339,32 @@ impl ImportDma for GlesRenderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportDmaWl for GlesRenderer {}
+impl ImportDmaWl for GlesRenderer {
+    fn prefers_udmabuf(&self) -> bool {
+        self.prefers_udmabuf
+    }
+}
+
+#[cfg(all(feature = "wayland_frontend", target_os = "linux"))]
+fn udmabuf_supported(device: &EGLDevice) -> bool {
+    use crate::backend::allocator::udmabuf::UdmabufAllocator;
+
+    let Ok(path) = device.render_device_path() else {
+        return false;
+    };
+    match std::fs::File::open(&path) {
+        Ok(file) => UdmabufAllocator::is_supported_by(file),
+        Err(err) => {
+            debug!(?err, ?path, "Failed to open drm device, not using udmabuf");
+            false
+        }
+    }
+}
+
+#[cfg(all(feature = "wayland_frontend", not(target_os = "linux")))]
+fn udmabuf_supported(_device: &EGLDevice) -> bool {
+    false
+}
 
 impl GlesRenderer {
     #[profiling::function]

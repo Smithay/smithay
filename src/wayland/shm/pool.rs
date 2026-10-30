@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     ptr,
     sync::{
-        LazyLock, OnceLock, RwLock,
+        LazyLock, Mutex, OnceLock, RwLock,
         mpsc::{Sender, channel},
     },
     thread,
@@ -13,6 +13,8 @@ use std::{
 
 use rustix::mm;
 use tracing::{debug, instrument, trace};
+
+use super::udmabuf::PoolUdmabufs;
 
 // Dropping Pool is actually pretty slow. Unmapping the memory can take 1-2 ms, but the real
 // offender is closing the file descriptor, which I've seen take up to 6 ms. It's waiting on some
@@ -52,6 +54,7 @@ pub struct Pool {
 struct InnerPool {
     map: RwLock<MemMap>,
     fd: OwnedFd,
+    udmabufs: Mutex<PoolUdmabufs>,
 }
 
 // SAFETY: The memmap is owned by the pool and content is only accessible via a reference.
@@ -77,6 +80,7 @@ impl InnerPool {
         Ok(InnerPool {
             map: RwLock::new(memmap),
             fd,
+            udmabufs: Mutex::default(),
         })
     }
 
@@ -181,6 +185,15 @@ impl Pool {
 
     pub fn size(&self) -> usize {
         self.inner.as_ref().unwrap().size()
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn fd(&self) -> BorrowedFd<'_> {
+        self.inner.as_ref().unwrap().fd.as_fd()
+    }
+
+    pub fn udmabufs(&self) -> &Mutex<PoolUdmabufs> {
+        &self.inner.as_ref().unwrap().udmabufs
     }
 
     pub fn with_data<T, F: FnOnce(*const u8, usize) -> T>(&self, f: F) -> Result<T, ()> {

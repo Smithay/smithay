@@ -148,10 +148,10 @@ impl PrivateSurfaceData {
         }
         let mut guard = my_data.public_data.cached_state.get::<SurfaceAttributes>();
         if let Some(BufferAssignment::NewBuffer(buffer)) = guard.current().buffer.take() {
-            buffer.release();
+            crate::wayland::buffer::release(&buffer);
         };
         if let Some(BufferAssignment::NewBuffer(buffer)) = guard.pending().buffer.take() {
-            buffer.release();
+            crate::wayland::buffer::release(&buffer);
         };
 
         let hooks = my_data.destruction_hooks.clone();

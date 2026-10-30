@@ -68,7 +68,7 @@ struct InnerBuffer {
 impl Drop for InnerBuffer {
     #[inline]
     fn drop(&mut self) {
-        self.buffer.release();
+        crate::wayland::buffer::release(&self.buffer);
         #[cfg(feature = "backend_drm")]
         if let Some(release_point) = &self.release_point {
             if let Err(err) = release_point.signal() {
