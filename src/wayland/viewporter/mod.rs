@@ -131,8 +131,7 @@ where
                     states
                         .data_map
                         .get::<ViewporterSurfaceState>()
-                        .map(|v| v.lock().unwrap().is_some())
-                        .unwrap_or(false)
+                        .is_some_and(|v| v.lock().unwrap().is_some())
                 });
 
                 if already_has_viewport {

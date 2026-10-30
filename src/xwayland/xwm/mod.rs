@@ -2103,9 +2103,7 @@ where
 
             // work around borrowing
             drop(_guard);
-            let allow_access = selection_type
-                .map(|type_| state.allow_selection_access(xwm_id, type_))
-                .unwrap_or(true);
+            let allow_access = selection_type.is_none_or(|type_| state.allow_selection_access(xwm_id, type_));
 
             let xwm = state.xwm_state(xwm_id);
             let selection = match n.selection {

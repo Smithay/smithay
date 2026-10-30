@@ -420,7 +420,7 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
         seat_state
             .seats
             .iter()
-            .find(|seat| seat.get_touch().map(|h| &h == self).unwrap_or(false))
+            .find(|seat| seat.get_touch().is_some_and(|h| &h == self))
             .cloned()
             .unwrap()
     }
@@ -643,7 +643,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         };
 
         for state in self.focus.values_mut() {
-            if state.current.map(|c| c == state.pending).unwrap_or(false) {
+            if state.current == Some(state.pending) {
                 continue;
             }
             state.current = Some(marker);
@@ -672,7 +672,7 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         };
 
         for state in self.focus.values_mut() {
-            if state.current.map(|c| c == state.pending).unwrap_or(false) {
+            if state.current == Some(state.pending) {
                 continue;
             }
 

@@ -162,10 +162,7 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
             if !matches!(
                 device,
                 SelectionDevice::WlrDataControl(_) | SelectionDevice::ExtDataControl(_)
-            ) && dh
-                .get_client(device.id())
-                .map(|c| Some(&c) != client)
-                .unwrap_or(true)
+            ) && !dh.get_client(device.id()).is_ok_and(|c| Some(&c) == client)
             {
                 continue;
             }

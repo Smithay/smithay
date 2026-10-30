@@ -505,11 +505,11 @@ impl DrmLeaseState {
     fn suspend_internal(&mut self, connectors: Option<&HashSet<connector::Handle>>) {
         #[allow(clippy::mutable_key_type)]
         let mut clients = HashSet::new();
-        for connector in self.connectors.iter_mut().filter(|c| {
-            connectors
-                .map(|filter| filter.contains(&c.handle))
-                .unwrap_or(true)
-        }) {
+        for connector in self
+            .connectors
+            .iter_mut()
+            .filter(|c| connectors.is_none_or(|filter| filter.contains(&c.handle)))
+        {
             for instance in connector.known_instances.drain(..) {
                 instance.withdrawn();
                 if let Some(client) = instance.client() {
@@ -551,11 +551,11 @@ impl DrmLeaseState {
             .flat_map(|instance| instance.client().map(|client| (instance, client)))
         {
             let mut once = false;
-            for connector in self.connectors.iter_mut().filter(|c| {
-                connectors
-                    .map(|filter| filter.contains(&c.handle))
-                    .unwrap_or(true)
-            }) {
+            for connector in self
+                .connectors
+                .iter_mut()
+                .filter(|c| connectors.is_none_or(|filter| filter.contains(&c.handle)))
+            {
                 if let Some(lease_connector) = connector.new_instance::<D>(&self.dh, &client) {
                     instance.connector(&lease_connector);
                     connector.send_info(&lease_connector);
@@ -566,11 +566,11 @@ impl DrmLeaseState {
                 instance.done();
             }
         }
-        for connector in self.connectors.iter_mut().filter(|c| {
-            connectors
-                .map(|filter| filter.contains(&c.handle))
-                .unwrap_or(true)
-        }) {
+        for connector in self
+            .connectors
+            .iter_mut()
+            .filter(|c| connectors.is_none_or(|filter| filter.contains(&c.handle)))
+        {
             connector.enabled = true;
         }
     }

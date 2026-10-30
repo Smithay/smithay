@@ -294,8 +294,7 @@ impl PrivateSurfaceData {
                 .public_data
                 .data_map
                 .get::<super::handlers::SubsurfaceState>()
-                .map(|s| s.sync.load(Ordering::Acquire))
-                .unwrap_or(false);
+                .is_some_and(|s| s.sync.load(Ordering::Acquire));
 
             // if we are not sync, but the child is we also have to commit the complete child surface tree
             if !is_sync && is_child_sync {
