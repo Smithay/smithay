@@ -199,8 +199,7 @@ impl<BackendData: Backend> XwmHandler for AnvilState<BackendData> {
                 o.user_data()
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
-                    .map(|w| &w == elem)
-                    .unwrap_or(false)
+                    .is_some_and(|w| &w == elem)
             }) {
                 trace!("Unfullscreening: {:?}", elem);
                 output.user_data().get::<FullscreenSurface>().unwrap().clear();

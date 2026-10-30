@@ -192,10 +192,7 @@ where
             wp_fifo_manager_v1::Request::GetFifo { id, surface } => {
                 let (is_initial, has_active_fifo) = with_states(&surface, |states| {
                     let marker = states.data_map.get::<RefCell<FifoMarker>>();
-                    (
-                        marker.is_none(),
-                        marker.map(|m| m.borrow().0.is_some()).unwrap_or(false),
-                    )
+                    (marker.is_none(), marker.is_some_and(|m| m.borrow().0.is_some()))
                 });
 
                 // The protocol mandates that only a single fifo object is associated with a surface at all times

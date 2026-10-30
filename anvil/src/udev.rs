@@ -377,9 +377,7 @@ pub fn run_udev() {
         .node_with_type(NodeType::Primary)
         .and_then(|node| node.ok());
     let primary_device = udev_backend.device_list().find(|(device_id, _)| {
-        primary_node
-            .map(|primary_node| *device_id == primary_node.dev_id())
-            .unwrap_or(false)
+        primary_node.is_some_and(|primary_node| *device_id == primary_node.dev_id())
             || *device_id == primary_gpu.dev_id()
     });
 
@@ -1358,11 +1356,7 @@ impl AnvilState<UdevData> {
             // and do some prediction for the next repaint.
             let repaint_delay = Duration::from_secs_f64(frame_duration.as_secs_f64() * 0.6f64);
 
-            let timer = if surface
-                .render_node
-                .map(|render_node| render_node != self.backend_data.primary_gpu)
-                .unwrap_or(true)
-            {
+            let timer = if surface.render_node != Some(self.backend_data.primary_gpu) {
                 // However, if we need to do a copy, that might not be enough.
                 // (And without actual comparison to previous frames we cannot really know.)
                 // So lets ignore that in those cases to avoid thrashing performance.

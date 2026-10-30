@@ -596,10 +596,7 @@ impl Frame for PixmanFrame<'_, '_> {
             src_image.set_filter(filter, &[])?;
             src_image.set_repeat(Repeat::None);
 
-            let has_alpha = DrmFourcc::try_from(src_image.format())
-                .ok()
-                .map(has_alpha)
-                .unwrap_or(true);
+            let has_alpha = DrmFourcc::try_from(src_image.format()).ok().is_none_or(has_alpha);
 
             let op = if has_alpha {
                 Operation::Over
@@ -797,22 +794,10 @@ impl PixmanRenderer {
     }
 
     fn cleanup(&mut self) {
-        self.dmabuf_cache.retain(|image| {
-            image
-                .0
-                .dmabuf
-                .as_ref()
-                .map(|map| !map.dmabuf.is_gone())
-                .unwrap_or(false)
-        });
-        self.buffers.retain(|image| {
-            image
-                .0
-                .dmabuf
-                .as_ref()
-                .map(|map| !map.dmabuf.is_gone())
-                .unwrap_or(false)
-        });
+        self.dmabuf_cache
+            .retain(|image| image.0.dmabuf.as_ref().is_some_and(|map| !map.dmabuf.is_gone()));
+        self.buffers
+            .retain(|image| image.0.dmabuf.as_ref().is_some_and(|map| !map.dmabuf.is_gone()));
     }
 }
 

@@ -238,11 +238,9 @@ impl DrmDevice {
         active: Arc<AtomicBool>,
         disable_connectors: bool,
     ) -> Result<DrmDeviceInternal, Error> {
-        let force_legacy = std::env::var("SMITHAY_USE_LEGACY")
-            .map(|x| {
-                x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
-            })
-            .unwrap_or(false);
+        let force_legacy = std::env::var("SMITHAY_USE_LEGACY").is_ok_and(|x| {
+            x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
+        });
 
         if force_legacy {
             info!("SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");

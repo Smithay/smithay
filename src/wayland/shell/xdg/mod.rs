@@ -276,7 +276,7 @@ macro_rules! xdg_role {
             /// state is [`Some`] in that it also checks if a current pending
             /// state is different from the [`current_server_state`](#method.current_server_state).
             pub fn has_pending_changes(&self) -> bool {
-                self.server_pending.as_ref().map(|s| *s != self.current_server_state()).unwrap_or(false)
+                self.server_pending.as_ref().is_some_and(|s| *s != self.current_server_state())
             }
 
             /// Returns a list of configures sent to, but not yet acknowledged by the client.
