@@ -770,10 +770,11 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
                 // Try to extract a native fence out of the supplied sync point if any
                 // If the sync point has no native fence or the surface does not support
                 // fencing force a wait
-                if let Some((sync, fence)) = config.sync.as_mut() {
-                    if supports_fencing && fence.is_none() {
-                        *fence = sync.export().map(Arc::new);
-                    }
+                if let Some((sync, fence)) = config.sync.as_mut()
+                    && supports_fencing
+                    && fence.is_none()
+                {
+                    *fence = sync.export().map(Arc::new);
                 }
             }
         }
@@ -2047,13 +2048,13 @@ where
                     }
                 }
                 Err(reason) => {
-                    if let Some(reason) = reason {
-                        if !render_element_states.states.contains_key(element_id) {
-                            render_element_states.states.insert(
-                                element_id.clone(),
-                                RenderElementState::rendering_with_reason(reason),
-                            );
-                        }
+                    if let Some(reason) = reason
+                        && !render_element_states.states.contains_key(element_id)
+                    {
+                        render_element_states.states.insert(
+                            element_id.clone(),
+                            RenderElementState::rendering_with_reason(reason),
+                        );
                     }
 
                     primary_plane_elements.push(element);
@@ -2448,16 +2449,16 @@ where
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
 
-        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane()) {
-            if !plane_state.skip {
-                let slot = plane_state.buffer().and_then(|config| match &config.buffer {
-                    ScanoutBuffer::Swapchain(slot) => Some(slot),
-                    _ => None,
-                });
+        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane())
+            && !plane_state.skip
+        {
+            let slot = plane_state.buffer().and_then(|config| match &config.buffer {
+                ScanoutBuffer::Swapchain(slot) => Some(slot),
+                _ => None,
+            });
 
-                if let Some(slot) = slot {
-                    self.swapchain.submitted(slot);
-                }
+            if let Some(slot) = slot {
+                self.swapchain.submitted(slot);
             }
         }
 
@@ -2494,16 +2495,16 @@ where
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
 
-        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane()) {
-            if !plane_state.skip {
-                let slot = plane_state.buffer().and_then(|config| match &config.buffer {
-                    ScanoutBuffer::Swapchain(slot) => Some(slot),
-                    _ => None,
-                });
+        if let Some(plane_state) = prepared_frame.frame.plane_state(self.surface.plane())
+            && !plane_state.skip
+        {
+            let slot = plane_state.buffer().and_then(|config| match &config.buffer {
+                ScanoutBuffer::Swapchain(slot) => Some(slot),
+                _ => None,
+            });
 
-                if let Some(slot) = slot {
-                    self.swapchain.submitted(slot);
-                }
+            if let Some(slot) = slot {
+                self.swapchain.submitted(slot);
             }
         }
 
@@ -2966,17 +2967,15 @@ where
             .plane_buffer(self.surface.plane())
             .expect("We have a buffer for the primary plane")
             .buffer
+            && !frame_flags.contains(FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT_ANY)
+            && slot.format() != element_config.properties.format
         {
-            if !frame_flags.contains(FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT_ANY)
-                && slot.format() != element_config.properties.format
-            {
-                trace!(
-                    "failed to assign element {:?} to primary {:?}, format doesn't match",
-                    element.id(),
-                    self.surface.plane()
-                );
-                return Err(None);
-            }
+            trace!(
+                "failed to assign element {:?} to primary {:?}, format doesn't match",
+                element.id(),
+                self.surface.plane()
+            );
+            return Err(None);
         }
 
         let has_underlay = self
@@ -3634,47 +3633,47 @@ where
                     .iter()
                     .find(|i| i.properties == properties);
 
-                if let Some(matching_instance) = matching_instance {
-                    if current_plane_snapshot == matching_instance.active_planes {
-                        let previous_frame_state = self
-                            .pending_frame
-                            .as_ref()
-                            .map(|pending| &pending.frame)
-                            .unwrap_or(&self.current_frame);
+                if let Some(matching_instance) = matching_instance
+                    && current_plane_snapshot == matching_instance.active_planes
+                {
+                    let previous_frame_state = self
+                        .pending_frame
+                        .as_ref()
+                        .map(|pending| &pending.frame)
+                        .unwrap_or(&self.current_frame);
 
-                        // Note: we ignore the cursor plane here as this would result
-                        // in constant re-tests of cursor moves and we do not expect
-                        // that to influence the test state of our elements.
-                        // Adding or removing cursor can influence the other planes, but
-                        // is already covered in the active planes check.
-                        let primary_plane_changed = if current_plane_snapshot.primary {
-                            frame_state.plane_properties(self.surface.plane())
-                                != previous_frame_state.plane_properties(self.surface.plane())
-                        } else {
-                            false
-                        };
+                    // Note: we ignore the cursor plane here as this would result
+                    // in constant re-tests of cursor moves and we do not expect
+                    // that to influence the test state of our elements.
+                    // Adding or removing cursor can influence the other planes, but
+                    // is already covered in the active planes check.
+                    let primary_plane_changed = if current_plane_snapshot.primary {
+                        frame_state.plane_properties(self.surface.plane())
+                            != previous_frame_state.plane_properties(self.surface.plane())
+                    } else {
+                        false
+                    };
 
-                        let overlay_plane_changed =
-                            self.planes.overlay.iter().enumerate().any(|(index, plane)| {
-                                // we only want to test planes that are currently in use
-                                if current_plane_snapshot.overlay_bitmask & (1 << index) == 0 {
-                                    return false;
-                                }
+                    let overlay_plane_changed =
+                        self.planes.overlay.iter().enumerate().any(|(index, plane)| {
+                            // we only want to test planes that are currently in use
+                            if current_plane_snapshot.overlay_bitmask & (1 << index) == 0 {
+                                return false;
+                            }
 
-                                frame_state.plane_properties(plane.handle)
-                                    != previous_frame_state.plane_properties(plane.handle)
-                            });
+                            frame_state.plane_properties(plane.handle)
+                                != previous_frame_state.plane_properties(plane.handle)
+                        });
 
-                        if !(primary_plane_changed || overlay_plane_changed) {
-                            // we now know that nothing changed and we can assume any previously failed
-                            // test will again fail
-                            let instance_state = element_state
-                                .instances
-                                .iter_mut()
-                                .find(|i| i.properties == properties)
-                                .unwrap();
-                            instance_state.failed_planes = matching_instance.failed_planes;
-                        }
+                    if !(primary_plane_changed || overlay_plane_changed) {
+                        // we now know that nothing changed and we can assume any previously failed
+                        // test will again fail
+                        let instance_state = element_state
+                            .instances
+                            .iter_mut()
+                            .find(|i| i.properties == properties)
+                            .unwrap();
+                        instance_state.failed_planes = matching_instance.failed_planes;
                     }
                 }
             }

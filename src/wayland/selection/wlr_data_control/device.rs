@@ -46,19 +46,18 @@ where
         match request {
             zwlr_data_control_device_v1::Request::SetSelection { source, .. } => {
                 // Each source can only be used once.
-                if let Some(source) = source.as_ref() {
-                    if handler
+                if let Some(source) = source.as_ref()
+                    && handler
                         .data_control_state()
                         .used_sources
                         .insert(source.clone(), self.wl_seat.clone())
                         .is_some()
-                    {
-                        resource.post_error(
-                            zwlr_data_control_device_v1::Error::UsedSource,
-                            "selection source can be used only once.",
-                        );
-                        return;
-                    }
+                {
+                    resource.post_error(
+                        zwlr_data_control_device_v1::Error::UsedSource,
+                        "selection source can be used only once.",
+                    );
+                    return;
                 }
 
                 seat.user_data()
@@ -85,19 +84,18 @@ where
                 }
 
                 // Each source can only be used once.
-                if let Some(source) = source.as_ref() {
-                    if handler
+                if let Some(source) = source.as_ref()
+                    && handler
                         .data_control_state()
                         .used_sources
                         .insert(source.clone(), self.wl_seat.clone())
                         .is_some()
-                    {
-                        resource.post_error(
-                            zwlr_data_control_device_v1::Error::UsedSource,
-                            "selection source can be used only once.",
-                        );
-                        return;
-                    }
+                {
+                    resource.post_error(
+                        zwlr_data_control_device_v1::Error::UsedSource,
+                        "selection source can be used only once.",
+                    );
+                    return;
                 }
 
                 seat.user_data()
@@ -137,13 +135,13 @@ where
         _client: wayland_server::backend::ClientId,
         resource: &ZwlrDataControlDeviceV1,
     ) {
-        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
-            if let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>() {
-                seat_data.borrow_mut().retain_devices(|ndd| match ndd {
-                    SelectionDevice::WlrDataControl(ndd) => ndd != resource,
-                    _ => true,
-                });
-            }
+        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat)
+            && let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>()
+        {
+            seat_data.borrow_mut().retain_devices(|ndd| match ndd {
+                SelectionDevice::WlrDataControl(ndd) => ndd != resource,
+                _ => true,
+            });
         }
     }
 }

@@ -70,10 +70,10 @@ impl Drop for InnerBuffer {
     fn drop(&mut self) {
         self.buffer.release();
         #[cfg(feature = "backend_drm")]
-        if let Some(release_point) = &self.release_point {
-            if let Err(err) = release_point.signal() {
-                tracing::error!("Failed to signal syncobj release point: {}", err);
-            }
+        if let Some(release_point) = &self.release_point
+            && let Err(err) = release_point.signal()
+        {
+            tracing::error!("Failed to signal syncobj release point: {}", err);
         }
     }
 }
@@ -504,28 +504,28 @@ where
 
         let last_commit = data.renderer_seen.get(&context_id);
         let buffer_damage = data.damage_since(last_commit.copied());
-        if let Entry::Vacant(e) = data.textures.entry(context_id.clone()) {
-            if let Some(buffer) = data.buffer.as_ref() {
-                // There is no point in importing a single pixel buffer
-                if matches!(
-                    crate::backend::renderer::buffer_type(buffer),
-                    Some(crate::backend::renderer::BufferType::SinglePixel)
-                ) {
-                    return Ok(());
-                }
+        if let Entry::Vacant(e) = data.textures.entry(context_id.clone())
+            && let Some(buffer) = data.buffer.as_ref()
+        {
+            // There is no point in importing a single pixel buffer
+            if matches!(
+                crate::backend::renderer::buffer_type(buffer),
+                Some(crate::backend::renderer::BufferType::SinglePixel)
+            ) {
+                return Ok(());
+            }
 
-                match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
-                    Some(Ok(m)) => {
-                        e.insert(Box::new(m));
-                        data.renderer_seen.insert(context_id, data.current_commit());
-                    }
-                    Some(Err(err)) => {
-                        warn!("Error loading buffer: {}", err);
-                        return Err(err);
-                    }
-                    None => {
-                        error!("Unknown buffer format for: {:?}", buffer);
-                    }
+            match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                Some(Ok(m)) => {
+                    e.insert(Box::new(m));
+                    data.renderer_seen.insert(context_id, data.current_commit());
+                }
+                Some(Err(err)) => {
+                    warn!("Error loading buffer: {}", err);
+                    return Err(err);
+                }
+                None => {
+                    error!("Unknown buffer format for: {:?}", buffer);
                 }
             }
         }

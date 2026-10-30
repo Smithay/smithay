@@ -101,29 +101,28 @@ impl XWmDnd {
 
     pub fn window_destroyed<D>(&mut self, window: &X11Window, loop_handle: &LoopHandle<'_, D>) -> bool {
         let mut res = self.selection.window_destroyed(window, loop_handle);
-        if let Some(active_drag) = self.active_drag.as_ref() {
-            if active_drag.owner == *window
+        if let Some(active_drag) = self.active_drag.as_ref()
+            && (active_drag.owner == *window
                 || active_drag
                     .state
                     .lock()
                     .unwrap()
                     .source
                     .as_ref()
-                    .is_some_and(|w| w == window)
-            {
-                self.active_drag.take();
-                self.xdnd_active.store(false, Ordering::Release);
-                res = true;
-            }
+                    .is_some_and(|w| w == window))
+        {
+            self.active_drag.take();
+            self.xdnd_active.store(false, Ordering::Release);
+            res = true;
         }
         res
     }
 
     pub fn has_window(&self, window: &X11Window) -> bool {
-        if let Some(drag) = self.active_drag.as_ref() {
-            if drag.target == *window {
-                return true;
-            }
+        if let Some(drag) = self.active_drag.as_ref()
+            && drag.target == *window
+        {
+            return true;
         }
 
         self.selection.has_window(window)
@@ -912,19 +911,14 @@ fn get_proxy_window(
     if let Some(prop) = conn
         .get_property(false, window, atoms.XdndProxy, AtomEnum::WINDOW, 0, 1)?
         .reply_unchecked()?
+        && let Some(proxy) = prop.value32().and_then(|mut val| val.next())
+        && let Some(prop) = conn
+            .get_property(false, proxy, atoms.XdndProxy, AtomEnum::WINDOW, 0, 1)?
+            .reply_unchecked()?
+        && let Some(verify) = prop.value32().and_then(|mut val| val.next())
+        && proxy == verify
     {
-        if let Some(proxy) = prop.value32().and_then(|mut val| val.next()) {
-            if let Some(prop) = conn
-                .get_property(false, proxy, atoms.XdndProxy, AtomEnum::WINDOW, 0, 1)?
-                .reply_unchecked()?
-            {
-                if let Some(verify) = prop.value32().and_then(|mut val| val.next()) {
-                    if proxy == verify {
-                        return Ok(Some(proxy));
-                    }
-                }
-            }
-        }
+        return Ok(Some(proxy));
     }
 
     Ok(None)

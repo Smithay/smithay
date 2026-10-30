@@ -747,22 +747,22 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
         }
         self.grab = GrabStatus::None;
 
-        if let Some(location) = self.location {
-            if restore_focus {
-                let focus = self.pending_focus.clone();
+        if let Some(location) = self.location
+            && restore_focus
+        {
+            let focus = self.pending_focus.clone();
 
-                self.motion(
-                    data,
-                    seat,
-                    descriptor,
-                    focus,
-                    &MotionEvent {
-                        location,
-                        serial,
-                        time,
-                    },
-                );
-            }
+            self.motion(
+                data,
+                seat,
+                descriptor,
+                focus,
+                &MotionEvent {
+                    location,
+                    serial,
+                    time,
+                },
+            );
         }
     }
 
@@ -776,22 +776,22 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
                 panic!("Accessed a tablet tool grab from within a tablet tool grab access.")
             }
             GrabStatus::Active(_, ref mut handler) => {
-                if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
-                        handler.unset(data);
-                        self.grab = GrabStatus::None;
-                        let mut default_grab = (self.default_grab)();
-                        f(
-                            data,
-                            &mut TabletToolInnerHandle {
-                                inner: self,
-                                descriptor,
-                                seat,
-                            },
-                            &mut *default_grab,
-                        );
-                        return;
-                    }
+                if let Some((ref focus, _)) = handler.start_data().focus
+                    && !focus.alive()
+                {
+                    handler.unset(data);
+                    self.grab = GrabStatus::None;
+                    let mut default_grab = (self.default_grab)();
+                    f(
+                        data,
+                        &mut TabletToolInnerHandle {
+                            inner: self,
+                            descriptor,
+                            seat,
+                        },
+                        &mut *default_grab,
+                    );
+                    return;
                 }
 
                 f(
@@ -1013,21 +1013,21 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
     }
 
     fn up(&mut self, data: &mut D, seat: &Seat<D>, descriptor: &TabletToolDescriptor, event: &UpEvent) {
-        if self.tip_down {
-            if let Some((focused, _)) = self.focus.as_mut() {
-                // Compat with other compositors, more on this in https://github.com/Smithay/smithay/pull/1851
-                // tldr: Spec-wise there is no reason to send this, but some clients depend on this
-                focused.axis(
-                    seat,
-                    data,
-                    descriptor,
-                    AxisFrame {
-                        pressure: Some(0.0),
-                        ..Default::default()
-                    },
-                );
-                focused.up(seat, data, descriptor, event);
-            }
+        if self.tip_down
+            && let Some((focused, _)) = self.focus.as_mut()
+        {
+            // Compat with other compositors, more on this in https://github.com/Smithay/smithay/pull/1851
+            // tldr: Spec-wise there is no reason to send this, but some clients depend on this
+            focused.axis(
+                seat,
+                data,
+                descriptor,
+                AxisFrame {
+                    pressure: Some(0.0),
+                    ..Default::default()
+                },
+            );
+            focused.up(seat, data, descriptor, event);
         }
 
         self.tip_down = false;

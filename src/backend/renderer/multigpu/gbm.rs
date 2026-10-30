@@ -327,10 +327,10 @@ where
                 texture,
                 Some(damage),
             );
-            if res.is_ok() {
-                if let Some(surface) = surface {
-                    surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
-                }
+            if res.is_ok()
+                && let Some(surface) = surface
+            {
+                surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
             }
             return res;
         }

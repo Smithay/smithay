@@ -109,10 +109,9 @@ impl State {
                     if id == crtc_prop {
                         if let property::Value::CRTC(Some(conn_crtc)) =
                             crtc_prop_info.value_type().convert_value(val)
+                            && conn_crtc == crtc
                         {
-                            if conn_crtc == crtc {
-                                current_connectors.insert(*conn);
-                            }
+                            current_connectors.insert(*conn);
                         }
                         break;
                     }
@@ -810,10 +809,10 @@ impl AtomicDrmSurface {
 
                 return Err(Error::TestFailed(self.crtc));
             } else {
-                if current.mode != pending.mode {
-                    if let Err(err) = self.fd.destroy_property_blob(current.blob.into()) {
-                        warn!("Failed to destroy old mode property blob: {}", err);
-                    }
+                if current.mode != pending.mode
+                    && let Err(err) = self.fd.destroy_property_blob(current.blob.into())
+                {
+                    warn!("Failed to destroy old mode property blob: {}", err);
                 }
 
                 // new config

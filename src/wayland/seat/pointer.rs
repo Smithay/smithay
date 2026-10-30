@@ -77,17 +77,16 @@ impl WlPointerHandle {
         let data = pointer.data::<PointerUserData<D>>().unwrap();
         if let Some(arc) = data.arc.upgrade() {
             let guard = arc.inner.lock().unwrap();
-            if let Some((focus, location)) = &guard.focus {
-                if focus.same_client_as(&pointer.id()) {
-                    if let Some(surface) = focus.wl_surface() {
-                        let serial = self.last_enter.lock().unwrap().unwrap();
-                        let client_scale = data.client_scale.load(Ordering::Acquire);
-                        let location = (guard.location - *location).to_client(client_scale);
-                        pointer.enter(serial.into(), &surface, location.x, location.y);
-                        if pointer.version() >= 5 {
-                            pointer.frame();
-                        }
-                    }
+            if let Some((focus, location)) = &guard.focus
+                && focus.same_client_as(&pointer.id())
+                && let Some(surface) = focus.wl_surface()
+            {
+                let serial = self.last_enter.lock().unwrap().unwrap();
+                let client_scale = data.client_scale.load(Ordering::Acquire);
+                let location = (guard.location - *location).to_client(client_scale);
+                pointer.enter(serial.into(), &surface, location.x, location.y);
+                if pointer.version() >= 5 {
+                    pointer.frame();
                 }
             }
         }

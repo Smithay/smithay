@@ -270,10 +270,10 @@ pub fn primary_gpu<S: AsRef<str>>(seat: S) -> io::Result<Option<PathBuf>> {
     let gpu_devices = gpus_for_seat(seat)?;
 
     fn has_boot_vga(device: &Device) -> bool {
-        if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
-            if let Some(id) = pci.attribute_value("boot_vga") {
-                return id == "1";
-            }
+        if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci"))
+            && let Some(id) = pci.attribute_value("boot_vga")
+        {
+            return id == "1";
         }
         false
     }

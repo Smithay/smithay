@@ -75,20 +75,20 @@ where
         if kbd.version() >= 4 {
             kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
         }
-        if let Some((focused, serial)) = guard.focus.as_ref() {
-            if focused.same_client_as(&kbd.id()) {
-                let serialized = guard.mods_state.serialized;
-                let keys = serialize_pressed_keys(guard.pressed_keys.iter().copied());
-                kbd.enter((*serial).into(), &focused.wl_surface().unwrap(), keys);
-                // Modifiers must be send after enter event.
-                kbd.modifiers(
-                    (*serial).into(),
-                    serialized.depressed,
-                    serialized.latched,
-                    serialized.locked,
-                    serialized.layout_effective,
-                );
-            }
+        if let Some((focused, serial)) = guard.focus.as_ref()
+            && focused.same_client_as(&kbd.id())
+        {
+            let serialized = guard.mods_state.serialized;
+            let keys = serialize_pressed_keys(guard.pressed_keys.iter().copied());
+            kbd.enter((*serial).into(), &focused.wl_surface().unwrap(), keys);
+            // Modifiers must be send after enter event.
+            kbd.modifiers(
+                (*serial).into(),
+                serialized.depressed,
+                serialized.latched,
+                serialized.locked,
+                serialized.layout_effective,
+            );
         }
         self.arc.known_kbds.lock().unwrap().push(kbd.downgrade());
     }

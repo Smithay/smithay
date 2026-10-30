@@ -292,10 +292,11 @@ fn handle_dnd<D, S>(
             }
         }
         Request::Destroy => {
-            if data.dropped && !data.finished {
-                if let Some(source) = source.as_ref() {
-                    source.cancel();
-                }
+            if data.dropped
+                && !data.finished
+                && let Some(source) = source.as_ref()
+            {
+                source.cancel();
             }
         }
         Request::Finish => {
@@ -512,19 +513,18 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             .unwrap()
             .borrow();
 
-        if let Some(offer) = offer {
-            if let Some(new_metadata) = offer.source.metadata() {
-                if offer.last_source_actions != new_metadata.dnd_actions {
-                    for wl_offer in &offer.wl_offers {
-                        if wl_offer.version() >= wl_data_offer::EVT_SOURCE_ACTIONS_SINCE {
-                            wl_offer.source_actions(DndAction::convert_slice(&new_metadata.dnd_actions));
-                        }
-                    }
-
-                    offer.last_source_actions = new_metadata.dnd_actions;
+        if let Some(offer) = offer
+            && let Some(new_metadata) = offer.source.metadata()
+            && offer.last_source_actions != new_metadata.dnd_actions
+        {
+            for wl_offer in &offer.wl_offers {
+                if wl_offer.version() >= wl_data_offer::EVT_SOURCE_ACTIONS_SINCE {
+                    wl_offer.source_actions(DndAction::convert_slice(&new_metadata.dnd_actions));
                 }
-            };
-        }
+            }
+
+            offer.last_source_actions = new_metadata.dnd_actions;
+        };
 
         for device in seat_data.known_data_devices() {
             if device.id().same_client_as(&self.id()) {
@@ -553,12 +553,11 @@ impl<D: SeatHandler + DataDeviceHandler + 'static> DndFocus<D> for WlSurface {
             .unwrap()
             .borrow();
         for device in seat_data.known_data_devices() {
-            if let Some(ref offer) = offer {
-                if device.version() >= wl_data_offer::REQ_SET_ACTIONS_SINCE
-                    && offer.state.lock().unwrap().chosen_action.is_empty()
-                {
-                    continue;
-                }
+            if let Some(ref offer) = offer
+                && device.version() >= wl_data_offer::REQ_SET_ACTIONS_SINCE
+                && offer.state.lock().unwrap().chosen_action.is_empty()
+            {
+                continue;
             }
             if device.id().same_client_as(&self.id()) {
                 device.drop();

@@ -46,19 +46,24 @@ where
 }
 
 pub fn fill_with_gradient_bytes(canvas: &mut [u8], shift: u32, width: u32, height: u32) {
-    canvas.chunks_exact_mut(4).enumerate().for_each(|(index, chunk)| {
-        let x = ((index + shift as usize) % width as usize) as u32;
-        let y = (index / width as usize) as u32;
+    canvas
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .enumerate()
+        .for_each(|(index, chunk)| {
+            let x = ((index + shift as usize) % width as usize) as u32;
+            let y = (index / width as usize) as u32;
 
-        let a = 0xFF;
-        let r = u32::min(((width - x) * 0xFF) / width, ((height - y) * 0xFF) / height);
-        let g = u32::min((x * 0xFF) / width, ((height - y) * 0xFF) / height);
-        let b = u32::min(((width - x) * 0xFF) / width, (y * 0xFF) / height);
-        let color = (a << 24) + (r << 16) + (g << 8) + b;
+            let a = 0xFF;
+            let r = u32::min(((width - x) * 0xFF) / width, ((height - y) * 0xFF) / height);
+            let g = u32::min((x * 0xFF) / width, ((height - y) * 0xFF) / height);
+            let b = u32::min(((width - x) * 0xFF) / width, (y * 0xFF) / height);
+            let color = (a << 24) + (r << 16) + (g << 8) + b;
 
-        let array: &mut [u8; 4] = chunk.try_into().unwrap();
-        *array = color.to_le_bytes();
-    });
+            let array: &mut [u8; 4] = chunk.try_into().unwrap();
+            *array = color.to_le_bytes();
+        });
 }
 
 pub fn draw<D>(

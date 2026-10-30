@@ -901,17 +901,17 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
             GrabStatus::Borrowed => panic!("Accessed a pointer grab from within a pointer grab access."),
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
-                        handler.unset(data);
-                        self.grab = GrabStatus::None;
-                        f(
-                            data,
-                            &mut PointerInnerHandle { inner: self, seat },
-                            &mut DefaultGrab,
-                        );
-                        return;
-                    }
+                if let Some((ref focus, _)) = handler.start_data().focus
+                    && !focus.alive()
+                {
+                    handler.unset(data);
+                    self.grab = GrabStatus::None;
+                    f(
+                        data,
+                        &mut PointerInnerHandle { inner: self, seat },
+                        &mut DefaultGrab,
+                    );
+                    return;
                 }
                 f(
                     data,

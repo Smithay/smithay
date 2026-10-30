@@ -780,10 +780,10 @@ impl DmabufState {
     /// It is highly recommended you disable the global before destroying it and ensure all child objects have
     /// been destroyed.
     pub fn destroy_global<D: 'static>(&mut self, display: &DisplayHandle, global: DmabufGlobal) {
-        if global_id::remove(global.id) {
-            if let Some(global_state) = self.globals.remove(&global.id) {
-                display.remove_global::<D>(global_state.id);
-            }
+        if global_id::remove(global.id)
+            && let Some(global_state) = self.globals.remove(&global.id)
+        {
+            display.remove_global::<D>(global_state.id);
         }
     }
 }

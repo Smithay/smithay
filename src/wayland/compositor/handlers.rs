@@ -123,18 +123,17 @@ impl Cacheable for SurfaceAttributes {
         }
     }
     fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
-        if self.buffer.is_some() {
-            if let Some(BufferAssignment::NewBuffer(buffer)) =
+        if self.buffer.is_some()
+            && let Some(BufferAssignment::NewBuffer(buffer)) =
                 std::mem::replace(&mut into.buffer, self.buffer)
-            {
-                let new_buffer = into.buffer.as_ref().and_then(|b| match b {
-                    BufferAssignment::Removed => None,
-                    BufferAssignment::NewBuffer(buffer) => Some(buffer),
-                });
+        {
+            let new_buffer = into.buffer.as_ref().and_then(|b| match b {
+                BufferAssignment::Removed => None,
+                BufferAssignment::NewBuffer(buffer) => Some(buffer),
+            });
 
-                if Some(&buffer) != new_buffer {
-                    buffer.release();
-                }
+            if Some(&buffer) != new_buffer {
+                buffer.release();
             }
         }
         into.buffer_delta = self.buffer_delta;

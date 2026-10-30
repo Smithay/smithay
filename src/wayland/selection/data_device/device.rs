@@ -77,70 +77,46 @@ where
                 }
 
                 let serial = Serial::from(serial);
-                if let Some(pointer) = seat.get_pointer() {
-                    if pointer.has_grab(serial) {
-                        if let Some(ref icon) = icon {
-                            if compositor::give_role(icon, DND_ICON_ROLE).is_err() {
-                                resource.post_error(
-                                    wl_data_device::Error::Role,
-                                    "Given surface already has an other role",
-                                );
-                                return;
-                            }
-                        }
-                        // The StartDrag is in response to a pointer implicit grab, all is good
-                        if let Some(source) = source {
-                            handler.dnd_requested(
-                                source,
-                                icon.clone(),
-                                seat.clone(),
-                                serial,
-                                GrabType::Pointer,
-                            );
-                        } else {
-                            handler.dnd_requested(
-                                origin,
-                                icon.clone(),
-                                seat.clone(),
-                                serial,
-                                GrabType::Pointer,
-                            );
-                        }
+                if let Some(pointer) = seat.get_pointer()
+                    && pointer.has_grab(serial)
+                {
+                    if let Some(ref icon) = icon
+                        && compositor::give_role(icon, DND_ICON_ROLE).is_err()
+                    {
+                        resource.post_error(
+                            wl_data_device::Error::Role,
+                            "Given surface already has an other role",
+                        );
+                        return;
+                    }
+                    // The StartDrag is in response to a pointer implicit grab, all is good
+                    if let Some(source) = source {
+                        handler.dnd_requested(source, icon.clone(), seat.clone(), serial, GrabType::Pointer);
+                    } else {
+                        handler.dnd_requested(origin, icon.clone(), seat.clone(), serial, GrabType::Pointer);
+                    }
 
-                        return;
-                    }
+                    return;
                 }
-                if let Some(touch) = seat.get_touch() {
-                    if touch.has_grab(serial) {
-                        if let Some(ref icon) = icon {
-                            if compositor::give_role(icon, DND_ICON_ROLE).is_err() {
-                                resource.post_error(
-                                    wl_data_device::Error::Role,
-                                    "Given surface already has an other role",
-                                );
-                                return;
-                            }
-                        }
-                        // The StartDrag is in response to a touch implicit grab, all is good
-                        if let Some(source) = source {
-                            handler.dnd_requested(
-                                source,
-                                icon.clone(),
-                                seat.clone(),
-                                serial,
-                                GrabType::Touch,
-                            );
-                        } else {
-                            handler.dnd_requested(
-                                origin,
-                                icon.clone(),
-                                seat.clone(),
-                                serial,
-                                GrabType::Touch,
-                            );
-                        }
+                if let Some(touch) = seat.get_touch()
+                    && touch.has_grab(serial)
+                {
+                    if let Some(ref icon) = icon
+                        && compositor::give_role(icon, DND_ICON_ROLE).is_err()
+                    {
+                        resource.post_error(
+                            wl_data_device::Error::Role,
+                            "Given surface already has an other role",
+                        );
                         return;
                     }
+                    // The StartDrag is in response to a touch implicit grab, all is good
+                    if let Some(source) = source {
+                        handler.dnd_requested(source, icon.clone(), seat.clone(), serial, GrabType::Touch);
+                    } else {
+                        handler.dnd_requested(origin, icon.clone(), seat.clone(), serial, GrabType::Touch);
+                    }
+                    return;
                 }
                 debug!(serial = ?serial, client = ?client, "denying drag from client without implicit grab");
             }
@@ -197,13 +173,13 @@ where
     }
 
     fn destroyed(&self, _state: &mut D, _client: wayland_server::backend::ClientId, resource: &WlDataDevice) {
-        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
-            if let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>() {
-                seat_data.borrow_mut().retain_devices(|ndd| match ndd {
-                    SelectionDevice::DataDevice(ndd) => ndd != resource,
-                    _ => true,
-                });
-            }
+        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat)
+            && let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>()
+        {
+            seat_data.borrow_mut().retain_devices(|ndd| match ndd {
+                SelectionDevice::DataDevice(ndd) => ndd != resource,
+                _ => true,
+            });
         }
     }
 }

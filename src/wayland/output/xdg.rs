@@ -126,16 +126,16 @@ impl XdgOutput {
             let client_scale = data.client_scale.load(Ordering::Acquire);
             let scale_changed = client_scale != data.last_client_scale.swap(client_scale, Ordering::AcqRel);
 
-            if new_mode.is_some() || new_scale.is_some() || new_transform.is_some() || scale_changed {
-                if let Some(size) = output.physical_size {
-                    let logical_size = size
-                        .to_f64()
-                        .to_logical(output.scale.fractional_scale())
-                        .to_client(client_scale)
-                        .to_i32_round();
-                    let transformed_size = output.transform.transform_size(logical_size);
-                    instance.logical_size(transformed_size.w, transformed_size.h);
-                }
+            if (new_mode.is_some() || new_scale.is_some() || new_transform.is_some() || scale_changed)
+                && let Some(size) = output.physical_size
+            {
+                let logical_size = size
+                    .to_f64()
+                    .to_logical(output.scale.fractional_scale())
+                    .to_client(client_scale)
+                    .to_i32_round();
+                let transformed_size = output.transform.transform_size(logical_size);
+                instance.logical_size(transformed_size.w, transformed_size.h);
             }
 
             if new_location.is_some() || scale_changed {

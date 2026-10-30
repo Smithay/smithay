@@ -1539,16 +1539,14 @@ impl ToplevelSurface {
                 )
             });
 
-        if decoration_mode_changed {
-            if let Some(decoration) = &decoration {
-                self::decoration::send_decoration_configure(
-                    decoration,
-                    configure
-                        .state
-                        .decoration_mode
-                        .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
-                );
-            }
+        if decoration_mode_changed && let Some(decoration) = &decoration {
+            self::decoration::send_decoration_configure(
+                decoration,
+                configure
+                    .state
+                    .decoration_mode
+                    .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
+            );
         }
 
         let serial = configure.serial;

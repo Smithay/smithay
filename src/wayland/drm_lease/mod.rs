@@ -444,21 +444,20 @@ impl DrmLeaseState {
 
         let mut instances = Vec::new();
         for instance in &self.known_lease_devices {
-            if let Ok(client) = self.dh.get_client(instance.id()) {
-                if let Ok(lease_connector) = client
+            if let Ok(client) = self.dh.get_client(instance.id())
+                && let Ok(lease_connector) = client
                     .create_resource::<wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1, _, D>(
                         &self.dh,
                         1,
                         DrmLeaseConnectorData { node: self.node },
                     )
-                {
-                    instance.connector(&lease_connector);
-                    lease_connector.name(name.clone());
-                    lease_connector.description(description.clone());
-                    lease_connector.connector_id(connector.into());
-                    instances.push(lease_connector);
-                    instance.done();
-                }
+            {
+                instance.connector(&lease_connector);
+                lease_connector.name(name.clone());
+                lease_connector.description(description.clone());
+                lease_connector.connector_id(connector.into());
+                instances.push(lease_connector);
+                instance.done();
             }
         }
 
@@ -486,10 +485,10 @@ impl DrmLeaseState {
             }
         }
         for instance in &self.known_lease_devices {
-            if let Some(client) = instance.client() {
-                if clients.contains(&client.id()) {
-                    instance.done();
-                }
+            if let Some(client) = instance.client()
+                && clients.contains(&client.id())
+            {
+                instance.done();
             }
         }
 

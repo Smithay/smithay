@@ -37,30 +37,27 @@ where
         let guard = self.arc.inner.lock().unwrap();
         let mut sent = false;
         for (slot, state) in &guard.focus {
-            if let Some((focus, location)) = &state.focus {
-                if focus.same_client_as(&touch.id()) {
-                    if let Some(surface) = focus.wl_surface() {
-                        if let Some(arc) = data.arc.upgrade() {
-                            let serial = arc.last_down.lock().unwrap()[slot];
-                            let time =
-                                *time.get_or_insert_with(|| Clock::<Monotonic>::new().now().as_millis());
-                            let client_scale = data.client_scale.load(Ordering::Acquire);
-                            let location = (state.location - *location).to_client(client_scale);
+            if let Some((focus, location)) = &state.focus
+                && focus.same_client_as(&touch.id())
+                && let Some(surface) = focus.wl_surface()
+                && let Some(arc) = data.arc.upgrade()
+            {
+                let serial = arc.last_down.lock().unwrap()[slot];
+                let time = *time.get_or_insert_with(|| Clock::<Monotonic>::new().now().as_millis());
+                let client_scale = data.client_scale.load(Ordering::Acquire);
+                let location = (state.location - *location).to_client(client_scale);
 
-                            touch.down(
-                                serial.into(),
-                                time,
-                                &surface,
-                                (*slot).into(),
-                                location.x,
-                                location.y,
-                            );
-                            sent = true;
+                touch.down(
+                    serial.into(),
+                    time,
+                    &surface,
+                    (*slot).into(),
+                    location.x,
+                    location.y,
+                );
+                sent = true;
 
-                            // TODO: send shape, orientation.
-                        }
-                    }
-                }
+                // TODO: send shape, orientation.
             }
         }
 
