@@ -23,10 +23,10 @@ impl PartialEq for InternalDrmDeviceFd {
 impl Drop for InternalDrmDeviceFd {
     fn drop(&mut self) {
         info!("Dropping device: {:?}", self.fd.dev_path());
-        if self.privileged {
-            if let Err(err) = self.release_master_lock() {
-                error!("Failed to drop drm master state. Error: {}", err);
-            }
+        if self.privileged
+            && let Err(err) = self.release_master_lock()
+        {
+            error!("Failed to drop drm master state. Error: {}", err);
         }
     }
 }

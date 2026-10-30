@@ -94,11 +94,11 @@ impl UserData {
 impl Drop for UserData {
     fn drop(&mut self) {
         // only drop non-Send user data if we are on the right thread, leak it otherwise
-        if let Some(&mut UserDataInner::NonThreadSafe(ref mut val, threadid)) = self.inner.get_mut() {
-            if threadid == current_thread_id() {
-                unsafe {
-                    ManuallyDrop::drop(&mut **val);
-                }
+        if let Some(&mut UserDataInner::NonThreadSafe(ref mut val, threadid)) = self.inner.get_mut()
+            && threadid == current_thread_id()
+        {
+            unsafe {
+                ManuallyDrop::drop(&mut **val);
             }
         }
     }

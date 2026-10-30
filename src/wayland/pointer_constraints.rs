@@ -374,10 +374,10 @@ fn remove_constraint<D: SeatHandler + PointerConstraintsHandler + 'static>(
     pointer: &PointerHandle<D>,
 ) {
     let is_removed = with_constraint_data::<D, _, _>(surface, |data| {
-        if let Some(data) = data {
-            if let Some(constraint) = data.constraints.remove(pointer) {
-                return Some(constraint);
-            }
+        if let Some(data) = data
+            && let Some(constraint) = data.constraints.remove(pointer)
+        {
+            return Some(constraint);
         }
         None
     });

@@ -109,13 +109,13 @@ where
         _client: wayland_server::backend::ClientId,
         resource: &PrimaryDevice,
     ) {
-        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
-            if let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>() {
-                seat_data.borrow_mut().retain_devices(|ndd| match ndd {
-                    SelectionDevice::Primary(ndd) => ndd != resource,
-                    _ => true,
-                });
-            }
+        if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat)
+            && let Some(seat_data) = seat.user_data().get::<RefCell<SeatData<D::SelectionUserData>>>()
+        {
+            seat_data.borrow_mut().retain_devices(|ndd| match ndd {
+                SelectionDevice::Primary(ndd) => ndd != resource,
+                _ => true,
+            });
         }
     }
 }

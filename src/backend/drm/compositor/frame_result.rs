@@ -218,10 +218,10 @@ where
 
         let mut elements: Vec<FrameResultDamageElement<'_, '_, E, B>> =
             Vec::with_capacity(usize::from(self.cursor_element.is_some()) + self.overlay_elements.len() + 1);
-        if let Some(cursor) = self.cursor_element {
-            if !filter_ids.contains(cursor.id()) {
-                elements.push(FrameResultDamageElement::Element(cursor));
-            }
+        if let Some(cursor) = self.cursor_element
+            && !filter_ids.contains(cursor.id())
+        {
+            elements.push(FrameResultDamageElement::Element(cursor));
         }
 
         elements.extend(
@@ -294,11 +294,11 @@ where
         let mut elements_to_render: Vec<&'a E> =
             Vec::with_capacity(usize::from(self.cursor_element.is_some()) + self.overlay_elements.len() + 1);
 
-        if let Some(cursor_element) = self.cursor_element.as_ref() {
-            if !filter_ids.contains(cursor_element.id()) {
-                elements_to_render.push(*cursor_element);
-                opaque_regions.extend(cursor_element.opaque_regions(scale));
-            }
+        if let Some(cursor_element) = self.cursor_element.as_ref()
+            && !filter_ids.contains(cursor_element.id())
+        {
+            elements_to_render.push(*cursor_element);
+            opaque_regions.extend(cursor_element.opaque_regions(scale));
         }
 
         for element in self

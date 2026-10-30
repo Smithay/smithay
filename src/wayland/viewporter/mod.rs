@@ -330,13 +330,12 @@ fn viewport_pre_commit_hook<D: 'static>(
             let src_size = viewport_state.src.map(|src| src.size);
             if viewport_state.dst.is_none()
                 && src_size != src_size.map(|s| Size::from((s.w as i32, s.h as i32)).to_f64())
+                && let Ok(viewport) = viewport.0.upgrade()
             {
-                if let Ok(viewport) = viewport.0.upgrade() {
-                    viewport.post_error(
-                        wp_viewport::Error::BadSize,
-                        "destination size is not integer".to_string(),
-                    );
-                }
+                viewport.post_error(
+                    wp_viewport::Error::BadSize,
+                    "destination size is not integer".to_string(),
+                );
             }
         }
     });
@@ -364,16 +363,14 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
         let buffer_rect = Rectangle::from_size(buffer_size.to_f64());
         let src = state.src.unwrap_or(buffer_rect);
         let valid = buffer_rect.contains_rect(src);
-        if !valid {
-            if let Ok(viewport) = viewport.0.upgrade() {
-                viewport.post_error(
+        if !valid && let Ok(viewport) = viewport.0.upgrade() {
+            viewport.post_error(
                     wp_viewport::Error::OutOfBuffer,
                     format!(
                         "source rectangle x={},y={},w={},h={} extends outside of the content area x={},y={},w={},h={}", 
                         src.loc.x, src.loc.y, src.size.w, src.size.h,
                         buffer_rect.loc.x, buffer_rect.loc.y, buffer_rect.size.w, buffer_rect.size.h),
                 );
-            }
         }
         valid
     } else {

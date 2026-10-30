@@ -1226,12 +1226,12 @@ impl EGLBufferReader {
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl Drop for EGLBufferReader {
     fn drop(&mut self) {
-        if let Some(wayland) = self.wayland.take().and_then(|x| Arc::try_unwrap(x).ok()) {
-            if !wayland.is_null() {
-                unsafe {
-                    // ignore errors on drop
-                    ffi::egl::UnbindWaylandDisplayWL(**self.display, wayland as _);
-                }
+        if let Some(wayland) = self.wayland.take().and_then(|x| Arc::try_unwrap(x).ok())
+            && !wayland.is_null()
+        {
+            unsafe {
+                // ignore errors on drop
+                ffi::egl::UnbindWaylandDisplayWL(**self.display, wayland as _);
             }
         }
     }

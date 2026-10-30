@@ -507,14 +507,14 @@ impl LayerSurface {
                 return;
             }
 
-            if let Some(edge) = pending.exclusive_edge {
-                if !pending.anchor.contains(edge) {
-                    role.surface.post_error(
-                        zwlr_layer_surface_v1::Error::InvalidExclusiveEdge,
-                        "exclusive edge is not an anchor",
-                    );
-                    return;
-                }
+            if let Some(edge) = pending.exclusive_edge
+                && !pending.anchor.contains(edge)
+            {
+                role.surface.post_error(
+                    zwlr_layer_surface_v1::Error::InvalidExclusiveEdge,
+                    "exclusive edge is not an anchor",
+                );
+                return;
             }
 
             // The presence of last_acked always follows the buffer assignment because the

@@ -108,10 +108,10 @@ impl Cacheable for DrmSyncobjCachedState {
 
     fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
         if self.acquire_point.is_some() && self.release_point.is_some() {
-            if let Some(release_point) = &into.release_point {
-                if let Err(err) = release_point.signal() {
-                    tracing::error!("Failed to signal syncobj release point: {}", err);
-                }
+            if let Some(release_point) = &into.release_point
+                && let Err(err) = release_point.signal()
+            {
+                tracing::error!("Failed to signal syncobj release point: {}", err);
             }
             into.acquire_point = self.acquire_point;
             into.release_point = self.release_point;
@@ -235,45 +235,44 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
         if let Some(data) = states
             .data_map
             .get::<RefCell<Option<WpLinuxDrmSyncobjSurfaceV1>>>()
+            && let Some(syncobj_surface) = data.borrow().as_ref()
         {
-            if let Some(syncobj_surface) = data.borrow().as_ref() {
-                let mut cached = states.cached_state.get::<DrmSyncobjCachedState>();
-                let pending = cached.pending();
-                if pending.acquire_point.is_some() && new_buffer.is_none() {
+            let mut cached = states.cached_state.get::<DrmSyncobjCachedState>();
+            let pending = cached.pending();
+            if pending.acquire_point.is_some() && new_buffer.is_none() {
+                syncobj_surface.post_error(
+                    wp_linux_drm_syncobj_surface_v1::Error::NoBuffer,
+                    "acquire point without buffer".to_string(),
+                );
+            } else if pending.acquire_point.is_some() && pending.release_point.is_none() {
+                syncobj_surface.post_error(
+                    wp_linux_drm_syncobj_surface_v1::Error::NoReleasePoint,
+                    "acquire point without release point".to_string(),
+                );
+            } else if pending.acquire_point.is_none() && pending.release_point.is_some() {
+                syncobj_surface.post_error(
+                    wp_linux_drm_syncobj_surface_v1::Error::NoAcquirePoint,
+                    "release point without acquire point".to_string(),
+                );
+            } else if let (Some(acquire), Some(release)) =
+                (pending.acquire_point.as_ref(), pending.release_point.as_ref())
+            {
+                if acquire.timeline == release.timeline && release.point <= acquire.point {
                     syncobj_surface.post_error(
-                        wp_linux_drm_syncobj_surface_v1::Error::NoBuffer,
-                        "acquire point without buffer".to_string(),
+                        wp_linux_drm_syncobj_surface_v1::Error::ConflictingPoints,
+                        format!(
+                            "release point {} is not greater than acquire point {}",
+                            release.point, acquire.point
+                        ),
                     );
-                } else if pending.acquire_point.is_some() && pending.release_point.is_none() {
-                    syncobj_surface.post_error(
-                        wp_linux_drm_syncobj_surface_v1::Error::NoReleasePoint,
-                        "acquire point without release point".to_string(),
-                    );
-                } else if pending.acquire_point.is_none() && pending.release_point.is_some() {
-                    syncobj_surface.post_error(
-                        wp_linux_drm_syncobj_surface_v1::Error::NoAcquirePoint,
-                        "release point without acquire point".to_string(),
-                    );
-                } else if let (Some(acquire), Some(release)) =
-                    (pending.acquire_point.as_ref(), pending.release_point.as_ref())
+                }
+                if let Some(buffer) = new_buffer
+                    && get_dmabuf(buffer).is_err()
                 {
-                    if acquire.timeline == release.timeline && release.point <= acquire.point {
-                        syncobj_surface.post_error(
-                            wp_linux_drm_syncobj_surface_v1::Error::ConflictingPoints,
-                            format!(
-                                "release point {} is not greater than acquire point {}",
-                                release.point, acquire.point
-                            ),
-                        );
-                    }
-                    if let Some(buffer) = new_buffer {
-                        if get_dmabuf(buffer).is_err() {
-                            syncobj_surface.post_error(
-                                wp_linux_drm_syncobj_surface_v1::Error::UnsupportedBuffer,
-                                "sync points with non-dmabuf buffer".to_string(),
-                            );
-                        }
-                    }
+                    syncobj_surface.post_error(
+                        wp_linux_drm_syncobj_surface_v1::Error::UnsupportedBuffer,
+                        "sync points with non-dmabuf buffer".to_string(),
+                    );
                 }
             }
         }
@@ -283,15 +282,15 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
 fn destruction_hook<D: DrmSyncobjHandler>(_data: &mut D, surface: &WlSurface) {
     compositor::with_states(surface, |states| {
         let mut cached = states.cached_state.get::<DrmSyncobjCachedState>();
-        if let Some(release_point) = &cached.pending().release_point {
-            if let Err(err) = release_point.signal() {
-                tracing::error!("Failed to signal syncobj release point: {}", err);
-            }
+        if let Some(release_point) = &cached.pending().release_point
+            && let Err(err) = release_point.signal()
+        {
+            tracing::error!("Failed to signal syncobj release point: {}", err);
         }
-        if let Some(release_point) = &cached.current().release_point {
-            if let Err(err) = release_point.signal() {
-                tracing::error!("Failed to signal syncobj release point: {}", err);
-            }
+        if let Some(release_point) = &cached.current().release_point
+            && let Err(err) = release_point.signal()
+        {
+            tracing::error!("Failed to signal syncobj release point: {}", err);
         }
     });
 }
@@ -413,10 +412,10 @@ where
                         // be cleared.
                         let mut cached = states.cached_state.get::<DrmSyncobjCachedState>();
                         cached.pending().acquire_point = None;
-                        if let Some(release_point) = cached.pending().release_point.take() {
-                            if let Err(err) = release_point.signal() {
-                                tracing::error!("Failed to signal syncobj release point: {}", err);
-                            }
+                        if let Some(release_point) = cached.pending().release_point.take()
+                            && let Err(err) = release_point.signal()
+                        {
+                            tracing::error!("Failed to signal syncobj release point: {}", err);
                         }
                     });
                 }

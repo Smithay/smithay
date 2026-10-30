@@ -219,16 +219,15 @@ where
 
                     exported_state.requested_child = Some((child.clone(), resource.clone()));
 
-                    if changed {
-                        if let Some(toplevel) = state
+                    if changed
+                        && let Some(toplevel) = state
                             .xdg_shell_state()
                             .toplevel_surfaces()
                             .iter()
                             .find(|toplevel| *toplevel.wl_surface() == child)
                             .cloned()
-                        {
-                            XdgShellHandler::parent_changed(state, toplevel);
-                        }
+                    {
+                        XdgShellHandler::parent_changed(state, toplevel);
                     }
                 }
             }
@@ -278,10 +277,10 @@ fn invalidate_relationship_for<D>(
         return;
     };
 
-    if let Some(invalidate_for) = invalidate_for {
-        if invalidate_for != requested_by {
-            return;
-        }
+    if let Some(invalidate_for) = invalidate_for
+        && invalidate_for != requested_by
+    {
+        return;
     }
 
     let mut changed = false;
@@ -300,15 +299,14 @@ fn invalidate_relationship_for<D>(
     let requested_child = requested_child.clone();
     exported_state.requested_child = None;
 
-    if changed {
-        if let Some(toplevel) = state
+    if changed
+        && let Some(toplevel) = state
             .xdg_shell_state()
             .toplevel_surfaces()
             .iter()
             .find(|toplevel| *toplevel.wl_surface() == requested_child)
             .cloned()
-        {
-            XdgShellHandler::parent_changed(state, toplevel);
-        }
+    {
+        XdgShellHandler::parent_changed(state, toplevel);
     }
 }

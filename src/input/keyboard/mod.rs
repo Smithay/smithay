@@ -381,17 +381,17 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             GrabStatus::Borrowed => panic!("Accessed a keyboard grab from within a keyboard grab access."),
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some(ref surface) = handler.start_data().focus {
-                    if !surface.alive() {
-                        handler.unset(data);
-                        self.grab = GrabStatus::None;
-                        f(
-                            data,
-                            &mut KeyboardInnerHandle { inner: self, seat },
-                            &mut DefaultGrab,
-                        );
-                        return;
-                    }
+                if let Some(ref surface) = handler.start_data().focus
+                    && !surface.alive()
+                {
+                    handler.unset(data);
+                    self.grab = GrabStatus::None;
+                    f(
+                        data,
+                        &mut KeyboardInnerHandle { inner: self, seat },
+                        &mut DefaultGrab,
+                    );
+                    return;
                 }
                 f(
                     data,
@@ -1007,12 +1007,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
             let result = callback(state);
 
-            if mods_changed {
-                if let Some((focus, _)) = internal.focus.as_mut() {
-                    let seat = self.get_seat(data);
-                    focus.modifiers(&seat, data, internal.mods_state, SERIAL_COUNTER.next_serial());
-                };
-            }
+            if mods_changed && let Some((focus, _)) = internal.focus.as_mut() {
+                let seat = self.get_seat(data);
+                focus.modifiers(&seat, data, internal.mods_state, SERIAL_COUNTER.next_serial());
+            };
 
             (result, leds_changed.then_some(internal.led_state))
         };
