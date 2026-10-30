@@ -85,7 +85,7 @@ jobs:
             - name: Checkout sources
               uses: actions/checkout@v3
             - name: Rust toolchain
-              uses: dtolnay/rust-toolchain@1.87
+              uses: dtolnay/rust-toolchain@1.88
             - name: Get date for registry cache
               id: date
               run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
@@ -136,7 +136,7 @@ jobs:
             - name: Selectively upgrade client-toolkit
               run: cargo update -p smithay-client-toolkit@0.21.0 --precise 0.21.1
             - name: Rust toolchain
-              uses: dtolnay/rust-toolchain@1.87
+              uses: dtolnay/rust-toolchain@1.88
             - name: Check
               run: cargo check --features "test_all_features"
 
