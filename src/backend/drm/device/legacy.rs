@@ -1,78 +1,25 @@
-use std::collections::HashMap;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, atomic::AtomicBool};
 
-use drm::control::{Device as ControlDevice, connector, crtc};
+use drm::control::{Device as ControlDevice, connector};
 
 use super::DrmDeviceFd;
 use crate::backend::drm::error::{AccessError, Error};
 use crate::utils::DevPath;
 
-use tracing::{debug, error, info_span, trace};
+use tracing::{debug, info_span, trace};
 
 #[derive(Debug)]
 pub struct LegacyDrmDevice {
     pub(crate) fd: DrmDeviceFd,
     pub(crate) active: Arc<AtomicBool>,
-    old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     pub(super) span: tracing::Span,
 }
 
 impl LegacyDrmDevice {
     pub fn new(fd: DrmDeviceFd, active: Arc<AtomicBool>, disable_connectors: bool) -> Result<Self, Error> {
         let span = info_span!("drm_legacy");
-        let mut dev = LegacyDrmDevice {
-            fd,
-            active,
-            old_state: HashMap::new(),
-            span,
-        };
+        let dev = LegacyDrmDevice { fd, active, span };
         let _guard = dev.span.enter();
-
-        // Enumerate (and save) the current device state.
-        // We need to keep the previous device configuration to restore the state later,
-        // so we query everything, that we can set.
-        let res_handles = dev.fd.resource_handles().map_err(|source| {
-            Error::Access(AccessError {
-                errmsg: "Error loading drm resources",
-                dev: dev.fd.dev_path(),
-                source,
-            })
-        })?;
-        for &con in res_handles.connectors() {
-            let con_info = dev.fd.get_connector(con, false).map_err(|source| {
-                Error::Access(AccessError {
-                    errmsg: "Error loading connector info",
-                    dev: dev.fd.dev_path(),
-                    source,
-                })
-            })?;
-            if let Some(enc) = con_info.current_encoder() {
-                let enc_info = dev.fd.get_encoder(enc).map_err(|source| {
-                    Error::Access(AccessError {
-                        errmsg: "Error loading encoder info",
-                        dev: dev.fd.dev_path(),
-                        source,
-                    })
-                })?;
-                if let Some(crtc) = enc_info.crtc() {
-                    let info = dev.fd.get_crtc(crtc).map_err(|source| {
-                        Error::Access(AccessError {
-                            errmsg: "Error loading crtc info",
-                            dev: dev.fd.dev_path(),
-                            source,
-                        })
-                    })?;
-                    dev.old_state
-                        .entry(crtc)
-                        .or_insert((info, Vec::new()))
-                        .1
-                        .push(con);
-                }
-            }
-        }
 
         // If the user does not explicitly requests us to skip this,
         // we clear out the complete connector<->crtc mapping on device creation.
@@ -118,41 +65,6 @@ impl LegacyDrmDevice {
         }
 
         Ok(())
-    }
-}
-
-impl Drop for LegacyDrmDevice {
-    fn drop(&mut self) {
-        if self.active.load(Ordering::SeqCst) {
-            let _guard = self.span.enter();
-
-            // Here we restore the tty to it's previous state.
-            // In case e.g. getty was running on the tty sets the correct framebuffer again,
-            // so that getty will be visible.
-            // We do exit correctly, if this fails, but the user will be presented with
-            // a black screen, if no display handler takes control again.
-
-            debug!("Device still active, trying to restore previous state");
-            for (handle, (info, connectors)) in self.old_state.drain() {
-                trace!(
-                    framebuffer = ?info.framebuffer(),
-                    offset = ?info.position(),
-                    ?connectors,
-                    mode = ?info.mode(),
-                    "Resetting crtc {:?}",
-                    handle,
-                );
-                if let Err(err) = self.fd.set_crtc(
-                    handle,
-                    info.framebuffer(),
-                    info.position(),
-                    &connectors,
-                    info.mode(),
-                ) {
-                    error!("Failed to reset crtc ({:?}). Error: {}", handle, err);
-                }
-            }
-        }
     }
 }
 
