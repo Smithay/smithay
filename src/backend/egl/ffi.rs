@@ -145,7 +145,7 @@ pub mod egl {
     use std::sync::{LazyLock, Once};
 
     const LIB_NAME: &'static str = if cfg!(target_os = "openbsd") {
-        "libEGL.so.2.0"
+        "libEGL.so"
     } else {
         "libEGL.so.1"
     };
