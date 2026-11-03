@@ -986,6 +986,15 @@ impl<D: TabletSeatHandler + 'static> TabletToolInternal<D> {
                     time: event.time,
                 },
             );
+
+            // Compat with clients, more on this in https://github.com/Smithay/smithay/issues/2259
+            // tldr: the old target's frame has to go out before proximity_in, otherwise a client
+            // owning both targets gets proximity_out and proximity_in in the same frame. Taking it
+            // here also keeps frame() from sending it a second time.
+            if let Some(old_focus) = self.previous_focus.take() {
+                old_focus.frame(seat, data, descriptor, event.time);
+            }
+
             self.proximity_in(
                 data,
                 seat,
