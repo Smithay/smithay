@@ -385,6 +385,11 @@ where
 
 /// Compile a client-supplied `xkb_v1` keymap, returning it if valid.
 fn compile_keymap(fd: OwnedFd, size: usize) -> Option<xkb::Keymap> {
+    if !rustix::fs::fstat(&fd).is_ok_and(|stat| stat.st_size as u64 >= size as u64) {
+        warn!("Virtual keyboard keymap is smaller than its announced size");
+        return None;
+    }
+
     let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
     // SAFETY: we can map the keymap into the memory.
     let keymap = match unsafe {
