@@ -81,7 +81,15 @@ where
                 parent_width,
                 parent_height,
             } => {
-                state.parent_size = Some((parent_width, parent_height).into());
+                if parent_width < 0 || parent_height < 0 {
+                    positioner.post_error(
+                        xdg_positioner::Error::InvalidInput,
+                        "Invalid size for positioner's parent size.",
+                    );
+                } else {
+                    state.parent_size =
+                        (parent_width > 0 && parent_height > 0).then(|| (parent_width, parent_height).into());
+                }
             }
             xdg_positioner::Request::SetParentConfigure { serial } => {
                 state.parent_configure = Some(Serial::from(serial));
