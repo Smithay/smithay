@@ -103,7 +103,11 @@ use wayland_server::{
 };
 
 use super::{ToplevelSurface, XdgShellHandler};
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2, shell::xdg::XdgShellSurfaceUserData};
+use crate::wayland::{
+    Dispatch2, GlobalData, GlobalDispatch2,
+    compositor::{self, BufferAssignment, SurfaceAttributes},
+    shell::xdg::{XdgShellSurfaceUserData, XdgToplevelSurfaceData},
+};
 
 /// Delegate type for handling xdg decoration events.
 #[derive(Debug)]
@@ -150,7 +154,7 @@ impl XdgDecorationState {
             filter: Box::new(filter),
         };
         let global =
-            display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, data);
+            display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(2, data);
 
         XdgDecorationState { global }
     }
@@ -246,6 +250,44 @@ where
                 }
 
                 let toplevel = state.xdg_shell_state().get_toplevel(&toplevel).unwrap();
+                let has_buffer = compositor::with_states(toplevel.wl_surface(), |s| {
+                    s.cached_state
+                        .get::<SurfaceAttributes>()
+                        .pending()
+                        .buffer
+                        .as_ref()
+                        .is_some_and(|b| matches!(b, BufferAssignment::NewBuffer(_)))
+                }) || toplevel.with_committed_state(|s| s.is_some());
+
+                if resource.version() < 2 && has_buffer {
+                    resource.post_error(
+                        zxdg_toplevel_decoration_v1::Error::UnconfiguredBuffer,
+                        "toplevel already has a buffer attached or committed",
+                    );
+                    return;
+                }
+
+                compositor::with_states(toplevel.wl_surface(), |s| {
+                    let mut role = s
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()
+                        .unwrap()
+                        .lock()
+                        .unwrap();
+
+                    role.initial_decoration_mode = has_buffer.then(|| {
+                        if role.decoration_destroyed_without_commit {
+                            role.current_server_state()
+                                .decoration_mode
+                                .unwrap_or(Mode::ClientSide)
+                        } else {
+                            Mode::ClientSide
+                        }
+                    });
+                    role.decoration_destroyed_without_commit = false;
+                    role.initial_decoration_configured = false;
+                });
+
                 let toplevel_decoration = data_init.init(id, toplevel.clone());
 
                 *decoration_guard = Some(toplevel_decoration);
@@ -292,8 +334,17 @@ where
             }
 
             Request::Destroy => {
-                if let Some(data) = self.xdg_toplevel().data::<XdgShellSurfaceUserData>() {
-                    data.decoration.lock().unwrap().take();
+                if let Some(data) = self.xdg_toplevel().data::<XdgShellSurfaceUserData>()
+                    && data.decoration.lock().unwrap().take().is_some()
+                {
+                    compositor::with_states(&data.wl_surface, |s| {
+                        s.data_map
+                            .get::<XdgToplevelSurfaceData>()
+                            .unwrap()
+                            .lock()
+                            .unwrap()
+                            .decoration_destroyed_without_commit = true;
+                    });
                 }
             }
 
