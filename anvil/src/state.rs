@@ -9,11 +9,8 @@ use std::{
 use tracing::{info, warn};
 
 use smithay::{
-    backend::{
-        input::TabletToolDescriptor,
-        renderer::element::{
-            RenderElementStates, default_primary_scanout_output_compare, utils::select_dmabuf_feedback,
-        },
+    backend::renderer::element::{
+        RenderElementStates, default_primary_scanout_output_compare, utils::select_dmabuf_feedback,
     },
     delegate_dispatch2,
     desktop::{
@@ -30,7 +27,7 @@ use smithay::{
         dnd::{DnDGrab, DndGrabHandler, DndTarget, GrabType, Source},
         keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, Focus, PointerHandle},
-        tablet::TabletSeatHandler,
+        tablet::{TabletSeatHandler, tool::TabletToolHandle},
     },
     output::Output,
     reexports::{
@@ -330,7 +327,7 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
 impl<BackendData: Backend> TabletSeatHandler for AnvilState<BackendData> {
     type ToolFocus = PointerFocusTarget;
 
-    fn tablet_tool_image(&mut self, _tool: &TabletToolDescriptor, image: CursorImageStatus) {
+    fn tablet_tool_image(&mut self, _tool: &TabletToolHandle<Self>, image: CursorImageStatus) {
         // TODO: tablet tools should have their own cursors
         self.cursor_status = image;
     }
