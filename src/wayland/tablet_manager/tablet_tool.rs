@@ -40,6 +40,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
             arc: Arc::new(TabletToolRc {
                 descriptor,
                 inner: Mutex::new(TabletToolInternal::new(default_grab)),
+                grab: Mutex::new(None),
                 wp_tablet_tool: WpTabletToolHandle {
                     bound: true,
                     last_proximity_in: Default::default(),
