@@ -63,6 +63,8 @@
 //! VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_client| true);
 //! ```
 
+use std::fs::File;
+use std::os::unix::fs::FileExt;
 use std::os::unix::io::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -83,6 +85,7 @@ use crate::input::keyboard::{KeyboardSource, KeymapFile};
 use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 const MANAGER_VERSION: u32 = 1;
+const MAX_KEYMAP_SIZE: usize = 256 * 1024;
 
 mod input;
 
@@ -385,32 +388,69 @@ where
 
 /// Compile a client-supplied `xkb_v1` keymap, returning it if valid.
 fn compile_keymap(fd: OwnedFd, size: usize) -> Option<xkb::Keymap> {
-    if !rustix::fs::fstat(&fd).is_ok_and(|stat| stat.st_size as u64 >= size as u64) {
-        warn!("Virtual keyboard keymap is smaller than its announced size");
+    if size > MAX_KEYMAP_SIZE {
+        warn!("Virtual keyboard keymap is too large: {size} bytes");
         return None;
     }
 
-    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-    // SAFETY: we can map the keymap into the memory.
-    let keymap = match unsafe {
-        xkb::Keymap::new_from_fd(
-            &context,
-            fd,
-            size,
-            xkb::KEYMAP_FORMAT_TEXT_V1,
-            xkb::KEYMAP_COMPILE_NO_FLAGS,
-        )
-    } {
-        Ok(Some(keymap)) => keymap,
-        Ok(None) => {
-            warn!("Failed to compile virtual keyboard keymap");
-            return None;
-        }
-        Err(err) => {
-            warn!("Failed to map virtual keyboard keymap: {err:?}");
-            return None;
-        }
-    };
+    let mut buffer = vec![0; size];
+    if let Err(err) = File::from(fd).read_exact_at(&mut buffer, 0) {
+        warn!("Failed to read virtual keyboard keymap: {err:?}");
+        return None;
+    }
+    let len = buffer.iter().position(|&byte| byte == 0).unwrap_or(size);
+    let keymap = String::from_utf8_lossy(&buffer[..len]).into_owned();
 
-    Some(keymap)
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+    let keymap = xkb::Keymap::new_from_string(
+        &context,
+        keymap,
+        xkb::KEYMAP_FORMAT_TEXT_V1,
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    );
+    if keymap.is_none() {
+        warn!("Failed to compile virtual keyboard keymap");
+    }
+    keymap
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use super::*;
+
+    const KEYMAP: &str = r#"xkb_keymap {
+    xkb_keycodes "test" { minimum = 8; maximum = 255; <AC01> = 38; };
+    xkb_types "test" { type "ONE_LEVEL" { modifiers = none; level_name[Level1] = "Any"; }; };
+    xkb_compatibility "test" { };
+    xkb_symbols "test" { key <AC01> { [ a ] }; };
+};
+"#;
+
+    fn keymap_fd(content: &[u8]) -> OwnedFd {
+        let fd = rustix::fs::memfd_create("keymap", rustix::fs::MemfdFlags::CLOEXEC).unwrap();
+        let mut file = File::from(fd);
+        file.write_all(content).unwrap();
+        file.into()
+    }
+
+    #[test]
+    fn keymap_with_its_nul_compiles() {
+        let mut content = KEYMAP.as_bytes().to_vec();
+        content.push(0);
+        let size = content.len();
+        assert!(compile_keymap(keymap_fd(&content), size).is_some());
+    }
+
+    #[test]
+    fn keymap_larger_than_its_file_is_rejected() {
+        let size = KEYMAP.len() + 2 * 4096;
+        assert!(compile_keymap(keymap_fd(KEYMAP.as_bytes()), size).is_none());
+    }
+
+    #[test]
+    fn huge_keymap_is_rejected() {
+        assert!(compile_keymap(keymap_fd(KEYMAP.as_bytes()), MAX_KEYMAP_SIZE + 1).is_none());
+    }
 }
