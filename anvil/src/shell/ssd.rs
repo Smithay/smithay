@@ -186,8 +186,7 @@ impl HeaderBar {
         if self
             .pointer_loc
             .as_ref()
-            .map(|l| l.x >= (width - BUTTON_WIDTH) as f64)
-            .unwrap_or(false)
+            .is_some_and(|l| l.x >= (width - BUTTON_WIDTH) as f64)
             && (needs_redraw_buttons || !self.close_button_hover)
         {
             self.close_button
@@ -196,8 +195,7 @@ impl HeaderBar {
         } else if !self
             .pointer_loc
             .as_ref()
-            .map(|l| l.x >= (width - BUTTON_WIDTH) as f64)
-            .unwrap_or(false)
+            .is_some_and(|l| l.x >= (width - BUTTON_WIDTH) as f64)
             && (needs_redraw_buttons || self.close_button_hover)
         {
             self.close_button
@@ -208,8 +206,7 @@ impl HeaderBar {
         if self
             .pointer_loc
             .as_ref()
-            .map(|l| l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64)
-            .unwrap_or(false)
+            .is_some_and(|l| l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64)
             && (needs_redraw_buttons || !self.maximize_button_hover)
         {
             self.maximize_button
@@ -218,8 +215,7 @@ impl HeaderBar {
         } else if !self
             .pointer_loc
             .as_ref()
-            .map(|l| l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64)
-            .unwrap_or(false)
+            .is_some_and(|l| l.x >= (width - BUTTON_WIDTH * 2) as f64 && l.x <= (width - BUTTON_WIDTH) as f64)
             && (needs_redraw_buttons || self.maximize_button_hover)
         {
             self.maximize_button

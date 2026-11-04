@@ -519,7 +519,7 @@ impl<'a> KeysymHandle<'a> {
         let base_sym = *raw_syms.first()?;
 
         // If the character is ascii or non-printable, return it.
-        if base_sym.key_char().map(|ch| ch.is_ascii()).unwrap_or(true) {
+        if base_sym.key_char().is_none_or(|ch| ch.is_ascii()) {
             return Some(base_sym);
         };
 
@@ -534,8 +534,7 @@ impl<'a> KeysymHandle<'a> {
                 // layout agnostic.
                 if keysym
                     .key_char()
-                    .map(|key| key.is_ascii() && !key.is_ascii_control())
-                    .unwrap_or(false)
+                    .is_some_and(|key| key.is_ascii() && !key.is_ascii_control())
                 {
                     return Some(*keysym);
                 }
@@ -1453,7 +1452,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         seat_state
             .seats
             .iter()
-            .find(|seat| seat.get_keyboard().map(|h| &h == self).unwrap_or(false))
+            .find(|seat| seat.get_keyboard().is_some_and(|h| &h == self))
             .cloned()
             .unwrap()
     }

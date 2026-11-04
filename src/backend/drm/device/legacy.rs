@@ -195,7 +195,7 @@ where
                     })
                 })?;
                 // to find out, if we got the handle of the "DPMS" property ...
-                if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
+                if info.name().to_str() == Ok("DPMS") {
                     // so we can use that to turn on / off the connector
                     trace!(connector = ?conn, "Setting DPMS {}", enabled);
                     dev.set_property(

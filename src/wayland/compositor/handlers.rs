@@ -547,8 +547,7 @@ pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
         state
             .data_map
             .get::<SubsurfaceState>()
-            .map(|s| s.sync.load(Ordering::Acquire))
-            .unwrap_or(false)
+            .is_some_and(|s| s.sync.load(Ordering::Acquire))
     });
     if is_direct_sync {
         return true;

@@ -369,8 +369,7 @@ where
             let destroyed_focused = inner
                 .focus
                 .as_ref()
-                .map(|focus| focus.id().same_client_as(&destroyed_id))
-                .unwrap_or(true);
+                .is_none_or(|focus| focus.id().same_client_as(&destroyed_id));
 
             // Deactivate IM when we either lost focus entirely or destroyed text-input for the
             // currently focused client.

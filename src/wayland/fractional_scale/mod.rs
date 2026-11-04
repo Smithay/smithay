@@ -144,8 +144,7 @@ where
                     states
                         .data_map
                         .get::<FractionalScaleStateUserData>()
-                        .map(|v| v.borrow().fractional_scale.is_some())
-                        .unwrap_or(false)
+                        .is_some_and(|v| v.borrow().fractional_scale.is_some())
                 });
 
                 if already_has_fractional_scale {

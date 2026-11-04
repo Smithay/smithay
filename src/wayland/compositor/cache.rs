@@ -120,7 +120,7 @@ impl<T: Cacheable + 'static> Cache for Mutex<CachedState<T>> {
     fn apply_state(&self, commit_id: Serial, dh: &DisplayHandle) {
         let mut me = self.lock().unwrap();
         loop {
-            if me.cache.front().map(|&(s, _)| s > commit_id).unwrap_or(true) {
+            if me.cache.front().is_none_or(|&(s, _)| s > commit_id) {
                 // if the cache is empty or the next state has a commit_id greater than the requested one
                 break;
             }

@@ -39,8 +39,7 @@ where
             .unwrap()
             .focus
             .as_ref()
-            .map(|f| f.0.same_client_as(id))
-            .unwrap_or(false)
+            .is_some_and(|f| f.0.same_client_as(id))
     }
 
     /// Return all raw [`WlKeyboard`] instances for a particular [`Client`]
