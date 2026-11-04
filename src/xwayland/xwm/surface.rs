@@ -738,11 +738,11 @@ impl X11Surface {
 
     /// Destroys the counter sync alarm and finishes any in-flight sync.
     fn destroy_sync_alarm(&self, state: &mut MutexGuard<'_, SharedSurfaceState>) {
-        if let Some(sync_alarm) = state.sync_alarm.take() {
-            if let Some(conn) = self.conn.upgrade() {
-                let _ = conn.sync_destroy_alarm(sync_alarm);
-                let _ = conn.flush();
-            }
+        if let Some(sync_alarm) = state.sync_alarm.take()
+            && let Some(conn) = self.conn.upgrade()
+        {
+            let _ = conn.sync_destroy_alarm(sync_alarm);
+            let _ = conn.flush();
         }
         self.finish_pending_sync(state);
     }
@@ -811,12 +811,11 @@ impl X11Surface {
     }
 
     fn destroy_sync_timeout(&self, state: &mut SharedSurfaceState) {
-        if let Some(alarm) = state.sync_timeout_alarm.take() {
-            if let Some(conn) = self.conn.upgrade() {
-                if let Err(err) = conn.sync_destroy_alarm(alarm).and_then(|_| conn.flush()) {
-                    tracing::warn!("Failed to unregister sync timeout alarm: {err}");
-                }
-            }
+        if let Some(alarm) = state.sync_timeout_alarm.take()
+            && let Some(conn) = self.conn.upgrade()
+            && let Err(err) = conn.sync_destroy_alarm(alarm).and_then(|_| conn.flush())
+        {
+            tracing::warn!("Failed to unregister sync timeout alarm: {err}");
         }
     }
 
@@ -901,26 +900,25 @@ impl X11Surface {
     pub(crate) fn set_wl_surface<D: SeatHandler + 'static>(&self, data: &mut D, surface: Option<WlSurface>) {
         let mut state = self.state.lock().unwrap();
 
-        if let Some(hook_id) = state.opaque_regions_hook_id.take() {
-            if let Some(wl_surface) = state.wl_surface.as_ref() {
-                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
-            }
+        if let Some(hook_id) = state.opaque_regions_hook_id.take()
+            && let Some(wl_surface) = state.wl_surface.as_ref()
+        {
+            compositor::remove_pre_commit_hook(wl_surface, &hook_id);
         }
 
-        if let Some(hook_id) = state.deferred_sync_hook_id.take() {
-            if let Some(wl_surface) = state.wl_surface.as_ref() {
-                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
-            }
+        if let Some(hook_id) = state.deferred_sync_hook_id.take()
+            && let Some(wl_surface) = state.wl_surface.as_ref()
+        {
+            compositor::remove_pre_commit_hook(wl_surface, &hook_id);
         }
 
-        if let (Some(surface), None) = (surface.as_ref(), state.wl_surface.as_ref()) {
-            if let Some((seat, keys, mods, serial)) = state.pending_enter.take() {
-                if let Ok(seat) = seat.downcast::<Seat<D>>() {
-                    enter_internal(surface, &seat, data, keys.into_iter(), serial);
-                    if let Some(modifiers) = mods {
-                        KeyboardTarget::modifiers(surface, &seat, data, modifiers, serial);
-                    }
-                }
+        if let (Some(surface), None) = (surface.as_ref(), state.wl_surface.as_ref())
+            && let Some((seat, keys, mods, serial)) = state.pending_enter.take()
+            && let Ok(seat) = seat.downcast::<Seat<D>>()
+        {
+            enter_internal(surface, &seat, data, keys.into_iter(), serial);
+            if let Some(modifiers) = mods {
+                KeyboardTarget::modifiers(surface, &seat, data, modifiers, serial);
             }
         }
         state.wl_surface = surface;
@@ -946,17 +944,15 @@ impl X11Surface {
             compositor::add_pre_commit_hook::<D, _>(wl_surface, move |_, _, wl_surface| {
                 if let Some(state) = state.upgrade() {
                     let update_opaque_region_if_needed = || {
-                        if state.lock().unwrap().opaque_region_dirty {
-                            if let Some(conn) = conn.upgrade() {
-                                if let Ok(opaque_region) =
-                                    fetch_opaque_regions(&conn, window, property_atom, client_scale.as_ref())
-                                {
-                                    let mut state = state.lock().unwrap();
-                                    state.opaque_region = opaque_region;
-                                    state.opaque_region_dirty = false;
-                                    return Some(state.opaque_region.clone());
-                                }
-                            }
+                        if state.lock().unwrap().opaque_region_dirty
+                            && let Some(conn) = conn.upgrade()
+                            && let Ok(opaque_region) =
+                                fetch_opaque_regions(&conn, window, property_atom, client_scale.as_ref())
+                        {
+                            let mut state = state.lock().unwrap();
+                            state.opaque_region = opaque_region;
+                            state.opaque_region_dirty = false;
+                            return Some(state.opaque_region.clone());
                         }
                         None
                     };
@@ -1001,13 +997,13 @@ impl X11Surface {
                     (buffered_configure, state.last_set_sync_timeout)
                 };
 
-                if let Some(buffered_configure) = buffered_configure {
-                    if let Err(err) = surface.configure_with_sync(buffered_configure, Some(timeout)) {
-                        tracing::info!(
-                            "Failed to send buffered surface configure/sync for window 0x{:08x}: {err}",
-                            surface.window
-                        );
-                    }
+                if let Some(buffered_configure) = buffered_configure
+                    && let Err(err) = surface.configure_with_sync(buffered_configure, Some(timeout))
+                {
+                    tracing::info!(
+                        "Failed to send buffered surface configure/sync for window 0x{:08x}: {err}",
+                        surface.window
+                    );
                 }
             })
         };
@@ -1351,21 +1347,21 @@ impl X11Surface {
             self.change_net_state(&[], &[self.atoms._NET_WM_STATE_HIDDEN])?;
         }
 
-        if let Some(conn) = self.conn.upgrade() {
-            if self.state.lock().unwrap().mapped_onto.is_some() {
-                let wm_state = if suspended {
-                    3u32 /*IconicState*/
-                } else {
-                    1u32 /*NormalState*/
-                };
-                conn.change_property32(
-                    PropMode::REPLACE,
-                    self.window,
-                    self.atoms.WM_STATE,
-                    self.atoms.WM_STATE,
-                    &[wm_state, 0 /*WINDOW_NONE*/],
-                )?;
-            }
+        if let Some(conn) = self.conn.upgrade()
+            && self.state.lock().unwrap().mapped_onto.is_some()
+        {
+            let wm_state = if suspended {
+                3u32 /*IconicState*/
+            } else {
+                1u32 /*NormalState*/
+            };
+            conn.change_property32(
+                PropMode::REPLACE,
+                self.window,
+                self.atoms.WM_STATE,
+                self.atoms.WM_STATE,
+                &[wm_state, 0 /*WINDOW_NONE*/],
+            )?;
         }
         Ok(())
     }
@@ -1939,10 +1935,10 @@ impl X11Surface {
             Err(err) => return Err(err),
         };
 
-        if let Some(mut value32) = reply.value32() {
-            if let Some(value) = value32.next() {
-                return Ok(Some(value));
-            }
+        if let Some(mut value32) = reply.value32()
+            && let Some(value) = value32.next()
+        {
+            return Ok(Some(value));
         }
 
         Ok(None)
@@ -2087,10 +2083,10 @@ impl X11Surface {
         state.sync_counter = None;
 
         // Break reference cycle caused by deferred_sync hook
-        if let Some(hook_id) = state.deferred_sync_hook_id.take() {
-            if let Some(wl_surface) = state.wl_surface.as_ref() {
-                compositor::remove_pre_commit_hook(wl_surface, &hook_id);
-            }
+        if let Some(hook_id) = state.deferred_sync_hook_id.take()
+            && let Some(wl_surface) = state.wl_surface.as_ref()
+        {
+            compositor::remove_pre_commit_hook(wl_surface, &hook_id);
         }
     }
 }
@@ -2160,10 +2156,10 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         }
 
         if let Some(conn) = self.conn.upgrade() {
-            if set_input_focus {
-                if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME) {
-                    warn!("Unable to set focus for X11Surface ({:?}): {}", self.window, err);
-                }
+            if set_input_focus
+                && let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME)
+            {
+                warn!("Unable to set focus for X11Surface ({:?}): {}", self.window, err);
             }
 
             if send_take_focus {
@@ -2516,7 +2512,9 @@ fn fetch_opaque_regions(
 
                 values
                     .collect::<Vec<_>>()
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .flat_map(|rect_values| {
                         let phys_rect = Rectangle::<i32, Physical>::new(
                             (rect_values[0] as i32, rect_values[1] as i32).into(),

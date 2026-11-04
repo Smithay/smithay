@@ -405,10 +405,10 @@ where
 
                 for compositor in self.compositor.values_mut() {
                     let compositor = compositor.get_mut().unwrap();
-                    if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
-                        if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
-                            return Err(err);
-                        }
+                    if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer)
+                        && !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame))
+                    {
+                        return Err(err);
                     }
                 }
 
@@ -558,10 +558,10 @@ where
             // if so, first lower the bandwidth by disabling planes on all compositors
             for compositor in self.compositor.values_mut() {
                 let compositor = compositor.get_mut().unwrap();
-                if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
-                    if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
-                        return Err(err);
-                    }
+                if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer)
+                    && !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame))
+                {
+                    return Err(err);
                 }
             }
 
@@ -846,20 +846,20 @@ where
 
         for compositor in compositor_list.values_mut() {
             let compositor = compositor.get_mut().unwrap();
-            if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
-                if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
-                    return Err(err);
-                }
+            if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer)
+                && !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame))
+            {
+                return Err(err);
             }
         }
 
         let compositor = compositor_list.get_mut(crtc).unwrap().get_mut().unwrap();
         match compositor.use_mode(mode) {
             Ok(_) => {
-                if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer) {
-                    if !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame)) {
-                        return Err(err);
-                    }
+                if let Err(err) = render_elements.submit_composited_frame(&mut *compositor, renderer)
+                    && !matches!(err, DrmOutputManagerError::Frame(FrameError::EmptyFrame))
+                {
+                    return Err(err);
                 }
             }
             Err(err @ FrameError::DrmError(DrmError::TestFailed(_))) => {
@@ -1019,10 +1019,10 @@ where
         let frame_result = compositor
             .render_frame(renderer, elements, *clear_color, FrameFlags::empty())
             .map_err(DrmOutputManagerError::RenderFrame)?;
-        if frame_result.needs_sync() {
-            if let PrimaryPlaneElement::Swapchain(primary_swapchain_element) = frame_result.primary_element {
-                let _ = primary_swapchain_element.sync.wait();
-            }
+        if frame_result.needs_sync()
+            && let PrimaryPlaneElement::Swapchain(primary_swapchain_element) = frame_result.primary_element
+        {
+            let _ = primary_swapchain_element.sync.wait();
         }
         compositor.commit_frame().map_err(DrmOutputManagerError::Frame)?;
         Ok(())

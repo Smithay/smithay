@@ -60,10 +60,10 @@ impl State {
                         source,
                     })
                 })?;
-                if let Some(current_crtc) = enc_info.crtc() {
-                    if crtc == current_crtc {
-                        current_connectors.insert(con);
-                    }
+                if let Some(current_crtc) = enc_info.crtc()
+                    && crtc == current_crtc
+                {
+                    current_connectors.insert(con);
                 }
             }
         }

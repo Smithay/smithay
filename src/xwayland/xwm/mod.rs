@@ -782,13 +782,13 @@ impl Deref for OwnedX11Window {
 
 impl Drop for OwnedX11Window {
     fn drop(&mut self) {
-        if let Some(window) = Arc::get_mut(&mut self.window) {
-            if let Some(conn) = self.conn.upgrade() {
-                if let Err(err) = conn.destroy_window(*window) {
-                    warn!("Failed to destroy window: {}", err);
-                }
-                let _ = conn.flush();
+        if let Some(window) = Arc::get_mut(&mut self.window)
+            && let Some(conn) = self.conn.upgrade()
+        {
+            if let Err(err) = conn.destroy_window(*window) {
+                warn!("Failed to destroy window: {}", err);
             }
+            let _ = conn.flush();
         }
     }
 }
@@ -1052,10 +1052,10 @@ impl X11Wm {
         let dh = dh.clone();
         handle.insert_source(source, move |event, _, data| match event {
             calloop::channel::Event::Msg(event) => {
-                if let Some(event_handle) = event_handle.upgrade() {
-                    if let Err(err) = handle_event(&event_handle, &dh, data, id, event) {
-                        warn!(id = id.0, err = ?err, "Failed to handle X11 event");
-                    }
+                if let Some(event_handle) = event_handle.upgrade()
+                    && let Err(err) = handle_event(&event_handle, &dh, data, id, event)
+                {
+                    warn!(id = id.0, err = ?err, "Failed to handle X11 event");
                 }
             }
             calloop::channel::Event::Closed => {
@@ -1130,22 +1130,22 @@ impl X11Wm {
                 .filter_map(|w| self.windows.iter().find(|s| s.window_id() == *w))
                 .collect();
             let pos = stacking_ordered_elems.iter().position(|w| relatable.is_window(w));
-            if let (Some(pos), Some(last_pos)) = (pos, last_pos) {
-                if direction.pos_comparator(pos, last_pos) {
-                    let sibling = stacking_ordered_elems[last_pos];
-                    let sibling_id = self.client_list_stacking[last_pos];
-                    let elem = stacking_ordered_elems[pos];
-                    let elem_id = self.client_list_stacking.remove(pos);
-                    self.conn.configure_window(
-                        elem.mapped_window_id().unwrap_or(elem_id),
-                        &ConfigureWindowAux::new()
-                            .sibling(sibling.mapped_window_id().unwrap_or(sibling_id))
-                            .stack_mode(direction.stack_mode()),
-                    )?;
-                    self.client_list_stacking.insert(last_pos, elem_id);
-                    changed = true;
-                    continue;
-                }
+            if let (Some(pos), Some(last_pos)) = (pos, last_pos)
+                && direction.pos_comparator(pos, last_pos)
+            {
+                let sibling = stacking_ordered_elems[last_pos];
+                let sibling_id = self.client_list_stacking[last_pos];
+                let elem = stacking_ordered_elems[pos];
+                let elem_id = self.client_list_stacking.remove(pos);
+                self.conn.configure_window(
+                    elem.mapped_window_id().unwrap_or(elem_id),
+                    &ConfigureWindowAux::new()
+                        .sibling(sibling.mapped_window_id().unwrap_or(sibling_id))
+                        .stack_mode(direction.stack_mode()),
+                )?;
+                self.client_list_stacking.insert(last_pos, elem_id);
+                changed = true;
+                continue;
             }
 
             if pos.is_some() {
@@ -1619,95 +1619,94 @@ where
             }
         }
         Event::MapRequest(r) => {
-            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
-                if surface.state.lock().unwrap().mapped_onto.is_none() {
-                    // we reparent windows, because a lot of stuff expects, that we do
-                    let geo_cookie = conn.get_geometry(r.window)?;
-                    let attrs_cookie = conn.get_window_attributes(r.window)?;
-                    let geo = geo_cookie.reply()?;
-                    let attrs = attrs_cookie.reply()?;
-                    let colormap = xwm.colormap_for_visual(attrs.visual)?;
+            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned()
+                && surface.state.lock().unwrap().mapped_onto.is_none()
+            {
+                // we reparent windows, because a lot of stuff expects, that we do
+                let geo_cookie = conn.get_geometry(r.window)?;
+                let attrs_cookie = conn.get_window_attributes(r.window)?;
+                let geo = geo_cookie.reply()?;
+                let attrs = attrs_cookie.reply()?;
+                let colormap = xwm.colormap_for_visual(attrs.visual)?;
 
-                    let win = r.window;
-                    let frame_win = conn.generate_id()?;
-                    let win_aux = CreateWindowAux::new()
-                        .event_mask(
-                            EventMask::SUBSTRUCTURE_NOTIFY
-                                | EventMask::SUBSTRUCTURE_REDIRECT
-                                | EventMask::PROPERTY_CHANGE,
-                        )
-                        .colormap(colormap)
-                        .background_pixmap(x11rb::NONE)
-                        .border_pixel(0);
+                let win = r.window;
+                let frame_win = conn.generate_id()?;
+                let win_aux = CreateWindowAux::new()
+                    .event_mask(
+                        EventMask::SUBSTRUCTURE_NOTIFY
+                            | EventMask::SUBSTRUCTURE_REDIRECT
+                            | EventMask::PROPERTY_CHANGE,
+                    )
+                    .colormap(colormap)
+                    .background_pixmap(x11rb::NONE)
+                    .border_pixel(0);
 
-                    {
-                        let _guard = scopeguard::guard((), |_| {
-                            let _ = conn.ungrab_server();
-                        });
+                {
+                    let _guard = scopeguard::guard((), |_| {
+                        let _ = conn.ungrab_server();
+                    });
 
-                        conn.grab_server()?;
-                        let cookie1 = conn.create_window(
-                            geo.depth,
-                            frame_win,
-                            xwm.screen.root,
-                            geo.x,
-                            geo.y,
-                            geo.width,
-                            geo.height,
-                            0,
-                            WindowClass::INPUT_OUTPUT,
-                            attrs.visual,
-                            &win_aux,
-                        )?;
-                        let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
-                        conn.map_window(win)?;
+                    conn.grab_server()?;
+                    let cookie1 = conn.create_window(
+                        geo.depth,
+                        frame_win,
+                        xwm.screen.root,
+                        geo.x,
+                        geo.y,
+                        geo.width,
+                        geo.height,
+                        0,
+                        WindowClass::INPUT_OUTPUT,
+                        attrs.visual,
+                        &win_aux,
+                    )?;
+                    let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
+                    conn.map_window(win)?;
 
-                        // Ignore all events caused by reparent_window(). All those events have the sequence number
-                        // of the reparent_window() request, thus remember its sequence number. The
-                        // grab_server()/ungrab_server() is done so that the server does not handle other clients
-                        // in-between, which could cause other events to get the same sequence number.
-                        xwm.sequences_to_ignore
-                            .push(Reverse(cookie1.sequence_number() as u16));
-                        xwm.sequences_to_ignore
-                            .push(Reverse(cookie2.sequence_number() as u16));
-                    }
-
-                    surface.state.lock().unwrap().mapped_onto = Some(frame_win);
-
-                    // A MapRequest can only happen when an X11 window does not have the
-                    // override-redirect flag set. It's possible for a window to be created as
-                    // override-redirect and later set the flag to false before mapping.
-                    // In that case, we set the X11Surface's override-redirect state to false here
-                    // to prevent `set_mapped` and `configure` from failing.
-                    surface.state.lock().unwrap().override_redirect = false;
-
-                    // Read initial _NET_WM_STATE set by the client before mapping.
-                    // Per EWMH spec, clients may set _NET_WM_STATE prior to mapping
-                    // and the window manager must respect it.
-                    if let Ok(reply) = conn
-                        .get_property(false, win, xwm.atoms._NET_WM_STATE, AtomEnum::ATOM, 0, 1024)?
-                        .reply()
-                    {
-                        if let Some(states) = reply.value32() {
-                            let mut state_lock = surface.state.lock().unwrap();
-                            for atom in states {
-                                state_lock.net_state.insert(atom);
-                            }
-                        }
-                    }
-
-                    if let Ok(Some(hints)) = WmHints::get(&*conn, win)?.reply_unchecked() {
-                        let mut state = surface.state.lock().unwrap();
-                        if matches!(hints.initial_state, Some(WmHintsState::Iconic)) {
-                            state.net_state.insert(xwm.atoms._NET_WM_STATE_HIDDEN);
-                        } else {
-                            state.net_state.remove(&xwm.atoms._NET_WM_STATE_HIDDEN);
-                        }
-                    }
-
-                    drop(_guard);
-                    state.map_window_request(xwm_id, surface);
+                    // Ignore all events caused by reparent_window(). All those events have the sequence number
+                    // of the reparent_window() request, thus remember its sequence number. The
+                    // grab_server()/ungrab_server() is done so that the server does not handle other clients
+                    // in-between, which could cause other events to get the same sequence number.
+                    xwm.sequences_to_ignore
+                        .push(Reverse(cookie1.sequence_number() as u16));
+                    xwm.sequences_to_ignore
+                        .push(Reverse(cookie2.sequence_number() as u16));
                 }
+
+                surface.state.lock().unwrap().mapped_onto = Some(frame_win);
+
+                // A MapRequest can only happen when an X11 window does not have the
+                // override-redirect flag set. It's possible for a window to be created as
+                // override-redirect and later set the flag to false before mapping.
+                // In that case, we set the X11Surface's override-redirect state to false here
+                // to prevent `set_mapped` and `configure` from failing.
+                surface.state.lock().unwrap().override_redirect = false;
+
+                // Read initial _NET_WM_STATE set by the client before mapping.
+                // Per EWMH spec, clients may set _NET_WM_STATE prior to mapping
+                // and the window manager must respect it.
+                if let Ok(reply) = conn
+                    .get_property(false, win, xwm.atoms._NET_WM_STATE, AtomEnum::ATOM, 0, 1024)?
+                    .reply()
+                    && let Some(states) = reply.value32()
+                {
+                    let mut state_lock = surface.state.lock().unwrap();
+                    for atom in states {
+                        state_lock.net_state.insert(atom);
+                    }
+                }
+
+                if let Ok(Some(hints)) = WmHints::get(&*conn, win)?.reply_unchecked() {
+                    let mut state = surface.state.lock().unwrap();
+                    if matches!(hints.initial_state, Some(WmHintsState::Iconic)) {
+                        state.net_state.insert(xwm.atoms._NET_WM_STATE_HIDDEN);
+                    } else {
+                        state.net_state.remove(&xwm.atoms._NET_WM_STATE_HIDDEN);
+                    }
+                }
+
+                drop(_guard);
+                state.map_window_request(xwm_id, surface);
             }
         }
         Event::MapNotify(n) => {
@@ -1837,21 +1836,21 @@ where
                         Some(n.above_sibling)
                     },
                 );
-            } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
-                if surface.is_override_redirect() {
-                    surface.state.lock().unwrap().last_configure = geometry;
-                    drop(_guard);
-                    state.configure_notify(
-                        xwm_id,
-                        surface,
-                        geometry,
-                        if n.above_sibling == x11rb::NONE {
-                            None
-                        } else {
-                            Some(n.above_sibling)
-                        },
-                    );
-                }
+            } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned()
+                && surface.is_override_redirect()
+            {
+                surface.state.lock().unwrap().last_configure = geometry;
+                drop(_guard);
+                state.configure_notify(
+                    xwm_id,
+                    surface,
+                    geometry,
+                    if n.above_sibling == x11rb::NONE {
+                        None
+                    } else {
+                        Some(n.above_sibling)
+                    },
+                );
             }
         }
         Event::UnmapNotify(n) => {
@@ -1971,21 +1970,19 @@ where
                             4096,
                         )?
                         .reply_unchecked()?
+                        && prop.type_ == AtomEnum::ATOM.into()
+                        && let Some(values) = prop.value32()
                     {
-                        if prop.type_ == AtomEnum::ATOM.into() {
-                            if let Some(values) = prop.value32() {
-                                let mime_types = values
-                                    .filter_map(|val| match val {
-                                        val if val == xwm.atoms.TARGETS || val == xwm.atoms.TIMESTAMP => None,
-                                        val => mime_from_atom(val, &conn, &xwm.atoms).transpose(),
-                                    })
-                                    .collect::<Result<Vec<String>, _>>()?;
+                        let mime_types = values
+                            .filter_map(|val| match val {
+                                val if val == xwm.atoms.TARGETS || val == xwm.atoms.TIMESTAMP => None,
+                                val => mime_from_atom(val, &conn, &xwm.atoms).transpose(),
+                            })
+                            .collect::<Result<Vec<String>, _>>()?;
 
-                                if let Some(selection) = selection.type_() {
-                                    drop(_guard);
-                                    XwmHandler::new_selection(state, xwm_id, selection, mime_types);
-                                }
-                            }
+                        if let Some(selection) = selection.type_() {
+                            drop(_guard);
+                            XwmHandler::new_selection(state, xwm_id, selection, mime_types);
                         }
                     }
                 }
@@ -2309,8 +2306,8 @@ where
                     None
                 } {
                     let transfer = selection.incoming.get_mut(&n.window).unwrap();
-                    if transfer.incr {
-                        if let Some(prop) = conn
+                    if transfer.incr
+                        && let Some(prop) = conn
                             .get_property(
                                 true,
                                 *transfer.window,
@@ -2320,33 +2317,32 @@ where
                                 0x1fffffff,
                             )?
                             .reply_unchecked()?
-                        {
-                            if prop.value_len == 0 {
-                                debug!(?transfer, "Incr Transfer complete!");
-                                if transfer.source_data.is_empty() {
-                                    selection.incoming.remove(&n.window).unwrap().destroy(loop_handle);
-                                } else {
-                                    transfer.incr_done = true;
-                                }
+                    {
+                        if prop.value_len == 0 {
+                            debug!(?transfer, "Incr Transfer complete!");
+                            if transfer.source_data.is_empty() {
+                                selection.incoming.remove(&n.window).unwrap().destroy(loop_handle);
                             } else {
-                                transfer.read_selection_prop(prop);
-                                if let Some(token) = transfer.token.as_ref() {
-                                    let _ = loop_handle.enable(token);
-                                } else {
-                                    selection.incoming.remove(&n.window);
-                                }
+                                transfer.incr_done = true;
+                            }
+                        } else {
+                            transfer.read_selection_prop(prop);
+                            if let Some(token) = transfer.token.as_ref() {
+                                let _ = loop_handle.enable(token);
+                            } else {
+                                selection.incoming.remove(&n.window);
                             }
                         }
                     }
                 }
-            } else if n.atom == xwm.atoms._NET_WM_SYNC_REQUEST_COUNTER {
-                if let Some(surface) = xwm.windows.iter().find(|w| w.window_id() == n.window).cloned() {
-                    surface.init_net_wm_sync_request()?;
-                }
+            } else if n.atom == xwm.atoms._NET_WM_SYNC_REQUEST_COUNTER
+                && let Some(surface) = xwm.windows.iter().find(|w| w.window_id() == n.window).cloned()
+            {
+                surface.init_net_wm_sync_request()?;
             }
 
-            if n.state == Property::DELETE {
-                if let Some(selection) = if xwm
+            if n.state == Property::DELETE
+                && let Some(selection) = if xwm
                     .clipboard
                     .outgoing
                     .get(&n.window)
@@ -2370,36 +2366,36 @@ where
                     Some(&mut xwm.dnd.selection)
                 } else {
                     None
-                } {
-                    let transfer = selection.outgoing.get_mut(&n.window).unwrap();
+                }
+            {
+                let transfer = selection.outgoing.get_mut(&n.window).unwrap();
 
-                    transfer.property_set = false;
-                    if transfer.flush_property_on_delete {
-                        transfer.flush_property_on_delete = false;
-                        let len = transfer.flush_data()?;
-                        let requestor = transfer.request.requestor;
-                        trace!(requestor, len, "Send data chunk");
+                transfer.property_set = false;
+                if transfer.flush_property_on_delete {
+                    transfer.flush_property_on_delete = false;
+                    let len = transfer.flush_data()?;
+                    let requestor = transfer.request.requestor;
+                    trace!(requestor, len, "Send data chunk");
 
-                        if transfer.token.is_none() {
-                            if len > 0 || !transfer.sent_finished {
-                                // Either the transfer is done, but we still have bytes left, or
-                                // all bytes have been transferred but the final 0-byte data chunk
-                                // hasn't been sent yet
-                                transfer.flush_property_on_delete = true;
-                            } else {
-                                // done
-                                selection.outgoing.remove(&requestor);
-                            }
+                    if transfer.token.is_none() {
+                        if len > 0 || !transfer.sent_finished {
+                            // Either the transfer is done, but we still have bytes left, or
+                            // all bytes have been transferred but the final 0-byte data chunk
+                            // hasn't been sent yet
+                            transfer.flush_property_on_delete = true;
+                        } else {
+                            // done
+                            selection.outgoing.remove(&requestor);
                         }
                     }
                 }
             }
 
-            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
-                if let Some(property) = surface.update_property(n.atom)? {
-                    drop(_guard);
-                    state.property_notify(xwm_id, surface, property);
-                }
+            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned()
+                && let Some(property) = surface.update_property(n.atom)?
+            {
+                drop(_guard);
+                state.property_notify(xwm_id, surface, property);
             }
         }
         Event::FocusIn(n)

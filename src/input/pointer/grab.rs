@@ -366,10 +366,9 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
     ) {
         if let (Some((new_target, new_location)), Some((grab_target, grab_location))) =
             (&focus, self.focus.as_mut())
+            && *new_target == *grab_target
         {
-            if *new_target == *grab_target {
-                *grab_location = *new_location;
-            }
+            *grab_location = *new_location;
         }
         handle.motion(data, self.focus.clone(), event);
     }

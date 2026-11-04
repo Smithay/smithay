@@ -136,16 +136,16 @@ impl PopupGrabInner {
 
         let mut guard = self.internal.lock().unwrap();
 
-        if let Some(grab) = guard.current_grab() {
-            if grab != &parent {
-                // If the parent is a grabbing popup which has already been dismissed, this popup will be immediately dismissed.
-                if guard.is_dismissed(&parent) {
-                    return Err(PopupGrabError::ParentDismissed);
-                }
-
-                // If the parent is a popup that did not take an explicit grab, an error will be raised.
-                return Err(PopupGrabError::NotTheTopmostPopup);
+        if let Some(grab) = guard.current_grab()
+            && grab != &parent
+        {
+            // If the parent is a grabbing popup which has already been dismissed, this popup will be immediately dismissed.
+            if guard.is_dismissed(&parent) {
+                return Err(PopupGrabError::ParentDismissed);
             }
+
+            // If the parent is a popup that did not take an explicit grab, an error will be raised.
+            return Err(PopupGrabError::NotTheTopmostPopup);
         }
 
         guard.append_grab(popup);
@@ -378,14 +378,13 @@ where
     }
 
     fn unset_keyboard_grab(&self, data: &mut D, serial: Serial) {
-        if let Some(keyboard) = self.keyboard_handle.as_ref() {
-            if keyboard.is_grabbed()
-                && (keyboard.has_grab(self.serial)
-                    || keyboard.has_grab(self.previous_serial.unwrap_or(self.serial)))
-            {
-                keyboard.unset_grab(data);
-                keyboard.set_focus(data, Some(self.root.clone()), serial);
-            }
+        if let Some(keyboard) = self.keyboard_handle.as_ref()
+            && keyboard.is_grabbed()
+            && (keyboard.has_grab(self.serial)
+                || keyboard.has_grab(self.previous_serial.unwrap_or(self.serial)))
+        {
+            keyboard.unset_grab(data);
+            keyboard.set_focus(data, Some(self.root.clone()), serial);
         }
     }
 }

@@ -296,17 +296,17 @@ impl EGLContext {
             }
         }
 
-        if let Some(ref mut priority) = priority {
-            if has_context_priority {
-                // We don't tell the client if realtime is supported or not, but we can fall back
-                // to high if it's set. They can query for the actual context priority obtained
-                // later, since the driver has whatever reason to not set to the requested priority.
-                if *priority == ContextPriority::RealTime && !has_realtime_context_priority {
-                    *priority = ContextPriority::High;
-                }
-                context_attributes.push(ffi::egl::CONTEXT_PRIORITY_LEVEL_IMG as i32);
-                context_attributes.push(Into::<ffi::egl::types::EGLenum>::into(*priority) as i32);
+        if let Some(ref mut priority) = priority
+            && has_context_priority
+        {
+            // We don't tell the client if realtime is supported or not, but we can fall back
+            // to high if it's set. They can query for the actual context priority obtained
+            // later, since the driver has whatever reason to not set to the requested priority.
+            if *priority == ContextPriority::RealTime && !has_realtime_context_priority {
+                *priority = ContextPriority::High;
             }
+            context_attributes.push(ffi::egl::CONTEXT_PRIORITY_LEVEL_IMG as i32);
+            context_attributes.push(Into::<ffi::egl::types::EGLenum>::into(*priority) as i32);
         }
 
         context_attributes.push(ffi::egl::NONE as i32);

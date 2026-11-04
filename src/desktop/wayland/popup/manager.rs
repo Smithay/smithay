@@ -36,18 +36,17 @@ impl PopupManager {
 
     /// Needs to be called for [`PopupManager`] to correctly update its internal state.
     pub fn commit(&mut self, surface: &WlSurface) {
-        if get_role(surface) == Some(XDG_POPUP_ROLE) {
-            if let Some(i) = self
+        if get_role(surface) == Some(XDG_POPUP_ROLE)
+            && let Some(i) = self
                 .unmapped_popups
                 .iter()
                 .position(|p| p.wl_surface() == surface)
-            {
-                trace!("Popup got mapped");
-                let popup = self.unmapped_popups.swap_remove(i);
-                // at this point the popup must have a parent,
-                // or it would have raised a protocol error
-                let _ = self.add_popup(popup);
-            }
+        {
+            trace!("Popup got mapped");
+            let popup = self.unmapped_popups.swap_remove(i);
+            // at this point the popup must have a parent,
+            // or it would have raised a protocol error
+            let _ = self.add_popup(popup);
         }
     }
 

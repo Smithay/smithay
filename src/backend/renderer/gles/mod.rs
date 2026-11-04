@@ -341,11 +341,11 @@ impl GlesCleanup {
         };
         // Only activate the context once there is something to destroy: activating an idle
         // GPU's context wakes it from runtime suspend.
-        if !egl.is_current() {
-            if let Err(err) = unsafe { egl.make_current() } {
-                let _ = self.sender.send(first);
-                return Err(err);
-            }
+        if !egl.is_current()
+            && let Err(err) = unsafe { egl.make_current() }
+        {
+            let _ = self.sender.send(first);
+            return Err(err);
         }
         for resource in std::iter::once(first).chain(receiver.try_iter()) {
             match resource {
@@ -856,13 +856,13 @@ impl GlesRenderer {
     }
 
     fn export_sync_point(&self) -> Option<SyncPoint> {
-        if self.capabilities.contains(&Capability::ExportFence) {
-            if let Ok(fence) = EGLFence::create(self.egl.display()) {
-                unsafe {
-                    self.gl.Flush();
-                }
-                return Some(SyncPoint::from(fence));
+        if self.capabilities.contains(&Capability::ExportFence)
+            && let Ok(fence) = EGLFence::create(self.egl.display())
+        {
+            unsafe {
+                self.gl.Flush();
             }
+            return Some(SyncPoint::from(fence));
         }
         None
     }
@@ -2339,10 +2339,10 @@ impl Renderer for GlesRenderer {
 
         // if the sync point holds a EGLFence we can try
         // to directly insert it in our context
-        if let Some(fence) = sync.get::<EGLFence>() {
-            if fence.wait(display).is_ok() {
-                return Ok(());
-            }
+        if let Some(fence) = sync.get::<EGLFence>()
+            && fence.wait(display).is_ok()
+        {
+            return Ok(());
         }
 
         // alternative we try to create a temporary fence
@@ -2351,12 +2351,10 @@ impl Renderer for GlesRenderer {
         if let Some(native) = EGLFence::supports_importing(display)
             .then(|| sync.export())
             .flatten()
+            && let Ok(fence) = EGLFence::import(display, native)
+            && fence.wait(display).is_ok()
         {
-            if let Ok(fence) = EGLFence::import(display, native) {
-                if fence.wait(display).is_ok() {
-                    return Ok(());
-                }
-            }
+            return Ok(());
         }
 
         // if everything above failed we can only

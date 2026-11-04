@@ -1231,10 +1231,10 @@ where
         let target_state = if let Some(target) = self.target.as_mut() {
             let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
 
-            if let Some((_, dmabuf)) = &target.cached_buffer {
-                if dmabuf.size() != buffer_size || BufferTrait::format(dmabuf).code != target.format {
-                    *target.cached_buffer = None;
-                }
+            if let Some((_, dmabuf)) = &target.cached_buffer
+                && (dmabuf.size() != buffer_size || BufferTrait::format(dmabuf).code != target.format)
+            {
+                *target.cached_buffer = None;
             };
 
             if target.cached_buffer.is_none() {
@@ -2084,11 +2084,11 @@ where
     ) -> Result<(), Error<R, T>> {
         let render_id = self.frame.as_mut().unwrap().context_id();
         let sync = texture.needs_synchronization::<R>(&render_id);
-        if let Some(sync) = sync {
-            if let Err(err) = self.frame.as_mut().unwrap().wait(&sync) {
-                trace!(?err, "Failed to import sync point, blocking");
-                let _ = sync.wait();
-            }
+        if let Some(sync) = sync
+            && let Err(err) = self.frame.as_mut().unwrap().wait(&sync)
+        {
+            trace!(?err, "Failed to import sync point, blocking");
+            let _ = sync.wait();
         }
         texture
             .reimport::<R>(unsafe { (*self.render).renderer_mut() })
@@ -2277,10 +2277,10 @@ where
             texture,
             Some(damage),
         );
-        if res.is_ok() {
-            if let Some(surface) = surface {
-                surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
-            }
+        if res.is_ok()
+            && let Some(surface) = surface
+        {
+            surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
         }
         res
     }
@@ -2532,11 +2532,11 @@ where
     };
 
     let src_renderer = src.renderer_mut();
-    if let Some(sync) = existing_sync_point.take() {
-        if let Err(err) = src_renderer.wait(&sync) {
-            debug!(?err, "Unable to wait for existing sync_point, blocking..");
-            let _ = sync.wait();
-        }
+    if let Some(sync) = existing_sync_point.take()
+        && let Err(err) = src_renderer.wait(&sync)
+    {
+        debug!(?err, "Unable to wait for existing sync_point, blocking..");
+        let _ = sync.wait();
     }
     let mut framebuffer = src_renderer.bind(shadow_buffer).map_err(Error::Render)?;
     let shadow_size = Size::from((src_texture.width() as i32, src_texture.height() as i32));
@@ -3768,10 +3768,10 @@ where
             texture,
             Some(damage),
         );
-        if res.is_ok() {
-            if let Some(surface) = surface {
-                surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
-            }
+        if res.is_ok()
+            && let Some(surface) = surface
+        {
+            surface.data_map.insert_if_missing_threadsafe(|| texture_ref);
         }
         res
     }

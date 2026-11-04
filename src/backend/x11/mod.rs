@@ -932,17 +932,15 @@ impl X11Inner {
             x11::Event::ClientMessage(client_message) => {
                 if let Some(window) =
                     X11Inner::window_ref_from_id(inner, &client_message.window).and_then(|w| w.upgrade())
+                    && client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW
+                // Destroy the window?
                 {
-                    if client_message.data.as_data32()[0] == window.atoms.WM_DELETE_WINDOW
-                    // Destroy the window?
-                    {
-                        (callback)(
-                            X11Event::CloseRequested {
-                                window_id: client_message.window,
-                            },
-                            &mut (),
-                        );
-                    }
+                    (callback)(
+                        X11Event::CloseRequested {
+                            window_id: client_message.window,
+                        },
+                        &mut (),
+                    );
                 }
             }
 

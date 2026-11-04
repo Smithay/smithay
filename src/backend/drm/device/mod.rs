@@ -414,10 +414,10 @@ impl DrmDevice {
     pub fn pause(&mut self) {
         self.set_active(false);
         self.surfaces.retain(|surface| surface.strong_count() != 0);
-        if self.device_fd().is_privileged() {
-            if let Err(err) = self.release_master_lock() {
-                error!("Failed to drop drm master state Error: {}", err);
-            }
+        if self.device_fd().is_privileged()
+            && let Err(err) = self.release_master_lock()
+        {
+            error!("Failed to drop drm master state Error: {}", err);
         }
     }
 
@@ -428,11 +428,11 @@ impl DrmDevice {
     /// conflicting requirements when enabling or creating surfaces or you are prepared
     /// to handle errors caused by those.
     pub fn activate(&mut self, disable_connectors: bool) -> Result<(), Error> {
-        if self.device_fd().is_privileged() {
-            if let Err(err) = self.acquire_master_lock() {
-                error!("Failed to acquire drm master on activate. Error: {}", err);
-                return Err(Error::DrmMasterFailed);
-            }
+        if self.device_fd().is_privileged()
+            && let Err(err) = self.acquire_master_lock()
+        {
+            error!("Failed to acquire drm master on activate. Error: {}", err);
+            return Err(Error::DrmMasterFailed);
         }
         if !self.set_active(true) && disable_connectors {
             self.reset_state()

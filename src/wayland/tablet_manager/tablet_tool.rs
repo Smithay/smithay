@@ -216,26 +216,23 @@ impl WpTabletToolHandle {
         self.known_instances.lock().unwrap().push(wp_tool.downgrade());
 
         let guard = handle.arc.inner.lock().unwrap();
-        if let Some((focus, _location)) = &guard.focus {
-            if focus.same_client_as(&wp_tool.id()) {
-                if let Some(surface) = focus.wl_surface() {
-                    let tablet = guard.tablet.as_ref().unwrap();
-                    if let Some(wp_tablet) =
-                        tablet.arc.wp_tablet.focused_tablet_for_seat(&surface, &seat.id())
-                    {
-                        let serial = self.last_proximity_in.lock().unwrap().unwrap();
-                        wp_tool.proximity_in(serial.into(), &wp_tablet, &surface);
+        if let Some((focus, _location)) = &guard.focus
+            && focus.same_client_as(&wp_tool.id())
+            && let Some(surface) = focus.wl_surface()
+        {
+            let tablet = guard.tablet.as_ref().unwrap();
+            if let Some(wp_tablet) = tablet.arc.wp_tablet.focused_tablet_for_seat(&surface, &seat.id()) {
+                let serial = self.last_proximity_in.lock().unwrap().unwrap();
+                wp_tool.proximity_in(serial.into(), &wp_tablet, &surface);
 
-                        if let Some(serial) = *self.last_down.lock().unwrap() {
-                            wp_tool.down(serial.into());
-                        }
-
-                        // TODO: send axis, motion, button.
-
-                        let time = Clock::<Monotonic>::new().now().as_millis();
-                        wp_tool.frame(time);
-                    }
+                if let Some(serial) = *self.last_down.lock().unwrap() {
+                    wp_tool.down(serial.into());
                 }
+
+                // TODO: send axis, motion, button.
+
+                let time = Clock::<Monotonic>::new().now().as_millis();
+                wp_tool.frame(time);
             }
         }
     }

@@ -170,10 +170,9 @@ impl XdgToplevelIconUserData {
             .iter()
             .position(|(b, _)| b == buffer)
             .map(|id| guard.remove(id))
+            && let Some(shm) = buffer.data::<ShmBufferUserData>()
         {
-            if let Some(shm) = buffer.data::<ShmBufferUserData>() {
-                shm.remove_destruction_hook(&hook);
-            }
+            shm.remove_destruction_hook(&hook);
         }
     }
 

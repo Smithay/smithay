@@ -286,95 +286,98 @@ impl EiInputSeatInner {
 
     // Add any devices the server provides, for capabilities the client has bound, if no device yet
     fn refresh_devices(&mut self) {
-        if self.device_keyboard.is_none() && self.bound_capabilities.contains(DeviceCapability::Keyboard) {
-            if let Some((name, keymap_file)) = self.keyboard.as_ref() {
-                let device = self.seat.add_device(
-                    Some(name),
-                    DeviceType::Virtual,
-                    DeviceCapability::Keyboard.into(),
-                    |device| {
-                        let keyboard = device.interface::<reis::eis::Keyboard>().unwrap();
-                        let _ = keymap_file.with_fd(true, |fd, len| {
-                            keyboard.keymap(reis::eis::keyboard::KeymapType::Xkb, len as u32, fd);
-                        });
-                    },
-                );
-                device.resumed();
-                let _ = self.event_sender.send(InputEvent::DeviceAdded {
-                    device: device.clone(),
-                });
-                self.device_keyboard = Some(DeviceDropWrapper::new(device, &self.event_sender));
-            }
+        if self.device_keyboard.is_none()
+            && self.bound_capabilities.contains(DeviceCapability::Keyboard)
+            && let Some((name, keymap_file)) = self.keyboard.as_ref()
+        {
+            let device = self.seat.add_device(
+                Some(name),
+                DeviceType::Virtual,
+                DeviceCapability::Keyboard.into(),
+                |device| {
+                    let keyboard = device.interface::<reis::eis::Keyboard>().unwrap();
+                    let _ = keymap_file.with_fd(true, |fd, len| {
+                        keyboard.keymap(reis::eis::keyboard::KeymapType::Xkb, len as u32, fd);
+                    });
+                },
+            );
+            device.resumed();
+            let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                device: device.clone(),
+            });
+            self.device_keyboard = Some(DeviceDropWrapper::new(device, &self.event_sender));
         }
 
-        if self.device_pointer.is_none() && self.bound_capabilities.contains(DeviceCapability::Pointer) {
-            if let Some(name) = self.pointer.as_ref() {
-                let device = self.seat.add_device(
-                    Some(name),
-                    DeviceType::Virtual,
-                    DeviceCapability::Pointer | DeviceCapability::Button | DeviceCapability::Scroll,
-                    |_| {},
-                );
-                device.resumed();
-                let _ = self.event_sender.send(InputEvent::DeviceAdded {
-                    device: device.clone(),
-                });
-                self.device_pointer = Some(DeviceDropWrapper::new(device, &self.event_sender));
-            }
+        if self.device_pointer.is_none()
+            && self.bound_capabilities.contains(DeviceCapability::Pointer)
+            && let Some(name) = self.pointer.as_ref()
+        {
+            let device = self.seat.add_device(
+                Some(name),
+                DeviceType::Virtual,
+                DeviceCapability::Pointer | DeviceCapability::Button | DeviceCapability::Scroll,
+                |_| {},
+            );
+            device.resumed();
+            let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                device: device.clone(),
+            });
+            self.device_pointer = Some(DeviceDropWrapper::new(device, &self.event_sender));
         }
 
         if self.device_pointer_absolute.is_none()
             && self
                 .bound_capabilities
                 .contains(DeviceCapability::PointerAbsolute)
+            && let Some(name) = self.pointer_absolute.as_ref()
         {
-            if let Some(name) = self.pointer_absolute.as_ref() {
-                let regions = self.regions.clone();
-                let device = self.seat.add_device(
-                    Some(name),
-                    DeviceType::Virtual,
-                    DeviceCapability::PointerAbsolute | DeviceCapability::Button | DeviceCapability::Scroll,
-                    |device| advertise_regions(device, &regions),
-                );
-                device.resumed();
-                let _ = self.event_sender.send(InputEvent::DeviceAdded {
-                    device: device.clone(),
-                });
-                self.device_pointer_absolute = Some(DeviceDropWrapper::new(device, &self.event_sender));
-            }
+            let regions = self.regions.clone();
+            let device = self.seat.add_device(
+                Some(name),
+                DeviceType::Virtual,
+                DeviceCapability::PointerAbsolute | DeviceCapability::Button | DeviceCapability::Scroll,
+                |device| advertise_regions(device, &regions),
+            );
+            device.resumed();
+            let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                device: device.clone(),
+            });
+            self.device_pointer_absolute = Some(DeviceDropWrapper::new(device, &self.event_sender));
         }
 
-        if self.device_touch.is_none() && self.bound_capabilities.contains(DeviceCapability::Touch) {
-            if let Some(name) = self.touch.as_ref() {
-                let regions = self.regions.clone();
-                let device = self.seat.add_device(
-                    Some(name),
-                    DeviceType::Virtual,
-                    DeviceCapability::Touch.into(),
-                    |device| advertise_regions(device, &regions),
-                );
-                device.resumed();
-                let _ = self.event_sender.send(InputEvent::DeviceAdded {
-                    device: device.clone(),
-                });
-                self.device_touch = Some(DeviceDropWrapper::new(device, &self.event_sender));
-            }
+        if self.device_touch.is_none()
+            && self.bound_capabilities.contains(DeviceCapability::Touch)
+            && let Some(name) = self.touch.as_ref()
+        {
+            let regions = self.regions.clone();
+            let device = self.seat.add_device(
+                Some(name),
+                DeviceType::Virtual,
+                DeviceCapability::Touch.into(),
+                |device| advertise_regions(device, &regions),
+            );
+            device.resumed();
+            let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                device: device.clone(),
+            });
+            self.device_touch = Some(DeviceDropWrapper::new(device, &self.event_sender));
         }
 
-        if self.device_text.is_none() && self.bound_capabilities.contains(DeviceCapability::Text) {
-            if let Some(name) = self.text.as_ref() {
-                let device = self.seat.add_device(
-                    Some(name),
-                    DeviceType::Virtual,
-                    DeviceCapability::Text.into(),
-                    |_| {},
-                );
-                device.resumed();
-                let _ = self.event_sender.send(InputEvent::DeviceAdded {
-                    device: device.clone(),
-                });
-                self.device_text = Some(DeviceDropWrapper::new(device, &self.event_sender));
-            }
+        if self.device_text.is_none()
+            && self.bound_capabilities.contains(DeviceCapability::Text)
+            && let Some(name) = self.text.as_ref()
+        {
+            let device = self.seat.add_device(
+                Some(name),
+                DeviceType::Virtual,
+                DeviceCapability::Text.into(),
+                |_| {},
+            );
+            device.resumed();
+            let _ = self.event_sender.send(InputEvent::DeviceAdded {
+                device: device.clone(),
+            });
+            self.device_text = Some(DeviceDropWrapper::new(device, &self.event_sender));
         }
 
         // Deliver any device add/remove produced above to the client (see `flush`).

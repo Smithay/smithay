@@ -136,19 +136,19 @@ pub fn run(channel: Channel<WlcsEvent>) {
             );
 
             // draw the dnd icon if any
-            if let Some(icon) = state.dnd_icon.as_ref() {
-                if icon.surface.alive() {
-                    let dnd_icon_pos = (cursor_pos + icon.offset.to_f64())
-                        .to_physical(scale)
-                        .to_i32_round();
-                    elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
-                        &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
-                        &mut renderer,
-                        dnd_icon_pos,
-                        scale,
-                        1.0,
-                    ));
-                }
+            if let Some(icon) = state.dnd_icon.as_ref()
+                && icon.surface.alive()
+            {
+                let dnd_icon_pos = (cursor_pos + icon.offset.to_f64())
+                    .to_physical(scale)
+                    .to_i32_round();
+                elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
+                    &smithay::desktop::space::SurfaceTree::from_surface(&icon.surface),
+                    &mut renderer,
+                    dnd_icon_pos,
+                    scale,
+                    1.0,
+                ));
             }
 
             let _ = render_output(

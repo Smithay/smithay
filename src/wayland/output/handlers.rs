@@ -86,10 +86,10 @@ where
 
         // Send enter for surfaces already on this output.
         for surface in &inner.surfaces {
-            if let Ok(surface) = surface.upgrade() {
-                if surface.client().as_ref() == Some(client) {
-                    surface.enter(&output);
-                }
+            if let Ok(surface) = surface.upgrade()
+                && surface.client().as_ref() == Some(client)
+            {
+                surface.enter(&output);
             }
         }
 

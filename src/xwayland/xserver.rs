@@ -469,10 +469,10 @@ impl ClientData for XWaylandClientData {
 
         let mut child = self.child.lock().unwrap().take().unwrap();
         thread::spawn(move || {
-            if let Ok(status) = child.wait() {
-                if !status.success() {
-                    error!("Xwayland terminated: {}", status);
-                }
+            if let Ok(status) = child.wait()
+                && !status.success()
+            {
+                error!("Xwayland terminated: {}", status);
             }
         });
     }

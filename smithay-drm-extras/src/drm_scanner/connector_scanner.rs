@@ -82,10 +82,10 @@ impl ConnectorScanner {
             .collect();
 
         for handle in to_remove {
-            if let Some(info) = self.connectors.remove(&handle) {
-                if info.state() == connector::State::Connected {
-                    removed.push(info);
-                }
+            if let Some(info) = self.connectors.remove(&handle)
+                && info.state() == connector::State::Connected
+            {
+                removed.push(info);
             }
         }
 
