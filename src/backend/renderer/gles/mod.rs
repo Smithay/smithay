@@ -54,7 +54,7 @@ use crate::{
             format::{FormatSet, get_bpp, get_opaque, has_alpha},
         },
         egl::{
-            EGLContext, EGLDevice, EGLSurface, MakeCurrentError,
+            EGLContext, EGLDevice, EGLDisplay, EGLSurface, MakeCurrentError,
             fence::EGLFence,
             ffi::egl::{self as ffi_egl, types::EGLImage},
         },
@@ -398,6 +398,8 @@ pub struct GlesRenderer {
     gl_version: GlVersion,
     pub(crate) extensions: Vec<String>,
     is_software: bool,
+    #[cfg_attr(not(feature = "wayland_frontend"), allow(unused))]
+    use_udmabuf: bool,
     capabilities: Vec<Capability>,
 
     // shaders
@@ -564,6 +566,35 @@ impl GlesRenderer {
         Ok(capabilities)
     }
 
+    /// Whether `wl_shm` buffers should be imported through udmabuf on the GPU of the given [`EGLDisplay`].
+    ///
+    /// A conservative default for the `use_udmabuf` argument of [`new`](Self::new) and
+    /// [`with_capabilities`](Self::with_capabilities), see [`UdmabufAllocator::is_supported_by`](crate::backend::allocator::udmabuf::UdmabufAllocator::is_supported_by).
+    pub fn udmabuf_supported(display: &EGLDisplay) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            use crate::backend::allocator::udmabuf::UdmabufAllocator;
+
+            let Ok(path) =
+                EGLDevice::device_for_display(display).and_then(|device| device.render_device_path())
+            else {
+                return false;
+            };
+            match std::fs::File::open(&path) {
+                Ok(file) => UdmabufAllocator::is_supported_by(file),
+                Err(err) => {
+                    debug!(?err, ?path, "Failed to open drm device, not using udmabuf");
+                    false
+                }
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = display;
+            false
+        }
+    }
+
     /// Creates a new OpenGL ES renderer from a given [`EGLContext`]
     /// with all [`supported capabilities`](Self::supported_capabilities).
     ///
@@ -572,14 +603,18 @@ impl GlesRenderer {
     /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
     ///
     /// See: [`with_capabilities`](Self::with_capabilities) for more information
-    pub unsafe fn new(context: EGLContext) -> Result<GlesRenderer, GlesError> {
+    pub unsafe fn new(context: EGLContext, use_udmabuf: bool) -> Result<GlesRenderer, GlesError> {
         let supported_capabilities = Self::supported_capabilities(&context)?;
-        Self::with_capabilities(context, supported_capabilities)
+        Self::with_capabilities(context, supported_capabilities, use_udmabuf)
     }
 
     /// Creates a new OpenGL ES renderer from a given [`EGLContext`]
     /// with the specified [`Capabilities`](Capability). If a requested [`Capability`] is not supported an
     /// error will be returned.
+    ///
+    /// If `use_udmabuf` is set, [`ImportAll`](crate::backend::renderer::ImportAll) imports `wl_shm`
+    /// buffers without copying through udmabuf when possible. [`udmabuf_supported`](Self::udmabuf_supported)
+    /// tells whether the GPU reads udmabufs reliably and faster than a copy.
     ///
     /// # Safety
     ///
@@ -598,6 +633,7 @@ impl GlesRenderer {
     pub unsafe fn with_capabilities(
         context: EGLContext,
         capabilities: impl IntoIterator<Item = Capability>,
+        use_udmabuf: bool,
     ) -> Result<GlesRenderer, GlesError> {
         let span = info_span!(parent: &context.span, "renderer_gles2");
         let _guard = span.enter();
@@ -737,6 +773,7 @@ impl GlesRenderer {
 
             extensions: exts,
             is_software,
+            use_udmabuf,
             gl_version,
             capabilities,
 
@@ -1334,7 +1371,11 @@ impl ImportDma for GlesRenderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportDmaWl for GlesRenderer {}
+impl ImportDmaWl for GlesRenderer {
+    fn prefers_udmabuf(&self) -> bool {
+        self.use_udmabuf
+    }
+}
 
 impl GlesRenderer {
     #[profiling::function]
@@ -3634,7 +3675,7 @@ mod context_activation_tests {
             .find_map(|device| {
                 let display = unsafe { EGLDisplay::new(device) }.ok()?;
                 let context = EGLContext::new(&display).ok()?;
-                unsafe { GlesRenderer::new(context) }.ok()
+                unsafe { GlesRenderer::new(context, false) }.ok()
             })
             .expect("no usable EGL device; Mesa provides the software device these tests need")
     }

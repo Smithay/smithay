@@ -173,8 +173,10 @@ pub fn run_x11() {
             .expect("Failed to create X11 surface"),
     };
 
+    let use_udmabuf = GlesRenderer::udmabuf_supported(&egl);
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut renderer = unsafe { GlesRenderer::new(context) }.expect("Failed to initialize renderer");
+    let mut renderer =
+        unsafe { GlesRenderer::new(context, use_udmabuf) }.expect("Failed to initialize renderer");
 
     #[cfg(feature = "egl")]
     if renderer.bind_wl_display(&display.handle()).is_ok() {

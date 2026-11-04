@@ -168,6 +168,7 @@ where
                                 format,
                             },
                             destruction_hooks: Default::default(),
+                            udmabuf: Default::default(),
                         };
 
                         data_init.init(buffer, data);

@@ -154,7 +154,29 @@ is used for timestamps for synthesized events.
 +};
 ```
 
+`GlesRenderer::new`, `GlesRenderer::with_capabilities`, `GlowRenderer::new` and `GlowRenderer::with_capabilities`
+take a `use_udmabuf` argument, which enables importing `wl_shm` buffers without copying through udmabuf.
+`GlesRenderer::udmabuf_supported` gives a conservative default for it. The winit backend and `GbmGlesBackend`
+without a factory use this default.
+
+```diff
+-GlesRenderer::new(context);
++let use_udmabuf = GlesRenderer::udmabuf_supported(context.display());
++GlesRenderer::new(context, use_udmabuf);
+```
+
 ### Additions
+
+- `GlesRenderer`, `GlowRenderer` and the multi-GPU renderers import `wl_shm` buffers in `ImportAll`
+  without copying through udmabuf when possible, if created with `use_udmabuf`.
+  Other renderers can opt in with `ImportDmaWl::prefers_udmabuf`.
+
+- The new `allocator_udmabuf` feature gates `UdmabufAllocator` and the udmabuf import of `wl_shm` buffers.
+  It is enabled by default and by `renderer_gl`.
+
+- `UdmabufAllocator::is_supported_by` indicate whether the driver of a drm device reads udmabufs
+  reliably and faster than a copy, which currently are integrated `i915` (with LLC), `xe` and `amdgpu` GPUs. 
+  `SMITHAY_UDMABUF_IMPORT=0` or `1` overrides it.
 
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
   whole environment, instead of only `PATH` and

@@ -257,7 +257,8 @@ pub fn run_udev() {
         if std::env::var("ANVIL_GLES_DISABLE_INSTANCING").is_ok() {
             capabilities.retain(|capability| *capability != Capability::Instancing);
         }
-        Ok(unsafe { GlesRenderer::with_capabilities(context, capabilities)? })
+        let use_udmabuf = GlesRenderer::udmabuf_supported(display);
+        Ok(unsafe { GlesRenderer::with_capabilities(context, capabilities, use_udmabuf)? })
     }))
     .unwrap();
 
