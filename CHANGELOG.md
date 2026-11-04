@@ -156,6 +156,10 @@ is used for timestamps for synthesized events.
 
 ### Additions
 
+- `FrameFlags::OMIT_UNCHANGED_CURSOR_PLANE` leaves an unchanged cursor plane out of
+  the partial updates of a `DrmCompositor`, for compositors that move the cursor plane
+  between frames themselves (e.g. with `drmModeMoveCursor`).
+
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
   whole environment, instead of only `PATH` and
   `XDG_RUNTIME_DIR`. This lets `Xwayland` find GPU drivers installed outside
