@@ -1010,7 +1010,7 @@ impl ImportMemWl for GlesRenderer {
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
                 self.gl.BindTexture(ffi::TEXTURE_2D, 0);
 
-                if self.capabilities.contains(&Capability::Fencing) {
+                if self.egl.is_shared() && self.capabilities.contains(&Capability::Fencing) {
                     sync_lock.update_write(&self.gl);
                 } else if self.egl.is_shared() {
                     self.gl.Finish();
@@ -1104,7 +1104,7 @@ impl ImportMem for GlesRenderer {
             }
 
             let mut sync = RwLock::<TextureSync>::default();
-            if self.capabilities.contains(&Capability::Fencing) {
+            if self.egl.is_shared() && self.capabilities.contains(&Capability::Fencing) {
                 sync.get_mut().unwrap().update_write(&self.gl);
             } else if self.egl.is_shared() {
                 unsafe {
@@ -1181,7 +1181,7 @@ impl ImportMem for GlesRenderer {
             self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
             self.gl.BindTexture(ffi::TEXTURE_2D, 0);
 
-            if self.capabilities.contains(&Capability::Fencing) {
+            if self.egl.is_shared() && self.capabilities.contains(&Capability::Fencing) {
                 sync_lock.update_write(&self.gl);
             } else if self.egl.is_shared() {
                 self.gl.Finish();
@@ -2566,7 +2566,9 @@ impl GlesFrame<'_, '_> {
         }
 
         if let GlesTargetInternal::Texture { sync_lock, .. } = &mut self.target.0 {
-            sync_lock.update_write(&self.renderer.gl);
+            if self.renderer.egl.is_shared() && self.renderer.capabilities.contains(&Capability::Fencing) {
+                sync_lock.update_write(&self.renderer.gl);
+            }
         }
 
         // delayed destruction until the next frame rendering.
@@ -3094,7 +3096,7 @@ impl GlesFrame<'_, '_> {
             gl.DisableVertexAttribArray(program.attrib_vert_position as u32);
             drop(scope);
 
-            if self.renderer.capabilities.contains(&Capability::Fencing) {
+            if self.renderer.egl.is_shared() && self.renderer.capabilities.contains(&Capability::Fencing) {
                 sync_lock.update_read(gl);
             } else if self.renderer.egl.is_shared() {
                 gl.Finish();
@@ -3670,5 +3672,146 @@ mod context_activation_tests {
 
         unsafe { renderer.egl_context().make_current().unwrap() };
         assert_eq!(unsafe { renderer.gl.IsTexture(texture_id) }, ffi::FALSE);
+    }
+}
+
+#[cfg(test)]
+mod texture_sync_tests {
+    use super::*;
+    use crate::backend::egl::EGLDisplay;
+
+    const RED: [u8; 4] = [255, 0, 0, 255];
+    const BLUE: [u8; 4] = [0, 0, 255, 255];
+
+    // Mesa's software device, as in `context_activation_tests`.
+    fn test_context() -> EGLContext {
+        let mut devices = EGLDevice::enumerate()
+            .expect("EGL device enumeration failed; Mesa provides the software device these tests need")
+            .collect::<Vec<_>>();
+        devices.sort_by_key(|device| !device.is_software());
+        devices
+            .into_iter()
+            .find_map(|device| {
+                let display = unsafe { EGLDisplay::new(device) }.ok()?;
+                EGLContext::new(&display).ok()
+            })
+            .expect("no usable EGL device; Mesa provides the software device these tests need")
+    }
+
+    fn texture(renderer: &mut GlesRenderer, pixel: &[u8; 4]) -> GlesTexture {
+        renderer
+            .import_memory(pixel, Fourcc::Abgr8888, Size::from((1, 1)), false)
+            .unwrap()
+    }
+
+    /// Draws `texture` into pixel `x` of a 2×1 `target`.
+    fn draw(renderer: &mut GlesRenderer, target: &mut GlesTexture, texture: &GlesTexture, x: i32) {
+        let mut framebuffer = renderer.bind(target).unwrap();
+        let mut frame = renderer
+            .render(&mut framebuffer, Size::from((2, 1)), Transform::Normal)
+            .unwrap();
+        Frame::render_texture_from_to(
+            &mut frame,
+            texture,
+            Rectangle::from_size(Size::from((1.0, 1.0))),
+            Rectangle::new((x, 0).into(), (1, 1).into()),
+            &[Rectangle::from_size(Size::from((1, 1)))],
+            &[],
+            Transform::Normal,
+            1.0,
+        )
+        .unwrap();
+        // Nothing waits for the frame to finish.
+        let _ = frame.finish().unwrap();
+    }
+
+    /// Fences pending after each kind of texture access.
+    #[derive(Debug, PartialEq)]
+    struct Fenced {
+        /// A write fence on a texture `import_memory` made.
+        import: bool,
+        /// A write fence on it after `update_memory`.
+        update: bool,
+        /// A read fence on it after a frame drew it.
+        draw: bool,
+        /// A write fence on the texture the frame drew into.
+        target: bool,
+    }
+
+    fn fenced(renderer: &mut GlesRenderer) -> Fenced {
+        let texture = texture(renderer, &RED);
+        let import = texture.0.sync.read().unwrap().pending_fences().1;
+        renderer
+            .update_memory(&texture, &BLUE, Rectangle::from_size(Size::from((1, 1))))
+            .unwrap();
+        let update = texture.0.sync.read().unwrap().pending_fences().1;
+        let mut target =
+            Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Abgr8888, Size::from((2, 1))).unwrap();
+        draw(renderer, &mut target, &texture, 0);
+        Fenced {
+            import,
+            update,
+            draw: texture.0.sync.read().unwrap().pending_fences().0,
+            target: target.0.sync.read().unwrap().pending_fences().1,
+        }
+    }
+
+    #[test]
+    fn unshared_context_creates_no_texture_fences() {
+        let mut renderer = unsafe { GlesRenderer::new(test_context()) }.unwrap();
+        assert!(!renderer.egl_context().is_shared());
+
+        assert_eq!(
+            fenced(&mut renderer),
+            Fenced {
+                import: false,
+                update: false,
+                draw: false,
+                target: false,
+            }
+        );
+    }
+
+    #[test]
+    fn shared_context_fences_texture_reads_and_writes() {
+        let context = test_context();
+        let _shared = EGLContext::new_shared(context.display(), &context).unwrap();
+        let mut renderer = unsafe { GlesRenderer::new(context) }.unwrap();
+        assert!(renderer.capabilities.contains(&Capability::Fencing));
+
+        assert_eq!(
+            fenced(&mut renderer),
+            Fenced {
+                import: true,
+                update: true,
+                draw: true,
+                target: true,
+            }
+        );
+    }
+
+    #[test]
+    fn unshared_context_draws_a_texture_before_updating_it() {
+        let mut renderer = unsafe { GlesRenderer::new(test_context()) }.unwrap();
+        let texture = texture(&mut renderer, &RED);
+        let mut target =
+            Offscreen::<GlesTexture>::create_buffer(&mut renderer, Fourcc::Abgr8888, Size::from((2, 1)))
+                .unwrap();
+
+        draw(&mut renderer, &mut target, &texture, 0);
+        renderer
+            .update_memory(&texture, &BLUE, Rectangle::from_size(Size::from((1, 1))))
+            .unwrap();
+        draw(&mut renderer, &mut target, &texture, 1);
+
+        let framebuffer = renderer.bind(&mut target).unwrap();
+        let mapping = renderer
+            .copy_framebuffer(
+                &framebuffer,
+                Rectangle::from_size(Size::from((2, 1))),
+                Fourcc::Abgr8888,
+            )
+            .unwrap();
+        assert_eq!(renderer.map_texture(&mapping).unwrap(), [RED, BLUE].concat());
     }
 }

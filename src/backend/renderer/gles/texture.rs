@@ -62,6 +62,11 @@ impl GlesTexture {
     }
 }
 
+/// Fences after the last draw that read a texture and the last write to it.
+///
+/// They let another context sharing the texture wait for this one. A single context's commands
+/// already execute in order, so the renderer only creates them when its context
+/// [is shared](crate::backend::egl::EGLContext::is_shared).
 #[derive(Debug, Default)]
 pub(super) struct TextureSync {
     read_sync: Mutex<Option<ffi::types::GLsync>>,
@@ -117,6 +122,15 @@ impl TextureSync {
         }
 
         *write_sync = Some(unsafe { gl.FenceSync(ffi::SYNC_GPU_COMMANDS_COMPLETE, 0) });
+    }
+
+    /// Whether a fence is pending after a read and after a write, in that order.
+    #[cfg(test)]
+    pub(super) fn pending_fences(&self) -> (bool, bool) {
+        (
+            self.read_sync.lock().unwrap().is_some(),
+            self.write_sync.lock().unwrap().is_some(),
+        )
     }
 }
 

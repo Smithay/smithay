@@ -349,6 +349,11 @@ blocking the compositor while they resume.
 calls `create_frame` while the session still has an active frame, as the protocol requires. Previously
 the request was accepted and the extra frame was silently added to the session.
 
+`GlesRenderer` now only creates GL fences for texture uploads and draws when its `EGLContext` is
+shared. The fences let another context wait for this one, while a single context's commands already
+run in order, so on an unshared context they were driver calls for nothing: three for every texture
+drawn. On NVIDIA's driver every sync object also leaks a few bytes.
+
 ## 0.7.0
 
 ### Breaking changes
