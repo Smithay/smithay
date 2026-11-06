@@ -4226,23 +4226,29 @@ where
     let bo_format = bo.format().code;
     let bo_stride = bo.stride();
 
-    let mut copy_to_bo = |src, src_stride, src_height| {
-        if src_stride == bo_stride as i32 {
+    let mut copy_to_bo = |src: &[u8], src_size: Size<i32, BufferCoords>, src_stride: i32| {
+        let Some(copy_len) = cursor_copy_len(
+            element_src,
+            element_size,
+            src_size,
+            src_stride,
+            src.len(),
+            cursor_size,
+            bo_stride,
+        ) else {
+            return false;
+        };
+        let src = &src[..copy_len];
+
+        if src_stride as u32 == bo_stride {
             bo.write(src).is_ok()
         } else {
             let res = bo.map_mut(0, 0, cursor_size.w as u32, cursor_size.h as u32, |mbo| {
+                let dst_stride = mbo.stride() as usize;
                 let dst = mbo.buffer_mut();
-                for row in 0..src_height {
-                    let src_row_start = (row * src_stride) as usize;
-                    let src_row_end = src_row_start + src_stride as usize;
-                    let src_row = &src[src_row_start..src_row_end];
-                    let dst_row_start = (row * bo_stride as i32) as usize;
-                    let dst_row_end = dst_row_start + src_stride as usize;
-                    let dst_row = &mut dst[dst_row_start..dst_row_end];
-                    dst_row.copy_from_slice(src_row);
-                }
+                copy_cursor_rows(src, src_stride as usize, src_size.h as usize, dst, dst_stride)
             });
-            res.is_ok()
+            res.unwrap_or(false)
         }
     };
 
@@ -4258,15 +4264,24 @@ where
                     return false;
                 };
 
-                let expected_len = (data.stride * data.height) as usize;
-                if data.offset as usize + expected_len > len {
+                let Some(expected_len) = usize::try_from(data.stride).ok().and_then(|stride| {
+                    usize::try_from(data.height)
+                        .ok()
+                        .and_then(|height| stride.checked_mul(height))
+                }) else {
+                    return false;
+                };
+                let Ok(offset) = usize::try_from(data.offset) else {
+                    return false;
+                };
+                if offset.checked_add(expected_len).is_none_or(|end| end > len) {
                     return false;
                 };
 
                 copy_to_bo(
-                    unsafe { std::slice::from_raw_parts(ptr.offset(data.offset as isize), expected_len) },
+                    unsafe { std::slice::from_raw_parts(ptr.add(offset), expected_len) },
+                    Size::from((data.width, data.height)),
                     data.stride,
-                    data.height,
                 )
             })
             .unwrap_or(false)
@@ -4276,8 +4291,110 @@ where
                 return false;
             };
 
-            copy_to_bo(memory, memory.stride(), memory.size().h)
+            copy_to_bo(memory, memory.size(), memory.stride())
         }
+    }
+}
+
+fn cursor_copy_len(
+    element_src: Rectangle<f64, BufferCoords>,
+    element_size: Size<i32, Physical>,
+    src_size: Size<i32, BufferCoords>,
+    src_stride: i32,
+    src_len: usize,
+    cursor_size: Size<i32, Physical>,
+    dst_stride: u32,
+) -> Option<usize> {
+    // A viewport can be 1:1 at the origin but still cover only part of
+    // the buffer. The fast path copies the whole buffer.
+    let row_bytes = src_size.w.checked_mul(4)?;
+    let src_len_needed = usize::try_from(src_stride).ok().and_then(|stride| {
+        usize::try_from(src_size.h)
+            .ok()
+            .and_then(|height| stride.checked_mul(height))
+    })?;
+
+    (src_size.w > 0
+        && src_size.h > 0
+        && element_src == Rectangle::from_size(src_size).to_f64()
+        && element_size.w == src_size.w
+        && element_size.h == src_size.h
+        && src_size.w <= cursor_size.w
+        && src_size.h <= cursor_size.h
+        && src_stride >= row_bytes
+        && (src_stride as u32) <= dst_stride
+        && src_len_needed <= src_len)
+        .then_some(src_len_needed)
+}
+
+fn copy_cursor_rows(src: &[u8], src_stride: usize, rows: usize, dst: &mut [u8], dst_stride: usize) -> bool {
+    if src_stride == 0 || dst_stride == 0 {
+        return false;
+    }
+    let Some(src_bytes) = src_stride.checked_mul(rows) else {
+        return false;
+    };
+    let Some(dst_bytes) = dst_stride.checked_mul(rows) else {
+        return false;
+    };
+    if src_stride > dst_stride || src_bytes > src.len() || dst_bytes > dst.len() {
+        return false;
+    }
+    for (src_row, dst_row) in src[..src_bytes]
+        .chunks_exact(src_stride)
+        .zip(dst[..dst_bytes].chunks_exact_mut(dst_stride))
+    {
+        dst_row[..src_stride].copy_from_slice(src_row);
+    }
+    true
+}
+
+#[cfg(test)]
+mod cursor_copy_tests {
+    use super::*;
+
+    #[test]
+    fn copy_requires_the_whole_source_to_match_the_element_and_plane() {
+        let visible = Size::<i32, Physical>::from((64, 64));
+        let source = Size::<i32, BufferCoords>::from((64, 64));
+        let src = Rectangle::from_size(source).to_f64();
+        assert_eq!(
+            cursor_copy_len(src, visible, source, 256, 256 * 64, visible, 256),
+            Some(256 * 64)
+        );
+        assert_eq!(
+            cursor_copy_len(src, visible, source, 256, 256 * 65, visible, 256),
+            Some(256 * 64)
+        );
+
+        let larger = Size::<i32, BufferCoords>::from((72, 72));
+        assert_eq!(
+            cursor_copy_len(src, visible, larger, 288, 288 * 72, visible, 256),
+            None
+        );
+        assert_eq!(
+            cursor_copy_len(src, visible, larger, 288, 288 * 72, Size::from((128, 128)), 512),
+            None
+        );
+        assert_eq!(
+            cursor_copy_len(src, visible, source, 272, 272 * 64, visible, 256),
+            None
+        );
+        assert_eq!(
+            cursor_copy_len(src, visible, source, 256, 256 * 63, visible, 256),
+            None
+        );
+    }
+
+    #[test]
+    fn row_copy_rejects_a_short_or_narrow_destination() {
+        let src = [1u8; 12];
+        let mut dst = [0u8; 16];
+        assert!(!copy_cursor_rows(&src, 6, 2, &mut dst[..8], 4));
+        assert!(!copy_cursor_rows(&src, 6, 2, &mut dst[..8], 8));
+        assert!(copy_cursor_rows(&src, 6, 2, &mut dst, 8));
+        assert_eq!(&dst[..6], &[1; 6]);
+        assert_eq!(&dst[8..14], &[1; 6]);
     }
 }
 
