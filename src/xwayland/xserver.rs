@@ -20,6 +20,36 @@ use crate::{utils::user_data::UserDataMap, wayland::compositor::CompositorClient
 
 use super::x11_sockets::{X11Lock, prepare_x11_sockets};
 
+/// An X11 display reservation that outlives individual Xwayland processes.
+/// Keep it alive while waiting for connections and across server restarts.
+#[derive(Debug, Clone)]
+pub struct XWaylandDisplay(Arc<ReservedDisplay>);
+
+#[derive(Debug)]
+struct ReservedDisplay {
+    sockets: Vec<UnixStream>,
+    lock: X11Lock,
+}
+
+impl XWaylandDisplay {
+    /// Reserve a display number and its listening sockets without starting Xwayland.
+    pub fn new(display: Option<u32>, open_abstract_socket: bool) -> std::io::Result<Self> {
+        let (lock, sockets) = prepare_x11_sockets(display, open_abstract_socket)?;
+        Ok(Self(Arc::new(ReservedDisplay { lock, sockets })))
+    }
+
+    /// The reserved X11 display number.
+    pub fn display_number(&self) -> u32 {
+        self.0.lock.display_number()
+    }
+
+    /// Listening sockets to watch for pending connections. Do not accept them;
+    /// Xwayland must accept the queued connections after it starts.
+    pub fn listen_sockets(&self) -> &[UnixStream] {
+        &self.0.sockets
+    }
+}
+
 /// A handle to a running XWayland process. Using XWayland as an xserver for
 /// X11-based clients requires two connections: one wayland socket, where
 /// XWayland creates surfaces for its clients, and one X11 socket, where a
@@ -211,11 +241,84 @@ impl XWayland {
         A: AsRef<OsStr>,
         F: FnOnce(&UserDataMap),
     {
+        let reservation = XWaylandDisplay::new(display.into(), open_abstract_socket)?;
+        Self::spawn_on_display(
+            dh,
+            reservation,
+            envs,
+            extra_args,
+            stdout,
+            stderr,
+            user_data,
+            clear_env,
+        )
+    }
+
+    /// Start Xwayland on an existing display reservation, inheriting the session
+    /// environment. `WAYLAND_SOCKET` is replaced and `envs` is applied last.
+    ///
+    /// Retain a clone of `reservation` to watch for connections before startup
+    /// and to restart the server without changing `DISPLAY`. Only one server
+    /// may use a reservation at a time. Stop watching its sockets before starting
+    /// the server, and leave pending connections for Xwayland to accept.
+    ///
+    /// Other arguments and the return value match [`Self::spawn_with_inherited_env`].
+    ///
+    /// # Errors
+    /// Returns an error if process creation or Wayland client insertion fails.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_with_inherited_env_on_display<K, V, I, A, AI, F>(
+        dh: &DisplayHandle,
+        reservation: XWaylandDisplay,
+        envs: I,
+        extra_args: AI,
+        stdout: impl Into<std::process::Stdio>,
+        stderr: impl Into<std::process::Stdio>,
+        user_data: F,
+    ) -> std::io::Result<(Self, Client)>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+        AI: IntoIterator<Item = A>,
+        A: AsRef<OsStr>,
+        F: FnOnce(&UserDataMap),
+    {
+        Self::spawn_on_display(
+            dh,
+            reservation,
+            envs,
+            extra_args,
+            stdout,
+            stderr,
+            user_data,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_on_display<K, V, I, A, AI, F>(
+        dh: &DisplayHandle,
+        reservation: XWaylandDisplay,
+        envs: I,
+        extra_args: AI,
+        stdout: impl Into<std::process::Stdio>,
+        stderr: impl Into<std::process::Stdio>,
+        user_data: F,
+        clear_env: bool,
+    ) -> std::io::Result<(Self, Client)>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+        AI: IntoIterator<Item = A>,
+        A: AsRef<OsStr>,
+        F: FnOnce(&UserDataMap),
+    {
         let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
         let (wl_x11, wl_me) = UnixStream::pair()?;
-
-        let (lock, listen_sockets) = prepare_x11_sockets(display.into(), open_abstract_socket)?;
-        let display_number = lock.display_number();
+        let display_number = reservation.display_number();
+        let listen_sockets = reservation.listen_sockets();
 
         // XWayland writes the the display number and a newline to this pipe when it's ready.
         let (displayfd_recv, displayfd_send) =
@@ -235,7 +338,7 @@ impl XWayland {
             .arg("-displayfd")
             .arg(displayfd_send.as_raw_fd().to_string());
 
-        for socket in &listen_sockets {
+        for socket in listen_sockets {
             command.arg("-listenfd").arg(socket.as_raw_fd().to_string());
         }
 
@@ -284,7 +387,7 @@ impl XWayland {
         let wrapper = unsafe { calloop::generic::FdWrapper::new(displayfd_recv.as_raw_fd()) };
         let source = calloop::generic::Generic::new(wrapper, calloop::Interest::READ, calloop::Mode::Level);
         let inner = Instance {
-            display_lock: lock,
+            reservation,
             display_fd: displayfd_recv,
             x11_socket: Some(x_wm_me),
         };
@@ -318,10 +421,21 @@ impl XWayland {
         ))
     }
 
+    /// Process ID of the server, while it is attached to its Wayland client.
+    pub fn pid(&self) -> Option<u32> {
+        self.client
+            .get_data::<XWaylandClientData>()?
+            .child
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(Child::id)
+    }
+
     /// Returns the X11 display used by the instance, suitable for setting the
     /// `DISPLAY` environment variable.
     pub fn display_number(&self) -> u32 {
-        self.inner.lock().unwrap().display_lock.display_number()
+        self.inner.lock().unwrap().reservation.display_number()
     }
 
     /// Returns a file descriptor which can be polled for readiness. When the fd
@@ -353,7 +467,7 @@ impl XWayland {
 
 #[derive(Debug)]
 struct Instance {
-    display_lock: X11Lock,
+    reservation: XWaylandDisplay,
     x11_socket: Option<UnixStream>,
     display_fd: OwnedFd,
 }
@@ -389,7 +503,7 @@ impl calloop::EventSource for XWayland {
             callback(
                 XWaylandEvent::Ready {
                     x11_socket,
-                    display_number: guard.display_lock.display_number(),
+                    display_number: guard.reservation.display_number(),
                 },
                 &mut (),
             );
@@ -491,4 +605,41 @@ unsafe fn unset_cloexec(fd: RawFd) -> std::io::Result<()> {
     let fd = unsafe { BorrowedFd::borrow_raw(fd) };
     rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::empty())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        os::unix::net::UnixStream,
+    };
+
+    #[test]
+    fn reservation_keeps_pending_connections_and_lock_until_last_owner_drops() {
+        std::fs::create_dir_all("/tmp/.X11-unix").unwrap();
+        // Avoid the display numbers selected by ordinary auto-started servers.
+        let display = (100..200)
+            .find_map(|n| XWaylandDisplay::new(Some(n), false).ok())
+            .expect("reserve an isolated X11 display");
+        let number = display.display_number();
+        let path = format!("/tmp/.X11-unix/X{number}");
+        let lock = format!("/tmp/.X{number}-lock");
+        let retained = display.clone();
+        drop(display);
+        assert!(XWaylandDisplay::new(Some(number), false).is_err());
+        let mut peer = UnixStream::connect(&path).unwrap();
+        peer.write_all(b"pending X11 handshake").unwrap();
+        // Simulate the server accepting a connection after deferred startup.
+        let server = rustix::net::accept(&retained.listen_sockets()[0]).unwrap();
+        let mut data = [0; 21];
+        std::fs::File::from(server).read_exact(&mut data).unwrap();
+        assert_eq!(&data, b"pending X11 handshake");
+        drop(retained);
+        assert!(!std::path::Path::new(&path).exists());
+        assert!(!std::path::Path::new(&lock).exists());
+        // The same address can be reserved again after the final owner exits.
+        let again = XWaylandDisplay::new(Some(number), false).unwrap();
+        assert_eq!(again.display_number(), number);
+    }
 }
