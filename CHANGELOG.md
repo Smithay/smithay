@@ -292,6 +292,10 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+Drag and drop now sends `wl_data_source.target` when the target accepts a mime type with
+`wl_data_offer.accept`, or rejects the offer. Previously the source never heard of the target's choice,
+so clients could not give feedback on whether a drop would be accepted.
+
 `LibinputInputBackend` now processes events libinput has queued without making its file descriptor
 readable: the `DeviceAdded` events for devices already present after `Libinput::udev_assign_seat` and
 `Libinput::resume`, and `DeviceRemoved` after `Libinput::suspend`. Previously these waited for the next
