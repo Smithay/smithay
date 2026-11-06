@@ -588,7 +588,10 @@ pub trait XwmHandler {
 
 // XWM instances are replaceable. Their event sources must not retain the old
 // connection or continue delivering events after the instance is dropped.
-struct EventSourceCleanup(Option<Box<dyn FnOnce()>>);
+struct EventSourceCleanup {
+    tokens: Vec<calloop::RegistrationToken>,
+    remove: Box<dyn Fn(calloop::RegistrationToken)>,
+}
 
 impl std::fmt::Debug for EventSourceCleanup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -598,8 +601,8 @@ impl std::fmt::Debug for EventSourceCleanup {
 
 impl Drop for EventSourceCleanup {
     fn drop(&mut self) {
-        if let Some(remove) = self.0.take() {
-            remove();
+        for token in self.tokens.drain(..) {
+            (self.remove)(token);
         }
     }
 }
@@ -644,6 +647,19 @@ pub struct X11Wm {
 impl Drop for X11Wm {
     fn drop(&mut self) {
         xwm_id::remove(self.id.0);
+
+        for selection in [&mut self.clipboard, &mut self.primary, &mut self.dnd.selection] {
+            for transfer in selection.incoming.values_mut() {
+                if let Some(token) = transfer.token.take() {
+                    (self.event_sources.remove)(token);
+                }
+            }
+            for transfer in selection.outgoing.values_mut() {
+                if let Some(token) = transfer.token.take() {
+                    (self.event_sources.remove)(token);
+                }
+            }
+        }
 
         // Break reference cycle caused by deferred_sync hook
         for window in std::mem::take(&mut self.windows) {
@@ -1039,11 +1055,14 @@ impl X11Wm {
         let release = focus_release.clone();
         let focus_token = handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
         let weak_handle = handle.downgrade();
-        let focus_cleanup = EventSourceCleanup(Some(Box::new(move || {
-            if let Some(handle) = weak_handle.upgrade() {
-                handle.remove(focus_token);
-            }
-        })));
+        let focus_cleanup = EventSourceCleanup {
+            tokens: vec![focus_token],
+            remove: Box::new(move |token| {
+                if let Some(handle) = weak_handle.upgrade() {
+                    handle.remove(token);
+                }
+            }),
+        };
 
         drop(_guard);
         let mut wm = Self {
@@ -1086,14 +1105,7 @@ impl X11Wm {
                 data.disconnected(id);
             }
         })?;
-        let focus_cleanup = wm.event_sources.0.take().unwrap();
-        let weak_handle = handle.downgrade();
-        wm.event_sources = EventSourceCleanup(Some(Box::new(move || {
-            focus_cleanup();
-            if let Some(handle) = weak_handle.upgrade() {
-                handle.remove(event_token);
-            }
-        })));
+        wm.event_sources.tokens.push(event_token);
         Ok(wm)
     }
 
@@ -1356,6 +1368,7 @@ impl X11Wm {
                 .set_selection_owner(x11rb::NONE, selection.atom, selection.timestamp)?;
         }
 
+        self.conn.flush()?;
         Ok(())
     }
 
