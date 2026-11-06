@@ -32,6 +32,9 @@ pub use modifiers_state::{ModifiersState, SerializedMods};
 mod xkb_config;
 pub use xkb_config::XkbConfig;
 
+#[cfg(test)]
+mod tests;
+
 /// Trait representing object that can receive keyboard interactions
 pub trait KeyboardTarget<D>: IsAlive + fmt::Debug + Send
 where
@@ -1370,13 +1373,14 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
             let serialized = mods_state.serialize_back(state);
 
+            // `ModifiersState` doesn't select a layout, so keep the current one.
             let modifiers_changed = state.update_mask(
                 serialized.depressed,
                 serialized.latched,
                 serialized.locked,
-                serialized.layout_effective & xkb::STATE_LAYOUT_DEPRESSED,
-                serialized.layout_effective & xkb::STATE_LAYOUT_LATCHED,
-                serialized.layout_effective & xkb::STATE_LAYOUT_LOCKED,
+                state.serialize_layout(xkb::STATE_LAYOUT_DEPRESSED),
+                state.serialize_layout(xkb::STATE_LAYOUT_LATCHED),
+                state.serialize_layout(xkb::STATE_LAYOUT_LOCKED),
             );
 
             // Return early it nothing changed.
