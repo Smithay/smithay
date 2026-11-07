@@ -586,9 +586,31 @@ pub trait XwmHandler {
     fn disconnected(&mut self, _xwm: XwmId) {}
 }
 
+// XWM instances are replaceable. Their event sources must not retain the old
+// connection or continue delivering events after the instance is dropped.
+struct EventSourceCleanup {
+    tokens: Vec<calloop::RegistrationToken>,
+    remove: Box<dyn Fn(calloop::RegistrationToken)>,
+}
+
+impl std::fmt::Debug for EventSourceCleanup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventSourceCleanup").finish_non_exhaustive()
+    }
+}
+
+impl Drop for EventSourceCleanup {
+    fn drop(&mut self) {
+        for token in self.tokens.drain(..) {
+            (self.remove)(token);
+        }
+    }
+}
+
 /// The runtime state of an reparenting XWayland window manager.
 #[derive(Debug)]
 pub struct X11Wm {
+    event_sources: EventSourceCleanup,
     id: XwmId,
     conn: Arc<RustConnection>,
     client_scale: Arc<AtomicF64>,
@@ -625,6 +647,19 @@ pub struct X11Wm {
 impl Drop for X11Wm {
     fn drop(&mut self) {
         xwm_id::remove(self.id.0);
+
+        for selection in [&mut self.clipboard, &mut self.primary, &mut self.dnd.selection] {
+            for transfer in selection.incoming.values_mut() {
+                if let Some(token) = transfer.token.take() {
+                    (self.event_sources.remove)(token);
+                }
+            }
+            for transfer in selection.outgoing.values_mut() {
+                if let Some(token) = transfer.token.take() {
+                    (self.event_sources.remove)(token);
+                }
+            }
+        }
 
         // Break reference cycle caused by deferred_sync hook
         for window in std::mem::take(&mut self.windows) {
@@ -1017,13 +1052,21 @@ impl X11Wm {
         let wm_window = OwnedX11Window::new(win, &conn);
 
         let (focus_release, focus_release_source) = FocusReleaseHandle::new(&conn)?;
-        {
-            let release = focus_release.clone();
-            handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
-        }
+        let release = focus_release.clone();
+        let focus_token = handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
+        let weak_handle = handle.downgrade();
+        let focus_cleanup = EventSourceCleanup {
+            tokens: vec![focus_token],
+            remove: Box::new(move |token| {
+                if let Some(handle) = weak_handle.upgrade() {
+                    handle.remove(token);
+                }
+            }),
+        };
 
         drop(_guard);
-        let wm = Self {
+        let mut wm = Self {
+            event_sources: focus_cleanup,
             id,
             conn,
             client_scale,
@@ -1050,7 +1093,7 @@ impl X11Wm {
 
         let event_handle = handle.downgrade();
         let dh = dh.clone();
-        handle.insert_source(source, move |event, _, data| match event {
+        let event_token = handle.insert_source(source, move |event, _, data| match event {
             calloop::channel::Event::Msg(event) => {
                 if let Some(event_handle) = event_handle.upgrade() {
                     if let Err(err) = handle_event(&event_handle, &dh, data, id, event) {
@@ -1062,7 +1105,22 @@ impl X11Wm {
                 data.disconnected(id);
             }
         })?;
+        wm.event_sources.tokens.push(event_token);
         Ok(wm)
+    }
+
+    /// Allow Xwayland to terminate when this XWM is the only remaining client.
+    /// The compositor must be prepared to recreate the server and XWM afterward.
+    /// Requires XFixes 6; the server's `-terminate` option controls the idle delay.
+    pub fn allow_idle_termination(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let version = self.conn.xfixes_query_version(6, 0)?.reply()?;
+        if version.major_version < 6 {
+            return Err(ConnectionError::UnsupportedExtension.into());
+        }
+        self.conn
+            .xfixes_set_client_disconnect_mode(x11rb::protocol::xfixes::ClientDisconnectFlags::TERMINATE)?
+            .check()?;
+        Ok(())
     }
 
     /// Id of this X11 WM
@@ -1310,6 +1368,7 @@ impl X11Wm {
                 .set_selection_owner(x11rb::NONE, selection.atom, selection.timestamp)?;
         }
 
+        self.conn.flush()?;
         Ok(())
     }
 
