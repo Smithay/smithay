@@ -10,6 +10,9 @@ use wayland_protocols::ext::workspace::v1::server::{
 };
 use wayland_server::{Client, DisplayHandle, GlobalDispatch, backend::GlobalId};
 
+pub mod workspace;
+use workspace::Workspace;
+
 const MANAGER_VERSION: u32 = 1;
 
 /// Handler for workspace protocol
@@ -47,7 +50,9 @@ pub trait WorkspaceHandler: 'static {
 #[derive(Debug)]
 pub struct WorkspaceManagerState {
     global: GlobalId,
-    pub(crate) _display: DisplayHandle,
+    pub(crate) display: DisplayHandle,
+
+    pub(crate) workspaces: Vec<Workspace>,
 
     pub(crate) instances: Vec<ExtWorkspaceManagerV1>,
 }
@@ -88,7 +93,10 @@ impl WorkspaceManagerState {
 
         Self {
             global,
-            _display: display.clone(),
+            display: display.clone(),
+
+            workspaces: Default::default(),
+
             instances: Default::default(),
         }
     }
@@ -125,6 +133,8 @@ impl WorkspaceManagerState {
     /// [`done`]: WorkspaceManagerState::done
     pub fn send_pending_changes(&mut self) -> bool {
         let mut changed = false;
+
+        changed |= self.send_workspace_changes();
 
         changed
     }
