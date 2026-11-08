@@ -7,18 +7,23 @@ use std::{
 };
 
 use wayland_protocols::ext::workspace::v1::server::{
-    ext_workspace_group_handle_v1::{ExtWorkspaceGroupHandleV1, GroupCapabilities},
+    ext_workspace_group_handle_v1::{self, ExtWorkspaceGroupHandleV1, GroupCapabilities},
     ext_workspace_handle_v1::ExtWorkspaceHandleV1,
     ext_workspace_manager_v1::ExtWorkspaceManagerV1,
 };
-use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak, protocol::wl_output::WlOutput};
+use wayland_server::{
+    Client, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId, protocol::wl_output::WlOutput,
+};
 
 use crate::{
     output::{Output, WeakOutput},
     utils::user_data::UserDataMap,
-    wayland::workspace_manager::{
-        WorkspaceManagerState,
-        workspace::{Workspace, WorkspaceData},
+    wayland::{
+        Dispatch2,
+        workspace_manager::{
+            PendingRequest, WorkspaceHandler, WorkspaceManagerObjectData, WorkspaceManagerState,
+            workspace::{Workspace, WorkspaceData},
+        },
     },
 };
 
@@ -553,6 +558,71 @@ impl WorkspaceManagerState {
         });
 
         changed
+    }
+}
+
+impl<D> Dispatch2<ExtWorkspaceGroupHandleV1, D> for WorkspaceGroupData
+where
+    D: WorkspaceHandler,
+{
+    fn request(
+        &self,
+        state: &mut D,
+        client: &wayland_server::Client,
+        resource: &ExtWorkspaceGroupHandleV1,
+        request: <ExtWorkspaceGroupHandleV1 as wayland_server::Resource>::Request,
+        _dhandle: &wayland_server::DisplayHandle,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
+        let Some(handle) = self.handle.upgrade() else {
+            return;
+        };
+
+        let Some(manager) = self.manager.upgrade().ok() else {
+            return;
+        };
+
+        let capabilities = handle.with_current_state(|s| s.capabilities);
+
+        use ext_workspace_group_handle_v1::Request;
+        let pending = match request {
+            Request::CreateWorkspace { workspace }
+                if capabilities.contains(GroupCapabilities::CreateWorkspace) =>
+            {
+                WorkspaceHandler::create_workspace(state, resource, workspace.clone());
+                PendingGroupRequest::CreateWorkspace(workspace.clone())
+            }
+            Request::Destroy => {
+                self.destroyed(state, client.id(), resource);
+                return;
+            }
+            _ => {
+                return;
+            }
+        };
+
+        WorkspaceManagerObjectData::add_pending(
+            &manager,
+            PendingRequest::Group(resource.downgrade(), pending),
+        );
+    }
+
+    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtWorkspaceGroupHandleV1) {
+        if let Ok(manager) = self.manager.upgrade() {
+            WorkspaceManagerObjectData::remove_pending(&manager, Resource::id(resource));
+        }
+
+        WorkspaceHandler::group_destroyed(state, resource);
+
+        let Some(handle) = self.handle.upgrade() else {
+            return;
+        };
+
+        let mut group = handle.inner.0.lock().unwrap();
+
+        if let Some(pos) = group.instances.iter().position(|i| i.id() == resource.id()) {
+            group.instances.remove(pos);
+        }
     }
 }
 
