@@ -240,7 +240,7 @@ impl WorkspaceGroup {
         let changed = !inner.initial_done_sent;
         inner.initial_done_sent = true;
 
-        changed | inner.send_pending_changes()
+        changed | inner.send_pending_changes(self.downgrade())
     }
 
     pub(super) fn new_instance<D>(
@@ -276,6 +276,29 @@ impl WorkspaceGroup {
             .for_each(|o| with_wl_output(&instance, &o, ExtWorkspaceGroupHandleV1::output_enter));
 
         inner.instances.push(instance);
+    }
+
+    pub(crate) fn on_output_bind(&self, client: &Client, output: &WlOutput) {
+        let inner = self.inner.0.lock().unwrap();
+
+        for instance in inner
+            .instances
+            .iter()
+            .filter(|i| i.client().as_ref() == Some(client))
+        {
+            instance.output_enter(output);
+
+            if inner.initial_done_sent {
+                let Some(manager) = instance
+                    .data::<WorkspaceGroupData>()
+                    .and_then(|d| d.manager.upgrade().ok())
+                else {
+                    continue;
+                };
+
+                manager.done();
+            }
+        }
     }
 
     pub(crate) fn send_workspace_enter(&self, workspace: &ExtWorkspaceHandleV1) {
@@ -349,7 +372,7 @@ where
 }
 
 impl Inner {
-    fn send_pending_changes(&mut self) -> bool {
+    fn send_pending_changes(&mut self, handle: WeakWorkspaceGroup) -> bool {
         let mut send_capabilities = false;
 
         if let Some(pending_state) = self.pending_state.take() {
@@ -379,8 +402,19 @@ impl Inner {
 
         let changed = send_capabilities | !old_outputs.is_empty() | !new_outputs.is_empty();
 
-        // TODO: Inject a weak reference to outputs so client can be notified in case they bind the
-        // output after the workspace.
+        for output in &old_outputs {
+            output.inner.0.lock().unwrap().workspace_groups.remove(&handle);
+        }
+
+        for output in &new_outputs {
+            output
+                .inner
+                .0
+                .lock()
+                .unwrap()
+                .workspace_groups
+                .insert(handle.clone());
+        }
 
         if changed {
             for instance in &self.instances {
@@ -401,10 +435,12 @@ impl Inner {
         changed
     }
 
-    fn remove(&mut self) {
+    fn remove(&mut self, handle: WeakWorkspaceGroup) {
         let outputs: Vec<_> = self.outputs.drain().flat_map(|o| o.upgrade()).collect();
 
-        // TODO: Remove the output's reference here.
+        for output in &outputs {
+            output.inner.0.lock().unwrap().workspace_groups.remove(&handle);
+        }
 
         for instance in std::mem::take(&mut self.instances) {
             outputs.iter().for_each(|o| {
@@ -505,7 +541,7 @@ impl WorkspaceManagerState {
             if !inner.pending_removal {
                 true
             } else {
-                inner.remove();
+                inner.remove(g.downgrade());
                 changed = true;
                 false
             }
