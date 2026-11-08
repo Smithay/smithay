@@ -10,6 +10,9 @@ use wayland_protocols::ext::workspace::v1::server::{
 };
 use wayland_server::{Client, DisplayHandle, GlobalDispatch, backend::GlobalId};
 
+pub mod group;
+use group::WorkspaceGroup;
+
 pub mod workspace;
 use workspace::Workspace;
 
@@ -53,6 +56,7 @@ pub struct WorkspaceManagerState {
     pub(crate) display: DisplayHandle,
 
     pub(crate) workspaces: Vec<Workspace>,
+    pub(crate) groups: Vec<WorkspaceGroup>,
 
     pub(crate) instances: Vec<ExtWorkspaceManagerV1>,
 }
@@ -96,6 +100,7 @@ impl WorkspaceManagerState {
             display: display.clone(),
 
             workspaces: Default::default(),
+            groups: Default::default(),
 
             instances: Default::default(),
         }
@@ -134,7 +139,9 @@ impl WorkspaceManagerState {
     pub fn send_pending_changes(&mut self) -> bool {
         let mut changed = false;
 
+        changed |= self.send_groups_changes();
         changed |= self.send_workspace_changes();
+        changed |= self.send_removed_groups();
 
         changed
     }
