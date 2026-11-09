@@ -7,16 +7,19 @@ use std::{
 
 use wayland_protocols::ext::workspace::v1::server::{
     ext_workspace_group_handle_v1::ExtWorkspaceGroupHandleV1,
-    ext_workspace_handle_v1::{ExtWorkspaceHandleV1, State, WorkspaceCapabilities},
+    ext_workspace_handle_v1::{self, ExtWorkspaceHandleV1, State, WorkspaceCapabilities},
     ext_workspace_manager_v1::ExtWorkspaceManagerV1,
 };
-use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak};
+use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak, backend::ClientId};
 
 use crate::{
     utils::user_data::UserDataMap,
-    wayland::workspace_manager::{
-        WorkspaceManagerState,
-        group::{WeakWorkspaceGroup, WorkspaceGroup},
+    wayland::{
+        Dispatch2,
+        workspace_manager::{
+            PendingRequest, WorkspaceHandler, WorkspaceManagerObjectData, WorkspaceManagerState,
+            group::{WeakWorkspaceGroup, WorkspaceGroup},
+        },
     },
 };
 
@@ -508,6 +511,85 @@ impl WorkspaceManagerState {
         });
 
         changed
+    }
+}
+
+impl<D> Dispatch2<ExtWorkspaceHandleV1, D> for WorkspaceData
+where
+    D: WorkspaceHandler,
+{
+    fn request(
+        &self,
+        state: &mut D,
+        client: &wayland_server::Client,
+        resource: &ExtWorkspaceHandleV1,
+        request: <ExtWorkspaceHandleV1 as Resource>::Request,
+        _dhandle: &wayland_server::DisplayHandle,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
+        let Some(handle) = self.handle.upgrade() else {
+            return;
+        };
+
+        let Some(manager) = self.manager.upgrade().ok() else {
+            return;
+        };
+
+        let capabilities = handle.with_current_state(|s| s.capabilities);
+
+        use ext_workspace_handle_v1::Request;
+        let pending = match request {
+            Request::Destroy => {
+                self.destroyed(state, client.id(), resource);
+                return;
+            }
+            Request::Activate if capabilities.contains(WorkspaceCapabilities::Activate) => {
+                WorkspaceHandler::activate(state, resource);
+                PendingWorkspaceRequest::Activate
+            }
+            Request::Deactivate if capabilities.contains(WorkspaceCapabilities::Deactivate) => {
+                WorkspaceHandler::deactivate(state, resource);
+                PendingWorkspaceRequest::Deactivate
+            }
+            Request::Assign { workspace_group } if capabilities.contains(WorkspaceCapabilities::Assign) => {
+                WorkspaceHandler::assign(state, resource, &workspace_group);
+                PendingWorkspaceRequest::Assign(workspace_group.downgrade())
+            }
+            Request::Remove if capabilities.contains(WorkspaceCapabilities::Remove) => {
+                WorkspaceHandler::remove(state, resource);
+                PendingWorkspaceRequest::Remove
+            }
+            _ => {
+                return;
+            }
+        };
+
+        WorkspaceManagerObjectData::add_pending(
+            &manager,
+            PendingRequest::Workspace(resource.downgrade(), pending),
+        );
+    }
+
+    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtWorkspaceHandleV1) {
+        if let Ok(manager) = self.manager.upgrade() {
+            WorkspaceManagerObjectData::remove_pending(&manager, Resource::id(resource));
+        }
+
+        WorkspaceHandler::workspace_destroyed(state, resource);
+
+        let Some(handle) = self.handle.upgrade() else {
+            return;
+        };
+
+        let mut workspace = handle.inner.0.lock().unwrap();
+
+        if let Some(pos) = workspace
+            .instances
+            .iter()
+            .position(|w| Resource::id(w) == Resource::id(resource))
+        {
+            workspace.instances.remove(pos);
+        }
     }
 }
 
