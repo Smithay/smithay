@@ -64,6 +64,11 @@ pub struct WorkspaceGroupData {
     manager: Weak<ExtWorkspaceManagerV1>,
 }
 
+#[derive(Debug)]
+pub(crate) enum PendingGroupRequest {
+    CreateWorkspace(String),
+}
+
 impl WorkspaceGroup {
     fn new(capabilities: GroupCapabilities, capacity: usize) -> Self {
         let inner = Inner {

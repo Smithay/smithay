@@ -6,6 +6,7 @@ use std::{
 };
 
 use wayland_protocols::ext::workspace::v1::server::{
+    ext_workspace_group_handle_v1::ExtWorkspaceGroupHandleV1,
     ext_workspace_handle_v1::{ExtWorkspaceHandleV1, State, WorkspaceCapabilities},
     ext_workspace_manager_v1::ExtWorkspaceManagerV1,
 };
@@ -73,6 +74,14 @@ pub struct WorkspaceData {
 #[derive(Debug)]
 pub struct Builder {
     workspace_state: WorkspaceState,
+}
+
+#[derive(Debug)]
+pub(crate) enum PendingWorkspaceRequest {
+    Activate,
+    Deactivate,
+    Assign(Weak<ExtWorkspaceGroupHandleV1>),
+    Remove,
 }
 
 impl Workspace {
