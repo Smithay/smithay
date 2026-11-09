@@ -449,6 +449,25 @@ impl DrmSurface {
         }
     }
 
+    /// Queue a page flip that may be applied asynchronously, allowing the
+    /// scanout to tear. Only the atomic API can express this; on the legacy
+    /// API the request fails so the caller can fall back to a synchronous
+    /// flip.
+    pub fn page_flip_async<'a>(
+        &self,
+        planes: impl IntoIterator<Item = PlaneState<'a>>,
+        event: bool,
+        async_flip: bool,
+    ) -> Result<(), Error> {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.page_flip_with_async(planes, event, async_flip),
+            DrmSurfaceInternal::Legacy(_) => Err(Error::UnknownProperty {
+                handle: self.crtc.into(),
+                name: "PAGE_FLIP_ASYNC",
+            }),
+        }
+    }
+
     /// Returns a set of available planes for this surface
     pub fn planes(&self) -> &Planes {
         &self.planes

@@ -870,6 +870,18 @@ impl AtomicDrmSurface {
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         event: bool,
     ) -> Result<(), Error> {
+        self.page_flip_with_async(planes, event, false)
+    }
+
+    /// Queue a page flip, optionally asking the kernel for an asynchronous
+    /// flip (`DRM_MODE_PAGE_FLIP_ASYNC`). Asynchronous flips may tear; the
+    /// caller is responsible for using them only where that is acceptable.
+    pub fn page_flip_with_async<'a>(
+        &self,
+        planes: impl IntoIterator<Item = PlaneState<'a>>,
+        event: bool,
+        async_flip: bool,
+    ) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -893,23 +905,20 @@ impl AtomicDrmSurface {
         // If we would set anything here, that would require a modeset, this would fail,
         // indicating a problem in our assumptions.
         trace!(?planes, "Queueing page flip: {:?}", req);
-        let res = self
-            .fd
-            .atomic_commit(
-                if event {
-                    AtomicCommitFlags::PAGE_FLIP_EVENT | AtomicCommitFlags::NONBLOCK
-                } else {
-                    AtomicCommitFlags::NONBLOCK
-                },
-                req.build()?,
-            )
-            .map_err(|source| {
-                Error::Access(AccessError {
-                    errmsg: "Page flip commit failed",
-                    dev: self.fd.dev_path(),
-                    source,
-                })
-            });
+        let mut flags = AtomicCommitFlags::NONBLOCK;
+        if event {
+            flags |= AtomicCommitFlags::PAGE_FLIP_EVENT;
+        }
+        if async_flip {
+            flags |= AtomicCommitFlags::PAGE_FLIP_ASYNC;
+        }
+        let res = self.fd.atomic_commit(flags, req.build()?).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Page flip commit failed",
+                dev: self.fd.dev_path(),
+                source,
+            })
+        });
 
         if res.is_ok() {
             for plane in planes.iter() {

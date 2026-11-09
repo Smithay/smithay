@@ -39,6 +39,13 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = GbmBuffer> + 'static, U> {
     drm: Arc<DrmSurface>,
     is_opaque: bool,
     supports_fencing: bool,
+    /// Ask for `PAGE_FLIP_ASYNC` on the next page flips. Cleared by this
+    /// type when the driver refuses one, so we fall back to vsync.
+    async_flip: bool,
+    /// Async atomic flips may only change `FB_ID`. The frame that arms tearing
+    /// is a normal flip without damage clips (or fences); later frames keep
+    /// that plane state and can use `PAGE_FLIP_ASYNC`.
+    async_flip_armed: bool,
     span: tracing::Span,
 }
 
@@ -95,6 +102,8 @@ where
                         drm,
                         is_opaque,
                         supports_fencing,
+                        async_flip: false,
+                        async_flip_armed: false,
                         span,
                     });
                 }
@@ -382,23 +391,66 @@ where
             None
         };
 
-        let plane_state = PlaneState {
-            handle: self.plane(),
+        let plane = self.plane();
+        // An async flip may only change FB_ID, so it cannot carry damage clips
+        // (or an input fence). The first flip after enabling it is a normal
+        // one without them; that leaves FB_DAMAGE_CLIPS at 0 in the atomic
+        // state and every later async request only changes FB_ID.
+        let async_requested = self.async_flip && fence.is_none();
+        let plane_state = |omit_damage: bool| PlaneState {
+            handle: plane,
             config: Some(PlaneConfig {
                 src,
                 dst,
                 transform: Transform::Normal,
                 alpha: 1.0,
-                damage_clips: damage_clips.as_ref().map(|d| d.blob()),
+                damage_clips: if omit_damage {
+                    None
+                } else {
+                    damage_clips.as_ref().map(|d| d.blob())
+                },
                 fb: *handle.as_ref(),
                 fence: fence.as_ref().map(|fence| fence.as_fd()),
             }),
         };
 
         let flip = if self.drm.commit_pending() {
-            self.drm.commit([plane_state], true)
+            let result = self.drm.commit([plane_state(async_requested)], true);
+            if result.is_ok() {
+                self.async_flip_armed = async_requested;
+            }
+            result
+        } else if async_requested {
+            if self.async_flip_armed {
+                match self.drm.page_flip_async([plane_state(true)], true, true) {
+                    Ok(()) => Ok(()),
+                    Err(err) => {
+                        // The driver or the current plane setup does not allow
+                        // async flips. Do not drop the frame: try a normal flip
+                        // and stop asking for async until the caller re-enables
+                        // it (which it only does after seeing this flag drop).
+                        debug!("async page flip refused, falling back to vsync: {err}");
+                        self.async_flip = false;
+                        self.async_flip_armed = false;
+                        self.drm.page_flip([plane_state(false)], true)
+                    }
+                }
+            } else {
+                // Arm tearing with a normal full-frame flip (no damage
+                // clips). Later async flips then only change FB_ID.
+                let result = self.drm.page_flip([plane_state(true)], true);
+                if result.is_ok() {
+                    self.async_flip_armed = true;
+                }
+                result
+            }
         } else {
-            self.drm.page_flip([plane_state], true)
+            // A fence-carrying frame cannot tear; the next fence-free frame
+            // has to arm the plane state again.
+            if self.async_flip {
+                self.async_flip_armed = false;
+            }
+            self.drm.page_flip([plane_state(false)], true)
         };
         if flip.is_ok() {
             self.pending_fb = Some((slot, user_data));
@@ -406,8 +458,23 @@ where
         flip.map_err(Error::DrmError)
     }
 
+    /// Whether queued frames ask for asynchronous page flips.
+    pub fn async_flip(&self) -> bool {
+        self.async_flip
+    }
+
+    /// Ask for asynchronous (tearing) page flips from now on. The next flip
+    /// that the driver refuses clears this again automatically.
+    pub fn use_async_flip(&mut self, async_flip: bool) {
+        if async_flip != self.async_flip {
+            self.async_flip_armed = false;
+        }
+        self.async_flip = async_flip;
+    }
+
     /// Reset the underlying buffers
     pub fn reset_buffers(&mut self) {
+        self.async_flip_armed = false;
         self.swapchain.reset_buffers()
     }
 
