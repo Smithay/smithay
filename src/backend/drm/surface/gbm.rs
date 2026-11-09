@@ -46,6 +46,10 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = GbmBuffer> + 'static, U> {
     /// is a normal flip without damage clips (or fences); later frames keep
     /// that plane state and can use `PAGE_FLIP_ASYNC`.
     async_flip_armed: bool,
+    /// Force the next queued frame through a full atomic commit, even when
+    /// no mode or VRR change is pending. Used to reapply state after a VT
+    /// switch, when another DRM master may have reset it.
+    force_commit: bool,
     span: tracing::Span,
 }
 
@@ -104,6 +108,7 @@ where
                         supports_fencing,
                         async_flip: false,
                         async_flip_armed: false,
+                        force_commit: false,
                         span,
                     });
                 }
@@ -414,9 +419,10 @@ where
             }),
         };
 
-        let flip = if self.drm.commit_pending() {
+        let flip = if self.drm.commit_pending() || self.force_commit {
             let result = self.drm.commit([plane_state(async_requested)], true);
             if result.is_ok() {
+                self.force_commit = false;
                 self.async_flip_armed = async_requested;
             }
             result
@@ -470,6 +476,13 @@ where
             self.async_flip_armed = false;
         }
         self.async_flip = async_flip;
+    }
+
+    /// Make the next queued frame a full atomic commit. This reapplies the
+    /// current mode and VRR settings after another DRM master may have reset
+    /// them, even when smithay does not consider a commit pending.
+    pub fn reapply_state(&mut self) {
+        self.force_commit = true;
     }
 
     /// Reset the underlying buffers
