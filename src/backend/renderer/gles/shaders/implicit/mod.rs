@@ -42,6 +42,19 @@ pub(in super::super) struct GlesTexProgramInner {
 }
 
 impl GlesTexProgram {
+    /// Returns the GL program ids of this shader, as `[normal, debug]` for each
+    /// variant (RGBA, RGBX and external textures).
+    ///
+    /// The renderer only sets the `tex` sampler uniform. A shader that samples
+    /// additional textures can use these ids to set its other sampler uniforms,
+    /// e.g. in [`GlesRenderer::with_context`].
+    pub fn program_ids(&self) -> [[ffi::types::GLuint; 2]; 3] {
+        self.0
+            .variants
+            .each_ref()
+            .map(|variant| [variant.normal.program, variant.debug.program])
+    }
+
     pub(in super::super) fn variant_for_format(
         &self,
         format: Option<ffi::types::GLenum>,
