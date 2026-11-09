@@ -288,6 +288,20 @@ impl WorkspaceGroup {
         inner.instances.push(instance);
     }
 
+    pub(super) fn remove_instances(&self, manager: &ExtWorkspaceManagerV1) {
+        let mut inner = self.inner.0.lock().unwrap();
+
+        let manager_id = Resource::id(manager);
+        inner
+            .instances
+            .extract_if(.., |i| {
+                Resource::id(i).same_client_as(&manager_id)
+                    && i.data::<WorkspaceGroupData>()
+                        .is_some_and(|d| d.manager.id() == manager_id)
+            })
+            .for_each(std::mem::drop);
+    }
+
     pub(crate) fn on_output_bind(&self, client: &Client, output: &WlOutput) {
         let inner = self.inner.0.lock().unwrap();
 
