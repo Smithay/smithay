@@ -474,6 +474,17 @@ impl DrmSurface {
         }
     }
 
+    /// Returns whether the driver supports asynchronous page flips
+    /// ([`PageFlipFlags::ASYNC`]) on this surface.
+    ///
+    /// Without support the flag is dropped and flips are synchronous.
+    pub fn supports_async_page_flips(&self) -> bool {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.supports_async_page_flips(),
+            DrmSurfaceInternal::Legacy(surf) => surf.supports_async_page_flips(),
+        }
+    }
+
     /// Returns if the underlying device is currently paused or not.
     pub fn is_active(&self) -> bool {
         match &*self.internal {

@@ -690,6 +690,10 @@ impl AtomicDrmSurface {
         Ok(())
     }
 
+    pub(crate) fn supports_async_page_flips(&self) -> bool {
+        self.supports_async_page_flips
+    }
+
     pub fn commit_pending(&self) -> bool {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }

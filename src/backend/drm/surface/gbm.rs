@@ -40,6 +40,12 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = GbmBuffer> + 'static, U> {
     drm: Arc<DrmSurface>,
     is_opaque: bool,
     supports_fencing: bool,
+    /// The plane state on screen only differs from the next frame in `FB_ID`,
+    /// so the next frame can be flipped asynchronously.
+    async_flip_armed: bool,
+    /// An asynchronous page flip was refused (or is not supported), so frames
+    /// asking for one are flipped synchronously.
+    async_flip_failed: bool,
     span: tracing::Span,
 }
 
@@ -96,6 +102,8 @@ where
                         drm,
                         is_opaque,
                         supports_fencing,
+                        async_flip_armed: false,
+                        async_flip_failed: false,
                         span,
                     });
                 }
@@ -379,37 +387,80 @@ where
             None
         };
 
-        let plane_state = PlaneState {
-            handle: self.plane(),
+        // Some kernels only let an async atomic commit change FB_ID, so
+        // it cannot carry damage clips or an input fence. A frame asking for an
+        // async flip therefore leaves FB_DAMAGE_CLIPS at zero, and the first
+        // one is a normal flip that arms it. A frame with a fence is flipped
+        // synchronously.
+        if presentation_mode == PresentationMode::Async && !self.drm.supports_async_page_flips() {
+            self.async_flip_failed = true;
+        }
+        let async_requested =
+            presentation_mode == PresentationMode::Async && !self.async_flip_failed && fence.is_none();
+
+        let plane = self.plane();
+        let plane_state = |omit_damage: bool| PlaneState {
+            handle: plane,
             config: Some(PlaneConfig {
                 src,
                 dst,
                 transform: Transform::Normal,
                 alpha: 1.0,
-                damage_clips: damage_clips.as_ref().map(|d| d.blob()),
+                damage_clips: if omit_damage {
+                    None
+                } else {
+                    damage_clips.as_ref().map(|d| d.blob())
+                },
                 fb: *handle.as_ref(),
                 fence: fence.as_ref().map(|fence| fence.as_fd()),
             }),
         };
 
-        let mut flip_flags = PageFlipFlags::EVENT;
-        if presentation_mode == PresentationMode::Async {
-            flip_flags |= PageFlipFlags::ASYNC;
-        }
-
         let flip = if self.drm.commit_pending() {
-            self.drm.commit([plane_state], flip_flags)
+            // A commit can not be async, it may change more than FB_ID.
+            self.drm
+                .commit([plane_state(async_requested)], PageFlipFlags::EVENT)
+        } else if async_requested && self.async_flip_armed {
+            match self
+                .drm
+                .page_flip([plane_state(true)], PageFlipFlags::EVENT | PageFlipFlags::ASYNC)
+            {
+                Ok(()) => Ok(()),
+                Err(err) => {
+                    // The driver refused the async flip, for example for the
+                    // buffer's format or modifier. Do not drop the frame,
+                    // flip it synchronously.
+                    debug!("async page flip failed, falling back to vsync: {err}");
+                    self.async_flip_failed = true;
+                    self.drm.page_flip([plane_state(false)], PageFlipFlags::EVENT)
+                }
+            }
         } else {
-            self.drm.page_flip([plane_state], flip_flags)
+            self.drm
+                .page_flip([plane_state(async_requested)], PageFlipFlags::EVENT)
         };
+        // Only a frame without damage clips or fence leaves a plane state
+        // that the next async flip can keep.
+        self.async_flip_armed = flip.is_ok() && async_requested && !self.async_flip_failed;
         if flip.is_ok() {
             self.pending_fb = Some((slot, user_data));
         }
         flip.map_err(Error::DrmError)
     }
 
+    /// Returns whether an asynchronous page flip was refused by the driver, or
+    /// the driver does not support them.
+    ///
+    /// Frames queued with [`PresentationMode::Async`] are then flipped
+    /// synchronously, until [`GbmBufferedSurface::reset_buffers`] is called.
+    pub fn async_flip_failed(&self) -> bool {
+        self.async_flip_failed
+    }
+
     /// Reset the underlying buffers
     pub fn reset_buffers(&mut self) {
+        self.async_flip_armed = false;
+        self.async_flip_failed = false;
         self.swapchain.reset_buffers()
     }
 
