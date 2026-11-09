@@ -1879,6 +1879,13 @@ where
                     )?;
                     if !surface.is_override_redirect() {
                         let mut state = surface.state.lock().unwrap();
+
+                        // It is possible that synthetic UnmapNotify will reach us when the window is mapped (eg. quick show-hide sequence),
+                        // honor the request and unmap before reparenting, to make sure it does not remap after reparent
+                        let cookie = conn.unmap_window(n.window)?;
+                        xwm.sequences_to_ignore
+                            .push(Reverse(cookie.sequence_number() as u16));
+
                         conn.reparent_window(
                             n.window,
                             xwm.screen.root,
