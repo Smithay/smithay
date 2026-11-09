@@ -231,6 +231,25 @@ impl WorkspaceManagerState {
 
         changed
     }
+
+    fn remove_instance(&mut self, manager: &ExtWorkspaceManagerV1, send_finished: bool) {
+        if let Some(pos) = self.instances.iter().position(|i| i == manager) {
+            let manager = self.instances.remove(pos);
+            WorkspaceManagerObjectData::cleanup(&manager);
+
+            for workspace in &self.workspaces {
+                workspace.remove_instances(&manager);
+            }
+
+            for group in &self.groups {
+                group.remove_instances(&manager);
+            }
+
+            if send_finished {
+                manager.finished();
+            }
+        }
+    }
 }
 
 impl<D> GlobalDispatch2<ExtWorkspaceManagerV1, D> for WorkspaceManagerGlobalData
@@ -275,7 +294,7 @@ where
     fn request(
         &self,
         state: &mut D,
-        client: &Client,
+        _client: &Client,
         manager: &ExtWorkspaceManagerV1,
         request: <ExtWorkspaceManagerV1 as wayland_server::Resource>::Request,
         _dhandle: &DisplayHandle,
@@ -283,8 +302,7 @@ where
     ) {
         match request {
             ext_workspace_manager_v1::Request::Stop => {
-                self.destroyed(state, client.id(), manager);
-                manager.finished();
+                state.workspace_manager_state().remove_instance(manager, true);
             }
             ext_workspace_manager_v1::Request::Commit => {
                 Self::commit(state, manager);
@@ -293,11 +311,8 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtWorkspaceManagerV1) {
-        state
-            .workspace_manager_state()
-            .instances
-            .retain(|i| i != resource);
+    fn destroyed(&self, state: &mut D, _client: ClientId, manager: &ExtWorkspaceManagerV1) {
+        state.workspace_manager_state().remove_instance(manager, false);
     }
 }
 

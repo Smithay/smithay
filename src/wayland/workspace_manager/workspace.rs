@@ -279,6 +279,20 @@ impl Workspace {
 
         inner.instances.push(instance);
     }
+
+    pub(super) fn remove_instances(&self, manager: &ExtWorkspaceManagerV1) {
+        let mut inner = self.inner.0.lock().unwrap();
+
+        let manager_id = Resource::id(manager);
+        inner
+            .instances
+            .extract_if(.., |i| {
+                Resource::id(i).same_client_as(&manager_id)
+                    && i.data::<WorkspaceData>()
+                        .is_some_and(|d| d.manager.id() == manager_id)
+            })
+            .for_each(std::mem::drop);
+    }
 }
 
 fn coordinate_to_wayland(coordinates: &[u32]) -> Vec<u8> {
