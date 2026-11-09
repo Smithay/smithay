@@ -668,8 +668,11 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
     fn cancel(&mut self, data: &mut D, seat: &Seat<D>) {
         // A cancel ends every active touch point, including ones that already had
         // their frame and haven't moved since, so don't skip those like `frame` does.
-        let marker = self.frame_marker();
-        self.pending_frame = None;
+        // Reuse the pending frame's marker if there is one; it's removed below.
+        let marker = self
+            .pending_frame
+            .take()
+            .unwrap_or_else(|| FrameMarker(frame_marker::next()));
 
         for state in self.focus.values_mut() {
             state.pending = marker;
