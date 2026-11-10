@@ -25,7 +25,6 @@ use crate::{
     },
     utils::{Client as ClientCoords, Clock, Monotonic, Point, Serial, iter::new_locked_obj_iter_from_vec},
     wayland::{
-        Dispatch2,
         compositor::{self, CompositorHandler},
         seat::{CURSOR_IMAGE_ROLE, WaylandFocus},
     },
@@ -57,7 +56,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolHandle<D> {
     }
 
     /// Return the raw [`ZwpTabletToolV2`] instance for a particular [`Client`]
-    pub fn client_tools<'a>(&'a self, client: &Client) -> impl Iterator<Item = ZwpTabletToolV2> + 'a {
+    pub fn client_tools<'a>(&'a self, client: &'a Client) -> impl Iterator<Item = ZwpTabletToolV2> + 'a {
         let guard = self.arc.wp_tablet_tool.known_instances.lock().unwrap();
         new_locked_obj_iter_from_vec(guard, client.id())
     }
@@ -79,7 +78,6 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
         tool_desc: &TabletToolDescriptor,
     ) -> TabletToolHandle<D>
     where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
     {
@@ -102,7 +100,6 @@ impl<D: TabletSeatHandler + 'static> TabletSeat<D> {
         default_grab: F,
     ) -> TabletToolHandle<D>
     where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
         F: Fn() -> Box<dyn TabletToolGrab<D>> + Send + 'static,
@@ -154,7 +151,6 @@ impl WpTabletToolHandle {
         handle: TabletToolHandle<D>,
         desc: &TabletToolDescriptor,
     ) where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData<D>>,
         D: CompositorHandler,
         D: TabletSeatHandler,
         <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
@@ -171,7 +167,7 @@ impl WpTabletToolHandle {
                 seat.version(),
                 TabletToolUserData {
                     handle: handle.downgrade(),
-                    seat_id: seat.id(),
+                    seat_id: seat.id().clone(),
                     client_scale,
                 },
             )
@@ -411,7 +407,7 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
     }
 }
 
-impl<D> Dispatch2<ZwpTabletToolV2, D> for TabletToolUserData<D>
+impl<D> Dispatch<ZwpTabletToolV2, D> for TabletToolUserData<D>
 where
     D: TabletSeatHandler,
     <D as TabletSeatHandler>::ToolFocus: WaylandFocus,
@@ -494,7 +490,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, tool: &ZwpTabletToolV2) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, tool: &ZwpTabletToolV2) {
         let Some(handle) = self.handle.upgrade() else {
             return;
         };

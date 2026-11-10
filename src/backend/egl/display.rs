@@ -865,7 +865,7 @@ impl EGLDisplay {
             ffi::egl::BindWaylandDisplayWL(**self.display, display_ptr as *mut _)
         })
         .map_err(Error::OtherEGLDisplayAlreadyBound)?;
-        let reader = EGLBufferReader::new(self.display.clone(), display_ptr);
+        let reader = EGLBufferReader::new(self.display.clone(), display_ptr as _);
         let mut global = BUFFER_READER.lock().unwrap();
         if global.as_ref().and_then(|x| x.upgrade()).is_some() {
             warn!("Double bind_wl_display, smithay does not support this, please report");
@@ -1065,7 +1065,7 @@ impl EGLBufferReader {
         let query = wrap_egl_call_bool(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.id().as_ptr() as _,
+                buffer.id().as_ptr().unwrap().as_ptr(),
                 ffi::egl::EGL_TEXTURE_FORMAT,
                 &mut format,
             )
@@ -1095,7 +1095,7 @@ impl EGLBufferReader {
         wrap_egl_call_bool(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.id().as_ptr() as _,
+                buffer.id().as_ptr().unwrap().as_ptr(),
                 ffi::egl::WIDTH as i32,
                 &mut width,
             )
@@ -1106,7 +1106,7 @@ impl EGLBufferReader {
         wrap_egl_call_bool(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.id().as_ptr() as _,
+                buffer.id().as_ptr().unwrap().as_ptr(),
                 ffi::egl::HEIGHT as i32,
                 &mut height,
             )
@@ -1128,7 +1128,7 @@ impl EGLBufferReader {
                 unsafe {
                     ffi::egl::QueryWaylandBufferWL(
                         **self.display,
-                        buffer.id().as_ptr() as _,
+                        buffer.id().as_ptr().unwrap().as_ptr(),
                         ffi::egl::WAYLAND_Y_INVERTED_WL,
                         &mut inverted,
                     )
@@ -1152,7 +1152,7 @@ impl EGLBufferReader {
                         **self.display,
                         ffi::egl::NO_CONTEXT,
                         ffi::egl::WAYLAND_BUFFER_WL,
-                        buffer.id().as_ptr() as *mut _,
+                        buffer.id().as_ptr().unwrap().as_ptr(),
                         out.as_ptr(),
                     )
                 })
@@ -1188,7 +1188,7 @@ impl EGLBufferReader {
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.id().as_ptr() as _,
+                buffer.id().as_ptr().unwrap().as_ptr(),
                 ffi::egl::WIDTH as _,
                 &mut width,
             ) == 0
@@ -1200,7 +1200,7 @@ impl EGLBufferReader {
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.id().as_ptr() as _,
+                buffer.id().as_ptr().unwrap().as_ptr(),
                 ffi::egl::HEIGHT as _,
                 &mut height,
             ) == 0

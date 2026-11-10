@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
-smithay-client-toolkit = "0.19.2"
+# smithay-client-toolkit = "0.19.2"
+smithay-client-toolkit = { git = "https://github.com/ids1024/client-toolkit", branch = "wayland-update" }
 tracing = { version = "0.1.37" }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }

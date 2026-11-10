@@ -45,8 +45,6 @@
 //! }
 //! # impl PointerConstraintsHandler for State {}
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
@@ -80,7 +78,6 @@ use std::{
 };
 
 use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
-use crate::wayland::{Dispatch2, GlobalDispatch2};
 
 pub use self::{
     keyboard::KeyboardUserData,
@@ -92,11 +89,8 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
     backend::{ClientId, GlobalId, ObjectId},
     protocol::{
-        wl_keyboard::WlKeyboard,
-        wl_pointer::WlPointer,
         wl_seat::{self, WlSeat},
         wl_surface,
-        wl_touch::WlTouch,
     },
 };
 
@@ -178,9 +172,10 @@ impl<D: SeatHandler + 'static> SeatState<D> {
     /// in case you want to remove it.
     pub fn new_wl_seat<N>(&mut self, display: &DisplayHandle, name: N) -> Seat<D>
     where
-        D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + SeatHandler + 'static,
+        D: SeatHandler + CompositorHandler + 'static,
         <D as SeatHandler>::PointerFocus: WaylandFocus,
         <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+        <D as SeatHandler>::TouchFocus: WaylandFocus,
         N: Into<String>,
     {
         let Seat { arc } = self.new_seat(name);
@@ -242,17 +237,12 @@ impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
     }
 }
 
-impl<D> Dispatch2<WlSeat, D> for SeatUserData<D>
+impl<D> Dispatch<WlSeat, D> for SeatUserData<D>
 where
-    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
-    D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData<D>>,
-    D: SeatHandler,
-    D: CompositorHandler,
+    D: SeatHandler + CompositorHandler + 'static,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     <D as SeatHandler>::TouchFocus: WaylandFocus,
-    D: 'static,
 {
     fn request(
         &self,
@@ -363,7 +353,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, seat: &WlSeat) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, seat: &WlSeat) {
         if let Some(arc) = self.arc.upgrade() {
             arc.inner
                 .lock()
@@ -374,14 +364,12 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<WlSeat, D> for SeatGlobalData<D>
+impl<D> GlobalDispatch<WlSeat, D> for SeatGlobalData<D>
 where
-    D: Dispatch<WlSeat, SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
-    D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData<D>>,
-    D: SeatHandler,
-    D: 'static,
+    D: SeatHandler + CompositorHandler + 'static,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::TouchFocus: WaylandFocus,
 {
     fn bind(
         &self,
@@ -403,7 +391,7 @@ where
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
-            resource.name(self.arc.name.clone());
+            resource.name(&self.arc.name);
         }
 
         resource.capabilities(inner.compute_caps());

@@ -7,7 +7,7 @@ use tracing::warn;
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::{
     self, ZwpInputMethodKeyboardGrabV2,
 };
-use wayland_server::{backend::ClientId, protocol::wl_keyboard::KeymapFormat};
+use wayland_server::{Dispatch, backend::ClientId, protocol::wl_keyboard::KeymapFormat};
 
 use crate::input::{
     SeatHandler,
@@ -20,7 +20,6 @@ use crate::wayland::text_input::TextInputHandle;
 use crate::{
     backend::input::{InputTime, KeyState, Keycode},
     utils::Serial,
-    wayland::Dispatch2,
 };
 
 #[derive(Default, Debug)]
@@ -137,13 +136,12 @@ impl<D: SeatHandler> fmt::Debug for InputMethodKeyboardUserData<D> {
     }
 }
 
-impl<D: SeatHandler + 'static> Dispatch2<ZwpInputMethodKeyboardGrabV2, D> for InputMethodKeyboardUserData<D> {
-    fn destroyed(&self, state: &mut D, _client: ClientId, _object: &ZwpInputMethodKeyboardGrabV2) {
+impl<D: SeatHandler + 'static> Dispatch<ZwpInputMethodKeyboardGrabV2, D> for InputMethodKeyboardUserData<D> {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _object: &ZwpInputMethodKeyboardGrabV2) {
         let mut inner = self.handle.inner.lock().unwrap();
         inner.grab = None;
         inner.keymap_id = None;
         drop(inner);
-        self.keyboard_handle.unset_grab(state);
     }
 
     fn request(

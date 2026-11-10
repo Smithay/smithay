@@ -20,8 +20,6 @@
 //!     &display.handle(), // the display
 //! );
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! # impl CompositorHandler for State {
 //! #     fn compositor_state(&mut self) -> &mut CompositorState { unimplemented!() }
 //! #     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState { unimplemented!() }
@@ -59,7 +57,7 @@ use wayland_server::{
 
 use crate::{
     utils::{Client, Logical, Rectangle, Size},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 
 use super::compositor::{self, Cacheable, CompositorHandler, SurfaceData, with_states};
@@ -79,10 +77,7 @@ impl ViewporterState {
     /// the event loop in the future.
     pub fn new<D>(display: &DisplayHandle) -> ViewporterState
     where
-        D: GlobalDispatch<wp_viewporter::WpViewporter, GlobalData>
-            + Dispatch<wp_viewporter::WpViewporter, GlobalData>
-            + Dispatch<wp_viewport::WpViewport, ViewportState>
-            + 'static,
+        D: CompositorHandler + 'static,
     {
         ViewporterState {
             global: display.create_global::<D, wp_viewporter::WpViewporter, _>(1, GlobalData),
@@ -95,10 +90,9 @@ impl ViewporterState {
     }
 }
 
-impl<D> GlobalDispatch2<wp_viewporter::WpViewporter, D> for GlobalData
+impl<D> GlobalDispatch<wp_viewporter::WpViewporter, D> for GlobalData
 where
-    D: Dispatch<wp_viewporter::WpViewporter, GlobalData>,
-    D: Dispatch<wp_viewport::WpViewport, ViewportState>,
+    D: CompositorHandler,
 {
     fn bind(
         &self,
@@ -112,9 +106,9 @@ where
     }
 }
 
-impl<D> Dispatch2<wp_viewporter::WpViewporter, D> for GlobalData
+impl<D> Dispatch<wp_viewporter::WpViewporter, D> for GlobalData
 where
-    D: Dispatch<wp_viewport::WpViewport, ViewportState>,
+    D: CompositorHandler,
 {
     fn request(
         &self,
@@ -138,7 +132,7 @@ where
                 if already_has_viewport {
                     surface.post_error(
                         wp_viewporter::Error::ViewportExists,
-                        "the surface already has a viewport object associated".to_string(),
+                        "the surface already has a viewport object associated",
                     );
                     return;
                 }
@@ -184,7 +178,7 @@ where
     }
 }
 
-impl<D> Dispatch2<wp_viewport::WpViewport, D> for ViewportState
+impl<D> Dispatch<wp_viewport::WpViewport, D> for ViewportState
 where
     D: CompositorHandler,
 {
@@ -223,7 +217,7 @@ where
                 if !is_unset && !is_valid_src {
                     resource.post_error(
                         wp_viewport::Error::BadValue,
-                        "negative or zero values in width or height or negative values in x or y".to_string(),
+                        "negative or zero values in width or height or negative values in x or y",
                     );
                     return;
                 }
@@ -231,10 +225,7 @@ where
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
                 let Ok(surface) = self.surface.upgrade() else {
-                    resource.post_error(
-                        wp_viewport::Error::NoSurface,
-                        "the wl_surface was destroyed".to_string(),
-                    );
+                    resource.post_error(wp_viewport::Error::NoSurface, "the wl_surface was destroyed");
                     return;
                 };
 
@@ -261,7 +252,7 @@ where
                 if !is_unset && !is_valid_size {
                     resource.post_error(
                         wp_viewport::Error::BadValue,
-                        "negative or zero values in width or height".to_string(),
+                        "negative or zero values in width or height",
                     );
                     return;
                 }
@@ -269,10 +260,7 @@ where
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
                 let Ok(surface) = self.surface.upgrade() else {
-                    resource.post_error(
-                        wp_viewport::Error::NoSurface,
-                        "the wl_surface was destroyed".to_string(),
-                    );
+                    resource.post_error(wp_viewport::Error::NoSurface, "the wl_surface was destroyed");
                     return;
                 };
 
@@ -332,10 +320,7 @@ fn viewport_pre_commit_hook<D: 'static>(
                 && src_size != src_size.map(|s| Size::from((s.w as i32, s.h as i32)).to_f64())
             {
                 if let Ok(viewport) = viewport.0.upgrade() {
-                    viewport.post_error(
-                        wp_viewport::Error::BadSize,
-                        "destination size is not integer".to_string(),
-                    );
+                    viewport.post_error(wp_viewport::Error::BadSize, "destination size is not integer");
                 }
             }
         }
@@ -368,7 +353,7 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
             if let Ok(viewport) = viewport.0.upgrade() {
                 viewport.post_error(
                     wp_viewport::Error::OutOfBuffer,
-                    format!(
+                    &format!(
                         "source rectangle x={},y={},w={},h={} extends outside of the content area x={},y={},w={},h={}", 
                         src.loc.x, src.loc.y, src.size.w, src.size.h,
                         buffer_rect.loc.x, buffer_rect.loc.y, buffer_rect.size.w, buffer_rect.size.h),

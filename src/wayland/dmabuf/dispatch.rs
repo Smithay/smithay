@@ -5,15 +5,13 @@ use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, New, Resource, backend::ClientId, protocol::wl_buffer,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
+    protocol::wl_buffer,
 };
 
 use crate::{
     backend::allocator::dmabuf::{Dmabuf, MAX_PLANES, Plane},
-    wayland::{
-        Dispatch2, GlobalDispatch2, buffer::BufferHandler, compositor,
-        dmabuf::SurfaceDmabufFeedbackStateInner,
-    },
+    wayland::{buffer::BufferHandler, compositor, dmabuf::SurfaceDmabufFeedbackStateInner},
 };
 
 use super::{
@@ -21,7 +19,7 @@ use super::{
     ImportNotifier, Modifier, SurfaceDmabufFeedbackState,
 };
 
-impl<D> Dispatch2<wl_buffer::WlBuffer, D> for Dmabuf
+impl<D> Dispatch<wl_buffer::WlBuffer, D> for Dmabuf
 where
     D: BufferHandler,
 {
@@ -43,17 +41,14 @@ where
         }
     }
 
-    fn destroyed(&self, data: &mut D, _client: ClientId, buffer: &wl_buffer::WlBuffer) {
+    fn destroyed(&self, data: &mut D, _client: &ClientId, buffer: &wl_buffer::WlBuffer) {
         data.buffer_destroyed(buffer);
     }
 }
 
-impl<D> Dispatch2<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufData
+impl<D> Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufData
 where
-    D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData>
-        + DmabufHandler
-        + 'static,
+    D: DmabufHandler + 'static,
 {
     fn request(
         &self,
@@ -143,7 +138,7 @@ where
     }
 }
 
-impl<D> Dispatch2<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, D> for DmabufFeedbackData {
+impl<D> Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, D> for DmabufFeedbackData {
     fn request(
         &self,
         _state: &mut D,
@@ -173,9 +168,9 @@ impl<D> Dispatch2<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, D> for
     }
 }
 
-impl<D> GlobalDispatch2<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufGlobalData
+impl<D> GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufGlobalData
 where
-    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData> + 'static,
+    D: DmabufHandler + 'static,
 {
     fn bind(
         &self,
@@ -221,9 +216,9 @@ where
     }
 }
 
-impl<D> Dispatch2<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, D> for DmabufParamsData
+impl<D> Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, D> for DmabufParamsData
 where
-    D: Dispatch<wl_buffer::WlBuffer, Dmabuf> + BufferHandler + DmabufHandler,
+    D: DmabufHandler,
 {
     fn request(
         &self,
@@ -253,7 +248,7 @@ where
                 if plane_idx as usize >= MAX_PLANES {
                     params.post_error(
                         zwp_linux_buffer_params_v1::Error::PlaneIdx,
-                        format!("Plane index {plane_idx} is out of bounds"),
+                        &format!("Plane index {plane_idx} is out of bounds"),
                     );
                     return;
                 }
@@ -264,7 +259,7 @@ where
                 if planes.iter().any(|plane| plane.plane_idx == plane_idx) {
                     params.post_error(
                         zwp_linux_buffer_params_v1::Error::PlaneSet,
-                        format!("Plane index {plane_idx} is already set."),
+                        &format!("Plane index {plane_idx} is already set."),
                     );
                     return;
                 }
@@ -282,7 +277,7 @@ where
                     if params.version() >= 5 && modifier != data_modifier {
                         params.post_error(
                             zwp_linux_buffer_params_v1::Error::InvalidFormat,
-                            format!("Planes have non-matching modifiers: {modifier:?} != {data_modifier:?}",),
+                            &format!("Planes have non-matching modifiers: {modifier:?} != {data_modifier:?}",),
                         );
                     }
                 } else {

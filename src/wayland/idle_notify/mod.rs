@@ -41,8 +41,6 @@
 //!     }
 //! }
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // On input you should notify the idle_notifier
 //! // state.idle_notifier.notify_activity(&seat);
 //! ```
@@ -69,7 +67,7 @@ use wayland_server::{
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 
 /// Handler trait for ext-idle-notify
@@ -121,7 +119,6 @@ impl<D: IdleNotifierHandler> IdleNotifierState<D> {
     /// Create new [`ExtIdleNotifierV1`] global.
     pub fn new(display: &DisplayHandle, loop_handle: LoopHandle<'static, D>) -> Self
     where
-        D: GlobalDispatch<ExtIdleNotifierV1, GlobalData>,
         D: IdleNotifierHandler,
         D: 'static,
     {
@@ -244,9 +241,8 @@ impl<D: IdleNotifierHandler + SeatHandler> IdleNotifierState<D> {
     }
 }
 
-impl<D> GlobalDispatch2<ExtIdleNotifierV1, D> for GlobalData
+impl<D> GlobalDispatch<ExtIdleNotifierV1, D> for GlobalData
 where
-    D: Dispatch<ExtIdleNotifierV1, GlobalData>,
     D: IdleNotifierHandler,
     D: 'static,
 {
@@ -262,9 +258,8 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtIdleNotifierV1, D> for GlobalData
+impl<D> Dispatch<ExtIdleNotifierV1, D> for GlobalData
 where
-    D: Dispatch<ExtIdleNotificationV1, IdleNotificationUserData>,
     D: IdleNotifierHandler,
     D: 'static,
 {
@@ -334,7 +329,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtIdleNotificationV1, D> for IdleNotificationUserData
+impl<D> Dispatch<ExtIdleNotificationV1, D> for IdleNotificationUserData
 where
     D: IdleNotifierHandler,
 {
@@ -353,7 +348,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, notification: &ExtIdleNotificationV1) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, notification: &ExtIdleNotificationV1) {
         let state = state.idle_notifier_state();
         if let Some(notifications) = state.notifications.get_mut(&self.seat) {
             notifications.retain(|x| x != notification);

@@ -2,14 +2,15 @@ use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_manager_v1::{self, WpContentTypeManagerV1},
     wp_content_type_v1::{self, WpContentTypeV1},
 };
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, New, Resource, backend::ClientId};
+use wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
+};
 
 use super::{ContentTypeSurfaceCachedState, ContentTypeSurfaceData, ContentTypeUserData};
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2, compositor};
+use crate::wayland::{GlobalData, compositor};
 
-impl<D> GlobalDispatch2<WpContentTypeManagerV1, D> for GlobalData
+impl<D> GlobalDispatch<WpContentTypeManagerV1, D> for GlobalData
 where
-    D: Dispatch<WpContentTypeManagerV1, GlobalData>,
     D: 'static,
 {
     fn bind(
@@ -24,9 +25,8 @@ where
     }
 }
 
-impl<D> Dispatch2<WpContentTypeManagerV1, D> for GlobalData
+impl<D> Dispatch<WpContentTypeManagerV1, D> for GlobalData
 where
-    D: Dispatch<WpContentTypeV1, ContentTypeUserData>,
     D: 'static,
 {
     fn request(
@@ -71,7 +71,7 @@ where
     }
 }
 
-impl<D> Dispatch2<WpContentTypeV1, D> for ContentTypeUserData {
+impl<D> Dispatch<WpContentTypeV1, D> for ContentTypeUserData {
     fn request(
         &self,
         _state: &mut D,
@@ -83,9 +83,6 @@ impl<D> Dispatch2<WpContentTypeV1, D> for ContentTypeUserData {
     ) {
         match request {
             wp_content_type_v1::Request::SetContentType { content_type } => {
-                let wayland_server::WEnum::Value(content_type) = content_type else {
-                    return;
-                };
                 let Some(surface) = self.wl_surface() else {
                     return;
                 };
@@ -124,7 +121,7 @@ impl<D> Dispatch2<WpContentTypeV1, D> for ContentTypeUserData {
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _client: ClientId, _object: &WpContentTypeV1) {
+    fn destroyed(&self, _state: &mut D, _client: &ClientId, _object: &WpContentTypeV1) {
         // Nothing to do here, graceful Destroy is already handled with double buffering
         // and in case of client close WlSurface destroyed handler will clean up the data anyway,
         // so there is no point in queuing new update

@@ -44,13 +44,13 @@ use wayland_protocols_wlr::virtual_pointer::v1::server::{
     zwlr_virtual_pointer_v1::{self, ZwlrVirtualPointerV1},
 };
 use wayland_server::{
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum, backend::ClientId,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, backend::ClientId,
     backend::GlobalId, protocol::wl_pointer, protocol::wl_seat::WlSeat,
 };
 
 use crate::backend::input::{Axis, AxisSource, ButtonState, InputEvent, InputTime};
 use crate::output::{Output, WeakOutput};
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
+use crate::wayland::GlobalData;
 
 const MANAGER_VERSION: u32 = 2;
 
@@ -108,7 +108,7 @@ impl VirtualPointerManagerState {
     }
 }
 
-impl<D> GlobalDispatch2<ZwlrVirtualPointerManagerV1, D> for VirtualPointerManagerGlobalData
+impl<D> GlobalDispatch<ZwlrVirtualPointerManagerV1, D> for VirtualPointerManagerGlobalData
 where
     D: Dispatch<ZwlrVirtualPointerManagerV1, GlobalData>,
     D: Dispatch<ZwlrVirtualPointerV1, VirtualPointerUserData>,
@@ -131,7 +131,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwlrVirtualPointerManagerV1, D> for GlobalData
+impl<D> Dispatch<ZwlrVirtualPointerManagerV1, D> for GlobalData
 where
     D: Dispatch<ZwlrVirtualPointerV1, VirtualPointerUserData>,
     D: VirtualPointerHandler,
@@ -199,18 +199,21 @@ impl VirtualPointerUserData {
     }
 }
 
-fn parse_axis(virtual_pointer: &ZwlrVirtualPointerV1, axis: WEnum<wl_pointer::Axis>) -> Option<Axis> {
+fn parse_axis(virtual_pointer: &ZwlrVirtualPointerV1, axis: wl_pointer::Axis) -> Option<Axis> {
     match axis {
-        WEnum::Value(wl_pointer::Axis::HorizontalScroll) => Some(Axis::Horizontal),
-        WEnum::Value(wl_pointer::Axis::VerticalScroll) => Some(Axis::Vertical),
+        wl_pointer::Axis::HorizontalScroll => Some(Axis::Horizontal),
+        wl_pointer::Axis::VerticalScroll => Some(Axis::Vertical),
         _ => {
-            virtual_pointer.post_error(zwlr_virtual_pointer_v1::Error::InvalidAxis, "invalid axis");
+            virtual_pointer.post_error(
+                zwlr_virtual_pointer_v1::Error::InvalidAxis,
+                &format!("invalid axis: {axis:?}"),
+            );
             None
         }
     }
 }
 
-impl<D> Dispatch2<ZwlrVirtualPointerV1, D> for VirtualPointerUserData
+impl<D> Dispatch<ZwlrVirtualPointerV1, D> for VirtualPointerUserData
 where
     D: VirtualPointerHandler + 'static,
 {
@@ -266,7 +269,7 @@ where
                 // as a C boolean (zero or nonzero), so any invalid value counts
                 // as pressed.
                 let button_state = match button_state {
-                    WEnum::Value(wl_pointer::ButtonState::Released) => ButtonState::Released,
+                    wl_pointer::ButtonState::Released => ButtonState::Released,
                     _ => ButtonState::Pressed,
                 };
 
@@ -305,14 +308,14 @@ where
             }
             zwlr_virtual_pointer_v1::Request::AxisSource { axis_source } => {
                 let axis_source = match axis_source {
-                    WEnum::Value(wl_pointer::AxisSource::Wheel) => AxisSource::Wheel,
-                    WEnum::Value(wl_pointer::AxisSource::Finger) => AxisSource::Finger,
-                    WEnum::Value(wl_pointer::AxisSource::Continuous) => AxisSource::Continuous,
-                    WEnum::Value(wl_pointer::AxisSource::WheelTilt) => AxisSource::WheelTilt,
+                    wl_pointer::AxisSource::Wheel => AxisSource::Wheel,
+                    wl_pointer::AxisSource::Finger => AxisSource::Finger,
+                    wl_pointer::AxisSource::Continuous => AxisSource::Continuous,
+                    wl_pointer::AxisSource::WheelTilt => AxisSource::WheelTilt,
                     _ => {
                         virtual_pointer.post_error(
                             zwlr_virtual_pointer_v1::Error::InvalidAxisSource,
-                            "invalid axis source",
+                            &format!("invalid axis source: {axis_source:?}"),
                         );
                         return;
                     }
@@ -364,7 +367,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client: ClientId, virtual_pointer: &ZwlrVirtualPointerV1) {
+    fn destroyed(&self, state: &mut D, _client: &ClientId, virtual_pointer: &ZwlrVirtualPointerV1) {
         let device = self.device(virtual_pointer);
 
         // A client may destroy the mouse, or die, with buttons still down.

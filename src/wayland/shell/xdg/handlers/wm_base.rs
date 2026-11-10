@@ -4,22 +4,19 @@ use indexmap::IndexSet;
 
 use crate::{
     utils::{IsAlive, Serial, alive_tracker::AliveTracker},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2},
+    wayland::GlobalData,
 };
 
-use wayland_protocols::xdg::shell::server::{
-    xdg_positioner::XdgPositioner, xdg_surface, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
-};
+use wayland_protocols::xdg::shell::server::{xdg_surface, xdg_wm_base, xdg_wm_base::XdgWmBase};
 
-use wayland_server::{DataInit, Dispatch, DisplayHandle, New, Resource, Weak, backend::ClientId};
+use wayland_server::{
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak, backend::ClientId,
+};
 
 use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};
 
-impl<D> GlobalDispatch2<XdgWmBase, D> for GlobalData
+impl<D> GlobalDispatch<XdgWmBase, D> for GlobalData
 where
-    D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
-    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
-    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
@@ -37,10 +34,8 @@ where
     }
 }
 
-impl<D> Dispatch2<XdgWmBase, D> for XdgWmBaseUserData
+impl<D> Dispatch<XdgWmBase, D> for XdgWmBaseUserData
 where
-    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
-    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
@@ -102,7 +97,7 @@ where
         }
     }
 
-    fn destroyed(&self, state: &mut D, _client_id: ClientId, wm_base: &XdgWmBase) {
+    fn destroyed(&self, state: &mut D, _client_id: &ClientId, wm_base: &XdgWmBase) {
         XdgShellHandler::client_destroyed(state, ShellClient::new(wm_base));
         self.alive_tracker.destroy_notify();
     }

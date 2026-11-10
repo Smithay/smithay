@@ -54,8 +54,6 @@
 //!
 //! let image_capture_source = ImageCaptureSourceState::new();
 //! let output_capture_source = OutputCaptureSourceState::new::<State>(&display_handle);
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ### With Toplevel Capture
@@ -107,8 +105,6 @@
 //! let image_capture_source = ImageCaptureSourceState::new();
 //! let output_capture_source = OutputCaptureSourceState::new::<State>(&display_handle);
 //! let toplevel_capture_source = ToplevelCaptureSourceState::new::<State>(&display_handle);
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 //!
 //! ### Custom Capture Sources
@@ -143,8 +139,8 @@ use wayland_server::{
 
 use crate::output::Output;
 use crate::utils::user_data::UserDataMap;
+use crate::wayland::GlobalData;
 use crate::wayland::foreign_toplevel_list::ForeignToplevelHandle;
-use crate::wayland::{Dispatch2, GlobalData, GlobalDispatch2};
 
 // ============================================================================
 // Core types
@@ -294,9 +290,7 @@ impl ImageCaptureSourceState {
 ///
 /// This is required by both [`OutputCaptureSourceHandler`] and
 /// [`ToplevelCaptureSourceHandler`].
-pub trait ImageCaptureSourceHandler:
-    Dispatch<ExtImageCaptureSourceV1, ImageCaptureSourceData> + 'static
-{
+pub trait ImageCaptureSourceHandler: 'static {
     /// Called when a capture source is destroyed.
     ///
     /// Use this to clean up any compositor-side state associated with the source.
@@ -310,7 +304,7 @@ pub trait ImageCaptureSourceHandler:
 }
 
 // Dispatch for the capture source resource
-impl<D> Dispatch2<ExtImageCaptureSourceV1, D> for ImageCaptureSourceData
+impl<D> Dispatch<ExtImageCaptureSourceV1, D> for ImageCaptureSourceData
 where
     D: ImageCaptureSourceHandler,
 {
@@ -334,7 +328,7 @@ where
     fn destroyed(
         &self,
         state: &mut D,
-        _client: wayland_server::backend::ClientId,
+        _client: &wayland_server::backend::ClientId,
         _resource: &ExtImageCaptureSourceV1,
     ) {
         self.source.mark_destroyed();
@@ -395,11 +389,7 @@ impl OutputCaptureSourceState {
 /// Handler for output capture sources.
 ///
 /// Implement this to enable output capture. Requires [`ImageCaptureSourceHandler`].
-pub trait OutputCaptureSourceHandler:
-    ImageCaptureSourceHandler
-    + GlobalDispatch<ExtOutputImageCaptureSourceManagerV1, OutputCaptureSourceGlobalData>
-    + Dispatch<ExtOutputImageCaptureSourceManagerV1, GlobalData>
-{
+pub trait OutputCaptureSourceHandler: ImageCaptureSourceHandler {
     /// Returns a mutable reference to the [`OutputCaptureSourceState`].
     fn output_capture_source_state(&mut self) -> &mut OutputCaptureSourceState;
 
@@ -415,7 +405,7 @@ pub trait OutputCaptureSourceHandler:
     }
 }
 
-impl<D> GlobalDispatch2<ExtOutputImageCaptureSourceManagerV1, D> for OutputCaptureSourceGlobalData
+impl<D> GlobalDispatch<ExtOutputImageCaptureSourceManagerV1, D> for OutputCaptureSourceGlobalData
 where
     D: OutputCaptureSourceHandler,
 {
@@ -435,7 +425,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtOutputImageCaptureSourceManagerV1, D> for GlobalData
+impl<D> Dispatch<ExtOutputImageCaptureSourceManagerV1, D> for GlobalData
 where
     D: OutputCaptureSourceHandler,
 {
@@ -533,11 +523,7 @@ impl ToplevelCaptureSourceState {
 ///
 /// Compositors with custom foreign-toplevel implementations should NOT use
 /// this. Instead, handle the protocol directly and use [`ImageCaptureSource::new()`].
-pub trait ToplevelCaptureSourceHandler:
-    ImageCaptureSourceHandler
-    + GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelCaptureSourceGlobalData>
-    + Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, GlobalData>
-{
+pub trait ToplevelCaptureSourceHandler: ImageCaptureSourceHandler {
     /// Returns a mutable reference to the [`ToplevelCaptureSourceState`].
     fn toplevel_capture_source_state(&mut self) -> &mut ToplevelCaptureSourceState;
 
@@ -553,7 +539,7 @@ pub trait ToplevelCaptureSourceHandler:
     }
 }
 
-impl<D> GlobalDispatch2<ExtForeignToplevelImageCaptureSourceManagerV1, D> for ToplevelCaptureSourceGlobalData
+impl<D> GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, D> for ToplevelCaptureSourceGlobalData
 where
     D: ToplevelCaptureSourceHandler,
 {
@@ -573,7 +559,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ExtForeignToplevelImageCaptureSourceManagerV1, D> for GlobalData
+impl<D> Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, D> for GlobalData
 where
     D: ToplevelCaptureSourceHandler,
 {

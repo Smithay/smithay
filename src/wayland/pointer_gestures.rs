@@ -92,8 +92,6 @@
 //! #     }
 //! # }
 //! let state = PointerGesturesState::new::<State>(&display.handle());
-//!
-//! smithay::delegate_dispatch2!(State);
 //! ```
 
 use std::sync::{Arc, Mutex, Weak, atomic::Ordering};
@@ -124,7 +122,7 @@ use crate::{
         },
     },
     utils::{SERIAL_COUNTER, Serial},
-    wayland::{Dispatch2, GlobalData, GlobalDispatch2, seat::PointerUserData},
+    wayland::{GlobalData, seat::PointerUserData},
 };
 
 const MANAGER_VERSION: u32 = 3;
@@ -387,11 +385,6 @@ impl PointerGesturesState {
     /// Register new [ZwpPointerGesturesV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpPointerGesturesV1, GlobalData>,
-        D: Dispatch<ZwpPointerGesturesV1, GlobalData>,
-        D: Dispatch<ZwpPointerGestureSwipeV1, PointerGestureUserData<D>>,
-        D: Dispatch<ZwpPointerGesturePinchV1, PointerGestureUserData<D>>,
-        D: Dispatch<ZwpPointerGestureHoldV1, PointerGestureUserData<D>>,
         D: SeatHandler,
         D: 'static,
     {
@@ -406,11 +399,8 @@ impl PointerGesturesState {
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGesturesV1, D> for GlobalData
+impl<D> Dispatch<ZwpPointerGesturesV1, D> for GlobalData
 where
-    D: Dispatch<ZwpPointerGestureSwipeV1, PointerGestureUserData<D>>,
-    D: Dispatch<ZwpPointerGesturePinchV1, PointerGestureUserData<D>>,
-    D: Dispatch<ZwpPointerGestureHoldV1, PointerGestureUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {
@@ -466,9 +456,9 @@ where
     }
 }
 
-impl<D> GlobalDispatch2<ZwpPointerGesturesV1, D> for GlobalData
+impl<D> GlobalDispatch<ZwpPointerGesturesV1, D> for GlobalData
 where
-    D: Dispatch<ZwpPointerGesturesV1, GlobalData> + SeatHandler + 'static,
+    D: SeatHandler + 'static,
 {
     fn bind(
         &self,
@@ -482,7 +472,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGestureSwipeV1, D> for PointerGestureUserData<D>
+impl<D> Dispatch<ZwpPointerGestureSwipeV1, D> for PointerGestureUserData<D>
 where
     D: SeatHandler,
     D: 'static,
@@ -502,7 +492,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGestureSwipeV1) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, object: &ZwpPointerGestureSwipeV1) {
         if let Some(arc) = self.arc.upgrade() {
             arc.wp_pointer_gestures
                 .known_swipe_gestures
@@ -513,7 +503,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGesturePinchV1, D> for PointerGestureUserData<D>
+impl<D> Dispatch<ZwpPointerGesturePinchV1, D> for PointerGestureUserData<D>
 where
     D: SeatHandler,
     D: 'static,
@@ -533,7 +523,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGesturePinchV1) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, object: &ZwpPointerGesturePinchV1) {
         if let Some(arc) = self.arc.upgrade() {
             arc.wp_pointer_gestures
                 .known_pinch_gestures
@@ -544,7 +534,7 @@ where
     }
 }
 
-impl<D> Dispatch2<ZwpPointerGestureHoldV1, D> for PointerGestureUserData<D>
+impl<D> Dispatch<ZwpPointerGestureHoldV1, D> for PointerGestureUserData<D>
 where
     D: SeatHandler,
     D: 'static,
@@ -564,7 +554,7 @@ where
         }
     }
 
-    fn destroyed(&self, _state: &mut D, _: ClientId, object: &ZwpPointerGestureHoldV1) {
+    fn destroyed(&self, _state: &mut D, _: &ClientId, object: &ZwpPointerGestureHoldV1) {
         if let Some(arc) = self.arc.upgrade() {
             arc.wp_pointer_gestures
                 .known_hold_gestures

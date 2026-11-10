@@ -77,8 +77,8 @@ impl XdgOutput {
         }
 
         if xdg_output.version() >= 2 {
-            xdg_output.name(inner.name.clone());
-            xdg_output.description(inner.description.clone());
+            xdg_output.name(&inner.name);
+            xdg_output.description(&inner.description);
         }
 
         // xdg_output.done() is deprecated since version 3

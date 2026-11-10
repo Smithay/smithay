@@ -20,8 +20,6 @@
 //! // insert the CommitTimingManagerState into your state
 //! // ..
 //!
-//! smithay::delegate_dispatch2!(State);
-//!
 //! // You're now ready to go!
 //! ```
 //!
@@ -92,10 +90,7 @@ use wayland_server::{
 
 use crate::{
     utils::Time,
-    wayland::{
-        Dispatch2, GlobalDispatch2,
-        compositor::{add_blocker, add_pre_commit_hook},
-    },
+    wayland::compositor::{add_blocker, add_pre_commit_hook},
 };
 
 use super::compositor::{Barrier, with_states};
@@ -114,7 +109,6 @@ impl CommitTimingManagerState {
     /// remove or disable this global in the future.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, true)
@@ -126,7 +120,6 @@ impl CommitTimingManagerState {
     /// remove or disable this global in the future.
     pub fn unmanaged<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
         D: 'static,
     {
         Self::new_internal::<D>(display, false)
@@ -134,7 +127,6 @@ impl CommitTimingManagerState {
 
     fn new_internal<D>(display: &DisplayHandle, is_managed: bool) -> Self
     where
-        D: GlobalDispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
         D: 'static,
     {
         let global =
@@ -160,9 +152,8 @@ pub struct CommitTimingManagerData {
     is_managed: bool,
 }
 
-impl<D> GlobalDispatch2<WpCommitTimingManagerV1, D> for CommitTimingManagerData
+impl<D> GlobalDispatch<WpCommitTimingManagerV1, D> for CommitTimingManagerData
 where
-    D: Dispatch<WpCommitTimingManagerV1, CommitTimingManagerData>,
     D: 'static,
 {
     fn bind(
@@ -177,9 +168,8 @@ where
     }
 }
 
-impl<D> Dispatch2<WpCommitTimingManagerV1, D> for CommitTimingManagerData
+impl<D> Dispatch<WpCommitTimingManagerV1, D> for CommitTimingManagerData
 where
-    D: Dispatch<WpCommitTimerV1, CommitTimerData>,
     D: 'static,
 {
     fn request(
@@ -257,7 +247,7 @@ struct CommitTimerMarker(Option<WpCommitTimerV1>);
 #[derive(Debug)]
 pub struct CommitTimerData(Weak<WlSurface>);
 
-impl<D> Dispatch2<WpCommitTimerV1, D> for CommitTimerData
+impl<D> Dispatch<WpCommitTimerV1, D> for CommitTimerData
 where
     D: 'static,
 {
@@ -279,7 +269,7 @@ where
                 let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
                         wp_commit_timer_v1::Error::SurfaceDestroyed,
-                        "the surface associated with this commit timer object has been destroyed".to_string(),
+                        "the surface associated with this commit timer object has been destroyed",
                     );
                     return;
                 };
@@ -308,7 +298,7 @@ where
                 if already_has_timestamp {
                     resource.post_error(
                         wp_commit_timer_v1::Error::TimestampExists,
-                        "the surface already has a timestamp associated for this commit".to_string(),
+                        "the surface already has a timestamp associated for this commit",
                     );
                 }
             }

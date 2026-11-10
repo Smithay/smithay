@@ -408,7 +408,7 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
             ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
                 config_id,
-                self.ptr() as *mut _,
+                self.ptr().as_ptr(),
                 WINIT_SURFACE_ATTRIBUTES.as_ptr(),
             )
         })

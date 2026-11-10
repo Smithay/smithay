@@ -1,16 +1,12 @@
 //! Attempt to reproduce https://github.com/Smithay/smithay/issues/1894
 
-use smithay_client_toolkit::delegate_subcompositor;
 use smithay_client_toolkit::reexports::client::protocol::wl_subsurface::WlSubsurface;
 use smithay_client_toolkit::reexports::{calloop, client as wayland_client};
 
 use smithay_client_toolkit::subcompositor::SubcompositorState;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_output, delegate_registry, delegate_shm, delegate_xdg_shell,
-    delegate_xdg_window,
     output::{OutputHandler, OutputState},
-    registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
         WaylandSurface,
@@ -27,6 +23,7 @@ use smithay_client_toolkit::{
 use tracing::info;
 use wayland_client::{
     Connection, QueueHandle,
+    globals::GlobalListHandler,
     protocol::{
         wl_output::{self, WlOutput},
         wl_surface::{self, WlSurface},
@@ -51,7 +48,6 @@ fn main() {
     let pool = SlotPool::new(256 * 256 * 4, &shm).unwrap();
 
     let mut app = App {
-        registry_state: RegistryState::new(&globals),
         output_state: OutputState::new(&globals, &qh),
         shm,
 
@@ -75,7 +71,6 @@ fn main() {
 }
 
 struct App {
-    registry_state: RegistryState,
     output_state: OutputState,
     shm: Shm,
 
@@ -202,17 +197,6 @@ impl App {
     }
 }
 
-delegate_compositor!(App);
-delegate_subcompositor!(App);
-
-delegate_output!(App);
-delegate_shm!(App);
-
-delegate_xdg_shell!(App);
-delegate_xdg_window!(App);
-
-delegate_registry!(App);
-
 impl OutputHandler for App {
     fn output_state(&mut self) -> &mut OutputState {
         &mut self.output_state
@@ -228,9 +212,6 @@ impl ShmHandler for App {
     }
 }
 
-impl ProvidesRegistryState for App {
-    fn registry(&mut self) -> &mut RegistryState {
-        &mut self.registry_state
-    }
+impl GlobalListHandler for App {
     registry_handlers![OutputState,];
 }
