@@ -8,6 +8,7 @@ use std::{
 
 use wayland_protocols::ext::workspace::v1::server::{
     ext_workspace_group_handle_v1::{ExtWorkspaceGroupHandleV1, GroupCapabilities},
+    ext_workspace_handle_v1::ExtWorkspaceHandleV1,
     ext_workspace_manager_v1::ExtWorkspaceManagerV1,
 };
 use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak, protocol::wl_output::WlOutput};
@@ -15,7 +16,10 @@ use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak, protocol::
 use crate::{
     output::{Output, WeakOutput},
     utils::user_data::UserDataMap,
-    wayland::workspace_manager::WorkspaceManagerState,
+    wayland::workspace_manager::{
+        WorkspaceManagerState,
+        workspace::{Workspace, WorkspaceData},
+    },
 };
 
 const GROUP_VERSION: u32 = 1;
@@ -119,6 +123,18 @@ impl WorkspaceGroup {
     {
         let inner = self.inner.0.lock().unwrap();
         with_state(&inner.current_state)
+    }
+
+    /// Add a workspace to this group.
+    pub fn workspace_enter(&self, workspace: &Workspace) {
+        workspace.assign(self);
+    }
+
+    /// Remove a workspace from this group.
+    ///
+    /// If the workspace wasn't in this group, this function does nothing.
+    pub fn workspace_leave(&self, workspace: &Workspace) {
+        workspace.leave(self);
     }
 
     /// Add an [`Output`] to this group.
@@ -260,6 +276,42 @@ impl WorkspaceGroup {
             .for_each(|o| with_wl_output(&instance, &o, ExtWorkspaceGroupHandleV1::output_enter));
 
         inner.instances.push(instance);
+    }
+
+    pub(crate) fn send_workspace_enter(&self, workspace: &ExtWorkspaceHandleV1) {
+        let inner = self.inner.0.lock().unwrap();
+
+        let Some(w_manager_id) = workspace.data::<WorkspaceData>().map(|d| d.manager.id()) else {
+            return;
+        };
+
+        for instance in &inner.instances {
+            let Some(manager_id) = instance.data::<WorkspaceGroupData>().map(|d| d.manager.id()) else {
+                continue;
+            };
+
+            if w_manager_id == manager_id {
+                instance.workspace_enter(workspace);
+            }
+        }
+    }
+
+    pub(crate) fn send_workspace_leave(&self, workspace: &ExtWorkspaceHandleV1) {
+        let inner = self.inner.0.lock().unwrap();
+
+        let Some(w_manager_id) = workspace.data::<WorkspaceData>().map(|d| d.manager.id()) else {
+            return;
+        };
+
+        for instance in &inner.instances {
+            let Some(manager_id) = instance.data::<WorkspaceGroupData>().map(|d| d.manager.id()) else {
+                continue;
+            };
+
+            if w_manager_id == manager_id {
+                instance.workspace_leave(workspace);
+            }
+        }
     }
 
     fn with_pending_outputs<F, T>(&self, with_outputs: F) -> T

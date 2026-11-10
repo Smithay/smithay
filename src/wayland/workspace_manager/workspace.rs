@@ -11,7 +11,13 @@ use wayland_protocols::ext::workspace::v1::server::{
 };
 use wayland_server::{Client, Dispatch, DisplayHandle, Resource, Weak};
 
-use crate::{utils::user_data::UserDataMap, wayland::workspace_manager::WorkspaceManagerState};
+use crate::{
+    utils::user_data::UserDataMap,
+    wayland::workspace_manager::{
+        WorkspaceManagerState,
+        group::{WeakWorkspaceGroup, WorkspaceGroup},
+    },
+};
 
 const WORKSPACE_VERSION: u32 = 1;
 
@@ -47,6 +53,9 @@ pub struct WorkspaceState {
 pub(crate) struct Inner {
     pending_state: Option<WorkspaceState>,
     current_state: WorkspaceState,
+
+    pending_group: Option<WeakWorkspaceGroup>,
+    group: Option<WeakWorkspaceGroup>,
 
     instances: Vec<ExtWorkspaceHandleV1>,
     initial_done_sent: bool,
@@ -120,6 +129,20 @@ impl Workspace {
         with_state(&inner.current_state)
     }
 
+    /// Get a handle to the workspace's pending group.
+    pub fn pending_group(&self) -> Option<WorkspaceGroup> {
+        let inner = self.inner.0.lock().unwrap();
+
+        inner.pending_group.as_ref().and_then(WeakWorkspaceGroup::upgrade)
+    }
+
+    /// Get a handle to the workspace group.
+    pub fn group(&self) -> Option<WorkspaceGroup> {
+        let inner = self.inner.0.lock().unwrap();
+
+        inner.group.as_ref().and_then(WeakWorkspaceGroup::upgrade)
+    }
+
     /// Activate the workspace.
     pub fn activate(&self) {
         self.with_pending_state(|s| s.state.set(State::Active, true));
@@ -128,6 +151,21 @@ impl Workspace {
     /// Deactivate the workspace.
     pub fn deactivate(&self) {
         self.with_pending_state(|s| s.state.set(State::Active, false));
+    }
+
+    /// Assign the workspace to a group.
+    pub fn assign(&self, group: &WorkspaceGroup) {
+        let mut inner = self.inner.0.lock().unwrap();
+
+        inner.pending_group = Some(group.downgrade());
+    }
+
+    /// Unassign the workspace from a group.
+    pub fn leave(&self, group: &WorkspaceGroup) {
+        let mut inner = self.inner.0.lock().unwrap();
+
+        // Either pending_group == group, or group is stale and shouldn't be accounted for.
+        inner.pending_group.take_if(|g| g == group);
     }
 
     /// Remove the workspace.
@@ -154,6 +192,7 @@ impl Workspace {
         }
 
         !inner.initial_done_sent
+            || inner.pending_group != inner.group
             || inner.pending_state.as_ref().is_some_and(|s| {
                 s.name != inner.current_state.name
                     || (s.id.is_some() && inner.current_state.id.is_none())
@@ -170,7 +209,9 @@ impl Workspace {
     /// lifecycle. If the workspace is pending removal, no state changes will be sent, and this
     /// function will return false.
     ///
-    /// The function cannot remove workspaces from the [`WorkspaceManagerState`].
+    /// The function cannot remove workspaces from the [`WorkspaceManagerState`]. When handling the
+    /// lifecycle explicitly, compositor should call [`Workspace::send_pending_changes`] before
+    /// [`WorkspaceManagerState::send_removed_groups`].
     pub fn send_pending_changes(&self) -> bool {
         let mut inner = self.inner.0.lock().unwrap();
 
@@ -220,7 +261,9 @@ impl Workspace {
         instance.state(state.state);
         instance.capabilities(state.capabilities);
 
-        // TODO: Send workspace_enter.
+        if let Some(group) = inner.group.as_ref().and_then(WeakWorkspaceGroup::upgrade) {
+            group.send_workspace_enter(&instance);
+        }
 
         inner.instances.push(instance);
     }
@@ -268,7 +311,36 @@ impl Inner {
             self.current_state = pending_state;
         };
 
-        let changed = send_name | send_id | new_coord.is_some() | send_caps | send_state;
+        let mut old_group = None;
+        let mut new_group = None;
+
+        if self.pending_group != self.group {
+            old_group = self.group.as_ref().and_then(WeakWorkspaceGroup::upgrade);
+
+            let pending_group = self.pending_group.as_ref().and_then(WeakWorkspaceGroup::upgrade);
+            if let Some(group) = pending_group
+                && !group.pending_removal()
+            {
+                new_group = Some(group);
+            } else {
+                self.pending_group = None;
+            }
+
+            self.group = self.pending_group.clone();
+        } else if let Some(group) = self.group.as_ref().and_then(WeakWorkspaceGroup::upgrade)
+            && group.pending_removal()
+        {
+            self.group.take();
+            old_group = Some(group);
+        }
+
+        let changed = send_name
+            | send_id
+            | new_coord.is_some()
+            | send_caps
+            | send_state
+            | old_group.is_some()
+            | new_group.is_some();
 
         if changed {
             for instance in self.instances.iter() {
@@ -291,6 +363,14 @@ impl Inner {
                 if send_state {
                     instance.state(self.current_state.state);
                 }
+
+                if let Some(group) = old_group.as_ref() {
+                    group.send_workspace_leave(instance);
+                }
+
+                if let Some(group) = new_group.as_ref() {
+                    group.send_workspace_enter(instance);
+                }
             }
         }
 
@@ -299,6 +379,10 @@ impl Inner {
 
     fn remove(&mut self) {
         for instance in std::mem::take(&mut self.instances) {
+            if let Some(group) = self.group.as_ref().and_then(WeakWorkspaceGroup::upgrade) {
+                group.send_workspace_leave(&instance);
+            }
+
             instance.removed();
         }
     }
@@ -344,6 +428,17 @@ impl WorkspaceManagerState {
         self.workspaces.iter()
     }
 
+    /// Gets an iterator over the workspace's group.
+    pub fn group_workspaces(&self, group: &WorkspaceGroup) -> impl Iterator<Item = &Workspace> {
+        self.workspaces.iter().filter({
+            let group = group.downgrade();
+            move |w| {
+                let inner = w.inner.0.lock().unwrap();
+                inner.group.as_ref().is_some_and(|g| g == &group)
+            }
+        })
+    }
+
     /// Send pending changes for all [`Workspace`]
     ///
     /// This function send pending state changes as well as workspace_enter and workspace_leave
@@ -354,9 +449,11 @@ impl WorkspaceManagerState {
     /// Calling this function directly isn't recommended and compositor should prefer calling
     /// [`send_pending_changes`]. Nevertheless, it's provided for compositor that want finer control
     /// on the ordering of operation (e.g. to send workspace event for a protocol extension that
-    /// should be sent alongside other events.).
+    /// should be sent alongside other events.). When calling this function directly, it should be
+    /// done before the call to [`send_removed_groups`].
     ///
     /// [`send_pending_changes`]: WorkspaceManagerState::send_pending_changes
+    /// [`send_removed_groups`]: WorkspaceManagerState::send_removed_groups
     pub fn send_workspace_changes(&mut self) -> bool {
         let mut changed = false;
 
@@ -380,10 +477,12 @@ impl WorkspaceManagerState {
     /// This function send `removed` events for workspace pending removal, then remove them from the
     /// [`WorkspaceManagerState`]. In general, compositor should prefer [`send_workspace_changes`]
     /// or [`send_pending_changes`]. This function is exposed for compositor that require finer
-    /// control on the lifecycle.
+    /// control on the lifecycle. Because it might send `workspace_leave`, this function should be
+    /// called before [`send_removed_groups`].
     ///
     /// [`send_workspace_changes`]: WorkspaceManagerState::send_workspace_changes
     /// [`send_pending_changes`]: WorkspaceManagerState::send_pending_changes
+    /// [`send_removed_groups`]: WorkspaceManagerState::send_removed_groups
     pub fn send_removed_workspaces(&mut self) -> bool {
         let mut changed = false;
 
@@ -432,6 +531,9 @@ impl Builder {
         let inner = Inner {
             pending_state: None,
             current_state: self.workspace_state,
+
+            pending_group: None,
+            group: None,
 
             instances: Vec::with_capacity(initial_capacity),
             initial_done_sent: false,
