@@ -304,7 +304,7 @@ where
                 let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
                         wp_fifo_v1::Error::SurfaceDestroyed,
-                        "the surface associated with this fifo object has been destroyed".to_string(),
+                        "the surface associated with this fifo object has been destroyed",
                     );
                     return;
                 };
@@ -316,7 +316,7 @@ where
                 let Ok(surface) = self.0.upgrade() else {
                     resource.post_error(
                         wp_fifo_v1::Error::SurfaceDestroyed,
-                        "the surface associated with this fifo object has been destroyed".to_string(),
+                        "the surface associated with this fifo object has been destroyed",
                     );
                     return;
                 };
