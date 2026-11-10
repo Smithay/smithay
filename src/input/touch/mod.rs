@@ -881,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_before_frame_reaches_the_target() {
+    fn cancel_without_frame_reaches_the_target() {
         let mut state = State::default();
         let mut seat = state.seat_state.new_seat("test");
         let touch = seat.add_touch();
