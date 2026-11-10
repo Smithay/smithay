@@ -138,7 +138,7 @@ where
                 if already_has_viewport {
                     surface.post_error(
                         wp_viewporter::Error::ViewportExists,
-                        "the surface already has a viewport object associated".to_string(),
+                        "the surface already has a viewport object associated",
                     );
                     return;
                 }
@@ -223,7 +223,7 @@ where
                 if !is_unset && !is_valid_src {
                     resource.post_error(
                         wp_viewport::Error::BadValue,
-                        "negative or zero values in width or height or negative values in x or y".to_string(),
+                        "negative or zero values in width or height or negative values in x or y",
                     );
                     return;
                 }
@@ -231,10 +231,7 @@ where
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
                 let Ok(surface) = self.surface.upgrade() else {
-                    resource.post_error(
-                        wp_viewport::Error::NoSurface,
-                        "the wl_surface was destroyed".to_string(),
-                    );
+                    resource.post_error(wp_viewport::Error::NoSurface, "the wl_surface was destroyed");
                     return;
                 };
 
@@ -261,7 +258,7 @@ where
                 if !is_unset && !is_valid_size {
                     resource.post_error(
                         wp_viewport::Error::BadValue,
-                        "negative or zero values in width or height".to_string(),
+                        "negative or zero values in width or height",
                     );
                     return;
                 }
@@ -269,10 +266,7 @@ where
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
                 let Ok(surface) = self.surface.upgrade() else {
-                    resource.post_error(
-                        wp_viewport::Error::NoSurface,
-                        "the wl_surface was destroyed".to_string(),
-                    );
+                    resource.post_error(wp_viewport::Error::NoSurface, "the wl_surface was destroyed");
                     return;
                 };
 
@@ -332,10 +326,7 @@ fn viewport_pre_commit_hook<D: 'static>(
                 && src_size != src_size.map(|s| Size::from((s.w as i32, s.h as i32)).to_f64())
             {
                 if let Ok(viewport) = viewport.0.upgrade() {
-                    viewport.post_error(
-                        wp_viewport::Error::BadSize,
-                        "destination size is not integer".to_string(),
-                    );
+                    viewport.post_error(wp_viewport::Error::BadSize, "destination size is not integer");
                 }
             }
         }

@@ -352,8 +352,7 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
                 if self.is_immutable() {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::Immutable,
-                        "Request made after the icon has been assigned to a toplevel via 'set_icon'"
-                            .to_string(),
+                        "Request made after the icon has been assigned to a toplevel via 'set_icon'",
                     );
                 }
 
@@ -363,15 +362,14 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
                 if self.is_immutable() {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::Immutable,
-                        "Request made after the icon has been assigned to a toplevel via 'set_icon'"
-                            .to_string(),
+                        "Request made after the icon has been assigned to a toplevel via 'set_icon'",
                     );
                 }
 
                 let Some(shm) = buffer.data::<ShmBufferUserData>() else {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::InvalidBuffer,
-                        "The wl_buffer must be backed by wl_shm".to_string(),
+                        "The wl_buffer must be backed by wl_shm",
                     );
                     return;
                 };
@@ -379,7 +377,7 @@ impl<D: XdgToplevelIconHandler> Dispatch2<XdgToplevelIconV1, D> for XdgToplevelI
                 if shm.data.width != shm.data.height {
                     icon.post_error(
                         xdg_toplevel_icon_v1::Error::InvalidBuffer,
-                        "The wl_buffer must be a square".to_string(),
+                        "The wl_buffer must be a square",
                     );
                     return;
                 };

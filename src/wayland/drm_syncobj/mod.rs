@@ -242,17 +242,17 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                 if pending.acquire_point.is_some() && new_buffer.is_none() {
                     syncobj_surface.post_error(
                         wp_linux_drm_syncobj_surface_v1::Error::NoBuffer,
-                        "acquire point without buffer".to_string(),
+                        "acquire point without buffer",
                     );
                 } else if pending.acquire_point.is_some() && pending.release_point.is_none() {
                     syncobj_surface.post_error(
                         wp_linux_drm_syncobj_surface_v1::Error::NoReleasePoint,
-                        "acquire point without release point".to_string(),
+                        "acquire point without release point",
                     );
                 } else if pending.acquire_point.is_none() && pending.release_point.is_some() {
                     syncobj_surface.post_error(
                         wp_linux_drm_syncobj_surface_v1::Error::NoAcquirePoint,
-                        "release point without acquire point".to_string(),
+                        "release point without acquire point",
                     );
                 } else if let (Some(acquire), Some(release)) =
                     (pending.acquire_point.as_ref(), pending.release_point.as_ref())
@@ -270,7 +270,7 @@ fn commit_hook<D: DrmSyncobjHandler>(_data: &mut D, _dh: &DisplayHandle, surface
                         if get_dmabuf(buffer).is_err() {
                             syncobj_surface.post_error(
                                 wp_linux_drm_syncobj_surface_v1::Error::UnsupportedBuffer,
-                                "sync points with non-dmabuf buffer".to_string(),
+                                "sync points with non-dmabuf buffer",
                             );
                         }
                     }
@@ -323,7 +323,7 @@ where
                 if already_exists {
                     resource.post_error(
                         wp_linux_drm_syncobj_manager_v1::Error::SurfaceExists,
-                        "the surface already has a syncobj_surface object associated".to_string(),
+                        "the surface already has a syncobj_surface object associated",
                     );
                     return;
                 }
@@ -360,7 +360,7 @@ where
                         None => {
                             resource.post_error(
                                 wp_linux_drm_syncobj_manager_v1::Error::InvalidTimeline,
-                                "failed to import syncobj timeline: No device".to_string(),
+                                "failed to import syncobj timeline: No device",
                             );
                         }
                     }
