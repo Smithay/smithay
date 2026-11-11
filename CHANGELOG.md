@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+`XdgDecorationHandler::decoration_destroyed` is a new mandatory callback, 
+compositors must handle it in order to correctly detect that a toplevels withdrew its previous SSD support declaration.
+
 `wayland::virtual_keyboard` no longer sends key events to focused clients on its
 own. A virtual keyboard is now an regular input device:
 `VirtualKeyboardManagerState::new` requires the state to implement the new
