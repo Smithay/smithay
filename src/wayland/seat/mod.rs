@@ -397,4 +397,8 @@ where
         resource.capabilities(inner.compute_caps());
         inner.known_seats.push(resource.downgrade());
     }
+
+    fn withdrawn(&self, _: &GlobalId) {
+        // TODO need dh argument to remove global?
+    }
 }

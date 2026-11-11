@@ -20,7 +20,12 @@ impl FixesState {
     where
         D: 'static,
     {
-        let global = display.create_global::<D, wl_fixes::WlFixes, _>(1, GlobalData);
+        let version = if cfg!(feature = "libwayland_1_26") {
+            2
+        } else {
+            1
+        };
+        let global = display.create_global::<D, wl_fixes::WlFixes, _>(version, GlobalData);
         Self { global }
     }
 
@@ -54,7 +59,7 @@ where
         &self,
         _state: &mut D,
         _client: &Client,
-        _resource: &wl_fixes::WlFixes,
+        resource: &wl_fixes::WlFixes,
         request: wl_fixes::Request,
         dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
@@ -63,6 +68,12 @@ where
             wl_fixes::Request::DestroyRegistry { registry } => {
                 if let Err(err) = dh.backend_handle().destroy_object::<D>(&registry.id()) {
                     error!(?err, "failed to destroy registry");
+                }
+            }
+            #[cfg(feature = "libwayland_1_26")]
+            wl_fixes::Request::AckGlobalRemove { registry, name } => {
+                if let Some(handle) = resource.handle().upgrade() {
+                    let _ = handle.handle_ack_global_remove(resource.id(), registry.id(), name);
                 }
             }
             wl_fixes::Request::Destroy => {}

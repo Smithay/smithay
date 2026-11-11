@@ -116,6 +116,7 @@ wayland_frontend = ["wayland-server", "wayland-protocols", "wayland-protocols-wl
 x11rb_event_source = ["x11rb"]
 xwayland = ["encoding_rs", "wayland_frontend", "x11rb/composite", "x11rb/xfixes", "x11rb/randr", "x11rb_event_source", "scopeguard"]
 test_all_features = ["default", "use_system_lib", "renderer_glow", "renderer_test"]
+libwayland_1_26 = ["wayland-server/libwayland_1_26"]
 
 [[example]]
 name = "minimal"
@@ -150,14 +151,14 @@ inherits = "release"
 debug = true
 
 [patch.crates-io]
-wayland-sys = { git = "https://github.com/smithay/wayland-rs" }
-wayland-egl = { git = "https://github.com/smithay/wayland-rs" }
-wayland-backend = { git = "https://github.com/smithay/wayland-rs" }
-wayland-server = { git = "https://github.com/smithay/wayland-rs" }
-wayland-scanner = { git = "https://github.com/smithay/wayland-rs" }
-wayland-client = { git = "https://github.com/smithay/wayland-rs" }
-wayland-protocols = { git = "https://github.com/smithay/wayland-rs" }
-wayland-protocols-wlr = { git = "https://github.com/smithay/wayland-rs" }
-wayland-cursor = { git = "https://github.com/smithay/wayland-rs" }
+wayland-sys = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-egl = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-backend = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-server = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-scanner = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-client = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-protocols = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-protocols-wlr = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
+wayland-cursor = { git = "https://github.com/smithay/wayland-rs", branch = "global-withdrawn" }
 winit = { git = "https://github.com/ids1024/winit", branch = "wayland-update" }
 gbm = { git = "https://github.com/ids1024/gbm.rs", branch = "wayland-rs" }

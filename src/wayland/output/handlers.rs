@@ -8,6 +8,7 @@ use wayland_protocols::xdg::xdg_output::zv1::server::{
 };
 use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    backend::GlobalId,
     protocol::wl_output::{self, Mode as WMode, WlOutput},
 };
 
@@ -141,6 +142,10 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         data_init.init(resource, GlobalData);
+    }
+
+    fn withdrawn(&self, _: &GlobalId) {
+        // TODO need dh argument to remove global?
     }
 }
 
