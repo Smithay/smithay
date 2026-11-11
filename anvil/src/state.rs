@@ -510,6 +510,16 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
             toplevel.send_pending_configure();
         }
     }
+    fn decoration_destroyed(&mut self, toplevel: ToplevelSurface) {
+        if let Some(window) = self
+            .space
+            .elements()
+            .find(|window| window.wl_surface().as_deref() == Some(toplevel.wl_surface()))
+        {
+            // The client forcefully goes back to CSD
+            window.set_ssd(false);
+        }
+    }
 }
 
 impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
