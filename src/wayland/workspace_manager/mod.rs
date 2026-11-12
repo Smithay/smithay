@@ -1,8 +1,87 @@
 //! Workspace protocol
 //!
+//! Workspace, also called virtual desktops, are groups of surfaces. A compositor with a concept of
+//! workspaces may only show some such groups of surfaces (those of 'active' workspaces) at a time.
+//! 'Activating' a workspace is a request for the compositor to display that workspace's surfaces as
+//! normal, whereas the compositor may hide or otherwise de-emphasise surfaces that are associated
+//! only with 'inactive' workspaces. Workspaces are grouped by which sets of outputs they correspond
+//! to, and may contain surfaces only from those outputs. In this way, it is possible for each
+//! output to have its own set of workspaces, or for all outputs (or any other arbitrary grouping)
+//! to share workspaces. Compositor may optionally conceptually arrange each group of workspaces in
+//! an N-dimensional grid.
+//!
 //! The purpose of this protocol is to enable the creation of taskbars and docks by providing them
 //! with a list of workspaces and their properties, and allowing them to activate and deactivate
 //! workspaces.
+//!
+//! ```no_run
+//!
+//! use smithay::{
+//!     reexports::wayland_protocols::ext::workspace::v1::server::ext_workspace_manager_v1::ExtWorkspaceManagerV1,
+//!     wayland::workspace_manager::{
+//!         self, WorkspaceHandler, WorkspaceManagerState, group::WorkspaceGroup, workspace::Workspace,
+//!     },
+//! };
+//!
+//! pub struct State {
+//!     workspace_manager: WorkspaceManagerState,
+//! }
+//!
+//! smithay::delegate_dispatch2!(State);
+//!
+//! // Implement the required trait
+//! impl WorkspaceHandler for State {
+//!     fn workspace_manager_state(&mut self) -> &mut WorkspaceManagerState {
+//!         &mut self.workspace_manager
+//!     }
+//!
+//!     // Simplest commit implementation. Clients requests are all accepted then the changes are
+//!     // broadcasted.
+//!     fn commit(&mut self, manager: &ExtWorkspaceManagerV1) {
+//!         workspace_manager::with_state(manager, |state| {
+//!             state.requests.iter().for_each(|r| {
+//!                 use workspace_manager::Request;
+//!                 match r {
+//!                     Request::Activate(w) if let Some(workspace) = Workspace::from_resource(w) => {
+//!                         workspace.activate();
+//!                     }
+//!                     Request::Deactivate(w) if let Some(workspace) = Workspace::from_resource(w) => {
+//!                         workspace.deactivate();
+//!                     }
+//!                     Request::Remove(w) if let Some(workspace) = Workspace::from_resource(w) => {
+//!                         workspace.remove();
+//!                     }
+//!                     Request::Assign { workspace, group }
+//!                         if let Some(workspace) = Workspace::from_resource(workspace)
+//!                             && let Some(group) = WorkspaceGroup::from_resource(group) =>
+//!                     {
+//!                         workspace.assign(&group);
+//!                     }
+//!                     Request::CreateWorkspace { group, workspace }
+//!                         if let Some(group) = WorkspaceGroup::from_resource(group) =>
+//!                     {
+//!                         let new_workspace = self
+//!                             .workspace_manager_state()
+//!                             .new_workspace::<State>(workspace.clone());
+//!                         group.workspace_enter(&new_workspace);
+//!                     }
+//!                     _ => {
+//!                         tracing::warn!("Not handling request {:?}", r);
+//!                     }
+//!                 }
+//!             });
+//!         });
+//!
+//!         self.workspace_manager_state().refresh();
+//!     }
+//! }
+//!
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! # let display_handle = display.handle();
+//! let mut state = State {
+//!     workspace_manager: WorkspaceManagerState::new::<State>(&display_handle),
+//! };
+//! ```
 
 use std::sync::{Mutex, MutexGuard};
 
