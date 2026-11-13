@@ -90,6 +90,7 @@ pub mod text_input;
 pub mod viewporter;
 pub mod virtual_keyboard;
 pub mod virtual_pointer;
+pub mod workspace_manager;
 pub mod xdg_activation;
 pub mod xdg_foreign;
 pub mod xdg_system_bell;
