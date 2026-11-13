@@ -645,14 +645,14 @@ impl EventSource for DmabufSource {
     where
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
-        for i in 0..4 {
-            if let Ok(PostAction::Remove) = if let Subsource::Active(source) = &mut self.sources[i] {
+        for source in &mut self.sources {
+            if let Ok(PostAction::Remove) = if let Subsource::Active(subsource) = source {
                 // luckily Generic skips events for other tokens
-                source.process_events(readiness, token, |_, _| Ok(PostAction::Remove))
+                subsource.process_events(readiness, token, |_, _| Ok(PostAction::Remove))
             } else {
                 Ok(PostAction::Continue)
             } {
-                self.sources[i].done();
+                source.done()
             }
         }
 
