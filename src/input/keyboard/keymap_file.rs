@@ -66,11 +66,13 @@ impl KeymapFile {
                 .map(PathBuf::from)
                 .unwrap_or_else(std::env::temp_dir);
 
-            let mut file = tempfile::tempfile_in(dir)?;
+            let mut file = tempfile::NamedTempFile::new_in(dir)?;
             file.write_all(self.0.keymap.as_bytes())?;
             file.flush()?;
 
-            cb(file.as_fd(), self.0.keymap.len());
+            // Send a read-only fd, as `SealedFile` does. The file is unlinked on drop.
+            let read_only = std::fs::File::open(file.path())?;
+            cb(read_only.as_fd(), self.0.keymap.len());
         }
         Ok(())
     }
@@ -120,5 +122,30 @@ mod tests {
         let keymap_file = KeymapFile::new(&keymap);
 
         assert_ne!(keymap_file.id().0, [0_u8; 16]);
+    }
+
+    #[cfg(feature = "wayland_frontend")]
+    #[test]
+    fn unsealed_keymap_fd_is_read_only() {
+        use rustix::fs::{OFlags, fcntl_getfl};
+        use std::{fs::File, os::unix::fs::FileExt};
+
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let xkb_config = crate::input::keyboard::XkbConfig::default();
+        let keymap = xkb_config.compile_keymap(&context).unwrap();
+        let keymap_file = KeymapFile::new(&keymap);
+
+        keymap_file
+            .with_fd(false, |fd, size| {
+                let access = fcntl_getfl(fd).unwrap() & OFlags::ACCMODE;
+                assert_eq!(access, OFlags::RDONLY);
+
+                let mut read = vec![0u8; size];
+                File::from(fd.try_clone_to_owned().unwrap())
+                    .read_exact_at(&mut read, 0)
+                    .unwrap();
+                assert_eq!(read, keymap_file.0.keymap.as_bytes());
+            })
+            .unwrap();
     }
 }
