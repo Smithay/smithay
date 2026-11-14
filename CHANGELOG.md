@@ -304,6 +304,10 @@ additionally drops the buffers cached for copying between a render and a target 
 
 ### Bugfixes
 
+`KeyboardHandle::set_modifier_state` now keeps the active keyboard layout. Previously it masked the
+effective layout index with xkb state component flags, so every call switched the keyboard back to
+its first layout.
+
 `LibinputInputBackend` now processes events libinput has queued without making its file descriptor
 readable: the `DeviceAdded` events for devices already present after `Libinput::udev_assign_seat` and
 `Libinput::resume`, and `DeviceRemoved` after `Libinput::suspend`. Previously these waited for the next
