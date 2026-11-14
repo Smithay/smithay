@@ -361,6 +361,11 @@ blocking the compositor while they resume.
 calls `create_frame` while the session still has an active frame, as the protocol requires. Previously
 the request was accepted and the extra frame was silently added to the session.
 
+`DrmDevice` no longer tries to restore the display state it found at creation when it is dropped. The atomic
+restore replayed every property it had read, among them immutable ones which the ioctl rejects, and failed
+with `EINVAL` on every device, leaving an error in the log at every exit. The legacy restore only repeated
+what the kernel does itself when the last client closes the device.
+
 ## 0.7.0
 
 ### Breaking changes
