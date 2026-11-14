@@ -68,9 +68,11 @@ impl KeymapFile {
 
             let mut file = tempfile::tempfile_in(dir)?;
             file.write_all(self.0.keymap.as_bytes())?;
+            file.write_all(&[0])?;
             file.flush()?;
 
-            cb(file.as_fd(), self.0.keymap.len());
+            // +1 for null
+            cb(file.as_fd(), self.0.keymap.len() + 1);
         }
         Ok(())
     }
