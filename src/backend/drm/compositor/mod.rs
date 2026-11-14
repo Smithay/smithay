@@ -1067,6 +1067,8 @@ where
     framebuffer_exporter: F,
 
     current_frame: CompositorFrameState<A, F>,
+    previous_primary_slot: Option<Arc<Slot<A::Buffer>>>,
+    keep_previous_frame_buffer: bool,
     pending_frame: Option<PendingFrame<A, F, U>>,
     queued_frame: Option<QueuedFrame<A, F, U>>,
     next_frame: Option<PreparedFrame<A, F>>,
@@ -1250,6 +1252,8 @@ where
                         reset_pending: true,
                         signaled_fence,
                         current_frame,
+                        previous_primary_slot: None,
+                        keep_previous_frame_buffer: false,
                         pending_frame: None,
                         queued_frame: None,
                         next_frame: None,
@@ -1432,6 +1436,8 @@ where
             reset_pending: true,
             signaled_fence,
             current_frame,
+            previous_primary_slot: None,
+            keep_previous_frame_buffer: false,
             pending_frame: None,
             queued_frame: None,
             next_frame: None,
@@ -2617,6 +2623,21 @@ where
     #[profiling::function]
     pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
         if let Some(PendingFrame { mut frame, user_data }) = self.pending_frame.take() {
+            // Optionally hold on to the primary plane buffer of the frame we are retiring for one
+            // more frame, so that the next render does not reuse the buffer that was scanned out
+            // until this very vblank. 
+            self.previous_primary_slot = if self.keep_previous_frame_buffer {
+                self.current_frame
+                    .plane_state(self.surface.plane())
+                    .and_then(|state| state.buffer())
+                    .and_then(|buffer| match &buffer.buffer {
+                        ScanoutBuffer::Swapchain(slot) => Some(slot.clone()),
+                        _ => None,
+                    })
+            } else {
+                None
+            };
+
             std::mem::swap(&mut frame, &mut self.current_frame);
             if self.queued_frame.is_some() {
                 self.submit()?;
@@ -2629,6 +2650,7 @@ where
 
     /// Reset the underlying buffers
     pub fn reset_buffers(&mut self) {
+        self.previous_primary_slot = None;
         self.swapchain.reset_buffers();
     }
 
@@ -2638,6 +2660,16 @@ where
     /// modify the damage for each surface.
     pub fn reset_buffer_ages(&mut self) {
         self.swapchain.reset_buffer_ages();
+    }
+
+    /// When enabled, the compositor holds on to that buffer until the following vblank, so the
+    /// swapchain effectively rotates through three buffers. This costs one extra swapchain buffer
+    /// and slightly more damage to redraw per frame.
+    pub fn set_keep_previous_frame_buffer(&mut self, keep: bool) {
+        self.keep_previous_frame_buffer = keep;
+        if !keep {
+            self.previous_primary_slot = None;
+        }
     }
 
     /// Returns the underlying [`crtc`] of this surface
