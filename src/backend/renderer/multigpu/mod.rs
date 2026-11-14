@@ -44,7 +44,7 @@ use std::{
     any::Any,
     collections::HashMap,
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use super::{
@@ -1746,6 +1746,8 @@ struct MultiTextureInternal {
     format: Option<Fourcc>,
     #[allow(dead_code)]
     buffer_format: Format,
+    /// Passed to the rendered texture, see [`Texture::hold_buffer`]
+    buffer: Option<Weak<dyn Any + Send + Sync>>,
 }
 // SAFETY: We require `Send` for textures of renderers suitable for the MultiRenderer.
 //  Type erasure just forces us to do this instead.
@@ -1796,10 +1798,12 @@ impl MultiTexture {
                     size,
                     format: None,
                     buffer_format,
+                    buffer: None,
                 }))
             });
         {
             let mut internal = internal.lock().unwrap();
+            internal.buffer = None;
             if internal.size != size || internal.buffer_format != buffer_format {
                 internal.textures.clear();
                 internal.format = None;
@@ -1816,6 +1820,7 @@ impl MultiTexture {
             size,
             format: None,
             buffer_format,
+            buffer: None,
         })))
     }
 
@@ -2020,6 +2025,9 @@ impl Texture for MultiTexture {
     fn format(&self) -> Option<Fourcc> {
         self.0.lock().unwrap().format
     }
+    fn hold_buffer(&self, buffer: Weak<dyn Any + Send + Sync>) {
+        self.0.lock().unwrap().buffer = Some(buffer);
+    }
 }
 
 impl<R: GraphicsApi, T: GraphicsApi> Frame for MultiFrame<'_, '_, '_, '_, R, T>
@@ -2094,7 +2102,11 @@ where
             .reimport::<R>(unsafe { (*self.render).renderer_mut() })
             .map_err(Error::Render)?;
 
+        let buffer = texture.0.lock().unwrap().buffer.clone();
         if let Some(texture) = texture.get::<R>(&render_id) {
+            if let Some(buffer) = buffer {
+                texture.hold_buffer(buffer);
+            }
             self.damage.extend(damage.iter().copied().map(|mut rect| {
                 rect.loc += dst.loc;
                 rect
@@ -2283,6 +2295,26 @@ where
             }
         }
         res
+    }
+
+    fn prefers_udmabuf(&self) -> bool {
+        ImportDmaWl::prefers_udmabuf(self.render.renderer())
+    }
+
+    fn import_udmabuf(
+        &mut self,
+        dmabuf: &Dmabuf,
+        damage: &[Rectangle<i32, BufferCoords>],
+    ) -> Result<<Self as RendererSuper>::TextureId, <Self as RendererSuper>::Error> {
+        // Unlike other dmabufs only on the render gpu, `prefers_udmabuf` checked only it
+        let imported = self
+            .render
+            .renderer_mut()
+            .import_dmabuf(dmabuf, Some(damage))
+            .map_err(Error::Render)?;
+        let mut texture = MultiTexture::new(dmabuf.size(), dmabuf.format());
+        texture.insert_texture::<R>(&self.render.renderer().context_id(), imported);
+        Ok(texture)
     }
 }
 
@@ -3736,7 +3768,7 @@ where
 impl<'a, 'frame, 'buffer, R: GraphicsApi, T: GraphicsApi> ImportDmaWl
     for LocalMultiRenderer<'a, '_, '_, 'frame, 'buffer, R, T>
 where
-    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf>,
+    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ImportDmaWl,
     <T::Device as ApiDevice>::Renderer: ExportMem + Bind<Dmabuf>,
     // TODO: comment
     R: 'static,
@@ -3774,6 +3806,25 @@ where
             }
         }
         res
+    }
+
+    fn prefers_udmabuf(&self) -> bool {
+        ImportDmaWl::prefers_udmabuf(self.guard.as_ref())
+    }
+
+    fn import_udmabuf(
+        &mut self,
+        dmabuf: &Dmabuf,
+        damage: &[Rectangle<i32, BufferCoords>],
+    ) -> Result<Self::TextureId, Self::Error> {
+        let imported = self
+            .guard
+            .as_mut()
+            .import_dmabuf(dmabuf, Some(damage))
+            .map_err(Error::Render)?;
+        let mut texture = MultiTexture::new(dmabuf.size(), dmabuf.format());
+        texture.insert_texture::<R>(&self.guard.as_ref().context_id(), imported);
+        Ok(texture)
     }
 }
 

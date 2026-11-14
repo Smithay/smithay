@@ -274,7 +274,8 @@ where
             (display, context, surface)
         };
 
-        let renderer = unsafe { GlesRenderer::new(context)?.into() };
+        let use_udmabuf = GlesRenderer::udmabuf_supported(&display);
+        let renderer = unsafe { GlesRenderer::new(context, use_udmabuf)?.into() };
         let damage_tracking = display.supports_damage();
 
         Ok(WinitGraphicsBackend {

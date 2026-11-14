@@ -256,7 +256,8 @@ pub fn run_udev() {
         if std::env::var("ANVIL_GLES_DISABLE_INSTANCING").is_ok() {
             capabilities.retain(|capability| *capability != Capability::Instancing);
         }
-        Ok(unsafe { GlesRenderer::with_capabilities(context, capabilities)? })
+        let use_udmabuf = GlesRenderer::udmabuf_supported(display);
+        Ok(unsafe { GlesRenderer::with_capabilities(context, capabilities, use_udmabuf)? })
     }))
     .unwrap();
 
@@ -801,8 +802,11 @@ impl AnvilState<UdevData> {
             .unwrap();
 
         let mut try_initialize_gpu = || {
-            let display = unsafe { EGLDisplay::new(gbm.clone()).map_err(DeviceAddError::AddNode)? };
-            let egl_device = EGLDevice::device_for_display(&display).map_err(DeviceAddError::AddNode)?;
+            // Dropped before `add_node`, Mesa may not report the drm device of a second display
+            let egl_device = {
+                let display = unsafe { EGLDisplay::new(gbm.clone()).map_err(DeviceAddError::AddNode)? };
+                EGLDevice::device_for_display(&display).map_err(DeviceAddError::AddNode)?
+            };
 
             if egl_device.is_software() {
                 return Err(DeviceAddError::NoRenderNode);

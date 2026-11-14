@@ -320,6 +320,8 @@ impl OutputDamageTracker {
 
     /// Render this output with the provided [`Renderer`]
     ///
+    /// Without damage nothing is rendered, and [`Renderer::cleanup_texture_cache`] is called instead.
+    ///
     /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(renderer, framebuffer, elements, clear_color))]
     #[profiling::function]
@@ -364,6 +366,8 @@ impl OutputDamageTracker {
 
         if self.damage.is_empty() {
             trace!("no damage, skipping rendering");
+            // Forcing renderer to free released resources, otherwise it will happen on its next frame
+            let _ = renderer.cleanup_texture_cache();
             return Ok(RenderOutputResult::skipped(states));
         }
 
@@ -375,6 +379,8 @@ impl OutputDamageTracker {
     /// Note: This is meant for cases, where rendering should happen with a different
     /// age value, but `damage_output` was used previously to reflect some internal
     /// damage tracking.
+    ///
+    /// Without damage nothing is rendered, and [`Renderer::cleanup_texture_cache`] is called instead.
     ///
     /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(renderer, framebuffer, elements, clear_color, states))]
@@ -421,6 +427,8 @@ impl OutputDamageTracker {
 
         if self.damage.is_empty() {
             trace!("no damage, skipping rendering");
+            // Forcing renderer to free released resources, otherwise it will happen on its next frame
+            let _ = renderer.cleanup_texture_cache();
             return Ok(RenderOutputResult::skipped(states));
         }
 

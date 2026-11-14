@@ -321,8 +321,16 @@ impl Dmabuf {
             .planes
             .get(idx)
             .ok_or(DmabufSyncFailed::PlaneIndexOutOfBound)?;
-        unsafe { rustix::ioctl::ioctl(&plane.fd, Setter::<DMA_BUF_SYNC, _>::new(dma_buf_sync { flags })) }
-            .map_err(std::io::Error::from)?;
+        // Waiting for gpu can be interrupted by a signal
+        let res = loop {
+            match unsafe {
+                rustix::ioctl::ioctl(&plane.fd, Setter::<DMA_BUF_SYNC, _>::new(dma_buf_sync { flags }))
+            } {
+                Err(rustix::io::Errno::INTR) => {}
+                res => break res,
+            }
+        };
+        res.map_err(std::io::Error::from)?;
         Ok(())
     }
 }
