@@ -675,16 +675,16 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
     }
 
     fn cancel(&mut self, data: &mut D, seat: &Seat<D>) {
-        let Some(marker) = self.pending_frame.take() else {
-            tracing::warn!("cancel called without prior events");
-            return;
-        };
+        // A cancel ends every active touch point, including ones that already had
+        // their frame and haven't moved since, so don't skip those like `frame` does.
+        // Reuse the pending frame's marker if there is one; it's removed below.
+        let marker = self
+            .pending_frame
+            .take()
+            .unwrap_or_else(|| FrameMarker(frame_marker::next()));
 
         for state in self.focus.values_mut() {
-            if state.current.map(|c| c == state.pending).unwrap_or(false) {
-                continue;
-            }
-
+            state.pending = marker;
             state.current = Some(marker);
 
             if let Some((focus, _)) = state.focus.take() {
@@ -728,5 +728,136 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         };
 
         self.pending_frame.unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        backend::input::{InputTime, KeyState},
+        input::{
+            SeatHandler, SeatState,
+            keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+            pointer::{
+                AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+                GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+                GestureSwipeUpdateEvent, MotionEvent as PointerMotionEvent, PointerTarget,
+                RelativeMotionEvent,
+            },
+        },
+        utils::{IsAlive, Serial},
+    };
+
+    #[derive(Debug, Default)]
+    struct State {
+        seat_state: SeatState<State>,
+        cancels: usize,
+    }
+
+    impl SeatHandler for State {
+        type KeyboardFocus = Target;
+        type PointerFocus = Target;
+        type TouchFocus = Target;
+
+        fn seat_state(&mut self) -> &mut SeatState<Self> {
+            &mut self.seat_state
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Target;
+
+    impl IsAlive for Target {
+        fn alive(&self) -> bool {
+            true
+        }
+    }
+
+    impl KeyboardTarget<State> for Target {
+        fn enter(&self, _: &Seat<State>, _: &mut State, _: Vec<KeysymHandle<'_>>, _: Serial) {}
+        fn leave(&self, _: &Seat<State>, _: &mut State, _: Serial) {}
+        fn key(
+            &self,
+            _: &Seat<State>,
+            _: &mut State,
+            _: KeysymHandle<'_>,
+            _: KeyState,
+            _: Serial,
+            _: InputTime,
+        ) {
+        }
+        fn modifiers(&self, _: &Seat<State>, _: &mut State, _: ModifiersState, _: Serial) {}
+    }
+
+    impl PointerTarget<State> for Target {
+        fn enter(&self, _: &Seat<State>, _: &mut State, _: &PointerMotionEvent) {}
+        fn motion(&self, _: &Seat<State>, _: &mut State, _: &PointerMotionEvent) {}
+        fn relative_motion(&self, _: &Seat<State>, _: &mut State, _: &RelativeMotionEvent) {}
+        fn button(&self, _: &Seat<State>, _: &mut State, _: &ButtonEvent) {}
+        fn axis(&self, _: &Seat<State>, _: &mut State, _: AxisFrame) {}
+        fn frame(&self, _: &Seat<State>, _: &mut State) {}
+        fn gesture_swipe_begin(&self, _: &Seat<State>, _: &mut State, _: &GestureSwipeBeginEvent) {}
+        fn gesture_swipe_update(&self, _: &Seat<State>, _: &mut State, _: &GestureSwipeUpdateEvent) {}
+        fn gesture_swipe_end(&self, _: &Seat<State>, _: &mut State, _: &GestureSwipeEndEvent) {}
+        fn gesture_pinch_begin(&self, _: &Seat<State>, _: &mut State, _: &GesturePinchBeginEvent) {}
+        fn gesture_pinch_update(&self, _: &Seat<State>, _: &mut State, _: &GesturePinchUpdateEvent) {}
+        fn gesture_pinch_end(&self, _: &Seat<State>, _: &mut State, _: &GesturePinchEndEvent) {}
+        fn gesture_hold_begin(&self, _: &Seat<State>, _: &mut State, _: &GestureHoldBeginEvent) {}
+        fn gesture_hold_end(&self, _: &Seat<State>, _: &mut State, _: &GestureHoldEndEvent) {}
+        fn leave(&self, _: &Seat<State>, _: &mut State, _: Serial, _: InputTime) {}
+    }
+
+    impl TouchTarget<State> for Target {
+        fn down(&self, _: &Seat<State>, _: &mut State, _: &DownEvent) {}
+        fn up(&self, _: &Seat<State>, _: &mut State, _: &UpEvent) {}
+        fn motion(&self, _: &Seat<State>, _: &mut State, _: &MotionEvent) {}
+        fn frame(&self, _: &Seat<State>, _: &mut State, _: FrameMarker) {}
+        fn cancel(&self, _: &Seat<State>, data: &mut State, _: FrameMarker) {
+            data.cancels += 1;
+        }
+        fn shape(&self, _: &Seat<State>, _: &mut State, _: &ShapeEvent) {}
+        fn orientation(&self, _: &Seat<State>, _: &mut State, _: &OrientationEvent) {}
+        fn last_frame(&self, _: &Seat<State>, _: &mut State) -> Option<FrameMarker> {
+            None
+        }
+    }
+
+    fn down(touch: &TouchHandle<State>, state: &mut State) {
+        touch.down(
+            state,
+            Some((Target, (0.0, 0.0).into())),
+            &DownEvent {
+                slot: Some(0).into(),
+                location: (10.0, 10.0).into(),
+                serial: Serial::from(1),
+                time: InputTime::from_millis(1),
+            },
+        );
+    }
+
+    #[test]
+    fn cancel_after_frame_reaches_the_target() {
+        let mut state = State::default();
+        let mut seat = state.seat_state.new_seat("test");
+        let touch = seat.add_touch();
+
+        down(&touch, &mut state);
+        touch.frame(&mut state);
+        touch.cancel(&mut state);
+
+        assert_eq!(state.cancels, 1);
+    }
+
+    #[test]
+    fn cancel_without_frame_reaches_the_target() {
+        let mut state = State::default();
+        let mut seat = state.seat_state.new_seat("test");
+        let touch = seat.add_touch();
+
+        down(&touch, &mut state);
+        touch.cancel(&mut state);
+
+        assert_eq!(state.cancels, 1);
     }
 }
