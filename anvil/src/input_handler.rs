@@ -169,8 +169,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 let surface = window.wl_surface()?;
                 self.seat.keyboard_shortcuts_inhibitor_for_surface(&surface)
             })
-            .map(|inhibitor| inhibitor.is_active())
-            .unwrap_or(false);
+            .is_some_and(|inhibitor| inhibitor.is_active());
 
         let action = keyboard
             .input(self, keycode, state, serial, time, |_, modifiers, handle| {
@@ -357,7 +356,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
         if !self.pointer.is_grabbed()
             && (!keyboard.is_grabbed() || input_method.keyboard_grabbed())
-            && !touch.map(|touch| touch.is_grabbed()).unwrap_or(false)
+            && !touch.is_some_and(|touch| touch.is_grabbed())
         {
             let output = self.space.output_under(location).next().cloned();
             if let Some(output) = output.as_ref() {

@@ -351,12 +351,10 @@ impl PrimaryScanoutOutput {
 
         let has_valid_output = primary_scanout_output
             .as_ref()
-            .map(|(current, _)| current.is_alive())
-            .unwrap_or(false);
+            .is_some_and(|(current, _)| current.is_alive());
         let same_output = primary_scanout_output
             .as_ref()
-            .map(|(current, _)| current == output)
-            .unwrap_or(false);
+            .is_some_and(|(current, _)| current == output);
 
         // If the element was not presented and we have no valid output
         // there is nothing we can do
@@ -438,13 +436,9 @@ pub fn default_primary_scanout_output_compare<'a>(
 
     // We don't expect to be called with an output that has no mode,
     // but to be safe we do not unwrap here
-    let next_mode_has_higher_refresh = next_mode
-        .map(|next_mode| {
-            current_mode
-                .map(|current_mode| next_mode.refresh > current_mode.refresh)
-                .unwrap_or(false)
-        })
-        .unwrap_or(false);
+    let next_mode_has_higher_refresh = next_mode.is_some_and(|next_mode| {
+        current_mode.is_some_and(|current_mode| next_mode.refresh > current_mode.refresh)
+    });
 
     let current_visible_area_threshold = current_state.visible_area * VISIBLE_AREA_THRESHOLD;
     let next_mode_visible_area_greater = next_state.visible_area >= current_visible_area_threshold;
@@ -476,8 +470,7 @@ impl RenderElementStates {
     /// Returns `false` if the element with the id was not found or skipped
     pub fn element_was_presented(&self, id: impl Into<Id>) -> bool {
         self.element_render_state(id)
-            .map(|state| state.presentation_state != RenderElementPresentationState::Skipped)
-            .unwrap_or(false)
+            .is_some_and(|state| state.presentation_state != RenderElementPresentationState::Skipped)
     }
 }
 

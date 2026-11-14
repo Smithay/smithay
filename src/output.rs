@@ -483,14 +483,14 @@ impl Hash for WeakOutput {
 impl PartialEq<WeakOutput> for Output {
     #[inline]
     fn eq(&self, other: &WeakOutput) -> bool {
-        other.upgrade().map(|o| &o == self).unwrap_or(false)
+        other.upgrade().is_some_and(|o| &o == self)
     }
 }
 
 impl PartialEq<Output> for WeakOutput {
     #[inline]
     fn eq(&self, other: &Output) -> bool {
-        self.upgrade().map(|o| &o == other).unwrap_or(false)
+        self.upgrade().is_some_and(|o| &o == other)
     }
 }
 

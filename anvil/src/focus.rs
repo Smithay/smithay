@@ -473,8 +473,7 @@ impl WaylandFocus for PointerFocusTarget {
             PointerFocusTarget::X11Surface(w) => w.same_client_as(object_id),
             PointerFocusTarget::SSD(w) => w
                 .wl_surface()
-                .map(|surface| surface.same_client_as(object_id))
-                .unwrap_or(false),
+                .is_some_and(|surface| surface.same_client_as(object_id)),
         }
     }
 }
