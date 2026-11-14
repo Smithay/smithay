@@ -105,6 +105,18 @@ where
             });
     }
 
+    fn input_repeat(
+        &mut self,
+        _data: &mut D,
+        _handle: &mut KeyboardInnerHandle<'_, D>,
+        _keycode: Keycode,
+        _serial: Serial,
+        _time: InputTime,
+    ) {
+        // Rate 0 in `zwp_input_method_keyboard_grab_v2:repeat_info()` has no special meaning,
+        // unlike new `wl_keyboard:repeat_info()`, therefore we can't support server side repeat yet
+    }
+
     fn set_focus(
         &mut self,
         data: &mut D,

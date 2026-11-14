@@ -280,6 +280,17 @@ impl<BackendData: Backend> KeyboardTarget<AnvilState<BackendData>> for KeyboardF
         self.inner_keyboard_target()
             .key(seat, data, key, state, serial, time)
     }
+    fn key_repeat(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        key: KeysymHandle<'_>,
+        serial: Serial,
+        time: InputTime,
+    ) {
+        self.inner_keyboard_target()
+            .key_repeat(seat, data, key, serial, time)
+    }
     fn modifiers(
         &self,
         seat: &Seat<AnvilState<BackendData>>,

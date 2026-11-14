@@ -73,7 +73,7 @@ where
 
         let guard = self.arc.internal.lock().unwrap();
         if kbd.version() >= 4 {
-            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
+            kbd.repeat_info(guard.advertised_repeat_rate(kbd.version()), guard.repeat_delay);
         }
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if focused.same_client_as(&kbd.id()) {
@@ -304,6 +304,27 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 key.raw_code().raw() - 8,
                 state.into(),
             )
+        })
+    }
+
+    fn key_repeat(
+        &self,
+        seat: &Seat<D>,
+        _data: &mut D,
+        key: KeysymHandle<'_>,
+        serial: Serial,
+        time: InputTime,
+    ) {
+        for_each_focused_kbds(seat, self, |kbd| {
+            // Older clients repeat keys themselves
+            if kbd.version() >= 10 {
+                kbd.key(
+                    serial.into(),
+                    time.millis(),
+                    key.raw_code().raw() - 8,
+                    WlKeyState::Repeated,
+                )
+            }
         })
     }
 
