@@ -550,6 +550,7 @@ impl LayerSurface {
 
     /// Returns the underlying [`WlSurface`]
     #[inline]
+    #[allow(clippy::same_name_method)]
     pub fn wl_surface(&self) -> &WlSurface {
         self.0.surface.wl_surface()
     }
@@ -756,7 +757,7 @@ impl LayerSurface {
 impl WaylandFocus for LayerSurface {
     #[inline]
     fn wl_surface(&self) -> Option<Cow<'_, wl_surface::WlSurface>> {
-        Some(Cow::Borrowed(self.0.surface.wl_surface()))
+        Some(Cow::Borrowed(self.wl_surface()))
     }
 }
 
