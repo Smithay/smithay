@@ -15,7 +15,7 @@ use std::{
     ptr,
     rc::Rc,
     sync::{
-        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
+        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError, Weak,
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{self, Sender},
     },
@@ -115,6 +115,22 @@ impl Drop for GlesBufferInner {
 #[derive(Debug, Clone)]
 struct GlesBuffer(Rc<GlesBufferInner>);
 
+/// The framebuffer a texture is bound through, kept while the texture lives
+#[derive(Debug)]
+struct GlesTextureFramebuffer {
+    texture: Weak<GlesTextureInternal>,
+    fbo: ffi::types::GLuint,
+    destruction_callback_sender: Sender<CleanupResource>,
+}
+
+impl Drop for GlesTextureFramebuffer {
+    fn drop(&mut self) {
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::FramebufferObject(self.fbo));
+    }
+}
+
 /// Offscreen render surface
 ///
 /// Usually more performant than using a texture as a framebuffer.
@@ -177,7 +193,6 @@ enum GlesTargetInternal<'a> {
         texture: GlesTexture,
         sync_lock: RwLockWriteGuard<'a, TextureSync>,
         fbo: ffi::types::GLuint,
-        destruction_callback_sender: Sender<CleanupResource>,
     },
     Renderbuffer {
         buf: &'a mut GlesRenderbuffer,
@@ -263,21 +278,11 @@ impl GlesTargetInternal<'_> {
 
 impl Drop for GlesTargetInternal<'_> {
     fn drop(&mut self) {
-        match self {
-            GlesTargetInternal::Texture {
-                fbo,
-                destruction_callback_sender,
-                ..
-            } => {
-                let _ = destruction_callback_sender.send(CleanupResource::FramebufferObject(*fbo));
-            }
-            GlesTargetInternal::Renderbuffer { buf, fbo, .. } => {
-                let _ = buf
-                    .0
-                    .destruction_callback_sender
-                    .send(CleanupResource::FramebufferObject(*fbo));
-            }
-            _ => {}
+        if let GlesTargetInternal::Renderbuffer { buf, fbo, .. } = self {
+            let _ = buf
+                .0
+                .destruction_callback_sender
+                .send(CleanupResource::FramebufferObject(*fbo));
         }
     }
 }
@@ -407,6 +412,7 @@ pub struct GlesRenderer {
     // caches
     buffers: Vec<GlesBuffer>,
     dmabuf_cache: HashMap<WeakDmabuf, GlesTexture>,
+    texture_framebuffers: Vec<GlesTextureFramebuffer>,
     vbos: [ffi::types::GLuint; 2],
     vertices: Vec<f32>,
     non_opaque_damage: Vec<Rectangle<i32, Physical>>,
@@ -748,6 +754,7 @@ impl GlesRenderer {
 
             buffers: Vec::new(),
             dmabuf_cache: std::collections::HashMap::new(),
+            texture_framebuffers: Vec::new(),
             vertices: Vec::with_capacity(6 * 16),
             non_opaque_damage: Vec::with_capacity(16),
             opaque_damage: Vec::with_capacity(16),
@@ -768,11 +775,26 @@ impl GlesRenderer {
             self.egl.make_current()?;
         }
 
-        let bind = || {
+        let mut bind = || {
             let mut sync_lock = texture.0.sync.write().unwrap();
+            sync_lock.wait_for_all(&self.gl);
+
+            // A framebuffer made per bind costs its creation and completeness check on every
+            // frame, and drivers may hold on to one deleted before anything was drawn through it
+            if let Some(cached) = self
+                .texture_framebuffers
+                .iter()
+                .find(|cached| ptr::eq(cached.texture.as_ptr(), Arc::as_ptr(&texture.0)))
+            {
+                return Ok(GlesTarget(GlesTargetInternal::Texture {
+                    texture: texture.clone(),
+                    sync_lock,
+                    fbo: cached.fbo,
+                }));
+            }
+
             let mut fbo = 0;
             unsafe {
-                sync_lock.wait_for_all(&self.gl);
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
 
@@ -807,10 +829,14 @@ impl GlesRenderer {
                 }
             }
 
+            self.texture_framebuffers.push(GlesTextureFramebuffer {
+                texture: Arc::downgrade(&texture.0),
+                fbo,
+                destruction_callback_sender: self.gles_cleanup().sender.clone(),
+            });
             Ok(GlesTarget(GlesTargetInternal::Texture {
                 texture: texture.clone(),
                 sync_lock,
-                destruction_callback_sender: self.gles_cleanup().sender.clone(),
                 fbo,
             }))
         };
@@ -841,6 +867,8 @@ impl GlesRenderer {
     fn cleanup(&mut self) -> Result<(), GlesError> {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
         self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
+        self.texture_framebuffers
+            .retain(|cached| cached.texture.strong_count() > 0);
         self.gles_cleanup().cleanup(&self.egl, &self.gl)?;
         Ok(())
     }
@@ -2373,6 +2401,7 @@ impl Renderer for GlesRenderer {
     fn invalidate_caches(&mut self) -> Result<(), Self::Error> {
         self.dmabuf_cache.clear();
         self.buffers.clear();
+        self.texture_framebuffers.clear();
         self.cleanup()
     }
 }
@@ -3624,7 +3653,7 @@ mod context_activation_tests {
 
     // Prefer software rendering so the tests can run without a GPU: Mesa offers a software
     // device even on a machine with no DRM node.
-    fn test_renderer() -> GlesRenderer {
+    pub(super) fn test_renderer() -> GlesRenderer {
         let mut devices = EGLDevice::enumerate()
             .expect("EGL device enumeration failed; Mesa provides the software device these tests need")
             .collect::<Vec<_>>();
@@ -3670,5 +3699,49 @@ mod context_activation_tests {
 
         unsafe { renderer.egl_context().make_current().unwrap() };
         assert_eq!(unsafe { renderer.gl.IsTexture(texture_id) }, ffi::FALSE);
+    }
+}
+
+#[cfg(test)]
+mod texture_framebuffer_tests {
+    use super::context_activation_tests::test_renderer;
+    use super::*;
+
+    fn target_framebuffer(target: &GlesTarget<'_>) -> ffi::types::GLuint {
+        match &target.0 {
+            GlesTargetInternal::Texture { fbo, .. } => *fbo,
+            _ => panic!("not a texture target"),
+        }
+    }
+
+    #[test]
+    fn binding_a_texture_again_reuses_its_framebuffer() {
+        let mut renderer = test_renderer();
+        let mut texture: GlesTexture = renderer
+            .create_buffer(Fourcc::Abgr8888, Size::from((4, 4)))
+            .unwrap();
+
+        let first = target_framebuffer(&renderer.bind(&mut texture).unwrap());
+        let second = target_framebuffer(&renderer.bind(&mut texture).unwrap());
+        assert_eq!(first, second);
+
+        renderer.cleanup_texture_cache().unwrap();
+        unsafe { renderer.egl_context().make_current().unwrap() };
+        assert_eq!(unsafe { renderer.gl.IsFramebuffer(first) }, ffi::TRUE);
+    }
+
+    #[test]
+    fn dropping_a_texture_frees_its_framebuffer() {
+        let mut renderer = test_renderer();
+        let mut texture: GlesTexture = renderer
+            .create_buffer(Fourcc::Abgr8888, Size::from((4, 4)))
+            .unwrap();
+        let fbo = target_framebuffer(&renderer.bind(&mut texture).unwrap());
+
+        drop(texture);
+        renderer.cleanup_texture_cache().unwrap();
+
+        unsafe { renderer.egl_context().make_current().unwrap() };
+        assert_eq!(unsafe { renderer.gl.IsFramebuffer(fbo) }, ffi::FALSE);
     }
 }

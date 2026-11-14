@@ -1093,6 +1093,7 @@ impl DmabufParamsData {
                 zwp_linux_buffer_params_v1::Error::InvalidDimensions,
                 "invalid width",
             );
+            return None;
         }
 
         if height < 1 {
@@ -1100,6 +1101,7 @@ impl DmabufParamsData {
                 zwp_linux_buffer_params_v1::Error::InvalidDimensions,
                 "invalid height",
             );
+            return None;
         }
 
         // 3. Validate all the planes
