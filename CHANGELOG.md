@@ -293,6 +293,8 @@ default implementations, which result in skipping the new functionality. As such
 
 `Output` now has `owns_xdg_output()` which allows you to match an XDG output protocol object with an `Output`.
 
+`Output::create_global_with_filter` creates a `wl_output` global visible only to the clients the filter accepts.
+
 Added `Renderer::invalidate_caches`, which unconditionally drops all renderer-internal caches,
 including entries `Renderer::cleanup_texture_cache` retains while their source buffers are still
 alive.
