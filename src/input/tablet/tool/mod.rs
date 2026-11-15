@@ -562,10 +562,9 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
         focus: Focus,
         grab: G,
     ) {
-        let inner = self.inner.lock().unwrap();
-
         handler.unset(data);
 
+        let mut inner = self.inner.lock().unwrap();
         if !inner.in_proximity() {
             tracing::warn!("set_grab called with an out of proximity tool.");
             return;
@@ -573,10 +572,7 @@ impl<D: TabletSeatHandler + 'static> TabletToolInnerHandle<'_, D> {
 
         self.grab_op = GrabOp::Set(serial, Box::new(grab));
 
-        self.inner
-            .lock()
-            .unwrap()
-            .post_set_grab(data, self.seat, self.descriptor, time, serial, focus);
+        inner.post_set_grab(data, self.seat, self.descriptor, time, serial, focus);
     }
 
     /// Remove any current grab on this tool, resetting it to the default behavior
