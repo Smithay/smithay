@@ -71,6 +71,7 @@
 mod handlers;
 pub(crate) mod xdg;
 
+use std::fmt;
 use std::mem;
 use std::sync::{Arc, atomic::Ordering};
 
@@ -106,9 +107,17 @@ pub struct OutputManagerState {
 }
 
 /// Internal data of a wl_output global
-#[derive(Debug)]
 pub struct WlOutputData {
     output: Output,
+    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+}
+
+impl fmt::Debug for WlOutputData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WlOutputData")
+            .field("output", &self.output)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Events initiated by the clients interacting with outputs
@@ -206,9 +215,27 @@ impl Output {
         D: GlobalDispatch<WlOutput, WlOutputData>,
         D: 'static,
     {
+        self.create_global_with_filter::<D, _>(display, |_| true)
+    }
+
+    /// Create a new output global with a filter.
+    ///
+    /// Filters can be used to limit visibility of a global to certain clients.
+    ///
+    /// See [`Output::create_global`].
+    pub fn create_global_with_filter<D, F>(&self, display: &DisplayHandle, filter: F) -> GlobalId
+    where
+        D: GlobalDispatch<WlOutput, WlOutputData>,
+        D: 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
+    {
         info!(output = self.name(), "Creating new wl_output");
         self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
-        display.create_global::<D, WlOutput, _>(4, WlOutputData { output: self.clone() })
+        let data = WlOutputData {
+            output: self.clone(),
+            filter: Box::new(filter),
+        };
+        display.create_global::<D, WlOutput, _>(4, data)
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource

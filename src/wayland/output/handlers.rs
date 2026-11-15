@@ -98,6 +98,10 @@ where
         drop(inner);
         state.output_bound(self.output.clone(), output);
     }
+
+    fn can_view(&self, client: &Client) -> bool {
+        (self.filter)(client)
+    }
 }
 
 impl<D> Dispatch2<WlOutput, D> for OutputUserData {
