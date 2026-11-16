@@ -73,6 +73,12 @@ impl InputMethodHandle {
         self.inner.lock().unwrap().instance.is_some()
     }
 
+    /// The client of the active input method instance
+    pub fn client(&self) -> Option<Client> {
+        let inner = self.inner.lock().unwrap();
+        inner.instance.as_ref()?.object.client()
+    }
+
     /// Whether `object` is the seat's active input method instance.
     pub(super) fn is_active_instance(&self, object: &ZwpInputMethodV2) -> bool {
         self.inner
