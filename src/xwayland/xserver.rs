@@ -1,7 +1,7 @@
 use std::{
     env,
     ffi::OsStr,
-    os::fd::{BorrowedFd, OwnedFd},
+    os::fd::{AsFd, BorrowedFd, OwnedFd},
     os::unix::{
         io::{AsRawFd, RawFd},
         net::UnixStream,
@@ -279,6 +279,12 @@ impl XWayland {
         info!("spawning XWayland instance");
 
         let child = command.spawn()?;
+        let pidfd = rustix::process::pidfd_open(
+            rustix::process::Pid::from_child(&child),
+            rustix::process::PidfdFlags::empty(),
+        )
+        .map_err(|err| tracing::warn!(?err, "Failed to open a pidfd for Xwayland"))
+        .ok();
 
         // SAFETY: RawFd's AsRawFd impl is infallible.
         let wrapper = unsafe { calloop::generic::FdWrapper::new(displayfd_recv.as_raw_fd()) };
@@ -304,6 +310,7 @@ impl XWayland {
                 compositor_state: CompositorClientState::default(),
                 data_map,
                 child: Mutex::new(Some(child)),
+                pidfd,
             }),
         )?;
 
@@ -459,6 +466,7 @@ pub struct XWaylandClientData {
     pub compositor_state: CompositorClientState,
     data_map: UserDataMap,
     child: Mutex<Option<Child>>,
+    pidfd: Option<OwnedFd>,
 }
 
 impl ClientData for XWaylandClientData {
@@ -482,6 +490,11 @@ impl XWaylandClientData {
     /// Access user_data map for a xwayland client
     pub fn user_data(&self) -> &UserDataMap {
         &self.data_map
+    }
+
+    /// pidfd of the Xwayland process
+    pub fn pidfd(&self) -> Option<BorrowedFd<'_>> {
+        self.pidfd.as_ref().map(|fd| fd.as_fd())
     }
 }
 
