@@ -166,7 +166,31 @@ while using input handle methods that don't affect the grab.) As a result there 
 - `PointerInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 - `TabletToolInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 
+`GlesRenderer::new`, `GlesRenderer::with_capabilities`, `GlowRenderer::new` and `GlowRenderer::with_capabilities`
+take a `use_udmabuf` argument, which enables importing `wl_shm` buffers without copying through udmabuf.
+`GlesRenderer::udmabuf_supported` gives a conservative default for it. The winit backend uses this default,
+`GbmGlesBackend` without a factory does the same check through the gbm device.
+
+```diff
+-GlesRenderer::new(context);
++let use_udmabuf = GlesRenderer::udmabuf_supported(context.display());
++GlesRenderer::new(context, use_udmabuf);
+```
+
 ### Additions
+
+- `GlesRenderer`, `GlowRenderer` and the multi-GPU renderers import `wl_shm` buffers in `ImportAll`
+  without copying through udmabuf when possible, if created with `use_udmabuf`.
+  These buffers are released once GPU is done reading them, kept alive through the new `Texture::hold_buffer`.
+  Other renderers can opt in with `ImportDmaWl::prefers_udmabuf`.
+  Multi-gpu ones import only on the render gpu through `ImportDmaWl::import_udmabuf`.
+
+- The new `allocator_udmabuf` feature gates `UdmabufAllocator` and the udmabuf import of `wl_shm` buffers.
+  It is enabled by default and by `renderer_gl`.
+
+- `UdmabufAllocator::is_supported_by` indicate whether the driver of a drm device reads udmabufs
+  reliably and faster than a copy, which currently are integrated `i915` (with LLC), `xe` and `amdgpu` GPUs. 
+  `SMITHAY_UDMABUF_IMPORT=0` or `1` overrides it.
 
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
   whole environment, instead of only `PATH` and

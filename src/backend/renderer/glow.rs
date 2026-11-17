@@ -95,14 +95,16 @@ impl GlowRenderer {
     /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
     ///
     /// See: [`with_capabilities`](Self::with_capabilities) for more information
-    pub unsafe fn new(context: EGLContext) -> Result<GlowRenderer, GlesError> {
+    pub unsafe fn new(context: EGLContext, use_udmabuf: bool) -> Result<GlowRenderer, GlesError> {
         let supported_capabilities = Self::supported_capabilities(&context)?;
-        Self::with_capabilities(context, supported_capabilities)
+        Self::with_capabilities(context, supported_capabilities, use_udmabuf)
     }
 
     /// Creates a new OpenGL ES 2 + Glow renderer from a given [`EGLContext`]
     /// with the specified [`Capabilities`](Capability). If a requested [`Capability`] is not supported an
     /// error will be returned.
+    ///
+    /// See: [`GlesRenderer::with_capabilities`] for `use_udmabuf`.
     ///
     /// # Safety
     ///
@@ -120,12 +122,13 @@ impl GlowRenderer {
     pub unsafe fn with_capabilities(
         context: EGLContext,
         capabilities: impl IntoIterator<Item = Capability>,
+        use_udmabuf: bool,
     ) -> Result<GlowRenderer, GlesError> {
         let glow = {
             context.make_current()?;
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
         };
-        let gl = GlesRenderer::with_capabilities(context, capabilities)?;
+        let gl = GlesRenderer::with_capabilities(context, capabilities, use_udmabuf)?;
 
         Ok(GlowRenderer {
             gl: GlesInternal::Owned(Box::new(gl)),
@@ -534,7 +537,11 @@ impl ImportDma for GlowRenderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportDmaWl for GlowRenderer {}
+impl ImportDmaWl for GlowRenderer {
+    fn prefers_udmabuf(&self) -> bool {
+        self.gl.as_ref().prefers_udmabuf()
+    }
+}
 
 impl ExportMem for GlowRenderer {
     type TextureMapping = GlesMapping;

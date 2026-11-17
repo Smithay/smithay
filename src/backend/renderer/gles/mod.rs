@@ -6,6 +6,7 @@
 use core::slice;
 use glam::{Affine2, Mat3, Vec2};
 use std::{
+    any::Any,
     collections::HashMap,
     ffi::{CStr, CString},
     fmt,
@@ -15,7 +16,7 @@ use std::{
     ptr,
     rc::Rc,
     sync::{
-        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError,
+        Arc, Mutex, RwLock, RwLockWriteGuard, TryLockError, Weak,
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{self, Sender},
     },
@@ -54,7 +55,7 @@ use crate::{
             format::{FormatSet, get_bpp, get_opaque, has_alpha},
         },
         egl::{
-            EGLContext, EGLDevice, EGLSurface, MakeCurrentError,
+            EGLContext, EGLDevice, EGLDisplay, EGLSurface, MakeCurrentError,
             fence::EGLFence,
             ffi::egl::{self as ffi_egl, types::EGLImage},
         },
@@ -398,6 +399,8 @@ pub struct GlesRenderer {
     gl_version: GlVersion,
     pub(crate) extensions: Vec<String>,
     is_software: bool,
+    #[cfg_attr(not(feature = "wayland_frontend"), allow(unused))]
+    use_udmabuf: bool,
     capabilities: Vec<Capability>,
 
     // shaders
@@ -407,6 +410,8 @@ pub struct GlesRenderer {
     // caches
     buffers: Vec<GlesBuffer>,
     dmabuf_cache: HashMap<WeakDmabuf, GlesTexture>,
+    /// Buffers kept until gpu is done reading them, see [`Texture::hold_buffer`]
+    held_buffers: Vec<(SyncPoint, Vec<Arc<dyn Any + Send + Sync>>)>,
     vbos: [ffi::types::GLuint; 2],
     vertices: Vec<f32>,
     non_opaque_damage: Vec<Rectangle<i32, Physical>>,
@@ -437,6 +442,7 @@ pub struct GlesFrame<'frame, 'buffer> {
     transform: Transform,
     size: Size<i32, Physical>,
     tex_program_override: Option<(GlesTexProgram, Vec<Uniform<'static>>)>,
+    held_buffers: Vec<Arc<dyn Any + Send + Sync>>,
     finished: AtomicBool,
 
     span: EnteredSpan,
@@ -564,6 +570,41 @@ impl GlesRenderer {
         Ok(capabilities)
     }
 
+    /// Whether `wl_shm` buffers should be imported through udmabuf on the GPU of the given [`EGLDisplay`].
+    ///
+    /// A conservative default for the `use_udmabuf` argument of [`new`](Self::new) and
+    /// [`with_capabilities`](Self::with_capabilities), see [`UdmabufAllocator::is_supported_by`](crate::backend::allocator::udmabuf::UdmabufAllocator::is_supported_by).
+    pub fn udmabuf_supported(display: &EGLDisplay) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            use crate::backend::allocator::udmabuf::UdmabufAllocator;
+
+            let path =
+                match EGLDevice::device_for_display(display).and_then(|device| device.render_device_path()) {
+                    Ok(path) => path,
+                    Err(err) => {
+                        debug!(
+                            ?err,
+                            "Failed to get the drm device of the display, not using udmabuf"
+                        );
+                        return false;
+                    }
+                };
+            match std::fs::File::open(&path) {
+                Ok(file) => UdmabufAllocator::is_supported_by(file),
+                Err(err) => {
+                    debug!(?err, ?path, "Failed to open drm device, not using udmabuf");
+                    false
+                }
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = display;
+            false
+        }
+    }
+
     /// Creates a new OpenGL ES renderer from a given [`EGLContext`]
     /// with all [`supported capabilities`](Self::supported_capabilities).
     ///
@@ -572,14 +613,18 @@ impl GlesRenderer {
     /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
     ///
     /// See: [`with_capabilities`](Self::with_capabilities) for more information
-    pub unsafe fn new(context: EGLContext) -> Result<GlesRenderer, GlesError> {
+    pub unsafe fn new(context: EGLContext, use_udmabuf: bool) -> Result<GlesRenderer, GlesError> {
         let supported_capabilities = Self::supported_capabilities(&context)?;
-        Self::with_capabilities(context, supported_capabilities)
+        Self::with_capabilities(context, supported_capabilities, use_udmabuf)
     }
 
     /// Creates a new OpenGL ES renderer from a given [`EGLContext`]
     /// with the specified [`Capabilities`](Capability). If a requested [`Capability`] is not supported an
     /// error will be returned.
+    ///
+    /// If `use_udmabuf` is set, [`ImportAll`](crate::backend::renderer::ImportAll) imports `wl_shm`
+    /// buffers without copying through udmabuf when possible. [`udmabuf_supported`](Self::udmabuf_supported)
+    /// tells whether the GPU reads udmabufs reliably and faster than a copy.
     ///
     /// # Safety
     ///
@@ -598,6 +643,7 @@ impl GlesRenderer {
     pub unsafe fn with_capabilities(
         context: EGLContext,
         capabilities: impl IntoIterator<Item = Capability>,
+        use_udmabuf: bool,
     ) -> Result<GlesRenderer, GlesError> {
         let span = info_span!(parent: &context.span, "renderer_gles2");
         let _guard = span.enter();
@@ -737,6 +783,7 @@ impl GlesRenderer {
 
             extensions: exts,
             is_software,
+            use_udmabuf,
             gl_version,
             capabilities,
 
@@ -748,6 +795,7 @@ impl GlesRenderer {
 
             buffers: Vec::new(),
             dmabuf_cache: std::collections::HashMap::new(),
+            held_buffers: Vec::new(),
             vertices: Vec::with_capacity(6 * 16),
             non_opaque_damage: Vec::with_capacity(16),
             opaque_damage: Vec::with_capacity(16),
@@ -839,6 +887,7 @@ impl GlesRenderer {
 
     #[profiling::function]
     fn cleanup(&mut self) -> Result<(), GlesError> {
+        self.held_buffers.retain(|(sync, _)| !sync.is_reached());
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
         self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
         self.gles_cleanup().cleanup(&self.egl, &self.gl)?;
@@ -1334,7 +1383,11 @@ impl ImportDma for GlesRenderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportDmaWl for GlesRenderer {}
+impl ImportDmaWl for GlesRenderer {
+    fn prefers_udmabuf(&self) -> bool {
+        self.use_udmabuf
+    }
+}
 
 impl GlesRenderer {
     #[profiling::function]
@@ -2321,6 +2374,7 @@ impl Renderer for GlesRenderer {
             transform,
             size: output_size,
             tex_program_override: None,
+            held_buffers: Vec::new(),
             finished: AtomicBool::new(false),
 
             span,
@@ -2588,6 +2642,12 @@ impl GlesFrame<'_, '_> {
         if let Some(sync_point) = self.renderer.export_sync_point() {
             // Sync after glFlush in export_sync_point() and right before returning.
             self.renderer.profiler.sync_gpu(&self.renderer.gl);
+            if !self.held_buffers.is_empty() {
+                let held_buffers = mem::take(&mut self.held_buffers);
+                self.renderer
+                    .held_buffers
+                    .push((sync_point.clone(), held_buffers));
+            }
             return Ok(sync_point);
         }
 
@@ -2597,6 +2657,7 @@ impl GlesFrame<'_, '_> {
         unsafe {
             self.renderer.gl.Finish();
         }
+        self.held_buffers.clear();
         Ok(SyncPoint::signaled())
     }
 
@@ -2974,9 +3035,16 @@ impl GlesFrame<'_, '_> {
             &program_variant.debug
         };
 
+        let sync_lock = tex.0.sync.read().unwrap();
+        let buffer = sync_lock.buffer.lock().unwrap().as_ref().and_then(Weak::upgrade);
+        if let Some(buffer) = buffer {
+            if !self.held_buffers.iter().any(|held| Arc::ptr_eq(held, &buffer)) {
+                self.held_buffers.push(buffer);
+            }
+        }
+
         // render
         let gl = &self.renderer.gl;
-        let sync_lock = tex.0.sync.read().unwrap();
         unsafe {
             sync_lock.wait_for_upload(gl);
             let scope = self
@@ -3634,7 +3702,7 @@ mod context_activation_tests {
             .find_map(|device| {
                 let display = unsafe { EGLDisplay::new(device) }.ok()?;
                 let context = EGLContext::new(&display).ok()?;
-                unsafe { GlesRenderer::new(context) }.ok()
+                unsafe { GlesRenderer::new(context, false) }.ok()
             })
             .expect("no usable EGL device; Mesa provides the software device these tests need")
     }

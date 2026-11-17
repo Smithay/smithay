@@ -133,7 +133,7 @@ impl Cacheable for SurfaceAttributes {
                 });
 
                 if Some(&buffer) != new_buffer {
-                    buffer.release();
+                    crate::wayland::buffer::release(&buffer);
                 }
             }
         }

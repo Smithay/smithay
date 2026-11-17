@@ -21,3 +21,12 @@ pub trait BufferHandler {
     /// At this point the buffer is no longer usable by Smithay.
     fn buffer_destroyed(&mut self, buffer: &wl_buffer::WlBuffer);
 }
+
+/// Sends `wl_buffer.release`, waiting first until the GPU is done reading the
+/// buffer if it was imported without a copy (shm via udmabuf).
+///
+/// Smithay releases buffers only through this function.
+pub(crate) fn release(buffer: &wl_buffer::WlBuffer) {
+    crate::wayland::shm::wait_udmabuf_idle(buffer);
+    buffer.release();
+}

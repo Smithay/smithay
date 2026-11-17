@@ -225,7 +225,8 @@ fn buffer_test(args: TestArgs) {
             let display = unsafe { EGLDisplay::new(device).expect("Failed to create EGL display") };
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
-            let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
+            let mut renderer =
+                unsafe { GlesRenderer::new(context, false).expect("Failed to init GL ES renderer") };
 
             render_into(&mut renderer, &mut buffer, args.width as i32, args.height as i32);
         }
@@ -260,7 +261,8 @@ fn buffer_test(args: TestArgs) {
             let display = unsafe { EGLDisplay::new(device).expect("Failed to create EGL display") };
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
-            let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
+            let mut renderer =
+                unsafe { GlesRenderer::new(context, false).expect("Failed to init GL ES renderer") };
 
             render_from::<_, GlesRenderbuffer>(
                 &mut renderer,

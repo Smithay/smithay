@@ -2250,13 +2250,6 @@ where
 
             match render_res {
                 Ok(render_output_result) => {
-                    if render_output_result.damage.is_none() {
-                        // if we receive no damage we can assume no rendering took place
-                        // and we should trigger a cleanup of the renderer texture cache
-                        // to prevent holding textures longer then necessary
-                        let _ = renderer.cleanup_texture_cache();
-                    }
-
                     for (id, state) in render_output_result.states.states.into_iter() {
                         // Skip the state for our fake elements
                         if self.overlay_plane_element_ids.contains_plane_id(&id) {

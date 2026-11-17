@@ -185,7 +185,14 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError> + Borrow<GlesRenderer>,
                     let context =
                         EGLContext::new_with_priority(display, self.context_priority.unwrap_or_default())
                             .map_err(Error::Egl)?;
-                    unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into()
+                    // Not `GlesRenderer::udmabuf_supported`: if the compositor already created an EGL display
+                    // for this device, Mesa doesn't report the drm device of ours and udmabuf would be disabled
+                    #[cfg(target_os = "linux")]
+                    let use_udmabuf =
+                        crate::backend::allocator::udmabuf::UdmabufAllocator::is_supported_by(gbm);
+                    #[cfg(not(target_os = "linux"))]
+                    let use_udmabuf = false;
+                    unsafe { GlesRenderer::new(context, use_udmabuf).map_err(Error::Gl)? }.into()
                 };
 
                 Ok(GbmGlesDevice {
