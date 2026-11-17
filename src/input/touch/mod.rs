@@ -54,6 +54,9 @@ pub(crate) struct TouchRc<D: SeatHandler> {
     pub(crate) known_instances: Mutex<Vec<Weak<wayland_server::protocol::wl_touch::WlTouch>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) last_down: Mutex<HashMap<TouchSlot, Serial>>,
+    // Unlike last_down, this is kept after the touch point goes up.
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) latest_down: Mutex<Option<Serial>>,
     pub(crate) span: tracing::Span,
 }
 
@@ -75,6 +78,7 @@ impl<D: SeatHandler> fmt::Debug for TouchHandle<D> {
             .field("grab", &self.arc.grab)
             .field("known_instances", &self.arc.known_instances)
             .field("last_down", &self.arc.last_down)
+            .field("latest_down", &self.arc.latest_down)
             .finish()
     }
 }
@@ -276,6 +280,8 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
                 known_instances: Mutex::new(Vec::new()),
                 #[cfg(feature = "wayland_frontend")]
                 last_down: Mutex::new(HashMap::new()),
+                #[cfg(feature = "wayland_frontend")]
+                latest_down: Mutex::new(None),
                 span: info_span!("input_touch"),
             }),
         }
@@ -307,6 +313,17 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
     /// Check if this touch is currently grabbed with this serial
     pub fn has_grab(&self, serial: Serial) -> bool {
         self.with_grab(|s, _| s == serial).unwrap_or(false)
+    }
+
+    /// Access the [`Serial`] of the last `wl_touch.down` event sent to a client.
+    ///
+    /// Touch has no enter event, so this is the equivalent of
+    /// [`PointerHandle::last_enter`](crate::input::pointer::PointerHandle::last_enter)
+    /// for validating serials, for example of xdg-activation tokens. It isn't cleared when the touch
+    /// point goes up, since clients usually act on a tap after it ended.
+    #[cfg(feature = "wayland_frontend")]
+    pub fn last_down(&self) -> Option<Serial> {
+        *self.arc.latest_down.lock().unwrap()
     }
 
     /// Check if this touch is currently being grabbed

@@ -168,6 +168,10 @@ while using input handle methods that don't affect the grab.) As a result there 
 
 ### Additions
 
+- `TouchHandle::last_down` gives the serial of the last `wl_touch.down` sent to
+  a client, similar to `PointerHandle::last_enter`, so that compositors can
+  accept xdg-activation tokens created after a tap. anvil now does.
+
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
   whole environment, instead of only `PATH` and
   `XDG_RUNTIME_DIR`. This lets `Xwayland` find GPU drivers installed outside

@@ -129,6 +129,7 @@ where
 
         if let Some(touch) = seat.get_touch() {
             touch.arc.last_down.lock().unwrap().insert(slot, serial);
+            *touch.arc.latest_down.lock().unwrap() = Some(serial);
         }
 
         for_each_focused_touch(seat, self, |touch| {
