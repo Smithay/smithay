@@ -447,12 +447,18 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
 
     fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
         if let Some((serial, seat)) = data.serial {
-            let keyboard = self.seat.get_keyboard().unwrap();
-            Seat::from_resource(&seat) == Some(self.seat.clone())
-                && keyboard
-                    .last_enter()
-                    .map(|last_enter| serial.is_no_older_than(&last_enter))
-                    .unwrap_or(false)
+            if Seat::from_resource(&seat) != Some(self.seat.clone()) {
+                return false;
+            }
+
+            // Allow tokens from a keyboard enter, pointer enter, or touch down
+            let keyboard_enter = self.seat.get_keyboard().unwrap().last_enter();
+            let pointer_enter = self.seat.get_pointer().and_then(|pointer| pointer.last_enter());
+            let touch_down = self.seat.get_touch().and_then(|touch| touch.last_down());
+            [keyboard_enter, pointer_enter, touch_down]
+                .into_iter()
+                .flatten()
+                .any(|last| serial.is_no_older_than(&last))
         } else {
             false
         }
