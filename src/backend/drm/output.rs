@@ -1,5 +1,9 @@
 //! Device-wide synchronization helpers
 
+use calloop::{
+    channel::{channel, Channel, Event, Sender},
+    Dispatcher, LoopHandle,
+};
 use std::{
     collections::HashMap,
     fmt,
@@ -43,7 +47,7 @@ type CompositorList<A, F, U, G> = Arc<RwLock<HashMap<crtc::Handle, Mutex<DrmComp
 ///
 /// The `DrmOutputManager` provides a way to handle operation commonly affected by this by locking the
 /// whole device, while still providing [`DrmOutput`]-handles to drive individual surfaces.
-pub struct DrmOutputManager<A, F, U, G>
+pub struct DrmOutputManager<A, F, U, G, S>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -55,12 +59,14 @@ where
     exporter: F,
     gbm: Option<GbmDevice<G>>,
     compositor: CompositorList<A, F, U, G>,
+    drop_channel: Sender<crtc::Handle>,
+    drop_dispatcher: Dispatcher<'static, Channel<crtc::Handle>, S>,
     color_formats: Vec<DrmFourcc>,
     renderer_formats: Vec<DrmFormat>,
 }
 
 /// Locked variant of the [`DrmOutputManager`].
-pub struct LockedDrmOutputManager<'a, A, F, U, G>
+pub struct LockedDrmOutputManager<'a, A, F, U, G, S>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -73,11 +79,13 @@ where
     gbm: &'a mut Option<GbmDevice<G>>,
     compositor: RwLockWriteGuard<'a, HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>>>,
     compositor_arc: CompositorList<A, F, U, G>,
+    drop_channel: Sender<crtc::Handle>,
+    drop_dispatcher: Dispatcher<'static, Channel<crtc::Handle>, S>,
     color_formats: &'a [DrmFourcc],
     renderer_formats: &'a [DrmFormat],
 }
 
-impl<A, F, U, G> fmt::Debug for DrmOutputManager<A, F, U, G>
+impl<A, F, U, G, S> fmt::Debug for DrmOutputManager<A, F, U, G, S>
 where
     A: Allocator + fmt::Debug,
     <A as Allocator>::Buffer: fmt::Debug,
@@ -99,7 +107,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> fmt::Debug for LockedDrmOutputManager<'a, A, F, U, G>
+impl<'a, A, F, U, G, S> fmt::Debug for LockedDrmOutputManager<'a, A, F, U, G, S>
 where
     A: Allocator + fmt::Debug,
     <A as Allocator>::Buffer: fmt::Debug,
@@ -122,7 +130,7 @@ where
     }
 }
 
-impl<A, F, U, G> DrmOutputManager<A, F, U, G>
+impl<A, F, U, G, S> DrmOutputManager<A, F, U, G, S>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -150,7 +158,7 @@ where
     }
 }
 
-impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
+impl<'a, A, F, U, G, S> LockedDrmOutputManager<'a, A, F, U, G, S>
 where
     A: Allocator,
     F: ExportFramebuffer<<A as Allocator>::Buffer>,
@@ -212,14 +220,14 @@ pub type DrmOutputManagerResult<U, A, F, R> = Result<
     >,
 >;
 
-impl<A, F, U, G> DrmOutputManager<A, F, U, G>
+impl<A, F, U, G, S> DrmOutputManager<A, F, U, G, S>
 where
-    A: Allocator + std::clone::Clone + std::fmt::Debug,
+    A: Allocator + std::clone::Clone + std::fmt::Debug + 'static,
     <A as Allocator>::Buffer: AsDmabuf,
     <A as Allocator>::Error: Send + Sync + 'static,
     <<A as crate::backend::allocator::Allocator>::Buffer as AsDmabuf>::Error:
         std::marker::Send + std::marker::Sync + 'static,
-    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone,
+    F: ExportFramebuffer<<A as Allocator>::Buffer> + std::clone::Clone + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug + Send + Sync + 'static,
     <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Error:
         std::marker::Send + std::marker::Sync + 'static,
@@ -246,13 +254,29 @@ where
         gbm: Option<GbmDevice<G>>,
         color_formats: impl IntoIterator<Item = DrmFourcc>,
         renderer_formats: impl IntoIterator<Item = DrmFormat>,
+        evlh: &LoopHandle<'static, S>,
     ) -> Self {
+        let compositor = CompositorList::<A, F, U, G>::default();
+
+        let list_copy = compositor.clone();
+        let (tx, rx) = channel();
+        let drop_dispatcher = Dispatcher::new(rx, move |event, _, _| {
+            if let Event::Msg(crtc) = event {
+                list_copy.write().unwrap().remove(&crtc);
+            }
+        });
+        let _ = evlh
+            .register_dispatcher(drop_dispatcher.clone())
+            .expect("Failed to register event loop source");
+
         Self {
             device,
             allocator,
             exporter,
             gbm,
-            compositor: Default::default(),
+            compositor,
+            drop_channel: tx,
+            drop_dispatcher,
             color_formats: color_formats.into_iter().collect(),
             renderer_formats: renderer_formats.into_iter().collect(),
         }
@@ -263,7 +287,7 @@ where
     ///
     /// The api of the [`LockedDrmOutputManager`] provides safe access to operations,
     /// which potentially need to modify the state of multiple underlying surfaces at once.
-    pub fn lock(&mut self) -> LockedDrmOutputManager<'_, A, F, U, G> {
+    pub fn lock(&mut self) -> LockedDrmOutputManager<'_, A, F, U, G, S> {
         LockedDrmOutputManager {
             device: &mut self.device,
             allocator: &mut self.allocator,
@@ -271,13 +295,15 @@ where
             gbm: &mut self.gbm,
             compositor: self.compositor.write().unwrap(),
             compositor_arc: self.compositor.clone(),
+            drop_channel: self.drop_channel.clone(),
+            drop_dispatcher: self.drop_dispatcher.clone(),
             color_formats: &self.color_formats,
             renderer_formats: &self.renderer_formats,
         }
     }
 }
 
-impl<'a, A, F, U, G> LockedDrmOutputManager<'a, A, F, U, G>
+impl<'a, A, F, U, G, S> LockedDrmOutputManager<'a, A, F, U, G, S>
 where
     A: Allocator + std::clone::Clone + std::fmt::Debug,
     <A as Allocator>::Buffer: AsDmabuf,
@@ -326,6 +352,10 @@ where
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
     {
+        while let Ok(crtc) = self.drop_dispatcher.as_source_ref().try_recv() {
+            self.compositor.remove(&crtc);
+        }
+
         let output_mode_source = output_mode_source.into();
 
         if self.compositor.contains_key(&crtc) {
@@ -491,11 +521,16 @@ where
             crtc,
             allocator: self.allocator.clone(),
             renderer_formats: Vec::from(self.renderer_formats),
+            drop_channel: self.drop_channel.clone(),
         })
     }
 
     /// Grants exclusive access to all underlying [`DrmCompositor`]s.
     pub fn compositors(&mut self) -> &HashMap<crtc::Handle, Mutex<DrmCompositor<A, F, U, G>>> {
+        while let Ok(crtc) = self.drop_dispatcher.as_source_ref().try_recv() {
+            self.compositor.remove(&crtc);
+        }
+
         &self.compositor
     }
 
@@ -520,6 +555,10 @@ where
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
     {
+        while let Ok(crtc) = self.drop_dispatcher.as_source_ref().try_recv() {
+            self.compositor.remove(&crtc);
+        }
+
         use_mode_internal(
             &mut self.compositor,
             crtc,
@@ -549,6 +588,10 @@ where
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
     {
+        while let Ok(crtc) = self.drop_dispatcher.as_source_ref().try_recv() {
+            self.compositor.remove(&crtc);
+        }
+
         // check if implicit modifiers are in use
         if self
             .compositor
@@ -600,6 +643,10 @@ where
     pub fn activate(&mut self, disable_connectors: bool) -> Result<(), DrmError> {
         self.device.activate(disable_connectors)?;
 
+        while let Ok(crtc) = self.drop_dispatcher.as_source_ref().try_recv() {
+            self.compositor.remove(&crtc);
+        }
+
         // We request a write guard here to guarantee unique access
         for compositor in self.compositor.values_mut() {
             if let Err(err) = compositor.get_mut().unwrap().reset_state() {
@@ -623,6 +670,7 @@ where
     crtc: crtc::Handle,
     allocator: A,
     renderer_formats: Vec<DrmFormat>,
+    drop_channel: Sender<crtc::Handle>,
 }
 
 impl<A, F, U, G> fmt::Debug for DrmOutput<A, F, U, G>
@@ -764,6 +812,7 @@ where
         R::TextureId: Texture + 'static,
         R::Error: Send + Sync + 'static,
     {
+        // TODO: we can't evaluate the drop_dispatcher here. do we keep this method?
         let mut write_guard = self.compositor.write().unwrap();
         use_mode_internal(
             &mut write_guard,
@@ -808,8 +857,11 @@ where
     G: AsFd + 'static,
 {
     fn drop(&mut self) {
-        let mut write_guard = self.compositor.write().unwrap();
-        write_guard.remove(&self.crtc);
+        if let Ok(mut write_guard) = self.compositor.try_write() {
+            write_guard.remove(&self.crtc);
+        } else {
+            let _ = self.drop_channel.send(self.crtc);
+        }
     }
 }
 
