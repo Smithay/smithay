@@ -7,7 +7,7 @@ authors = ["Bartłomiej Maryńczak <marynczakbartlomiej@gmail.com>"]
 
 [dependencies]
 libdisplay-info = { version = "0.3.0", optional = true }
-drm = { version = "0.14.0" }
+drm = { git = "https://github.com/maciej-lech/drm-rs.git", rev = "12ee307714479efee625e4dbd36c65d732330e28" }
 
 [features]
 default = ["display-info"]

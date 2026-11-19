@@ -39,9 +39,17 @@ pub struct GbmFramebuffer {
 impl Drop for GbmFramebuffer {
     #[inline]
     fn drop(&mut self) {
-        trace!(fb = ?self.fb, "destroying framebuffer");
-        if let Err(err) = self.drm.destroy_framebuffer(self.fb) {
-            warn!(fb = ?self.fb, ?err, "failed to destroy framebuffer");
+        trace!(fb = ?self.fb, "releasing framebuffer");
+        // CLOSEFB keeps planes still scanning out the fb (last frame stays on screen
+        // after pause()); kernels < 6.8 only have RMFB
+        let res = match self.drm.close_framebuffer(self.fb) {
+            Err(err) if matches!(err.raw_os_error(), Some(libc::EINVAL | libc::ENOTTY)) => {
+                self.drm.destroy_framebuffer(self.fb)
+            }
+            res => res,
+        };
+        if let Err(err) = res {
+            warn!(fb = ?self.fb, ?err, "failed to release framebuffer");
         }
     }
 }

@@ -411,6 +411,9 @@ impl DrmDevice {
     /// This will cause the `DrmDevice` to avoid making calls to the file descriptor e.g. on drop.
     /// Note that calls directly utilizing the underlying file descriptor, like the traits of the `drm-rs` crate,
     /// will ignore this state. Use [`DrmDevice::is_active`] to guard these calls.
+    ///
+    /// Dropping the surfaces and framebuffers of a paused device keeps the last frame on screen
+    /// until the next DRM master commits, as framebuffers are released with `CLOSEFB`.
     pub fn pause(&mut self) {
         self.set_active(false);
         self.surfaces.retain(|surface| surface.strong_count() != 0);
