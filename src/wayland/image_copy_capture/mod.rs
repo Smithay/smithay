@@ -433,7 +433,7 @@ impl CursorSessionRef {
             return;
         }
 
-        if let Some(session_obj) = inner.session_obj.as_ref() {
+        if let Some(session_obj) = inner.session_obj.as_ref().filter(|obj| obj.is_alive()) {
             session_obj.buffer_size(constraints.size.w as u32, constraints.size.h as u32);
             for fmt in &constraints.shm {
                 session_obj.shm_format(*fmt);
@@ -561,7 +561,7 @@ impl Drop for CursorSession {
             return;
         }
 
-        if let Some(session_obj) = inner.session_obj.as_ref() {
+        if let Some(session_obj) = inner.session_obj.as_ref().filter(|obj| obj.is_alive()) {
             session_obj.stopped();
         }
         inner.constraints.take();
@@ -773,7 +773,7 @@ pub trait ImageCopyCaptureHandler:
     GlobalDispatch<ExtImageCopyCaptureManagerV1, ImageCopyCaptureGlobalData>
     + Dispatch<ExtImageCopyCaptureManagerV1, GlobalData>
     + Dispatch<ExtImageCopyCaptureSessionV1, SessionData>
-    + Dispatch<ExtImageCopyCaptureSessionV1, CursorSessionData>
+    + Dispatch<ExtImageCopyCaptureSessionV1, CursorCaptureSessionData>
     + Dispatch<ExtImageCopyCaptureCursorSessionV1, CursorSessionData>
     + Dispatch<ExtImageCopyCaptureFrameV1, FrameData>
     + 'static
@@ -843,6 +843,12 @@ pub trait ImageCopyCaptureHandler:
 
     /// Called when a cursor session is destroyed.
     ///
+    /// A cursor session consists of two objects, the cursor session, and the
+    /// capture session from its `get_capture_session` request, which frames are
+    /// created on. This is called when either of them is destroyed, so it may
+    /// run twice for the same session if the capture session is destroyed
+    /// before the cursor session.
+    ///
     /// Note: Destruction might happen explicitly by the client, or implicitly
     /// when the client quits. In case of implicit destruction the order the
     /// callbacks are called in is undefined.
@@ -882,6 +888,16 @@ pub struct SessionData {
 pub struct CursorSessionData {
     inner: Arc<Mutex<CursorSessionInner>>,
     user_data: Arc<UserDataMap>,
+}
+
+/// User data for the capture session protocol resources created from a cursor session.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct CursorCaptureSessionData {
+    inner: Arc<Mutex<CursorSessionInner>>,
+    user_data: Arc<UserDataMap>,
+    /// The cursor session this capture session belongs to.
+    cursor_obj: Weak<ExtImageCopyCaptureCursorSessionV1>,
 }
 
 /// User data for frame protocol resources.
@@ -1155,7 +1171,7 @@ where
 }
 
 // Dispatch for session created from cursor session's get_capture_session
-impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for CursorSessionData
+impl<D> Dispatch2<ExtImageCopyCaptureSessionV1, D> for CursorCaptureSessionData
 where
     D: ImageCopyCaptureHandler,
 {
@@ -1186,6 +1202,35 @@ where
             _ => unreachable!(),
         }
     }
+
+    fn destroyed(
+        &self,
+        state: &mut D,
+        _client: wayland_server::backend::ClientId,
+        _resource: &ExtImageCopyCaptureSessionV1,
+    ) {
+        // If the cursor session object is already gone, the handler was
+        // notified when it was destroyed.
+        let Ok(cursor_obj) = self.cursor_obj.upgrade() else {
+            return;
+        };
+
+        if let Some(frame) = self.inner.lock().unwrap().active_frame.take() {
+            frame
+                .inner
+                .lock()
+                .unwrap()
+                .fail(&frame.obj, FailureReason::Stopped);
+        }
+
+        // This callback may be called again when the cursor session object
+        // itself is destroyed later.
+        state.cursor_session_destroyed(CursorSessionRef {
+            obj: cursor_obj,
+            inner: self.inner.clone(),
+            user_data: self.user_data.clone(),
+        });
+    }
 }
 
 impl<D> Dispatch2<ExtImageCopyCaptureCursorSessionV1, D> for CursorSessionData
@@ -1196,7 +1241,7 @@ where
         &self,
         _state: &mut D,
         _client: &Client,
-        _resource: &ExtImageCopyCaptureCursorSessionV1,
+        resource: &ExtImageCopyCaptureCursorSessionV1,
         request: ext_image_copy_capture_cursor_session_v1::Request,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
@@ -1212,9 +1257,10 @@ where
 
                 let obj = data_init.init(
                     session,
-                    CursorSessionData {
+                    CursorCaptureSessionData {
                         inner: self.inner.clone(),
                         user_data: self.user_data.clone(),
+                        cursor_obj: resource.downgrade(),
                     },
                 );
 
