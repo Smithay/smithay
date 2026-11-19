@@ -150,9 +150,15 @@ impl PrivateSurfaceData {
         if let Some(BufferAssignment::NewBuffer(buffer)) = guard.current().buffer.take() {
             buffer.release();
         };
+        for release_callback in std::mem::take(&mut guard.current().release_callbacks) {
+            release_callback.done(0);
+        }
         if let Some(BufferAssignment::NewBuffer(buffer)) = guard.pending().buffer.take() {
             buffer.release();
         };
+        for release_callback in std::mem::take(&mut guard.pending().release_callbacks) {
+            release_callback.done(0);
+        }
 
         let hooks = my_data.destruction_hooks.clone();
         // don't hold the mutex while the hooks are invoked
