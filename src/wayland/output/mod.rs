@@ -306,7 +306,7 @@ impl Output {
             .unwrap()
             .xdg_output
             .as_ref()
-            .map(|xdg_output| {
+            .is_some_and(|xdg_output| {
                 xdg_output
                     .inner
                     .lock()
@@ -315,7 +315,6 @@ impl Output {
                     .iter()
                     .any(|o| o.id() == output.id())
             })
-            .unwrap_or(false)
     }
 
     /// This function returns all managed [WlOutput] matching the provided [Client]

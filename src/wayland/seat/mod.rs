@@ -115,8 +115,7 @@ pub trait WaylandFocus {
     /// *Must* return false, if there is not underlying wayland object.
     fn same_client_as(&self, object_id: &ObjectId) -> bool {
         self.wl_surface()
-            .map(|s| s.id().same_client_as(object_id))
-            .unwrap_or(false)
+            .is_some_and(|s| s.id().same_client_as(object_id))
     }
 }
 

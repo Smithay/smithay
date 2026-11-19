@@ -1016,8 +1016,7 @@ where
 
                 let draw_cursors = options
                     .into_result()
-                    .map(|o| o.contains(ext_image_copy_capture_manager_v1::Options::PaintCursors))
-                    .unwrap_or(false);
+                    .is_ok_and(|o| o.contains(ext_image_copy_capture_manager_v1::Options::PaintCursors));
                 let inner = Arc::new(Mutex::new(SessionInner::new(
                     capture_source.clone(),
                     draw_cursors,

@@ -702,8 +702,7 @@ impl<B: Buffer, F: Framebuffer> FrameState<B, F> {
         let is_fully_compatible = self.planes.iter().all(|(handle, state)| {
             previous_frame
                 .plane_state(*handle)
-                .map(|other| state.is_compatible(other))
-                .unwrap_or(false)
+                .is_some_and(|other| state.is_compatible(other))
         });
 
         if allow_partial_update && (!needs_test || is_fully_compatible) {
@@ -1795,8 +1794,7 @@ where
             for (handle, plane_state) in next_frame_state.planes.iter_mut() {
                 let reset_state = previous_state
                     .plane_state(*handle)
-                    .map(|state| state.config.is_some())
-                    .unwrap_or(false);
+                    .is_some_and(|state| state.config.is_some());
 
                 if reset_state {
                     plane_state.skip = false;
@@ -2164,8 +2162,7 @@ where
 
         let render = next_frame_state
             .plane_buffer(self.surface.plane())
-            .map(|config| matches!(config.buffer, ScanoutBuffer::Swapchain(_)))
-            .unwrap_or(false);
+            .is_some_and(|config| matches!(config.buffer, ScanoutBuffer::Swapchain(_)));
 
         if render {
             trace!(
@@ -2282,8 +2279,7 @@ where
                     // the whole plane initially.
                     let had_direct_scan_out = previous_state
                         .plane_state(self.surface.plane())
-                        .map(|state| state.element_state.is_some())
-                        .unwrap_or(true);
+                        .is_none_or(|state| state.element_state.is_some());
 
                     let primary_plane_state = next_frame_state.plane_state_mut(self.surface.plane()).unwrap();
                     let config = primary_plane_state.config.as_mut().unwrap();
@@ -2944,8 +2940,7 @@ where
 
         if frame_state
             .plane_state(self.surface.plane())
-            .map(|state| state.element_state.is_some())
-            .unwrap_or(true)
+            .is_none_or(|state| state.element_state.is_some())
         {
             return Err(None);
         }
@@ -3149,21 +3144,13 @@ where
 
         // if the output transform or scale change we have to (re-)render the cursor plane,
         // also if the element changed or reports damage we have to render it
-        let render = cursor_state
-            .previous_output_transform
-            .map(|t| t != output_transform)
-            .unwrap_or(true)
-            || cursor_state
-                .previous_output_scale
-                .map(|s| s != scale)
-                .unwrap_or(true)
-            || previous_element_state
-                .map(|element_state| {
-                    element_state.id != *element.id()
-                        || element.current_commit() != element_state.commit
-                        || element_state.cursor_size != Some(element_size)
-                })
-                .unwrap_or(true)
+        let render = (cursor_state.previous_output_transform != Some(output_transform))
+            || (cursor_state.previous_output_scale != Some(scale))
+            || previous_element_state.is_none_or(|element_state| {
+                element_state.id != *element.id()
+                    || element.current_commit() != element_state.commit
+                    || element_state.cursor_size != Some(element_size)
+            })
             || previous_state
                 .plane_state(plane_info.handle)
                 .and_then(|state| {
@@ -3391,22 +3378,17 @@ where
         };
         let is_compatible = previous_state
             .plane_state(plane_info.handle)
-            .map(|state| {
-                state
-                    .config
-                    .as_ref()
-                    .map(|other| {
-                        // Note: We do not use the plane config `is_compatible` test
-                        // here as we exclude the destination location from the test
-                        other.properties.src == config.properties.src
-                            && other.properties.dst.size == config.properties.dst.size
-                            && other.properties.alpha == config.properties.alpha
-                            && other.properties.transform == config.properties.transform
-                            && other.properties.format == config.properties.format
-                    })
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false);
+            .is_some_and(|state| {
+                state.config.as_ref().is_some_and(|other| {
+                    // Note: We do not use the plane config `is_compatible` test
+                    // here as we exclude the destination location from the test
+                    other.properties.src == config.properties.src
+                        && other.properties.dst.size == config.properties.dst.size
+                        && other.properties.alpha == config.properties.alpha
+                        && other.properties.transform == config.properties.transform
+                        && other.properties.format == config.properties.format
+                })
+            });
 
         let plane_state = PlaneState {
             skip: false,
@@ -3773,8 +3755,7 @@ where
 
         let primary_plane_has_alpha = frame_state
             .plane_buffer(self.surface.plane())
-            .map(|state| has_alpha(state.format().code))
-            .unwrap_or(false);
+            .is_some_and(|state| has_alpha(state.format().code));
 
         let previous_frame_state = self
             .pending_frame
@@ -3791,19 +3772,16 @@ where
         let is_plane_compatible = |plane: &&PlaneInfo| {
             previous_frame_state
                 .plane_state(plane.handle)
-                .map(|state| {
+                .is_some_and(|state| {
                     state
                         .element_state
                         .as_ref()
-                        .map(|state| state.z_index <= element_config.z_index)
-                        .unwrap_or(false)
+                        .is_some_and(|state| state.z_index <= element_config.z_index)
                         && state
                             .config
                             .as_ref()
-                            .map(|config| config.properties.is_compatible(&element_config.properties))
-                            .unwrap_or(false)
+                            .is_some_and(|config| config.properties.is_compatible(&element_config.properties))
                 })
-                .unwrap_or(false)
         };
 
         let mut test_overlay_plane = |plane: &PlaneInfo,
@@ -4005,30 +3983,19 @@ where
 
         let is_compatible = previous_state
             .plane_state(plane.handle)
-            .map(|state| {
-                state
-                    .config
-                    .as_ref()
-                    .map(|c| c.is_compatible(&config))
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false);
+            .is_some_and(|state| state.config.as_ref().is_some_and(|c| c.is_compatible(&config)));
 
         // We can only skip the plane update if we have no damage and if
         // the src/dst/alpha properties are unchanged. Also we can not skip if
         // the fb did change (this includes the case where we previously
         // had not assigned anything to the plane)
         let skip = !has_element_damage
-            && previous_state
-                .plane_state(plane.handle)
-                .map(|state| {
-                    state
-                        .config
-                        .as_ref()
-                        .map(|c| is_compatible && c.buffer.fb == config.buffer.fb)
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false);
+            && previous_state.plane_state(plane.handle).is_some_and(|state| {
+                state
+                    .config
+                    .as_ref()
+                    .is_some_and(|c| is_compatible && c.buffer.fb == config.buffer.fb)
+            });
 
         let plane_state = PlaneState {
             skip,

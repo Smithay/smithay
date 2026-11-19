@@ -317,8 +317,7 @@ where
                     states
                         .data_map
                         .get::<RefCell<Option<WpLinuxDrmSyncobjSurfaceV1>>>()
-                        .map(|v| v.borrow().is_some())
-                        .unwrap_or(false)
+                        .is_some_and(|v| v.borrow().is_some())
                 });
                 if already_exists {
                     resource.post_error(
