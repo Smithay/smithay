@@ -124,6 +124,10 @@ impl Source for WlDataSource {
             .map(|data| data.inner.lock().unwrap().clone())
     }
 
+    fn accepted(&self, mime_type: Option<String>) {
+        self.target(mime_type);
+    }
+
     fn choose_action(&self, action: DndAction) {
         self.action(action.into());
     }
