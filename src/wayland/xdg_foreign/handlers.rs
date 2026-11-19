@@ -195,6 +195,14 @@ where
                 {
                     let parent = &exported_state.exported_surface;
 
+                    if *parent == child {
+                        resource.post_error(
+                            zxdg_imported_v2::Error::InvalidSurface,
+                            "invalid parent relationship",
+                        );
+                        return;
+                    }
+
                     let mut invalid = false;
                     let mut changed = false;
                     compositor::with_states(&child, |states| {
