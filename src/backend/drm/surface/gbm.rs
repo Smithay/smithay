@@ -39,6 +39,9 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = GbmBuffer> + 'static, U> {
     drm: Arc<DrmSurface>,
     is_opaque: bool,
     supports_fencing: bool,
+    /// Force the next queued frame through a full atomic commit, even when
+    /// no mode or VRR change is pending.
+    force_commit: bool,
     span: tracing::Span,
 }
 
@@ -95,6 +98,7 @@ where
                         drm,
                         is_opaque,
                         supports_fencing,
+                        force_commit: false,
                         span,
                     });
                 }
@@ -395,8 +399,12 @@ where
             }),
         };
 
-        let flip = if self.drm.commit_pending() {
-            self.drm.commit([plane_state], true)
+        let flip = if self.drm.commit_pending() || self.force_commit {
+            let result = self.drm.commit([plane_state], true);
+            if result.is_ok() {
+                self.force_commit = false;
+            }
+            result
         } else {
             self.drm.page_flip([plane_state], true)
         };
@@ -404,6 +412,16 @@ where
             self.pending_fb = Some((slot, user_data));
         }
         flip.map_err(Error::DrmError)
+    }
+
+    /// Make the next queued frame a full atomic commit, even when no commit
+    /// is pending.
+    ///
+    /// This reapplies the current mode and properties like `VRR_ENABLED`
+    /// after another DRM master may have changed them, for example while
+    /// another VT was active. A plain page flip does not restore them.
+    pub fn reapply_state(&mut self) {
+        self.force_commit = true;
     }
 
     /// Reset the underlying buffers
