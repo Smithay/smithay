@@ -54,6 +54,7 @@
 //! #       serial: Serial,
 //! #       time: InputTime,
 //! #   ) {}
+//! #   fn key_repeat(&self, seat: &Seat<State>, data: &mut State, key: KeysymHandle<'_>, serial: Serial, time: InputTime) {}
 //! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
 //! # }
 //! # impl TouchTarget<State> for Target {

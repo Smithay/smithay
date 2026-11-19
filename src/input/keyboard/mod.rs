@@ -32,6 +32,8 @@ pub use modifiers_state::{ModifiersState, SerializedMods};
 mod xkb_config;
 pub use xkb_config::XkbConfig;
 
+pub mod repeat;
+
 /// Trait representing object that can receive keyboard interactions
 pub trait KeyboardTarget<D>: IsAlive + fmt::Debug + Send
 where
@@ -48,6 +50,15 @@ where
         data: &mut D,
         key: KeysymHandle<'_>,
         state: KeyState,
+        serial: Serial,
+        time: InputTime,
+    );
+    /// A key held on a keyboard from a given seat is being repeated by the compositor
+    fn key_repeat(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        key: KeysymHandle<'_>,
         serial: Serial,
         time: InputTime,
     );
@@ -238,10 +249,16 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) pressed_keys: HashSet<Keycode>,
     pub(crate) key_sources: HashMap<Keycode, HashSet<KeyboardSource>>,
     pub(crate) forwarded_pressed_keys: HashSet<Keycode>,
+    /// Keys that were actually sent to the focused client
+    ///
+    /// Unlike `forwarded_pressed_keys`, this excludes presses swallowed by a grab.
+    /// Not reset on focus change, as the new focus receives the held keys in `enter`.
+    delivered_pressed_keys: HashSet<Keycode>,
     pub(crate) mods_state: ModifiersState,
     xkb: Arc<Mutex<Xkb>>,
     pub(crate) repeat_rate: i32,
     pub(crate) repeat_delay: i32,
+    compositor_side_repeat: bool,
     led_mapping: LedMapping,
     pub(crate) led_state: LedState,
 }
@@ -254,10 +271,12 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
             .field("pending_focus", &self.pending_focus)
             .field("pressed_keys", &self.pressed_keys)
             .field("forwarded_pressed_keys", &self.forwarded_pressed_keys)
+            .field("delivered_pressed_keys", &self.delivered_pressed_keys)
             .field("mods_state", &self.mods_state)
             .field("xkb", &self.xkb)
             .field("repeat_rate", &self.repeat_rate)
             .field("repeat_delay", &self.repeat_delay)
+            .field("compositor_side_repeat", &self.compositor_side_repeat)
             .finish()
     }
 }
@@ -286,6 +305,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             pressed_keys: HashSet::new(),
             key_sources: HashMap::new(),
             forwarded_pressed_keys: HashSet::new(),
+            delivered_pressed_keys: HashSet::new(),
             mods_state: ModifiersState::default(),
             xkb: Arc::new(Mutex::new(Xkb {
                 context,
@@ -294,9 +314,22 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             })),
             repeat_rate,
             repeat_delay,
+            compositor_side_repeat: false,
             led_mapping,
             led_state,
         })
+    }
+
+    /// The repeat rate to advertise to a `wl_keyboard` of the given version
+    ///
+    /// Rate 0 tells `wl_keyboard` v10+ clients that the compositor repeats keys.
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) fn advertised_repeat_rate(&self, version: u32) -> i32 {
+        if self.compositor_side_repeat && version >= 10 {
+            0
+        } else {
+            self.repeat_rate
+        }
     }
 
     // Feed a key event from `source` into the shared seat state. Returns
@@ -694,6 +727,20 @@ pub trait KeyboardGrab<D: SeatHandler>: Send + Downcast {
         serial: Serial,
         time: InputTime,
     );
+
+    /// A compositor-side key repeat was reported.
+    ///
+    /// The default implementation forwards it to the focused client.
+    fn input_repeat(
+        &mut self,
+        data: &mut D,
+        handle: &mut KeyboardInnerHandle<'_, D>,
+        keycode: Keycode,
+        serial: Serial,
+        time: InputTime,
+    ) {
+        handle.input_repeat(data, keycode, serial, time)
+    }
 
     /// A focus change was requested.
     fn set_focus(
@@ -1305,6 +1352,53 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         });
     }
 
+    /// Handle a compositor-side key repeat
+    ///
+    /// Works like [`KeyboardHandle::input`], but does not change the keyboard state.
+    /// Does nothing unless [`KeyboardHandle::set_compositor_side_repeat`] is enabled.
+    /// The repeat is forwarded to the focused client via [`KeyboardTarget::key_repeat`].
+    ///
+    /// Usually called from the callback passed to [`repeat::KeyRepeat::key_event`].
+    #[instrument(level = "trace", parent = &self.arc.span, skip(self, data, filter))]
+    pub fn input_repeat<T, F>(
+        &self,
+        data: &mut D,
+        keycode: Keycode,
+        serial: Serial,
+        time: InputTime,
+        filter: F,
+    ) -> Option<T>
+    where
+        F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
+    {
+        trace!("Handling key repeat");
+
+        let guard = self.arc.internal.lock().unwrap();
+        if !guard.compositor_side_repeat {
+            tracing::warn!("Key repeat ignored, compositor-side repeat is not enabled on this keyboard");
+            return None;
+        }
+
+        if !guard.pressed_keys.contains(&keycode) {
+            debug!(?keycode, "Key repeat ignored, the key is not pressed");
+            return None;
+        }
+        let mods_state = guard.mods_state;
+        let xkb = guard.xkb.clone();
+        std::mem::drop(guard);
+
+        let key_handle = KeysymHandle { xkb: &xkb, keycode };
+        if let FilterResult::Intercept(val) = filter(data, &mods_state, key_handle) {
+            trace!("Key repeat was intercepted by filter");
+            return Some(val);
+        }
+
+        self.run_grab_with_inner_handle(data, |data, handle, grab| {
+            grab.input_repeat(data, handle, keycode, serial, time);
+        });
+        None
+    }
+
     /// Set the current focus of this keyboard
     ///
     /// If the new focus is different from the previous one, any previous focus
@@ -1436,21 +1530,66 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         self.arc.internal.lock().unwrap().focus.is_some()
     }
 
+    /// The repeat info configured for this keyboard, as `(rate, delay)`
+    ///
+    /// `rate` is in repeats per second, `delay` in milliseconds.
+    pub fn repeat_info(&self) -> (i32, i32) {
+        let guard = self.arc.internal.lock().unwrap();
+        (guard.repeat_rate, guard.repeat_delay)
+    }
+
+    /// Whether the given key should repeat when held, according to the current keymap
+    pub fn key_repeats(&self, keycode: Keycode) -> bool {
+        let guard = self.arc.internal.lock().unwrap();
+        guard.xkb.lock().unwrap().keymap.key_repeats(keycode)
+    }
+
     /// Change the repeat info configured for this keyboard
     #[instrument(parent = &self.arc.span, skip(self))]
     pub fn change_repeat_info(&self, rate: i32, delay: i32) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
+        self.send_repeat_info(&guard);
+    }
+
+    /// Enable or disable compositor-side key repeat
+    ///
+    /// Disabled by default
+    ///
+    /// When enabled the compositor has to drive repeats by calling [`KeyboardHandle::input_repeat`],
+    /// for example with [`repeat::KeyRepeat`] helper.
+    #[instrument(parent = &self.arc.span, skip(self))]
+    pub fn set_compositor_side_repeat(&self, enabled: bool) {
+        let mut guard = self.arc.internal.lock().unwrap();
+        if guard.compositor_side_repeat == enabled {
+            return;
+        }
+        guard.compositor_side_repeat = enabled;
+        self.send_repeat_info(&guard);
+    }
+
+    /// Whether compositor-side key repeat is enabled
+    pub fn is_compositor_side_repeat_on(&self) -> bool {
+        self.arc.internal.lock().unwrap().compositor_side_repeat
+    }
+
+    /// Send the current repeat info to all bound `wl_keyboard`s
+    fn send_repeat_info(&self, internal: &KbdInternal<D>) {
         #[cfg(feature = "wayland_frontend")]
         for kbd in &*self.arc.known_kbds.lock().unwrap() {
             let Ok(kbd) = kbd.upgrade() else {
                 continue;
             };
             if kbd.version() >= 4 {
-                kbd.repeat_info(rate, delay);
+                kbd.repeat_info(
+                    internal.advertised_repeat_rate(kbd.version()),
+                    internal.repeat_delay,
+                );
             }
         }
+        #[cfg(not(feature = "wayland_frontend"))]
+        let _ = internal;
     }
 
     /// Access the [`Serial`] of the last `keyboard_enter` event, if that focus is still active.
@@ -1560,6 +1699,9 @@ where
                 let handle = KeysymHandle { xkb: &xkb, keycode };
                 focus.key(&seat, data, handle, KeyState::Released, release, time);
             }
+            // We just sent Released, so protocol wise it can no longer be considered as pressed,
+            // even tho on the real keyboard nothing happened
+            guard.delivered_pressed_keys.remove(&keycode);
         }
 
         // Restore the seat keymap (and the seat's real modifier state) to the client.
@@ -1699,6 +1841,11 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         if let Some(mods) = modifiers {
             focus.modifiers(self.seat, data, mods, serial);
         }
+
+        match key_state {
+            KeyState::Pressed => inner.delivered_pressed_keys.insert(keycode),
+            KeyState::Released => inner.delivered_pressed_keys.remove(&keycode),
+        };
     }
 
     /// Iterate over the currently pressed keys.
@@ -1769,6 +1916,29 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
             trace!("Focus unset");
             old_focus.leave(self.seat, data, serial);
         }
+    }
+}
+
+impl<D: SeatHandler> KeyboardInnerHandle<'_, D> {
+    /// Send a compositor-side key repeat to the focused keyboards
+    pub fn input_repeat(&mut self, data: &mut D, keycode: Keycode, serial: Serial, time: InputTime) {
+        let inner = self.inner.lock().unwrap();
+        let Some((focus, _)) = inner.focus.as_ref() else {
+            return;
+        };
+
+        // The spec says:
+        // The key may only enter the repeated state after entering the pressed state and before entering the released state
+        if !inner.delivered_pressed_keys.contains(&keycode) {
+            debug!(?keycode, "Key repeat ignored, the key press was not delivered");
+            return;
+        }
+
+        let key = KeysymHandle {
+            xkb: &inner.xkb,
+            keycode,
+        };
+        focus.key_repeat(self.seat, data, key, serial, time);
     }
 }
 
