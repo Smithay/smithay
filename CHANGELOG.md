@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0
+
 ### Breaking changes
 
 `XdgDecorationHandler::decoration_destroyed` is a new mandatory callback, 
