@@ -65,7 +65,7 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
     {
         if let Some(OfferReplySource::Client(source)) = self.clipboard_selection.as_ref() {
             match new_selection.as_ref() {
-                Some(OfferReplySource::Client(new_source)) if new_source == source => (),
+                Some(OfferReplySource::Client(new_source)) if new_source == source => return,
                 _ => source.cancel(),
             }
         }
@@ -95,7 +95,7 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
     {
         if let Some(OfferReplySource::Client(source)) = self.primary_selection.as_ref() {
             match new_selection.as_ref() {
-                Some(OfferReplySource::Client(new_source)) if new_source == source => (),
+                Some(OfferReplySource::Client(new_source)) if new_source == source => return,
                 _ => source.cancel(),
             }
         }
