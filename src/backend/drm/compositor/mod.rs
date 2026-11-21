@@ -245,6 +245,7 @@ impl<B: Buffer> ScanoutBuffer<B> {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer.clone())),
             UnderlyingStorage::Memory { .. } => None,
+            UnderlyingStorage::SolidColor(_) => None,
         }
     }
 }
@@ -344,6 +345,7 @@ impl ElementFramebufferCacheBuffer {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer.downgrade())),
             UnderlyingStorage::Memory { .. } => None,
+            UnderlyingStorage::SolidColor(_) => None,
         }
     }
 }
@@ -1914,15 +1916,17 @@ where
             // color and remove the element completely. This will make the element directly above
             // this element the last element, enabling direct scan-out on the primary plane for it.
             if element_is_opaque && element_output_geometry.contains_rect(output_geometry) {
-                let element_color = element.underlying_storage(renderer).and_then(|storage| {
-                    if let UnderlyingStorage::Wayland(buffer) = storage {
-                        single_pixel_buffer::get_single_pixel_buffer(buffer)
-                            .ok()
-                            .map(|spb| Color32F::from(spb.rgba32f()))
-                    } else {
-                        None
-                    }
-                });
+                let element_color = element
+                    .underlying_storage(renderer)
+                    .and_then(|storage| match storage {
+                        UnderlyingStorage::Wayland(buffer) => {
+                            single_pixel_buffer::get_single_pixel_buffer(buffer)
+                                .ok()
+                                .map(|spb| Color32F::from(spb.rgba32f()))
+                        }
+                        UnderlyingStorage::SolidColor(color) => Some(color),
+                        _ => None,
+                    });
 
                 if let Some(color) = element_color {
                     clear_color = color;
@@ -3322,6 +3326,7 @@ where
                         }
                     }
                 }
+                UnderlyingStorage::SolidColor(_) => None,
             }?;
 
             let ret = cursor_buffer
@@ -4120,6 +4125,7 @@ fn apply_underlying_storage_transform(
             }
         }
         UnderlyingStorage::Memory { .. } => element_transform,
+        UnderlyingStorage::SolidColor(_) => element_transform,
     }
 }
 
@@ -4278,6 +4284,7 @@ where
 
             copy_to_bo(memory, memory.stride(), memory.size().h)
         }
+        UnderlyingStorage::SolidColor(_) => false,
     }
 }
 
