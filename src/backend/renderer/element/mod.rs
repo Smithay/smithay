@@ -35,7 +35,7 @@ use crate::{
 #[cfg(feature = "wayland_frontend")]
 use super::utils::Buffer;
 use super::{
-    Renderer,
+    Color32F, Renderer,
     utils::{CommitCounter, DamageSet, OpaqueRegions},
 };
 
@@ -256,6 +256,8 @@ pub enum UnderlyingStorage<'a> {
     Wayland(&'a Buffer),
     /// A memory backed buffer
     Memory(&'a memory::MemoryBuffer),
+    /// A solid color fill
+    SolidColor(Color32F),
 }
 
 /// Defines the (optional) reason why a [`Element`] was selected for
