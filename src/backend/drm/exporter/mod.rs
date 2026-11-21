@@ -36,6 +36,7 @@ impl<'a, B: Buffer> ExportBuffer<'a, B> {
             #[cfg(feature = "wayland_frontend")]
             UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
             UnderlyingStorage::Memory { .. } => None,
+            UnderlyingStorage::SolidColor(_) => None,
         }
     }
 }
