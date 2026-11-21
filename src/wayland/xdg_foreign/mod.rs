@@ -32,6 +32,7 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Deref,
+    sync::{Arc, Mutex},
 };
 
 use rand::distr::{Alphanumeric, SampleString};
@@ -40,7 +41,11 @@ use wayland_protocols::xdg::foreign::zv2::server::{
 };
 use wayland_server::{DisplayHandle, GlobalDispatch, backend::GlobalId, protocol::wl_surface::WlSurface};
 
-use crate::wayland::GlobalData;
+use crate::wayland::{
+    GlobalData, compositor,
+    shell::xdg::{ToplevelSurface, XdgShellHandler},
+    xdg_foreign::handlers::invalidate_relationship_for,
+};
 
 mod handlers;
 
@@ -54,15 +59,25 @@ pub trait XdgForeignHandler: 'static {
 /// It may be shared with any client, which then can use it to import the surface by calling xdg_importer.import_toplevel.
 /// A handle may be used to import the surface multiple times.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-struct XdgForeignHandle(String);
+pub struct XdgForeignHandle(String);
 
 impl XdgForeignHandle {
     fn new() -> Self {
         Self(Alphanumeric.sample_string(&mut rand::rng(), 32))
     }
 
-    fn as_str(&self) -> &str {
+    /// Returns the string representation of the handle.
+    pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Destroys a compositor-side toplevel export.
+    pub fn unexport<D>(self, data: &mut D)
+    where
+        D: XdgForeignHandler + XdgShellHandler,
+    {
+        invalidate_relationship_for(data, &self, None);
+        data.xdg_foreign_state().exported.remove(&self);
     }
 }
 
@@ -128,5 +143,38 @@ impl XdgForeignState {
     /// Returns the xdg_importer global.
     pub fn importer_global(&self) -> GlobalId {
         self.importer.clone()
+    }
+
+    /// Creates a compositor-side toplevel export.
+    ///
+    /// Exports `toplevel`.  The compositor can use the returned `XdgForeignHandle` to send the
+    /// handle string to another client, allowing it to import `toplevel`.
+    ///
+    /// The returned handle will be automatically destroyed when `toplevel`'s underlying surface is
+    /// destroyed, but can also be destroyed using [`XdgForeignHandle::unexport`].
+    pub fn export_toplevel<D>(&mut self, toplevel: &ToplevelSurface) -> XdgForeignHandle
+    where
+        D: XdgForeignHandler + XdgShellHandler,
+    {
+        let handle = XdgForeignHandle::new();
+        self.exported.insert(
+            handle.clone(),
+            ExportedState {
+                exported_surface: toplevel.wl_surface().clone(),
+                requested_child: None,
+                imported_by: HashSet::new(),
+            },
+        );
+
+        compositor::add_destruction_hook::<D, _>(toplevel.wl_surface(), {
+            let handle = Arc::new(Mutex::new(Some(handle.clone())));
+            move |data, _| {
+                if let Some(handle) = handle.lock().unwrap().take() {
+                    handle.unexport(data);
+                }
+            }
+        });
+
+        handle
     }
 }

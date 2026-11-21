@@ -258,7 +258,7 @@ where
     invalidate_relationship_for(state, handle, None);
 }
 
-fn invalidate_relationship_for<D>(
+pub(super) fn invalidate_relationship_for<D>(
     state: &mut D,
     handle: &XdgForeignHandle,
     invalidate_for: Option<&ZxdgImportedV2>,
