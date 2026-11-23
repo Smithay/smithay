@@ -166,7 +166,28 @@ while using input handle methods that don't affect the grab.) As a result there 
 - `PointerInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 - `TabletToolInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 
+Keyboard and pointer grabs are no longer limited to one per device. `KeyboardHandle` and
+`PointerHandle` keep a list of grabs, and the `KeyboardInnerHandle` or `PointerInnerHandle` a grab
+is called with passes events on to the next grab in that list, and only below the last one to
+the client. Grabs for touch and tablet tools are unchanged.
+- `set_grab` with the serial of an active grab replaces that grab and leaves the others in place.
+  With any other serial it replaces the active grabs as before.
+- The default pointer grab now also starts the implicit click grab for a press that an active
+  grab passes on while a surface has the focus, for example a press on a popup that holds a grab.
+- A grab can return `true` from the new `KeyboardGrab::persistent` or `PointerGrab::persistent`.
+  Such a grab is not replaced by other grabs, is passed events after them, is not reported by
+  `is_grabbed`, `with_grab` and `grab_start_data`, and is not removed by `unset_grab`.
+- `with_grab` and `grab_start_data` report the most recently started grab that is not persistent.
+- `KeyboardHandle::input_forward_bypassing_grab` bypasses persistent grabs only.
+
 ### Additions
+
+- `KeyboardHandle::unset_grab_of` and `PointerHandle::unset_grab_of` remove the grab of a given
+  type and leave every other grab in place. `KeyboardHandle::has_grab_of` and
+  `PointerHandle::has_grab_of` tell whether one is active.
+
+- `PointerHandle::grab_start_data_for` returns the start data of the grab that was started with a
+  given serial.
 
 - `TouchHandle::last_down` gives the serial of the last `wl_touch.down` sent to
   a client, similar to `PointerHandle::last_enter`, so that compositors can

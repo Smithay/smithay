@@ -17,7 +17,11 @@ use tracing::{debug, info, info_span, instrument, trace};
 use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
 pub use xkbcommon::xkb::{self, ContextFlags, Keycode, Keysym, keysyms};
 
-use super::{Grab, GrabOp, Seat, SeatHandler};
+use super::{
+    Seat, SeatHandler,
+    grab_stack::{Deferred, GrabEntry, GrabStack, NewGrab, Position, split_next},
+};
+use std::any::TypeId;
 
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{Resource, Weak};
@@ -397,11 +401,14 @@ pub enum Error {
     IoError(io::Error),
 }
 
+type FocusOf<D> = Option<<D as SeatHandler>::KeyboardFocus>;
+type KeyboardGrabStack<D> = GrabStack<dyn KeyboardGrab<D>, FocusOf<D>>;
+
 pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
     // NOTE: If both grab and internal mutex are held, grab should be acquired first.
     // And internal mutex should not be held over a callback.
-    grab: Mutex<Option<Grab<dyn KeyboardGrab<D>>>>,
+    grab: Mutex<KeyboardGrabStack<D>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) keymap: Mutex<KeymapFile>,
     #[cfg(feature = "wayland_frontend")]
@@ -709,6 +716,20 @@ pub trait KeyboardGrab<D: SeatHandler>: Send + Downcast {
 
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
+
+    /// Whether this grab belongs to a protocol object rather than to a user interaction.
+    ///
+    /// Most grabs are something the user is in the middle of, like an open popup. They are started
+    /// by an input event and can be cancelled by the compositor at any point. A persistent grab is
+    /// a standing redirection instead, that stays for as long as the object that asked for it
+    /// does, and that only its owner can end. The keyboard grab of an input method is one.
+    ///
+    /// Persistent grabs are passed events like any other grab, but they are not what
+    /// [`KeyboardHandle::is_grabbed`], [`KeyboardHandle::with_grab`] and
+    /// [`KeyboardHandle::unset_grab`] are about.
+    fn persistent(&self) -> bool {
+        false
+    }
 }
 
 impl_downcast!(KeyboardGrab<D> where D: SeatHandler);
@@ -782,7 +803,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         Ok(Self {
             arc: Arc::new(KbdRc {
                 internal: Mutex::new(internal),
-                grab: Mutex::new(None),
+                grab: Mutex::new(GrabStack::new()),
                 #[cfg(feature = "wayland_frontend")]
                 keymap: Mutex::new(keymap_file),
                 #[cfg(feature = "wayland_frontend")]
@@ -1017,80 +1038,138 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         self.arc.keymap.lock().unwrap().clone()
     }
 
-    /// Change the current grab on this keyboard to the provided grab
+    /// Install a grab on this keyboard
     ///
-    /// Overwrites any current grab.
+    /// It replaces the grabs that are active, except for [persistent](KeyboardGrab::persistent)
+    /// ones, which are not affected: the new grab sees every event before they do, and what it
+    /// forwards through its [`KeyboardInnerHandle`] reaches them next.
+    ///
+    /// A persistent grab in turn replaces nothing but a grab of its own type, and is passed events
+    /// after the other grabs.
     pub fn set_grab<G: KeyboardGrab<D> + 'static>(&self, data: &mut D, grab: G, serial: Serial) {
-        let mut grab_lock = self.arc.grab.lock().unwrap();
-        if let Some(mut grab) = grab_lock.take() {
-            grab.handler.unset(data);
+        let mut stack = self.arc.grab.lock().unwrap();
+
+        let type_id = TypeId::of::<G>();
+        let persistent = grab.persistent();
+        for mut displaced in stack.take_displaced(serial, type_id, persistent) {
+            displaced.handler.unset(data);
         }
-        *grab_lock = Some(Grab {
+
+        let pending_focus = self.arc.internal.lock().unwrap().pending_focus.clone();
+        stack.push(NewGrab {
             serial,
+            type_id,
+            persistent,
+            pending_focus,
             handler: Box::new(grab),
         });
     }
 
-    /// Remove any current grab on this keyboard, resetting it to the default behavior
+    /// Remove the grabs on this keyboard, resetting it to the default behavior
+    ///
+    /// [Persistent](KeyboardGrab::persistent) grabs are left in place, use
+    /// [`unset_grab_of`](Self::unset_grab_of) to remove one of those.
     pub fn unset_grab(&self, data: &mut D) {
-        if let Some(mut grab) = self.arc.grab.lock().unwrap().take() {
+        let removed = self.arc.grab.lock().unwrap().take_where(|e| !e.meta.persistent);
+        for mut grab in removed {
             grab.handler.unset(data);
         }
     }
 
+    /// Remove the grab of type `G` from this keyboard, leaving every other grab in place
+    ///
+    /// Returns whether there was such a grab.
+    pub fn unset_grab_of<G: KeyboardGrab<D> + 'static>(&self, data: &mut D) -> bool {
+        let type_id = TypeId::of::<G>();
+        let removed = self
+            .arc
+            .grab
+            .lock()
+            .unwrap()
+            .take_where(|e| e.meta.type_id == type_id);
+        let found = !removed.is_empty();
+        for mut grab in removed {
+            grab.handler.unset(data);
+        }
+        found
+    }
+
     /// Check if this keyboard is currently grabbed with this serial
     pub fn has_grab(&self, serial: Serial) -> bool {
-        self.with_grab(|s, _| s == serial).unwrap_or(false)
+        let stack = self.arc.grab.lock().unwrap();
+        stack.entries.iter().any(|e| e.meta.serial == serial)
+    }
+
+    /// Check if a grab of type `G` is active on this keyboard
+    pub fn has_grab_of<G: KeyboardGrab<D> + 'static>(&self) -> bool {
+        let stack = self.arc.grab.lock().unwrap();
+        stack.entries.iter().any(|e| e.meta.type_id == TypeId::of::<G>())
     }
 
     /// Check if this keyboard is currently being grabbed
+    ///
+    /// [Persistent](KeyboardGrab::persistent) grabs do not count.
     pub fn is_grabbed(&self) -> bool {
-        self.arc.grab.lock().unwrap().is_some()
+        self.arc.grab.lock().unwrap().current().is_some()
     }
 
     /// Returns the start data for the grab, if any.
+    ///
+    /// See [`with_grab`](Self::with_grab) for which grab that is when several are active.
     pub fn grab_start_data(&self) -> Option<GrabStartData<D>> {
         self.with_grab(|_, g| g.start_data().clone())
     }
 
     /// Calls `f` with the active grab, if any.
+    ///
+    /// If several grabs are active, this is the most recently started one,
+    /// [persistent](KeyboardGrab::persistent) grabs aside.
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn KeyboardGrab<D>) -> T) -> Option<T> {
-        let grab = self.arc.grab.lock().unwrap();
-        grab.as_ref().map(|grab| f(grab.serial, &*grab.handler))
+        let stack = self.arc.grab.lock().unwrap();
+        stack.current().map(|e| f(e.meta.serial, &*e.handler))
     }
 
-    /// Run function on grab, with inner handle
-    fn run_grab_with_inner_handle<F>(&self, data: &mut D, f: F)
-    where
-        F: FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
-    {
-        let mut grab = self.arc.grab.lock().unwrap();
+    /// Run `f` with a handle that stands above every grab, which is where events enter.
+    ///
+    /// With `skip_persistent` the event is not shown to the persistent grabs.
+    fn with_root<R>(
+        &self,
+        data: &mut D,
+        skip_persistent: bool,
+        f: impl FnOnce(&mut D, &mut KeyboardInnerHandle<'_, D>) -> R,
+    ) -> R {
+        let mut stack = self.arc.grab.lock().unwrap();
 
-        // If this grab is associated with a surface that is no longer alive, discard it
-        if let Some(Grab { serial: _, handler }) = &mut *grab
-            && let Some(focus) = &handler.start_data().focus
-            && !focus.alive()
-        {
-            handler.unset(data);
-            *grab = None;
+        // Discard the grabs that are associated with a surface that is no longer alive
+        let dead = stack.take_where(|e| {
+            e.handler
+                .start_data()
+                .focus
+                .as_ref()
+                .is_some_and(|focus| !focus.alive())
+        });
+        for mut grab in dead {
+            grab.handler.unset(data);
         }
 
-        let handler = if let Some(Grab { serial: _, handler }) = &mut *grab {
-            &mut **handler
-        } else {
-            &mut DefaultGrab
-        };
-
         let seat = self.get_seat(data);
-        let mut inner_handle = KeyboardInnerHandle {
-            inner: &self.arc.internal,
-            grab_op: GrabOp::Keep,
-            seat: &seat,
+        let mut deferred = Vec::new();
+        let ret = {
+            let mut root = KeyboardInnerHandle {
+                inner: &self.arc.internal,
+                seat: &seat,
+                position: Position::Root,
+                below: &mut stack.entries[..],
+                deferred: &mut deferred,
+                skip_persistent,
+            };
+            f(data, &mut root)
         };
 
-        f(data, &mut inner_handle, handler);
-
-        inner_handle.grab_op.apply(&mut grab);
+        for mut displaced in stack.finish(deferred) {
+            displaced.handler.unset(data);
+        }
+        ret
     }
 
     /// Handle a keystroke
@@ -1236,7 +1315,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         self.forward(data, keycode, state, serial, time, mods_changed, false);
     }
 
-    /// Forward a key event to the focused client, bypassing the active grab, if any.
+    /// Forward a key event to the focused client, bypassing the [persistent](KeyboardGrab::persistent)
+    /// grabs, if any. Other grabs still get to see the event.
     ///
     /// This can be used by compositors to prevent infinite loops when a client
     /// with a grab (e.g., fcitx) forwards a key through its own virtual keyboard, which
@@ -1271,7 +1351,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         mods_changed: bool,
         bypass_grab: bool,
     ) {
-        self.run_grab_with_inner_handle(data, |data, handle, grab| {
+        self.with_root(data, bypass_grab, |data, handle| {
             let mut inner = handle.inner.lock().unwrap();
             let has_focus = inner.focus.is_some();
 
@@ -1291,11 +1371,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             let mods = inner.mods_state;
             let modifiers = mods_changed.then_some(mods);
             drop(inner);
-            if bypass_grab {
-                DefaultGrab.input(data, handle, keycode, state, modifiers, serial, time);
-            } else {
-                grab.input(data, handle, keycode, state, modifiers, serial, time);
-            }
+            handle.input(data, keycode, state, modifiers, serial, time);
 
             if has_focus {
                 trace!("Input forwarded to client");
@@ -1313,9 +1389,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
     #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
-        self.run_grab_with_inner_handle(data, |data, handle, grab| {
+        self.with_root(data, false, |data, handle| {
             handle.inner.lock().unwrap().pending_focus.clone_from(&focus);
-            grab.set_focus(data, handle, focus, serial);
+            handle.set_focus(data, focus, serial);
         });
     }
 
@@ -1586,12 +1662,25 @@ where
     }
 }
 
-/// This inner handle is accessed from inside a keyboard grab logic, and directly
-/// sends event to the client
+/// This inner handle is accessed from inside a keyboard grab logic
+///
+/// It stands for everything below the grab it is handed to: [`input`](Self::input) and
+/// [`set_focus`](Self::set_focus) pass an event on to the next grab that is active on this
+/// keyboard, and, below the last of them, send it to the client.
 pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
     inner: &'a Mutex<KbdInternal<D>>,
-    grab_op: GrabOp<dyn KeyboardGrab<D>>,
     seat: &'a Seat<D>,
+    position: Position<'a, FocusOf<D>>,
+    below: &'a mut [GrabEntry<dyn KeyboardGrab<D>, FocusOf<D>>],
+    deferred: &'a mut Vec<Deferred<dyn KeyboardGrab<D>, FocusOf<D>>>,
+    skip_persistent: bool,
+}
+
+/// What an event that is passed on reaches next.
+enum Next<'a, D: SeatHandler> {
+    Grab(&'a mut dyn KeyboardGrab<D>, KeyboardInnerHandle<'a, D>),
+    Default(KeyboardInnerHandle<'a, D>),
+    Device,
 }
 
 impl<D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'_, D> {
@@ -1604,9 +1693,45 @@ impl<D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'_, D> {
 }
 
 impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
-    /// Change the current grab on this keyboard to the provided grab
+    fn descend(&mut self) -> Next<'_, D> {
+        if matches!(self.position, Position::Default) {
+            return Next::Device;
+        }
+
+        match split_next(&mut *self.below, self.skip_persistent) {
+            Some((meta, grab, below)) => Next::Grab(
+                grab,
+                KeyboardInnerHandle {
+                    inner: self.inner,
+                    seat: self.seat,
+                    position: Position::Grab(meta),
+                    below,
+                    deferred: &mut *self.deferred,
+                    skip_persistent: self.skip_persistent,
+                },
+            ),
+            None => Next::Default(KeyboardInnerHandle {
+                inner: self.inner,
+                seat: self.seat,
+                position: Position::Default,
+                below: &mut [],
+                deferred: &mut *self.deferred,
+                skip_persistent: self.skip_persistent,
+            }),
+        }
+    }
+
+    /// The focus that was last requested from the grab this handle belongs to.
+    fn pending_focus(&self) -> FocusOf<D> {
+        match &self.position {
+            Position::Grab(meta) => meta.pending_focus.clone(),
+            _ => self.inner.lock().unwrap().pending_focus.clone(),
+        }
+    }
+
+    /// Change the grab this handle belongs to to the provided grab
     ///
-    /// Overwrites any current grab.
+    /// The new grab takes the place of the current one among the active grabs.
     pub fn set_grab<G: KeyboardGrab<D> + 'static>(
         &mut self,
         handler: &mut dyn KeyboardGrab<D>,
@@ -1615,13 +1740,27 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         grab: G,
     ) {
         handler.unset(data);
-        self.grab_op = GrabOp::Set(serial, Box::new(grab));
+
+        let new = NewGrab {
+            serial,
+            type_id: TypeId::of::<G>(),
+            persistent: grab.persistent(),
+            pending_focus: self.pending_focus(),
+            handler: Box::new(grab) as Box<dyn KeyboardGrab<D>>,
+        };
+        match &mut self.position {
+            Position::Grab(meta) => {
+                meta.removed = true;
+                self.deferred.push(Deferred::Replace(meta.seq, new));
+            }
+            Position::Default | Position::Root => self.deferred.push(Deferred::Top(new)),
+        }
     }
 
-    /// Remove any current grab on this keyboard, resetting it to the default behavior
+    /// End the grab this handle belongs to, leaving every other grab in place
     ///
     /// This will also restore the focus of the underlying keyboard if restore_focus
-    /// is [`true`]
+    /// is [`true`]. The grabs below, if any, get to decide on it again.
     pub fn unset_grab(
         &mut self,
         handler: &mut dyn KeyboardGrab<D>,
@@ -1630,10 +1769,13 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         restore_focus: bool,
     ) {
         handler.unset(data);
-        self.grab_op = GrabOp::Unset;
+        if let Position::Grab(meta) = &mut self.position {
+            meta.removed = true;
+        }
+
         // restore the focus
         if restore_focus {
-            let focus = self.inner.lock().unwrap().pending_focus.clone();
+            let focus = self.pending_focus();
             self.set_focus(data, focus, serial);
         }
     }
@@ -1665,7 +1807,7 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         self.inner.lock().unwrap().mods_state
     }
 
-    /// Send the input to the focused keyboards
+    /// Pass the input on to the grabs below, and finally send it to the focused keyboards
     pub fn input(
         &mut self,
         data: &mut D,
@@ -1675,6 +1817,16 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
         serial: Serial,
         time: InputTime,
     ) {
+        match self.descend() {
+            Next::Grab(grab, mut handle) => {
+                return grab.input(data, &mut handle, keycode, key_state, modifiers, serial, time);
+            }
+            Next::Default(mut handle) => {
+                return DefaultGrab.input(data, &mut handle, keycode, key_state, modifiers, serial, time);
+            }
+            Next::Device => {}
+        }
+
         let mut inner = self.inner.lock().unwrap();
         let inner = &mut *inner;
 
@@ -1737,12 +1889,25 @@ impl<D: SeatHandler + 'static> KeyboardInnerHandle<'_, D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
+    ///
+    /// The request is passed on to the grabs below first, which may alter or deny it.
     pub fn set_focus(
         &mut self,
         data: &mut D,
         focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: Serial,
     ) {
+        match self.descend() {
+            Next::Grab(grab, mut handle) => {
+                if let Position::Grab(meta) = &mut handle.position {
+                    meta.pending_focus.clone_from(&focus);
+                }
+                return grab.set_focus(data, &mut handle, focus, serial);
+            }
+            Next::Default(mut handle) => return DefaultGrab.set_focus(data, &mut handle, focus, serial),
+            Next::Device => {}
+        }
+
         let mut inner = self.inner.lock().unwrap();
         if let Some(focus) = focus {
             let old_focus = inner.focus.replace((focus.clone(), serial));

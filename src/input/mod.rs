@@ -146,9 +146,12 @@ use crate::{
 };
 
 pub mod dnd;
+mod grab_stack;
 pub mod keyboard;
 pub mod pointer;
 pub mod tablet;
+#[cfg(test)]
+mod tests;
 pub mod touch;
 
 /// Handler trait for Seats
