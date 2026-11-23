@@ -179,6 +179,8 @@ the client. Grabs for touch and tablet tools are unchanged.
   `is_grabbed`, `with_grab` and `grab_start_data`, and is not removed by `unset_grab`.
 - `with_grab` and `grab_start_data` report the most recently started grab that is not persistent.
 - `KeyboardHandle::input_forward_bypassing_grab` bypasses persistent grabs only.
+- `InputMethodKeyboardGrab` is persistent, and only takes keys while a text input is enabled on
+  the focused surface.
 
 ### Additions
 

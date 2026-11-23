@@ -28,6 +28,8 @@ pub(crate) struct InputMethodKeyboard {
     pub grab: Option<ZwpInputMethodKeyboardGrabV2>,
     pub text_input_handle: TextInputHandle,
     pub keymap_id: Option<KeymapFileId>,
+    /// Keys went past the input method since it last got one, so it may have missed modifiers.
+    pub passed_keys_on: bool,
 }
 
 /// Handle to an input method instance
@@ -42,7 +44,7 @@ where
 {
     fn input(
         &mut self,
-        _data: &mut D,
+        data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
         keycode: Keycode,
         key_state: KeyState,
@@ -51,6 +53,16 @@ where
         time: InputTime,
     ) {
         let mut inner = self.inner.lock().unwrap();
+
+        // An input method takes the keys for as long as it has a text input to type into. While it
+        // has none, for instance because the session is locked, they are none of its business and
+        // go on to whatever comes next.
+        if !inner.text_input_handle.has_active_text_input() {
+            inner.passed_keys_on = true;
+            drop(inner);
+            return handle.input(data, keycode, key_state, modifiers, serial, time);
+        }
+        let resumed = std::mem::take(&mut inner.passed_keys_on);
 
         // The keyboard's keymap can change while the grab is active (e.g. when a virtual keyboard
         // with its own keymap is in use, e.g., wtype's synthetic keymap), and the keycodes must be
@@ -75,8 +87,9 @@ where
         });
 
         // The client resets its state when it receives a new keymap, so send the full modifier
-        // state before the key in that case. Otherwise, only send the modifiers if they changed.
-        let (mods_before_key, mods_after_key) = if keymap_changed {
+        // state before the key in that case, and also when it did not get to see the keys that
+        // came before this one. Otherwise, only send the modifiers if they changed.
+        let (mods_before_key, mods_after_key) = if keymap_changed || resumed {
             (Some(handle.modifier_state().serialized), None)
         } else {
             (None, modifiers.map(|m| m.serialized))
@@ -120,6 +133,12 @@ where
     }
 
     fn unset(&mut self, _data: &mut D) {}
+
+    // The grab lasts for as long as the input method keeps its `zwp_input_method_keyboard_grab_v2`,
+    // whatever else happens on the keyboard in the meantime.
+    fn persistent(&self) -> bool {
+        true
+    }
 }
 
 /// User data of ZwpInputKeyboardGrabV2 object
@@ -143,7 +162,8 @@ impl<D: SeatHandler + 'static> Dispatch2<ZwpInputMethodKeyboardGrabV2, D> for In
         inner.grab = None;
         inner.keymap_id = None;
         drop(inner);
-        self.keyboard_handle.unset_grab(state);
+        self.keyboard_handle
+            .unset_grab_of::<InputMethodKeyboardGrab>(state);
     }
 
     fn request(
