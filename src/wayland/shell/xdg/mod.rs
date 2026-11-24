@@ -1614,6 +1614,8 @@ impl ToplevelSurface {
             // initial commit---we don't want to consider that as "got unmapped" and reset role.
             let got_unmapped = had_buffer_before && !has_buffer;
 
+            decoration::xdg_toplevel_pre_commit_hook(&states.cached_state, &mut role);
+
             if has_buffer {
                 let Some(last_acked) = role.last_acked.clone() else {
                     return Some((

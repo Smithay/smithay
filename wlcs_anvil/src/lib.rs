@@ -144,16 +144,16 @@ impl Wlcs for AnvilDisplayServerHandle {
     }
 
     fn create_client_socket(&self) -> std::io::Result<OwnedFd> {
-        if let Some((ref sender, _)) = self.server {
-            if let Ok((client_side, server_side)) = UnixStream::pair() {
-                if let Err(e) = sender.send(WlcsEvent::NewClient {
-                    stream: server_side,
-                    client_id: client_side.as_raw_fd(),
-                }) {
-                    return Err(Error::new(ErrorKind::ConnectionReset, e));
-                }
-                return Ok(client_side.into());
+        if let Some((ref sender, _)) = self.server
+            && let Ok((client_side, server_side)) = UnixStream::pair()
+        {
+            if let Err(e) = sender.send(WlcsEvent::NewClient {
+                stream: server_side,
+                client_id: client_side.as_raw_fd(),
+            }) {
+                return Err(Error::new(ErrorKind::ConnectionReset, e));
             }
+            return Ok(client_side.into());
         }
         Err(Error::from(ErrorKind::NotFound))
     }

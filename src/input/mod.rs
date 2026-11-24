@@ -742,19 +742,35 @@ impl<D: SeatHandler + 'static> Seat<D> {
     }
 }
 
-pub(super) enum GrabStatus<G: ?Sized> {
-    None,
-    Active(Serial, Box<G>),
-    Borrowed,
+pub(crate) struct Grab<G: ?Sized> {
+    serial: Serial,
+    handler: Box<G>,
 }
 
-// `G` is not `Debug`, so we have to impl Debug manually
-impl<G: ?Sized> fmt::Debug for GrabStatus<G> {
+impl<G: ?Sized> fmt::Debug for Grab<G> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Grab")
+            .field("serial", &self.serial)
+            .finish_non_exhaustive()
+    }
+}
+
+enum GrabOp<G: ?Sized> {
+    Keep,
+    Unset,
+    Set(Serial, Box<G>),
+}
+
+impl<G: ?Sized> GrabOp<G> {
+    fn apply(self, grab: &mut Option<Grab<G>>) {
         match self {
-            GrabStatus::None => f.debug_tuple("GrabStatus::None").finish(),
-            GrabStatus::Active(serial, _) => f.debug_tuple("GrabStatus::Active").field(&serial).finish(),
-            GrabStatus::Borrowed => f.debug_tuple("GrabStatus::Borrowed").finish(),
+            GrabOp::Keep => {}
+            GrabOp::Unset => {
+                *grab = None;
+            }
+            GrabOp::Set(serial, handler) => {
+                *grab = Some(Grab { serial, handler });
+            }
         }
     }
 }

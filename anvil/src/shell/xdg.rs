@@ -91,59 +91,59 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
     ) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
 
-        if let Some(touch) = seat.get_touch() {
-            if touch.has_grab(serial) {
-                let start_data = touch.grab_start_data().unwrap();
-                tracing::info!(?start_data);
+        if let Some(touch) = seat.get_touch()
+            && touch.has_grab(serial)
+        {
+            let start_data = touch.grab_start_data().unwrap();
+            tracing::info!(?start_data);
 
-                // If the client disconnects after requesting a move
-                // we can just ignore the request
-                let Some(window) = self.window_for_surface(surface.wl_surface()) else {
-                    tracing::info!("no window");
-                    return;
-                };
+            // If the client disconnects after requesting a move
+            // we can just ignore the request
+            let Some(window) = self.window_for_surface(surface.wl_surface()) else {
+                tracing::info!("no window");
+                return;
+            };
 
-                // If the focus was for a different surface, ignore the request.
-                if start_data.focus.is_none()
-                    || !start_data
-                        .focus
-                        .as_ref()
-                        .unwrap()
-                        .0
-                        .same_client_as(&surface.wl_surface().id())
-                {
-                    tracing::info!("different surface");
-                    return;
-                }
-                let geometry = window.geometry();
-                let loc = self.space.element_location(&window).unwrap();
-                let (initial_window_location, initial_window_size) = (loc, geometry.size);
+            // If the focus was for a different surface, ignore the request.
+            if start_data.focus.is_none()
+                || !start_data
+                    .focus
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .same_client_as(&surface.wl_surface().id())
+            {
+                tracing::info!("different surface");
+                return;
+            }
+            let geometry = window.geometry();
+            let loc = self.space.element_location(&window).unwrap();
+            let (initial_window_location, initial_window_size) = (loc, geometry.size);
 
-                with_states(surface.wl_surface(), move |states| {
-                    states
-                        .data_map
-                        .get::<RefCell<SurfaceData>>()
-                        .unwrap()
-                        .borrow_mut()
-                        .resize_state = ResizeState::Resizing(ResizeData {
-                        edges: edges.into(),
-                        initial_window_location,
-                        initial_window_size,
-                    });
-                });
-
-                let grab = TouchResizeSurfaceGrab {
-                    start_data,
-                    window,
+            with_states(surface.wl_surface(), move |states| {
+                states
+                    .data_map
+                    .get::<RefCell<SurfaceData>>()
+                    .unwrap()
+                    .borrow_mut()
+                    .resize_state = ResizeState::Resizing(ResizeData {
                     edges: edges.into(),
                     initial_window_location,
                     initial_window_size,
-                    last_window_size: initial_window_size,
-                };
+                });
+            });
 
-                touch.set_grab(self, grab, serial);
-                return;
-            }
+            let grab = TouchResizeSurfaceGrab {
+                start_data,
+                window,
+                edges: edges.into(),
+                initial_window_location,
+                initial_window_size,
+                last_window_size: initial_window_size,
+            };
+
+            touch.set_grab(self, grab, serial);
+            return;
         }
 
         let pointer = seat.get_pointer().unwrap();
@@ -201,10 +201,10 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
     fn ack_configure(&mut self, surface: WlSurface, configure: Configure) {
         if let Configure::Toplevel(configure) = configure {
             if let Some(serial) = with_states(&surface, |states| {
-                if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
-                    if let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state {
-                        return Some(serial);
-                    }
+                if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>()
+                    && let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state
+                {
+                    return Some(serial);
                 }
 
                 None
@@ -427,65 +427,65 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
 impl<BackendData: Backend> AnvilState<BackendData> {
     pub fn move_request_xdg(&mut self, surface: &ToplevelSurface, seat: &Seat<Self>, serial: Serial) {
-        if let Some(touch) = seat.get_touch() {
-            if touch.has_grab(serial) {
-                let start_data = touch.grab_start_data().unwrap();
+        if let Some(touch) = seat.get_touch()
+            && touch.has_grab(serial)
+        {
+            let start_data = touch.grab_start_data().unwrap();
 
-                // If the client disconnects after requesting a move
-                // we can just ignore the request
-                let Some(window) = self.window_for_surface(surface.wl_surface()) else {
-                    return;
-                };
+            // If the client disconnects after requesting a move
+            // we can just ignore the request
+            let Some(window) = self.window_for_surface(surface.wl_surface()) else {
+                return;
+            };
 
-                // If the focus was for a different surface, ignore the request.
-                if start_data.focus.is_none()
-                    || !start_data
-                        .focus
-                        .as_ref()
-                        .unwrap()
-                        .0
-                        .same_client_as(&surface.wl_surface().id())
-                {
-                    return;
-                }
-
-                let mut initial_window_location = self.space.element_location(&window).unwrap();
-
-                // If surface is maximized then unmaximize it
-                let changed = surface.with_pending_state(|state| {
-                    if state.states.unset(xdg_toplevel::State::Maximized) {
-                        state.size = None;
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if changed {
-                    surface.send_configure();
-
-                    // NOTE: In real compositor mouse location should be mapped to a new window size
-                    // For example, you could:
-                    // 1) transform mouse pointer position from compositor space to window space (location relative)
-                    // 2) divide the x coordinate by width of the window to get the percentage
-                    //   - 0.0 would be on the far left of the window
-                    //   - 0.5 would be in middle of the window
-                    //   - 1.0 would be on the far right of the window
-                    // 3) multiply the percentage by new window width
-                    // 4) by doing that, drag will look a lot more natural
-                    //
-                    // but for anvil needs setting location to pointer location is fine
-                    initial_window_location = start_data.location.to_i32_round();
-                }
-
-                let grab = TouchMoveSurfaceGrab {
-                    start_data,
-                    window,
-                    initial_window_location,
-                };
-
-                touch.set_grab(self, grab, serial);
+            // If the focus was for a different surface, ignore the request.
+            if start_data.focus.is_none()
+                || !start_data
+                    .focus
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .same_client_as(&surface.wl_surface().id())
+            {
                 return;
             }
+
+            let mut initial_window_location = self.space.element_location(&window).unwrap();
+
+            // If surface is maximized then unmaximize it
+            let changed = surface.with_pending_state(|state| {
+                if state.states.unset(xdg_toplevel::State::Maximized) {
+                    state.size = None;
+                    true
+                } else {
+                    false
+                }
+            });
+            if changed {
+                surface.send_configure();
+
+                // NOTE: In real compositor mouse location should be mapped to a new window size
+                // For example, you could:
+                // 1) transform mouse pointer position from compositor space to window space (location relative)
+                // 2) divide the x coordinate by width of the window to get the percentage
+                //   - 0.0 would be on the far left of the window
+                //   - 0.5 would be in middle of the window
+                //   - 1.0 would be on the far right of the window
+                // 3) multiply the percentage by new window width
+                // 4) by doing that, drag will look a lot more natural
+                //
+                // but for anvil needs setting location to pointer location is fine
+                initial_window_location = start_data.location.to_i32_round();
+            }
+
+            let grab = TouchMoveSurfaceGrab {
+                start_data,
+                window,
+                initial_window_location,
+            };
+
+            touch.set_grab(self, grab, serial);
+            return;
         }
 
         let pointer = seat.get_pointer().unwrap();

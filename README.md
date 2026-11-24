@@ -61,6 +61,7 @@ Rust.
 - [DriftWM](https://github.com/malbiruk/driftwm): A trackpad-first infinite canvas Wayland compositor.
 - [Denial](https://github.com/denialwm/denial): A stacking, tiling, and scrolling-tiling Wayland compositor with a Flutter-based shell.
 - [Slipstream](https://github.com/peterwalker78/slipstream-desktop): A keyboard-first Wayland desktop that holds your notifications until you pause.
+- [xfwl4](https://gitlab.xfce.org/xfce/xfwl4): [Xfce](https://xfce.org/)'s Wayland compositor
 
 ## System Dependencies
 

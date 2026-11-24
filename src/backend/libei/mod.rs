@@ -136,6 +136,11 @@ impl EiInputConnection {
     pub fn eis_connection(&self) -> &eis::Connection {
         self.0.connection.connection()
     }
+
+    /// Returns the name the client sent during the EI handshake, if any.
+    pub fn name(&self) -> Option<&str> {
+        self.0.connection.name()
+    }
 }
 
 /// An event produced by an [`EiInput`] event source.

@@ -259,12 +259,11 @@ impl<BackendData: Backend> XwmHandler for AnvilState<BackendData> {
     fn allow_selection_access(&mut self, xwm: XwmId, _selection: SelectionTarget) -> bool {
         if let Some(keyboard) = self.seat.get_keyboard() {
             // check that an X11 window is focused
-            if let Some(KeyboardFocusTarget::Window(w)) = keyboard.current_focus() {
-                if let Some(surface) = w.x11_surface() {
-                    if surface.xwm_id().unwrap() == xwm {
-                        return true;
-                    }
-                }
+            if let Some(KeyboardFocusTarget::Window(w)) = keyboard.current_focus()
+                && let Some(surface) = w.x11_surface()
+                && surface.xwm_id().unwrap() == xwm
+            {
+                return true;
             }
         }
         false
@@ -350,41 +349,41 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     }
 
     pub fn move_request_x11(&mut self, window: &X11Surface) {
-        if let Some(touch) = self.seat.get_touch() {
-            if let Some(start_data) = touch.grab_start_data() {
-                let element = self
-                    .space
-                    .elements()
-                    .find(|e| matches!(e.0.x11_surface(), Some(w) if w == window));
+        if let Some(touch) = self.seat.get_touch()
+            && let Some(start_data) = touch.grab_start_data()
+        {
+            let element = self
+                .space
+                .elements()
+                .find(|e| matches!(e.0.x11_surface(), Some(w) if w == window));
 
-                if let Some(element) = element {
-                    let mut initial_window_location = self.space.element_location(element).unwrap();
+            if let Some(element) = element {
+                let mut initial_window_location = self.space.element_location(element).unwrap();
 
-                    // If surface is maximized then unmaximize it
-                    if window.is_maximized() {
-                        window.set_maximized(false).unwrap();
-                        let pos = start_data.location;
-                        initial_window_location = (pos.x as i32, pos.y as i32).into();
-                        if let Some(old_geo) = window
-                            .user_data()
-                            .get::<OldGeometry>()
-                            .and_then(|data| data.restore())
-                        {
-                            window
-                                .configure(Rectangle::new(initial_window_location, old_geo.size))
-                                .unwrap();
-                        }
+                // If surface is maximized then unmaximize it
+                if window.is_maximized() {
+                    window.set_maximized(false).unwrap();
+                    let pos = start_data.location;
+                    initial_window_location = (pos.x as i32, pos.y as i32).into();
+                    if let Some(old_geo) = window
+                        .user_data()
+                        .get::<OldGeometry>()
+                        .and_then(|data| data.restore())
+                    {
+                        window
+                            .configure(Rectangle::new(initial_window_location, old_geo.size))
+                            .unwrap();
                     }
-
-                    let grab = TouchMoveSurfaceGrab {
-                        start_data,
-                        window: element.clone(),
-                        initial_window_location,
-                    };
-
-                    touch.set_grab(self, grab, SERIAL_COUNTER.next_serial());
-                    return;
                 }
+
+                let grab = TouchMoveSurfaceGrab {
+                    start_data,
+                    window: element.clone(),
+                    initial_window_location,
+                };
+
+                touch.set_grab(self, grab, SERIAL_COUNTER.next_serial());
+                return;
             }
         }
 

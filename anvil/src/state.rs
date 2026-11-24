@@ -258,10 +258,10 @@ impl<BackendData: Backend> SelectionHandler for AnvilState<BackendData> {
 
     #[cfg(feature = "xwayland")]
     fn new_selection(&mut self, ty: SelectionTarget, source: Option<SelectionSource>, _seat: Seat<Self>) {
-        if let Some(xwm) = self.xwm.as_mut() {
-            if let Err(err) = xwm.new_selection(ty, source.map(|source| source.mime_types())) {
-                warn!(?err, ?ty, "Failed to set Xwayland selection");
-            }
+        if let Some(xwm) = self.xwm.as_mut()
+            && let Err(err) = xwm.new_selection(ty, source.map(|source| source.mime_types()))
+        {
+            warn!(?err, ?ty, "Failed to set Xwayland selection");
         }
     }
 
@@ -274,10 +274,10 @@ impl<BackendData: Backend> SelectionHandler for AnvilState<BackendData> {
         _seat: Seat<Self>,
         _user_data: &(),
     ) {
-        if let Some(xwm) = self.xwm.as_mut() {
-            if let Err(err) = xwm.send_selection(ty, mime_type, fd) {
-                warn!(?err, "Failed to send primary (X11 -> Wayland)");
-            }
+        if let Some(xwm) = self.xwm.as_mut()
+            && let Err(err) = xwm.send_selection(ty, mime_type, fd)
+        {
+            warn!(?err, "Failed to send primary (X11 -> Wayland)");
         }
     }
 }
@@ -447,12 +447,18 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
 
     fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
         if let Some((serial, seat)) = data.serial {
-            let keyboard = self.seat.get_keyboard().unwrap();
-            Seat::from_resource(&seat) == Some(self.seat.clone())
-                && keyboard
-                    .last_enter()
-                    .map(|last_enter| serial.is_no_older_than(&last_enter))
-                    .unwrap_or(false)
+            if Seat::from_resource(&seat) != Some(self.seat.clone()) {
+                return false;
+            }
+
+            // Allow tokens from a keyboard enter, pointer enter, or touch down
+            let keyboard_enter = self.seat.get_keyboard().unwrap().last_enter();
+            let pointer_enter = self.seat.get_pointer().and_then(|pointer| pointer.last_enter());
+            let touch_down = self.seat.get_touch().and_then(|touch| touch.last_down());
+            [keyboard_enter, pointer_enter, touch_down]
+                .into_iter()
+                .flatten()
+                .any(|last| serial.is_no_older_than(&last))
         } else {
             false
         }
@@ -508,6 +514,16 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
 
         if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
+        }
+    }
+    fn decoration_destroyed(&mut self, toplevel: ToplevelSurface) {
+        if let Some(window) = self
+            .space
+            .elements()
+            .find(|window| window.wl_surface().as_deref() == Some(toplevel.wl_surface()))
+        {
+            // The client forcefully goes back to CSD
+            window.set_ssd(false);
         }
     }
 }

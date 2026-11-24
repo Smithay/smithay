@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+`XdgDecorationHandler::decoration_destroyed` is a new mandatory callback, 
+compositors must handle it in order to correctly detect that a toplevels withdrew its previous SSD support declaration.
+
 `wayland::virtual_keyboard` no longer sends key events to focused clients on its
 own. A virtual keyboard is now an regular input device:
 `VirtualKeyboardManagerState::new` requires the state to implement the new
@@ -154,7 +157,20 @@ is used for timestamps for synthesized events.
 +};
 ```
 
+Input handles now use a separate mutex for grabs, so the inner mutex isn't held during execution of the grab
+(this prevents, for instance, a deadlock if the grab tries to use a mutex internally that another thread holds
+while using input handle methods that don't affect the grab.) As a result there are a few API changes:
+- `KeyboardInnerHandle::current_focus` now returns a clone of the focus instead of a reference
+- `KeyboardInnerHandle::keysym_handle` is removed in favor of an `::xkb()` that clones the `Xkb` instance, and
+   a `KeysymHandle::new` method
+- `PointerInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
+- `TabletToolInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
+
 ### Additions
+
+- `TouchHandle::last_down` gives the serial of the last `wl_touch.down` sent to
+  a client, similar to `PointerHandle::last_enter`, so that compositors can
+  accept xdg-activation tokens created after a tap. anvil now does.
 
 - `XWayland::spawn_with_inherited_env` starts `Xwayland` with the compositor's
   whole environment, instead of only `PATH` and
@@ -280,6 +296,8 @@ default implementations, which result in skipping the new functionality. As such
 - `relocate_element()`: moves an element to a new location in the space without changing the stacking order.
 
 `Output` now has `owns_xdg_output()` which allows you to match an XDG output protocol object with an `Output`.
+
+`Output::create_global_with_filter` creates a `wl_output` global visible only to the clients the filter accepts.
 
 Added `Renderer::invalidate_caches`, which unconditionally drops all renderer-internal caches,
 including entries `Renderer::cleanup_texture_cache` retains while their source buffers are still
