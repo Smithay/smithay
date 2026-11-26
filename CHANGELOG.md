@@ -166,6 +166,12 @@ while using input handle methods that don't affect the grab.) As a result there 
 - `PointerInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 - `TabletToolInnerHandle::current_pressed` now returns `Vec<u32>` instead of `&[u32]`
 
+Framebuffers are now released with `DRM_IOCTL_MODE_CLOSEFB` (falling back to `RMFB` on kernels older
+than 6.8), which does not disable planes still scanning them out. Dropping the surfaces of a paused
+`DrmDevice` on shutdown now keeps the last frame on screen for a seamless handoff to the next
+compositor. Code dropping a framebuffer while it is still scanned out, without a clear commit, keeps
+showing it instead of a disabled plane.
+
 ### Additions
 
 - `TouchHandle::last_down` gives the serial of the last `wl_touch.down` sent to
