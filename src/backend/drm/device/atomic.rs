@@ -1,27 +1,16 @@
 use std::collections::HashMap;
-use std::sync::{
-    Arc, RwLock,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, RwLock, atomic::AtomicBool};
 
 use drm::control::atomic::AtomicModeReq;
 use drm::control::{
-    AtomicCommitFlags, Device as ControlDevice, PropertyValueSet, ResourceHandle, connector, crtc,
-    framebuffer, plane, property,
+    AtomicCommitFlags, Device as ControlDevice, ResourceHandle, connector, crtc, plane, property,
 };
 
 use super::DrmDeviceFd;
 use crate::backend::drm::error::AccessError;
 use crate::{backend::drm::error::Error, utils::DevPath};
 
-use tracing::{debug, error, info_span, trace};
-
-type OldState = (
-    Vec<(connector::Handle, PropertyValueSet)>,
-    Vec<(crtc::Handle, PropertyValueSet)>,
-    Vec<(framebuffer::Handle, PropertyValueSet)>,
-    Vec<(plane::Handle, PropertyValueSet)>,
-);
+use tracing::{debug, info_span, trace};
 
 #[derive(Clone, Debug, Default)]
 pub struct PropMapping {
@@ -84,7 +73,6 @@ impl PropMapping {
 pub struct AtomicDrmDevice {
     pub(crate) fd: DrmDeviceFd,
     pub(crate) active: Arc<AtomicBool>,
-    old_state: OldState,
     pub(crate) prop_mapping: Arc<RwLock<PropMapping>>,
     pub(super) span: tracing::Span,
 }
@@ -92,16 +80,15 @@ pub struct AtomicDrmDevice {
 impl AtomicDrmDevice {
     pub fn new(fd: DrmDeviceFd, active: Arc<AtomicBool>, disable_connectors: bool) -> Result<Self, Error> {
         let span = info_span!("drm_atomic");
-        let mut dev = AtomicDrmDevice {
+        let dev = AtomicDrmDevice {
             fd,
             active,
-            old_state: (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
             prop_mapping: Default::default(),
             span,
         };
         let _guard = dev.span.enter();
 
-        // Enumerate (and save) the current device state.
+        // Enumerate the device resources.
         let res_handles = dev.fd.resource_handles().map_err(|source| {
             Error::Access(AccessError {
                 errmsg: "Error loading drm resources",
@@ -118,24 +105,15 @@ impl AtomicDrmDevice {
             })
         })?;
 
-        let mut old_state = dev.old_state.clone();
         let mut mapping = dev.prop_mapping.write().unwrap();
 
-        // This helper function takes a snapshot of the current device properties.
-        // (everything in the atomic api is set via properties.)
-        add_props(&dev.fd, res_handles.connectors(), &mut old_state.0)?;
-        add_props(&dev.fd, res_handles.crtcs(), &mut old_state.1)?;
-        add_props(&dev.fd, res_handles.framebuffers(), &mut old_state.2)?;
-        add_props(&dev.fd, &planes, &mut old_state.3)?;
-
-        // And because the mapping is not consistent across devices,
-        // we also need to lookup the handle for a property name.
+        // Because the mapping is not consistent across devices,
+        // we need to lookup the handle for a property name.
         // And we do this a fair bit, so lets cache that mapping.
         map_props(&dev.fd, res_handles.connectors(), &mut mapping.connectors)?;
         map_props(&dev.fd, res_handles.crtcs(), &mut mapping.crtcs)?;
         map_props(&dev.fd, &planes, &mut mapping.planes)?;
 
-        dev.old_state = old_state;
         trace!("Mapping: {:#?}", mapping);
 
         drop(mapping);
@@ -233,76 +211,6 @@ impl AtomicDrmDevice {
 
         Ok(())
     }
-}
-
-impl Drop for AtomicDrmDevice {
-    fn drop(&mut self) {
-        if self.active.load(Ordering::SeqCst) {
-            let _guard = self.span.enter();
-
-            // Here we restore the card/tty's to it's previous state.
-            // In case e.g. getty was running on the tty sets the correct framebuffer again,
-            // so that getty will be visible.
-            // We do exit correctly if this fails, but the user will be presented with
-            // a black screen if no display handler takes control again.
-
-            // create an atomic mode request consisting of all properties we captured on creation.
-            // TODO, check current connector status and remove deactivated connectors from this req.
-
-            debug!("Device still active, trying to restore previous state");
-            let mut req = AtomicModeReq::new();
-            fn add_multiple_props<T: ResourceHandle>(
-                req: &mut AtomicModeReq,
-                old_state: &[(T, PropertyValueSet)],
-            ) {
-                for (handle, set) in old_state {
-                    let (prop_handles, values) = set.as_props_and_values();
-                    for (&prop_handle, &val) in prop_handles.iter().zip(values.iter()) {
-                        req.add_raw_property((*handle).into(), prop_handle, val);
-                    }
-                }
-            }
-
-            add_multiple_props(&mut req, &self.old_state.0);
-            add_multiple_props(&mut req, &self.old_state.1);
-            add_multiple_props(&mut req, &self.old_state.2);
-            add_multiple_props(&mut req, &self.old_state.3);
-
-            trace!("Previous state: {:?}", req);
-            if let Err(err) = self.fd.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req) {
-                error!("Failed to restore previous state. Error: {}", err);
-            }
-        }
-    }
-}
-
-// Add all properties of given handles to a given drm resource type to state.
-// You may use this to snapshot the current state of the drm device (fully or partially).
-fn add_props<D, T>(fd: &D, handles: &[T], state: &mut Vec<(T, PropertyValueSet)>) -> Result<(), Error>
-where
-    D: DevPath + ControlDevice,
-    T: ResourceHandle,
-{
-    let iter = handles.iter().map(|x| (x, fd.get_properties(*x)));
-    if let Some(len) = iter.size_hint().1 {
-        state.reserve_exact(len)
-    }
-
-    iter.map(|(x, y)| (*x, y))
-        .try_for_each(|(x, y)| match y {
-            Ok(y) => {
-                state.push((x, y));
-                Ok(())
-            }
-            Err(err) => Err(err),
-        })
-        .map_err(|source| {
-            Error::Access(AccessError {
-                errmsg: "Error reading properties",
-                dev: fd.dev_path(),
-                source,
-            })
-        })
 }
 
 /// Create a mapping of property names and handles for given handles of a given drm resource type.
