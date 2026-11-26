@@ -183,11 +183,12 @@ where
             }
 
             Request::Resize { size } => {
-                if size <= 0 {
+                let Some(size) = usize::try_from(size).ok().and_then(NonZeroUsize::new) else {
                     pool.post_error(wl_shm::Error::InvalidFd, "invalid wl_shm_pool size");
-                }
+                    return;
+                };
 
-                if let Err(err) = arc_pool.resize(NonZeroUsize::try_from(size as usize).unwrap()) {
+                if let Err(err) = arc_pool.resize(size) {
                     match err {
                         ResizeError::InvalidSize => {
                             pool.post_error(wl_shm::Error::InvalidFd, "cannot shrink wl_shm_pool");
