@@ -18,7 +18,7 @@ use crate::utils::{Buffer, DevPath, Size};
 
 use super::error::AccessError;
 use super::surface::{DrmSurface, DrmSurfaceInternal, atomic::AtomicDrmSurface, legacy::LegacyDrmSurface};
-use super::{Planes, error::Error, planes};
+use super::{Planes, TileInfo, error::Error, planes, tile_info};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
@@ -274,6 +274,14 @@ impl DrmDevice {
     /// Returns a set of available planes for a given crtc
     pub fn planes(&self, crtc: &crtc::Handle) -> Result<Planes, Error> {
         planes(self, crtc, self.has_universal_planes)
+    }
+
+    /// Returns the parsed `TILE` property of a connector, if set.
+    ///
+    /// Tiled monitors (DisplayID Tile Topology) expose multiple connectors
+    /// that share a [`TileInfo::group_id`].
+    pub fn tile_info(&self, conn: connector::Handle) -> Result<Option<TileInfo>, Error> {
+        tile_info(self, conn)
     }
 
     /// Claim a plane so that it won't be used by a different crtc
