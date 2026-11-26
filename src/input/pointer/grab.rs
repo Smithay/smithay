@@ -170,6 +170,21 @@ pub trait PointerGrab<D: SeatHandler>: Send + Downcast {
     fn start_data(&self) -> &GrabStartData<D>;
     /// The grab has been unset or replaced with another grab.
     fn unset(&mut self, data: &mut D);
+    /// Whether this grab belongs to a protocol object rather than to a user interaction.
+    ///
+    /// Most grabs are something the user is in the middle of: a click, a drag, a popup. They are
+    /// started by an input event, end with one, and can be cancelled by the compositor at any
+    /// point. A persistent grab is a standing redirection instead, that stays for as long as the
+    /// object that asked for it does, and that only its owner can end.
+    ///
+    /// Persistent grabs are passed events like any other grab, but they are not what
+    /// [`PointerHandle::is_grabbed`](super::PointerHandle::is_grabbed),
+    /// [`PointerHandle::with_grab`](super::PointerHandle::with_grab) and
+    /// [`PointerHandle::unset_grab`](super::PointerHandle::unset_grab) are about, and installing
+    /// one does not end the implicit grab of a button press.
+    fn persistent(&self) -> bool {
+        false
+    }
 }
 
 impl_downcast!(PointerGrab<D> where D: SeatHandler);
@@ -232,7 +247,14 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
 
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         handle.button(data, event);
-        if event.state == ButtonState::Pressed {
+        // A press that gets here starts the implicit grab, which then stands in for the default grab
+        // until the last button is released. Presses are also passed down to here by the grabs that
+        // forward them. A press on a popup that holds a grab starts an implicit grab like any other,
+        // for the client that was sent the press. A press that came through a grab which has taken
+        // the focus away was sent to nobody, and starts none.
+        if event.state == ButtonState::Pressed
+            && (!handle.under_interaction || handle.current_focus().is_some())
+        {
             let grab = data.click_grab(GrabStartData {
                 focus: handle.current_focus(),
                 button: event.button,

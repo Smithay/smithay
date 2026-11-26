@@ -189,6 +189,15 @@ impl TextInputHandle {
         });
     }
 
+    /// Whether the focused surface has a text input enabled, which is what makes an input method
+    /// active.
+    pub(crate) fn has_active_text_input(&self) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        let mut active = false;
+        inner.with_active_text_input(|_, _, _| active = true);
+        active
+    }
+
     /// Call the callback with the serial of the active text_input or with the passed
     /// `default` one when empty.
     pub(crate) fn active_text_input_serial_or_default<F>(&self, default: u32, mut callback: F)
