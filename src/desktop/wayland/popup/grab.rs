@@ -558,6 +558,20 @@ where
             return;
         }
 
+        // While a button is held, keep focus on the surface that received the
+        // press, so it also receives the release
+        if !handle.current_pressed().is_empty() {
+            if let Some((target, mut location)) = handle.current_focus() {
+                if let Some((new_target, new_location)) = &focus {
+                    if *new_target == target {
+                        location = *new_location;
+                    }
+                }
+                handle.motion(data, Some((target, location)), event);
+                return;
+            }
+        }
+
         // Check that the focus is of the same client as the grab
         // If yes allow it, if not unset the focus.
         if focus
