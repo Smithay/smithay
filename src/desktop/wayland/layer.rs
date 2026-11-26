@@ -84,8 +84,7 @@ impl LayerMap {
                 .0
                 .userdata
                 .get::<LayerUserdata>()
-                .map(|s| s.lock().unwrap().location.is_some())
-                .unwrap_or(false)
+                .is_some_and(|s| s.lock().unwrap().location.is_some())
             {
                 return Err(LayerError::AlreadyMapped);
             }
@@ -392,9 +391,10 @@ impl LayerMap {
 
                 let size = Size::new(size.w.0.max(0), size.h.0.max(0));
                 trace!("Setting layer to pos {:?} and size {:?}", location, size);
-                let size_changed = layer.0.surface.with_pending_state(|state| {
-                    state.size.replace(size).map(|old| old != size).unwrap_or(true)
-                });
+                let size_changed = layer
+                    .0
+                    .surface
+                    .with_pending_state(|state| state.size.replace(size) != Some(size));
                 changed = changed || size_changed;
                 let initial_configure_sent = with_states(surface, |states| {
                     states

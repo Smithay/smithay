@@ -233,7 +233,7 @@ fn plane_type(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Res
                 source,
             })
         })?;
-        if info.name().to_str().map(|x| x == "type").unwrap_or(false) {
+        if info.name().to_str() == Ok("type") {
             return Ok(match val {
                 x if x == (PlaneType::Primary as u64) => PlaneType::Primary,
                 x if x == (PlaneType::Cursor as u64) => PlaneType::Cursor,
@@ -261,7 +261,7 @@ fn plane_zpos(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Res
                 source,
             })
         })?;
-        if info.name().to_str().map(|x| x == "zpos").unwrap_or(false) {
+        if info.name().to_str() == Ok("zpos") {
             let plane_zpos = match info.value_type().convert_value(val) {
                 drm::control::property::Value::UnsignedRange(u) => Some(u as i32),
                 drm::control::property::Value::SignedRange(i) => Some(i as i32),
@@ -313,7 +313,7 @@ fn plane_formats(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> 
                 // get information of that property
                 if let Ok(info) = dev.get_property(**handle) {
                     // to find out, if we got the handle of the "IN_FORMATS" property ...
-                    if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
+                    if info.name().to_str() == Ok("IN_FORMATS") {
                         // so we can use that to get formats
                         return true;
                     }
@@ -430,7 +430,7 @@ fn plane_has_property(
                 source,
             })
         })?;
-        if info.name().to_str().map(|x| x == name).unwrap_or(false) {
+        if info.name().to_str() == Ok(name) {
             return Ok(true);
         }
     }
@@ -464,7 +464,7 @@ fn plane_size_hints(
                 source,
             })
         })?;
-        if info.name().to_str().map(|x| x == "SIZE_HINTS").unwrap_or(false) {
+        if info.name().to_str() == Ok("SIZE_HINTS") {
             let size_hints = if let drm::control::property::Value::Blob(blob_id) =
                 info.value_type().convert_value(val)
             {

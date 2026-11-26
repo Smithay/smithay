@@ -127,13 +127,11 @@ where
             if let Some(surface_view) = data.and_then(|d| d.lock().unwrap().surface_view) {
                 location += surface_view.offset;
 
-                let contains_the_point = data
-                    .map(|data| {
-                        data.lock()
-                            .unwrap()
-                            .contains_point(&*states.cached_state.get().current(), point - location.to_f64())
-                    })
-                    .unwrap_or(false);
+                let contains_the_point = data.is_some_and(|data| {
+                    data.lock()
+                        .unwrap()
+                        .contains_point(&*states.cached_state.get().current(), point - location.to_f64())
+                });
                 if contains_the_point {
                     *found.borrow_mut() = Some((wl_surface.clone(), location));
                 }
@@ -253,8 +251,7 @@ pub fn send_frames_surface_tree<T, F>(
                 states.data_map.get::<SurfaceFrameThrottlingState>().unwrap();
 
             let on_primary_scanout_output = primary_scan_out_output(surface, states)
-                .map(|preferred_output| preferred_output == *output)
-                .unwrap_or(false);
+                .is_some_and(|preferred_output| preferred_output == *output);
 
             let frame_overdue = surface_frame_throttling_state.is_overdue(time, throttle);
 
@@ -303,8 +300,7 @@ pub fn send_dmabuf_feedback_surface_tree<'a, P, F>(
         |_, _, &()| TraversalAction::DoChildren(()),
         |surface, states, &()| {
             let on_primary_scanout_output = primary_scan_out_output(surface, states)
-                .map(|preferred_output| preferred_output == *output)
-                .unwrap_or(false);
+                .is_some_and(|preferred_output| preferred_output == *output);
 
             if !on_primary_scanout_output {
                 return;
@@ -460,8 +456,7 @@ pub fn take_presentation_feedback_surface_tree<F1, F2>(
         |_, _, &()| TraversalAction::DoChildren(()),
         |surface, states, &()| {
             let on_primary_scanout_output = primary_scan_out_output(surface, states)
-                .map(|preferred_output| preferred_output == output_feedback.output)
-                .unwrap_or(false);
+                .is_some_and(|preferred_output| preferred_output == output_feedback.output);
 
             if !on_primary_scanout_output {
                 return;
@@ -492,8 +487,7 @@ pub fn surface_presentation_feedback_flags_from_states(
                 .map(|val| Id::from(surface).namespaced(val))
                 .unwrap_or(surface.into()),
         )
-        .map(|state| state.presentation_state == RenderElementPresentationState::ZeroCopy)
-        .unwrap_or(false);
+        .is_some_and(|state| state.presentation_state == RenderElementPresentationState::ZeroCopy);
 
     if zero_copy {
         wp_presentation_feedback::Kind::ZeroCopy
@@ -518,9 +512,7 @@ impl SurfaceFrameThrottlingState {
     pub fn is_overdue(&self, time: Duration, throttle: Option<Duration>) -> bool {
         if let Some(throttle) = throttle {
             let guard = self.0.lock().unwrap();
-            guard
-                .map(|last| time.saturating_sub(last) > throttle)
-                .unwrap_or(true)
+            guard.is_none_or(|last| time.saturating_sub(last) > throttle)
         } else {
             false
         }

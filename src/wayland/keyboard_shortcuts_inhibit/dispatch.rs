@@ -71,8 +71,7 @@ where
                     .keyboard_shortcuts_inhibit_state()
                     .inhibitors
                     .get(&seat_id)
-                    .map(|list| list.borrow().surface_has_inhibitor(&surface))
-                    .unwrap_or(false)
+                    .is_some_and(|list| list.borrow().surface_has_inhibitor(&surface))
                 {
                     resource.post_error(
                         zwp_keyboard_shortcuts_inhibit_manager_v1::Error::AlreadyInhibited,

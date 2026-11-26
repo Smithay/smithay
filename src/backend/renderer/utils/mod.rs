@@ -204,10 +204,7 @@ impl<N: Coordinate, Kind> DamageSnapshot<N, Kind> {
     pub fn damage_since(&self, commit: Option<CommitCounter>) -> Option<DamageSet<N, Kind>> {
         let distance = self.commit_counter.distance(commit);
 
-        if distance
-            .map(|distance| distance <= self.damage.len())
-            .unwrap_or(false)
-        {
+        if distance.is_some_and(|distance| distance <= self.damage.len()) {
             let mut damage_set = DamageSet::default();
             for damage in self.damage.iter().take(distance.unwrap()) {
                 damage_set.damage.extend_from_slice(damage);
