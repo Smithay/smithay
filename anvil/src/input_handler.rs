@@ -142,6 +142,14 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let mut suppressed_keys = self.suppressed_keys.clone();
         let keyboard = self.seat.get_keyboard().unwrap();
 
+        self.key_repeat.key_event(
+            &keyboard,
+            keycode,
+            state,
+            time,
+            |state: &mut Self, keycode, time| state.on_key_repeat(keycode, time),
+        );
+
         for layer in self.layer_shell_state.layer_surfaces().rev() {
             let exclusive = layer.with_cached_state(|data| {
                 data.keyboard_interactivity == KeyboardInteractivity::Exclusive
@@ -216,6 +224,18 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
         self.suppressed_keys = suppressed_keys;
         action
+    }
+
+    fn on_key_repeat(&mut self, keycode: smithay::input::keyboard::Keycode, time: InputTime) {
+        let keyboard = self.seat.get_keyboard().unwrap();
+        keyboard.input_repeat::<(), _>(self, keycode, SCOUNTER.next_serial(), time, |state, _, handle| {
+            // Keys that triggered a compositor shortcut are not forwarded to the client
+            if state.suppressed_keys.contains(&handle.modified_sym()) {
+                FilterResult::Intercept(())
+            } else {
+                FilterResult::Forward
+            }
+        });
     }
 
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
@@ -787,6 +807,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
     pub fn release_all_keys(&mut self) {
         let keyboard = self.seat.get_keyboard().unwrap();
+        self.key_repeat.stop();
         for keycode in keyboard.pressed_keys() {
             keyboard.input(
                 self,
