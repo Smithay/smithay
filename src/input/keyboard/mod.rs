@@ -6,6 +6,7 @@ use downcast_rs::{Downcast, impl_downcast};
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "wayland_frontend")]
 use std::sync::RwLock;
+use std::time::{Duration, Instant};
 use std::{
     default::Default,
     fmt, io,
@@ -236,7 +237,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
     pub(crate) pressed_keys: HashSet<Keycode>,
-    pub(crate) key_sources: HashMap<Keycode, HashSet<KeyboardSource>>,
+    pub(crate) key_sources: HashMap<Keycode, HashMap<KeyboardSource, Instant>>,
     pub(crate) forwarded_pressed_keys: HashSet<Keycode>,
     pub(crate) mods_state: ModifiersState,
     xkb: Arc<Mutex<Xkb>>,
@@ -261,6 +262,15 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
             .finish()
     }
 }
+
+/// How long one source may hold a keycode before it stops blocking other sources' presses of it.
+///
+/// A source that lost a release (e.g. a libei client that crashed or dropped the event) would
+/// otherwise keep the keycode "held" forever and make every other source's press of that key be
+/// absorbed. Too small a value lets a genuinely held key from one source be re-reported as a
+/// fresh press when another source presses it; too large delays recovery from a lost release.
+/// Dedup of overlapping presses within this window is unchanged.
+const STALE_KEY_HOLD: Duration = Duration::from_secs(5);
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
     fn new(
@@ -305,15 +315,35 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
     // `is_transition` is `true` only when this event actually changes the combined pressed set
     // i.e. the first source to press a keycode, or the last source to release it.
     fn key_input(&mut self, source: KeyboardSource, keycode: Keycode, state: KeyState) -> (bool, bool, bool) {
+        self.key_input_at(source, keycode, state, Instant::now())
+    }
+
+    fn key_input_at(
+        &mut self,
+        source: KeyboardSource,
+        keycode: Keycode,
+        state: KeyState,
+        now: Instant,
+    ) -> (bool, bool, bool) {
         // track pressed keys per source, the seat xkb only follows the *combined* set
         let direction = match state {
             KeyState::Pressed => {
                 let holders = self.key_sources.entry(keycode).or_default();
+                // Other sources whose press is older than STALE_KEY_HOLD lost their release:
+                // drop them so they cannot absorb this source's events forever.
+                let before = holders.len();
+                holders.retain(|s, t| *s == source || now.saturating_duration_since(*t) < STALE_KEY_HOLD);
+                let dropped_stale = holders.len() != before;
                 let was_held = !holders.is_empty();
-                holders.insert(source);
+                holders.insert(source, now);
                 if was_held {
                     // already down from another source: absorb
                     return (false, false, false);
+                }
+                if dropped_stale && self.pressed_keys.contains(&keycode) {
+                    // balance the stale xkb Down so modifiers do not double count
+                    let mut xkb = self.xkb.lock().unwrap();
+                    xkb.state.update_key(keycode, xkb::KeyDirection::Up);
                 }
                 self.pressed_keys.insert(keycode);
                 xkb::KeyDirection::Down
@@ -357,7 +387,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         let held: Vec<Keycode> = self
             .key_sources
             .iter()
-            .filter(|(_, holders)| holders.contains(&source))
+            .filter(|(_, holders)| holders.contains_key(&source))
             .map(|(keycode, _)| *keycode)
             .collect();
         let mut transitioned = Vec::new();
@@ -1804,4 +1834,115 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
     }
 
     fn unset(&mut self, _data: &mut D) {}
+}
+
+#[cfg(test)]
+mod stale_hold_tests {
+    use super::*;
+    use crate::input::SeatState;
+    use crate::input::pointer::*;
+    use crate::input::touch::{DownEvent, FrameMarker, OrientationEvent, ShapeEvent, TouchTarget, UpEvent};
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct T;
+    impl IsAlive for T {
+        fn alive(&self) -> bool {
+            true
+        }
+    }
+    impl PointerTarget<H> for T {
+        fn enter(&self, _: &Seat<H>, _: &mut H, _: &MotionEvent) {}
+        fn motion(&self, _: &Seat<H>, _: &mut H, _: &MotionEvent) {}
+        fn relative_motion(&self, _: &Seat<H>, _: &mut H, _: &RelativeMotionEvent) {}
+        fn button(&self, _: &Seat<H>, _: &mut H, _: &ButtonEvent) {}
+        fn axis(&self, _: &Seat<H>, _: &mut H, _: AxisFrame) {}
+        fn frame(&self, _: &Seat<H>, _: &mut H) {}
+        fn leave(&self, _: &Seat<H>, _: &mut H, _: Serial, _: InputTime) {}
+        fn gesture_swipe_begin(&self, _: &Seat<H>, _: &mut H, _: &GestureSwipeBeginEvent) {}
+        fn gesture_swipe_update(&self, _: &Seat<H>, _: &mut H, _: &GestureSwipeUpdateEvent) {}
+        fn gesture_swipe_end(&self, _: &Seat<H>, _: &mut H, _: &GestureSwipeEndEvent) {}
+        fn gesture_pinch_begin(&self, _: &Seat<H>, _: &mut H, _: &GesturePinchBeginEvent) {}
+        fn gesture_pinch_update(&self, _: &Seat<H>, _: &mut H, _: &GesturePinchUpdateEvent) {}
+        fn gesture_pinch_end(&self, _: &Seat<H>, _: &mut H, _: &GesturePinchEndEvent) {}
+        fn gesture_hold_begin(&self, _: &Seat<H>, _: &mut H, _: &GestureHoldBeginEvent) {}
+        fn gesture_hold_end(&self, _: &Seat<H>, _: &mut H, _: &GestureHoldEndEvent) {}
+    }
+    impl KeyboardTarget<H> for T {
+        fn enter(&self, _: &Seat<H>, _: &mut H, _: Vec<KeysymHandle<'_>>, _: Serial) {}
+        fn leave(&self, _: &Seat<H>, _: &mut H, _: Serial) {}
+        fn key(&self, _: &Seat<H>, _: &mut H, _: KeysymHandle<'_>, _: KeyState, _: Serial, _: InputTime) {}
+        fn modifiers(&self, _: &Seat<H>, _: &mut H, _: ModifiersState, _: Serial) {}
+    }
+    impl TouchTarget<H> for T {
+        fn down(&self, _: &Seat<H>, _: &mut H, _: &DownEvent) {}
+        fn up(&self, _: &Seat<H>, _: &mut H, _: &UpEvent) {}
+        fn motion(&self, _: &Seat<H>, _: &mut H, _: &crate::input::touch::MotionEvent) {}
+        fn frame(&self, _: &Seat<H>, _: &mut H, _: FrameMarker) {}
+        fn cancel(&self, _: &Seat<H>, _: &mut H, _: FrameMarker) {}
+        fn shape(&self, _: &Seat<H>, _: &mut H, _: &ShapeEvent) {}
+        fn orientation(&self, _: &Seat<H>, _: &mut H, _: &OrientationEvent) {}
+        fn last_frame(&self, _: &Seat<H>, _: &mut H) -> Option<FrameMarker> {
+            None
+        }
+    }
+
+    struct H;
+    impl SeatHandler for H {
+        type KeyboardFocus = T;
+        type PointerFocus = T;
+        type TouchFocus = T;
+        fn seat_state(&mut self) -> &mut SeatState<Self> {
+            unimplemented!()
+        }
+    }
+
+    const ENTER: u32 = 28;
+    fn kbd() -> KbdInternal<H> {
+        KbdInternal::new(XkbConfig::default(), 25, 600, xkb::CONTEXT_NO_FLAGS).unwrap()
+    }
+
+    #[test]
+    fn stuck_aux_does_not_block_other_source() {
+        let (mut k, t0) = (kbd(), Instant::now());
+        let (a, b) = (KeyboardSource::new_auxiliary(), KeyboardSource::MAIN);
+        let enter = Keycode::new(ENTER + 8);
+        assert!(k.key_input_at(a, enter, KeyState::Pressed, t0).2);
+        // within the window: B is absorbed (dedup)
+        assert!(
+            !k.key_input_at(b, enter, KeyState::Pressed, t0 + Duration::from_secs(1))
+                .2
+        );
+        assert!(
+            !k.key_input_at(b, enter, KeyState::Released, t0 + Duration::from_secs(1))
+                .2
+        );
+        // A never releases; later B presses/releases and the client must see both
+        let t1 = t0 + STALE_KEY_HOLD + Duration::from_secs(1);
+        assert!(k.key_input_at(b, enter, KeyState::Pressed, t1).2);
+        assert!(k.key_input_at(b, enter, KeyState::Released, t1).2);
+        assert!(k.pressed_keys.is_empty());
+    }
+
+    #[test]
+    fn both_press_one_press_one_release() {
+        let (mut k, t0) = (kbd(), Instant::now());
+        let (a, b) = (KeyboardSource::new_auxiliary(), KeyboardSource::MAIN);
+        let enter = Keycode::new(ENTER + 8);
+        assert!(k.key_input_at(a, enter, KeyState::Pressed, t0).2);
+        assert!(!k.key_input_at(b, enter, KeyState::Pressed, t0).2);
+        assert!(!k.key_input_at(a, enter, KeyState::Released, t0).2);
+        assert!(k.key_input_at(b, enter, KeyState::Released, t0).2);
+    }
+
+    #[test]
+    fn stale_modifier_does_not_stick() {
+        let (mut k, t0) = (kbd(), Instant::now());
+        let (a, b) = (KeyboardSource::new_auxiliary(), KeyboardSource::MAIN);
+        let shift = Keycode::new(42 + 8);
+        k.key_input_at(a, shift, KeyState::Pressed, t0);
+        let t1 = t0 + STALE_KEY_HOLD + Duration::from_secs(1);
+        k.key_input_at(b, shift, KeyState::Pressed, t1);
+        k.key_input_at(b, shift, KeyState::Released, t1);
+        assert!(!k.mods_state.shift);
+    }
 }
