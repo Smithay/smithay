@@ -2565,8 +2565,13 @@ impl GlesFrame<'_, '_> {
             self.renderer.gl.Disable(ffi::BLEND);
         }
 
+        let mut force_finish = false;
         if let GlesTargetInternal::Texture { sync_lock, .. } = &mut self.target.0 {
-            sync_lock.update_write(&self.renderer.gl);
+            if self.renderer.capabilities.contains(&Capability::Fencing) {
+                sync_lock.update_write(&self.renderer.gl);
+            } else if self.renderer.egl.is_shared() {
+                force_finish = true;
+            }
         }
 
         // delayed destruction until the next frame rendering.
@@ -2585,7 +2590,7 @@ impl GlesFrame<'_, '_> {
         }
 
         // if we support egl fences we should use it
-        if let Some(sync_point) = self.renderer.export_sync_point() {
+        if !force_finish && let Some(sync_point) = self.renderer.export_sync_point() {
             // Sync after glFlush in export_sync_point() and right before returning.
             self.renderer.profiler.sync_gpu(&self.renderer.gl);
             return Ok(sync_point);
