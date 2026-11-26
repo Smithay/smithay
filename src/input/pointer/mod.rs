@@ -841,9 +841,6 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                     focus.enter(seat, data, &event);
                 }
             };
-        } else if let Some((old_focus, _)) = self.focus.take() {
-            old_focus.leave(seat, data, event.serial, event.time);
-            data.cursor_image(seat, CursorImageStatus::default_named());
         }
     }
 
