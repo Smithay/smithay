@@ -226,6 +226,18 @@ pub enum WaylandSurfaceTexture<R: Renderer> {
     SolidColor(Color32F),
 }
 
+impl<R: Renderer> Clone for WaylandSurfaceTexture<R>
+where
+    R::TextureId: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Texture(texture) => Self::Texture(texture.clone()),
+            Self::SolidColor(color) => Self::SolidColor(*color),
+        }
+    }
+}
+
 /// A single surface render element
 pub struct WaylandSurfaceRenderElement<R: Renderer> {
     id: Id,
@@ -241,6 +253,28 @@ pub struct WaylandSurfaceRenderElement<R: Renderer> {
     damage: DamageSnapshot<i32, BufferCoords>,
     opaque_regions: OpaqueRegions<i32, Logical>,
     texture: WaylandSurfaceTexture<R>,
+}
+
+impl<R: Renderer> Clone for WaylandSurfaceRenderElement<R>
+where
+    R::TextureId: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            location: self.location,
+            alpha: self.alpha,
+            kind: self.kind,
+            view: self.view,
+            buffer: self.buffer.clone(),
+            buffer_scale: self.buffer_scale,
+            buffer_transform: self.buffer_transform,
+            buffer_dimensions: self.buffer_dimensions,
+            damage: self.damage.clone(),
+            opaque_regions: OpaqueRegions::from_slice(&self.opaque_regions),
+            texture: self.texture.clone(),
+        }
+    }
 }
 
 impl<R: Renderer> fmt::Debug for WaylandSurfaceRenderElement<R> {
