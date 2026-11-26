@@ -143,7 +143,7 @@ where
                 };
 
                 if let Some(message) = message {
-                    pool.post_error(wl_shm::Error::InvalidStride, message);
+                    pool.post_error(wl_shm_pool::Error::InvalidStride, message);
                     return;
                 }
 
@@ -151,7 +151,7 @@ where
                     WEnum::Value(format) => {
                         if !state.shm_state().formats.contains(&format) {
                             pool.post_error(
-                                wl_shm::Error::InvalidFormat,
+                                wl_shm_pool::Error::InvalidFormat,
                                 format!("format {format:?} not supported"),
                             );
 
@@ -175,7 +175,7 @@ where
 
                     WEnum::Unknown(unknown) => {
                         pool.post_error(
-                            wl_shm::Error::InvalidFormat,
+                            wl_shm_pool::Error::InvalidFormat,
                             format!("unknown format 0x{unknown:x}"),
                         );
                     }
@@ -184,17 +184,17 @@ where
 
             Request::Resize { size } => {
                 if size <= 0 {
-                    pool.post_error(wl_shm::Error::InvalidFd, "invalid wl_shm_pool size");
+                    pool.post_error(wl_shm_pool::Error::InvalidStride, "invalid wl_shm_pool size");
                 }
 
                 if let Err(err) = arc_pool.resize(NonZeroUsize::try_from(size as usize).unwrap()) {
                     match err {
                         ResizeError::InvalidSize => {
-                            pool.post_error(wl_shm::Error::InvalidFd, "cannot shrink wl_shm_pool");
+                            pool.post_error(wl_shm_pool::Error::InvalidStride, "cannot shrink wl_shm_pool");
                         }
 
                         ResizeError::MremapFailed => {
-                            pool.post_error(wl_shm::Error::InvalidFd, "mremap failed");
+                            pool.post_error(wl_shm_pool::Error::InvalidStride, "mremap failed");
                         }
                     }
                 }
