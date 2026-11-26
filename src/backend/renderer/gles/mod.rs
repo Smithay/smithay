@@ -398,6 +398,7 @@ pub struct GlesRenderer {
     gl_version: GlVersion,
     pub(crate) extensions: Vec<String>,
     is_software: bool,
+    is_nvidia: bool,
     capabilities: Vec<Capability>,
 
     // shaders
@@ -728,6 +729,9 @@ impl GlesRenderer {
         drop(_guard);
 
         let profiler = profiler::GpuProfiler::new(&gl, &exts);
+        let is_nvidia = CStr::from_ptr(gl.GetString(ffi::VENDOR) as *const c_char)
+            .to_bytes()
+            .starts_with(b"NVIDIA");
 
         let renderer = GlesRenderer {
             gl,
@@ -737,6 +741,7 @@ impl GlesRenderer {
 
             extensions: exts,
             is_software,
+            is_nvidia,
             gl_version,
             capabilities,
 
@@ -3095,7 +3100,13 @@ impl GlesFrame<'_, '_> {
             drop(scope);
 
             if self.renderer.capabilities.contains(&Capability::Fencing) {
-                sync_lock.update_read(gl);
+                // niri's GBM contexts do not acquire new GL share-group members.
+                // A private context already orders its own reads and writes. Avoid
+                // redundant NVIDIA read fences that amplify driver host-memory
+                // growth, while preserving synchronization for shared contexts.
+                if !self.renderer.is_nvidia || self.renderer.egl.is_shared() {
+                    sync_lock.update_read(gl);
+                }
             } else if self.renderer.egl.is_shared() {
                 gl.Finish();
             };
