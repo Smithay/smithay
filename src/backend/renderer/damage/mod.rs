@@ -130,7 +130,8 @@ struct ElementInstanceState {
     last_geometry: Rectangle<i32, Physical>,
     last_transform: Transform,
     last_alpha: f32,
-    last_z_index: usize,
+    /// Index in the stack of drawn elements, counted from the bottom-most one
+    last_stack_index: usize,
     last_is_framebuffer_effect: bool,
 }
 
@@ -142,14 +143,14 @@ impl ElementInstanceState {
         geometry: Rectangle<i32, Physical>,
         transform: Transform,
         alpha: f32,
-        z_index: usize,
+        stack_index: usize,
         is_framebuffer_effect: bool,
     ) -> bool {
         self.last_src == src
             && self.last_geometry == geometry
             && self.last_transform == transform
             && self.last_alpha == alpha
-            && self.last_z_index == z_index
+            && self.last_stack_index == stack_index
             && self.last_is_framebuffer_effect == is_framebuffer_effect
     }
 }
@@ -168,12 +169,19 @@ impl ElementState {
         geometry: Rectangle<i32, Physical>,
         transform: Transform,
         alpha: f32,
-        z_index: usize,
+        stack_index: usize,
         is_framebuffer_effect: bool,
     ) -> bool {
-        self.last_instances
-            .iter()
-            .any(|instance| instance.matches(src, geometry, transform, alpha, z_index, is_framebuffer_effect))
+        self.last_instances.iter().any(|instance| {
+            instance.matches(
+                src,
+                geometry,
+                transform,
+                alpha,
+                stack_index,
+                is_framebuffer_effect,
+            )
+        })
     }
 }
 
@@ -499,7 +507,6 @@ impl OutputDamageTracker {
         let mut element_damage = std::mem::take(&mut self.element_damage);
 
         let mut element_visible_area_workhouse = std::mem::take(&mut self.element_visible_area_workhouse);
-        let mut render_element_z_index = 0;
         for element in elements.iter() {
             let element_id = element.id();
             let element_loc = element.geometry(output_scale).loc;
@@ -534,52 +541,7 @@ impl OutputDamageTracker {
                 continue;
             }
 
-            let element_src = element.src();
-            let element_geometry = element.geometry(output_scale);
-            let element_transform = element.transform();
-            let element_alpha = element.alpha();
-            let element_last_state = self.last_state.elements.get(element.id());
             let element_is_framebuffer_effect = element.is_framebuffer_effect();
-
-            self.element_damage_index.push(self.damage.len());
-            if element_last_state
-                .map(|s| {
-                    !s.instance_matches(
-                        element_src,
-                        element_geometry,
-                        element_transform,
-                        element_alpha,
-                        render_element_z_index,
-                        element_is_framebuffer_effect,
-                    )
-                })
-                .unwrap_or(true)
-            {
-                if let Some(intersection) = element_geometry.intersection(output_geo) {
-                    self.damage.push(intersection);
-                }
-                if let Some(state) = element_last_state {
-                    self.damage.extend(
-                        state
-                            .last_instances
-                            .iter()
-                            .filter_map(|i| i.last_geometry.intersection(output_geo)),
-                    );
-                }
-            } else {
-                let element_output_damage = element
-                    .damage_since(
-                        output_scale,
-                        self.last_state.elements.get(element_id).map(|s| s.last_commit),
-                    )
-                    .into_iter()
-                    .map(|mut d| {
-                        d.loc += element_loc;
-                        d
-                    })
-                    .filter_map(|geo| geo.intersection(output_geo));
-                self.damage.extend(element_output_damage);
-            }
 
             let element_opaque_regions_start_index = self.opaque_regions.len();
             let element_opaque_regions = element
@@ -595,7 +557,6 @@ impl OutputDamageTracker {
             self.opaque_regions_index
                 .push(element_opaque_regions_start_index..element_opaque_regions_end_index);
 
-            render_element_z_index += 1;
             render_elements.push(element);
 
             if let Some(state) = element_render_states.states.get_mut(element_id) {
@@ -624,6 +585,62 @@ impl OutputDamageTracker {
             &mut self.element_visible_area_workhouse,
             &mut element_visible_area_workhouse,
         );
+
+        // if the element has been moved or its alpha or z index changed, damage it
+        //
+        // The z index is counted from the bottom-most element drawn. Elements
+        // added, removed or restacked above an element do not change its index,
+        // so they do not force it to be redrawn; they bring their own damage.
+        // Two elements can only change their relative order if at least one of
+        // them changed its index, which damages its old and new geometry.
+        for (z_index, element) in render_elements.iter().enumerate() {
+            let element_id = element.id();
+            let element_loc = element.geometry(output_scale).loc;
+            let element_src = element.src();
+            let element_geometry = element.geometry(output_scale);
+            let element_transform = element.transform();
+            let element_alpha = element.alpha();
+            let element_last_state = self.last_state.elements.get(element_id);
+            let element_is_framebuffer_effect = element.is_framebuffer_effect();
+            let element_stack_index = render_elements.len() - 1 - z_index;
+
+            self.element_damage_index.push(self.damage.len());
+            if element_last_state
+                .map(|s| {
+                    !s.instance_matches(
+                        element_src,
+                        element_geometry,
+                        element_transform,
+                        element_alpha,
+                        element_stack_index,
+                        element_is_framebuffer_effect,
+                    )
+                })
+                .unwrap_or(true)
+            {
+                if let Some(intersection) = element_geometry.intersection(output_geo) {
+                    self.damage.push(intersection);
+                }
+                if let Some(state) = element_last_state {
+                    self.damage.extend(
+                        state
+                            .last_instances
+                            .iter()
+                            .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                    );
+                }
+            } else {
+                let element_output_damage = element
+                    .damage_since(output_scale, element_last_state.map(|s| s.last_commit))
+                    .into_iter()
+                    .map(|mut d| {
+                        d.loc += element_loc;
+                        d
+                    })
+                    .filter_map(|geo| geo.intersection(output_geo));
+                self.damage.extend(element_output_damage);
+            }
+        }
 
         let mut force_effect_redraw = false;
 
@@ -787,6 +804,7 @@ impl OutputDamageTracker {
                 .iter()
                 .enumerate()
                 .fold(new_elements_state, |mut map, (z_index, elem)| {
+                    let stack_index = render_elements.len() - 1 - z_index;
                     let id = elem.id();
                     let elem_src = elem.src();
                     let elem_alpha = elem.alpha();
@@ -800,7 +818,7 @@ impl OutputDamageTracker {
                             last_geometry: elem_geometry,
                             last_transform: elem_transform,
                             last_alpha: elem_alpha,
-                            last_z_index: z_index,
+                            last_stack_index: stack_index,
                             last_is_framebuffer_effect: element_is_framebuffer_effect,
                         });
                     } else {
@@ -814,7 +832,7 @@ impl OutputDamageTracker {
                                     last_geometry: elem_geometry,
                                     last_transform: elem_transform,
                                     last_alpha: elem_alpha,
-                                    last_z_index: z_index,
+                                    last_stack_index: stack_index,
                                     last_is_framebuffer_effect: element_is_framebuffer_effect,
                                 }],
                             },
@@ -970,5 +988,94 @@ impl OutputDamageTracker {
                 Err(Error::Rendering(err))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::renderer::element::{Kind, solid::SolidColorRenderElement};
+
+    fn solid(id: &Id, geometry: Rectangle<i32, Physical>) -> SolidColorRenderElement {
+        SolidColorRenderElement::new(
+            id.clone(),
+            geometry,
+            CommitCounter::default(),
+            Color32F::new(0.0, 0.0, 0.0, 1.0),
+            Kind::Unspecified,
+        )
+    }
+
+    fn assert_damage(
+        tracker: &mut OutputDamageTracker,
+        elements: &[SolidColorRenderElement],
+        expected: &[Rectangle<i32, Physical>],
+        untouched: Rectangle<i32, Physical>,
+    ) {
+        let damage = tracker
+            .damage_output(1, elements)
+            .unwrap()
+            .0
+            .cloned()
+            .unwrap_or_default();
+        let missing = Rectangle::subtract_rects_many(expected.iter().copied(), damage.iter().copied());
+        assert!(
+            missing.is_empty() && !damage.iter().any(|d| d.overlaps(untouched)),
+            "expected damage {:?} and none in {:?}, got {:?}",
+            expected,
+            untouched,
+            damage
+        );
+    }
+
+    #[test]
+    fn element_added_on_top_does_not_damage_elements_below() {
+        let mut tracker = OutputDamageTracker::new((100, 100), 1.0, Transform::Normal);
+        let background = Id::new();
+        let window = Id::new();
+        let popup = Id::new();
+        let background_geo = Rectangle::from_size((100, 100).into());
+        let window_geo = Rectangle::new((10, 10).into(), (50, 50).into());
+        let popup_geo = Rectangle::new((20, 20).into(), (10, 10).into());
+        let untouched = Rectangle::new((60, 60).into(), (40, 40).into());
+
+        let elements = [solid(&window, window_geo), solid(&background, background_geo)];
+        assert_damage(&mut tracker, &elements, &[background_geo], Rectangle::default());
+
+        let elements = [
+            solid(&popup, popup_geo),
+            solid(&window, window_geo),
+            solid(&background, background_geo),
+        ];
+        assert_damage(&mut tracker, &elements, &[popup_geo], untouched);
+
+        let elements = [solid(&window, window_geo), solid(&background, background_geo)];
+        assert_damage(&mut tracker, &elements, &[popup_geo], untouched);
+    }
+
+    #[test]
+    fn restacked_elements_are_damaged() {
+        let mut tracker = OutputDamageTracker::new((100, 100), 1.0, Transform::Normal);
+        let background = Id::new();
+        let a = Id::new();
+        let b = Id::new();
+        let background_geo = Rectangle::from_size((100, 100).into());
+        let a_geo = Rectangle::new((10, 10).into(), (30, 30).into());
+        let b_geo = Rectangle::new((20, 20).into(), (30, 30).into());
+        let untouched = Rectangle::new((60, 60).into(), (40, 40).into());
+
+        let elements = [
+            solid(&a, a_geo),
+            solid(&b, b_geo),
+            solid(&background, background_geo),
+        ];
+        assert_damage(&mut tracker, &elements, &[background_geo], Rectangle::default());
+
+        let elements = [
+            solid(&b, b_geo),
+            solid(&a, a_geo),
+            solid(&background, background_geo),
+        ];
+        assert_damage(&mut tracker, &elements, &[a_geo, b_geo], untouched);
     }
 }
