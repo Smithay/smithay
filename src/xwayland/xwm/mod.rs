@@ -586,9 +586,67 @@ pub trait XwmHandler {
     fn disconnected(&mut self, _xwm: XwmId) {}
 }
 
+// XWM instances are replaceable. Their event sources must not retain the old
+// connection or continue delivering events after the instance is dropped.
+//
+// `X11Wm` cannot hold a `LoopHandle` (it is `!Send`, which would make `X11Wm`
+// `!Send` too), so removal is delegated to a reaper source living in the loop.
+// Removal is therefore deferred to the next dispatch; `dead` lets sources that
+// are already queued skip the stale XWM until the reaper has run.
+#[derive(Debug)]
+struct EventSourceCleanup {
+    tokens: Vec<calloop::RegistrationToken>,
+    reaper: calloop::channel::Sender<calloop::RegistrationToken>,
+    dead: Arc<AtomicBool>,
+}
+
+impl EventSourceCleanup {
+    fn new<D: 'static>(handle: &LoopHandle<'static, D>) -> calloop::Result<Self> {
+        let (reaper, source) = calloop::channel::channel();
+        let weak_handle = handle.downgrade();
+        // The source removes itself once the sender is dropped.
+        handle
+            .insert_source(source, move |event, _, _| {
+                if let calloop::channel::Event::Msg(token) = event {
+                    if let Some(handle) = weak_handle.upgrade() {
+                        handle.remove(token);
+                    }
+                }
+            })
+            .map_err(|err| err.error)?;
+
+        Ok(Self {
+            tokens: Vec::new(),
+            reaper,
+            dead: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    /// Mark the XWM as gone, so that remaining sources stop touching it.
+    fn mark_dead(&self) {
+        self.dead.store(true, Ordering::Release);
+    }
+
+    /// Ask the event loop to remove a source belonging to this XWM.
+    fn retire(&self, token: calloop::RegistrationToken) {
+        // Fails only if the event loop is gone, taking all sources with it.
+        let _ = self.reaper.send(token);
+    }
+}
+
+impl Drop for EventSourceCleanup {
+    fn drop(&mut self) {
+        self.mark_dead();
+        for token in std::mem::take(&mut self.tokens) {
+            self.retire(token);
+        }
+    }
+}
+
 /// The runtime state of an reparenting XWayland window manager.
 #[derive(Debug)]
 pub struct X11Wm {
+    event_sources: EventSourceCleanup,
     id: XwmId,
     conn: Arc<RustConnection>,
     client_scale: Arc<AtomicF64>,
@@ -625,6 +683,24 @@ pub struct X11Wm {
 impl Drop for X11Wm {
     fn drop(&mut self) {
         xwm_id::remove(self.id.0);
+
+        self.event_sources.mark_dead();
+        // Taking the tokens also keeps the transfers' own `Drop` from warning.
+        for selection in [&mut self.clipboard, &mut self.primary, &mut self.dnd.selection] {
+            let tokens = selection
+                .incoming
+                .values_mut()
+                .filter_map(|transfer| transfer.token.take())
+                .chain(
+                    selection
+                        .outgoing
+                        .values_mut()
+                        .filter_map(|transfer| transfer.token.take()),
+                );
+            for token in tokens {
+                self.event_sources.retire(token);
+            }
+        }
 
         // Break reference cycle caused by deferred_sync hook
         for window in std::mem::take(&mut self.windows) {
@@ -1017,13 +1093,14 @@ impl X11Wm {
         let wm_window = OwnedX11Window::new(win, &conn);
 
         let (focus_release, focus_release_source) = FocusReleaseHandle::new(&conn)?;
-        {
-            let release = focus_release.clone();
-            handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
-        }
+        let release = focus_release.clone();
+        let mut event_sources = EventSourceCleanup::new(&handle)?;
+        let focus_token = handle.insert_source(focus_release_source, move |_, _, _| release.dispatch())?;
+        event_sources.tokens.push(focus_token);
 
         drop(_guard);
-        let wm = Self {
+        let mut wm = Self {
+            event_sources,
             id,
             conn,
             client_scale,
@@ -1050,7 +1127,9 @@ impl X11Wm {
 
         let event_handle = handle.downgrade();
         let dh = dh.clone();
-        handle.insert_source(source, move |event, _, data| match event {
+        let dead = wm.event_sources.dead.clone();
+        let event_token = handle.insert_source(source, move |event, _, data| match event {
+            _ if dead.load(Ordering::Acquire) => {}
             calloop::channel::Event::Msg(event) => {
                 if let Some(event_handle) = event_handle.upgrade() {
                     if let Err(err) = handle_event(&event_handle, &dh, data, id, event) {
@@ -1062,7 +1141,22 @@ impl X11Wm {
                 data.disconnected(id);
             }
         })?;
+        wm.event_sources.tokens.push(event_token);
         Ok(wm)
+    }
+
+    /// Allow Xwayland to terminate when this XWM is the only remaining client.
+    /// The compositor must be prepared to recreate the server and XWM afterward.
+    /// Requires XFixes 6; the server's `-terminate` option controls the idle delay.
+    pub fn allow_idle_termination(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let version = self.conn.xfixes_query_version(6, 0)?.reply()?;
+        if version.major_version < 6 {
+            return Err(ConnectionError::UnsupportedExtension.into());
+        }
+        self.conn
+            .xfixes_set_client_disconnect_mode(x11rb::protocol::xfixes::ClientDisconnectFlags::TERMINATE)?
+            .check()?;
+        Ok(())
     }
 
     /// Id of this X11 WM
@@ -1310,6 +1404,7 @@ impl X11Wm {
                 .set_selection_owner(x11rb::NONE, selection.atom, selection.timestamp)?;
         }
 
+        self.conn.flush()?;
         Ok(())
     }
 
@@ -2043,10 +2138,14 @@ where
                         let loop_handle_clone = loop_handle.clone();
                         let incoming_window = *window;
                         let atom = n.selection;
+                        let dead = xwm.event_sources.dead.clone();
                         let token = loop_handle
                             .insert_source(
                                 Generic::new(fd, Interest::WRITE, Mode::Level),
                                 move |_, fd, data| {
+                                    if dead.load(Ordering::Acquire) {
+                                        return Ok(PostAction::Remove);
+                                    }
                                     let xwm = data.xwm_state(xwm_id);
                                     let conn = &xwm.conn;
                                     let atoms = &xwm.atoms;
@@ -2248,9 +2347,13 @@ where
                         let requestor = n.requestor;
                         let atom = selection.atom;
 
+                        let dead = xwm.event_sources.dead.clone();
                         let token = loop_handle.insert_source(
                             Generic::new(recv_fd, Interest::READ, Mode::Level),
                             move |_, fd, data| {
+                                if dead.load(Ordering::Acquire) {
+                                    return Ok(PostAction::Remove);
+                                }
                                 let xwm = data.xwm_state(xwm_id);
                                 let selection = match atom {
                                     x if x == xwm.atoms.CLIPBOARD => &mut xwm.clipboard,
@@ -2915,4 +3018,44 @@ fn atom_from_mime(
             .reply_unchecked()?
             .map(|reply| reply.atom),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn x11_wm_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<X11Wm>();
+    }
+
+    #[test]
+    fn dropping_cleanup_removes_registered_sources() {
+        let mut event_loop = calloop::EventLoop::<u32>::try_new().unwrap();
+        let handle = event_loop.handle();
+
+        let (ping, source) = ping::make_ping().unwrap();
+        let token = handle.insert_source(source, |_, _, count| *count += 1).unwrap();
+        let mut cleanup = EventSourceCleanup::new(&handle).unwrap();
+        cleanup.tokens.push(token);
+        let dead = cleanup.dead.clone();
+
+        let mut count = 0;
+        ping.ping();
+        event_loop.dispatch(Some(Duration::ZERO), &mut count).unwrap();
+        assert_eq!(count, 1);
+
+        drop(cleanup);
+        assert!(dead.load(Ordering::Acquire));
+
+        // The reaper runs on the next dispatch. The ping source may still fire
+        // in that same iteration, so only look at what happens afterwards.
+        event_loop.dispatch(Some(Duration::ZERO), &mut count).unwrap();
+        let settled = count;
+        ping.ping();
+        event_loop.dispatch(Some(Duration::ZERO), &mut count).unwrap();
+        assert_eq!(count, settled);
+    }
 }
